@@ -45,9 +45,29 @@ skill's arguments and visual precondition. The live action guard independently
 expands the selected skill and rejects pointer output outside its configured
 envelope. Direct click actions remain blocked by the active profile.
 
+The Windows controller submits absolute cursor placement and mouse-button
+events in one `SendInput` batch. This prevents physical cursor movement from
+interleaving between placement and the click and silently redirecting a command.
+
 Native telemetry does not yet report whether the map is open. Consequently,
 the map-open/map-closed precondition is currently grounded in the captured
 frame and planner instructions, while the coordinate envelope is enforced in
 code. Until active-screen telemetry or a deterministic visual classifier is
 available, movement should be supervised and recalibrated after meaningful
 changes to resolution, window mode, or UI scale.
+
+## Initial live trial
+
+The first supervised trial on 2026-07-22 validated both paths while Kenshi was
+paused between short movement windows:
+
+- Fine movement reached speed 54.0 and changed Lekko's position by about 26.7
+  world units toward nearby visible terrain.
+- Coarse map movement reached speed 72.6 and changed position by about 165
+  world units toward a point southeast of The Hub marker.
+- The first map attempt exposed a cursor-placement race because physical mouse
+  movement could occur between separate synthetic move and click calls. Atomic
+  move-plus-button injection fixed it; a subsequent frame showed the cursor at
+  the requested map pixel.
+- Kenshi was explicitly re-paused, the map was closed, and later telemetry
+  confirmed Lekko's position remained stable.

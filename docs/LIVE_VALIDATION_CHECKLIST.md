@@ -106,5 +106,16 @@ inspection alone.
   normalized `x=0.15..0.85`, `y=0.15..0.65`; map travel is inset to
   `x=0.30..0.68`, `y=0.16..0.69`. The map was closed again after capture.
 - The guard now enforces those per-skill envelopes and direct clicks remain
-  blocked. Neither movement skill has been executed live yet, so the repeated
-  calibrated-click checklist item remains open.
+  blocked.
+- A supervised fine-movement trial reached speed 54.0 and moved Lekko about
+  26.7 world units toward nearby visible terrain before the game was re-paused.
+- The first map trial exposed a real cursor race: physical mouse movement could
+  interleave between separate synthetic move and button calls, sending the
+  destination to the prior pointer location. The controller now submits the
+  absolute move and right-button events as one `SendInput` batch.
+- The corrected coarse-map trial placed the pointer at the requested pixel,
+  reached speed 72.6, and moved Lekko about 165 world units toward a destination
+  southeast of The Hub before re-pausing. The map was closed and subsequent
+  telemetry confirmed the final position remained stable.
+- These trials validate the two paths once, not the 50 repetitions required by
+  the calibrated-click checklist item, so that item remains open.
