@@ -29,11 +29,6 @@ Kenshi installation.
 
 ## Checks not completed here
 
-- Ruff and mypy were declared in the development extras but were not installed
-  in the execution image; their commands could not be run.
-- The native C++ project was not compiled because this environment is not
-  Windows and does not have the Visual C++ 2010 x64 toolset or KenshiLib build
-  dependencies.
 - The DLL was not loaded into Kenshi.
 - No live telemetry field was verified against the game UI.
 - Windows screenshot capture, focus, SendInput, integrity-level behavior, and
@@ -45,3 +40,22 @@ Kenshi installation.
 The platform-independent agent runtime is executable and tested. The native
 source and live-control path are implementation scaffolds with explicit manual
 acceptance gates, not a claim of a finished Kenshi integration.
+
+## Windows native follow-up
+
+Completed later on 2026-07-22 from the WSL checkout using Windows-hosted build
+tools and local Windows intermediate/output directories:
+
+- Ruff passed, strict mypy passed for 36 source files, and 27 pytest tests
+  passed.
+- Visual Studio 2022 Build Tools discovered the installed VS2010 SP1 `v100` x64
+  compiler (`16.00.40219.01`) and MSBuild platform integration.
+- `KenshiLib_Examples_deps` was pinned at
+  `b566d74bf3d74629cc2fb632a97595b8202993f1`; Git LFS fsck passed and Boost
+  1.60 was extracted.
+- `scripts\build_native.ps1` produced a 50,688-byte PE32+ x64 DLL.
+- The staged DLL exported `startPlugin`, imported `KenshiLib.dll`, `MSVCP100.dll`,
+  and `MSVCR100.dll`, and had SHA-256
+  `555cee28d7718bee63e8369ca1462a7a2584e0648e4651f49a992a41e612fc13`.
+
+Runtime loading and live telemetry validation remain intentionally separate.

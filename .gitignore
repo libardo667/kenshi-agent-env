@@ -18,6 +18,7 @@ runs/*
 *.obj
 *.exp
 *.lib
+*.dll
 *.[iI][sS][oO]
 native/**/x64/
 native/**/Debug/

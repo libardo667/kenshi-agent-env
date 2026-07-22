@@ -9,7 +9,7 @@ generic where possible; hashes and commits are the reproducibility anchors.
 | RE_Kenshi | v0.3.4, tag commit `be107d258618974d56b7373f0f86c82daa2196a9` | [upstream release](https://github.com/BFrizzleFoShizzle/RE_Kenshi/releases/tag/v0.3.4) | 2026-07-22 | Not installed; upstream lists Kenshi 1.0.68 Steam as supported |
 | KenshiLib | v0.4.0, tag commit `18f75fecb93cfead6029efe0d5fe199d6618bcc9` | [upstream release](https://github.com/BFrizzleFoShizzle/KenshiLib/releases/tag/v0.4.0) | 2026-07-22 | Not installed; upstream says this version ships with RE_Kenshi v0.3.4 |
 | KenshiLib examples | `548b3eaf779c1b2feb25416f1db757320d04ec6c` | [upstream repository](https://github.com/BFrizzleFoShizzle/KenshiLib_Examples) | 2026-07-22 | Dependency layout reference |
-| Example dependencies | `b566d74bf3d74629cc2fb632a97595b8202993f1` | [upstream repository](https://github.com/BFrizzleFoShizzle/KenshiLib_Examples_deps) | 2026-07-22 | Not downloaded |
+| Example dependencies | `b566d74bf3d74629cc2fb632a97595b8202993f1` | `C:\Hub\Projects\CppProjects\KenshiLib_Examples_deps` | 2026-07-22 | Detached at the pinned commit; `git lfs fsck` passes; Boost archive extracted |
 | Visual Studio Build Tools | 2022 17.14.35 | Windows installation | 2026-07-22 | MSBuild present |
 | Visual C++ v100 x64 toolset | compiler 16.00.40219.01, VS2010 SP1 | `C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC` | 2026-07-22 | x64 compiler and `v100` MSBuild integration pass native doctor |
 | Windows SDK | 7.0A for VS2010; Windows 10 SDK 10.0.26100.0 for VS2022 | Windows installation | 2026-07-22 | Standalone Windows SDK 7.1 is not installed |
@@ -36,8 +36,12 @@ These are upstream release digests. Recompute them after download before use.
 ## Native build command
 
 ```powershell
-# Blocked until KENSHILIB_DIR and BOOST_INCLUDE_PATH are provisioned.
+.\scripts\build_native.ps1
 ```
+
+Result: VS2010 SP1 `Release | x64` build succeeded. The staged DLL SHA-256 was
+`555cee28d7718bee63e8369ca1462a7a2584e0648e4651f49a992a41e612fc13`.
+The only compiler warning was C4091 in upstream MyGUI header `BaseLayout.h`.
 
 ## Plugin staging/install layout
 
@@ -47,3 +51,6 @@ KenshiAgentTelemetry/
   KenshiAgentTelemetry.mod
   RE_Kenshi.json
 ```
+
+The verified package is staged under `staging\KenshiAgentTelemetry`; it has not
+been copied into the Kenshi installation yet.

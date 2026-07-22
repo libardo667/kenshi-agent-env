@@ -26,9 +26,10 @@ and game-integration failures.
   JSON file.
 - Automated tests for the platform-independent path.
 
-The native plugin source is scaffolded against the maintained KenshiLib headers,
-but it has not been compiled or field-tested inside your Kenshi installation.
-That distinction matters. See `STATUS.md` and `CODING_AGENT_PROMPT.md`.
+The native plugin now compiles as a VS2010 SP1 `Release | x64` DLL against the
+pinned maintained KenshiLib dependency bundle. It has not yet been loaded or
+field-tested inside Kenshi. That distinction matters. See `STATUS.md` and
+`CODING_AGENT_PROMPT.md`.
 
 ## Repository map
 

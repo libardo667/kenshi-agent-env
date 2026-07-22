@@ -13,11 +13,12 @@
 - Macro/skill expansion with action and rate limits.
 - Native KenshiLib plugin source that hooks PlayerInterface::update and emits a
   partial, atomic telemetry snapshot from the game/UI thread.
+- Reproducible Windows native toolchain verification and a successful
+  Visual C++ 2010 SP1 `Release | x64` plugin build.
 
 ## Must be verified on a real Kenshi installation
 
-- Building the native plugin with the exact KenshiLib/RE_Kenshi dependencies and
-  the Visual C++ 2010 x64 toolset.
+- Loading the staged native plugin with RE_Kenshi for the first time.
 - Runtime compatibility with the user's Kenshi executable and active mod set.
 - Every native field accessor, especially squad enumeration and virtual calls.
 - Kenshi key bindings, window focus behavior, client coordinates, and UI scale.
