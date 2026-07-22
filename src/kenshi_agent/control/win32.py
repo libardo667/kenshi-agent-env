@@ -27,6 +27,15 @@ class AmbiguousWindowError(RuntimeError):
     pass
 
 
+def enable_per_monitor_dpi_awareness(user32: Any) -> bool:
+    """Use physical pixels consistently for capture geometry and SendInput."""
+    setter = getattr(user32, "SetProcessDpiAwarenessContext", None)
+    if setter is None:
+        legacy_setter = getattr(user32, "SetProcessDPIAware", None)
+        return bool(legacy_setter and legacy_setter())
+    return bool(setter(ctypes.c_void_p(-4)))
+
+
 def select_unique_window(matches: list[tuple[int, str]], title_filter: str) -> int:
     if not matches:
         raise WindowNotFoundError(f"No visible window title contains {title_filter!r}.")
@@ -170,6 +179,7 @@ class Win32InputController(InputController):
         self.focus_before_input = focus_before_input
         self.post_input_delay_seconds = post_input_delay_seconds
         self.user32 = getattr(ctypes, "windll").user32  # noqa: B009 - Windows-only
+        enable_per_monitor_dpi_awareness(self.user32)
         self._configure_signatures()
 
     def _configure_signatures(self) -> None:
