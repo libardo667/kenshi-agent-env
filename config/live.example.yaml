@@ -4,7 +4,9 @@ mode: live
 paths:
   runs_dir: ../runs
   prompt_file: ../prompts/planner_system.md
-  memory_db: ../runs/live-memory.sqlite3
+  # Keep SQLite on a Windows-local filesystem; WAL locking is unreliable over
+  # the WSL UNC boundary even though screenshots and JSONL logs work there.
+  memory_db: ${LOCALAPPDATA}/KenshiAgent/state/live-memory.sqlite3
 
 runtime:
   max_steps: 200
@@ -32,7 +34,7 @@ mock:
   random_events: true
 
 telemetry:
-  file: ${KENSHI_AGENT_TELEMETRY_DIR:-C:/Users/REPLACE_ME/AppData/Local/KenshiAgent}/telemetry.latest.json
+  file: ${LOCALAPPDATA}/KenshiAgent/telemetry.latest.json
   max_age_seconds: 3.0
   read_retries: 4
   retry_delay_seconds: 0.04
@@ -40,7 +42,8 @@ telemetry:
 
 capture:
   enabled: true
-  window_title_contains: Kenshi
+  # Narrow enough not to match a terminal opened in the kenshi-agent-env repo.
+  window_title_contains: Kenshi 1.0.
   image_format: png
   jpeg_quality: 90
   crop_client_area: true

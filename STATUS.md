@@ -21,6 +21,9 @@
 - Initial read-only field validation: schema-valid two-hertz snapshots, fresh
   UTC timestamps, one-character squad identity/selection, money, camera and
   character position, movement speed, pause, and speed multiplier.
+- Windows live dry-run validation: a bounded heuristic episode captured five
+  isolated 1920x1080 Kenshi frames, paired them with fresh telemetry, logged
+  four proposed actions, and withheld every input action at the safety gate.
 
 ## Still requires broader live validation
 
@@ -29,7 +32,7 @@
 - Safety-critical getting-eaten state; the raw KenshiLib byte produced a false
   positive on a healthy new character and is intentionally omitted.
 - Kenshi key bindings, window focus behavior, client coordinates, and UI scale.
-- Screenshot interpretation and live planner behavior.
+- OpenAI vision-planner behavior against live screenshots.
 
 ## Deliberately not implemented
 

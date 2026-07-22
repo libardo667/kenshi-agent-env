@@ -136,7 +136,8 @@ Do these in order. Skipping the order makes failures hard to diagnose.
 2. Build and install the native plugin against the exact maintained
    RE_Kenshi/KenshiLib versions used by the game.
 3. Confirm `plugin_status.json` and a steadily increasing telemetry sequence.
-4. Run `doctor` and `validate-telemetry` against live output.
+4. Prepare the isolated Windows live runtime, then run `doctor` and
+   `validate-telemetry` against live output.
 5. Run live mode with action execution disabled. Inspect screenshots, telemetry,
    prompts, and proposed decisions.
 6. Fix the resolution, window mode, UI scale, and key bindings; calibrate any
@@ -144,8 +145,21 @@ Do these in order. Skipping the order makes failures hard to diagnose.
 7. Enable one harmless key skill at a time on a disposable save.
 8. Only after those checks, enable model-selected live actions.
 
-Copy `config/live.example.yaml` and replace the telemetry path. Live mode remains
-dry-run unless both conditions are true:
+When the checkout lives in WSL, keep the live Python process and SQLite memory
+database on Windows. From Windows PowerShell in the repo, run:
+
+```powershell
+.\scripts\bootstrap_live_windows.ps1
+.\scripts\run_live_dry.ps1 -Config config\live.example.yaml -Steps 4
+```
+
+Add `-WithOpenAI` to the bootstrap command only when preparing to test the
+vision planner. The dry-run command deliberately omits the second live-action
+gate, so proposed actions are logged but not sent to Kenshi.
+
+`config/live.example.yaml` derives telemetry and SQLite paths from Windows
+`%LOCALAPPDATA%`; copy it only when you need machine-specific overrides. Live
+mode remains dry-run unless both conditions are true:
 
 ```yaml
 safety:
