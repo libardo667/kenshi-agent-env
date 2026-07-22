@@ -13,6 +13,10 @@ unimplemented.
 
 ## Build
 
+See the [Windows native setup guide](../../docs/WINDOWS_NATIVE_SETUP.md) for exact
+media hashes, Visual C++/SP1 installation, Git LFS dependency setup, and
+diagnostics.
+
 1. Install RE_Kenshi and obtain the matching maintained KenshiLib development
    dependencies.
 2. Install a Visual Studio version capable of using the Visual C++ 2010 x64

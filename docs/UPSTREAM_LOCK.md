@@ -11,8 +11,8 @@ generic where possible; hashes and commits are the reproducibility anchors.
 | KenshiLib examples | `548b3eaf779c1b2feb25416f1db757320d04ec6c` | [upstream repository](https://github.com/BFrizzleFoShizzle/KenshiLib_Examples) | 2026-07-22 | Dependency layout reference |
 | Example dependencies | `b566d74bf3d74629cc2fb632a97595b8202993f1` | [upstream repository](https://github.com/BFrizzleFoShizzle/KenshiLib_Examples_deps) | 2026-07-22 | Not downloaded |
 | Visual Studio Build Tools | 2022 17.14.35 | Windows installation | 2026-07-22 | MSBuild present |
-| Visual C++ v100 x64 toolset | missing | Windows installation | 2026-07-22 | Required by upstream; native doctor fails closed |
-| Windows SDK | not yet locked | Windows installation | 2026-07-22 | Record after native toolchain installation |
+| Visual C++ v100 x64 toolset | compiler 16.00.40219.01, VS2010 SP1 | `C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC` | 2026-07-22 | x64 compiler and `v100` MSBuild integration pass native doctor |
+| Windows SDK | 7.0A for VS2010; Windows 10 SDK 10.0.26100.0 for VS2022 | Windows installation | 2026-07-22 | Standalone Windows SDK 7.1 is not installed |
 | Python | CPython 3.12.13 x64, uv-managed | Windows user installation | 2026-07-22 | `python` resolves successfully; `py -3.11` is unavailable |
 
 The current upstream examples require Boost 1.60 headers and v100 libraries in
@@ -36,11 +36,14 @@ These are upstream release digests. Recompute them after download before use.
 ## Native build command
 
 ```powershell
-# Blocked until KENSHILIB_DIR and the v100 x64 toolset are installed.
+# Blocked until KENSHILIB_DIR and BOOST_INCLUDE_PATH are provisioned.
 ```
 
 ## Plugin staging/install layout
 
 ```text
-# Not yet established from a verified current upstream example.
+KenshiAgentTelemetry/
+  KenshiAgentTelemetry.dll
+  KenshiAgentTelemetry.mod
+  RE_Kenshi.json
 ```

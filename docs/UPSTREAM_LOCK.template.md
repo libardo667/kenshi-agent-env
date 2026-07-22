@@ -11,6 +11,7 @@ Do not commit secrets, account names, or unnecessary absolute user paths.
 | KenshiLib examples | | | | |
 | Visual Studio IDE | | | | |
 | Visual C++ v100 x64 toolset | | | | |
+| Visual Studio 2010 SP1 compiler version | | | | Expected `16.00.40219.01` or newer `v100` servicing build |
 | Windows SDK | | | | |
 | Python | | | | |
 | Python lock/install command | | | | |

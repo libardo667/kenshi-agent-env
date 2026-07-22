@@ -56,6 +56,21 @@ $v100CompilerCandidates = @(
 $v100Compiler = $v100CompilerCandidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
 Add-Check "v100 x64 compiler" (-not [string]::IsNullOrWhiteSpace($v100Compiler)) $v100Compiler
 
+$v100Sp1Minimum = [version]"16.0.40219.1"
+$v100Sp1Installed = $false
+$v100VersionDetail = "compiler unavailable"
+if (-not [string]::IsNullOrWhiteSpace($v100Compiler)) {
+    $v100VersionText = ((Get-Item -LiteralPath $v100Compiler).VersionInfo.FileVersion -split " ")[0]
+    $v100VersionDetail = "$v100VersionText (minimum SP1 $v100Sp1Minimum)"
+    try {
+        $v100Sp1Installed = [version]$v100VersionText -ge $v100Sp1Minimum
+    }
+    catch {
+        $v100VersionDetail = "$v100VersionText (could not parse; minimum SP1 $v100Sp1Minimum)"
+    }
+}
+Add-Check "v100 compiler SP1" $v100Sp1Installed $v100VersionDetail
+
 $v100TargetsDir = "${env:ProgramFiles(x86)}\MSBuild\Microsoft.Cpp\v4.0\Platforms\x64\PlatformToolsets\v100"
 $v100Props = Join-Path $v100TargetsDir "Microsoft.Cpp.x64.v100.props"
 $v100Targets = Join-Path $v100TargetsDir "Microsoft.Cpp.x64.v100.targets"
