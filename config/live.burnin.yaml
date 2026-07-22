@@ -79,6 +79,7 @@ safety:
     - close_overlay
     - move_visible_terrain
     - move_on_map
+    - interact_visible_person
 
 memory:
   enabled: true
@@ -103,10 +104,12 @@ macros:
       - kind: key
         key: i
   focus_selected:
-    description: Center on the selected character.
+    description: Select and center the first squad member by pressing squad slot 1 twice.
     actions:
       - kind: key
-        key: f
+        key: "1"
+      - kind: key
+        key: "1"
   close_overlay:
     description: Close the currently visible map, inventory, or other dismissible overlay.
     actions:
@@ -156,3 +159,24 @@ macros:
         button: right
       - kind: key
         key: m
+  interact_visible_person:
+    description: Right-click one clearly non-hostile visible person to talk or approach for dialogue, advance briefly, and return paused.
+    arguments:
+      x: Normalized horizontal coordinate of the visible person's body in the 3D viewport.
+      y: Normalized vertical coordinate of the visible person's body in the 3D viewport.
+      duration_seconds: Approach time from 0.5 to 6.0 seconds; keep it short when already nearby.
+    visual_precondition: The 3D world is visible with overlays closed, and the target is clearly a non-hostile shopkeeper or person with a talk affordance. Never use on an ambiguous or hostile target because right-click may attack.
+    normalized_pointer_bounds:
+      min_x: 0.10
+      max_x: 0.90
+      min_y: 0.12
+      max_y: 0.70
+    movement_pulse_seconds: 2.0
+    movement_pulse_min_seconds: 0.5
+    movement_pulse_max_seconds: 6.0
+    actions:
+      - kind: click
+        x: "{{x}}"
+        y: "{{y}}"
+        space: normalized
+        button: right

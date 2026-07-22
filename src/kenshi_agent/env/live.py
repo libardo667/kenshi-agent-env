@@ -323,6 +323,7 @@ class LiveEnvironment(AgentEnvironment):
         unpause_sent = False
         emergency_stop = False
         user_interrupted = False
+        auto_paused = False
         try:
             unpause_receipt = await self.controller.execute(pause_key)
             unpause_sent = True
@@ -343,6 +344,10 @@ class LiveEnvironment(AgentEnvironment):
                 if self.controller.user_input_detected():
                     user_interrupted = True
                     break
+                if self._fresh_pause_state() is True:
+                    auto_paused = True
+                    unpause_sent = False
+                    break
                 await asyncio.sleep(min(0.1, remaining))
         finally:
             if unpause_sent:
@@ -359,11 +364,12 @@ class LiveEnvironment(AgentEnvironment):
 
         if emergency_stop:
             raise RuntimeError("Emergency stop ended the movement pulse after re-pausing Kenshi.")
-        outcome = (
-            "Human input ended the pulse; confirmed re-paused state and yielded control."
-            if user_interrupted
-            else f"Advanced Kenshi for {pulse_seconds:.2f}s and confirmed re-paused state."
-        )
+        if user_interrupted:
+            outcome = "Human input ended the pulse; confirmed re-paused state and yielded control."
+        elif auto_paused:
+            outcome = "Kenshi auto-paused during the pulse; preserved the paused state."
+        else:
+            outcome = f"Advanced Kenshi for {pulse_seconds:.2f}s and confirmed re-paused state."
         return ActionReceipt(
             action=action,
             accepted=True,

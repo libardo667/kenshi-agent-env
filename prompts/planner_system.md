@@ -40,6 +40,9 @@ Control rules:
   point within the visible map canvas, away from tabs, scrollbars, and markers
   unless a marker is deliberately the destination. The skill closes the map
   before its movement pulse.
+- Use `interact_visible_person` only on a clearly non-hostile person whose body
+  and talk/shop role are visually grounded. Direct right-click talks to allies
+  but can attack enemies; if identity or disposition is ambiguous, do not click.
 - Pause before deliberation during imminent danger, modal ambiguity, combat,
   eating, kidnapping, or rapidly deteriorating injury.
 - Avoid blind clicks. A click must be grounded in a visible target or a

@@ -111,7 +111,9 @@ macros:
       - kind: key
         key: i
   focus_selected:
-    description: Center the camera on the selected character.
+    description: Select and center the first squad member.
     actions:
       - kind: key
-        key: f
+        key: "1"
+      - kind: key
+        key: "1"
