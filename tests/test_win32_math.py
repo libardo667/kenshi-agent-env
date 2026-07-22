@@ -1,7 +1,12 @@
 import pytest
 
 from kenshi_agent.control.base import WindowRect
-from kenshi_agent.control.win32 import normalize_virtual_desktop_point, resolve_screen_point
+from kenshi_agent.control.win32 import (
+    AmbiguousWindowError,
+    normalize_virtual_desktop_point,
+    resolve_screen_point,
+    select_unique_window,
+)
 from kenshi_agent.models import CoordinateSpace
 
 
@@ -26,3 +31,11 @@ def test_virtual_desktop_normalization_supports_negative_origin() -> None:
 def test_invalid_virtual_desktop_is_rejected() -> None:
     with pytest.raises(ValueError):
         normalize_virtual_desktop_point(0, 0, left=0, top=0, width=1, height=1080)
+
+
+def test_window_target_must_be_unique() -> None:
+    assert select_unique_window([(42, "Kenshi 1.0.68")], "kenshi") == 42
+    with pytest.raises(AmbiguousWindowError, match="narrower window title"):
+        select_unique_window(
+            [(42, "Kenshi 1.0.68"), (84, "Kenshi crash reporter")], "kenshi"
+        )

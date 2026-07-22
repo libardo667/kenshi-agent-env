@@ -23,6 +23,22 @@ class WindowNotFoundError(RuntimeError):
     pass
 
 
+class AmbiguousWindowError(RuntimeError):
+    pass
+
+
+def select_unique_window(matches: list[tuple[int, str]], title_filter: str) -> int:
+    if not matches:
+        raise WindowNotFoundError(f"No visible window title contains {title_filter!r}.")
+    if len(matches) > 1:
+        titles = ", ".join(repr(title) for _, title in matches)
+        raise AmbiguousWindowError(
+            f"Multiple visible window titles contain {title_filter!r}: {titles}. "
+            "Use a narrower window title filter."
+        )
+    return matches[0][0]
+
+
 def resolve_screen_point(
     x: float, y: float, space: CoordinateSpace, rect: WindowRect
 ) -> tuple[int, int]:
@@ -167,7 +183,7 @@ class Win32InputController(InputController):
         self.user32.ClientToScreen.restype = wintypes.BOOL
 
     def _find_window(self) -> int:
-        matches: list[int] = []
+        matches: list[tuple[int, str]] = []
         enum_proc_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
         def callback(hwnd: int, _: int) -> bool:
@@ -179,16 +195,12 @@ class Win32InputController(InputController):
             buffer = ctypes.create_unicode_buffer(length + 1)
             self.user32.GetWindowTextW(hwnd, buffer, length + 1)
             if self.window_title_contains in buffer.value.casefold():
-                matches.append(int(hwnd))
+                matches.append((int(hwnd), buffer.value))
             return True
 
         callback_ref = enum_proc_type(callback)
         self.user32.EnumWindows(callback_ref, 0)
-        if not matches:
-            raise WindowNotFoundError(
-                f"No visible window title contains {self.window_title_contains!r}."
-            )
-        return matches[0]
+        return select_unique_window(matches, self.window_title_contains)
 
     def client_rect(self) -> WindowRect:
         hwnd = self._find_window()

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$Python = "py -3.11",
+    [string]$Python = "py",
     [switch]$WithOpenAI
 )
 
@@ -8,8 +8,13 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path -Parent $PSScriptRoot
 Set-Location $repo
 
+& $Python -c "import sys; raise SystemExit(0 if sys.version_info >= (3, 11) else 1)"
+if ($LASTEXITCODE -ne 0) {
+    throw "Python 3.11 or newer is required. Pass -Python with a suitable executable."
+}
+
 if (-not (Test-Path ".venv")) {
-    & ([scriptblock]::Create("$Python -m venv .venv"))
+    & $Python -m venv .venv
 }
 
 & ".\.venv\Scripts\python.exe" -m pip install --upgrade pip

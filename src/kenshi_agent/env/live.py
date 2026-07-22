@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
-from ..control.base import InputController, PrimitiveInputAction
+from ..control.base import InputController
 from ..control.capture import WindowCapture
 from ..models import (
     Action,
@@ -21,7 +21,7 @@ from ..models import (
     WaitAction,
 )
 from ..skills import MacroRegistry
-from ..telemetry import TelemetryReadError, TelemetryReader
+from ..telemetry import TelemetryReader, TelemetryReadError
 from .base import AgentEnvironment
 
 
@@ -204,13 +204,18 @@ class LiveEnvironment(AgentEnvironment):
                     primitive_actions=0,
                     message=f"Kenshi already reports paused={action.paused}.",
                 )
+            if paused is None:
+                raise RuntimeError(
+                    "Refusing to toggle Kenshi pause because the current pause state is unknown."
+                )
             primitive = KeyAction(key=self.controls_config.pause_key)
             primitive_receipt = await self.controller.execute(primitive)
             return primitive_receipt.model_copy(
                 update={
                     "action": action,
                     "message": (
-                        f"Pressed {self.controls_config.pause_key!r} to request paused={action.paused}. "
+                        f"Pressed {self.controls_config.pause_key!r} to request "
+                        f"paused={action.paused}. "
                         "A later observation must confirm the state."
                     ),
                 }
