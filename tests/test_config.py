@@ -19,6 +19,7 @@ def test_live_example_uses_windows_local_app_data(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("KENSHI_AGENT_TELEMETRY_DIR", raising=False)
 
     config = load_config(root / "config" / "live.example.yaml")
 
@@ -27,3 +28,28 @@ def test_live_example_uses_windows_local_app_data(
         tmp_path / "KenshiAgent" / "state" / "live-memory.sqlite3"
     )
     assert config.capture.window_title_contains == "Kenshi 1.0."
+
+
+def test_live_example_accepts_telemetry_directory_override(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    override = tmp_path / "custom-telemetry"
+    monkeypatch.setenv("KENSHI_AGENT_TELEMETRY_DIR", str(override))
+
+    config = load_config(root / "config" / "live.example.yaml")
+
+    assert config.telemetry.file == override / "telemetry.latest.json"
+
+
+def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
+    root = Path(__file__).resolve().parents[1]
+    ignored_names = {
+        line.strip()
+        for line in (root / ".gitignore").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert ".env" in ignored_names
+    assert ".env.example" not in ignored_names
+    assert (root / ".env.example").is_file()

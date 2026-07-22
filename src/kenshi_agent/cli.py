@@ -10,6 +10,8 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from .config import AppConfig, load_config
 from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
@@ -29,6 +31,12 @@ from .telemetry.sample import sample_snapshot
 
 def _new_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+
+
+def _load_project_env() -> Path:
+    env_file = Path.cwd() / ".env"
+    load_dotenv(dotenv_path=env_file, override=False)
+    return env_file
 
 
 def _console_safe(value: str) -> str:
@@ -294,6 +302,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _load_project_env()
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.subcommand == "run":
