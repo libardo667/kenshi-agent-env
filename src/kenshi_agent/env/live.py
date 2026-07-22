@@ -95,7 +95,8 @@ class LiveEnvironment(AgentEnvironment):
         if self._capture is not None:
             try:
                 self._capture_sequence += 1
-                frame = self._capture.capture(self._capture_sequence)
+                async with self.controller.input_lease():
+                    frame = self._capture.capture(self._capture_sequence)
                 screenshot_path = frame.path
                 screenshot_hash = frame.sha256
                 if telemetry_snapshot is not None:
@@ -156,7 +157,21 @@ class LiveEnvironment(AgentEnvironment):
                 raise RuntimeError(
                     f"Emergency stop key {self.emergency_stop_key!r} is pressed; action aborted."
                 )
-            receipt = await self._execute_live(action, started)
+            if isinstance(action, (NoopAction, StopAction, WaitAction)):
+                receipt = await self._execute_live(action, started)
+            else:
+                async with self.controller.input_lease():
+                    receipt = await self._execute_live(action, started)
+                lease_wait = self.controller.input_lease_wait_seconds()
+                if lease_wait >= 0.01:
+                    receipt = receipt.model_copy(
+                        update={
+                            "message": (
+                                f"Waited {lease_wait:.2f}s for a quiet input turn. "
+                                + receipt.message
+                            )
+                        }
+                    )
 
         self._step_index += 1
         if self.runtime_config.settle_seconds:
@@ -241,7 +256,7 @@ class LiveEnvironment(AgentEnvironment):
                 }
             )
         if isinstance(action, SkillAction):
-            pulse_seconds = self.macros.movement_pulse_seconds(action.name)
+            pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
                 return await self._execute_movement_pulse(
                     action, started, pulse_seconds=pulse_seconds
@@ -269,6 +284,8 @@ class LiveEnvironment(AgentEnvironment):
         primitive_count = 0
         messages: list[str] = []
         for macro_primitive in primitives:
+            if self.controller.user_input_detected():
+                raise RuntimeError("User input resumed during macro execution; yielding control.")
             if self.controller.emergency_stop_pressed(self.emergency_stop_key):
                 raise RuntimeError("Emergency stop pressed during macro execution.")
             if not isinstance(
@@ -305,6 +322,7 @@ class LiveEnvironment(AgentEnvironment):
         pause_key = KeyAction(key=self.controls_config.pause_key)
         unpause_sent = False
         emergency_stop = False
+        user_interrupted = False
         try:
             unpause_receipt = await self.controller.execute(pause_key)
             unpause_sent = True
@@ -322,14 +340,17 @@ class LiveEnvironment(AgentEnvironment):
                 if self.controller.emergency_stop_pressed(self.emergency_stop_key):
                     emergency_stop = True
                     break
+                if self.controller.user_input_detected():
+                    user_interrupted = True
+                    break
                 await asyncio.sleep(min(0.1, remaining))
         finally:
             if unpause_sent:
-                pause_receipt = await self.controller.execute(pause_key)
+                pause_receipt = await self.controller.execute_safety(pause_key)
                 primitive_count += pause_receipt.primitive_actions
                 if not await self._wait_for_pause_state(True):
                     if self._fresh_pause_state() is False:
-                        retry_receipt = await self.controller.execute(pause_key)
+                        retry_receipt = await self.controller.execute_safety(pause_key)
                         primitive_count += retry_receipt.primitive_actions
                     if not await self._wait_for_pause_state(True):
                         raise RuntimeError(
@@ -338,6 +359,8 @@ class LiveEnvironment(AgentEnvironment):
 
         if emergency_stop:
             raise RuntimeError("Emergency stop ended the movement pulse after re-pausing Kenshi.")
+        if user_interrupted:
+            raise RuntimeError("User input ended the movement pulse after re-pausing Kenshi.")
         return ActionReceipt(
             action=action,
             accepted=True,

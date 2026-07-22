@@ -274,6 +274,8 @@ class SkillSpec(StrictModel):
     arguments: dict[str, str] = Field(default_factory=dict)
     visual_precondition: str | None = Field(default=None, max_length=1000)
     movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
 
 
 class Observation(StrictModel):

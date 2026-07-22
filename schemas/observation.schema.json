@@ -724,6 +724,34 @@
           ],
           "default": null,
           "title": "Movement Pulse Seconds"
+        },
+        "movement_pulse_min_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movement Pulse Min Seconds"
+        },
+        "movement_pulse_max_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movement Pulse Max Seconds"
         }
       },
       "required": [

@@ -40,6 +40,8 @@ class MacroRegistry:
             arguments=macro.arguments,
             visual_precondition=macro.visual_precondition,
             movement_pulse_seconds=macro.movement_pulse_seconds,
+            movement_pulse_min_seconds=macro.movement_pulse_min_seconds,
+            movement_pulse_max_seconds=macro.movement_pulse_max_seconds,
         )
 
     def specs(self) -> list[SkillSpec]:
@@ -56,6 +58,27 @@ class MacroRegistry:
             return self._macros[name].movement_pulse_seconds
         except KeyError as exc:
             raise UnknownSkillError(name) from exc
+
+    def resolve_movement_pulse_seconds(self, action: SkillAction) -> float | None:
+        try:
+            macro = self._macros[action.name]
+        except KeyError as exc:
+            raise UnknownSkillError(action.name) from exc
+        default = macro.movement_pulse_seconds
+        if default is None:
+            return None
+        minimum = macro.movement_pulse_min_seconds or default
+        maximum = macro.movement_pulse_max_seconds or default
+        requested = action.argument_map().get("duration_seconds", default)
+        if isinstance(requested, bool) or not isinstance(requested, (int, float)):
+            raise ValueError("duration_seconds must be a number")
+        duration = float(requested)
+        if not minimum <= duration <= maximum:
+            raise ValueError(
+                f"duration_seconds={duration:.2f} is outside the calibrated "
+                f"range [{minimum:.2f}, {maximum:.2f}]"
+            )
+        return duration
 
     def expand(self, action: SkillAction) -> list[Action]:
         try:

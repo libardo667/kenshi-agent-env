@@ -7,6 +7,8 @@
   latency/throughput/price provider routing.
 - Added planner latency metrics, a flushed terminal decision stream, and a
   translucent always-on-top Windows decision viewer excluded from model captures.
+- Added model-selected bounded movement duration and polite Windows input leases
+  with idle waiting, user-interruption detection, and foreground/cursor handback.
 
 ## 0.1.0 — scaffold
 

@@ -258,6 +258,30 @@ def test_live_movement_pulse_requires_confirmed_pause() -> None:
         ActionGuard(config, macros).validate(action, unpaused)
 
 
+def test_live_movement_pulse_rejects_duration_outside_bounds() -> None:
+    config = safety_config().model_copy(update={"allow_skills": ["move_on_map"]})
+    macros = MacroRegistry(
+        {
+            "move_on_map": MacroConfig(
+                movement_pulse_seconds=2.0,
+                movement_pulse_min_seconds=1.0,
+                movement_pulse_max_seconds=4.0,
+                actions=[],
+            )
+        }
+    )
+    action = SkillAction.model_validate({"name": "move_on_map", "args": {"duration_seconds": 8.0}})
+    paused = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(game=GameState(paused=True)),
+    )
+
+    with pytest.raises(SafetyViolation, match="outside the calibrated range"):
+        ActionGuard(config, macros).validate(action, paused)
+
+
 def test_wait_limit() -> None:
     guard = ActionGuard(safety_config(), MacroRegistry({}))
     observation = Observation(run_id="run", step_index=0, mode="mock")
