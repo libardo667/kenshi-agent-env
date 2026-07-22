@@ -36,6 +36,7 @@ class WindowCapture:
     def capture(self, sequence: int) -> CapturedFrame:
         if os.name != "nt":
             raise RuntimeError("Live window capture is available only on Windows.")
+        self.controller.focus_window()
         rect = self.controller.client_rect()
         image = ImageGrab.grab(
             bbox=(rect.left, rect.top, rect.right, rect.bottom),

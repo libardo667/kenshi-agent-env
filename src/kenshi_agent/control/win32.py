@@ -113,7 +113,9 @@ if os.name == "nt":
 class Win32InputController(InputController):
     INPUT_MOUSE = 0
     INPUT_KEYBOARD = 1
+    KEYEVENTF_EXTENDEDKEY = 0x0001
     KEYEVENTF_KEYUP = 0x0002
+    KEYEVENTF_SCANCODE = 0x0008
     MOUSEEVENTF_MOVE = 0x0001
     MOUSEEVENTF_LEFTDOWN = 0x0002
     MOUSEEVENTF_LEFTUP = 0x0004
@@ -165,6 +167,18 @@ class Win32InputController(InputController):
         "f11": 0x7A,
         "f12": 0x7B,
     }
+    _EXTENDED_VIRTUAL_KEYS = {
+        0x21,  # Page Up
+        0x22,  # Page Down
+        0x23,  # End
+        0x24,  # Home
+        0x25,  # Left
+        0x26,  # Up
+        0x27,  # Right
+        0x28,  # Down
+        0x2D,  # Insert
+        0x2E,  # Delete
+    }
 
     def __init__(
         self,
@@ -179,6 +193,7 @@ class Win32InputController(InputController):
         self.focus_before_input = focus_before_input
         self.post_input_delay_seconds = post_input_delay_seconds
         self.user32 = getattr(ctypes, "windll").user32  # noqa: B009 - Windows-only
+        self.kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows-only
         enable_per_monitor_dpi_awareness(self.user32)
         self._configure_signatures()
 
@@ -187,10 +202,29 @@ class Win32InputController(InputController):
         self.user32.SendInput.restype = wintypes.UINT
         self.user32.GetAsyncKeyState.argtypes = [wintypes.INT]
         self.user32.GetAsyncKeyState.restype = wintypes.SHORT
+        self.user32.MapVirtualKeyW.argtypes = [wintypes.UINT, wintypes.UINT]
+        self.user32.MapVirtualKeyW.restype = wintypes.UINT
         self.user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
         self.user32.GetClientRect.restype = wintypes.BOOL
         self.user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
         self.user32.ClientToScreen.restype = wintypes.BOOL
+        self.user32.GetForegroundWindow.restype = wintypes.HWND
+        self.user32.GetWindowThreadProcessId.argtypes = [
+            wintypes.HWND,
+            ctypes.POINTER(wintypes.DWORD),
+        ]
+        self.user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+        self.user32.AttachThreadInput.argtypes = [
+            wintypes.DWORD,
+            wintypes.DWORD,
+            wintypes.BOOL,
+        ]
+        self.user32.AttachThreadInput.restype = wintypes.BOOL
+        self.user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+        self.user32.SetForegroundWindow.restype = wintypes.BOOL
+        self.user32.BringWindowToTop.argtypes = [wintypes.HWND]
+        self.user32.BringWindowToTop.restype = wintypes.BOOL
+        self.kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 
     def _find_window(self) -> int:
         matches: list[tuple[int, str]] = []
@@ -229,11 +263,40 @@ class Win32InputController(InputController):
 
     def _focus(self) -> None:
         hwnd = self._find_window()
+        if self.user32.GetForegroundWindow() == hwnd:
+            return
         self.user32.ShowWindow(hwnd, self.SW_RESTORE)
-        if not self.user32.SetForegroundWindow(hwnd):
+        if self.user32.SetForegroundWindow(hwnd) and self.user32.GetForegroundWindow() == hwnd:
+            return
+
+        current_thread = self.kernel32.GetCurrentThreadId()
+        foreground = self.user32.GetForegroundWindow()
+        thread_ids = {
+            self.user32.GetWindowThreadProcessId(foreground, None) if foreground else 0,
+            self.user32.GetWindowThreadProcessId(hwnd, None),
+        }
+        attached: list[int] = []
+        try:
+            for thread_id in thread_ids:
+                if (
+                    thread_id
+                    and thread_id != current_thread
+                    and self.user32.AttachThreadInput(current_thread, thread_id, True)
+                ):
+                    attached.append(thread_id)
+            self.user32.BringWindowToTop(hwnd)
+            self.user32.SetForegroundWindow(hwnd)
+        finally:
+            for thread_id in reversed(attached):
+                self.user32.AttachThreadInput(current_thread, thread_id, False)
+
+        if self.user32.GetForegroundWindow() != hwnd:
             raise RuntimeError(
                 "Windows refused foreground focus. Click Kenshi once, then retry."
             )
+
+    def focus_window(self) -> None:
+        self._focus()
 
     @classmethod
     def _vk(cls, key: str) -> int:
@@ -262,10 +325,23 @@ class Win32InputController(InputController):
             )
 
     def _keyboard_input(self, vk: int, *, key_up: bool) -> Any:
-        flags = self.KEYEVENTF_KEYUP if key_up else 0
+        scan_code = self.user32.MapVirtualKeyW(vk, 0)
+        if not scan_code:
+            raise RuntimeError(f"Windows could not map virtual key 0x{vk:02X} to a scan code.")
+        flags = self.KEYEVENTF_SCANCODE
+        if vk in self._EXTENDED_VIRTUAL_KEYS:
+            flags |= self.KEYEVENTF_EXTENDEDKEY
+        if key_up:
+            flags |= self.KEYEVENTF_KEYUP
         return INPUT(
             type=self.INPUT_KEYBOARD,
-            ki=KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0, dwExtraInfo=0),
+            ki=KEYBDINPUT(
+                wVk=0,
+                wScan=scan_code,
+                dwFlags=flags,
+                time=0,
+                dwExtraInfo=0,
+            ),
         )
 
     def _mouse_input(self, x: int, y: int, flags: int) -> Any:

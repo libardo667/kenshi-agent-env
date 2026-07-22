@@ -10,6 +10,9 @@ class NoopInputController(InputController):
     def __init__(self, *, message: str = "Dry-run input controller.") -> None:
         self.message = message
 
+    def focus_window(self) -> None:
+        return None
+
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         now = datetime.now(UTC)
         return ActionReceipt(

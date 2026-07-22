@@ -26,6 +26,10 @@ class WindowRect:
 
 class InputController(ABC):
     @abstractmethod
+    def focus_window(self) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         raise NotImplementedError
 
