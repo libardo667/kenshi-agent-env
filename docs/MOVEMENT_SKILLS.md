@@ -88,3 +88,9 @@ An executor-controlled coarse pulse was then validated live. Run
 `20260722T201337.162004Z` clicked a nearby map destination, closed the map,
 advanced for 2.00 seconds, moved Lekko about 114 world units, and returned a
 receipt only after telemetry again reported `paused: true`.
+
+Run `20260722T201615.824597Z` then completed the active profile's full 30
+decisions. Terra selected 14 fine pulses, two coarse map pulses, 12 camera
+recenters, and two map opens. All 31 observations reported `paused: true`; no
+action was rejected and no environment error occurred. Lekko's net displacement
+was about 969 world units while remaining in The Hub area.

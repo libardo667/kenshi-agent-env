@@ -36,6 +36,9 @@
 - Executor-controlled fine and coarse movement pulses with fresh pause-state
   confirmation, F12 interruption, blocked direct unpause, and a 30-decision
   active profile.
+- A completed 30-decision Terra exploration episode with 16 movement pulses,
+  no rejected actions or environment errors, and paused telemetry at every
+  observation.
 
 ## Still requires broader live validation
 
