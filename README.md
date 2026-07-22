@@ -225,8 +225,9 @@ Live capture and action execution also use a polite input lease. The controller
 waits for 1.25 seconds without keyboard or mouse activity, remembers the current
 foreground window and cursor, briefly focuses Kenshi, and restores the prior
 desktop state afterward. If human input resumes during movement, the executor
-ends the pulse, guarantees re-pause, and yields control. These timings and
-restoration behaviors are configurable under `controls`.
+ends the pulse, guarantees re-pause, yields control, and later makes a fresh
+plan rather than retrying the stale intent. These timings and restoration
+behaviors are configurable under `controls`.
 
 `config/live.example.yaml` derives telemetry and SQLite paths from Windows
 `%LOCALAPPDATA%`; copy it only when you need machine-specific overrides. Live

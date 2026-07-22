@@ -73,7 +73,9 @@ Kenshi for the atomic intent, and restores the saved desktop state afterward.
 If keyboard/mouse activity or a focus change occurs during a movement pulse,
 the agent treats that as the human taking a turn. It stops advancing, briefly
 focuses Kenshi only to guarantee re-pause, then restores the human's latest
-foreground window and cursor. F12 remains the explicit emergency stop.
+foreground window and cursor. Once input is quiet again it captures fresh state
+and replans instead of retrying the interrupted intent. F12 remains the explicit
+emergency stop.
 
 Native telemetry does not yet report whether the map is open. Consequently,
 the map-open/map-closed precondition is currently grounded in the captured

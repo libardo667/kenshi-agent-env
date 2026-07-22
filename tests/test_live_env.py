@@ -180,7 +180,7 @@ def test_model_can_choose_bounded_movement_duration(tmp_path: Path) -> None:
         transition = await environment.step(movement_action(duration_seconds=0.02))
 
         assert telemetry.paused is True
-        assert "advanced Kenshi for 0.02s" in transition.receipt.message
+        assert "Advanced Kenshi for 0.02s" in transition.receipt.message
 
     asyncio.run(scenario())
 
@@ -218,10 +218,13 @@ def test_user_input_ends_pulse_after_repausing(tmp_path: Path) -> None:
         )
         await environment.reset()
 
-        with pytest.raises(RuntimeError, match="User input ended.*after re-pausing"):
-            await environment.step(movement_action())
+        transition = await environment.step(movement_action())
 
         assert telemetry.paused is True
         assert [action.kind for action in controller.actions][-2:] == ["key", "key"]
+        assert "Human input ended the pulse" in transition.receipt.message
+        assert "yielded control" in transition.receipt.message
+        assert transition.observation.telemetry is not None
+        assert transition.observation.telemetry.game.paused is True
 
     asyncio.run(scenario())
