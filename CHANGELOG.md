@@ -6,7 +6,7 @@
 - Added an OpenRouter vision planner with structured outputs, image input, and
   latency/throughput/price provider routing.
 - Added planner latency metrics, a flushed terminal decision stream, and a
-  translucent always-on-top Windows decision viewer.
+  translucent always-on-top Windows decision viewer excluded from model captures.
 
 ## 0.1.0 — scaffold
 

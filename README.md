@@ -165,8 +165,10 @@ always-on-top window over the game:
 
 Use `-Planner openrouter` after adding `OPENROUTER_API_KEY`. The viewer is an
 external read-only process that follows the append-only run log; it never calls
-Kenshi UI code or input APIs. It stays open for 30 seconds after a run by
-default, and can be closed normally at any time.
+Kenshi UI code or input APIs. Windows capture exclusion keeps the viewer out of
+the screenshots sent to the model; if that OS call fails, the viewer closes
+itself rather than contaminate model input. It stays open for 30 seconds after a
+run by default, and can be closed normally at any time.
 
 ## Moving toward live Kenshi
 
