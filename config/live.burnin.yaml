@@ -53,6 +53,7 @@ controls:
   max_wait_for_input_turn_seconds: 60
   restore_foreground_after_input: true
   restore_cursor_after_input: true
+  alt_tab_after_input: true
 
 safety:
   # This profile permits only the audited skills below. The CLI must still

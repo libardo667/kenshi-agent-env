@@ -83,6 +83,7 @@ class ControlsConfig(ConfigModel):
     max_wait_for_input_turn_seconds: float = Field(default=60.0, ge=1.0, le=600.0)
     restore_foreground_after_input: bool = True
     restore_cursor_after_input: bool = True
+    alt_tab_after_input: bool = True
 
     @field_validator("speed_keys")
     @classmethod

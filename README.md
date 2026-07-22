@@ -223,8 +223,10 @@ unpause is blocked.
 
 Live capture and action execution also use a polite input lease. The controller
 waits for 1.25 seconds without keyboard or mouse activity, remembers the current
-foreground window and cursor, briefly focuses Kenshi, and restores the prior
-desktop state afterward. If human input resumes during movement, the executor
+foreground window and cursor, and briefly focuses Kenshi. After an action it
+Alt+Tabs back to the previous context before restoring the cursor, preventing
+Kenshi edge-scroll from reacting to off-screen or secondary-monitor coordinates.
+If human input resumes during movement, the executor
 ends the pulse, guarantees re-pause, yields control, and later makes a fresh
 plan rather than retrying the stale intent. These timings and restoration
 behaviors are configurable under `controls`.

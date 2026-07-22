@@ -69,7 +69,10 @@ environment error instead of starting another planner call.
 
 Before capture or action execution, the Windows controller waits for a quiet
 keyboard/mouse interval. It snapshots the foreground window and cursor, focuses
-Kenshi for the atomic intent, and restores the saved desktop state afterward.
+Kenshi for the atomic intent, then Alt+Tabs to the previous context before
+restoring the saved cursor. Moving the pointer only after Kenshi loses focus
+prevents its edge-scroll camera behavior from reacting to a secondary-monitor
+or off-screen saved coordinate.
 If keyboard/mouse activity or a focus change occurs during a movement pulse,
 the agent treats that as the human taking a turn. It stops advancing, briefly
 focuses Kenshi only to guarantee re-pause, then restores the human's latest

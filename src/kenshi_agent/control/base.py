@@ -28,7 +28,8 @@ class WindowRect:
 
 class InputController(ABC):
     @asynccontextmanager
-    async def input_lease(self) -> AsyncIterator[None]:
+    async def input_lease(self, *, alt_tab_on_restore: bool = False) -> AsyncIterator[None]:
+        del alt_tab_on_restore
         yield
 
     def user_input_detected(self) -> bool:

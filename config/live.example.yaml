@@ -64,6 +64,7 @@ controls:
   max_wait_for_input_turn_seconds: 60
   restore_foreground_after_input: true
   restore_cursor_after_input: true
+  alt_tab_after_input: true
 
 safety:
   # Keep false through telemetry and screenshot validation. Turning this true

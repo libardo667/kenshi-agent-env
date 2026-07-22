@@ -103,6 +103,7 @@ def _build_environment(
             max_wait_for_input_turn_seconds=(config.controls.max_wait_for_input_turn_seconds),
             restore_foreground_after_input=(config.controls.restore_foreground_after_input),
             restore_cursor_after_input=config.controls.restore_cursor_after_input,
+            alt_tab_after_input=config.controls.alt_tab_after_input,
         )
         telemetry = TelemetryReader(
             config.telemetry.file,

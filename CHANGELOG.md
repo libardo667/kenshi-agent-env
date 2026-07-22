@@ -9,6 +9,8 @@
   translucent always-on-top Windows decision viewer excluded from model captures.
 - Added model-selected bounded movement duration and polite Windows input leases
   with idle waiting, user-interruption detection, and foreground/cursor handback.
+- Changed action handoff to Alt+Tab away from Kenshi before restoring the cursor,
+  preventing infinite edge-scroll when the saved pointer is on another monitor.
 
 ## 0.1.0 — scaffold
 
