@@ -24,6 +24,14 @@ Control rules:
 
 - Return one action. Prefer a named skill when it is available and its
   preconditions are satisfied; otherwise use the smallest safe primitive.
+- Use skill names exactly as listed in `available_skills`. Consult `skill_specs`
+  for required arguments and visual preconditions.
+- Use `move_visible_terrain` only when the screenshot visibly shows the 3D world
+  with the map closed. Choose nearby, unobstructed terrain rather than a unit,
+  building, UI element, or ambiguous object.
+- Use `move_on_map` only when the screenshot visibly shows the open map. Choose a
+  point within the visible map canvas, away from tabs, scrollbars, and markers
+  unless a marker is deliberately the destination.
 - Pause before deliberation during imminent danger, modal ambiguity, combat,
   eating, kidnapping, or rapidly deteriorating injury.
 - Avoid blind clicks. A click must be grounded in a visible target or a

@@ -45,8 +45,8 @@ controls:
   post_input_delay_seconds: 0.10
 
 safety:
-  # This profile permits only the harmless burn-in actions below. The CLI must
-  # still receive --execute-live-actions before any input is sent.
+  # This profile permits only the audited skills below. The CLI must still
+  # receive --execute-live-actions before any input is sent.
   live_actions_enabled: true
   require_cli_execute_flag: true
   emergency_stop_key: f12
@@ -66,6 +66,8 @@ safety:
     - open_inventory
     - focus_selected
     - close_overlay
+    - move_visible_terrain
+    - move_on_map
 
 memory:
   enabled: true
@@ -99,3 +101,37 @@ macros:
     actions:
       - kind: key
         key: escape
+  move_visible_terrain:
+    description: Fine movement by right-clicking nearby visible terrain in the 3D world.
+    arguments:
+      x: Normalized horizontal coordinate in the current Kenshi client screenshot.
+      y: Normalized vertical coordinate in the current Kenshi client screenshot.
+    visual_precondition: The map and other overlays are closed, and the target is visibly unobstructed terrain in the 3D world viewport.
+    normalized_pointer_bounds:
+      min_x: 0.15
+      max_x: 0.85
+      min_y: 0.15
+      max_y: 0.65
+    actions:
+      - kind: click
+        x: "{{x}}"
+        y: "{{y}}"
+        space: normalized
+        button: right
+  move_on_map:
+    description: Gross movement by right-clicking a destination on the open map.
+    arguments:
+      x: Normalized horizontal coordinate in the current Kenshi client screenshot.
+      y: Normalized vertical coordinate in the current Kenshi client screenshot.
+    visual_precondition: The map is visibly open, and the target is inside its map canvas rather than its tabs, frame, or scrollbars.
+    normalized_pointer_bounds:
+      min_x: 0.30
+      max_x: 0.68
+      min_y: 0.16
+      max_y: 0.69
+    actions:
+      - kind: click
+        x: "{{x}}"
+        y: "{{y}}"
+        space: normalized
+        button: right

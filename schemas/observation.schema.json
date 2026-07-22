@@ -676,6 +676,48 @@
       "title": "NearbyEntity",
       "type": "object"
     },
+    "SkillSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "default": "",
+          "maxLength": 1000,
+          "title": "Description",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Arguments",
+          "type": "object"
+        },
+        "visual_precondition": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visual Precondition"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SkillSpec",
+      "type": "object"
+    },
     "TelemetrySnapshot": {
       "additionalProperties": false,
       "properties": {
@@ -956,6 +998,13 @@
         "type": "string"
       },
       "title": "Available Skills",
+      "type": "array"
+    },
+    "skill_specs": {
+      "items": {
+        "$ref": "#/$defs/SkillSpec"
+      },
+      "title": "Skill Specs",
       "type": "array"
     },
     "memories": {

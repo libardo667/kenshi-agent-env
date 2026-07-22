@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .models import Action, parse_action
 
@@ -101,8 +101,29 @@ class MemoryConfig(ConfigModel):
     minimum_salience: float = Field(default=0.15, ge=0.0, le=1.0)
 
 
+class NormalizedPointerBoundsConfig(ConfigModel):
+    min_x: float = Field(ge=0.0, le=1.0)
+    max_x: float = Field(ge=0.0, le=1.0)
+    min_y: float = Field(ge=0.0, le=1.0)
+    max_y: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def ordered_bounds(self) -> NormalizedPointerBoundsConfig:
+        if self.min_x > self.max_x:
+            raise ValueError("min_x must not exceed max_x")
+        if self.min_y > self.max_y:
+            raise ValueError("min_y must not exceed max_y")
+        return self
+
+    def contains(self, x: float, y: float) -> bool:
+        return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
+
+
 class MacroConfig(ConfigModel):
     description: str = ""
+    arguments: dict[str, str] = Field(default_factory=dict)
+    visual_precondition: str | None = None
+    normalized_pointer_bounds: NormalizedPointerBoundsConfig | None = None
     actions: list[dict[str, Any]] = Field(default_factory=list)
 
     def parsed_actions(self) -> list[Action]:

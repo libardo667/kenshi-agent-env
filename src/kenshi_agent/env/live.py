@@ -117,6 +117,7 @@ class LiveEnvironment(AgentEnvironment):
             screenshot_sha256=screenshot_hash,
             events=events,
             available_skills=self.macros.names(),
+            skill_specs=self.macros.specs(),
         )
         self._last_observation = observation
         return observation

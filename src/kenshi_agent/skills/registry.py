@@ -3,8 +3,8 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any
 
-from ..config import MacroConfig
-from ..models import Action, SkillAction, parse_action
+from ..config import MacroConfig, NormalizedPointerBoundsConfig
+from ..models import Action, SkillAction, SkillSpec, parse_action
 
 
 class UnknownSkillError(KeyError):
@@ -26,6 +26,27 @@ class MacroRegistry:
     def description(self, name: str) -> str:
         try:
             return self._macros[name].description
+        except KeyError as exc:
+            raise UnknownSkillError(name) from exc
+
+    def spec(self, name: str) -> SkillSpec:
+        try:
+            macro = self._macros[name]
+        except KeyError as exc:
+            raise UnknownSkillError(name) from exc
+        return SkillSpec(
+            name=name,
+            description=macro.description,
+            arguments=macro.arguments,
+            visual_precondition=macro.visual_precondition,
+        )
+
+    def specs(self) -> list[SkillSpec]:
+        return [self.spec(name) for name in self.names()]
+
+    def normalized_pointer_bounds(self, name: str) -> NormalizedPointerBoundsConfig | None:
+        try:
+            return self._macros[name].normalized_pointer_bounds
         except KeyError as exc:
             raise UnknownSkillError(name) from exc
 

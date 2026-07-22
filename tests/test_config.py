@@ -26,9 +26,7 @@ def test_live_example_uses_windows_local_app_data(
     config = load_config(root / "config" / "live.example.yaml")
 
     assert config.telemetry.file == (tmp_path / "KenshiAgent" / "telemetry.latest.json")
-    assert config.paths.memory_db == (
-        tmp_path / "KenshiAgent" / "state" / "live-memory.sqlite3"
-    )
+    assert config.paths.memory_db == (tmp_path / "KenshiAgent" / "state" / "live-memory.sqlite3")
     assert config.capture.window_title_contains == "Kenshi 1.0."
 
 
@@ -61,8 +59,15 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "open_inventory",
         "focus_selected",
         "close_overlay",
+        "move_visible_terrain",
+        "move_on_map",
     }
     assert config.safety.max_primitive_actions_per_step == 2
+    fine_bounds = config.macros["move_visible_terrain"].normalized_pointer_bounds
+    map_bounds = config.macros["move_on_map"].normalized_pointer_bounds
+    assert fine_bounds is not None and fine_bounds.contains(0.5, 0.5)
+    assert map_bounds is not None and map_bounds.contains(0.5, 0.5)
+    assert not map_bounds.contains(0.2, 0.5)
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:

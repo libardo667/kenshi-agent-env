@@ -36,7 +36,13 @@ class ActionGuard:
             if observation.mode == "live" and not self.macros.has(action.name):
                 raise SafetyViolation(f"Live skill {action.name!r} has no configured macro.")
             if observation.mode == "live":
-                primitives = self.macros.expand(action)
+                try:
+                    primitives = self.macros.expand(action)
+                except (TypeError, ValueError) as exc:
+                    raise SafetyViolation(
+                        f"Live skill {action.name!r} could not be expanded safely: {exc}"
+                    ) from exc
+                pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
                 for primitive in primitives:
                     if primitive.kind not in {"key", "hotkey", "move_cursor", "click"}:
                         raise SafetyViolation(
@@ -46,6 +52,20 @@ class ActionGuard:
                     self._validate_action_constraints(
                         primitive, observation, check_action_allowlist=False
                     )
+                    if pointer_bounds is not None and isinstance(
+                        primitive, (ClickAction, MoveCursorAction)
+                    ):
+                        if primitive.space != CoordinateSpace.NORMALIZED:
+                            raise SafetyViolation(
+                                f"Live skill {action.name!r} has a pointer safety envelope "
+                                "but emitted non-normalized coordinates."
+                            )
+                        if not pointer_bounds.contains(primitive.x, primitive.y):
+                            raise SafetyViolation(
+                                f"Live skill {action.name!r} pointer target "
+                                f"({primitive.x:.3f}, {primitive.y:.3f}) is outside its "
+                                "calibrated safety envelope."
+                            )
         primitive_count = len(primitives) if primitives is not None else 1
         if primitive_count > self.config.max_primitive_actions_per_step:
             raise SafetyViolation(

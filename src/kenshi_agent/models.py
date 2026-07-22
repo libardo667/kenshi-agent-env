@@ -268,6 +268,13 @@ class MemoryRecord(StrictModel):
     last_accessed_at: datetime
 
 
+class SkillSpec(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=1000)
+    arguments: dict[str, str] = Field(default_factory=dict)
+    visual_precondition: str | None = Field(default=None, max_length=1000)
+
+
 class Observation(StrictModel):
     run_id: str
     step_index: int = Field(ge=0)
@@ -280,6 +287,7 @@ class Observation(StrictModel):
     screenshot_sha256: str | None = None
     events: list[str] = Field(default_factory=list)
     available_skills: list[str] = Field(default_factory=list)
+    skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
 
     def planner_payload(self, *, max_chars: int = 24000) -> str:

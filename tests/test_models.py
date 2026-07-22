@@ -9,6 +9,7 @@ from kenshi_agent.models import (
     Observation,
     PlannerDecision,
     SkillAction,
+    SkillSpec,
     TelemetrySnapshot,
     parse_action,
 )
@@ -65,7 +66,16 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
         mode="mock",
         telemetry=TelemetrySnapshot(),
         screenshot_path=Path("secret-frame.png"),
+        skill_specs=[
+            SkillSpec(
+                name="move_on_map",
+                arguments={"x": "Normalized x."},
+                visual_precondition="The map is open.",
+            )
+        ],
     )
     payload = observation.planner_payload()
     assert "secret-frame.png" not in payload
     assert '"run_id": "run"' in payload
+    assert '"name": "move_on_map"' in payload
+    assert '"visual_precondition": "The map is open."' in payload
