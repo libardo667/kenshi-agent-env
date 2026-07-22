@@ -160,7 +160,7 @@ class LiveEnvironment(AgentEnvironment):
             if isinstance(action, (NoopAction, StopAction, WaitAction)):
                 receipt = await self._execute_live(action, started)
             else:
-                async with self.controller.input_lease():
+                async with self.controller.input_lease(alt_tab_on_restore=True):
                     receipt = await self._execute_live(action, started)
                 lease_wait = self.controller.input_lease_wait_seconds()
                 if lease_wait >= 0.01:

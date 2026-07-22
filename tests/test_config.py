@@ -66,6 +66,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.runtime.max_steps == 30
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.openrouter_provider_sort == "latency"
+    assert config.controls.alt_tab_after_input
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
     assert not config.safety.allow_live_unpause_actions

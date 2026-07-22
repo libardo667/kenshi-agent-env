@@ -197,6 +197,7 @@ class Win32InputController(InputController):
         max_wait_for_input_turn_seconds: float = 60.0,
         restore_foreground_after_input: bool = True,
         restore_cursor_after_input: bool = True,
+        alt_tab_after_input: bool = True,
     ) -> None:
         if os.name != "nt":
             raise RuntimeError("Win32InputController is available only on Windows.")
@@ -208,6 +209,7 @@ class Win32InputController(InputController):
         self.max_wait_for_input_turn_seconds = max_wait_for_input_turn_seconds
         self.restore_foreground_after_input = restore_foreground_after_input
         self.restore_cursor_after_input = restore_cursor_after_input
+        self.alt_tab_after_input = alt_tab_after_input
         self.user32 = getattr(ctypes, "windll").user32  # noqa: B009 - Windows-only
         self.kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows-only
         enable_per_monitor_dpi_awareness(self.user32)
@@ -221,6 +223,8 @@ class Win32InputController(InputController):
         self._restore_foreground: int | None = None
         self._restore_cursor: tuple[int, int] | None = None
         self._last_lease_wait_seconds = 0.0
+        self._lease_alt_tab_on_restore = False
+        self._lease_kenshi_foreground: int | None = None
 
     def _configure_signatures(self) -> None:
         self.user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
@@ -337,6 +341,7 @@ class Win32InputController(InputController):
         self._focus_handle(hwnd, restore_window=True, strict=True)
         if self._lease_active:
             self._expected_foreground = hwnd
+            self._lease_kenshi_foreground = hwnd
 
     def focus_window(self) -> None:
         self._focus()
@@ -404,18 +409,50 @@ class Win32InputController(InputController):
         self._expected_foreground = int(self.user32.GetForegroundWindow() or 0) or None
         self._expected_cursor = self._cursor_position()
 
+    def _alt_tab_to_previous_context(self) -> None:
+        alt = self._vk("alt")
+        tab = self._vk("tab")
+        previous_override = self._safety_override_active
+        self._safety_override_active = True
+        try:
+            self._send(
+                [
+                    self._keyboard_input(alt, key_up=False),
+                    self._keyboard_input(tab, key_up=False),
+                    self._keyboard_input(tab, key_up=True),
+                    self._keyboard_input(alt, key_up=True),
+                ]
+            )
+        finally:
+            self._safety_override_active = previous_override
+        time.sleep(0.05)
+
     def _restore_desktop_state(self) -> None:
-        if self.restore_cursor_after_input and self._restore_cursor is not None:
-            self.user32.SetCursorPos(*self._restore_cursor)
         if (
             self.restore_foreground_after_input
             and self._restore_foreground is not None
             and self.user32.IsWindow(self._restore_foreground)
         ):
-            self._focus_handle(self._restore_foreground, restore_window=False, strict=False)
+            use_alt_tab = (
+                self._lease_alt_tab_on_restore
+                and self.alt_tab_after_input
+                and self._lease_kenshi_foreground is not None
+                and int(self.user32.GetForegroundWindow() or 0)
+                == self._lease_kenshi_foreground
+            )
+            if use_alt_tab:
+                self._alt_tab_to_previous_context()
+            current = int(self.user32.GetForegroundWindow() or 0) or None
+            restore_target_is_kenshi = self._restore_foreground == self._lease_kenshi_foreground
+            if current != self._restore_foreground and not (
+                use_alt_tab and restore_target_is_kenshi
+            ):
+                self._focus_handle(self._restore_foreground, restore_window=False, strict=False)
+        if self.restore_cursor_after_input and self._restore_cursor is not None:
+            self.user32.SetCursorPos(*self._restore_cursor)
 
     @asynccontextmanager
-    async def input_lease(self) -> AsyncIterator[None]:
+    async def input_lease(self, *, alt_tab_on_restore: bool = False) -> AsyncIterator[None]:
         if not self.polite_input_enabled or self._lease_active:
             self._last_lease_wait_seconds = 0.0
             yield
@@ -424,6 +461,8 @@ class Win32InputController(InputController):
         await self._wait_for_input_turn()
         self._last_lease_wait_seconds = time.monotonic() - wait_started
         self._lease_active = True
+        self._lease_alt_tab_on_restore = alt_tab_on_restore
+        self._lease_kenshi_foreground = None
         self._lease_interrupted = False
         self._restore_foreground = int(self.user32.GetForegroundWindow() or 0) or None
         self._restore_cursor = self._cursor_position()
@@ -439,6 +478,8 @@ class Win32InputController(InputController):
             self._expected_foreground = None
             self._expected_cursor = None
             self._last_agent_input_tick = None
+            self._lease_alt_tab_on_restore = False
+            self._lease_kenshi_foreground = None
 
     def input_lease_wait_seconds(self) -> float:
         return self._last_lease_wait_seconds

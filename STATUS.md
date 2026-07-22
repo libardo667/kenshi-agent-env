@@ -45,6 +45,8 @@
 - A four-turn Luna live validation of planner-selected duration and polite input
   leasing: four executed actions, no stale observations/rejections/errors, and
   paused final telemetry; native probes restored exact focus/cursor handoff.
+- Native Alt+Tab handoff validation confirmed Kenshi lost foreground focus before
+  a saved pointer coordinate was restored, preventing edge-scroll camera input.
 - A completed 30-decision Terra exploration episode with 16 movement pulses,
   no rejected actions or environment errors, and paused telemetry at every
   observation.
