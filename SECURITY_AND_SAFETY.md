@@ -11,7 +11,8 @@ The Windows controller uses a polite input lease by default. It waits for a
 configurable idle interval before capture or input, records foreground/cursor
 state, and restores that state afterward. Resumed human input interrupts a
 movement pulse; safety re-pause is the only operation allowed to reclaim Kenshi
-focus before the controller yields it back.
+focus before the controller yields it back. After the next quiet interval the
+agent observes and replans rather than replaying an interrupted intent.
 
 Run Kenshi and the controller at the same Windows integrity level. Do not run
 one as administrator and the other normally. Keep the Kenshi window title

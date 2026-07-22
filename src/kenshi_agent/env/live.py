@@ -359,8 +359,11 @@ class LiveEnvironment(AgentEnvironment):
 
         if emergency_stop:
             raise RuntimeError("Emergency stop ended the movement pulse after re-pausing Kenshi.")
-        if user_interrupted:
-            raise RuntimeError("User input ended the movement pulse after re-pausing Kenshi.")
+        outcome = (
+            "Human input ended the pulse; confirmed re-paused state and yielded control."
+            if user_interrupted
+            else f"Advanced Kenshi for {pulse_seconds:.2f}s and confirmed re-paused state."
+        )
         return ActionReceipt(
             action=action,
             accepted=True,
@@ -370,8 +373,7 @@ class LiveEnvironment(AgentEnvironment):
             finished_at=datetime.now(UTC),
             primitive_actions=primitive_count,
             message=(
-                f"Executed skill {action.name!r}, advanced Kenshi for "
-                f"{pulse_seconds:.2f}s, and confirmed re-paused state. " + " ".join(messages)
+                f"Executed skill {action.name!r}. {outcome} " + " ".join(messages)
             ),
         )
 
