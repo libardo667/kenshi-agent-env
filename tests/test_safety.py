@@ -5,6 +5,7 @@ from kenshi_agent.models import (
     ClickAction,
     CoordinateSpace,
     GameState,
+    KeyAction,
     MoveCursorAction,
     Observation,
     PauseAction,
@@ -116,6 +117,21 @@ def test_live_skill_must_be_configured_and_allowlisted() -> None:
     observation = Observation(run_id="run", step_index=0, mode="live")
     action = guard.validate(SkillAction(name="open_map"), observation)
     assert action.kind == "skill"
+
+
+def test_allowlisted_skill_can_expand_to_a_blocked_top_level_primitive() -> None:
+    config = safety_config().model_copy(
+        update={"allow_action_kinds": ["noop", "stop", "wait", "skill"]}
+    )
+    macros = MacroRegistry(
+        {"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])}
+    )
+    guard = ActionGuard(config, macros)
+    observation = Observation(run_id="run", step_index=0, mode="live")
+
+    assert guard.validate(SkillAction(name="open_map"), observation).kind == "skill"
+    with pytest.raises(SafetyViolation, match="Action kind 'key'"):
+        guard.validate(KeyAction(key="m"), observation)
 
 
 def test_live_skill_primitives_receive_pointer_validation() -> None:

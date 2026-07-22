@@ -43,7 +43,9 @@ class ActionGuard:
                             f"Live skill {action.name!r} contains unsupported primitive "
                             f"{primitive.kind!r}."
                         )
-                    self._validate_action_constraints(primitive, observation)
+                    self._validate_action_constraints(
+                        primitive, observation, check_action_allowlist=False
+                    )
         primitive_count = len(primitives) if primitives is not None else 1
         if primitive_count > self.config.max_primitive_actions_per_step:
             raise SafetyViolation(
@@ -53,8 +55,14 @@ class ActionGuard:
         self._consume_rate_budget(primitive_count)
         return action
 
-    def _validate_action_constraints(self, action: Action, observation: Observation) -> None:
-        if action.kind not in self.config.allow_action_kinds:
+    def _validate_action_constraints(
+        self,
+        action: Action,
+        observation: Observation,
+        *,
+        check_action_allowlist: bool = True,
+    ) -> None:
+        if check_action_allowlist and action.kind not in self.config.allow_action_kinds:
             raise SafetyViolation(f"Action kind {action.kind!r} is not allowlisted.")
         if isinstance(action, WaitAction) and action.seconds > self.config.max_wait_seconds:
             raise SafetyViolation(
