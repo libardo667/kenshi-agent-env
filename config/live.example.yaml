@@ -117,9 +117,17 @@ macros:
       - kind: key
         key: i
   focus_selected:
-    description: Select and center the first squad member.
+    description: Select and center the first squad member by double-clicking the first squad portrait.
+    visual_precondition: The normal world HUD is visible and the first squad portrait occupies its calibrated bottom portrait slot.
+    normalized_pointer_bounds:
+      min_x: 0.31
+      max_x: 0.39
+      min_y: 0.84
+      max_y: 0.97
     actions:
-      - kind: key
-        key: "1"
-      - kind: key
-        key: "1"
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2

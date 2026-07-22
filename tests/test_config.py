@@ -83,7 +83,10 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.macros["move_on_map"].movement_pulse_min_seconds == 1.0
     assert config.macros["move_on_map"].movement_pulse_max_seconds == 8.0
     assert len(config.macros["move_on_map"].actions) == 2
-    assert len(config.macros["focus_selected"].actions) == 2
+    focus_actions = config.macros["focus_selected"].parsed_actions()
+    assert len(focus_actions) == 1
+    assert focus_actions[0].kind == "click"
+    assert focus_actions[0].clicks == 2
     assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
 
 
