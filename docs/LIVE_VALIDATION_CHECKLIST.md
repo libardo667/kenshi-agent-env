@@ -101,3 +101,10 @@ inspection alone.
 - Run `20260722T185358.928132Z` completed six active steps: pause, three overlay
   closes, map open, and map close. Every receipt was executed and non-dry-run;
   no raw pointer, movement, combat, purchasing, or save action was permitted.
+- A paused 1920x1080 world frame and a controlled map-open frame were used to
+  calibrate separate right-click envelopes. Fine movement is limited to
+  normalized `x=0.15..0.85`, `y=0.15..0.65`; map travel is inset to
+  `x=0.30..0.68`, `y=0.16..0.69`. The map was closed again after capture.
+- The guard now enforces those per-skill envelopes and direct clicks remain
+  blocked. Neither movement skill has been executed live yet, so the repeated
+  calibrated-click checklist item remains open.
