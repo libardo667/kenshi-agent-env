@@ -124,3 +124,8 @@ inspection alone.
   unpause, advanced exactly 2.00 seconds, and confirmed re-pause before returning
   its receipt. Lekko moved about 114 world units and the final frame showed the
   closed-map world view with `paused: true` telemetry.
+- Run `20260722T201615.824597Z` completed 30 Terra decisions: 14 fine movement
+  pulses, two coarse map pulses, 12 `focus_selected` recoveries, and two map
+  opens. It produced 30 executed receipts, zero safety rejections, zero
+  environment errors, and `paused: true` in every observation. Lekko moved a
+  net 969 world units while the objective kept exploration within The Hub.
