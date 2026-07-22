@@ -18,6 +18,7 @@ from ..models import (
     NoopAction,
     Observation,
     PauseAction,
+    ScrollAction,
     SetSpeedAction,
     SkillAction,
     StopAction,
@@ -262,7 +263,9 @@ class LiveEnvironment(AgentEnvironment):
                     action, started, pulse_seconds=pulse_seconds
                 )
             return await self._execute_skill(action, started)
-        if isinstance(action, (KeyAction, HotkeyAction, MoveCursorAction, ClickAction)):
+        if isinstance(
+            action, (KeyAction, HotkeyAction, MoveCursorAction, ClickAction, ScrollAction)
+        ):
             return await self.controller.execute(action)
         raise TypeError(f"Unsupported live action: {type(action).__name__}")
 
@@ -290,7 +293,7 @@ class LiveEnvironment(AgentEnvironment):
                 raise RuntimeError("Emergency stop pressed during macro execution.")
             if not isinstance(
                 macro_primitive,
-                (KeyAction, HotkeyAction, MoveCursorAction, ClickAction),
+                (KeyAction, HotkeyAction, MoveCursorAction, ClickAction, ScrollAction),
             ):
                 raise TypeError(
                     f"Live macro {action.name!r} contains unsupported primitive "

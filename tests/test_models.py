@@ -8,6 +8,7 @@ from kenshi_agent.models import (
     ClickAction,
     Observation,
     PlannerDecision,
+    ScrollAction,
     SkillAction,
     SkillSpec,
     TelemetrySnapshot,
@@ -27,6 +28,28 @@ def test_action_discriminator_parses_click() -> None:
     )
     assert isinstance(action, ClickAction)
     assert action.x == 0.25
+
+
+def test_action_discriminator_parses_bounded_scroll() -> None:
+    action = parse_action(
+        {
+            "kind": "scroll",
+            "x": 0.5,
+            "y": 0.45,
+            "space": "normalized",
+            "notches": 1,
+        }
+    )
+
+    assert isinstance(action, ScrollAction)
+    assert action.notches == 1
+
+
+def test_scroll_rejects_zero_and_excessive_notches() -> None:
+    with pytest.raises(ValidationError):
+        ScrollAction(x=0.5, y=0.5, notches=0)
+    with pytest.raises(ValidationError):
+        ScrollAction(x=0.5, y=0.5, notches=9)
 
 
 def test_unknown_action_field_is_rejected() -> None:

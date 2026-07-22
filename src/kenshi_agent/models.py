@@ -206,6 +206,21 @@ class ClickAction(StrictModel):
     interval_seconds: float = Field(default=0.08, ge=0.0, le=1.0)
 
 
+class ScrollAction(StrictModel):
+    kind: Literal["scroll"] = "scroll"
+    x: float
+    y: float
+    space: CoordinateSpace = CoordinateSpace.NORMALIZED
+    notches: int = Field(ge=-8, le=8)
+
+    @field_validator("notches")
+    @classmethod
+    def notches_must_move(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("notches must not be zero")
+        return value
+
+
 SkillArgumentValue: TypeAlias = str | int | float | bool | None
 
 
@@ -240,6 +255,7 @@ Action: TypeAlias = (
     | HotkeyAction
     | MoveCursorAction
     | ClickAction
+    | ScrollAction
     | SkillAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)

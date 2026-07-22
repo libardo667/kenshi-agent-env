@@ -11,6 +11,7 @@ from .models import (
     MoveCursorAction,
     Observation,
     PauseAction,
+    ScrollAction,
     SkillAction,
     WaitAction,
 )
@@ -51,7 +52,13 @@ class ActionGuard:
                     )
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
                 for primitive in primitives:
-                    if primitive.kind not in {"key", "hotkey", "move_cursor", "click"}:
+                    if primitive.kind not in {
+                        "key",
+                        "hotkey",
+                        "move_cursor",
+                        "click",
+                        "scroll",
+                    }:
                         raise SafetyViolation(
                             f"Live skill {action.name!r} contains unsupported primitive "
                             f"{primitive.kind!r}."
@@ -60,7 +67,7 @@ class ActionGuard:
                         primitive, observation, check_action_allowlist=False
                     )
                     if pointer_bounds is not None and isinstance(
-                        primitive, (ClickAction, MoveCursorAction)
+                        primitive, (ClickAction, MoveCursorAction, ScrollAction)
                     ):
                         if primitive.space != CoordinateSpace.NORMALIZED:
                             raise SafetyViolation(
@@ -104,16 +111,16 @@ class ActionGuard:
                 raise SafetyViolation(
                     "Direct live unpause is blocked; use a bounded movement pulse."
                 )
-        if isinstance(action, (ClickAction, MoveCursorAction)):
+        if isinstance(action, (ClickAction, MoveCursorAction, ScrollAction)):
             self._validate_pointer_target(action, observation)
 
     def _validate_pointer_target(
         self,
-        action: ClickAction | MoveCursorAction,
+        action: ClickAction | MoveCursorAction | ScrollAction,
         observation: Observation,
     ) -> None:
         if (
-            isinstance(action, ClickAction)
+            isinstance(action, (ClickAction, ScrollAction))
             and observation.mode == "live"
             and observation.telemetry_stale
             and self.config.block_clicks_when_telemetry_stale

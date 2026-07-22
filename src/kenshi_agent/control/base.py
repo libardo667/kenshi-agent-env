@@ -5,9 +5,16 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from ..models import ActionReceipt, ClickAction, HotkeyAction, KeyAction, MoveCursorAction
+from ..models import (
+    ActionReceipt,
+    ClickAction,
+    HotkeyAction,
+    KeyAction,
+    MoveCursorAction,
+    ScrollAction,
+)
 
-PrimitiveInputAction = KeyAction | HotkeyAction | MoveCursorAction | ClickAction
+PrimitiveInputAction = KeyAction | HotkeyAction | MoveCursorAction | ClickAction | ScrollAction
 
 
 @dataclass(frozen=True, slots=True)
