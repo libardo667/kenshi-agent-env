@@ -49,6 +49,18 @@ The Windows controller submits absolute cursor placement and mouse-button
 events in one `SendInput` batch. This prevents physical cursor movement from
 interleaving between placement and the click and silently redirecting a command.
 
+Movement is also time-bounded. The active profile assigns a 0.75-second pulse
+to fine world movement and a 2.0-second pulse to coarse map travel. The live
+executor requires a fresh paused observation before accepting either skill,
+executes the destination command, briefly unpauses, and uses fresh native
+telemetry to confirm both the unpause and final re-pause. Model-selected direct
+unpause is blocked, so API latency never becomes blind gameplay time.
+
+The map skill closes the map before advancing. F12 is checked during each pulse;
+if pressed, the pulse ends early and the executor re-pauses before reporting the
+emergency stop. If re-pause cannot be confirmed, the episode terminates with an
+environment error instead of starting another planner call.
+
 Native telemetry does not yet report whether the map is open. Consequently,
 the map-open/map-closed precondition is currently grounded in the captured
 frame and planner instructions, while the coordinate envelope is enforced in
@@ -71,3 +83,8 @@ paused between short movement windows:
   the requested map pixel.
 - Kenshi was explicitly re-paused, the map was closed, and later telemetry
   confirmed Lekko's position remained stable.
+
+An executor-controlled coarse pulse was then validated live. Run
+`20260722T201337.162004Z` clicked a nearby map destination, closed the map,
+advanced for 2.00 seconds, moved Lekko about 114 world units, and returned a
+receipt only after telemetry again reported `paused: true`.

@@ -119,3 +119,8 @@ inspection alone.
   telemetry confirmed the final position remained stable.
 - These trials validate the two paths once, not the 50 repetitions required by
   the calibrated-click checklist item, so that item remains open.
+- Run `20260722T201337.162004Z` validated the autonomous coarse-pulse contract:
+  one map skill clicked the bounded destination, closed the map, confirmed
+  unpause, advanced exactly 2.00 seconds, and confirmed re-pause before returning
+  its receipt. Lekko moved about 114 world units and the final frame showed the
+  closed-map world view with `paused: true` telemetry.
