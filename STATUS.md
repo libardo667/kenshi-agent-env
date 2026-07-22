@@ -42,6 +42,9 @@
 - Planner-selected movement duration inside separate fine/coarse safety bounds,
   plus polite keyboard/mouse leases that wait for idle, restore foreground and
   cursor state, and yield on resumed human activity after guaranteed re-pause.
+- A four-turn Luna live validation of planner-selected duration and polite input
+  leasing: four executed actions, no stale observations/rejections/errors, and
+  paused final telemetry; native probes restored exact focus/cursor handoff.
 - A completed 30-decision Terra exploration episode with 16 movement pulses,
   no rejected actions or environment errors, and paused telemetry at every
   observation.
