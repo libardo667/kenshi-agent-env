@@ -8,8 +8,9 @@ same game/UI thread at two hertz, and atomically replaces
 It currently exports only fields that have a relatively clear KenshiLib surface:
 pause, speed, money, camera position, selected character, squad names, basic
 state, position, movement speed, and food-item count. It explicitly warns that
-hunger, wounds, detailed inventory, modal UI state, and nearby entities remain
-unimplemented.
+hunger, wounds, getting-eaten state, detailed inventory, modal UI state, and
+nearby entities remain unimplemented. KenshiLib's raw `isGettingEaten` byte is
+not exported because live validation found it set on a healthy new character.
 
 ## Build
 
@@ -33,8 +34,10 @@ diagnostics.
    folder to `<Kenshi>\mods\KenshiAgentTelemetry` and enable the mod in the
    Kenshi launcher.
 
-The staged layout follows the current upstream HelloWorld example: an empty
-`.mod` marker, `RE_Kenshi.json`, and the plugin DLL in one Kenshi mod folder.
+The staged layout follows the current upstream HelloWorld example: its 46-byte
+native-only `.mod` stub, `RE_Kenshi.json`, and the plugin DLL in one Kenshi mod
+folder. A zero-byte marker is invalid and Kenshi will reject it while loading
+game data.
 
 ## Output
 
@@ -61,6 +64,6 @@ folder component.
   errors or hitches.
 
 Do not enable live Python input until these checks pass. The source is based on
-the pinned maintained headers and now compiles as a VS2010 SP1 `Release | x64`
-DLL. It has not yet been loaded or field-tested inside the user's Kenshi
-installation.
+the pinned maintained headers, compiles as a VS2010 SP1 `Release | x64` DLL,
+and passed its initial load/two-hertz telemetry smoke test in the user's Kenshi
+installation. The broader checklist remains intentionally incomplete.

@@ -170,7 +170,6 @@ namespace
                 json << "\"conscious\":" << JsonBool(!character->isUnconcious()) << ",";
                 json << "\"down\":" << JsonBool(character->isDown()) << ",";
                 json << "\"crippled\":" << JsonBool(character->isCrippled()) << ",";
-                json << "\"getting_eaten\":" << JsonBool(character->isGettingEaten != 0) << ",";
                 json << "\"position\":";
                 AppendVector3(json, position);
                 json << ",\"movement_speed\":" << character->getMovementSpeed() << ",";
@@ -181,8 +180,8 @@ namespace
         json << "],";
         json << "\"nearby_entities\":[],";
         json << "\"warnings\":["
-             << "\"Partial telemetry only: hunger, wounds, inventory detail, UI modals, "
-             << "and nearby entities are not yet exported.\""
+             << "\"Partial telemetry only: hunger, wounds, getting-eaten state, inventory "
+             << "detail, UI modals, and nearby entities are not yet exported.\""
              << "]";
         json << "}";
         return json.str();

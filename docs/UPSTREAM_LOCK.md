@@ -1,13 +1,13 @@
 # Upstream and host lock
 
-Verified on 2026-07-22 before modifying the Kenshi installation. Paths are kept
-generic where possible; hashes and commits are the reproducibility anchors.
+Verified on 2026-07-22 during the first native build and live bring-up. Paths are
+kept generic where possible; hashes and commits are the reproducibility anchors.
 
 | Component | Version/tag/commit | Source or installed path | Verified UTC | Notes |
 |---|---|---|---|---|
 | Kenshi executable | 1.0.68 Steam, build 13871665 | `C:\Program Files (x86)\Steam\steamapps\common\Kenshi\kenshi_x64.exe` | 2026-07-22 | SHA-256 `a596ab4e407c67b58599c54ffb32dc1bf2b64510cdebd3fa9359ef05a576aeb1` |
-| RE_Kenshi | v0.3.4, tag commit `be107d258618974d56b7373f0f86c82daa2196a9` | [upstream release](https://github.com/BFrizzleFoShizzle/RE_Kenshi/releases/tag/v0.3.4) | 2026-07-22 | Not installed; upstream lists Kenshi 1.0.68 Steam as supported |
-| KenshiLib | v0.4.0, tag commit `18f75fecb93cfead6029efe0d5fe199d6618bcc9` | [upstream release](https://github.com/BFrizzleFoShizzle/KenshiLib/releases/tag/v0.4.0) | 2026-07-22 | Not installed; upstream says this version ships with RE_Kenshi v0.3.4 |
+| RE_Kenshi | v0.3.4, tag commit `be107d258618974d56b7373f0f86c82daa2196a9` | [upstream release](https://github.com/BFrizzleFoShizzle/RE_Kenshi/releases/tag/v0.3.4) | 2026-07-22 | Installed; log reports RE_Kenshi 0.3.4 and supported Steam 1.0.65 compatibility runtime |
+| KenshiLib | v0.4.0, tag commit `18f75fecb93cfead6029efe0d5fe199d6618bcc9` | [upstream release](https://github.com/BFrizzleFoShizzle/KenshiLib/releases/tag/v0.4.0) | 2026-07-22 | Installed with RE_Kenshi; log reports KenshiLib 0.4.0 and loaded RVAs |
 | KenshiLib examples | `548b3eaf779c1b2feb25416f1db757320d04ec6c` | [upstream repository](https://github.com/BFrizzleFoShizzle/KenshiLib_Examples) | 2026-07-22 | Dependency layout reference |
 | Example dependencies | `b566d74bf3d74629cc2fb632a97595b8202993f1` | `C:\Hub\Projects\CppProjects\KenshiLib_Examples_deps` | 2026-07-22 | Detached at the pinned commit; `git lfs fsck` passes; Boost archive extracted |
 | Visual Studio Build Tools | 2022 17.14.35 | Windows installation | 2026-07-22 | MSBuild present |
@@ -17,12 +17,18 @@ generic where possible; hashes and commits are the reproducibility anchors.
 
 The current upstream examples require Boost 1.60 headers and v100 libraries in
 addition to KenshiLib. The maintained examples also link plugins with
-`kenshilib.lib` and use an empty `.mod` file plus `RE_Kenshi.json` beside the
-plugin DLL.
+`kenshilib.lib` and use the same 46-byte native-only `.mod` stub plus
+`RE_Kenshi.json` beside the plugin DLL. The stub SHA-256 is
+`ebdab65d330e46e1ff9725ac5d0ed87fd8c718cfb41ef85b27b86eb3d35b79c0`.
 
 ## Active mods during validation
 
-- Not yet recorded. Native installation and live validation have not started.
+- `KenshiAgentTelemetry.mod` was the only enabled non-core mod.
+- The installed native mod stub SHA-256 was
+  `ebdab65d330e46e1ff9725ac5d0ed87fd8c718cfb41ef85b27b86eb3d35b79c0`.
+- A pre-install recovery snapshot is at
+  `C:\Hub\Archive\kenshi-agent-env\pre-re-kenshi-20260722-103917` on the
+  validation host.
 
 ## Dependency bundle checksums
 
@@ -39,8 +45,9 @@ These are upstream release digests. Recompute them after download before use.
 .\scripts\build_native.ps1
 ```
 
-Result: VS2010 SP1 `Release | x64` build succeeded. The staged DLL SHA-256 was
-`555cee28d7718bee63e8369ca1462a7a2584e0648e4651f49a992a41e612fc13`.
+Result: VS2010 SP1 `Release | x64` build succeeded. The corrected, live-loaded
+DLL SHA-256 was
+`61693dc6489f371eb151f638be4eba7c5922086d4ffcf62e421983c6776751e1`.
 The only compiler warning was C4091 in upstream MyGUI header `BaseLayout.h`.
 
 ## Plugin staging/install layout
@@ -52,5 +59,5 @@ KenshiAgentTelemetry/
   RE_Kenshi.json
 ```
 
-The verified package is staged under `staging\KenshiAgentTelemetry`; it has not
-been copied into the Kenshi installation yet.
+The verified package is staged under `staging\KenshiAgentTelemetry` and was
+copied to `<Kenshi>\mods\KenshiAgentTelemetry` for live validation.

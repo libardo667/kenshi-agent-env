@@ -16,7 +16,12 @@ Copy-Item $dll -Destination (Join-Path $destination "KenshiAgentTelemetry.dll") 
 Copy-Item "native\KenshiAgentTelemetry\RE_Kenshi.json" -Destination $destination -Force
 Copy-Item "native\KenshiAgentTelemetry\README.md" -Destination $destination -Force
 Copy-Item "native\KenshiAgentTelemetry\THIRD_PARTY_NOTICES.md" -Destination $destination -Force
-New-Item -ItemType File -Force -Path (Join-Path $destination "KenshiAgentTelemetry.mod") | Out-Null
+$modStubBase64 = Get-Content "native\KenshiAgentTelemetry\KenshiAgentTelemetry.mod.base64" -Raw
+$modStub = [Convert]::FromBase64String($modStubBase64.Trim())
+[IO.File]::WriteAllBytes(
+    (Join-Path $destination "KenshiAgentTelemetry.mod"),
+    $modStub
+)
 
 Write-Host "Staged native files at $destination"
 Write-Host "This script does not install them into Kenshi."

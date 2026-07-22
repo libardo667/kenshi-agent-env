@@ -15,12 +15,19 @@
   partial, atomic telemetry snapshot from the game/UI thread.
 - Reproducible Windows native toolchain verification and a successful
   Visual C++ 2010 SP1 `Release | x64` plugin build.
+- RE_Kenshi 0.3.4/KenshiLib 0.4.0 installation and native plugin loading on
+  Kenshi 1.0.68 Steam (running RE_Kenshi's supported 1.0.65 compatibility
+  executable).
+- Initial read-only field validation: schema-valid two-hertz snapshots, fresh
+  UTC timestamps, one-character squad identity/selection, money, camera and
+  character position, movement speed, pause, and speed multiplier.
 
-## Must be verified on a real Kenshi installation
+## Still requires broader live validation
 
-- Loading the staged native plugin with RE_Kenshi for the first time.
-- Runtime compatibility with the user's Kenshi executable and active mod set.
-- Every native field accessor, especially squad enumeration and virtual calls.
+- Squad enumeration and state across recruit, dismiss, reorder, KO, death,
+  save/load, and zone transitions.
+- Safety-critical getting-eaten state; the raw KenshiLib byte produced a false
+  positive on a healthy new character and is intentionally omitted.
 - Kenshi key bindings, window focus behavior, client coordinates, and UI scale.
 - Screenshot interpretation and live planner behavior.
 
@@ -30,4 +37,3 @@
 - Omniscient world-state extraction.
 - Automatic save reloads or hidden reset commands.
 - Unattended enabling of real keyboard/mouse injection.
-- Claims that the native plugin is field-tested in game.
