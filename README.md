@@ -250,6 +250,9 @@ F12 is the default emergency-stop key and is checked before each primitive input
 The Kenshi process and controller should run at the same Windows integrity level.
 Fine world movement and coarse map travel use separate right-click skills with
 different calibrated envelopes; see [Movement skills](docs/MOVEMENT_SKILLS.md).
+The next supervised vertical slice is a guarded one-item purchase; its staged
+state machine and spending policy are recorded in
+[Food procurement](docs/FOOD_PROCUREMENT.md).
 
 ## Native telemetry bridge
 

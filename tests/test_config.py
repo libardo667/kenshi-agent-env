@@ -62,6 +62,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "close_overlay",
         "move_visible_terrain",
         "move_on_map",
+        "interact_visible_person",
     }
     assert config.runtime.max_steps == 30
     assert config.planner.model == "gpt-5.6-luna"
@@ -82,6 +83,8 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.macros["move_on_map"].movement_pulse_min_seconds == 1.0
     assert config.macros["move_on_map"].movement_pulse_max_seconds == 8.0
     assert len(config.macros["move_on_map"].actions) == 2
+    assert len(config.macros["focus_selected"].actions) == 2
+    assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:

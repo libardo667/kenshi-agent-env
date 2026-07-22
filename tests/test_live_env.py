@@ -20,12 +20,19 @@ from kenshi_agent.telemetry import TelemetryRead
 
 
 class PulseTelemetry:
-    def __init__(self) -> None:
+    def __init__(self, *, auto_pause_after_reads: int | None = None) -> None:
         self.paused = True
         self.sequence = 0
+        self.auto_pause_after_reads = auto_pause_after_reads
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
+        if (
+            self.auto_pause_after_reads is not None
+            and self.sequence >= self.auto_pause_after_reads
+            and not self.paused
+        ):
+            self.paused = True
         return TelemetryRead(
             snapshot=TelemetrySnapshot(
                 sequence=self.sequence,
@@ -181,6 +188,27 @@ def test_model_can_choose_bounded_movement_duration(tmp_path: Path) -> None:
 
         assert telemetry.paused is True
         assert "Advanced Kenshi for 0.02s" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_movement_pulse_preserves_unexpected_game_auto_pause(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry(auto_pause_after_reads=3)
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(pulse_seconds=0.2),
+        )
+        await environment.reset()
+
+        transition = await environment.step(movement_action())
+
+        assert telemetry.paused is True
+        assert [action.kind for action in controller.actions] == ["click", "key"]
+        assert "auto-paused" in transition.receipt.message
 
     asyncio.run(scenario())
 
