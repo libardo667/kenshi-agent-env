@@ -31,6 +31,8 @@
   a live pause probe changed plugin telemetry and restored the original state.
 - Distinct fine-world and coarse-map movement skills with planner-visible
   preconditions and guard-enforced normalized pointer envelopes.
+- Supervised live validation of both movement modes, including atomic absolute
+  move-plus-click injection that remains exact during physical mouse movement.
 
 ## Still requires broader live validation
 
@@ -40,8 +42,7 @@
   positive on a healthy new character and is intentionally omitted.
 - Repeated focus, client-coordinate, key-binding, and UI-scale calibration.
 - Broader OpenAI vision-planner behavior beyond the safe overlay burn-in.
-- Controlled live validation of both movement modes and repeated click-drift
-  testing; their bounds are calibrated but movement has not yet been executed.
+- Repeated click-drift testing across resolutions, window modes, and UI scales.
 
 ## Deliberately not implemented
 
