@@ -3,6 +3,9 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import os
+import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from ctypes import wintypes
 from datetime import UTC, datetime
 from typing import Any
@@ -109,6 +112,9 @@ if os.name == "nt":
         _anonymous_ = ("union",)
         _fields_ = [("type", wintypes.DWORD), ("union", INPUTUNION)]
 
+    class LASTINPUTINFO(ctypes.Structure):
+        _fields_ = [("cbSize", wintypes.UINT), ("dwTime", wintypes.DWORD)]
+
 
 class Win32InputController(InputController):
     INPUT_MOUSE = 0
@@ -186,16 +192,35 @@ class Win32InputController(InputController):
         *,
         focus_before_input: bool = True,
         post_input_delay_seconds: float = 0.08,
+        polite_input_enabled: bool = True,
+        idle_seconds_before_input: float = 1.25,
+        max_wait_for_input_turn_seconds: float = 60.0,
+        restore_foreground_after_input: bool = True,
+        restore_cursor_after_input: bool = True,
     ) -> None:
         if os.name != "nt":
             raise RuntimeError("Win32InputController is available only on Windows.")
         self.window_title_contains = window_title_contains.casefold()
         self.focus_before_input = focus_before_input
         self.post_input_delay_seconds = post_input_delay_seconds
+        self.polite_input_enabled = polite_input_enabled
+        self.idle_seconds_before_input = idle_seconds_before_input
+        self.max_wait_for_input_turn_seconds = max_wait_for_input_turn_seconds
+        self.restore_foreground_after_input = restore_foreground_after_input
+        self.restore_cursor_after_input = restore_cursor_after_input
         self.user32 = getattr(ctypes, "windll").user32  # noqa: B009 - Windows-only
         self.kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows-only
         enable_per_monitor_dpi_awareness(self.user32)
         self._configure_signatures()
+        self._lease_active = False
+        self._lease_interrupted = False
+        self._safety_override_active = False
+        self._expected_foreground: int | None = None
+        self._expected_cursor: tuple[int, int] | None = None
+        self._last_agent_input_tick: int | None = None
+        self._restore_foreground: int | None = None
+        self._restore_cursor: tuple[int, int] | None = None
+        self._last_lease_wait_seconds = 0.0
 
     def _configure_signatures(self) -> None:
         self.user32.SendInput.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
@@ -213,6 +238,10 @@ class Win32InputController(InputController):
         self.user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
         self.user32.GetCursorPos.restype = wintypes.BOOL
         self.user32.GetForegroundWindow.restype = wintypes.HWND
+        self.user32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
+        self.user32.GetLastInputInfo.restype = wintypes.BOOL
+        self.user32.IsWindow.argtypes = [wintypes.HWND]
+        self.user32.IsWindow.restype = wintypes.BOOL
         self.user32.GetWindowThreadProcessId.argtypes = [
             wintypes.HWND,
             ctypes.POINTER(wintypes.DWORD),
@@ -229,6 +258,7 @@ class Win32InputController(InputController):
         self.user32.BringWindowToTop.argtypes = [wintypes.HWND]
         self.user32.BringWindowToTop.restype = wintypes.BOOL
         self.kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+        self.kernel32.GetTickCount.restype = wintypes.DWORD
 
     def _find_window(self) -> int:
         matches: list[tuple[int, str]] = []
@@ -265,13 +295,13 @@ class Win32InputController(InputController):
             raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
         return WindowRect(top_left.x, top_left.y, bottom_right.x, bottom_right.y)
 
-    def _focus(self) -> None:
-        hwnd = self._find_window()
+    def _focus_handle(self, hwnd: int, *, restore_window: bool, strict: bool) -> bool:
         if self.user32.GetForegroundWindow() == hwnd:
-            return
-        self.user32.ShowWindow(hwnd, self.SW_RESTORE)
+            return True
+        if restore_window:
+            self.user32.ShowWindow(hwnd, self.SW_RESTORE)
         if self.user32.SetForegroundWindow(hwnd) and self.user32.GetForegroundWindow() == hwnd:
-            return
+            return True
 
         current_thread = self.kernel32.GetCurrentThreadId()
         foreground = self.user32.GetForegroundWindow()
@@ -295,12 +325,123 @@ class Win32InputController(InputController):
                 self.user32.AttachThreadInput(current_thread, thread_id, False)
 
         if self.user32.GetForegroundWindow() != hwnd:
-            raise RuntimeError(
-                "Windows refused foreground focus. Click Kenshi once, then retry."
-            )
+            if strict:
+                raise RuntimeError(
+                    "Windows refused foreground focus. Click Kenshi once, then retry."
+                )
+            return False
+        return True
+
+    def _focus(self) -> None:
+        hwnd = self._find_window()
+        self._focus_handle(hwnd, restore_window=True, strict=True)
+        if self._lease_active:
+            self._expected_foreground = hwnd
 
     def focus_window(self) -> None:
         self._focus()
+
+    def _cursor_position(self) -> tuple[int, int]:
+        point = wintypes.POINT()
+        if not self.user32.GetCursorPos(ctypes.byref(point)):
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+        return point.x, point.y
+
+    def _last_input_tick(self) -> int:
+        info = LASTINPUTINFO(cbSize=ctypes.sizeof(LASTINPUTINFO), dwTime=0)
+        if not self.user32.GetLastInputInfo(ctypes.byref(info)):
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+        return int(info.dwTime)
+
+    def _idle_seconds(self) -> float:
+        now = int(self.kernel32.GetTickCount())
+        return ((now - self._last_input_tick()) & 0xFFFFFFFF) / 1000.0
+
+    def _any_input_down(self) -> bool:
+        return any(self.user32.GetAsyncKeyState(vk) & 0x8000 for vk in range(1, 256))
+
+    async def _wait_for_input_turn(self) -> None:
+        deadline = time.monotonic() + self.max_wait_for_input_turn_seconds
+        while self._idle_seconds() < self.idle_seconds_before_input or self._any_input_down():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Timed out waiting for a quiet keyboard/mouse interval; "
+                    "the planned input was not sent."
+                )
+            await asyncio.sleep(min(0.1, remaining))
+
+    def _capture_interruption(self) -> None:
+        self._lease_interrupted = True
+        self._restore_foreground = int(self.user32.GetForegroundWindow() or 0) or None
+        self._restore_cursor = self._cursor_position()
+
+    def user_input_detected(self) -> bool:
+        if not self._lease_active:
+            return False
+        current_tick = self._last_input_tick()
+        current_foreground = int(self.user32.GetForegroundWindow() or 0) or None
+        current_cursor = self._cursor_position()
+        changed = (
+            (
+                self._last_agent_input_tick is not None
+                and current_tick != self._last_agent_input_tick
+            )
+            or (
+                self._expected_foreground is not None
+                and current_foreground != self._expected_foreground
+            )
+            or (self._expected_cursor is not None and current_cursor != self._expected_cursor)
+        )
+        if changed and (not self._lease_interrupted or not self._safety_override_active):
+            self._capture_interruption()
+        return self._lease_interrupted
+
+    def _mark_agent_input(self) -> None:
+        if not self._lease_active:
+            return
+        self._last_agent_input_tick = self._last_input_tick()
+        self._expected_foreground = int(self.user32.GetForegroundWindow() or 0) or None
+        self._expected_cursor = self._cursor_position()
+
+    def _restore_desktop_state(self) -> None:
+        if self.restore_cursor_after_input and self._restore_cursor is not None:
+            self.user32.SetCursorPos(*self._restore_cursor)
+        if (
+            self.restore_foreground_after_input
+            and self._restore_foreground is not None
+            and self.user32.IsWindow(self._restore_foreground)
+        ):
+            self._focus_handle(self._restore_foreground, restore_window=False, strict=False)
+
+    @asynccontextmanager
+    async def input_lease(self) -> AsyncIterator[None]:
+        if not self.polite_input_enabled or self._lease_active:
+            self._last_lease_wait_seconds = 0.0
+            yield
+            return
+        wait_started = time.monotonic()
+        await self._wait_for_input_turn()
+        self._last_lease_wait_seconds = time.monotonic() - wait_started
+        self._lease_active = True
+        self._lease_interrupted = False
+        self._restore_foreground = int(self.user32.GetForegroundWindow() or 0) or None
+        self._restore_cursor = self._cursor_position()
+        self._expected_foreground = self._restore_foreground
+        self._expected_cursor = self._restore_cursor
+        self._last_agent_input_tick = self._last_input_tick()
+        try:
+            yield
+        finally:
+            self.user_input_detected()
+            self._restore_desktop_state()
+            self._lease_active = False
+            self._expected_foreground = None
+            self._expected_cursor = None
+            self._last_agent_input_tick = None
+
+    def input_lease_wait_seconds(self) -> float:
+        return self._last_lease_wait_seconds
 
     @classmethod
     def _vk(cls, key: str) -> int:
@@ -318,6 +459,8 @@ class Win32InputController(InputController):
     def _send(self, inputs: list[Any]) -> None:
         if not inputs:
             return
+        if self._lease_active and self.user_input_detected() and not self._safety_override_active:
+            raise RuntimeError("User input resumed; yielding the planned input turn.")
         array_type = INPUT * len(inputs)
         array = array_type(*inputs)
         sent = self.user32.SendInput(len(inputs), array, ctypes.sizeof(INPUT))
@@ -327,6 +470,7 @@ class Win32InputController(InputController):
                 f"SendInput inserted {sent}/{len(inputs)} events (GetLastError={error}). "
                 "Check window focus and Windows integrity levels."
             )
+        self._mark_agent_input()
 
     def _keyboard_input(self, vk: int, *, key_up: bool) -> Any:
         scan_code = self.user32.MapVirtualKeyW(vk, 0)
@@ -375,6 +519,8 @@ class Win32InputController(InputController):
             raise RuntimeError("Windows reported an invalid virtual desktop size.") from exc
 
     def _move_cursor(self, x: float, y: float, space: CoordinateSpace) -> None:
+        if self._lease_active and self.user_input_detected() and not self._safety_override_active:
+            raise RuntimeError("User input resumed; yielding the planned input turn.")
         screen_x, screen_y = self._screen_point(x, y, space)
         if not self.user32.SetCursorPos(screen_x, screen_y):
             raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
@@ -386,9 +532,27 @@ class Win32InputController(InputController):
                 "Windows did not place the cursor at the requested target: "
                 f"requested=({screen_x}, {screen_y}) actual=({actual.x}, {actual.y})."
             )
+        self._mark_agent_input()
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
+        return await self._execute(action, safety_override=False)
+
+    async def execute_safety(self, action: PrimitiveInputAction) -> ActionReceipt:
+        self._safety_override_active = True
+        try:
+            return await self._execute(action, safety_override=True)
+        finally:
+            self._safety_override_active = False
+
+    async def _execute(
+        self,
+        action: PrimitiveInputAction,
+        *,
+        safety_override: bool,
+    ) -> ActionReceipt:
         started = datetime.now(UTC)
+        if self._lease_active and self.user_input_detected() and not safety_override:
+            raise RuntimeError("User input resumed; yielding the planned input turn.")
         if self.focus_before_input:
             self._focus()
         primitive_count = 1
@@ -412,9 +576,7 @@ class Win32InputController(InputController):
                     await asyncio.sleep(action.hold_seconds)
             finally:
                 if pressed:
-                    self._send(
-                        [self._keyboard_input(vk, key_up=True) for vk in reversed(pressed)]
-                    )
+                    self._send([self._keyboard_input(vk, key_up=True) for vk in reversed(pressed)])
             primitive_count = len(keys) * 2
         elif isinstance(action, MoveCursorAction):
             self._move_cursor(action.x, action.y, action.space)
@@ -424,9 +586,7 @@ class Win32InputController(InputController):
             move_input = self._mouse_input(
                 absolute_x,
                 absolute_y,
-                self.MOUSEEVENTF_MOVE
-                | self.MOUSEEVENTF_ABSOLUTE
-                | self.MOUSEEVENTF_VIRTUALDESK,
+                self.MOUSEEVENTF_MOVE | self.MOUSEEVENTF_ABSOLUTE | self.MOUSEEVENTF_VIRTUALDESK,
             )
             button_flags = {
                 MouseButton.LEFT: (self.MOUSEEVENTF_LEFTDOWN, self.MOUSEEVENTF_LEFTUP),

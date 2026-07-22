@@ -98,6 +98,11 @@ def _build_environment(
             config.capture.window_title_contains,
             focus_before_input=config.controls.focus_before_input,
             post_input_delay_seconds=config.controls.post_input_delay_seconds,
+            polite_input_enabled=config.controls.polite_input_enabled,
+            idle_seconds_before_input=config.controls.idle_seconds_before_input,
+            max_wait_for_input_turn_seconds=(config.controls.max_wait_for_input_turn_seconds),
+            restore_foreground_after_input=(config.controls.restore_foreground_after_input),
+            restore_cursor_after_input=config.controls.restore_cursor_after_input,
         )
         telemetry = TelemetryReader(
             config.telemetry.file,

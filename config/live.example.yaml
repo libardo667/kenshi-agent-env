@@ -17,9 +17,9 @@ runtime:
 planner:
   kind: openai
   model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
-  reasoning_effort: low
+  reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-low}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
-  openrouter_provider_sort: latency
+  openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
   temperature: 0.1
   timeout_seconds: 90
   include_screenshot: true
@@ -59,6 +59,11 @@ controls:
     3: "3"
   focus_before_input: true
   post_input_delay_seconds: 0.10
+  polite_input_enabled: true
+  idle_seconds_before_input: 1.25
+  max_wait_for_input_turn_seconds: 60
+  restore_foreground_after_input: true
+  restore_cursor_after_input: true
 
 safety:
   # Keep false through telemetry and screenshot validation. Turning this true

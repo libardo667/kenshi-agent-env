@@ -75,7 +75,11 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert map_bounds is not None and map_bounds.contains(0.5, 0.5)
     assert not map_bounds.contains(0.2, 0.5)
     assert config.macros["move_visible_terrain"].movement_pulse_seconds == 0.75
+    assert config.macros["move_visible_terrain"].movement_pulse_min_seconds == 0.35
+    assert config.macros["move_visible_terrain"].movement_pulse_max_seconds == 3.0
     assert config.macros["move_on_map"].movement_pulse_seconds == 2.0
+    assert config.macros["move_on_map"].movement_pulse_min_seconds == 1.0
+    assert config.macros["move_on_map"].movement_pulse_max_seconds == 8.0
     assert len(config.macros["move_on_map"].actions) == 2
 
 

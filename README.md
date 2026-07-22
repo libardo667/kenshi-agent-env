@@ -136,11 +136,14 @@ doctor. The PowerShell entrypoints set the working directory to the repo root.
 The active profile defaults to `gpt-5.6-luna` with low reasoning effort. Luna
 keeps image input and structured decisions while targeting lower latency and
 cost than Terra. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
+Set `KENSHI_AGENT_REASONING_EFFORT` to compare `none`, `low`, or a higher
+model-supported effort without editing the profile.
 
 OpenRouter is also supported through its OpenAI-compatible Chat API. Add
 `OPENROUTER_API_KEY` to `.env`, select `--planner openrouter`, and optionally set
 `KENSHI_AGENT_OPENROUTER_MODEL`. The default is `openai/gpt-5.6-luna`; provider
-routing is sorted by latency and requires structured-output support.
+routing is sorted by latency and requires structured-output support. Override
+the sort with `KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`.
 
 The planner receives a bounded JSON observation and, when enabled, a base64 image
 of the current frame. It returns a validated `PlannerDecision`; it does not call
@@ -212,11 +215,18 @@ kenshi-agent run `
 ```
 
 The active profile defaults to 30 planner decisions and the lower-latency Luna
-planner. Fine and coarse movement
-run as executor-controlled pulses: choose the destination while paused, advance
-for 0.75 or 2.0 seconds respectively, then require fresh telemetry confirming
-the game is paused again before another model call. Direct model-selected
+planner. Fine and coarse movement run as executor-controlled pulses: while
+paused, the model chooses both a destination and a bounded duration. Fine pulses
+may be 0.35–3.0 seconds and coarse map pulses 1.0–8.0 seconds. Fresh telemetry
+must confirm re-pause before another model call, and direct model-selected
 unpause is blocked.
+
+Live capture and action execution also use a polite input lease. The controller
+waits for 1.25 seconds without keyboard or mouse activity, remembers the current
+foreground window and cursor, briefly focuses Kenshi, and restores the prior
+desktop state afterward. If human input resumes during movement, the executor
+ends the pulse, guarantees re-pause, and yields control. These timings and
+restoration behaviors are configurable under `controls`.
 
 `config/live.example.yaml` derives telemetry and SQLite paths from Windows
 `%LOCALAPPDATA%`; copy it only when you need machine-specific overrides. Live
@@ -295,7 +305,8 @@ The Python guard enforces:
 - action-kind and skill allowlists;
 - normalized click bounds and client-area bounds when known;
 - per-skill normalized pointer envelopes for calibrated movement macros;
-- bounded movement pulses with telemetry-confirmed re-pause before planning;
+- model-selected bounded movement pulses with telemetry-confirmed re-pause;
+- polite input leases with idle detection and foreground/cursor restoration;
 - stale-telemetry click blocking;
 - maximum wait duration;
 - macro expansion limits;

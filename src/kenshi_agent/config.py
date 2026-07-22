@@ -33,13 +33,9 @@ class RuntimeConfig(ConfigModel):
 
 
 class PlannerConfig(ConfigModel):
-    kind: Literal["heuristic", "scripted", "subprocess", "openai", "openrouter"] = (
-        "heuristic"
-    )
+    kind: Literal["heuristic", "scripted", "subprocess", "openai", "openrouter"] = "heuristic"
     model: str = "gpt-5.6-luna"
-    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = (
-        "low"
-    )
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "low"
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
     include_screenshot: bool = True
@@ -82,6 +78,11 @@ class ControlsConfig(ConfigModel):
     speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "1", 2: "2", 3: "3"})
     focus_before_input: bool = True
     post_input_delay_seconds: float = Field(default=0.08, ge=0.0, le=2.0)
+    polite_input_enabled: bool = True
+    idle_seconds_before_input: float = Field(default=1.25, ge=0.0, le=30.0)
+    max_wait_for_input_turn_seconds: float = Field(default=60.0, ge=1.0, le=600.0)
+    restore_foreground_after_input: bool = True
+    restore_cursor_after_input: bool = True
 
     @field_validator("speed_keys")
     @classmethod
@@ -136,7 +137,24 @@ class MacroConfig(ConfigModel):
     visual_precondition: str | None = None
     normalized_pointer_bounds: NormalizedPointerBoundsConfig | None = None
     movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     actions: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def valid_movement_pulse_bounds(self) -> MacroConfig:
+        if self.movement_pulse_seconds is None:
+            if (
+                self.movement_pulse_min_seconds is not None
+                or self.movement_pulse_max_seconds is not None
+            ):
+                raise ValueError("movement pulse bounds require movement_pulse_seconds")
+            return self
+        minimum = self.movement_pulse_min_seconds or self.movement_pulse_seconds
+        maximum = self.movement_pulse_max_seconds or self.movement_pulse_seconds
+        if minimum > self.movement_pulse_seconds or self.movement_pulse_seconds > maximum:
+            raise ValueError("movement pulse duration must satisfy min <= default <= max")
+        return self
 
     def parsed_actions(self) -> list[Action]:
         return [parse_action(item) for item in self.actions]

@@ -7,6 +7,12 @@ Live actions require both `safety.live_actions_enabled: true` in configuration
 and the CLI flag `--execute-live-actions`. Dry-run is the default. F12 is the
 default emergency-stop key and is checked before every primitive action.
 
+The Windows controller uses a polite input lease by default. It waits for a
+configurable idle interval before capture or input, records foreground/cursor
+state, and restores that state afterward. Resumed human input interrupts a
+movement pulse; safety re-pause is the only operation allowed to reclaim Kenshi
+focus before the controller yields it back.
+
 Run Kenshi and the controller at the same Windows integrity level. Do not run
 one as administrator and the other normally. Keep the Kenshi window title
 filter narrow. Close applications containing secrets before live tests. Start

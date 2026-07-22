@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from ..models import ActionReceipt, ClickAction, HotkeyAction, KeyAction, MoveCursorAction
@@ -25,6 +27,16 @@ class WindowRect:
 
 
 class InputController(ABC):
+    @asynccontextmanager
+    async def input_lease(self) -> AsyncIterator[None]:
+        yield
+
+    def user_input_detected(self) -> bool:
+        return False
+
+    def input_lease_wait_seconds(self) -> float:
+        return 0.0
+
     @abstractmethod
     def focus_window(self) -> None:
         raise NotImplementedError
@@ -32,6 +44,9 @@ class InputController(ABC):
     @abstractmethod
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         raise NotImplementedError
+
+    async def execute_safety(self, action: PrimitiveInputAction) -> ActionReceipt:
+        return await self.execute(action)
 
     @abstractmethod
     def emergency_stop_pressed(self, key: str) -> bool:

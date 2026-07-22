@@ -36,19 +36,19 @@ class ActionGuard:
             if observation.mode == "live" and not self.macros.has(action.name):
                 raise SafetyViolation(f"Live skill {action.name!r} has no configured macro.")
             if observation.mode == "live":
-                pulse_seconds = self.macros.movement_pulse_seconds(action.name)
+                try:
+                    pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
+                    primitives = self.macros.expand(action)
+                except (TypeError, ValueError) as exc:
+                    raise SafetyViolation(
+                        f"Live skill {action.name!r} could not be expanded safely: {exc}"
+                    ) from exc
                 if pulse_seconds is not None and (
                     observation.telemetry is None or observation.telemetry.game.paused is not True
                 ):
                     raise SafetyViolation(
                         f"Movement pulse {action.name!r} requires confirmed paused live state."
                     )
-                try:
-                    primitives = self.macros.expand(action)
-                except (TypeError, ValueError) as exc:
-                    raise SafetyViolation(
-                        f"Live skill {action.name!r} could not be expanded safely: {exc}"
-                    ) from exc
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
                 for primitive in primitives:
                     if primitive.kind not in {"key", "hotkey", "move_cursor", "click"}:

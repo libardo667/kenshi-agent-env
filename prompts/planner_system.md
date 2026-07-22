@@ -28,9 +28,11 @@ Control rules:
   for required arguments and visual preconditions.
 - Treat the observation's `objective` as the current bounded intention when it
   is present.
-- Movement skills advance time only for their listed pulse duration and return
-  Kenshi to confirmed pause before the next decision. Never request a direct
-  unpause to make movement continue during model deliberation.
+- Movement skills accept a bounded `duration_seconds`. Choose the shortest
+  useful pulse near obstacles or ambiguity and longer pulses only across clear,
+  recoverable routes. The executor returns Kenshi to confirmed pause before the
+  next observation and all model planning happens while paused. Never request a
+  direct unpause during model deliberation.
 - Use `move_visible_terrain` only when the screenshot visibly shows the 3D world
   with the map closed. Choose nearby, unobstructed terrain rather than a unit,
   building, UI element, or ambiguous object.

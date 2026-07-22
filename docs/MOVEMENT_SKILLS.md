@@ -9,8 +9,9 @@ Use this skill only when the screenshot visibly shows the 3D world and the map
 and other overlays are closed. The target must be nearby, unobstructed terrain,
 not a character, building, item, or UI element.
 
-The skill accepts normalized `x` and `y` screenshot coordinates and emits one
-normalized right click. Its calibrated safety envelope is:
+The skill accepts normalized `x` and `y` screenshot coordinates plus a
+`duration_seconds` from 0.35 to 3.0 seconds, then emits one normalized right
+click. Its calibrated safety envelope is:
 
 ```text
 x: 0.15 .. 0.85
@@ -26,8 +27,9 @@ building panel, most right-side controls, and the pause banner.
 Use this skill only when the screenshot visibly shows the open map. The target
 must be inside the map canvas, away from the window frame, tabs, and scrollbars.
 
-It also accepts normalized `x` and `y` screenshot coordinates and emits one
-normalized right click. Its calibrated safety envelope is:
+It also accepts normalized `x` and `y` screenshot coordinates plus a
+`duration_seconds` from 1.0 to 8.0 seconds, then emits one normalized right
+click. Its calibrated safety envelope is:
 
 ```text
 x: 0.30 .. 0.68
@@ -49,17 +51,29 @@ The Windows controller submits absolute cursor placement and mouse-button
 events in one `SendInput` batch. This prevents physical cursor movement from
 interleaving between placement and the click and silently redirecting a command.
 
-Movement is also time-bounded. The active profile assigns a 0.75-second pulse
-to fine world movement and a 2.0-second pulse to coarse map travel. The live
-executor requires a fresh paused observation before accepting either skill,
-executes the destination command, briefly unpauses, and uses fresh native
-telemetry to confirm both the unpause and final re-pause. Model-selected direct
-unpause is blocked, so API latency never becomes blind gameplay time.
+Movement is also time-bounded. The model chooses a duration inside the
+skill-specific range; 0.75 seconds for fine movement and 2.0 seconds for map
+travel remain the defaults when it omits the argument. The live executor
+requires a fresh paused observation before accepting either skill, executes the
+destination command, briefly unpauses, and uses fresh native telemetry to
+confirm both the unpause and final re-pause. All screenshot analysis and model
+planning happen while paused. Model-selected direct unpause is blocked, so API
+latency never becomes blind gameplay time.
 
 The map skill closes the map before advancing. F12 is checked during each pulse;
 if pressed, the pulse ends early and the executor re-pauses before reporting the
 emergency stop. If re-pause cannot be confirmed, the episode terminates with an
 environment error instead of starting another planner call.
+
+## Polite shared input
+
+Before capture or action execution, the Windows controller waits for a quiet
+keyboard/mouse interval. It snapshots the foreground window and cursor, focuses
+Kenshi for the atomic intent, and restores the saved desktop state afterward.
+If keyboard/mouse activity or a focus change occurs during a movement pulse,
+the agent treats that as the human taking a turn. It stops advancing, briefly
+focuses Kenshi only to guarantee re-pause, then restores the human's latest
+foreground window and cursor. F12 remains the explicit emergency stop.
 
 Native telemetry does not yet report whether the map is open. Consequently,
 the map-open/map-closed precondition is currently grounded in the captured
