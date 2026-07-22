@@ -1,0 +1,15 @@
+{
+  "environment": "mock",
+  "planner": "heuristic",
+  "seed": 7,
+  "step_budget": 40,
+  "steps_completed": 25,
+  "terminated": true,
+  "success": true,
+  "stop_reason": "The mock character survived one in-game day.",
+  "decisions": 25,
+  "reflex_decisions": 5,
+  "policy_rejections": 0,
+  "stale_observations": 0,
+  "note": "Generated during scaffold validation on 2026-07-22. This is a mock orchestration result, not evidence of live Kenshi competence."
+}

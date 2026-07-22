@@ -1,0 +1,255 @@
+# Kenshi Agent Environment
+
+A safety-first scaffold for turning Kenshi into an agentic environment with a
+versioned observation protocol, screenshots, persistent memory, structured
+planning, bounded skills, ordinary Windows input, replayable logs, and a
+read-only native telemetry bridge.
+
+This is not a claim that an LLM can already play Kenshi well. It is the machinery
+needed to run that experiment without confusing perception, planning, input,
+and game-integration failures.
+
+## What is runnable now
+
+- A deterministic Kenshi-like mock environment with the same `reset`, `observe`,
+  `step`, and `close` interface used by live mode.
+- Strict action, telemetry, observation, decision, receipt, and memory schemas.
+- A heuristic baseline that can complete the bundled one-day survival mock
+  benchmark.
+- Scripted and subprocess planner adapters.
+- An optional OpenAI vision planner using screenshot plus structured telemetry.
+- SQLite autobiographical memory and append-only JSONL run logs.
+- Replay summaries and JSON Schema export.
+- A Windows client-area screenshot and SendInput controller.
+- Two independent gates before real keyboard or mouse input is allowed.
+- Native KenshiLib plugin source that emits partial telemetry through an atomic
+  JSON file.
+- Automated tests for the platform-independent path.
+
+The native plugin source is scaffolded against the maintained KenshiLib headers,
+but it has not been compiled or field-tested inside your Kenshi installation.
+That distinction matters. See `STATUS.md` and `CODING_AGENT_PROMPT.md`.
+
+## Repository map
+
+```text
+config/                  Mock and live configuration
+prompts/                 Planner and memory prompts
+schemas/                 Generated JSON Schemas
+src/kenshi_agent/        Python environment and agent runtime
+native/KenshiAgentTelemetry/
+                         Read-only KenshiLib telemetry plugin
+benchmarks/              Experiment definitions
+examples/                Sample telemetry and scripted policy
+docs/                    Protocol and validation notes
+scripts/                 Bootstrap, test, run, and staging helpers
+tests/                   Platform-independent automated tests
+runs/                    Local screenshots, logs, and outputs; gitignored
+CODING_AGENT_PROMPT.md   Full implementation brief for a coding agent
+```
+
+## Five-minute mock run
+
+From the repository root:
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+kenshi-agent doctor --config config/default.yaml
+pytest
+kenshi-agent run --config config/default.yaml --mode mock --planner heuristic --steps 40
+```
+
+The command prints a run directory. Its `events.jsonl` records every observation,
+decision, action receipt, memory write, and termination event. Mock screenshots
+are saved under that run.
+
+Summarize a run with:
+
+```powershell
+kenshi-agent summarize runs\<RUN_ID>\events.jsonl
+```
+
+## Planner options
+
+### Heuristic baseline
+
+The baseline is intentionally simple and inspectable. It establishes whether the
+environment works independently of model behavior.
+
+```powershell
+kenshi-agent run --config config/default.yaml --planner heuristic --steps 40
+```
+
+### Scripted policy
+
+Each non-comment line is one complete `PlannerDecision` JSON object.
+
+```powershell
+kenshi-agent run `
+  --config config/default.yaml `
+  --planner scripted `
+  --script examples/scripted_policy.jsonl `
+  --steps 10
+```
+
+### External subprocess
+
+The runtime writes one `Observation` JSON line to the child process's stdin. The
+child must write one `PlannerDecision` JSON object to stdout and exit zero. This
+is the cleanest connector for a coding-agent harness, local model, or custom
+orchestrator.
+
+```powershell
+kenshi-agent run `
+  --config config/default.yaml `
+  --planner subprocess `
+  --command "python scripts/external_planner_example.py" `
+  --steps 20
+```
+
+See `docs/EXTERNAL_PLANNER_PROTOCOL.md`.
+
+### OpenAI vision planner
+
+Install the optional dependency and set the API key in the environment:
+
+```powershell
+python -m pip install -e ".[openai]"
+$env:OPENAI_API_KEY = "..."
+kenshi-agent run --config config/default.yaml --planner openai --steps 20
+```
+
+The planner receives a bounded JSON observation and, when enabled, a base64 image
+of the current frame. It returns a validated `PlannerDecision`; it does not call
+input APIs itself.
+
+## Moving toward live Kenshi
+
+Do these in order. Skipping the order makes failures hard to diagnose.
+
+1. Run the full mock tests and preserve a green baseline.
+2. Build and install the native plugin against the exact maintained
+   RE_Kenshi/KenshiLib versions used by the game.
+3. Confirm `plugin_status.json` and a steadily increasing telemetry sequence.
+4. Run `doctor` and `validate-telemetry` against live output.
+5. Run live mode with action execution disabled. Inspect screenshots, telemetry,
+   prompts, and proposed decisions.
+6. Fix the resolution, window mode, UI scale, and key bindings; calibrate any
+   semantic UI anchors.
+7. Enable one harmless key skill at a time on a disposable save.
+8. Only after those checks, enable model-selected live actions.
+
+Copy `config/live.example.yaml` and replace the telemetry path. Live mode remains
+dry-run unless both conditions are true:
+
+```yaml
+safety:
+  live_actions_enabled: true
+```
+
+and:
+
+```powershell
+kenshi-agent run --config config/my-live.yaml --mode live --execute-live-actions
+```
+
+F12 is the default emergency-stop key and is checked before each primitive input.
+The Kenshi process and controller should run at the same Windows integrity level.
+
+## Native telemetry bridge
+
+The plugin hooks `PlayerInterface::update`, calls the original update first, and
+samples the game/UI thread at two hertz. It currently exports:
+
+- loaded, paused, speed, and money;
+- camera position and center;
+- basic squad identity, selection, life/consciousness state, position, movement
+  speed, and food-item count.
+
+It intentionally does not pretend to export fields that have not been validated:
+hunger, wound detail, inventory grids, modals, dialogue, context menus, current
+tasks, nearby entities, and faction interpretation remain work items.
+
+Build instructions and the manual verification sequence are in
+`native/KenshiAgentTelemetry/README.md`. The full coding-agent brief explains how
+to expand telemetry one field at a time without turning reverse-engineered
+assumptions into a fragile world dump.
+
+## Telemetry design
+
+Snapshots are complete JSON documents atomically replaced at a known path. Each
+snapshot contains:
+
+- a semantic protocol version;
+- a monotonically increasing sequence;
+- a UTC capture timestamp;
+- an explicit capability list;
+- partial game, camera, UI, squad, and visible-entity state;
+- warnings for known omissions or degraded sampling.
+
+Missing data means unknown, not zero. The planner must only trust fields listed
+by capabilities and must stop or pause when live telemetry becomes stale.
+
+Generate or refresh schemas with:
+
+```powershell
+kenshi-agent export-schemas --output schemas
+```
+
+See `docs/TELEMETRY_PROTOCOL.md`.
+
+## Safety model
+
+The native side is read-only. It must not issue tasks, teleport characters,
+change health, alter money, modify factions, trigger save/load, or invoke hidden
+game actions. Player actions go through visible keyboard and mouse input.
+
+The Python guard enforces:
+
+- action-kind and skill allowlists;
+- normalized click bounds and client-area bounds when known;
+- stale-telemetry click blocking;
+- maximum wait duration;
+- macro expansion limits;
+- per-minute primitive-action rate limits;
+- configuration plus CLI live-input gates;
+- an emergency-stop key.
+
+Use a disposable save. Close applications containing secrets before testing a
+vision model that receives desktop screenshots.
+
+## Experimental discipline
+
+Always report at least four failure categories separately:
+
+1. observation/perception failure;
+2. planning or world-model failure;
+3. action compilation or interface-control failure;
+4. native telemetry or environment failure.
+
+The bundled benchmark specification in `benchmarks/one_day_survival.yaml` is a
+starting point. Run screenshot-only, screenshot-plus-telemetry, and
+telemetry-plus-skills conditions separately. Do not optimize against one save and
+then present the result as general play ability.
+
+## Known limitations
+
+- No real Kenshi build or runtime verification was possible in the environment
+  where this scaffold was produced.
+- The native ABI and field access must be tested against the exact executable,
+  RE_Kenshi release, KenshiLib dependency package, and active mods.
+- Nearby entities and medical detail are not yet exported natively.
+- UI skills beyond ordinary configurable key macros require calibration and
+  screenshot-grounded confirmation.
+- The OpenAI planner is optional and untested against a live game session.
+- SendInput can fail when Windows integrity levels differ or foreground focus is
+  denied.
+- The mock world tests orchestration, not Kenshi strategy competence.
+
+## License and project status
+
+The repository is GPL-3.0-or-later because its native plugin is designed to link
+against GPL-licensed KenshiLib. Kenshi is owned by Lo-Fi Games. This project is
+unofficial and includes no game assets or binaries.

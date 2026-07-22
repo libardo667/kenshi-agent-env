@@ -1,0 +1,976 @@
+{
+  "$defs": {
+    "BodyPartState": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "current_hp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Hp"
+        },
+        "max_hp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Hp"
+        },
+        "cut_damage": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cut Damage"
+        },
+        "wear_damage": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wear Damage"
+        },
+        "bleeding_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bleeding Rate"
+        },
+        "missing": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Missing"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "BodyPartState",
+      "type": "object"
+    },
+    "CameraState": {
+      "additionalProperties": false,
+      "properties": {
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "center": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "zoom": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Zoom"
+        }
+      },
+      "title": "CameraState",
+      "type": "object"
+    },
+    "CharacterState": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "selected": {
+          "default": false,
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "alive": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alive"
+        },
+        "conscious": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conscious"
+        },
+        "down": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Down"
+        },
+        "crippled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crippled"
+        },
+        "getting_eaten": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Getting Eaten"
+        },
+        "imprisoned": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Imprisoned"
+        },
+        "enslaved": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enslaved"
+        },
+        "in_combat": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Combat"
+        },
+        "stealth": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stealth"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "movement_speed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movement Speed"
+        },
+        "hunger": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hunger"
+        },
+        "bleeding_rate": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bleeding Rate"
+        },
+        "food_items": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Food Items"
+        },
+        "first_aid_kits": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "First Aid Kits"
+        },
+        "current_goal": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Current Goal"
+        },
+        "body_parts": {
+          "items": {
+            "$ref": "#/$defs/BodyPartState"
+          },
+          "title": "Body Parts",
+          "type": "array"
+        },
+        "inventory": {
+          "items": {
+            "$ref": "#/$defs/InventoryItem"
+          },
+          "title": "Inventory",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "CharacterState",
+      "type": "object"
+    },
+    "Disposition": {
+      "enum": [
+        "friendly",
+        "neutral",
+        "hostile",
+        "unknown"
+      ],
+      "title": "Disposition",
+      "type": "string"
+    },
+    "GameState": {
+      "additionalProperties": false,
+      "properties": {
+        "loaded": {
+          "default": false,
+          "title": "Loaded",
+          "type": "boolean"
+        },
+        "paused": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paused"
+        },
+        "speed_multiplier": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Speed Multiplier"
+        },
+        "day": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Day"
+        },
+        "hour": {
+          "anyOf": [
+            {
+              "maximum": 23,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hour"
+        },
+        "minute": {
+          "anyOf": [
+            {
+              "maximum": 59,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minute"
+        },
+        "elapsed_minutes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Elapsed Minutes"
+        },
+        "money": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Money"
+        },
+        "location_name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Name"
+        }
+      },
+      "title": "GameState",
+      "type": "object"
+    },
+    "InventoryItem": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "quantity": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Quantity",
+          "type": "integer"
+        },
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "charges": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Charges"
+        },
+        "stolen": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stolen"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "InventoryItem",
+      "type": "object"
+    },
+    "MemoryKind": {
+      "enum": [
+        "fact",
+        "episode",
+        "commitment",
+        "hypothesis"
+      ],
+      "title": "MemoryKind",
+      "type": "string"
+    },
+    "MemoryRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "integer"
+        },
+        "namespace": {
+          "title": "Namespace",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MemoryKind"
+        },
+        "content": {
+          "title": "Content",
+          "type": "string"
+        },
+        "salience": {
+          "title": "Salience",
+          "type": "number"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "last_accessed_at": {
+          "format": "date-time",
+          "title": "Last Accessed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "namespace",
+        "run_id",
+        "kind",
+        "content",
+        "salience",
+        "created_at",
+        "last_accessed_at"
+      ],
+      "title": "MemoryRecord",
+      "type": "object"
+    },
+    "NearbyEntity": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "default": "unknown",
+          "title": "Kind",
+          "type": "string"
+        },
+        "faction": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Faction"
+        },
+        "disposition": {
+          "$ref": "#/$defs/Disposition",
+          "default": "unknown"
+        },
+        "distance": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Distance"
+        },
+        "visible": {
+          "default": true,
+          "title": "Visible",
+          "type": "boolean"
+        },
+        "conscious": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Conscious"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "NearbyEntity",
+      "type": "object"
+    },
+    "TelemetrySnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {
+          "default": "0.1.0",
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "sequence": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "captured_at": {
+          "format": "date-time",
+          "title": "Captured At",
+          "type": "string"
+        },
+        "source": {
+          "default": "unknown",
+          "title": "Source",
+          "type": "string"
+        },
+        "capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "game": {
+          "$ref": "#/$defs/GameState"
+        },
+        "camera": {
+          "$ref": "#/$defs/CameraState"
+        },
+        "ui": {
+          "$ref": "#/$defs/UIState"
+        },
+        "squad": {
+          "items": {
+            "$ref": "#/$defs/CharacterState"
+          },
+          "title": "Squad",
+          "type": "array"
+        },
+        "nearby_entities": {
+          "items": {
+            "$ref": "#/$defs/NearbyEntity"
+          },
+          "title": "Nearby Entities",
+          "type": "array"
+        },
+        "warnings": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Warnings",
+          "type": "array"
+        }
+      },
+      "title": "TelemetrySnapshot",
+      "type": "object"
+    },
+    "UIState": {
+      "additionalProperties": false,
+      "properties": {
+        "active_screen": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Screen"
+        },
+        "modal_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modal Open"
+        },
+        "dialogue_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dialogue Open"
+        },
+        "dialogue_options": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Dialogue Options",
+          "type": "array"
+        },
+        "context_menu_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Menu Open"
+        },
+        "selected_character_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Character Id"
+        },
+        "client_width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Width"
+        },
+        "client_height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Height"
+        }
+      },
+      "title": "UIState",
+      "type": "object"
+    },
+    "Vec3": {
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "z": {
+          "title": "Z",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "z"
+      ],
+      "title": "Vec3",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "step_index": {
+      "minimum": 0,
+      "title": "Step Index",
+      "type": "integer"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "mock",
+        "live",
+        "replay"
+      ],
+      "title": "Mode",
+      "type": "string"
+    },
+    "telemetry": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TelemetrySnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "telemetry_stale": {
+      "default": false,
+      "title": "Telemetry Stale",
+      "type": "boolean"
+    },
+    "telemetry_age_seconds": {
+      "anyOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Telemetry Age Seconds"
+    },
+    "screenshot_path": {
+      "anyOf": [
+        {
+          "format": "path",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Screenshot Path"
+    },
+    "screenshot_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Screenshot Sha256"
+    },
+    "events": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "available_skills": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Available Skills",
+      "type": "array"
+    },
+    "memories": {
+      "items": {
+        "$ref": "#/$defs/MemoryRecord"
+      },
+      "title": "Memories",
+      "type": "array"
+    }
+  },
+  "required": [
+    "run_id",
+    "step_index",
+    "mode"
+  ],
+  "title": "Observation",
+  "type": "object"
+}

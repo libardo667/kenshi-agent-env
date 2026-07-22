@@ -1,0 +1,339 @@
+{
+  "$defs": {
+    "ClickAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "click",
+          "default": "click",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton",
+          "default": "left"
+        },
+        "clicks": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Clicks",
+          "type": "integer"
+        },
+        "interval_seconds": {
+          "default": 0.08,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Interval Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ClickAction",
+      "type": "object"
+    },
+    "CoordinateSpace": {
+      "enum": [
+        "normalized",
+        "client",
+        "screen"
+      ],
+      "title": "CoordinateSpace",
+      "type": "string"
+    },
+    "HotkeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "hotkey",
+          "default": "hotkey",
+          "title": "Kind",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 2,
+          "title": "Keys",
+          "type": "array"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "HotkeyAction",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "KeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "key",
+          "default": "key",
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "KeyAction",
+      "type": "object"
+    },
+    "MouseButton": {
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ],
+      "title": "MouseButton",
+      "type": "string"
+    },
+    "MoveCursorAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "move_cursor",
+          "default": "move_cursor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "MoveCursorAction",
+      "type": "object"
+    },
+    "NoopAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "noop",
+          "default": "noop",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "No action required.",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "title": "NoopAction",
+      "type": "object"
+    },
+    "PauseAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "pause",
+          "default": "pause",
+          "title": "Kind",
+          "type": "string"
+        },
+        "paused": {
+          "default": true,
+          "title": "Paused",
+          "type": "boolean"
+        }
+      },
+      "title": "PauseAction",
+      "type": "object"
+    },
+    "SetSpeedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "set_speed",
+          "default": "set_speed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "speed": {
+          "enum": [
+            1,
+            2,
+            3
+          ],
+          "title": "Speed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "speed"
+      ],
+      "title": "SetSpeedAction",
+      "type": "object"
+    },
+    "SkillAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "skill",
+          "default": "skill",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Args",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SkillAction",
+      "type": "object"
+    },
+    "StopAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "stop",
+          "default": "stop",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "StopAction",
+      "type": "object"
+    },
+    "WaitAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "wait",
+          "default": "wait",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seconds": {
+          "maximum": 60.0,
+          "minimum": 0.0,
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "title": "WaitAction",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "click": "#/$defs/ClickAction",
+      "hotkey": "#/$defs/HotkeyAction",
+      "key": "#/$defs/KeyAction",
+      "move_cursor": "#/$defs/MoveCursorAction",
+      "noop": "#/$defs/NoopAction",
+      "pause": "#/$defs/PauseAction",
+      "set_speed": "#/$defs/SetSpeedAction",
+      "skill": "#/$defs/SkillAction",
+      "stop": "#/$defs/StopAction",
+      "wait": "#/$defs/WaitAction"
+    },
+    "propertyName": "kind"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/NoopAction"
+    },
+    {
+      "$ref": "#/$defs/StopAction"
+    },
+    {
+      "$ref": "#/$defs/PauseAction"
+    },
+    {
+      "$ref": "#/$defs/SetSpeedAction"
+    },
+    {
+      "$ref": "#/$defs/WaitAction"
+    },
+    {
+      "$ref": "#/$defs/KeyAction"
+    },
+    {
+      "$ref": "#/$defs/HotkeyAction"
+    },
+    {
+      "$ref": "#/$defs/MoveCursorAction"
+    },
+    {
+      "$ref": "#/$defs/ClickAction"
+    },
+    {
+      "$ref": "#/$defs/SkillAction"
+    }
+  ]
+}

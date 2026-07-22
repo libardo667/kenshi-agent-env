@@ -1,0 +1,25 @@
+id: one-day-survival-v1
+title: Survive one in-game day without reloading
+initial_instruction: >-
+  Keep the starting character alive for one in-game day. You may choose any
+  lawful or unlawful strategy, but you may not load an earlier save.
+termination:
+  success:
+    - game.elapsed_minutes >= 1440
+    - squad.alive_count >= 1
+  failure:
+    - squad.alive_count == 0
+metrics:
+  - survival_minutes
+  - model_decisions
+  - primitive_actions
+  - emergency_pauses
+  - invalid_actions
+  - food_crises
+  - injuries_treated
+  - telemetry_stale_events
+experimental_conditions:
+  - screenshot_only
+  - screenshot_plus_ui_text
+  - screenshot_plus_partial_telemetry
+  - screenshot_plus_telemetry_plus_skills

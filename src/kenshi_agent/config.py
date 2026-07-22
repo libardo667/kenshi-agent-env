@@ -1,0 +1,172 @@
+from __future__ import annotations
+
+import os
+import re
+from pathlib import Path
+from typing import Any, Literal
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from .models import Action, parse_action
+
+
+_ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
+
+
+class ConfigModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class PathsConfig(ConfigModel):
+    runs_dir: Path
+    prompt_file: Path
+    memory_db: Path
+
+
+class RuntimeConfig(ConfigModel):
+    max_steps: int = Field(default=32, ge=1, le=100000)
+    settle_seconds: float = Field(default=0.25, ge=0.0, le=60.0)
+    observation_memory_limit: int = Field(default=12, ge=0, le=100)
+    stop_when_terminated: bool = True
+
+
+class PlannerConfig(ConfigModel):
+    kind: Literal["heuristic", "scripted", "subprocess", "openai"] = "heuristic"
+    model: str = "gpt-5.5"
+    temperature: float = Field(default=0.2, ge=0.0, le=2.0)
+    timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
+    include_screenshot: bool = True
+    screenshot_detail: Literal["low", "high", "auto"] = "high"
+    max_observation_chars: int = Field(default=24000, ge=1000, le=200000)
+
+
+class MockConfig(ConfigModel):
+    seed: int = 7
+    start_location: str = "The Hub"
+    start_cats: int = Field(default=180, ge=0)
+    start_hunger: float = Field(default=250.0, ge=0.0, le=300.0)
+    start_food_items: int = Field(default=1, ge=0)
+    start_first_aid_kits: int = Field(default=1, ge=0)
+    minutes_per_wait_second: float = Field(default=1.0, gt=0.0, le=120.0)
+    random_events: bool = True
+
+
+class TelemetryConfig(ConfigModel):
+    file: Path
+    max_age_seconds: float = Field(default=3.0, gt=0.0, le=300.0)
+    read_retries: int = Field(default=3, ge=1, le=20)
+    retry_delay_seconds: float = Field(default=0.03, ge=0.0, le=2.0)
+    require_protocol_major: int = Field(default=0, ge=0, le=100)
+
+
+class CaptureConfig(ConfigModel):
+    enabled: bool = True
+    window_title_contains: str = "Kenshi"
+    image_format: Literal["png", "jpeg"] = "png"
+    jpeg_quality: int = Field(default=90, ge=20, le=100)
+    crop_client_area: bool = True
+
+
+class ControlsConfig(ConfigModel):
+    pause_key: str = "space"
+    speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "1", 2: "2", 3: "3"})
+    focus_before_input: bool = True
+    post_input_delay_seconds: float = Field(default=0.08, ge=0.0, le=2.0)
+
+    @field_validator("speed_keys")
+    @classmethod
+    def all_speeds_present(cls, value: dict[int, str]) -> dict[int, str]:
+        missing = {1, 2, 3} - set(value)
+        if missing:
+            raise ValueError(f"speed_keys is missing mappings for: {sorted(missing)}")
+        return value
+
+
+class SafetyConfig(ConfigModel):
+    live_actions_enabled: bool = False
+    require_cli_execute_flag: bool = True
+    emergency_stop_key: str = "f12"
+    max_primitive_actions_per_step: int = Field(default=12, ge=1, le=100)
+    max_actions_per_minute: int = Field(default=90, ge=1, le=1000)
+    max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
+    block_clicks_when_telemetry_stale: bool = True
+    allow_action_kinds: list[str] = Field(default_factory=list)
+    allow_skills: list[str] = Field(default_factory=list)
+
+
+class MemoryConfig(ConfigModel):
+    enabled: bool = True
+    run_namespace: str = "default"
+    max_recalled_memories: int = Field(default=12, ge=0, le=100)
+    minimum_salience: float = Field(default=0.15, ge=0.0, le=1.0)
+
+
+class MacroConfig(ConfigModel):
+    description: str = ""
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+
+    def parsed_actions(self) -> list[Action]:
+        return [parse_action(item) for item in self.actions]
+
+
+class AppConfig(ConfigModel):
+    version: int = 1
+    mode: Literal["mock", "live", "replay"] = "mock"
+    paths: PathsConfig
+    runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
+    planner: PlannerConfig = Field(default_factory=PlannerConfig)
+    mock: MockConfig = Field(default_factory=MockConfig)
+    telemetry: TelemetryConfig
+    capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    controls: ControlsConfig = Field(default_factory=ControlsConfig)
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    macros: dict[str, MacroConfig] = Field(default_factory=dict)
+
+
+def _expand_env_string(value: str) -> str:
+    def replace_default(match: re.Match[str]) -> str:
+        name, default = match.group(1), match.group(2)
+        return os.environ.get(name, default)
+
+    return os.path.expandvars(_ENV_DEFAULT_PATTERN.sub(replace_default, value))
+
+
+def _expand_env(value: Any) -> Any:
+    if isinstance(value, str):
+        return _expand_env_string(value)
+    if isinstance(value, list):
+        return [_expand_env(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _expand_env(item) for key, item in value.items()}
+    return value
+
+
+def _resolve_path(path: Path, base: Path) -> Path:
+    if path.is_absolute():
+        return path.resolve()
+    return (base / path).resolve()
+
+
+def load_config(path: str | Path) -> AppConfig:
+    config_path = Path(path).expanduser().resolve()
+    with config_path.open("r", encoding="utf-8") as handle:
+        raw = yaml.safe_load(handle) or {}
+    expanded = _expand_env(raw)
+    config = AppConfig.model_validate(expanded)
+    base = config_path.parent
+    return config.model_copy(
+        update={
+            "paths": config.paths.model_copy(
+                update={
+                    "runs_dir": _resolve_path(config.paths.runs_dir, base),
+                    "prompt_file": _resolve_path(config.paths.prompt_file, base),
+                    "memory_db": _resolve_path(config.paths.memory_db, base),
+                }
+            ),
+            "telemetry": config.telemetry.model_copy(
+                update={"file": _resolve_path(config.telemetry.file, base)}
+            ),
+        }
+    )

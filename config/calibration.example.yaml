@@ -1,0 +1,13 @@
+# Optional semantic anchors for skill macros. Coordinates are normalized to
+# the Kenshi client area, not the full desktop. Measure them at a fixed
+# resolution and UI scale; do not copy these placeholders into live use.
+version: 1
+window:
+  expected_width: 1920
+  expected_height: 1080
+  ui_scale: 1.0
+anchors:
+  squad_portrait_1: { x: 0.055, y: 0.915 }
+  medic_button: { x: 0.815, y: 0.945 }
+  inventory_button: { x: 0.875, y: 0.945 }
+  map_button: { x: 0.930, y: 0.945 }

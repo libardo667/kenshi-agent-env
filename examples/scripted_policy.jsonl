@@ -1,0 +1,4 @@
+{"intent":"Resume the world.","rationale":"The mock episode begins paused.","action":{"kind":"pause","paused":false},"confidence":1.0,"memory_writes":[]}
+{"intent":"Use fast time while safe.","rationale":"No threat is present in the initial mock state.","action":{"kind":"set_speed","speed":3},"confidence":0.9,"memory_writes":[]}
+{"intent":"Earn a cash buffer.","rationale":"Work near town is the bounded scripted activity.","action":{"kind":"skill","name":"work_for_cats","args":{}},"confidence":0.8,"memory_writes":[]}
+{"intent":"End the demonstration.","rationale":"The scripted smoke test has exercised pause, speed, and a skill.","action":{"kind":"stop","reason":"Scripted demonstration complete."},"confidence":1.0,"memory_writes":[]}
