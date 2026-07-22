@@ -53,7 +53,7 @@ inspection alone.
 - [ ] Controller and Kenshi run at equal integrity levels.
 - [ ] F12 prevents the next primitive action.
 - [x] Dry-run logs proposed actions without sending input.
-- [ ] One key action works in a disposable save.
+- [x] One key action works in a disposable save.
 - [ ] One calibrated click works for 50 repeated trials without drift.
 - [ ] Loss of foreground focus aborts safely.
 
@@ -84,3 +84,20 @@ inspection alone.
 - The first attempt exposed SQLite WAL locking failure on the WSL UNC path.
   Live memory now defaults to Windows-local `%LOCALAPPDATA%\KenshiAgent\state`;
   screenshots and JSONL artifacts remain in the ignored repo `runs` directory.
+
+### Evidence from 2026-07-22 active burn-in
+
+- The initial active run exposed two false-positive success paths: desktop
+  capture recorded a foreground Chrome window, and virtual-key `SendInput`
+  events were accepted by Windows but ignored by Kenshi.
+- Capture now focuses the uniquely matched Kenshi window before `ImageGrab`.
+  A validation frame showed Lekko and the Kenshi client rather than Chrome.
+- Keyboard input now uses hardware scan codes. A controlled Space probe changed
+  plugin telemetry from `paused: false` to `true`; a second probe restored it to
+  `false`.
+- Run `20260722T185241.001241Z` executed `open_inventory` and `open_map`, then
+  safely rejected Terra's raw Escape request. Escape was subsequently added as
+  the audited `close_overlay` skill instead of allowing arbitrary keys.
+- Run `20260722T185358.928132Z` completed six active steps: pause, three overlay
+  closes, map open, and map close. Every receipt was executed and non-dry-run;
+  no raw pointer, movement, combat, purchasing, or save action was permitted.

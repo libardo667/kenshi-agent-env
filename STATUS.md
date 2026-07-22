@@ -24,6 +24,11 @@
 - Windows live dry-run validation: a bounded heuristic episode captured five
   isolated 1920x1080 Kenshi frames, paired them with fresh telemetry, logged
   four proposed actions, and withheld every input action at the safety gate.
+- OpenAI structured-output live planning with `gpt-5.6-terra`, plus an active
+  burn-in profile that limits execution to audited pause, overlay, map,
+  inventory, and focus skills.
+- Foreground-safe, per-monitor-DPI-aware capture and scan-code keyboard input;
+  a live pause probe changed plugin telemetry and restored the original state.
 
 ## Still requires broader live validation
 
@@ -31,8 +36,8 @@
   save/load, and zone transitions.
 - Safety-critical getting-eaten state; the raw KenshiLib byte produced a false
   positive on a healthy new character and is intentionally omitted.
-- Kenshi key bindings, window focus behavior, client coordinates, and UI scale.
-- OpenAI vision-planner behavior against live screenshots.
+- Repeated focus, client-coordinate, key-binding, and UI-scale calibration.
+- Broader OpenAI vision-planner behavior beyond the safe overlay burn-in.
 
 ## Deliberately not implemented
 
