@@ -208,6 +208,10 @@ class Win32InputController(InputController):
         self.user32.GetClientRect.restype = wintypes.BOOL
         self.user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
         self.user32.ClientToScreen.restype = wintypes.BOOL
+        self.user32.SetCursorPos.argtypes = [wintypes.INT, wintypes.INT]
+        self.user32.SetCursorPos.restype = wintypes.BOOL
+        self.user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+        self.user32.GetCursorPos.restype = wintypes.BOOL
         self.user32.GetForegroundWindow.restype = wintypes.HWND
         self.user32.GetWindowThreadProcessId.argtypes = [
             wintypes.HWND,
@@ -372,18 +376,16 @@ class Win32InputController(InputController):
 
     def _move_cursor(self, x: float, y: float, space: CoordinateSpace) -> None:
         screen_x, screen_y = self._screen_point(x, y, space)
-        absolute_x, absolute_y = self._absolute_virtual_coordinates(screen_x, screen_y)
-        self._send(
-            [
-                self._mouse_input(
-                    absolute_x,
-                    absolute_y,
-                    self.MOUSEEVENTF_MOVE
-                    | self.MOUSEEVENTF_ABSOLUTE
-                    | self.MOUSEEVENTF_VIRTUALDESK,
-                )
-            ]
-        )
+        if not self.user32.SetCursorPos(screen_x, screen_y):
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+        actual = wintypes.POINT()
+        if not self.user32.GetCursorPos(ctypes.byref(actual)):
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+        if (actual.x, actual.y) != (screen_x, screen_y):
+            raise RuntimeError(
+                "Windows did not place the cursor at the requested target: "
+                f"requested=({screen_x}, {screen_y}) actual=({actual.x}, {actual.y})."
+            )
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         started = datetime.now(UTC)
@@ -417,7 +419,15 @@ class Win32InputController(InputController):
         elif isinstance(action, MoveCursorAction):
             self._move_cursor(action.x, action.y, action.space)
         elif isinstance(action, ClickAction):
-            self._move_cursor(action.x, action.y, action.space)
+            screen_x, screen_y = self._screen_point(action.x, action.y, action.space)
+            absolute_x, absolute_y = self._absolute_virtual_coordinates(screen_x, screen_y)
+            move_input = self._mouse_input(
+                absolute_x,
+                absolute_y,
+                self.MOUSEEVENTF_MOVE
+                | self.MOUSEEVENTF_ABSOLUTE
+                | self.MOUSEEVENTF_VIRTUALDESK,
+            )
             button_flags = {
                 MouseButton.LEFT: (self.MOUSEEVENTF_LEFTDOWN, self.MOUSEEVENTF_LEFTUP),
                 MouseButton.RIGHT: (self.MOUSEEVENTF_RIGHTDOWN, self.MOUSEEVENTF_RIGHTUP),
@@ -426,6 +436,7 @@ class Win32InputController(InputController):
             for click_index in range(action.clicks):
                 self._send(
                     [
+                        move_input,
                         self._mouse_input(0, 0, button_flags[0]),
                         self._mouse_input(0, 0, button_flags[1]),
                     ]
