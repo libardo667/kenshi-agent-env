@@ -26,7 +26,8 @@ diagnostics.
 4. Set `BOOST_INCLUDE_PATH` to the extracted Boost 1.60 root containing both
    `boost` and `stage\lib`.
 5. Run `scripts\native_doctor.ps1` and resolve every failed check.
-6. Open `KenshiAgentTelemetry.sln` and build **Release | x64**.
+6. Run `scripts\build_native.ps1` to build **Release | x64** with local Windows
+   intermediate/output directories.
 7. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
 8. After reviewing the staged files, copy the staged `KenshiAgentTelemetry`
    folder to `<Kenshi>\mods\KenshiAgentTelemetry` and enable the mod in the
@@ -60,5 +61,6 @@ folder component.
   errors or hitches.
 
 Do not enable live Python input until these checks pass. The source is based on
-the current maintained headers but has not been compiled or field-tested inside
-the user's Kenshi installation.
+the pinned maintained headers and now compiles as a VS2010 SP1 `Release | x64`
+DLL. It has not yet been loaded or field-tested inside the user's Kenshi
+installation.

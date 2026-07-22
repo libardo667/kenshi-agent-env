@@ -6,9 +6,9 @@ inspection alone.
 ## Native loading
 
 - [ ] Exact Kenshi executable version recorded.
-- [ ] Exact RE_Kenshi release recorded.
-- [ ] Exact KenshiLib dependency commit or release recorded.
-- [ ] Plugin built Release x64 with the required v100 toolset.
+- [x] Exact RE_Kenshi release recorded.
+- [x] Exact KenshiLib dependency commit or release recorded.
+- [x] Plugin built Release x64 with the required v100 toolset.
 - [ ] Plugin loads without an error in the RE_Kenshi/Kenshi logs.
 - [ ] `plugin_status.json` reaches `ready`.
 - [ ] Uninstalling the plugin returns Kenshi to its prior behavior.

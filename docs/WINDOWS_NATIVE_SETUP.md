@@ -119,10 +119,14 @@ From the project root in Windows PowerShell:
 Resolve every failure. Then build only the supported configuration:
 
 ```powershell
-& "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe" `
-  .\native\KenshiAgentTelemetry\KenshiAgentTelemetry.sln `
-  /m /p:Configuration=Release /p:Platform=x64
+.\scripts\build_native.ps1
 ```
+
+The build script discovers MSBuild, reloads the upstream user environment
+variables, and writes intermediates and outputs beneath
+`%LOCALAPPDATA%\KenshiAgent\build\native`. Keeping the output on a normal local
+Windows path is required when the source checkout is accessed through WSL: the
+VS2010 compiler cannot create its program database on a WSL UNC path.
 
 Upstream documents the Debug configuration as broken. Do not retarget the
 project to a newer compiler to get around a `v100` failure; fix the toolchain or
@@ -134,7 +138,8 @@ Build output and game installation are separate steps. First stage a reviewable
 folder:
 
 ```powershell
-.\scripts\stage_native.ps1 -BuiltDll <path-to-KenshiAgentTelemetry.dll>
+.\scripts\stage_native.ps1 `
+  -BuiltDll "$env:LOCALAPPDATA\KenshiAgent\build\native\bin\KenshiAgentTelemetry.dll"
 ```
 
 Inspect the staged DLL, `.mod` marker, `RE_Kenshi.json`, notices, and README.
