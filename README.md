@@ -169,10 +169,10 @@ Add `-WithOpenAI` to the bootstrap command only when preparing to test the
 vision planner. The dry-run command deliberately omits the second live-action
 gate, so proposed actions are logged but not sent to Kenshi.
 
-For the first active burn-in, use the dedicated profile. It enables live input
-but allows only pause, wait, map, inventory, close-overlay, and focus-selected
-behavior; raw keys, clicks, movement, combat, purchasing, and save operations
-remain blocked:
+For the active burn-in, use the dedicated profile. It enables live input but
+allows only pause, wait, map, inventory, close-overlay, focus-selected, and two
+bounded movement skills. Raw keys and clicks, combat, purchasing, and save
+operations remain blocked:
 
 ```powershell
 kenshi-agent run `
@@ -199,6 +199,8 @@ kenshi-agent run --config config/my-live.yaml --mode live --execute-live-actions
 
 F12 is the default emergency-stop key and is checked before each primitive input.
 The Kenshi process and controller should run at the same Windows integrity level.
+Fine world movement and coarse map travel use separate right-click skills with
+different calibrated envelopes; see [Movement skills](docs/MOVEMENT_SKILLS.md).
 
 ## Native telemetry bridge
 
@@ -256,6 +258,7 @@ The Python guard enforces:
 
 - action-kind and skill allowlists;
 - normalized click bounds and client-area bounds when known;
+- per-skill normalized pointer envelopes for calibrated movement macros;
 - stale-telemetry click blocking;
 - maximum wait duration;
 - macro expansion limits;

@@ -29,6 +29,8 @@
   inventory, and focus skills.
 - Foreground-safe, per-monitor-DPI-aware capture and scan-code keyboard input;
   a live pause probe changed plugin telemetry and restored the original state.
+- Distinct fine-world and coarse-map movement skills with planner-visible
+  preconditions and guard-enforced normalized pointer envelopes.
 
 ## Still requires broader live validation
 
@@ -38,6 +40,8 @@
   positive on a healthy new character and is intentionally omitted.
 - Repeated focus, client-coordinate, key-binding, and UI-scale calibration.
 - Broader OpenAI vision-planner behavior beyond the safe overlay burn-in.
+- Controlled live validation of both movement modes and repeated click-drift
+  testing; their bounds are calibrated but movement has not yet been executed.
 
 ## Deliberately not implemented
 
