@@ -12,7 +12,7 @@ runtime:
   observation_memory_limit: 16
   stop_when_terminated: true
   decision_stream: true
-  objective: Explore cautiously around The Hub using bounded movement pulses while remaining nearby and recoverable.
+  objective: Locate and approach a clearly non-hostile trader in The Hub so Lekko can buy one affordable food item. Stay paused between actions and stop at any dialogue or trade UI that has not yet been calibrated.
 
 planner:
   kind: openai
@@ -104,12 +104,20 @@ macros:
       - kind: key
         key: i
   focus_selected:
-    description: Select and center the first squad member by pressing squad slot 1 twice.
+    description: Select and center the first squad member by double-clicking the first squad portrait.
+    visual_precondition: The normal world HUD is visible and the first squad portrait occupies its calibrated bottom portrait slot.
+    normalized_pointer_bounds:
+      min_x: 0.31
+      max_x: 0.39
+      min_y: 0.84
+      max_y: 0.97
     actions:
-      - kind: key
-        key: "1"
-      - kind: key
-        key: "1"
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
   close_overlay:
     description: Close the currently visible map, inventory, or other dismissible overlay.
     actions:

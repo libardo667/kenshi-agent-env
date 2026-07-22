@@ -8,8 +8,8 @@ item, or price.
 
 ## Intended loop
 
-1. **Recover the camera.** Select and center squad member 1 by pressing `1`
-   twice.
+1. **Recover the camera.** Select and center squad member 1 by double-clicking
+   the first squad portrait.
 2. **Locate a trader.** Inspect the world view for a clearly non-hostile person
    with an obvious talk or shop affordance. Movement remains limited to the
    existing visible-terrain and map pulses.
@@ -27,6 +27,13 @@ The implementation is being exposed in those same stages. Camera recovery and
 the bounded person interaction are available now. Dialogue and trade clicks are
 deliberately absent until supervised runs provide real screenshots to calibrate
 against.
+
+The current focus target is calibrated against the 1920x1080 live client: the
+first portrait center is at normalized `(0.349, 0.906)` inside a narrow portrait
+envelope. A live double-click was accepted while Lekko was already centered and
+left that valid view unchanged. Earlier keyboard probing showed that repeated
+`1` selected Lekko but did not move the camera, so it is not used as the recovery
+gesture.
 
 ## Purchase policy
 
@@ -61,7 +68,7 @@ without sending a second pause toggle that would resume the game.
 
 Each new stage requires a supervised live proof before the next one is added:
 
-- prove double-`1` restores a useful camera view;
+- prove the bounded first-portrait double-click restores a useful camera view;
 - capture a successful non-hostile interaction and its dialogue screen;
 - use that capture to bound a dialogue-option action;
 - capture the resulting trade screen;
