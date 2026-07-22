@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 
 from .env import AgentEnvironment
 from .memory import MemoryStore
-from .models import ActionReceipt, Observation, PlannerDecision, StopAction, Transition
+from .models import ActionReceipt, Observation, PlannerDecision, StopAction
 from .planners import Planner
 from .reflexes import ReflexEngine
 from .safety import ActionGuard, SafetyViolation
@@ -143,7 +143,10 @@ class AgentRuntime:
                     if transition.events:
                         stop_reason = transition.events[-1]
                     else:
-                        stop_reason = transition.receipt.message or "Environment terminated the episode."
+                        stop_reason = (
+                            transition.receipt.message
+                            or "Environment terminated the episode."
+                        )
                     break
                 if isinstance(action, StopAction):
                     terminated = True

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.models import TelemetrySnapshot
-from kenshi_agent.telemetry import TelemetryReadError, TelemetryReader, write_snapshot_atomic
+from kenshi_agent.telemetry import TelemetryReader, TelemetryReadError, write_snapshot_atomic
 
 
 def test_atomic_writer_and_reader(tmp_path: Path) -> None:

@@ -30,10 +30,10 @@ class SubprocessPlanner(Planner):
                 process.communicate(request.encode("utf-8")),
                 timeout=self.timeout_seconds,
             )
-        except TimeoutError:
+        except TimeoutError as exc:
             process.kill()
             await process.wait()
-            raise RuntimeError("Subprocess planner timed out.")
+            raise RuntimeError("Subprocess planner timed out.") from exc
         if process.returncode != 0:
             raise RuntimeError(
                 f"Subprocess planner exited {process.returncode}: "

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypeAlias
 
@@ -12,26 +12,26 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
-class MemoryKind(str, Enum):
+class MemoryKind(StrEnum):
     FACT = "fact"
     EPISODE = "episode"
     COMMITMENT = "commitment"
     HYPOTHESIS = "hypothesis"
 
 
-class MouseButton(str, Enum):
+class MouseButton(StrEnum):
     LEFT = "left"
     RIGHT = "right"
     MIDDLE = "middle"
 
 
-class CoordinateSpace(str, Enum):
+class CoordinateSpace(StrEnum):
     NORMALIZED = "normalized"
     CLIENT = "client"
     SCREEN = "screen"
 
 
-class Disposition(str, Enum):
+class Disposition(StrEnum):
     FRIENDLY = "friendly"
     NEUTRAL = "neutral"
     HOSTILE = "hostile"

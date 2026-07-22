@@ -169,7 +169,7 @@ class Win32InputController(InputController):
         self.window_title_contains = window_title_contains.casefold()
         self.focus_before_input = focus_before_input
         self.post_input_delay_seconds = post_input_delay_seconds
-        self.user32 = ctypes.windll.user32
+        self.user32 = getattr(ctypes, "windll").user32  # noqa: B009 - Windows-only
         self._configure_signatures()
 
     def _configure_signatures(self) -> None:
@@ -184,7 +184,9 @@ class Win32InputController(InputController):
 
     def _find_window(self) -> int:
         matches: list[tuple[int, str]] = []
-        enum_proc_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        enum_proc_type = getattr(ctypes, "WINFUNCTYPE")(  # noqa: B009 - Windows-only
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
 
         def callback(hwnd: int, _: int) -> bool:
             if not self.user32.IsWindowVisible(hwnd):
@@ -206,13 +208,13 @@ class Win32InputController(InputController):
         hwnd = self._find_window()
         client = wintypes.RECT()
         if not self.user32.GetClientRect(hwnd, ctypes.byref(client)):
-            raise ctypes.WinError()
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
         top_left = wintypes.POINT(client.left, client.top)
         bottom_right = wintypes.POINT(client.right, client.bottom)
         if not self.user32.ClientToScreen(hwnd, ctypes.byref(top_left)):
-            raise ctypes.WinError()
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
         if not self.user32.ClientToScreen(hwnd, ctypes.byref(bottom_right)):
-            raise ctypes.WinError()
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
         return WindowRect(top_left.x, top_left.y, bottom_right.x, bottom_right.y)
 
     def _focus(self) -> None:
@@ -243,7 +245,7 @@ class Win32InputController(InputController):
         array = array_type(*inputs)
         sent = self.user32.SendInput(len(inputs), array, ctypes.sizeof(INPUT))
         if sent != len(inputs):
-            error = ctypes.get_last_error()
+            error = getattr(ctypes, "get_last_error")()  # noqa: B009 - Windows-only
             raise RuntimeError(
                 f"SendInput inserted {sent}/{len(inputs)} events (GetLastError={error}). "
                 "Check window focus and Windows integrity levels."

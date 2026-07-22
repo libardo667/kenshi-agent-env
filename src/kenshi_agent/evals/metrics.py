@@ -3,6 +3,24 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
+
+
+class _MetricValues(TypedDict):
+    decisions: int
+    reflex_decisions: int
+    planner_errors: int
+    action_receipts: int
+    rejected_actions: int
+    dry_run_actions: int
+    executed_actions: int
+    primitive_actions: int
+    observations: int
+    stale_observations: int
+    memory_writes: int
+    success: bool | None
+    steps_completed: int | None
+    stop_reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +42,7 @@ class LogMetrics:
 
 
 def evaluate_log(path: Path) -> LogMetrics:
-    values = {
+    values: _MetricValues = {
         "decisions": 0,
         "reflex_decisions": 0,
         "planner_errors": 0,

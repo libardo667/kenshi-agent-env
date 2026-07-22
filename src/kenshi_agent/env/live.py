@@ -10,7 +10,10 @@ from ..control.capture import WindowCapture
 from ..models import (
     Action,
     ActionReceipt,
+    ClickAction,
+    HotkeyAction,
     KeyAction,
+    MoveCursorAction,
     NoopAction,
     Observation,
     PauseAction,
@@ -236,19 +239,18 @@ class LiveEnvironment(AgentEnvironment):
             primitives = self.macros.expand(action)
             primitive_count = 0
             messages: list[str] = []
-            for primitive in primitives:
+            for macro_primitive in primitives:
                 if self.controller.emergency_stop_pressed(self.emergency_stop_key):
                     raise RuntimeError("Emergency stop pressed during macro execution.")
-                if not isinstance(primitive, (KeyAction,)) and primitive.kind not in {
-                    "hotkey",
-                    "move_cursor",
-                    "click",
-                }:
+                if not isinstance(
+                    macro_primitive,
+                    (KeyAction, HotkeyAction, MoveCursorAction, ClickAction),
+                ):
                     raise TypeError(
                         f"Live macro {action.name!r} contains unsupported primitive "
-                        f"{primitive.kind!r}."
+                        f"{macro_primitive.kind!r}."
                     )
-                primitive_receipt = await self.controller.execute(primitive)  # type: ignore[arg-type]
+                primitive_receipt = await self.controller.execute(macro_primitive)
                 primitive_count += primitive_receipt.primitive_actions
                 messages.append(primitive_receipt.message)
             return ActionReceipt(
@@ -261,8 +263,8 @@ class LiveEnvironment(AgentEnvironment):
                 primitive_actions=primitive_count,
                 message=f"Executed skill {action.name!r}. " + " ".join(messages),
             )
-        if action.kind in {"key", "hotkey", "move_cursor", "click"}:
-            return await self.controller.execute(action)  # type: ignore[arg-type]
+        if isinstance(action, (KeyAction, HotkeyAction, MoveCursorAction, ClickAction)):
+            return await self.controller.execute(action)
         raise TypeError(f"Unsupported live action: {type(action).__name__}")
 
     async def close(self) -> None:
