@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "audience": "Contributors rebuilding the native telemetry plugin on Windows",
+    "redistribution": "The project records identities and acquisition references but does not redistribute Microsoft installation media.",
+    "verification": "Match both size_bytes and sha256 before removing Mark of the Web or running setup."
+  },
+  "media": [
+    {
+      "id": "vs2010-professional-enu",
+      "product": "Microsoft Visual Studio 2010 Professional",
+      "filename": "en_visual_studio_2010_professional_x86_dvd_509727.iso",
+      "size_bytes": 2351316992,
+      "sha256": "bdfba5df0bd72cffdb398fe885d9e36d052617647c0ae4fd0579a8fc785c95ba",
+      "volume_label": "X16-81637VS2010PROMSDN",
+      "required_features": [
+        "Visual C++",
+        "X64 Compilers and Tools"
+      ],
+      "official_acquisition_url": "https://my.visualstudio.com/Downloads?q=Visual%20Studio%202010%20Professional",
+      "archival_reference_url": "https://archive.org/details/en_visual_studio_2010_professional_x86_dvd_509727",
+      "license_note": "Proprietary Microsoft software. Each contributor must acquire and use it under an applicable Microsoft license."
+    },
+    {
+      "id": "vs2010-sp1-multilanguage",
+      "product": "Microsoft Visual Studio 2010 Service Pack 1 (KB983509)",
+      "filename": "mu_visual_studio_2010_sp1_x86_dvd_651704.iso",
+      "size_bytes": 1592336384,
+      "sha256": "fce24f0e3f95fdeb54b806be3266f3b61a1e6b5b78c7e6c13c36fc1a6f5ba0ad",
+      "volume_label": "VS2010SP1DVD",
+      "expected_compiler_version": "16.00.40219.01",
+      "official_acquisition_url": "https://my.visualstudio.com/Downloads?q=Visual%20Studio%202010%20Service%20Pack%201",
+      "official_release_notes_url": "https://learn.microsoft.com/en-us/visualstudio/releases/2010/vs2010-sp1-vs",
+      "archival_reference_url": "https://archive.org/details/mu_visual_studio_2010_sp1_x86_dvd_651704",
+      "license_note": "Microsoft update media. The project verifies contributor-supplied media but does not mirror it."
+    }
+  ]
+}

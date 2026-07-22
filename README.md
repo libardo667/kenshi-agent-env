@@ -173,9 +173,12 @@ hunger, wound detail, inventory grids, modals, dialogue, context menus, current
 tasks, nearby entities, and faction interpretation remain work items.
 
 Build instructions and the manual verification sequence are in
-`native/KenshiAgentTelemetry/README.md`. The full coding-agent brief explains how
-to expand telemetry one field at a time without turning reverse-engineered
-assumptions into a fragile world dump.
+[the native plugin README](native/KenshiAgentTelemetry/README.md). Contributors
+provisioning the legacy Windows compiler and pinned dependency bundle should
+start with the [Windows native setup guide](docs/WINDOWS_NATIVE_SETUP.md); exact
+media identities are recorded without redistributing proprietary installers.
+The full coding-agent brief explains how to expand telemetry one field at a time
+without turning reverse-engineered assumptions into a fragile world dump.
 
 ## Telemetry design
 
