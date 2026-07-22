@@ -36,9 +36,31 @@ if (Test-Path $vswhere) {
     Add-Check "MSBuild" (-not [string]::IsNullOrWhiteSpace($msbuild)) $msbuild
     $modernCompiler = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find VC\Tools\MSVC\**\bin\Hostx64\x64\cl.exe | Select-Object -First 1
     Add-Check "Visual C++ x64 tools" (-not [string]::IsNullOrWhiteSpace($modernCompiler)) $modernCompiler
-    $v100 = & $vswhere -all -products * -find MSBuild\Microsoft.Cpp\v4.0\Platforms\x64\PlatformToolsets\v100\Toolset.targets | Select-Object -First 1
-    Add-Check "v100 x64 toolset" (-not [string]::IsNullOrWhiteSpace($v100)) $v100
 }
+
+# VS2010 predates vswhere and uses Microsoft.Cpp.x64.v100.* rather than the
+# Toolset.targets filename used by newer platform toolsets. Detect the legacy
+# compiler and MSBuild integration at their registered/default locations.
+$vc100ProductDir = Get-ItemPropertyValue `
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\10.0\Setup\VC" `
+    -Name ProductDir `
+    -ErrorAction SilentlyContinue
+if ([string]::IsNullOrWhiteSpace($vc100ProductDir)) {
+    $vc100ProductDir = "${env:ProgramFiles(x86)}\Microsoft Visual Studio 10.0\VC\"
+}
+
+$v100CompilerCandidates = @(
+    (Join-Path $vc100ProductDir "bin\amd64\cl.exe"),
+    (Join-Path $vc100ProductDir "bin\x86_amd64\cl.exe")
+)
+$v100Compiler = $v100CompilerCandidates | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+Add-Check "v100 x64 compiler" (-not [string]::IsNullOrWhiteSpace($v100Compiler)) $v100Compiler
+
+$v100TargetsDir = "${env:ProgramFiles(x86)}\MSBuild\Microsoft.Cpp\v4.0\Platforms\x64\PlatformToolsets\v100"
+$v100Props = Join-Path $v100TargetsDir "Microsoft.Cpp.x64.v100.props"
+$v100Targets = Join-Path $v100TargetsDir "Microsoft.Cpp.x64.v100.targets"
+$v100MsBuildInstalled = (Test-Path $v100Props -PathType Leaf) -and (Test-Path $v100Targets -PathType Leaf)
+Add-Check "v100 x64 MSBuild" $v100MsBuildInstalled $v100TargetsDir
 
 $checks | ForEach-Object {
     $state = if ($_.Passed) { "PASS" } else { "FAIL" }
