@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated, Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator
 
@@ -206,13 +206,31 @@ class ClickAction(StrictModel):
     interval_seconds: float = Field(default=0.08, ge=0.0, le=1.0)
 
 
+SkillArgumentValue: TypeAlias = str | int | float | bool | None
+
+
+class SkillArgument(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+    value: SkillArgumentValue
+
+
 class SkillAction(StrictModel):
     kind: Literal["skill"] = "skill"
     name: str = Field(min_length=1, max_length=80)
-    args: dict[str, JsonValue] = Field(default_factory=dict)
+    args: list[SkillArgument] = Field(default_factory=list, max_length=20)
+
+    @field_validator("args", mode="before")
+    @classmethod
+    def accept_argument_mapping(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return [{"name": name, "value": argument} for name, argument in value.items()]
+        return value
+
+    def argument_map(self) -> dict[str, SkillArgumentValue]:
+        return {argument.name: argument.value for argument in self.args}
 
 
-Action: TypeAlias = Annotated[
+Action: TypeAlias = (
     NoopAction
     | StopAction
     | PauseAction
@@ -222,9 +240,8 @@ Action: TypeAlias = Annotated[
     | HotkeyAction
     | MoveCursorAction
     | ClickAction
-    | SkillAction,
-    Field(discriminator="kind"),
-]
+    | SkillAction
+)
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
 

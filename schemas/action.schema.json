@@ -88,7 +88,6 @@
       "title": "HotkeyAction",
       "type": "object"
     },
-    "JsonValue": {},
     "KeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -233,17 +232,55 @@
           "type": "string"
         },
         "args": {
-          "additionalProperties": {
-            "$ref": "#/$defs/JsonValue"
+          "items": {
+            "$ref": "#/$defs/SkillArgument"
           },
+          "maxItems": 20,
           "title": "Args",
-          "type": "object"
+          "type": "array"
         }
       },
       "required": [
         "name"
       ],
       "title": "SkillAction",
+      "type": "object"
+    },
+    "SkillArgument": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "SkillArgument",
       "type": "object"
     },
     "StopAction": {
@@ -289,22 +326,7 @@
       "type": "object"
     }
   },
-  "discriminator": {
-    "mapping": {
-      "click": "#/$defs/ClickAction",
-      "hotkey": "#/$defs/HotkeyAction",
-      "key": "#/$defs/KeyAction",
-      "move_cursor": "#/$defs/MoveCursorAction",
-      "noop": "#/$defs/NoopAction",
-      "pause": "#/$defs/PauseAction",
-      "set_speed": "#/$defs/SetSpeedAction",
-      "skill": "#/$defs/SkillAction",
-      "stop": "#/$defs/StopAction",
-      "wait": "#/$defs/WaitAction"
-    },
-    "propertyName": "kind"
-  },
-  "oneOf": [
+  "anyOf": [
     {
       "$ref": "#/$defs/NoopAction"
     },

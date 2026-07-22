@@ -34,7 +34,8 @@ class MacroRegistry:
             macro = self._macros[action.name]
         except KeyError as exc:
             raise UnknownSkillError(action.name) from exc
-        rendered = [self._render(deepcopy(item), action.args) for item in macro.actions]
+        arguments = action.argument_map()
+        rendered = [self._render(deepcopy(item), arguments) for item in macro.actions]
         actions = [parse_action(item) for item in rendered]
         if any(isinstance(item, SkillAction) for item in actions):
             raise ValueError("Macros may not recursively invoke other skills.")
