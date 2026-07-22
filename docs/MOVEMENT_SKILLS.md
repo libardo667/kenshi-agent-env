@@ -108,3 +108,11 @@ decisions. Terra selected 14 fine pulses, two coarse map pulses, 12 camera
 recenters, and two map opens. All 31 observations reported `paused: true`; no
 action was rejected and no environment error occurred. Lekko's net displacement
 was about 969 world units while remaining in The Hub area.
+
+Run `20260722T210911.740414Z` validated planner-selected duration and polite
+input leasing. Luna supplied `duration_seconds: 0.75` for a fine movement target;
+the guard accepted it inside the configured 0.35–3.0-second range, and the
+executor returned paused. The four-turn run completed with four executed
+actions, no stale observations, rejections, or environment errors, and paused
+final telemetry. Separate native probes confirmed exact foreground/cursor
+restoration and preservation of a simulated human pointer handoff.
