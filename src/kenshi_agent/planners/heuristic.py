@@ -40,7 +40,9 @@ class HeuristicPlanner(Planner):
                 action=StopAction(reason="No squad members observed."),
                 confidence=0.95,
             )
-        selected = next((member for member in telemetry.squad if member.selected), telemetry.squad[0])
+        selected = next(
+            (member for member in telemetry.squad if member.selected), telemetry.squad[0]
+        )
         hostile = next(
             (
                 entity
@@ -55,11 +57,16 @@ class HeuristicPlanner(Planner):
                 rationale=f"{hostile.name} is visibly hostile and nearby.",
                 action=SkillAction(name="seek_safety"),
                 confidence=0.9,
-                expected_observation="The hostile should disappear and location should become The Hub.",
+                expected_observation=(
+                    "The hostile should disappear and location should become The Hub."
+                ),
                 memory_writes=[
                     MemoryWrite(
                         kind=MemoryKind.EPISODE,
-                        content=f"Encountered {hostile.name} near {telemetry.game.location_name or 'an unknown place'}.",
+                        content=(
+                            f"Encountered {hostile.name} near "
+                            f"{telemetry.game.location_name or 'an unknown place'}."
+                        ),
                         salience=0.55,
                         evidence="Visible hostile in telemetry.",
                     )
@@ -112,7 +119,9 @@ class HeuristicPlanner(Planner):
         if telemetry.game.speed_multiplier is not None and telemetry.game.speed_multiplier < 3:
             return PlannerDecision(
                 intent="Advance a low-risk routine efficiently.",
-                rationale="The situation is stable and the baseline benchmark benefits from faster time.",
+                rationale=(
+                    "The situation is stable and the baseline benchmark benefits from faster time."
+                ),
                 action=SetSpeedAction(speed=3),
                 confidence=0.8,
             )

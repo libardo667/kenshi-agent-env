@@ -61,7 +61,7 @@ class OpenAIPlanner(Planner):
             if not response.output_text:
                 raise RuntimeError("OpenAI response contained neither parsed output nor text.")
             parsed = PlannerDecision.model_validate_json(response.output_text)
-        return parsed
+        return PlannerDecision.model_validate(parsed)
 
     @staticmethod
     def _data_url(path: Path) -> str:

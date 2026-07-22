@@ -10,7 +10,6 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .models import Action, parse_action
 
-
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
 
 

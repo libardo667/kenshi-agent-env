@@ -24,7 +24,9 @@ class ScriptedPlanner(Planner):
                 try:
                     decisions.append(PlannerDecision.model_validate(json.loads(stripped)))
                 except Exception as exc:
-                    raise ValueError(f"Invalid scripted decision at {path}:{line_number}: {exc}") from exc
+                    raise ValueError(
+                        f"Invalid scripted decision at {path}:{line_number}: {exc}"
+                    ) from exc
         return decisions
 
     async def decide(self, observation: Observation) -> PlannerDecision:

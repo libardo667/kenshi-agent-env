@@ -25,7 +25,9 @@ class ReflexEngine:
                 )
             return PlannerDecision(
                 intent="Do not act on stale state.",
-                rationale="Telemetry is stale; continuing could turn interface error into game loss.",
+                rationale=(
+                    "Telemetry is stale; continuing could turn interface error into game loss."
+                ),
                 action=StopAction(reason="Telemetry remained stale."),
                 confidence=0.99,
             )
@@ -48,7 +50,11 @@ class ReflexEngine:
         )
         catastrophic_body_state = any(member.getting_eaten is True for member in squad)
         if (immediate_threat or catastrophic_body_state) and telemetry.game.paused is False:
-            reason = "A visible hostile is close." if immediate_threat else "A squad member is being eaten."
+            reason = (
+                "A visible hostile is close."
+                if immediate_threat
+                else "A squad member is being eaten."
+            )
             return PlannerDecision(
                 intent="Pause for emergency reassessment.",
                 rationale=reason,

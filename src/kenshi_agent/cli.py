@@ -2,20 +2,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from dataclasses import asdict
 import json
 import os
 import platform
 import sys
+from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import AppConfig, load_config
 from .control import Win32InputController
-from .env import LiveEnvironment, MockEnvironment, ReplayEnvironment
+from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
 from .memory import MemoryStore
 from .planners import HeuristicPlanner, OpenAIPlanner, ScriptedPlanner, SubprocessPlanner
+from .planners.base import Planner
 from .reflexes import ReflexEngine
 from .runtime import AgentRuntime
 from .safety import ActionGuard
@@ -30,7 +31,7 @@ def _new_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
 
 
-def _build_planner(config: AppConfig, args: argparse.Namespace):
+def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
     kind = args.planner or config.planner.kind
     if kind == "heuristic":
         return HeuristicPlanner()
@@ -54,7 +55,7 @@ def _build_environment(
     run_id: str,
     run_dir: Path,
     macros: MacroRegistry,
-):
+) -> AgentEnvironment:
     mode = args.mode or config.mode
     if mode == "mock":
         return MockEnvironment(config.mock, run_dir / "frames", run_id)
@@ -173,7 +174,8 @@ def _doctor(args: argparse.Namespace) -> int:
                     (
                         "telemetry_parse",
                         True,
-                        f"protocol={read.snapshot.protocol_version} age={read.age_seconds:.2f}s stale={read.stale}",
+                        f"protocol={read.snapshot.protocol_version} "
+                        f"age={read.age_seconds:.2f}s stale={read.stale}",
                     )
                 )
             except Exception as exc:
