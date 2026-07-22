@@ -57,9 +57,13 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}
     assert set(config.safety.allow_skills) == {
         "open_map",
+        "zoom_map_in",
+        "zoom_map_out",
         "open_inventory",
         "focus_selected",
         "close_overlay",
+        "zoom_world_in",
+        "zoom_world_out",
         "move_visible_terrain",
         "move_on_map",
         "interact_visible_person",
@@ -88,6 +92,16 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert focus_actions[0].kind == "click"
     assert focus_actions[0].clicks == 2
     assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
+    zoom_in = config.macros["zoom_map_in"].parsed_actions()[0]
+    assert zoom_in.kind == "scroll"
+    assert zoom_in.x == 0.534
+    assert zoom_in.y == 0.505
+    assert zoom_in.notches == 1
+    world_zoom_out = config.macros["zoom_world_out"].parsed_actions()[0]
+    assert world_zoom_out.kind == "scroll"
+    assert world_zoom_out.x == 0.503
+    assert world_zoom_out.y == 0.523
+    assert world_zoom_out.notches == -1
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:

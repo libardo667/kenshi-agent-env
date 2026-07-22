@@ -35,6 +35,24 @@ left that valid view unchanged. Earlier keyboard probing showed that repeated
 `1` selected Lekko but did not move the camera, so it is not used as the recovery
 gesture.
 
+Map zoom remains split into named, bounded skills that issue one wheel notch at
+a small demonstrated map-canvas target. Raw scroll remains unavailable to the
+planner. A live user gesture recorded zoom-in as delta `+120` at normalized
+`(0.534, 0.505)`; this point sits below the town-information hover card that
+intercepted an earlier probe. Wheel-down was also proved to change the map scale.
+
+Even at maximum zoom, Kenshi's map remains a coarse regional view. It can confirm
+The Hub and support settlement-scale travel, but it cannot identify the bar or
+another individual business. Procurement must switch to a 3D-town survey after
+arrival instead of spending turns reopening or zooming the map.
+
+Local search also needs recoverable 3D framing. `zoom_world_out` and
+`zoom_world_in` expose one wheel notch at a demonstrated central viewport target
+only while the normal world HUD is visible. A live user gesture recorded
+world-camera zoom-out as delta `-120` at normalized `(0.503, 0.523)`. The planner
+should zoom out of clipped building geometry one observed step at a time before
+it attempts grounded movement or person interaction.
+
 ## Purchase policy
 
 Before enabling a purchase action, the safety layer must enforce all of these:

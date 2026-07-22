@@ -9,6 +9,7 @@ from kenshi_agent.control.win32 import (
     normalize_virtual_desktop_point,
     resolve_screen_point,
     select_unique_window,
+    wheel_delta_data,
 )
 from kenshi_agent.models import CoordinateSpace
 
@@ -66,6 +67,11 @@ def test_virtual_desktop_normalization_supports_negative_origin() -> None:
 def test_invalid_virtual_desktop_is_rejected() -> None:
     with pytest.raises(ValueError):
         normalize_virtual_desktop_point(0, 0, left=0, top=0, width=1, height=1080)
+
+
+def test_wheel_delta_data_encodes_both_directions() -> None:
+    assert wheel_delta_data(1) == 120
+    assert wheel_delta_data(-1) == 0xFFFFFF88
 
 
 def test_window_target_must_be_unique() -> None:

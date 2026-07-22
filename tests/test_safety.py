@@ -9,6 +9,7 @@ from kenshi_agent.models import (
     MoveCursorAction,
     Observation,
     PauseAction,
+    ScrollAction,
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
@@ -31,6 +32,7 @@ def safety_config() -> SafetyConfig:
             "hotkey",
             "click",
             "move_cursor",
+            "scroll",
             "skill",
         ],
         allow_skills=["open_map"],
@@ -57,6 +59,19 @@ def test_stale_live_click_is_blocked() -> None:
     )
     with pytest.raises(SafetyViolation):
         guard.validate(ClickAction(x=0.5, y=0.5), observation)
+
+
+def test_stale_live_scroll_is_blocked() -> None:
+    guard = ActionGuard(safety_config(), MacroRegistry({}))
+    observation = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(),
+        telemetry_stale=True,
+    )
+    with pytest.raises(SafetyViolation, match="telemetry is stale"):
+        guard.validate(ScrollAction(x=0.5, y=0.5, notches=1), observation)
 
 
 def test_live_screen_space_pointer_action_is_blocked() -> None:

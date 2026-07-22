@@ -1,0 +1,1 @@
+{"intent":"Test whether the current map is already at maximum zoom.","rationale":"A single bounded zoom-out step should change the map if wheel input is working and the prior zoom-in was capped.","action":{"kind":"skill","name":"zoom_map_out","args":{}},"confidence":1.0,"memory_writes":[]}

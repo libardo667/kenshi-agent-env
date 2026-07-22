@@ -1,0 +1,1 @@
+{"intent":"Increase local detail around The Hub.","rationale":"The map is visibly open and its current scale is too coarse to identify a useful local route.","action":{"kind":"skill","name":"zoom_map_in","args":{}},"confidence":1.0,"memory_writes":[]}

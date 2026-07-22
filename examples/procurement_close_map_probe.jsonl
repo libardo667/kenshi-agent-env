@@ -1,0 +1,1 @@
+{"intent":"Return to the 3D town view for local trader search.","rationale":"The open map has confirmed The Hub but cannot resolve individual businesses even at maximum zoom.","action":{"kind":"skill","name":"close_overlay","args":{}},"confidence":1.0,"memory_writes":[]}

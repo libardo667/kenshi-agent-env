@@ -18,6 +18,7 @@ from ..models import (
     KeyAction,
     MouseButton,
     MoveCursorAction,
+    ScrollAction,
 )
 from .base import InputController, PrimitiveInputAction, WindowRect
 
@@ -76,6 +77,11 @@ def normalize_virtual_desktop_point(
     return normalized_x, normalized_y
 
 
+def wheel_delta_data(notches: int) -> int:
+    """Encode signed Win32 wheel notches in MOUSEINPUT's unsigned DWORD."""
+    return ctypes.c_uint32(notches * 120).value
+
+
 if os.name == "nt":
     ULONG_PTR = wintypes.WPARAM
 
@@ -129,6 +135,7 @@ class Win32InputController(InputController):
     MOUSEEVENTF_RIGHTUP = 0x0010
     MOUSEEVENTF_MIDDLEDOWN = 0x0020
     MOUSEEVENTF_MIDDLEUP = 0x0040
+    MOUSEEVENTF_WHEEL = 0x0800
     MOUSEEVENTF_VIRTUALDESK = 0x4000
     MOUSEEVENTF_ABSOLUTE = 0x8000
     SW_RESTORE = 9
@@ -533,10 +540,17 @@ class Win32InputController(InputController):
             ),
         )
 
-    def _mouse_input(self, x: int, y: int, flags: int) -> Any:
+    def _mouse_input(self, x: int, y: int, flags: int, *, mouse_data: int = 0) -> Any:
         return INPUT(
             type=self.INPUT_MOUSE,
-            mi=MOUSEINPUT(dx=x, dy=y, mouseData=0, dwFlags=flags, time=0, dwExtraInfo=0),
+            mi=MOUSEINPUT(
+                dx=x,
+                dy=y,
+                mouseData=mouse_data,
+                dwFlags=flags,
+                time=0,
+                dwExtraInfo=0,
+            ),
         )
 
     def _screen_point(self, x: float, y: float, space: CoordinateSpace) -> tuple[int, int]:
@@ -645,6 +659,28 @@ class Win32InputController(InputController):
                 if click_index + 1 < action.clicks and action.interval_seconds:
                     await asyncio.sleep(action.interval_seconds)
             primitive_count = action.clicks * 2 + 1
+        elif isinstance(action, ScrollAction):
+            screen_x, screen_y = self._screen_point(action.x, action.y, action.space)
+            absolute_x, absolute_y = self._absolute_virtual_coordinates(screen_x, screen_y)
+            wheel_data = wheel_delta_data(action.notches)
+            self._send(
+                [
+                    self._mouse_input(
+                        absolute_x,
+                        absolute_y,
+                        self.MOUSEEVENTF_MOVE
+                        | self.MOUSEEVENTF_ABSOLUTE
+                        | self.MOUSEEVENTF_VIRTUALDESK,
+                    ),
+                    self._mouse_input(
+                        0,
+                        0,
+                        self.MOUSEEVENTF_WHEEL,
+                        mouse_data=wheel_data,
+                    ),
+                ]
+            )
+            primitive_count = 2
         else:
             raise TypeError(f"Unsupported primitive input action: {type(action).__name__}")
 

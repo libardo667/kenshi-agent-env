@@ -74,9 +74,13 @@ safety:
     - skill
   allow_skills:
     - open_map
+    - zoom_map_in
+    - zoom_map_out
     - open_inventory
     - focus_selected
     - close_overlay
+    - zoom_world_in
+    - zoom_world_out
     - move_visible_terrain
     - move_on_map
     - interact_visible_person
@@ -98,6 +102,34 @@ macros:
     actions:
       - kind: key
         key: m
+  zoom_map_in:
+    description: Zoom the open map in one bounded wheel step at the demonstrated safe canvas point.
+    visual_precondition: The map is visibly open and the target below its town-information card is unobstructed.
+    normalized_pointer_bounds:
+      min_x: 0.51
+      max_x: 0.56
+      min_y: 0.49
+      max_y: 0.53
+    actions:
+      - kind: scroll
+        x: 0.534
+        y: 0.505
+        space: normalized
+        notches: 1
+  zoom_map_out:
+    description: Zoom the open map out one bounded wheel step at the demonstrated safe canvas point.
+    visual_precondition: The map is visibly open and the target below its town-information card is unobstructed.
+    normalized_pointer_bounds:
+      min_x: 0.51
+      max_x: 0.56
+      min_y: 0.49
+      max_y: 0.53
+    actions:
+      - kind: scroll
+        x: 0.534
+        y: 0.505
+        space: normalized
+        notches: -1
   open_inventory:
     description: Open or close inventory.
     actions:
@@ -123,6 +155,34 @@ macros:
     actions:
       - kind: key
         key: escape
+  zoom_world_in:
+    description: Zoom the 3D world camera in one bounded wheel step at the demonstrated central viewport point.
+    visual_precondition: The normal 3D world HUD is visible with no map, dialogue, trade window, or other modal overlay.
+    normalized_pointer_bounds:
+      min_x: 0.45
+      max_x: 0.56
+      min_y: 0.48
+      max_y: 0.58
+    actions:
+      - kind: scroll
+        x: 0.503
+        y: 0.523
+        space: normalized
+        notches: 1
+  zoom_world_out:
+    description: Zoom the 3D world camera out one bounded wheel step to escape clipped geometry or widen the survey view.
+    visual_precondition: The normal 3D world HUD is visible with no map, dialogue, trade window, or other modal overlay.
+    normalized_pointer_bounds:
+      min_x: 0.45
+      max_x: 0.56
+      min_y: 0.48
+      max_y: 0.58
+    actions:
+      - kind: scroll
+        x: 0.503
+        y: 0.523
+        space: normalized
+        notches: -1
   move_visible_terrain:
     description: Fine movement by right-clicking nearby visible terrain, advancing briefly, and returning paused.
     arguments:

@@ -40,9 +40,19 @@ Control rules:
   point within the visible map canvas, away from tabs, scrollbars, and markers
   unless a marker is deliberately the destination. The skill closes the map
   before its movement pulse.
+- Treat the map as regional orientation, not a source of building or business
+  detail. Once The Hub is confirmed, return to the 3D world to find a trader;
+  the map remains coarse even at maximum zoom. Use `zoom_map_in` for one bounded
+  wheel step and `zoom_map_out` only to recover lost regional context.
+  Never close and reopen an unchanged map repeatedly; zoom it, act on grounded
+  information, or return to world-view movement.
 - Use `interact_visible_person` only on a clearly non-hostile person whose body
   and talk/shop role are visually grounded. Direct right-click talks to allies
   but can attack enemies; if identity or disposition is ambiguous, do not click.
+- If the 3D camera is clipped into building geometry, use `zoom_world_out`
+  one notch at a time before movement or interaction. Use `zoom_world_in` only
+  when the world view is clear and a closer view materially improves target
+  identification.
 - Pause before deliberation during imminent danger, modal ambiguity, combat,
   eating, kidnapping, or rapidly deteriorating injury.
 - Avoid blind clicks. A click must be grounded in a visible target or a

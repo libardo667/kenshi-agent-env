@@ -203,9 +203,9 @@ vision planner. The dry-run command deliberately omits the second live-action
 gate, so proposed actions are logged but not sent to Kenshi.
 
 For the active burn-in, use the dedicated profile. It enables live input but
-allows only pause, wait, map, inventory, close-overlay, focus-selected, and two
-bounded movement skills. Raw keys and clicks, combat, purchasing, and save
-operations remain blocked:
+allows only pause, wait, map, calibrated map zoom, inventory, close-overlay,
+focus-selected, and bounded movement/person-interaction skills. Raw keys and
+clicks, combat, purchasing, and save operations remain blocked:
 
 ```powershell
 kenshi-agent run `
