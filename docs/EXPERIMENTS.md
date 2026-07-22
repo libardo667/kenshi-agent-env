@@ -27,6 +27,12 @@ Start with repeatable, bounded tasks. "Play Kenshi" is not an evaluable task.
 Keep model, prompt, save, UI resolution, and action budget fixed within each
 comparison.
 
+For hosted-model comparisons, also record provider, model identifier, reasoning
+effort, screenshot detail, and OpenRouter routing preference. New JSONL logs
+store per-turn planner latency; `kenshi-agent summarize RUN_LOG` reports mean,
+median, and p95 latency. Compare action quality from the same paused save rather
+than choosing solely by speed.
+
 ## Minimum metrics
 
 - task success and survival time;

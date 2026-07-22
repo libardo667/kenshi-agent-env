@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Added lower-latency GPT-5.6 Luna defaults with configurable reasoning effort.
+- Added an OpenRouter vision planner with structured outputs, image input, and
+  latency/throughput/price provider routing.
+- Added planner latency metrics, a flushed terminal decision stream, and a
+  translucent always-on-top Windows decision viewer.
+
 ## 0.1.0 — scaffold
 
 - Added a deterministic mock agent environment and one-day survival baseline.

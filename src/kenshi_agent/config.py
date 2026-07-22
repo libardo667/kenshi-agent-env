@@ -29,16 +29,25 @@ class RuntimeConfig(ConfigModel):
     observation_memory_limit: int = Field(default=12, ge=0, le=100)
     stop_when_terminated: bool = True
     objective: str | None = Field(default=None, max_length=1000)
+    decision_stream: bool = False
 
 
 class PlannerConfig(ConfigModel):
-    kind: Literal["heuristic", "scripted", "subprocess", "openai"] = "heuristic"
-    model: str = "gpt-5.6-terra"
+    kind: Literal["heuristic", "scripted", "subprocess", "openai", "openrouter"] = (
+        "heuristic"
+    )
+    model: str = "gpt-5.6-luna"
+    reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = (
+        "low"
+    )
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
     include_screenshot: bool = True
     screenshot_detail: Literal["low", "high", "auto"] = "high"
     max_observation_chars: int = Field(default=24000, ge=1000, le=200000)
+    openrouter_model: str = "openai/gpt-5.6-luna"
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_provider_sort: Literal["latency", "throughput", "price"] = "latency"
 
 
 class MockConfig(ConfigModel):

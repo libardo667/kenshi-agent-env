@@ -10,7 +10,9 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("KENSHI_AGENT_MODEL", raising=False)
     config = load_config(root / "config" / "default.yaml")
     assert config.mode == "mock"
-    assert config.planner.model == "gpt-5.6-terra"
+    assert config.planner.model == "gpt-5.6-luna"
+    assert config.planner.reasoning_effort == "low"
+    assert config.planner.openrouter_model == "openai/gpt-5.6-luna"
     assert config.paths.runs_dir == (root / "runs").resolve()
     assert config.paths.prompt_file.exists()
     assert config.telemetry.file == (root / "examples" / "telemetry.latest.json").resolve()
@@ -62,6 +64,8 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "move_on_map",
     }
     assert config.runtime.max_steps == 30
+    assert config.planner.model == "gpt-5.6-luna"
+    assert config.planner.openrouter_provider_sort == "latency"
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
     assert not config.safety.allow_live_unpause_actions

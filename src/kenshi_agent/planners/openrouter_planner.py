@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import mimetypes
+import os
 from pathlib import Path
 from typing import Any
 
@@ -11,25 +12,28 @@ from ..models import Observation, PlannerDecision
 from .base import Planner
 
 
-class OpenAIPlanner(Planner):
-    """Optional vision planner using the OpenAI Responses API and Pydantic output."""
+class OpenRouterPlanner(Planner):
+    """Vision planner using OpenRouter's OpenAI-compatible Chat API."""
 
     def __init__(self, config: PlannerConfig, prompt_file: Path) -> None:
         try:
             from openai import AsyncOpenAI
         except ImportError as exc:
             raise RuntimeError(
-                "The OpenAI planner requires the optional dependency: "
+                "The OpenRouter planner requires the optional dependency: "
                 "pip install -e '.[openai]'"
             ) from exc
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENROUTER_API_KEY is required for the OpenRouter planner.")
         self.config = config
         self.instructions = prompt_file.read_text(encoding="utf-8")
-        self.client: Any = AsyncOpenAI()
+        self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
 
     async def decide(self, observation: Observation) -> PlannerDecision:
         content: list[dict[str, Any]] = [
             {
-                "type": "input_text",
+                "type": "text",
                 "text": (
                     "Choose exactly one next action from this observation. "
                     "Return the PlannerDecision schema only.\n\n"
@@ -44,24 +48,39 @@ class OpenAIPlanner(Planner):
         ):
             content.append(
                 {
-                    "type": "input_image",
-                    "image_url": self._data_url(observation.screenshot_path),
-                    "detail": self.config.screenshot_detail,
+                    "type": "image_url",
+                    "image_url": {
+                        "url": self._data_url(observation.screenshot_path),
+                        "detail": self.config.screenshot_detail,
+                    },
                 }
             )
+
         async with asyncio.timeout(self.config.timeout_seconds):
-            response = await self.client.responses.parse(
-                model=self.config.model,
-                instructions=self.instructions,
-                input=[{"role": "user", "content": content}],
-                text_format=PlannerDecision,
-                reasoning={"effort": self.config.reasoning_effort},
+            response = await self.client.chat.completions.parse(
+                model=self.config.openrouter_model,
+                messages=[
+                    {"role": "system", "content": self.instructions},
+                    {"role": "user", "content": content},
+                ],
+                response_format=PlannerDecision,
+                reasoning_effort=self.config.reasoning_effort,
+                extra_body={
+                    "provider": {
+                        "sort": self.config.openrouter_provider_sort,
+                        "require_parameters": True,
+                    }
+                },
             )
-        parsed = response.output_parsed
+
+        message = response.choices[0].message
+        parsed = message.parsed
         if parsed is None:
-            if not response.output_text:
-                raise RuntimeError("OpenAI response contained neither parsed output nor text.")
-            parsed = PlannerDecision.model_validate_json(response.output_text)
+            if not message.content:
+                raise RuntimeError(
+                    "OpenRouter response contained neither parsed output nor text."
+                )
+            parsed = PlannerDecision.model_validate_json(message.content)
         return PlannerDecision.model_validate(parsed)
 
     @staticmethod

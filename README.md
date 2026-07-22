@@ -114,7 +114,7 @@ kenshi-agent run `
 
 See `docs/EXTERNAL_PLANNER_PROTOCOL.md`.
 
-### OpenAI vision planner
+### Hosted vision planners
 
 Create an API key in the [OpenAI dashboard](https://platform.openai.com/api-keys),
 copy the ignored environment template, add the key locally, and install the
@@ -133,12 +133,40 @@ Copy-Item .env.example .env
 The CLI loads only `.env` in its current working directory. Existing process
 environment variables take precedence, and key values are never printed by the
 doctor. The PowerShell entrypoints set the working directory to the repo root.
-The default planner model is `gpt-5.6-terra`, chosen as the balance tier for
-vision-driven gameplay. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
+The active profile defaults to `gpt-5.6-luna` with low reasoning effort. Luna
+keeps image input and structured decisions while targeting lower latency and
+cost than Terra. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
+
+OpenRouter is also supported through its OpenAI-compatible Chat API. Add
+`OPENROUTER_API_KEY` to `.env`, select `--planner openrouter`, and optionally set
+`KENSHI_AGENT_OPENROUTER_MODEL`. The default is `openai/gpt-5.6-luna`; provider
+routing is sorted by latency and requires structured-output support.
 
 The planner receives a bounded JSON observation and, when enabled, a base64 image
 of the current frame. It returns a validated `PlannerDecision`; it does not call
 input APIs itself.
+
+### Live decision overlay
+
+The active profile prints a human-readable stream for every turn: planning
+latency, intent, concise rationale, action, confidence, and execution result.
+It also records planner latency in `events.jsonl`, and `kenshi-agent summarize`
+reports mean, median, and p95 latency for new runs.
+
+On Windows, the overlay launcher puts the same feed in a translucent,
+always-on-top window over the game:
+
+```powershell
+.\scripts\run_live_overlay.ps1 `
+  -Planner openai `
+  -Steps 30 `
+  -ExecuteLiveActions
+```
+
+Use `-Planner openrouter` after adding `OPENROUTER_API_KEY`. The viewer is an
+external read-only process that follows the append-only run log; it never calls
+Kenshi UI code or input APIs. It stays open for 30 seconds after a run by
+default, and can be closed normally at any time.
 
 ## Moving toward live Kenshi
 
@@ -181,7 +209,8 @@ kenshi-agent run `
   --execute-live-actions
 ```
 
-The active profile defaults to 30 planner decisions. Fine and coarse movement
+The active profile defaults to 30 planner decisions and the lower-latency Luna
+planner. Fine and coarse movement
 run as executor-controlled pulses: choose the destination while paused, advance
 for 0.75 or 2.0 seconds respectively, then require fresh telemetry confirming
 the game is paused again before another model call. Direct model-selected

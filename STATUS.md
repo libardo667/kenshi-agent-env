@@ -6,7 +6,7 @@
   and close.
 - Strict Pydantic schemas for telemetry, observations, decisions, actions,
   receipts, and memories.
-- Heuristic, scripted, subprocess, and optional OpenAI vision planners.
+- Heuristic, scripted, subprocess, OpenAI Responses, and OpenRouter vision planners.
 - JSONL event logs, SQLite memory, replay summaries, schema export, and tests.
 - Windows client-area capture and SendInput controller behind two independent
   live-execution gates.
@@ -24,9 +24,12 @@
 - Windows live dry-run validation: a bounded heuristic episode captured five
   isolated 1920x1080 Kenshi frames, paired them with fresh telemetry, logged
   four proposed actions, and withheld every input action at the safety gate.
-- OpenAI structured-output live planning with `gpt-5.6-terra`, plus an active
-  burn-in profile that limits execution to audited pause, overlay, map,
-  inventory, and focus skills.
+- Structured-output live planning with lower-latency `gpt-5.6-luna` and optional
+  OpenRouter latency routing, plus an active burn-in profile that limits
+  execution to audited pause, overlay, map, inventory, focus, and movement skills.
+- A flushed terminal decision stream and translucent always-on-top Windows
+  viewer showing intent, concise rationale, action, confidence, planner latency,
+  and execution result as the run unfolds.
 - Foreground-safe, per-monitor-DPI-aware capture and scan-code keyboard input;
   a live pause probe changed plugin telemetry and restored the original state.
 - Distinct fine-world and coarse-map movement skills with planner-visible
@@ -47,7 +50,8 @@
 - Safety-critical getting-eaten state; the raw KenshiLib byte produced a false
   positive on a healthy new character and is intentionally omitted.
 - Repeated focus, client-coordinate, key-binding, and UI-scale calibration.
-- Broader OpenAI vision-planner behavior beyond the safe overlay burn-in.
+- Broader hosted vision-planner behavior beyond the safe movement burn-in.
+- Comparative Luna/OpenRouter latency and action-quality trials from a fixed save.
 - Repeated click-drift testing across resolutions, window modes, and UI scales.
 
 ## Deliberately not implemented
