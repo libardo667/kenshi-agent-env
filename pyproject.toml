@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=75", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kenshi-agent-env"
+version = "0.1.0"
+description = "A safety-first, agentic environment scaffold for controlling Kenshi through telemetry, vision, and ordinary Windows input."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+authors = [{ name = "Kenshi Agent Environment contributors" }]
+dependencies = [
+  "pydantic>=2.7,<3",
+  "PyYAML>=6,<7",
+  "Pillow>=10,<13",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=2.0,<3"]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.9,<1",
+  "mypy>=1.14,<2",
+]
+
+[project.scripts]
+kenshi-agent = "kenshi_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unused_ignores = true

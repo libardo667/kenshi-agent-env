@@ -1,0 +1,108 @@
+version: 1
+mode: mock
+
+paths:
+  runs_dir: ../runs
+  prompt_file: ../prompts/planner_system.md
+  memory_db: ../runs/memory.sqlite3
+
+runtime:
+  max_steps: 32
+  settle_seconds: 0.15
+  observation_memory_limit: 12
+  stop_when_terminated: true
+
+planner:
+  kind: heuristic
+  model: ${KENSHI_AGENT_MODEL:-gpt-5.5}
+  temperature: 0.2
+  timeout_seconds: 90
+  include_screenshot: true
+  screenshot_detail: high
+  max_observation_chars: 24000
+
+mock:
+  seed: 7
+  start_location: The Hub
+  start_cats: 180
+  start_hunger: 250.0
+  start_food_items: 1
+  start_first_aid_kits: 1
+  minutes_per_wait_second: 1.0
+  random_events: true
+
+telemetry:
+  file: ${KENSHI_AGENT_TELEMETRY_DIR:-../examples}/telemetry.latest.json
+  max_age_seconds: 3.0
+  read_retries: 3
+  retry_delay_seconds: 0.03
+  require_protocol_major: 0
+
+capture:
+  enabled: true
+  window_title_contains: Kenshi
+  image_format: png
+  jpeg_quality: 90
+  crop_client_area: true
+
+controls:
+  pause_key: space
+  speed_keys:
+    1: "1"
+    2: "2"
+    3: "3"
+  focus_before_input: true
+  post_input_delay_seconds: 0.08
+
+safety:
+  live_actions_enabled: false
+  require_cli_execute_flag: true
+  emergency_stop_key: f12
+  max_primitive_actions_per_step: 12
+  max_actions_per_minute: 90
+  max_wait_seconds: 10.0
+  block_clicks_when_telemetry_stale: true
+  allow_action_kinds:
+    - noop
+    - stop
+    - pause
+    - set_speed
+    - wait
+    - key
+    - hotkey
+    - click
+    - move_cursor
+    - skill
+  allow_skills:
+    - pause_game
+    - open_map
+    - open_inventory
+    - focus_selected
+
+memory:
+  enabled: true
+  run_namespace: default
+  max_recalled_memories: 12
+  minimum_salience: 0.15
+
+macros:
+  pause_game:
+    description: Toggle pause through the normal interface.
+    actions:
+      - kind: key
+        key: space
+  open_map:
+    description: Open or close the map using the configured Kenshi key binding.
+    actions:
+      - kind: key
+        key: m
+  open_inventory:
+    description: Open or close inventory using the configured Kenshi key binding.
+    actions:
+      - kind: key
+        key: i
+  focus_selected:
+    description: Center the camera on the selected character.
+    actions:
+      - kind: key
+        key: f
