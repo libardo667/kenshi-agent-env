@@ -31,6 +31,11 @@ def _new_run_id() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
 
 
+def _console_safe(value: str) -> str:
+    encoding = sys.stdout.encoding or "utf-8"
+    return value.encode(encoding, errors="backslashreplace").decode(encoding)
+
+
 def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
     kind = args.planner or config.planner.kind
     if kind == "heuristic":
@@ -178,6 +183,14 @@ def _doctor(args: argparse.Namespace) -> int:
                         f"age={read.age_seconds:.2f}s stale={read.stale}",
                     )
                 )
+                checks.append(
+                    (
+                        "telemetry_fresh",
+                        not read.stale,
+                        f"age={read.age_seconds:.2f}s "
+                        f"maximum={config.telemetry.max_age_seconds:.2f}s",
+                    )
+                )
             except Exception as exc:
                 checks.append(("telemetry_parse", False, f"{type(exc).__name__}: {exc}"))
         if os.name == "nt":
@@ -200,7 +213,8 @@ def _doctor(args: argparse.Namespace) -> int:
             checks.append(("openai_package", False, "pip install -e '.[openai]'"))
     width = max(len(name) for name, _, _ in checks)
     for name, passed, detail in checks:
-        print(f"{'PASS' if passed else 'FAIL'}  {name:<{width}}  {detail}")
+        line = f"{'PASS' if passed else 'FAIL'}  {name:<{width}}  {detail}"
+        print(_console_safe(line))
     return 0 if all(passed for _, passed, _ in checks) else 1
 
 
