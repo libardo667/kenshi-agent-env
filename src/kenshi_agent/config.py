@@ -28,6 +28,7 @@ class RuntimeConfig(ConfigModel):
     settle_seconds: float = Field(default=0.25, ge=0.0, le=60.0)
     observation_memory_limit: int = Field(default=12, ge=0, le=100)
     stop_when_terminated: bool = True
+    objective: str | None = Field(default=None, max_length=1000)
 
 
 class PlannerConfig(ConfigModel):
@@ -90,6 +91,7 @@ class SafetyConfig(ConfigModel):
     max_actions_per_minute: int = Field(default=90, ge=1, le=1000)
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
     block_clicks_when_telemetry_stale: bool = True
+    allow_live_unpause_actions: bool = False
     allow_action_kinds: list[str] = Field(default_factory=list)
     allow_skills: list[str] = Field(default_factory=list)
 
@@ -124,6 +126,7 @@ class MacroConfig(ConfigModel):
     arguments: dict[str, str] = Field(default_factory=dict)
     visual_precondition: str | None = None
     normalized_pointer_bounds: NormalizedPointerBoundsConfig | None = None
+    movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     actions: list[dict[str, Any]] = Field(default_factory=list)
 
     def parsed_actions(self) -> list[Action]:

@@ -54,7 +54,6 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.safety.require_cli_execute_flag
     assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}
     assert set(config.safety.allow_skills) == {
-        "pause_game",
         "open_map",
         "open_inventory",
         "focus_selected",
@@ -62,12 +61,18 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "move_visible_terrain",
         "move_on_map",
     }
-    assert config.safety.max_primitive_actions_per_step == 2
+    assert config.runtime.max_steps == 30
+    assert config.runtime.objective is not None
+    assert config.safety.max_primitive_actions_per_step == 4
+    assert not config.safety.allow_live_unpause_actions
     fine_bounds = config.macros["move_visible_terrain"].normalized_pointer_bounds
     map_bounds = config.macros["move_on_map"].normalized_pointer_bounds
     assert fine_bounds is not None and fine_bounds.contains(0.5, 0.5)
     assert map_bounds is not None and map_bounds.contains(0.5, 0.5)
     assert not map_bounds.contains(0.2, 0.5)
+    assert config.macros["move_visible_terrain"].movement_pulse_seconds == 0.75
+    assert config.macros["move_on_map"].movement_pulse_seconds == 2.0
+    assert len(config.macros["move_on_map"].actions) == 2
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:

@@ -36,6 +36,13 @@ class ActionGuard:
             if observation.mode == "live" and not self.macros.has(action.name):
                 raise SafetyViolation(f"Live skill {action.name!r} has no configured macro.")
             if observation.mode == "live":
+                pulse_seconds = self.macros.movement_pulse_seconds(action.name)
+                if pulse_seconds is not None and (
+                    observation.telemetry is None or observation.telemetry.game.paused is not True
+                ):
+                    raise SafetyViolation(
+                        f"Movement pulse {action.name!r} requires confirmed paused live state."
+                    )
                 try:
                     primitives = self.macros.expand(action)
                 except (TypeError, ValueError) as exc:
@@ -66,7 +73,7 @@ class ActionGuard:
                                 f"({primitive.x:.3f}, {primitive.y:.3f}) is outside its "
                                 "calibrated safety envelope."
                             )
-        primitive_count = len(primitives) if primitives is not None else 1
+        primitive_count = self.macros.primitive_count(action) if primitives is not None else 1
         if primitive_count > self.config.max_primitive_actions_per_step:
             raise SafetyViolation(
                 f"Action expands to {primitive_count} primitives; maximum is "
@@ -92,6 +99,10 @@ class ActionGuard:
             if observation.telemetry is None or observation.telemetry.game.paused is None:
                 raise SafetyViolation(
                     "Pause action blocked because the current live pause state is unknown."
+                )
+            if not action.paused and not self.config.allow_live_unpause_actions:
+                raise SafetyViolation(
+                    "Direct live unpause is blocked; use a bounded movement pulse."
                 )
         if isinstance(action, (ClickAction, MoveCursorAction)):
             self._validate_pointer_target(action, observation)

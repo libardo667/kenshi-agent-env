@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -42,6 +43,7 @@ class LiveEnvironment(AgentEnvironment):
         capture_config: CaptureConfig,
         execute_actions: bool,
         emergency_stop_key: str,
+        available_skills: list[str] | None = None,
     ) -> None:
         self.run_id = run_id
         self.run_dir = run_dir
@@ -53,6 +55,7 @@ class LiveEnvironment(AgentEnvironment):
         self.capture_config = capture_config
         self.execute_actions = execute_actions
         self.emergency_stop_key = emergency_stop_key
+        self.available_skills = sorted(set(available_skills or macros.names()))
         self._step_index = 0
         self._capture_sequence = 0
         self._last_observation: Observation | None = None
@@ -116,8 +119,9 @@ class LiveEnvironment(AgentEnvironment):
             screenshot_path=screenshot_path,
             screenshot_sha256=screenshot_hash,
             events=events,
-            available_skills=self.macros.names(),
-            skill_specs=self.macros.specs(),
+            objective=self.runtime_config.objective,
+            available_skills=self.available_skills,
+            skill_specs=[self.macros.spec(name) for name in self.available_skills],
         )
         self._last_observation = observation
         return observation
@@ -237,36 +241,139 @@ class LiveEnvironment(AgentEnvironment):
                 }
             )
         if isinstance(action, SkillAction):
-            primitives = self.macros.expand(action)
-            primitive_count = 0
-            messages: list[str] = []
-            for macro_primitive in primitives:
-                if self.controller.emergency_stop_pressed(self.emergency_stop_key):
-                    raise RuntimeError("Emergency stop pressed during macro execution.")
-                if not isinstance(
-                    macro_primitive,
-                    (KeyAction, HotkeyAction, MoveCursorAction, ClickAction),
-                ):
-                    raise TypeError(
-                        f"Live macro {action.name!r} contains unsupported primitive "
-                        f"{macro_primitive.kind!r}."
-                    )
-                primitive_receipt = await self.controller.execute(macro_primitive)
-                primitive_count += primitive_receipt.primitive_actions
-                messages.append(primitive_receipt.message)
-            return ActionReceipt(
-                action=action,
-                accepted=True,
-                executed=True,
-                dry_run=False,
-                started_at=started,
-                finished_at=datetime.now(UTC),
-                primitive_actions=primitive_count,
-                message=f"Executed skill {action.name!r}. " + " ".join(messages),
-            )
+            pulse_seconds = self.macros.movement_pulse_seconds(action.name)
+            if pulse_seconds is not None:
+                return await self._execute_movement_pulse(
+                    action, started, pulse_seconds=pulse_seconds
+                )
+            return await self._execute_skill(action, started)
         if isinstance(action, (KeyAction, HotkeyAction, MoveCursorAction, ClickAction)):
             return await self.controller.execute(action)
         raise TypeError(f"Unsupported live action: {type(action).__name__}")
+
+    async def _execute_skill(self, action: SkillAction, started: datetime) -> ActionReceipt:
+        primitive_count, messages = await self._execute_skill_primitives(action)
+        return ActionReceipt(
+            action=action,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=primitive_count,
+            message=f"Executed skill {action.name!r}. " + " ".join(messages),
+        )
+
+    async def _execute_skill_primitives(self, action: SkillAction) -> tuple[int, list[str]]:
+        primitives = self.macros.expand(action)
+        primitive_count = 0
+        messages: list[str] = []
+        for macro_primitive in primitives:
+            if self.controller.emergency_stop_pressed(self.emergency_stop_key):
+                raise RuntimeError("Emergency stop pressed during macro execution.")
+            if not isinstance(
+                macro_primitive,
+                (KeyAction, HotkeyAction, MoveCursorAction, ClickAction),
+            ):
+                raise TypeError(
+                    f"Live macro {action.name!r} contains unsupported primitive "
+                    f"{macro_primitive.kind!r}."
+                )
+            primitive_receipt = await self.controller.execute(macro_primitive)
+            primitive_count += primitive_receipt.primitive_actions
+            messages.append(primitive_receipt.message)
+        return primitive_count, messages
+
+    async def _execute_movement_pulse(
+        self,
+        action: SkillAction,
+        started: datetime,
+        *,
+        pulse_seconds: float,
+    ) -> ActionReceipt:
+        paused = (
+            self._last_observation.telemetry.game.paused
+            if self._last_observation is not None and self._last_observation.telemetry is not None
+            else None
+        )
+        if paused is not True:
+            raise RuntimeError(
+                f"Movement pulse {action.name!r} requires confirmed paused live state."
+            )
+
+        primitive_count, messages = await self._execute_skill_primitives(action)
+        pause_key = KeyAction(key=self.controls_config.pause_key)
+        unpause_sent = False
+        emergency_stop = False
+        try:
+            unpause_receipt = await self.controller.execute(pause_key)
+            unpause_sent = True
+            primitive_count += unpause_receipt.primitive_actions
+            if not await self._wait_for_pause_state(False):
+                if self._fresh_pause_state() is True:
+                    unpause_sent = False
+                raise RuntimeError("Kenshi did not confirm unpaused state for movement pulse.")
+
+            deadline = time.monotonic() + pulse_seconds
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                if self.controller.emergency_stop_pressed(self.emergency_stop_key):
+                    emergency_stop = True
+                    break
+                await asyncio.sleep(min(0.1, remaining))
+        finally:
+            if unpause_sent:
+                pause_receipt = await self.controller.execute(pause_key)
+                primitive_count += pause_receipt.primitive_actions
+                if not await self._wait_for_pause_state(True):
+                    if self._fresh_pause_state() is False:
+                        retry_receipt = await self.controller.execute(pause_key)
+                        primitive_count += retry_receipt.primitive_actions
+                    if not await self._wait_for_pause_state(True):
+                        raise RuntimeError(
+                            "Movement pulse ended but Kenshi did not confirm re-paused state."
+                        )
+
+        if emergency_stop:
+            raise RuntimeError("Emergency stop ended the movement pulse after re-pausing Kenshi.")
+        return ActionReceipt(
+            action=action,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=primitive_count,
+            message=(
+                f"Executed skill {action.name!r}, advanced Kenshi for "
+                f"{pulse_seconds:.2f}s, and confirmed re-paused state. " + " ".join(messages)
+            ),
+        )
+
+    async def _wait_for_pause_state(self, expected: bool, *, timeout_seconds: float = 3.0) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                result = self.telemetry_reader.read()
+                if not result.stale and result.snapshot.game.paused is expected:
+                    return True
+            except TelemetryReadError:
+                pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.05, remaining))
+
+    def _fresh_pause_state(self) -> bool | None:
+        try:
+            result = self.telemetry_reader.read()
+        except TelemetryReadError:
+            return None
+        if result.stale:
+            return None
+        return result.snapshot.game.paused
 
     async def close(self) -> None:
         return None

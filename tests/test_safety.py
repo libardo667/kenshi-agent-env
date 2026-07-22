@@ -103,6 +103,9 @@ def test_live_pause_requires_known_current_state() -> None:
     )
     assert guard.validate(PauseAction(paused=True), known).paused is True
 
+    with pytest.raises(SafetyViolation, match="Direct live unpause"):
+        guard.validate(PauseAction(paused=False), known)
+
 
 def test_live_skill_must_be_configured_and_allowlisted() -> None:
     macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
@@ -223,6 +226,36 @@ def test_live_movement_skill_rejects_missing_coordinates_as_safety_violation() -
             SkillAction(name="move_on_map", args=[SkillArgument(name="x", value=0.5)]),
             observation,
         )
+
+
+def test_live_movement_pulse_requires_confirmed_pause() -> None:
+    config = safety_config().model_copy(update={"allow_skills": ["move_on_map"]})
+    macros = MacroRegistry(
+        {
+            "move_on_map": MacroConfig(
+                movement_pulse_seconds=1.0,
+                actions=[
+                    {
+                        "kind": "click",
+                        "x": "{{x}}",
+                        "y": "{{y}}",
+                        "space": "normalized",
+                        "button": "right",
+                    }
+                ],
+            )
+        }
+    )
+    action = SkillAction.model_validate({"name": "move_on_map", "args": {"x": 0.5, "y": 0.4}})
+    unpaused = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(game=GameState(paused=False)),
+    )
+
+    with pytest.raises(SafetyViolation, match="requires confirmed paused"):
+        ActionGuard(config, macros).validate(action, unpaused)
 
 
 def test_wait_limit() -> None:

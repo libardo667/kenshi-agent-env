@@ -39,6 +39,7 @@ class MacroRegistry:
             description=macro.description,
             arguments=macro.arguments,
             visual_precondition=macro.visual_precondition,
+            movement_pulse_seconds=macro.movement_pulse_seconds,
         )
 
     def specs(self) -> list[SkillSpec]:
@@ -47,6 +48,12 @@ class MacroRegistry:
     def normalized_pointer_bounds(self, name: str) -> NormalizedPointerBoundsConfig | None:
         try:
             return self._macros[name].normalized_pointer_bounds
+        except KeyError as exc:
+            raise UnknownSkillError(name) from exc
+
+    def movement_pulse_seconds(self, name: str) -> float | None:
+        try:
+            return self._macros[name].movement_pulse_seconds
         except KeyError as exc:
             raise UnknownSkillError(name) from exc
 
@@ -64,7 +71,8 @@ class MacroRegistry:
 
     def primitive_count(self, action: Action) -> int:
         if isinstance(action, SkillAction):
-            return len(self.expand(action))
+            pulse_primitives = 2 if self.movement_pulse_seconds(action.name) is not None else 0
+            return len(self.expand(action)) + pulse_primitives
         return 1
 
     @classmethod

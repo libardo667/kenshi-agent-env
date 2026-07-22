@@ -273,6 +273,7 @@ class SkillSpec(StrictModel):
     description: str = Field(default="", max_length=1000)
     arguments: dict[str, str] = Field(default_factory=dict)
     visual_precondition: str | None = Field(default=None, max_length=1000)
+    movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
 
 
 class Observation(StrictModel):
@@ -286,6 +287,7 @@ class Observation(StrictModel):
     screenshot_path: Path | None = None
     screenshot_sha256: str | None = None
     events: list[str] = Field(default_factory=list)
+    objective: str | None = Field(default=None, max_length=1000)
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
