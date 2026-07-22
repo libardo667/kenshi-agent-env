@@ -107,6 +107,7 @@ def _build_environment(
             capture_config=config.capture,
             execute_actions=execute_actions,
             emergency_stop_key=config.safety.emergency_stop_key,
+            available_skills=config.safety.allow_skills,
         )
     raise SystemExit(f"Unsupported environment mode: {mode}")
 

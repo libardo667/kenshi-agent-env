@@ -710,6 +710,20 @@
           ],
           "default": null,
           "title": "Visual Precondition"
+        },
+        "movement_pulse_seconds": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 10.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Movement Pulse Seconds"
         }
       },
       "required": [
@@ -992,6 +1006,19 @@
       },
       "title": "Events",
       "type": "array"
+    },
+    "objective": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Objective"
     },
     "available_skills": {
       "items": {

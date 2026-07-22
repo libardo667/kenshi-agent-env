@@ -66,6 +66,7 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
         mode="mock",
         telemetry=TelemetrySnapshot(),
         screenshot_path=Path("secret-frame.png"),
+        objective="Explore nearby.",
         skill_specs=[
             SkillSpec(
                 name="move_on_map",
@@ -77,5 +78,6 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     payload = observation.planner_payload()
     assert "secret-frame.png" not in payload
     assert '"run_id": "run"' in payload
+    assert '"objective": "Explore nearby."' in payload
     assert '"name": "move_on_map"' in payload
     assert '"visual_precondition": "The map is open."' in payload

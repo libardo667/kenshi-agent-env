@@ -33,6 +33,7 @@ def test_skill_specs_expose_arguments_and_visual_preconditions() -> None:
                 description="Fine movement in the world.",
                 arguments={"x": "Normalized x coordinate."},
                 visual_precondition="The map is closed.",
+                movement_pulse_seconds=0.75,
                 actions=[],
             )
         }
@@ -43,3 +44,5 @@ def test_skill_specs_expose_arguments_and_visual_preconditions() -> None:
     assert spec.name == "move_visible_terrain"
     assert spec.arguments == {"x": "Normalized x coordinate."}
     assert spec.visual_precondition == "The map is closed."
+    assert spec.movement_pulse_seconds == 0.75
+    assert registry.primitive_count(SkillAction(name="move_visible_terrain")) == 2

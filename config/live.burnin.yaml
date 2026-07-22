@@ -7,10 +7,11 @@ paths:
   memory_db: ${LOCALAPPDATA}/KenshiAgent/state/live-memory.sqlite3
 
 runtime:
-  max_steps: 12
+  max_steps: 30
   settle_seconds: 0.75
   observation_memory_limit: 16
   stop_when_terminated: true
+  objective: Explore cautiously around The Hub using bounded movement pulses while remaining nearby and recoverable.
 
 planner:
   kind: openai
@@ -50,10 +51,11 @@ safety:
   live_actions_enabled: true
   require_cli_execute_flag: true
   emergency_stop_key: f12
-  max_primitive_actions_per_step: 2
-  max_actions_per_minute: 20
+  max_primitive_actions_per_step: 4
+  max_actions_per_minute: 40
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
+  allow_live_unpause_actions: false
   allow_action_kinds:
     - noop
     - stop
@@ -61,7 +63,6 @@ safety:
     - wait
     - skill
   allow_skills:
-    - pause_game
     - open_map
     - open_inventory
     - focus_selected
@@ -102,7 +103,7 @@ macros:
       - kind: key
         key: escape
   move_visible_terrain:
-    description: Fine movement by right-clicking nearby visible terrain in the 3D world.
+    description: Fine movement by right-clicking nearby visible terrain, advancing briefly, and returning paused.
     arguments:
       x: Normalized horizontal coordinate in the current Kenshi client screenshot.
       y: Normalized vertical coordinate in the current Kenshi client screenshot.
@@ -112,6 +113,7 @@ macros:
       max_x: 0.85
       min_y: 0.15
       max_y: 0.65
+    movement_pulse_seconds: 0.75
     actions:
       - kind: click
         x: "{{x}}"
@@ -119,7 +121,7 @@ macros:
         space: normalized
         button: right
   move_on_map:
-    description: Gross movement by right-clicking a destination on the open map.
+    description: Gross movement by right-clicking the open map, closing it, advancing briefly, and returning paused.
     arguments:
       x: Normalized horizontal coordinate in the current Kenshi client screenshot.
       y: Normalized vertical coordinate in the current Kenshi client screenshot.
@@ -129,9 +131,12 @@ macros:
       max_x: 0.68
       min_y: 0.16
       max_y: 0.69
+    movement_pulse_seconds: 2.0
     actions:
       - kind: click
         x: "{{x}}"
         y: "{{y}}"
         space: normalized
         button: right
+      - kind: key
+        key: m
