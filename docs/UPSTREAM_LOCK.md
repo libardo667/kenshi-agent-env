@@ -15,6 +15,11 @@ generic where possible; hashes and commits are the reproducibility anchors.
 | Windows SDK | not yet locked | Windows installation | 2026-07-22 | Record after native toolchain installation |
 | Python | CPython 3.12.13 x64, uv-managed | Windows user installation | 2026-07-22 | `python` resolves successfully; `py -3.11` is unavailable |
 
+The current upstream examples require Boost 1.60 headers and v100 libraries in
+addition to KenshiLib. The maintained examples also link plugins with
+`kenshilib.lib` and use an empty `.mod` file plus `RE_Kenshi.json` beside the
+plugin DLL.
+
 ## Active mods during validation
 
 - Not yet recorded. Native installation and live validation have not started.

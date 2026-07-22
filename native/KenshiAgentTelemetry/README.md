@@ -19,13 +19,17 @@ unimplemented.
    (`v100`) platform toolset.
 3. Set `KENSHILIB_DIR` to the dependency directory containing `Include` and
    `Libraries`.
-4. Open `KenshiAgentTelemetry.sln` and build **Release | x64**.
-5. Package the resulting DLL using the same plugin layout as the maintained
-   KenshiLib examples for your installed RE_Kenshi version.
+4. Set `BOOST_INCLUDE_PATH` to the extracted Boost 1.60 root containing both
+   `boost` and `stage\lib`.
+5. Run `scripts\native_doctor.ps1` and resolve every failed check.
+6. Open `KenshiAgentTelemetry.sln` and build **Release | x64**.
+7. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
+8. After reviewing the staged files, copy the staged `KenshiAgentTelemetry`
+   folder to `<Kenshi>\mods\KenshiAgentTelemetry` and enable the mod in the
+   Kenshi launcher.
 
-The exact packaging step is intentionally not hard-coded here because it has
-changed across RE_Kenshi releases. Compare against the current HelloWorld
-example rather than an old forum post.
+The staged layout follows the current upstream HelloWorld example: an empty
+`.mod` marker, `RE_Kenshi.json`, and the plugin DLL in one Kenshi mod folder.
 
 ## Output
 
