@@ -32,7 +32,7 @@ class RuntimeConfig(ConfigModel):
 
 class PlannerConfig(ConfigModel):
     kind: Literal["heuristic", "scripted", "subprocess", "openai"] = "heuristic"
-    model: str = "gpt-5.5"
+    model: str = "gpt-5.6-terra"
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
     include_screenshot: bool = True

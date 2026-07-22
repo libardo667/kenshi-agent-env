@@ -133,6 +133,8 @@ Copy-Item .env.example .env
 The CLI loads only `.env` in its current working directory. Existing process
 environment variables take precedence, and key values are never printed by the
 doctor. The PowerShell entrypoints set the working directory to the repo root.
+The default planner model is `gpt-5.6-terra`, chosen as the balance tier for
+vision-driven gameplay. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
 
 The planner receives a bounded JSON observation and, when enabled, a base64 image
 of the current frame. It returns a validated `PlannerDecision`; it does not call
