@@ -116,13 +116,23 @@ See `docs/EXTERNAL_PLANNER_PROTOCOL.md`.
 
 ### OpenAI vision planner
 
-Install the optional dependency and set the API key in the environment:
+Create an API key in the [OpenAI dashboard](https://platform.openai.com/api-keys),
+copy the ignored environment template, add the key locally, and install the
+optional dependency:
 
 ```powershell
-python -m pip install -e ".[openai]"
-$env:OPENAI_API_KEY = "..."
-kenshi-agent run --config config/default.yaml --planner openai --steps 20
+Copy-Item .env.example .env
+# Edit .env so it contains OPENAI_API_KEY=your-key-here
+.\scripts\bootstrap_live_windows.ps1 -WithOpenAI
+.\scripts\run_live_dry.ps1 `
+  -Config config\live.example.yaml `
+  -Planner openai `
+  -Steps 1
 ```
+
+The CLI loads only `.env` in its current working directory. Existing process
+environment variables take precedence, and key values are never printed by the
+doctor. The PowerShell entrypoints set the working directory to the repo root.
 
 The planner receives a bounded JSON observation and, when enabled, a base64 image
 of the current frame. It returns a validated `PlannerDecision`; it does not call

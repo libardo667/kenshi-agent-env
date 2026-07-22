@@ -34,7 +34,7 @@ mock:
   random_events: true
 
 telemetry:
-  file: ${LOCALAPPDATA}/KenshiAgent/telemetry.latest.json
+  file: ${KENSHI_AGENT_TELEMETRY_DIR:-$LOCALAPPDATA/KenshiAgent}/telemetry.latest.json
   max_age_seconds: 3.0
   read_retries: 4
   retry_delay_seconds: 0.04
