@@ -178,9 +178,14 @@ operations remain blocked:
 kenshi-agent run `
   --config config/live.burnin.yaml `
   --planner openai `
-  --steps 6 `
   --execute-live-actions
 ```
+
+The active profile defaults to 30 planner decisions. Fine and coarse movement
+run as executor-controlled pulses: choose the destination while paused, advance
+for 0.75 or 2.0 seconds respectively, then require fresh telemetry confirming
+the game is paused again before another model call. Direct model-selected
+unpause is blocked.
 
 `config/live.example.yaml` derives telemetry and SQLite paths from Windows
 `%LOCALAPPDATA%`; copy it only when you need machine-specific overrides. Live
@@ -259,6 +264,7 @@ The Python guard enforces:
 - action-kind and skill allowlists;
 - normalized click bounds and client-area bounds when known;
 - per-skill normalized pointer envelopes for calibrated movement macros;
+- bounded movement pulses with telemetry-confirmed re-pause before planning;
 - stale-telemetry click blocking;
 - maximum wait duration;
 - macro expansion limits;

@@ -33,6 +33,9 @@
   preconditions and guard-enforced normalized pointer envelopes.
 - Supervised live validation of both movement modes, including atomic absolute
   move-plus-click injection that remains exact during physical mouse movement.
+- Executor-controlled fine and coarse movement pulses with fresh pause-state
+  confirmation, F12 interruption, blocked direct unpause, and a 30-decision
+  active profile.
 
 ## Still requires broader live validation
 
