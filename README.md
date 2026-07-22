@@ -26,10 +26,12 @@ and game-integration failures.
   JSON file.
 - Automated tests for the platform-independent path.
 
-The native plugin now compiles as a VS2010 SP1 `Release | x64` DLL against the
-pinned maintained KenshiLib dependency bundle. It has not yet been loaded or
-field-tested inside Kenshi. That distinction matters. See `STATUS.md` and
-`CODING_AGENT_PROMPT.md`.
+The native plugin compiles as a VS2010 SP1 `Release | x64` DLL against the
+pinned maintained KenshiLib dependency bundle. Its initial in-game smoke test
+now passes with RE_Kenshi 0.3.4/KenshiLib 0.4.0: the hook reaches `ready`, emits
+schema-valid snapshots at two hertz, and tracks one-character selection,
+position, movement, pause, speed, and money. Broader field and input validation
+is still incomplete. See `STATUS.md` and `docs/LIVE_VALIDATION_CHECKLIST.md`.
 
 ## Repository map
 
@@ -170,8 +172,9 @@ samples the game/UI thread at two hertz. It currently exports:
   speed, and food-item count.
 
 It intentionally does not pretend to export fields that have not been validated:
-hunger, wound detail, inventory grids, modals, dialogue, context menus, current
-tasks, nearby entities, and faction interpretation remain work items.
+hunger, wound detail, getting-eaten state, inventory grids, modals, dialogue,
+context menus, current tasks, nearby entities, and faction interpretation
+remain work items.
 
 Build instructions and the manual verification sequence are in
 [the native plugin README](native/KenshiAgentTelemetry/README.md). Contributors
