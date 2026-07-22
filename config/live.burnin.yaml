@@ -1,0 +1,101 @@
+version: 1
+mode: live
+
+paths:
+  runs_dir: ../runs
+  prompt_file: ../prompts/planner_system.md
+  memory_db: ${LOCALAPPDATA}/KenshiAgent/state/live-memory.sqlite3
+
+runtime:
+  max_steps: 12
+  settle_seconds: 0.75
+  observation_memory_limit: 16
+  stop_when_terminated: true
+
+planner:
+  kind: openai
+  model: ${KENSHI_AGENT_MODEL:-gpt-5.6-terra}
+  temperature: 0.1
+  timeout_seconds: 90
+  include_screenshot: true
+  screenshot_detail: high
+  max_observation_chars: 30000
+
+telemetry:
+  file: ${KENSHI_AGENT_TELEMETRY_DIR:-$LOCALAPPDATA/KenshiAgent}/telemetry.latest.json
+  max_age_seconds: 3.0
+  read_retries: 4
+  retry_delay_seconds: 0.04
+  require_protocol_major: 0
+
+capture:
+  enabled: true
+  window_title_contains: Kenshi 1.0.
+  image_format: png
+  jpeg_quality: 90
+  crop_client_area: true
+
+controls:
+  pause_key: space
+  speed_keys:
+    1: "1"
+    2: "2"
+    3: "3"
+  focus_before_input: true
+  post_input_delay_seconds: 0.10
+
+safety:
+  # This profile permits only the harmless burn-in actions below. The CLI must
+  # still receive --execute-live-actions before any input is sent.
+  live_actions_enabled: true
+  require_cli_execute_flag: true
+  emergency_stop_key: f12
+  max_primitive_actions_per_step: 2
+  max_actions_per_minute: 20
+  max_wait_seconds: 8.0
+  block_clicks_when_telemetry_stale: true
+  allow_action_kinds:
+    - noop
+    - stop
+    - pause
+    - wait
+    - skill
+  allow_skills:
+    - pause_game
+    - open_map
+    - open_inventory
+    - focus_selected
+    - close_overlay
+
+memory:
+  enabled: true
+  run_namespace: live-burnin
+  max_recalled_memories: 16
+  minimum_salience: 0.2
+
+macros:
+  pause_game:
+    description: Toggle pause through the normal interface.
+    actions:
+      - kind: key
+        key: space
+  open_map:
+    description: Open or close the map.
+    actions:
+      - kind: key
+        key: m
+  open_inventory:
+    description: Open or close inventory.
+    actions:
+      - kind: key
+        key: i
+  focus_selected:
+    description: Center on the selected character.
+    actions:
+      - kind: key
+        key: f
+  close_overlay:
+    description: Close the currently visible map, inventory, or other dismissible overlay.
+    actions:
+      - kind: key
+        key: escape

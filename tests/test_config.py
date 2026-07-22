@@ -44,6 +44,27 @@ def test_live_example_accepts_telemetry_directory_override(
     assert config.telemetry.file == override / "telemetry.latest.json"
 
 
+def test_live_burnin_profile_allows_only_audited_actions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    config = load_config(root / "config" / "live.burnin.yaml")
+
+    assert config.safety.live_actions_enabled
+    assert config.safety.require_cli_execute_flag
+    assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}
+    assert set(config.safety.allow_skills) == {
+        "pause_game",
+        "open_map",
+        "open_inventory",
+        "focus_selected",
+        "close_overlay",
+    }
+    assert config.safety.max_primitive_actions_per_step == 2
+
+
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
     root = Path(__file__).resolve().parents[1]
     ignored_names = {

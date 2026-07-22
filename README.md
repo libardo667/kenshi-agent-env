@@ -169,6 +169,19 @@ Add `-WithOpenAI` to the bootstrap command only when preparing to test the
 vision planner. The dry-run command deliberately omits the second live-action
 gate, so proposed actions are logged but not sent to Kenshi.
 
+For the first active burn-in, use the dedicated profile. It enables live input
+but allows only pause, wait, map, inventory, close-overlay, and focus-selected
+behavior; raw keys, clicks, movement, combat, purchasing, and save operations
+remain blocked:
+
+```powershell
+kenshi-agent run `
+  --config config/live.burnin.yaml `
+  --planner openai `
+  --steps 6 `
+  --execute-live-actions
+```
+
 `config/live.example.yaml` derives telemetry and SQLite paths from Windows
 `%LOCALAPPDATA%`; copy it only when you need machine-specific overrides. Live
 mode remains dry-run unless both conditions are true:
