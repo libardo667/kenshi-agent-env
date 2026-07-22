@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Config,
     [int]$Steps = 20,
-    [ValidateSet("heuristic", "scripted", "subprocess", "openai")]
+    [ValidateSet("heuristic", "scripted", "subprocess", "openai", "openrouter")]
     [string]$Planner = "heuristic",
     [string]$Python
 )

@@ -14,7 +14,10 @@ runtime:
 
 planner:
   kind: heuristic
-  model: ${KENSHI_AGENT_MODEL:-gpt-5.6-terra}
+  model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
+  reasoning_effort: low
+  openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
+  openrouter_provider_sort: latency
   temperature: 0.2
   timeout_seconds: 90
   include_screenshot: true

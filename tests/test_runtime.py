@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 from kenshi_agent.config import MacroConfig, MockConfig, SafetyConfig
@@ -55,6 +56,11 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             summary = await runtime.run(max_steps=30)
             assert summary.success is True
             assert summary.steps_completed < 30
+            event_lines = (tmp_path / "events.jsonl").read_text().splitlines()
+            events = [json.loads(line) for line in event_lines]
+            decisions = [event for event in events if event["event_type"] == "decision"]
+            assert decisions
+            assert decisions[0]["payload"]["planner_latency_seconds"] >= 0.0
         finally:
             logger.close()
             memory.close()

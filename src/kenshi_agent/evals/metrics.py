@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from math import ceil
 from pathlib import Path
+from statistics import fmean, median
 from typing import TypedDict
 
 
@@ -39,9 +41,13 @@ class LogMetrics:
     success: bool | None = None
     steps_completed: int | None = None
     stop_reason: str | None = None
+    mean_planner_latency_seconds: float | None = None
+    p50_planner_latency_seconds: float | None = None
+    p95_planner_latency_seconds: float | None = None
 
 
 def evaluate_log(path: Path) -> LogMetrics:
+    planner_latencies: list[float] = []
     values: _MetricValues = {
         "decisions": 0,
         "reflex_decisions": 0,
@@ -70,6 +76,9 @@ def evaluate_log(path: Path) -> LogMetrics:
                     values["reflex_decisions"] += 1
                 if source == "planner_error":
                     values["planner_errors"] += 1
+                latency = payload.get("planner_latency_seconds")
+                if latency is not None and source != "reflex":
+                    planner_latencies.append(float(latency))
             elif event_type == "action_receipt":
                 values["action_receipts"] += 1
                 values["primitive_actions"] += int(payload.get("primitive_actions", 0))
@@ -89,4 +98,13 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["success"] = payload.get("success")
                 values["steps_completed"] = payload.get("steps_completed")
                 values["stop_reason"] = payload.get("stop_reason")
-    return LogMetrics(**values)
+    if not planner_latencies:
+        return LogMetrics(**values)
+    ordered = sorted(planner_latencies)
+    p95_index = max(0, ceil(len(ordered) * 0.95) - 1)
+    return LogMetrics(
+        **values,
+        mean_planner_latency_seconds=fmean(ordered),
+        p50_planner_latency_seconds=median(ordered),
+        p95_planner_latency_seconds=ordered[p95_index],
+    )

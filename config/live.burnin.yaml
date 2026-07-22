@@ -11,11 +11,15 @@ runtime:
   settle_seconds: 0.75
   observation_memory_limit: 16
   stop_when_terminated: true
+  decision_stream: true
   objective: Explore cautiously around The Hub using bounded movement pulses while remaining nearby and recoverable.
 
 planner:
   kind: openai
-  model: ${KENSHI_AGENT_MODEL:-gpt-5.6-terra}
+  model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
+  reasoning_effort: low
+  openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
+  openrouter_provider_sort: latency
   temperature: 0.1
   timeout_seconds: 90
   include_screenshot: true

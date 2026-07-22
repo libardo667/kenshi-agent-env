@@ -17,9 +17,17 @@ from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
 from .memory import MemoryStore
-from .planners import HeuristicPlanner, OpenAIPlanner, ScriptedPlanner, SubprocessPlanner
+from .overlay import show_overlay
+from .planners import (
+    HeuristicPlanner,
+    OpenAIPlanner,
+    OpenRouterPlanner,
+    ScriptedPlanner,
+    SubprocessPlanner,
+)
 from .planners.base import Planner
 from .reflexes import ReflexEngine
+from .reporting import ConsoleDecisionReporter
 from .runtime import AgentRuntime
 from .safety import ActionGuard
 from .schema_export import export_schemas
@@ -58,6 +66,8 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
         return SubprocessPlanner(args.command, timeout_seconds=config.planner.timeout_seconds)
     if kind == "openai":
         return OpenAIPlanner(config.planner, config.paths.prompt_file)
+    if kind == "openrouter":
+        return OpenRouterPlanner(config.planner, config.paths.prompt_file)
     raise SystemExit(f"Unsupported planner kind: {kind}")
 
 
@@ -125,6 +135,7 @@ async def _run_command(args: argparse.Namespace) -> int:
         else None
     )
     try:
+        planner_kind = args.planner or config.planner.kind
         planner = _build_planner(config, args)
         environment = _build_environment(
             config,
@@ -143,6 +154,21 @@ async def _run_command(args: argparse.Namespace) -> int:
             memory=memory,
             memory_limit=config.memory.max_recalled_memories,
             minimum_memory_salience=config.memory.minimum_salience,
+            reporter=(
+                ConsoleDecisionReporter(
+                    run_id=run_id,
+                    planner_name=planner_kind,
+                    model_name=(
+                        config.planner.openrouter_model
+                        if planner_kind == "openrouter"
+                        else config.planner.model
+                        if planner_kind == "openai"
+                        else None
+                    ),
+                )
+                if config.runtime.decision_stream
+                else None
+            ),
         )
         summary = await runtime.run(
             max_steps=args.steps or config.runtime.max_steps,
@@ -212,8 +238,10 @@ def _doctor(args: argparse.Namespace) -> int:
                 checks.append(("kenshi_window", True, f"{rect.width}x{rect.height}"))
             except Exception as exc:
                 checks.append(("kenshi_window", False, f"{type(exc).__name__}: {exc}"))
-    if (args.planner or config.planner.kind) == "openai":
-        checks.append(("openai_api_key", bool(os.environ.get("OPENAI_API_KEY")), "environment"))
+    planner_kind = args.planner or config.planner.kind
+    if planner_kind in {"openai", "openrouter"}:
+        key_name = "OPENAI_API_KEY" if planner_kind == "openai" else "OPENROUTER_API_KEY"
+        checks.append((key_name.lower(), bool(os.environ.get(key_name)), "environment"))
         try:
             import openai  # noqa: F401
 
@@ -261,6 +289,16 @@ def _write_sample_telemetry(args: argparse.Namespace) -> int:
     return 0
 
 
+def _show_overlay(args: argparse.Namespace) -> int:
+    show_overlay(
+        Path(args.log).expanduser().resolve(),
+        title=args.title,
+        opacity=args.opacity,
+        auto_close_seconds=args.auto_close_seconds,
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="kenshi-agent")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -268,7 +306,8 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run an agent episode.")
     run.add_argument("--config", default="config/default.yaml")
     run.add_argument("--mode", choices=["mock", "live", "replay"])
-    run.add_argument("--planner", choices=["heuristic", "scripted", "subprocess", "openai"])
+    planner_choices = ["heuristic", "scripted", "subprocess", "openai", "openrouter"]
+    run.add_argument("--planner", choices=planner_choices)
     run.add_argument("--steps", type=int)
     run.add_argument("--seed", type=int)
     run.add_argument("--run-id")
@@ -284,7 +323,7 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Check configuration and live prerequisites.")
     doctor.add_argument("--config", default="config/default.yaml")
     doctor.add_argument("--mode", choices=["mock", "live", "replay"])
-    doctor.add_argument("--planner", choices=["heuristic", "scripted", "subprocess", "openai"])
+    doctor.add_argument("--planner", choices=planner_choices)
 
     validate = subparsers.add_parser("validate-telemetry", help="Validate one telemetry snapshot.")
     validate.add_argument("--config", default="config/default.yaml")
@@ -298,6 +337,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     sample = subparsers.add_parser("write-sample-telemetry")
     sample.add_argument("--output", default="examples/telemetry.latest.json")
+
+    overlay = subparsers.add_parser("overlay", help="Show a translucent live decision feed.")
+    overlay.add_argument("--log", required=True, help="Session JSONL to follow.")
+    overlay.add_argument("--title", default="Kenshi Agent")
+    overlay.add_argument("--opacity", type=float, default=0.82)
+    overlay.add_argument("--auto-close-seconds", type=float, default=0.0)
 
     return parser
 
@@ -318,5 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         return _export_schemas(args)
     if args.subcommand == "write-sample-telemetry":
         return _write_sample_telemetry(args)
+    if args.subcommand == "overlay":
+        return _show_overlay(args)
     parser.error(f"Unhandled command: {args.subcommand}")
     return 2

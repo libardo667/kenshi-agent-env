@@ -9,7 +9,15 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     records = [
         {
             "event_type": "decision",
-            "payload": {"source": "reflex"},
+            "payload": {"source": "reflex", "planner_latency_seconds": 0.001},
+        },
+        {
+            "event_type": "decision",
+            "payload": {"source": "planner", "planner_latency_seconds": 1.0},
+        },
+        {
+            "event_type": "decision",
+            "payload": {"source": "planner", "planner_latency_seconds": 3.0},
         },
         {
             "event_type": "action_receipt",
@@ -26,8 +34,11 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     ]
     path.write_text("\n".join(json.dumps(record) for record in records) + "\n", encoding="utf-8")
     metrics = evaluate_log(path)
-    assert metrics.decisions == 1
+    assert metrics.decisions == 3
     assert metrics.reflex_decisions == 1
     assert metrics.primitive_actions == 2
     assert metrics.stale_observations == 1
     assert metrics.success is True
+    assert metrics.mean_planner_latency_seconds == 2.0
+    assert metrics.p50_planner_latency_seconds == 2.0
+    assert metrics.p95_planner_latency_seconds == 3.0

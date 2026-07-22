@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import monotonic
 
 from .env import AgentEnvironment
 from .memory import MemoryStore
 from .models import ActionReceipt, Observation, PlannerDecision, StopAction
 from .planners import Planner
 from .reflexes import ReflexEngine
+from .reporting import ConsoleDecisionReporter
 from .safety import ActionGuard, SafetyViolation
 from .session_log import SessionLogger
 
@@ -37,6 +39,7 @@ class AgentRuntime:
         memory: MemoryStore | None,
         memory_limit: int,
         minimum_memory_salience: float,
+        reporter: ConsoleDecisionReporter | None = None,
     ) -> None:
         self.run_id = run_id
         self.environment = environment
@@ -47,6 +50,7 @@ class AgentRuntime:
         self.memory = memory
         self.memory_limit = memory_limit
         self.minimum_memory_salience = minimum_memory_salience
+        self.reporter = reporter
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
         started = datetime.now(UTC)
@@ -59,11 +63,16 @@ class AgentRuntime:
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
             self.logger.write("run_started", payload={"max_steps": max_steps, "seed": seed})
+            if self.reporter is not None:
+                self.reporter.run_started(max_steps)
             self.logger.write(
                 "observation", step_index=observation.step_index, payload=observation
             )
 
             for _ in range(max_steps):
+                planning_started = monotonic()
+                if self.reporter is not None:
+                    self.reporter.planning_started(observation.step_index)
                 decision_source = "planner"
                 decision = self.reflexes.decide(observation)
                 if decision is not None:
@@ -80,14 +89,24 @@ class AgentRuntime:
                         )
                         decision_source = "planner_error"
 
+                planner_latency_seconds = monotonic() - planning_started
+
                 self.logger.write(
                     "decision",
                     step_index=observation.step_index,
                     payload={
                         "source": decision_source,
+                        "planner_latency_seconds": planner_latency_seconds,
                         "decision": decision.model_dump(mode="json"),
                     },
                 )
+                if self.reporter is not None:
+                    self.reporter.decision(
+                        step_index=observation.step_index,
+                        source=decision_source,
+                        decision=decision,
+                        latency_seconds=planner_latency_seconds,
+                    )
 
                 try:
                     action = self.guard.validate(decision.action, observation)
@@ -109,6 +128,12 @@ class AgentRuntime:
                         step_index=observation.step_index,
                         payload=rejected,
                     )
+                    if self.reporter is not None:
+                        self.reporter.error(
+                            step_index=observation.step_index,
+                            label="REJECT",
+                            message=str(exc),
+                        )
                     stop_reason = f"Safety policy rejected action: {exc}"
                     terminated = True
                     break
@@ -121,6 +146,12 @@ class AgentRuntime:
                         step_index=observation.step_index,
                         payload={"type": type(exc).__name__, "message": str(exc)},
                     )
+                    if self.reporter is not None:
+                        self.reporter.error(
+                            step_index=observation.step_index,
+                            label="ERROR",
+                            message=f"{type(exc).__name__}: {exc}",
+                        )
                     stop_reason = f"Environment error: {type(exc).__name__}: {exc}"
                     terminated = True
                     break
@@ -131,6 +162,11 @@ class AgentRuntime:
                     step_index=observation.step_index,
                     payload=transition.receipt,
                 )
+                if self.reporter is not None:
+                    self.reporter.action_receipt(
+                        step_index=observation.step_index,
+                        receipt=transition.receipt,
+                    )
                 self._store_memories(decision)
                 observation = self._with_memories(transition.observation)
                 self.logger.write(
@@ -176,6 +212,11 @@ class AgentRuntime:
                     "finished_at": summary.finished_at.isoformat(),
                 },
             )
+            if self.reporter is not None:
+                self.reporter.run_finished(
+                    steps_completed=summary.steps_completed,
+                    stop_reason=summary.stop_reason,
+                )
             return summary
         finally:
             await self.environment.close()
