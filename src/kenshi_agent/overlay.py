@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,13 @@ def show_overlay(
     root.configure(bg="#101216")
     root.attributes("-topmost", True)
     root.attributes("-alpha", opacity)
+    root.update_idletasks()
+    if not _exclude_from_capture(root.winfo_id()):
+        root.destroy()
+        raise RuntimeError(
+            "Windows could not exclude the decision overlay from screenshots; "
+            "the viewer was closed so it cannot contaminate model input."
+        )
 
     width = 620
     height = 520
@@ -132,3 +140,23 @@ def show_overlay(
 
     root.after(50, poll)
     root.mainloop()
+
+
+def _exclude_from_capture(window_id: int) -> bool:
+    if sys.platform != "win32":
+        return True
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
+    user32.SetWindowDisplayAffinity.argtypes = [wintypes.HWND, wintypes.DWORD]
+    user32.SetWindowDisplayAffinity.restype = wintypes.BOOL
+
+    window = wintypes.HWND(window_id)
+    while parent := user32.GetParent(window):
+        window = parent
+    wda_exclude_from_capture = 0x00000011
+    return bool(user32.SetWindowDisplayAffinity(window, wda_exclude_from_capture))
