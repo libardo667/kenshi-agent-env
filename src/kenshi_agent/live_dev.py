@@ -70,7 +70,10 @@ async def _wait_until(
             title = controller.target_window_title()
         except (OSError, RuntimeError, ValueError):
             title = None
-        if title is not None and "crash reporter" in title.casefold():
+        if title is not None and any(
+            marker in title.casefold()
+            for marker in ("crash reporter", "has crashed")
+        ):
             raise LaunchFailed(
                 f"Kenshi startup stopped because the terminal window {title!r} appeared."
             )

@@ -191,6 +191,23 @@ def test_launcher_wait_fails_immediately_on_crash_reporter() -> None:
     asyncio.run(scenario())
 
 
+def test_launcher_wait_fails_immediately_on_kenshi_has_crashed_window() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(title="Kenshi has crashed")
+
+        with pytest.raises(LaunchFailed, match="Kenshi has crashed"):
+            await _wait_until(
+                lambda: False,
+                10.0,
+                "anything",
+                controller=controller,
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
 def test_plugin_ready_fails_immediately_on_fresh_native_error(tmp_path: Path) -> None:
     launched_at = datetime.now(UTC)
     status = tmp_path / "plugin_status.json"

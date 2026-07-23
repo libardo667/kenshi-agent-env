@@ -106,13 +106,27 @@ crashed during startup and is rejected. Its exact dump/binary evidence is under
 preinstall package is under
 `runs/p0-title-telemetry-hotfix-preinstall-20260723T224713Z/`.
 
-The replacement uses MyGUI's supported `eventFrameStart` subscription rather
-than detouring third-party code. Its pinned Release x64 output is 189,440 bytes
+The next replacement used MyGUI's supported `eventFrameStart` subscription
+rather than detouring third-party code. Its pinned Release x64 output was
+189,440 bytes
 with SHA-256
 `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
 The build emitted only the same upstream MyGUI C4091 and Boost C4715 warnings.
-At this checkpoint the original 185,344-byte DLL is restored on disk and the
-event-subscription build remains uninstalled pending a bounded supervised load.
+It reproduced the same immediate startup crash and is rejected. Exact evidence
+is under
+`runs/p0-title-telemetry-event-subscription-crash-20260723T230002Z/`, with its
+full preinstall package under
+`runs/p0-title-telemetry-event-subscription-preinstall-20260723T225933Z/`.
+
+The split-lifecycle replacement hooks Kenshi's pinned
+`TitleScreen::_NV_update`, emits a minimal title/control-only snapshot, and
+retains loaded-game sampling on `PlayerInterface::update` only after
+`GameWorld::initialized`. It neither detours MyGUI nor subscribes to its
+delegate list. Its pinned Release x64 output is 188,416 bytes with SHA-256
+`33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
+The build emitted only the same upstream warnings. At this checkpoint the
+original 185,344-byte DLL is restored on disk and the split-lifecycle candidate
+is uninstalled.
 
 ## Plugin staging/install layout
 

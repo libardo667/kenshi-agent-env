@@ -119,13 +119,22 @@ configs, and screenshot are preserved under
 `runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`. The complete
 pre-hotfix package is under
 `runs/p0-title-telemetry-hotfix-preinstall-20260723T224713Z/`, and its
-185,344-byte DLL is restored on disk. The next candidate uses MyGUI's supported
-`eventFrameStart` subscription and leaves loaded-game native-command monitoring
-on `PlayerInterface::update`. The pinned Release x64 build is 189,440 bytes
-with SHA-256
-`6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`;
-it has 211 passing tests plus static/doctor checks but is not installed or
-live-tested at this checkpoint. The replaced protocol `0.4.0` DLL is preserved under
+185,344-byte DLL was restored on disk. A supported MyGUI `eventFrameStart`
+candidate then compiled as a 189,440-byte DLL
+(`6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`)
+and reproduced the same immediate startup crash. Its dump, matching DLL/PDB,
+logs, configs, and screenshot are preserved under
+`runs/p0-title-telemetry-event-subscription-crash-20260723T230002Z/`; the
+complete preinstall package is under
+`runs/p0-title-telemetry-event-subscription-preinstall-20260723T225933Z/`, and
+the 185,344-byte DLL is restored again. Both MyGUI integration paths are
+rejected. The current uninstalled candidate hooks Kenshi's pinned
+`TitleScreen::_NV_update`, emits a minimal title-only snapshot with no
+world/player/camera/entity/native-command access, and uses the already proven
+`PlayerInterface::update` only after world initialization. Its pinned Release
+x64 DLL is 188,416 bytes with SHA-256
+`33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
+The replaced protocol `0.4.0` DLL is preserved under
 `runs/p0-semantic-launch-preinstall-20260723T2208Z/installed-plugin-backup/`.
 The frozen process and `BAD STUFF`
 dialog were preserved before shutdown. Pre-restart configuration is retained
@@ -140,9 +149,9 @@ uses input leases, latches new human input as terminal, makes one startup
 sequence without click retries, uses a coordinate-independent pause key, and
 requires a causally confirmed paused result. The live environment rechecks the
 exact calibrated client size inside the acquired input lease before every
-pointer-bearing action. Full portable evidence for the event-subscription
-candidate is 211 passing tests, Ruff, mypy across 48 source files, compile
-checks, schema parity, default doctor,
+pointer-bearing action. Full portable evidence for the current title/player
+split is 212 passing tests, Ruff, mypy across 48 source files, compile checks,
+schema parity, default doctor,
 three fixed single-step seeds, and the continuous mock proof.
 
 ## Pending live milestone: P6 conditional food-procurement chain
@@ -700,8 +709,8 @@ Acceptance criteria:
 
 P0 semantic-launch/control-ownership offline verification on 2026-07-23:
 
-- `.venv/bin/python -m pytest -q`: 211 passed after the event-subscription and
-  launcher crash/error fail-fast revision.
+- `.venv/bin/python -m pytest -q`: 212 passed after the title/player split and
+  both crash-title fail-fast cases.
 - `.venv/bin/ruff check .`: passed.
 - `.venv/bin/mypy src`: passed, 48 source files.
 - `.venv/bin/python -m compileall -q src scripts`: passed.
@@ -745,6 +754,21 @@ P0 semantic-launch/control-ownership offline verification on 2026-07-23:
   `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
   It is not installed; install provenance and a bounded repeat smoke are the
   immediate gate.
+- The supported-event candidate was then installed from a fresh full backup.
+  It reported `ready`, emitted no fresh telemetry, and reproduced an immediate
+  startup crash. The exact evidence is under
+  `runs/p0-title-telemetry-event-subscription-crash-20260723T230002Z/`.
+  The launcher wrapper was stopped, the crashed process required termination,
+  and the installed DLL was restored to the original 185,344-byte hash.
+- Both MyGUI detour/delegate directions are rejected. The current candidate
+  hooks Kenshi's pinned `TitleScreen::_NV_update`, emits a minimal title-only
+  snapshot with no loaded-world dereferences, and gates the ordinary
+  `PlayerInterface::update` snapshot on `GameWorld::initialized`. Its pinned
+  Release x64 DLL is 188,416 bytes with SHA-256
+  `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
+  The launcher now recognizes both `RE_Kenshi Crash Reporter` and
+  `Kenshi has crashed` as terminal no-input states. This candidate remains
+  uninstalled pending a new supervised boundary.
 - Alternate-resolution semantic startup and visible ownership reset/disarm
   remain live gates.
 

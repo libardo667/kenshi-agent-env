@@ -198,10 +198,12 @@ was actually enumerated.
 ## Threading
 
 Sample Kenshi objects only on a verified game/UI thread. Protocol `0.5.0`
-subscribes to MyGUI's supported per-frame event so title-menu controls are
-observable before a save creates `PlayerInterface`; loaded-game command
-monitoring remains on `PlayerInterface::update`. Direct detours of third-party
-MyGUI functions are outside this contract. Serialize a plain copy.
+uses separate Kenshi-owned `TitleScreen::update` and
+`PlayerInterface::update` hooks. The former emits only title state and bounded
+visible controls; it must not dereference `GameWorld`, player, camera, entity,
+or native-command state. The latter emits loaded-game state only after
+`GameWorld::initialized` is true. Direct MyGUI function detours and delegate
+subscription are outside this contract. Serialize a plain copy.
 Do not dereference Kenshi or MyGUI objects from a background writer thread. A
 future worker may write copied bytes, but it must not retain game pointers.
 
