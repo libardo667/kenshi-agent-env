@@ -513,12 +513,13 @@ class AgentRuntime:
                     continue
 
                 planning_started = monotonic()
+                planner_observation = observation
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
                 planner_source = "planner"
                 try:
                     output, preemption = await self._race_with_safety_supervisor(
-                        self.planner.decide(observation),
+                        self.planner.decide(planner_observation),
                         safety_supervisor,
                     )
                     if preemption is not None:
@@ -641,6 +642,63 @@ class AgentRuntime:
                         "planner_latency_seconds": planner_latency_seconds,
                     },
                 )
+                if (
+                    observation.mode == "live"
+                    and self.planning_config.live_execution_policy
+                    == LiveContinuousPolicy.FOOD_PROCUREMENT_V1
+                    and not plan.based_on_revision.same_snapshot_as(
+                        observation.world_revision
+                    )
+                ):
+                    from .food_procurement import food_procurement_rebase_errors
+
+                    rebase_errors = food_procurement_rebase_errors(
+                        plan,
+                        planner_observation,
+                        observation,
+                    )
+                    if rebase_errors:
+                        stop_reason = (
+                            "Plan rejected before execution: stale live food plan "
+                            "could not be rebased: "
+                            + "; ".join(rebase_errors)
+                        )
+                        self._plan_event(
+                            "plan_rejected",
+                            plan_id=plan.plan_id,
+                            plan_version=plan.plan_version,
+                            observation=observation,
+                            reason=stop_reason,
+                            evidence={
+                                "plan_basis": plan.based_on_revision.model_dump(
+                                    mode="json"
+                                ),
+                                "current_revision": (
+                                    observation.world_revision.model_dump(mode="json")
+                                ),
+                            },
+                        )
+                        terminated = True
+                        continue
+                    old_basis = plan.based_on_revision
+                    plan = plan.model_copy(
+                        update={"based_on_revision": observation.world_revision},
+                        deep=True,
+                    )
+                    self._plan_event(
+                        "plan_rebased",
+                        plan_id=plan.plan_id,
+                        plan_version=plan.plan_version,
+                        observation=observation,
+                        reason=(
+                            "Only telemetry sequence/time advanced while the exact "
+                            "live food safety fence remained unchanged."
+                        ),
+                        evidence={
+                            "old_basis": old_basis.model_dump(mode="json"),
+                            "new_basis": plan.based_on_revision.model_dump(mode="json"),
+                        },
+                    )
                 try:
                     assumption_evidence = validate_plan(
                         plan,

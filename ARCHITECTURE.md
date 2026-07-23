@@ -80,6 +80,14 @@ ambiguity-aware registry. See
 `docs/ADR_WORLD_STATE_STREAM.md` and
 `docs/ADR_STABLE_NATIVE_IDENTITY.md`.
 
+Generic strategic output must still match the current exact revision. The sole
+live `food_procurement_v1` exception may advance a plan basis across
+sequence-only updates after comparing an exact phase fence from the immutable
+planner observation to latest state. Any identity, capability, game/UI, native
+command, selection, or exact-target change rejects the plan; a successful
+rebase is a distinct lifecycle event and does not skip ordinary policy,
+precondition, or guard validation.
+
 ## Independent safety supervision
 
 Continuous mode starts one `SafetySupervisor` subscriber before the
@@ -125,6 +133,12 @@ revalidates topology, assumptions, policy, and remaining action/risk/time
 budgets. The ordinary guard and precondition checks still run before every
 replacement action. Any stale, mismatched, wrong-type, invalid, or late advisory
 is logged and discarded.
+
+The active live food profile disables concurrent advisories. Its short
+movement pulse completes well before the measured hosted response, while its
+accepted phase plan already carries the bounded future dialogue/inspection
+steps. Portable/mock profiles retain the concurrency path and its regression
+coverage.
 
 Both hosted planners select their structured output type mechanically:
 `PlannerDecision` for `single_step`, `PlanEnvelope` for an idle continuous

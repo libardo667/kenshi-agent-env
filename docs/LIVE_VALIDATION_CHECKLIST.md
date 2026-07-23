@@ -294,7 +294,7 @@ Evidence from the supervised 2026-07-23 run:
 - [ ] Run the conditional continuous chain with all existing live/native gates
       plus `--acknowledge-continuous-live`; require one response to drive
       approach/dialogue/inspection and one later response to buy at most once.
-      Five no-input hosted preflights sent zero native commands and left money,
+      Six no-input hosted preflights sent zero native commands and left money,
       food, and pause unchanged. `xhigh` exceeded the 90-second timeout; `high`
       returned after 62.70 seconds but used unsupported shorthand condition
       paths. Medium run
@@ -303,9 +303,16 @@ Evidence from the supervised 2026-07-23 run:
       shape of `exists`; that operator is now absent from the schema. The
       following medium call was cancelled after 18.91 seconds by the independent
       sequence-stall supervisor; the native stream hotfix above was installed
-      before execution is retried. The follow-up contract uses medium reasoning,
-      dynamic output-token ceilings, a schema-enumerated condition vocabulary,
-      and bounded planner failure logging.
+      before execution is retried. Run
+      `p6-live-continuous-dry-medium-20260723T203207Z` then returned a strict
+      typed plan in 23.95 seconds with the repaired stream healthy; policy
+      rejected redundant global target annotations, an undersized game-time
+      budget, and its naturally advanced exact revision. Those shapes are now
+      canonicalized/enforced, and only the live food policy can rebase
+      sequence-only latency when its complete phase fence is unchanged. The
+      follow-up contract uses medium reasoning, dynamic output-token ceilings,
+      a schema-enumerated condition vocabulary, and bounded planner failure
+      logging.
 - [ ] Record exact pre/post money, selected food count, pause, action count,
       strategic-call count, and final plan lifecycle.
 - [ ] Exercise one safe preemption (F12 or human input), confirm no repeated

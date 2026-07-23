@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 
 from .models import (
+    CharacterState,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -80,6 +81,11 @@ def _requires(
 
 
 def _selected_food_items(observation: Observation) -> int | None:
+    selected = _selected_character(observation)
+    return selected.food_items if selected is not None else None
+
+
+def _selected_character(observation: Observation) -> CharacterState | None:
     telemetry = observation.telemetry
     if telemetry is None:
         return None
@@ -95,7 +101,80 @@ def _selected_food_items(observation: Observation) -> int | None:
             telemetry.squad[0] if telemetry.squad else None,
         ),
     )
-    return selected.food_items if selected is not None else None
+    return selected
+
+
+def _food_rebase_fence(
+    observation: Observation,
+    target_id: str,
+) -> dict[str, object] | None:
+    telemetry = observation.telemetry
+    selected = _selected_character(observation)
+    if telemetry is None or selected is None:
+        return None
+    target = next(
+        (entity for entity in telemetry.nearby_entities if entity.id == target_id),
+        None,
+    )
+    if target is None:
+        return None
+    return {
+        "mode": observation.mode,
+        "control_mode": observation.control_mode.value,
+        "telemetry_stale": observation.telemetry_stale,
+        "identity_session_id": telemetry.identity_session_id,
+        "capabilities": tuple(sorted(telemetry.capabilities)),
+        "game": telemetry.game.model_dump(mode="json"),
+        "ui": telemetry.ui.model_dump(mode="json"),
+        "active_shop_trader_count": telemetry.active_shop_trader_count,
+        "native_control": telemetry.native_control.model_dump(mode="json"),
+        "selected": selected.model_dump(mode="json"),
+        "target": target.model_dump(mode="json"),
+    }
+
+
+def food_procurement_rebase_errors(
+    plan: PlanEnvelope,
+    planner_observation: Observation,
+    current_observation: Observation,
+) -> list[str]:
+    """Permit only sequence-only rebases across an unchanged live food fence."""
+
+    errors: list[str] = []
+    if not plan.based_on_revision.same_snapshot_as(
+        planner_observation.world_revision
+    ):
+        errors.append("plan basis does not match its immutable planner snapshot")
+    if not current_observation.world_revision.is_later_than(
+        planner_observation.world_revision
+    ):
+        errors.append("current world revision is not causally later than the planner snapshot")
+
+    actions = [
+        step.action for step in plan.steps if isinstance(step.action, SkillAction)
+    ]
+    target_ids = _target_ids(actions)
+    if (
+        len(actions) != len(plan.steps)
+        or len(target_ids) != len(actions)
+        or len(set(target_ids)) != 1
+    ):
+        errors.append("stale food plan lacks one exact stable target fence")
+        return errors
+
+    target_id = target_ids[0]
+    before = _food_rebase_fence(planner_observation, target_id)
+    after = _food_rebase_fence(current_observation, target_id)
+    if before is None or after is None:
+        errors.append("food rebase fence is unavailable")
+    elif before != after:
+        changed = sorted(
+            key for key in before.keys() | after.keys() if before.get(key) != after.get(key)
+        )
+        errors.append(
+            "food rebase fence changed during planning: " + ", ".join(changed)
+        )
+    return errors
 
 
 def _skill(step: PlanStep, errors: list[str]) -> SkillAction | None:
@@ -179,6 +258,18 @@ def food_procurement_policy_errors(
             "food procurement actions do not match the current authoritative phase; "
             f"expected {expected_names}, observed {names}"
         )
+    if "approach_confirmed_vendor" in names:
+        approach_action = actions[names.index("approach_confirmed_vendor")]
+        duration = approach_action.argument_map().get("duration_seconds")
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or plan.max_game_seconds < float(duration) + 1.0
+        ):
+            errors.append(
+                "food approach plan game-time budget must cover duration_seconds "
+                "plus one second"
+            )
 
     target_ids = _target_ids(actions)
     if len(target_ids) != len(actions) or len(set(target_ids)) != 1:

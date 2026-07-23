@@ -742,6 +742,15 @@ class Condition(StrictModel):
                 raise ValueError(f"Unsupported condition path: {self.path!r}")
             if self.path is not None and self.path.startswith("target.") and not self.target_id:
                 raise ValueError("target.* conditions require target_id")
+            if (
+                self.path is not None
+                and not self.path.startswith("target.")
+                and self.target_id is not None
+            ):
+                # A redundant entity annotation cannot narrow a global scalar.
+                # Normalize it away so policy matching and evaluation share one
+                # canonical condition shape.
+                object.__setattr__(self, "target_id", None)
         elif self.kind == ConditionKind.CAPABILITY:
             if self.path is None:
                 raise ValueError("Capability conditions require path")

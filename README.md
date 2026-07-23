@@ -149,7 +149,15 @@ environments. Live observations require an explicitly enabled versioned policy;
 the sole current policy accepts only the exact Hub food-procurement phases,
 same-target actions, authoritative dialogue/trade/tooltip evidence, and exact
 money/food/pause postconditions. It remains disabled in default and
-live-example configuration.
+live-example configuration. Ordinary stale planner output still executes
+nothing. This one live policy may rebase a returned plan from its immutable
+planner revision to a later telemetry sequence only when the complete
+phase-critical fence—identity session, capabilities, game/UI state, native
+command state, selected character, and exact vendor—remains byte-for-byte
+equivalent. Every action is then checked again against the latest observation.
+The burn-in disables concurrent option advisories because the measured hosted
+latency is longer than the short movement pulse and the accepted phase plan
+already contains its bounded future steps.
 The complete executor and condition contract is recorded in
 [Continuous planning](docs/CONTINUOUS_PLANNING.md).
 
@@ -232,7 +240,9 @@ request 10,240 tokens from world, 8,192 from dialogue, and 6,144 from trade.
 This limit includes the model's hidden reasoning tokens as well as visible
 structured output. The condition path itself is a schema enum, so unsupported
 abbreviations are rejected by structured generation rather than only by a
-later executor validator.
+later executor validator. Non-target telemetry conditions canonicalize a
+redundant model-supplied `target_id` to null; only `target.*` conditions retain
+an exact stable target fence.
 
 OpenRouter is also supported through its OpenAI-compatible Chat API. Add
 `OPENROUTER_API_KEY` to `.env`, select `--planner openrouter`, and optionally set
