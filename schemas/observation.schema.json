@@ -919,6 +919,60 @@
       "title": "MoveCursorAction",
       "type": "object"
     },
+    "NativeControlState": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "default": false,
+          "title": "Available",
+          "type": "boolean"
+        },
+        "last_command_sequence": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Last Command Sequence",
+          "type": "integer"
+        },
+        "last_command": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Command"
+        },
+        "last_result": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Result"
+        },
+        "last_target": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Target"
+        }
+      },
+      "title": "NativeControlState",
+      "type": "object"
+    },
     "NearbyEntity": {
       "additionalProperties": false,
       "properties": {
@@ -1069,6 +1123,20 @@
             }
           ],
           "default": null
+        },
+        "camera_bearing_degrees": {
+          "anyOf": [
+            {
+              "maximum": 180.0,
+              "minimum": -180.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Camera Bearing Degrees"
         },
         "screen_position": {
           "anyOf": [
@@ -1468,6 +1536,9 @@
         },
         "ui": {
           "$ref": "#/$defs/UIState"
+        },
+        "native_control": {
+          "$ref": "#/$defs/NativeControlState"
         },
         "squad": {
           "items": {

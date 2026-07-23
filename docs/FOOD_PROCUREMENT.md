@@ -10,23 +10,22 @@ item, or price.
 
 1. **Recover the camera.** Double-click Lekko's first squad portrait to center
    the 3D camera on Lekko.
-2. **Locate a trader.** Inspect the world view for a clearly non-hostile person
-   with an obvious talk or shop affordance. Movement remains limited to the
-   existing visible-terrain and map pulses.
-3. **Approach and talk.** Right-click only that grounded visual target and allow
-   a short, bounded approach pulse. If dialogue auto-pauses the game, preserve
-   that paused state.
-4. **Enter trade.** Select a trade dialogue option only after its actual layout
-   has been captured and a dedicated click envelope has been calibrated.
-5. **Buy one item.** Select one visibly identified food item only after its
-   actual trade-grid layout has been captured and purchase guards are active.
+2. **Locate a trader.** Use the native role split to distinguish a real
+   humanoid vendor leader from guards, followers, and trader-squad animals.
+3. **Approach and talk.** Ask the bounded native bridge to issue Kenshi's own
+   `PLAYER_TALK_TO` order for the nearest role-confirmed, non-hostile vendor,
+   then advance through a short pause-bounded pulse.
+4. **Enter trade.** Use the calibrated `choose_show_goods` envelope only when
+   the captured dialogue visibly contains that exact first option.
+5. **Buy one item.** Hover a candidate with `inspect_shop_item`, require a
+   visible `[Food]` tooltip and affordable value, then use the separately
+   bounded purchase skill with that value as `expected_price`.
 6. **Verify and stop.** Require fresh telemetry to confirm the money change and,
    where available, the selected character's food-item count. Return paused.
 
-The implementation is being exposed in those same stages. Camera recovery and
-the bounded person interaction are available now. Dialogue and trade clicks are
-deliberately absent until supervised runs provide real screenshots to calibrate
-against.
+All six stages have now passed one supervised live run. This is a narrow proof
+for the current 1920x1080 HUD, Hub Barman dialogue, and Barman grid—not a claim
+that arbitrary traders or resolutions are calibrated.
 
 The camera anchor double-clicks Lekko's calibrated squad portrait. This removes
 ambiguity when a building or other world object owns the detail panel, and uses
@@ -73,6 +72,14 @@ Before enabling a purchase action, the safety layer must enforce all of these:
 - a stop on a surprising money delta, unverified item identity, stale
   telemetry, or an unexpected screen transition.
 
+The live profile now enforces one purchase per run, a maximum expected price of
+750 cats, and a minimum expected post-purchase balance of 250 cats. It requires
+fresh trade telemetry, exactly one verified non-hostile shop owner, and a
+positive integer `expected_price`. Runtime success requires both a money
+decrease and an increased selected-character `food_items` count. Item identity
+still comes from the current visible tooltip, so the generic inventory-grid
+problem remains deliberately unsolved.
+
 The current telemetry bridge reports money, a basic food-item count, nearby
 characters, faction disposition, dialogue/trade screen state, and normalized
 screen positions for characters Kenshi says are rendered in the viewport. It
@@ -92,6 +99,13 @@ still does not report inventory grids, item prices, affordable items, or
 click-target occlusion. Visual evidence is necessary, but it is never a
 substitute for a narrow click region and numeric spending guards.
 
+The same plugin now provides one constrained control bridge:
+`approach_confirmed_vendor`. It listens for a private `Ctrl+Shift+F10` chord on
+the UI thread, repeats the vendor-role and disposition checks, and calls
+`newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, ...)` with the target handle,
+indoor building, and position. Kenshi—not screen-coordinate guesswork—therefore
+owns the route through the bar door and interior.
+
 ## Interaction safety
 
 Kenshi's direct right-click behavior is contextual: it can initiate friendly
@@ -106,16 +120,19 @@ without sending a second pause toggle that would resume the game.
 
 ## Calibration gates
 
-Each new stage requires a supervised live proof before the next one is added:
+The 2026-07-23 proof completed the vertical slice:
 
-- prove the bounded portrait double-click restores a useful camera view;
-- capture a successful non-hostile interaction and its dialogue screen;
-- use that capture to bound a dialogue-option action;
-- capture the resulting trade screen;
-- use that capture to bound a one-item purchase action;
-- prove the purchase guard rejects over-budget, insufficient-balance, stale,
-  repeated, and malformed requests in automated tests;
-- perform one supervised low-cost purchase and verify the result.
+- the native approach command reported `issued` with target `Barman`;
+- a two-second pulse reduced Barman distance from 237.48 to 90.87;
+- the next pulse opened Barman dialogue;
+- the calibrated first option opened trade;
+- lifecycle telemetry changed `active_shop_trader_count` from 0 to 1 and mapped
+  `shop_inventory_owner: true` to Barman;
+- hovering normalized `(0.316, 0.357)` showed `Meatwrap (2)`, `[Food]`,
+  `50 nu`, and value `c.649`;
+- one guarded right-click changed money from 1,000 to 351 and `food_items` from
+  0 to 1; and
+- the game was left paused.
 
 Escape is the default recovery action for an unexpected overlay. If the screen
 cannot be identified confidently after recovery, the run stops and leaves the

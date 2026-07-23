@@ -78,6 +78,21 @@ inspection alone.
 - [ ] Stale telemetry triggers pause or stop.
 - [ ] Every episode produces a complete JSONL log and final summary.
 
+### Evidence from 2026-07-23 food-procurement proof
+
+- Camera-relative bearing was validated against reciprocal Q/E orbits. A
+  negative off-screen bearing moves toward zero with `orbit_camera_right`; the
+  live orbit step is about 13 degrees.
+- The native `approach_confirmed_vendor` command acknowledged sequence 1 with
+  result `issued` and target `Barman`. One two-second pulse reduced distance
+  from 237.48 to 90.87; the next opened dialogue.
+- Selecting the calibrated `Show me your goods` option created exactly one
+  `ShopTrader`. Lifecycle telemetry mapped its owner pointer to Barman and set
+  `shop_inventory_owner: true`.
+- A hover at normalized `(0.316, 0.357)` visibly identified a Meatwrap as
+  `[Food]`, 50 nutrition, value 649 cats. One purchase changed money from 1,000
+  to 351 and selected food items from 0 to 1. The game was confirmed paused.
+
 ### Evidence from 2026-07-22 live dry-run
 
 - The initial title filter `Kenshi` also matched a terminal opened in the

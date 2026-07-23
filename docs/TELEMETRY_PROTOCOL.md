@@ -50,6 +50,7 @@ ui.dialogue
 nearby.characters
 nearby.roles
 nearby.shop_owners
+control.approach_vendor
 ```
 
 Capabilities describe what the plugin can currently observe, not what exists in
@@ -60,6 +61,16 @@ selected character. An entity with `visible: true` is rendered inside the
 current camera viewport and has a normalized `screen_position`. It may still be
 hidden by a roof, wall, character, or other geometry, so this is not proof that
 a click at that point will reach the character.
+
+`camera_bearing_degrees` remains available for nearby entities that are outside
+the viewport. It is measured around the current camera: zero is straight ahead,
+negative values are left, positive values are right, and values near either
+`-180` or `180` are behind the camera. This grounds a bounded orbit direction;
+it is not evidence that the route to the entity is clear. Because the live
+camera orbits around Lekko while facing inward, a negative target bearing is
+brought toward zero with `orbit_camera_right`, and a positive target bearing
+with `orbit_camera_left`. That sign convention was checked against the live
+camera rather than inferred from the skill names.
 
 `nearby.roles` keeps physical type separate from trade roles. `kind` is
 `character` or `animal`; it is never inferred from squad commerce. The
@@ -77,6 +88,17 @@ then compares each registered `ShopTrader::getTrader()` owner by pointer
 against nearby characters. `active_shop_trader_count` reports the registry
 size. Both values are null and the capability is absent if either lifecycle
 hook fails.
+
+`control.approach_vendor` is a narrowly constrained native control capability.
+The plugin responds to its private `Ctrl+Shift+F10` bridge only on the game/UI
+thread, re-enumerates nearby characters, and selects the nearest conscious,
+non-hostile humanoid whose platoon has a vendor list, who is that platoon's
+leader, and who has dialogue. It then calls
+`PlayerInterface::newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, ...)` with
+the character's handle, indoor building, and world position. Kenshi therefore
+owns the pathfinding through doors and interior floors. `native_control`
+reports the last command sequence, result, and target; it does not imply that
+the resulting path has completed.
 
 ## Identity
 

@@ -14,7 +14,7 @@ from .config import AppConfig, load_config
 from .control.capture import WindowCapture
 from .control.win32 import Win32InputController
 from .models import ClickAction
-from .telemetry import TelemetryReader
+from .telemetry import TelemetryReader, TelemetryReadError
 
 
 def _controller(config: AppConfig) -> Win32InputController:
@@ -107,10 +107,25 @@ async def _launch(args: argparse.Namespace) -> int:
         reader = _telemetry_read(config)
 
         def game_loaded() -> bool:
-            result = reader.read()
+            try:
+                result = reader.read()
+            except TelemetryReadError:
+                return False
             return not result.stale and result.snapshot.game.loaded and bool(result.snapshot.squad)
 
-        _wait_until(game_loaded, args.timeout, "loaded player squad")
+        load_deadline = time.monotonic() + args.timeout
+        next_retry = time.monotonic() + 4.0
+        while not game_loaded():
+            now = time.monotonic()
+            if now >= load_deadline:
+                raise TimeoutError("Timed out waiting for loaded player squad.")
+            if now >= next_retry:
+                # The RE_Kenshi menu can appear late or reopen over Continue.
+                # Retrying this title-screen sequence is idempotent.
+                await _click(controller, 0.300, 0.110)
+                await _click(controller, 0.338, 0.171)
+                next_retry = now + 4.0
+            await asyncio.sleep(0.25)
         snapshot = reader.read().snapshot
         if snapshot.game.paused is False:
             await _click(controller, 0.765, 0.723)
@@ -154,6 +169,7 @@ def _telemetry(args: argparse.Namespace) -> int:
         "screen": snapshot.ui.active_screen,
         "money": snapshot.game.money,
         "active_shop_trader_count": snapshot.active_shop_trader_count,
+        "native_control": snapshot.native_control.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json") if selected else None,
         "barman": barman.model_dump(mode="json") if barman else None,
     }

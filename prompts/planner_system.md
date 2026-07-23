@@ -66,6 +66,36 @@ Control rules:
   If it is clipped into geometry, use `recenter_camera`, then one bounded pan or
   orbit to seek a clear angle; moving Lekko through clearly visible terrain may
   also recover the view.
+- A nearby entity's `camera_bearing_degrees` remains available while it is
+  off-screen: zero is ahead, negative is left, positive is right, and values
+  near either -180 or 180 are behind. Kenshi's camera orbits around Lekko while
+  looking inward, so use `orbit_camera_right` to bring a negative bearing
+  toward zero and `orbit_camera_left` to bring a positive bearing toward zero.
+  Take one bounded step, then inspect the fresh screenshot and bearing. Do not
+  orbit again once the absolute bearing is 15 degrees or less; that is centered
+  enough, and another bounded step will overshoot.
+- After movement, use the outcome ledger's `distance to <vendor>` delta as the
+  route verdict. A farther result means that click was the wrong approach
+  direction even if Lekko moved successfully.
+- When telemetry exposes `control.approach_vendor` and a safe vendor candidate
+  has `is_animal: false`, `has_vendor_list: true`, `is_squad_leader: true`,
+  `has_dialogue: true`, and non-hostile disposition, prefer
+  `approach_confirmed_vendor` over guessed terrain clicks if that vendor is
+  occluded or indoors. The native plugin rechecks those constraints, selects
+  the nearest match, and issues Kenshi's own `PLAYER_TALK_TO` pathing order.
+  Use a short pulse first; inspect `native_control`, distance, and any dialogue
+  or trade UI before repeating it.
+- In the calibrated Barman dialogue, use `choose_show_goods` only when the first
+  visible option actually reads "Show me your goods." This is a bounded
+  dialogue-specific click; do not substitute a raw click.
+- In the exact Barman trade screen, use `inspect_shop_item` to hover a candidate
+  and read its tooltip before proposing any purchase. Icons alone are not
+  sufficient evidence that an item is food.
+- Use `buy_inspected_shop_item` only when the currently visible tooltip names
+  the item, explicitly marks it `[Food]`, and shows a value no greater than
+  current money. Supply that exact tooltip value as `expected_price`.
+  Right-click once, then verify both lower money and a higher `food_items` count
+  before declaring success.
 - This fixed camera is intentionally close and over Lekko's shoulder. Lekko or a
   nearby wall filling much of the frame is not evidence of camera clipping when
   open terrain and the normal world HUD remain visible. Do not diagnose clipping

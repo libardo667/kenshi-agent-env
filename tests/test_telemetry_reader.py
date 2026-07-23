@@ -62,11 +62,19 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "disposition": "neutral",
             "distance": 12.5,
             "position": {"x": -100.0, "y": 25.0, "z": 80.0},
+            "camera_bearing_degrees": -18.5,
             "screen_position": {"x": 0.45, "y": 0.35},
             "conscious": True,
         }
     ]
     payload["active_shop_trader_count"] = 1
+    payload["native_control"] = {
+        "available": True,
+        "last_command_sequence": 2,
+        "last_command": "approach_confirmed_vendor",
+        "last_result": "issued",
+        "last_target": "Bar Trader",
+    }
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     result = TelemetryReader(path, max_age_seconds=5, retries=1).read()
@@ -77,8 +85,11 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
     assert result.snapshot.nearby_entities[0].is_squad_leader is True
     assert result.snapshot.nearby_entities[0].talk_task_available is True
     assert result.snapshot.active_shop_trader_count == 1
+    assert result.snapshot.native_control.last_result == "issued"
+    assert result.snapshot.native_control.last_target == "Bar Trader"
     assert result.snapshot.nearby_entities[0].position is not None
     assert result.snapshot.nearby_entities[0].position.x == -100.0
+    assert result.snapshot.nearby_entities[0].camera_bearing_degrees == -18.5
     assert result.snapshot.nearby_entities[0].screen_position is not None
     assert result.snapshot.nearby_entities[0].screen_position.x == 0.45
     assert result.snapshot.nearby_entities[0].visible is None
