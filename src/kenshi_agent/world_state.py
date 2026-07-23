@@ -528,6 +528,37 @@ class WorldStateStore:
         )
         return self.active_plan  # type: ignore[return-value]
 
+    def apply_plan_patch(
+        self,
+        plan_version: int,
+        accepted_revision: WorldStateRevision,
+    ) -> ActivePlanState:
+        if self._active_plan is None:
+            raise WorldStateError("Cannot patch a plan when no plan is active.")
+        if plan_version <= self._active_plan.plan_version:
+            raise WorldStateError(
+                f"Patched plan version {plan_version} must exceed active version "
+                f"{self._active_plan.plan_version}."
+            )
+        previous_version = self._active_plan.plan_version
+        self._active_plan = replace(
+            self._active_plan,
+            plan_version=plan_version,
+            accepted_revision=accepted_revision.model_copy(deep=True),
+            step_id=None,
+            status="patched",
+        )
+        self.record_event(
+            "active_plan_patched",
+            revision=accepted_revision,
+            payload={
+                "plan_id": self._active_plan.plan_id,
+                "previous_plan_version": previous_version,
+                "plan_version": plan_version,
+            },
+        )
+        return self.active_plan  # type: ignore[return-value]
+
     def clear_active_plan(self, reason: str) -> None:
         if self._active_plan is None:
             return

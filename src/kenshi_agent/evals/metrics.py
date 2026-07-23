@@ -54,6 +54,16 @@ class _MetricValues(TypedDict):
     safety_cleanups_failed: int
     safety_supervisor_terminals: int
     safety_supervisor_safe_paused: int
+    plan_patches_staged: int
+    plan_patches_applied: int
+    plan_patches_rejected: int
+    concurrent_planner_discards: int
+    options_prepared: int
+    options_started: int
+    option_progress_updates: int
+    options_succeeded: int
+    options_failed: int
+    options_cancelled: int
     success: bool | None
     steps_completed: int | None
     stop_reason: str | None
@@ -106,6 +116,16 @@ class LogMetrics:
     safety_cleanups_failed: int = 0
     safety_supervisor_terminals: int = 0
     safety_supervisor_safe_paused: int = 0
+    plan_patches_staged: int = 0
+    plan_patches_applied: int = 0
+    plan_patches_rejected: int = 0
+    concurrent_planner_discards: int = 0
+    options_prepared: int = 0
+    options_started: int = 0
+    option_progress_updates: int = 0
+    options_succeeded: int = 0
+    options_failed: int = 0
+    options_cancelled: int = 0
     success: bool | None = None
     steps_completed: int | None = None
     stop_reason: str | None = None
@@ -115,6 +135,7 @@ class LogMetrics:
     actions_per_strategic_planner_call: float | None = None
     receipts_with_post_command_revision_percentage: float | None = None
     safety_cleanup_success_percentage: float | None = None
+    option_success_percentage: float | None = None
 
 
 def evaluate_log(path: Path) -> LogMetrics:
@@ -166,6 +187,16 @@ def evaluate_log(path: Path) -> LogMetrics:
         "safety_cleanups_failed": 0,
         "safety_supervisor_terminals": 0,
         "safety_supervisor_safe_paused": 0,
+        "plan_patches_staged": 0,
+        "plan_patches_applied": 0,
+        "plan_patches_rejected": 0,
+        "concurrent_planner_discards": 0,
+        "options_prepared": 0,
+        "options_started": 0,
+        "option_progress_updates": 0,
+        "options_succeeded": 0,
+        "options_failed": 0,
+        "options_cancelled": 0,
         "success": None,
         "steps_completed": None,
         "stop_reason": None,
@@ -252,6 +283,26 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["safety_supervisor_terminals"] += 1
                 if payload.get("status") == "safe_paused":
                     values["safety_supervisor_safe_paused"] += 1
+            elif event_type == "plan_patch_staged":
+                values["plan_patches_staged"] += 1
+            elif event_type == "plan_patched":
+                values["plan_patches_applied"] += 1
+            elif event_type == "plan_patch_rejected":
+                values["plan_patches_rejected"] += 1
+            elif event_type == "concurrent_planner_discarded":
+                values["concurrent_planner_discards"] += 1
+            elif event_type == "option_prepared":
+                values["options_prepared"] += 1
+            elif event_type == "option_started":
+                values["options_started"] += 1
+            elif event_type == "option_progress":
+                values["option_progress_updates"] += 1
+            elif event_type == "option_succeeded":
+                values["options_succeeded"] += 1
+            elif event_type == "option_failed":
+                values["options_failed"] += 1
+            elif event_type == "option_cancelled":
+                values["options_cancelled"] += 1
             elif event_type == "world_state_update":
                 if payload.get("sequence_status") == "duplicate":
                     values["sequence_stall_incidents"] += 1
@@ -326,6 +377,16 @@ def evaluate_log(path: Path) -> LogMetrics:
         if values["safety_cleanups_started"]
         else None
     )
+    terminal_options = (
+        values["options_succeeded"]
+        + values["options_failed"]
+        + values["options_cancelled"]
+    )
+    option_success_percentage = (
+        100.0 * values["options_succeeded"] / terminal_options
+        if terminal_options
+        else None
+    )
     planner_latencies = strategic_planner_latencies or decision_planner_latencies
     if not planner_latencies:
         return LogMetrics(
@@ -333,6 +394,7 @@ def evaluate_log(path: Path) -> LogMetrics:
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
             safety_cleanup_success_percentage=safety_cleanup_success_percentage,
+            option_success_percentage=option_success_percentage,
         )
     ordered = sorted(planner_latencies)
     p95_index = max(0, ceil(len(ordered) * 0.95) - 1)
@@ -344,6 +406,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         actions_per_strategic_planner_call=actions_per_call,
         receipts_with_post_command_revision_percentage=causal_receipt_percentage,
         safety_cleanup_success_percentage=safety_cleanup_success_percentage,
+        option_success_percentage=option_success_percentage,
     )
 
 

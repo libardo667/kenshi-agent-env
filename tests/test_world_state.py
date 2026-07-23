@@ -33,6 +33,7 @@ from kenshi_agent.world_state import (
     RevisionRegressionError,
     SequenceStatus,
     WorldStateClosedError,
+    WorldStateError,
     WorldStateStore,
 )
 
@@ -553,6 +554,23 @@ def test_active_plan_and_command_causality_are_executor_owned() -> None:
 
     store.clear_active_plan("completed")
     assert store.active_plan is None
+
+
+def test_active_plan_patch_requires_a_new_version_and_resets_active_step() -> None:
+    store = WorldStateStore()
+    first = observation(1)
+    second = observation(2)
+    store.publish(first)
+    store.activate_plan("plan", 1, first.world_revision)
+    store.activate_step("step-a")
+
+    with pytest.raises(WorldStateError, match="must exceed"):
+        store.apply_plan_patch(1, second.world_revision)
+
+    patched = store.apply_plan_patch(2, second.world_revision)
+    assert patched.plan_version == 2
+    assert patched.step_id is None
+    assert patched.status == "patched"
 
 
 def test_store_update_preserves_authorization_state_at_publish_time() -> None:

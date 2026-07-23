@@ -25,6 +25,7 @@ from kenshi_agent.models import (
     PlannerDecision,
     PlannerOutput,
     PlanningMode,
+    PlanPatch,
     PlanStep,
     RiskBudget,
     SetSpeedAction,
@@ -257,6 +258,74 @@ def two_step_plan(
     )
 
 
+def patchable_movement_plan(observation: Observation) -> PlanEnvelope:
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="patchable-movement",
+        plan_version=1,
+        objective="Move, then choose the latest safe speed.",
+        control_mode=observation.control_mode,
+        based_on_revision=observation.world_revision,
+        assumptions=[fresh()],
+        steps=[
+            PlanStep(
+                step_id="move",
+                action=SkillAction(name="mock_move"),
+                preconditions=[
+                    condition(
+                        "telemetry.game.paused",
+                        True,
+                        "game.pause",
+                    )
+                ],
+                success_conditions=[
+                    condition(
+                        "telemetry.game.paused",
+                        True,
+                        "game.pause",
+                    )
+                ],
+                failure_conditions=[],
+                timeout_seconds=3.0,
+                retry_budget=0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                on_success="old-speed",
+            ),
+            PlanStep(
+                step_id="old-speed",
+                action=SetSpeedAction(speed=2),
+                preconditions=[
+                    condition(
+                        "telemetry.game.paused",
+                        True,
+                        "game.pause",
+                    )
+                ],
+                success_conditions=[
+                    condition(
+                        "telemetry.game.speed_multiplier",
+                        2.0,
+                        "game.speed",
+                    )
+                ],
+                failure_conditions=[],
+                timeout_seconds=1.0,
+                retry_budget=0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            ),
+        ],
+        entry_step_id="move",
+        max_actions=2,
+        max_wall_seconds=5.0,
+        max_game_seconds=5.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=0,
+            max_purchase_actions=0,
+            max_native_assisted_actions=0,
+        ),
+    )
+
+
 class PlanThenStopPlanner(Planner):
     def __init__(
         self,
@@ -322,7 +391,17 @@ def runtime_for(
     observation_pump_enabled: bool = False,
     observation_clock: PlanningClock | None = None,
 ) -> tuple[AgentRuntime, SessionLogger]:
-    macros = MacroRegistry({"unused": MacroConfig(actions=[{"kind": "key", "key": "u"}])})
+    macros = MacroRegistry(
+        {
+            "unused": MacroConfig(actions=[{"kind": "key", "key": "u"}]),
+            "mock_move": MacroConfig(
+                actions=[],
+                movement_pulse_seconds=0.5,
+                movement_pulse_min_seconds=0.1,
+                movement_pulse_max_seconds=1.0,
+            ),
+        }
+    )
     safety = SafetyConfig(
         allow_action_kinds=["pause", "set_speed", "skill", "stop"],
         max_actions_per_minute=500,
@@ -540,7 +619,9 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
         async def observe_without_capture(self) -> Observation:
             self.sequence += 1
             self.unsafe = True
-            return self.observation()
+            return self.observation().model_copy(
+                update={"events": ["human_input_detected"]}
+            )
 
         async def step(self, action: Action) -> Transition:
             if isinstance(action, SkillAction):
@@ -642,8 +723,309 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
         )
         assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
         assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 1
+        preemption = next(
+            event for event in events if event["event_type"] == "safety_supervisor_preempted"
+        )
+        assert preemption["payload"]["cause"] == "human_input"
+        assert sum(event["event_type"] == "option_prepared" for event in events) == 1
+        assert sum(event["event_type"] == "option_started" for event in events) == 1
+        assert sum(event["event_type"] == "option_cancelled" for event in events) == 1
+        assert not [
+            task
+            for task in asyncio.all_tasks()
+            if task is not asyncio.current_task()
+            and task.get_name().startswith("kenshi-agent-option-")
+        ]
         metrics = evaluate_log(tmp_path / "events.jsonl")
         assert metrics.plan_execution_cancellations == 1
+
+    asyncio.run(scenario())
+
+
+def test_movement_option_overlaps_and_applies_a_valid_future_patch(
+    tmp_path: Path,
+) -> None:
+    class PatchableMovementEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.release_movement = asyncio.Event()
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            if not isinstance(action, SkillAction):
+                return await super().step(action)
+            self.actions.append(action)
+            self.movement_started.set()
+            await self.release_movement.wait()
+            self.step_index += 1
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.INTERFACE_ONLY,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=2,
+                    message="fake movement completed and remained paused",
+                ),
+                observation=self.observation(),
+            )
+
+    class PatchingPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.advisory_returned = asyncio.Event()
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return patchable_movement_plan(current)
+            assert current.active_plan is not None
+            assert current.active_plan.active_step_id == "move"
+            self.advisory_returned.set()
+            return PlanPatch(
+                schema_version="1.0",
+                plan_id=current.active_plan.plan_id,
+                based_on_plan_version=current.active_plan.plan_version,
+                based_on_revision=current.world_revision,
+                replace_future_steps=[
+                    PlanStep(
+                        step_id="patched-speed",
+                        action=SetSpeedAction(speed=3),
+                        preconditions=[
+                            condition(
+                                "telemetry.game.paused",
+                                True,
+                                "game.pause",
+                            )
+                        ],
+                        success_conditions=[
+                            condition(
+                                "telemetry.game.speed_multiplier",
+                                3.0,
+                                "game.speed",
+                            )
+                        ],
+                        failure_conditions=[],
+                        timeout_seconds=1.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                    )
+                ],
+                rationale="The future speed choice can be updated without restarting movement.",
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = PatchableMovementEnvironment(clock=clock)
+        planner = PatchingPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
+            for _ in range(5):
+                await asyncio.sleep(0)
+                if any(
+                    event["event_type"] == "plan_patch_staged"
+                    for event in read_events(tmp_path / "events.jsonl")
+                ):
+                    break
+            assert any(
+                event["event_type"] == "plan_patch_staged"
+                for event in read_events(tmp_path / "events.jsonl")
+            )
+            assert not any(isinstance(action, SetSpeedAction) for action in environment.actions)
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            environment.release_movement.set()
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 2
+        assert planner.calls == 2
+        assert [type(action) for action in environment.actions] == [
+            SkillAction,
+            SetSpeedAction,
+        ]
+        assert isinstance(environment.actions[1], SetSpeedAction)
+        assert environment.actions[1].speed == 3
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "option_prepared" for event in events) == 1
+        assert sum(event["event_type"] == "option_started" for event in events) == 1
+        assert sum(event["event_type"] == "option_progress" for event in events) >= 1
+        assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
+        staged_index = next(
+            index
+            for index, event in enumerate(events)
+            if event["event_type"] == "plan_patch_staged"
+        )
+        succeeded_index = next(
+            index
+            for index, event in enumerate(events)
+            if event["event_type"] == "option_succeeded"
+        )
+        patched_index = next(
+            index
+            for index, event in enumerate(events)
+            if event["event_type"] == "plan_patched"
+        )
+        assert staged_index < succeeded_index < patched_index
+        assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 0
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.strategic_planner_calls == 2
+        assert metrics.plan_patches_staged == 1
+        assert metrics.plan_patches_applied == 1
+        assert metrics.plan_patches_rejected == 0
+        assert metrics.option_progress_updates >= 1
+        assert metrics.options_succeeded == 1
+        assert metrics.option_success_percentage == 100.0
+        replayed = replay_plan_lifecycle(tmp_path / "events.jsonl")
+        assert replayed["patchable-movement"].plan_version == 2
+        assert replayed["patchable-movement"].status == "completed"
+        assert replayed["patchable-movement"].succeeded_step_ids == [
+            "move",
+            "patched-speed",
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
+    tmp_path: Path,
+) -> None:
+    class AdvancingMovementEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.release_movement = asyncio.Event()
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            if not isinstance(action, SkillAction):
+                return await super().step(action)
+            self.actions.append(action)
+            self.movement_started.set()
+            await self.release_movement.wait()
+            self.step_index += 1
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.INTERFACE_ONLY,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=2,
+                ),
+                observation=self.observation(),
+            )
+
+    class StalePatchPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.advisory_returned = asyncio.Event()
+            self.advisory_started = asyncio.Event()
+            self.release_advisory = asyncio.Event()
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return patchable_movement_plan(current)
+            assert current.active_plan is not None
+            self.advisory_started.set()
+            await self.release_advisory.wait()
+            self.advisory_returned.set()
+            return PlanPatch(
+                schema_version="1.0",
+                plan_id=current.active_plan.plan_id,
+                based_on_plan_version=current.active_plan.plan_version,
+                based_on_revision=current.world_revision,
+                replace_future_steps=[
+                    PlanStep(
+                        step_id="stale-speed",
+                        action=SetSpeedAction(speed=3),
+                        preconditions=[
+                            condition(
+                                "telemetry.game.paused",
+                                True,
+                                "game.pause",
+                            )
+                        ],
+                        success_conditions=[
+                            condition(
+                                "telemetry.game.speed_multiplier",
+                                3.0,
+                                "game.speed",
+                            )
+                        ],
+                        failure_conditions=[],
+                        timeout_seconds=1.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                    )
+                ],
+                rationale="This advisory is intentionally stale.",
+            )
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = AdvancingMovementEnvironment(clock=plan_clock)
+        planner = StalePatchPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            await asyncio.wait_for(planner.advisory_started.wait(), timeout=1.0)
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            planner.release_advisory.set()
+            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
+            await asyncio.sleep(0)
+            environment.release_movement.set()
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 2
+        assert isinstance(environment.actions[1], SetSpeedAction)
+        assert environment.actions[1].speed == 2
+        events = read_events(tmp_path / "events.jsonl")
+        rejected = [
+            event for event in events if event["event_type"] == "plan_patch_rejected"
+        ]
+        assert len(rejected) == 1
+        assert "stale" in str(rejected[0]["payload"])
+        assert sum(event["event_type"] == "plan_patched" for event in events) == 0
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.plan_patches_staged == 0
+        assert metrics.plan_patches_applied == 0
+        assert metrics.plan_patches_rejected == 1
 
     asyncio.run(scenario())
 

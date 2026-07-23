@@ -8,6 +8,8 @@ control:
 planning:
   mode: single_step
   observation_pump_enabled: true
+  stateful_movement_options_enabled: true
+  concurrent_option_planning_enabled: true
   observation_pump_seconds: 0.1
   state_history_limit: 128
   state_delta_limit: 128

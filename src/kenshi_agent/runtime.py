@@ -603,6 +603,8 @@ class AgentRuntime:
                     clock=self.planning_clock,
                     state_store=state_store,
                     observe_transition=self._observe_plan_transition,
+                    planning_config=self.planning_config,
+                    concurrent_planner=self.planner.decide,
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(

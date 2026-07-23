@@ -150,6 +150,55 @@
       "title": "ActionOutcomeAssessment",
       "type": "string"
     },
+    "ActivePlanContext": {
+      "additionalProperties": false,
+      "properties": {
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "objective": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "active_step_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "title": "Active Step Id",
+          "type": "string"
+        },
+        "completed_step_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Completed Step Ids",
+          "type": "array"
+        },
+        "remaining_actions": {
+          "maximum": 16,
+          "minimum": 0,
+          "title": "Remaining Actions",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "plan_id",
+        "plan_version",
+        "objective",
+        "active_step_id",
+        "remaining_actions"
+      ],
+      "title": "ActivePlanContext",
+      "type": "object"
+    },
     "BodyPartState": {
       "additionalProperties": false,
       "properties": {
@@ -1917,6 +1966,17 @@
       ],
       "default": null,
       "title": "Objective"
+    },
+    "active_plan": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ActivePlanContext"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "recent_action_outcomes": {
       "items": {
