@@ -258,6 +258,9 @@ namespace
                     json << "\"faction\":\"" << JsonEscape(const_cast<Faction*>(faction)->getName()) << "\",";
                 json << "\"disposition\":\"" << GetDisposition(selected, target) << "\",";
                 json << "\"distance\":" << Distance(targetPosition, selectedPosition) << ",";
+                json << "\"position\":";
+                AppendVector3(json, targetPosition);
+                json << ",";
                 json << "\"conscious\":" << JsonBool(!target->isUnconcious());
                 json << "}";
             }

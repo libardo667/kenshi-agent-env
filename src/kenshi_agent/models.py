@@ -98,6 +98,7 @@ class NearbyEntity(StrictModel):
     faction: str | None = None
     disposition: Disposition = Disposition.UNKNOWN
     distance: float | None = None
+    position: Vec3 | None = None
     visible: bool | None = None
     conscious: bool | None = None
 
