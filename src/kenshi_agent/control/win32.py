@@ -266,6 +266,8 @@ class Win32InputController(InputController):
         self._expected_cursor: tuple[int, int] | None = None
         self._last_agent_input_tick: int | None = None
         self._last_agent_input_tick_global: int | None = None
+        self._last_agent_input_monotonic: float | None = None
+        self._continuous_input_diagnostic: str | None = None
         self._continuous_last_input_tick = self._last_input_tick()
         self._restore_foreground: int | None = None
         self._restore_cursor: tuple[int, int] | None = None
@@ -451,15 +453,37 @@ class Win32InputController(InputController):
 
     def continuous_user_input_detected(self) -> bool:
         current_tick = self._last_input_tick()
-        if current_tick == self._continuous_last_input_tick:
+        prior_tick = self._continuous_last_input_tick
+        if current_tick == prior_tick:
+            self._continuous_input_diagnostic = None
             return False
         self._continuous_last_input_tick = current_tick
-        return current_tick != self._last_agent_input_tick_global
+        if current_tick == self._last_agent_input_tick_global:
+            self._continuous_input_diagnostic = None
+            return False
+        agent_age = (
+            time.monotonic() - self._last_agent_input_monotonic
+            if self._last_agent_input_monotonic is not None
+            else None
+        )
+        agent_age_text = f"{agent_age:.3f}" if agent_age is not None else "unknown"
+        self._continuous_input_diagnostic = (
+            "human_input_diagnostic "
+            f"prior_tick={prior_tick} current_tick={current_tick} "
+            f"last_agent_tick={self._last_agent_input_tick_global} "
+            f"agent_input_age_seconds={agent_age_text}"
+        )
+        return True
+
+    def continuous_user_input_diagnostic(self) -> str | None:
+        return self._continuous_input_diagnostic
 
     def _mark_agent_input(self) -> None:
         current_tick = self._last_input_tick()
         self._last_agent_input_tick_global = current_tick
+        self._last_agent_input_monotonic = time.monotonic()
         self._continuous_last_input_tick = current_tick
+        self._continuous_input_diagnostic = None
         if not self._lease_active:
             return
         self._last_agent_input_tick = current_tick
@@ -505,7 +529,11 @@ class Win32InputController(InputController):
             ):
                 self._focus_handle(self._restore_foreground, restore_window=False, strict=False)
         if self.restore_cursor_after_input and self._restore_cursor is not None:
-            self.user32.SetCursorPos(*self._restore_cursor)
+            if self.user32.SetCursorPos(*self._restore_cursor):
+                # Cursor restoration is agent-authored input too. Without this
+                # attribution the continuous supervisor can misclassify the
+                # restore event after a deliberately held key or mouse action.
+                self._mark_agent_input()
 
     @asynccontextmanager
     async def input_lease(self, *, alt_tab_on_restore: bool = False) -> AsyncIterator[None]:

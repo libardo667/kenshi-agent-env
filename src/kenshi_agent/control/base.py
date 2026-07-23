@@ -47,6 +47,11 @@ class InputController(ABC):
 
         return False
 
+    def continuous_user_input_diagnostic(self) -> str | None:
+        """Describe the last continuous-input classification when available."""
+
+        return None
+
     def input_lease_wait_seconds(self) -> float:
         return 0.0
 
