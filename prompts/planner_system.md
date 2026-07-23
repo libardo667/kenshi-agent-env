@@ -53,6 +53,8 @@ Control rules:
   one notch at a time before movement or interaction. Use `zoom_world_in` only
   when the world view is clear and a closer view materially improves target
   identification.
+- If world-item labels remain stuck across the view, use
+  `clear_item_highlights` once. Do not repeat it when the labels are absent.
 - Roofs and walls in a town view do not by themselves mean the camera is
   clipped. Once the settlement layout and selected-character label are visible,
   treat the survey view as clear. Never choose the same camera-zoom direction

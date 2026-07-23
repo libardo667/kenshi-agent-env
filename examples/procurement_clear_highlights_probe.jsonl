@@ -1,0 +1,1 @@
+{"intent":"Clear the stuck item-label overlay before surveying The Hub.","rationale":"Windows reports Alt is up, but Kenshi still shows world-item labels; one complete raw Alt press/release should reconcile its internal input state.","action":{"kind":"skill","name":"clear_item_highlights","args":{}},"confidence":1.0,"memory_writes":[]}

@@ -63,6 +63,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "pause_game",
         "focus_selected",
         "close_overlay",
+        "clear_item_highlights",
         "zoom_world_in",
         "zoom_world_out",
         "survey_camera_up",
@@ -104,6 +105,10 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert focus_actions[0].x == 0.349
     assert focus_actions[0].y == 0.906
     assert focus_actions[0].clicks == 2
+    clear_highlights = config.macros["clear_item_highlights"].parsed_actions()
+    assert len(clear_highlights) == 1
+    assert clear_highlights[0].kind == "key"
+    assert clear_highlights[0].key == "alt"
     assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
     zoom_in = config.macros["zoom_map_in"].parsed_actions()[0]
     assert zoom_in.kind == "scroll"
