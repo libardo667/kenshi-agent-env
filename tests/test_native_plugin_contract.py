@@ -31,7 +31,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "target->hasDialogue()" in source
     assert "getPlayerTaskProbability" in source
     assert "PLAYER_TALK_TO" in source
-    assert "IssueApproachConfirmedVendor" in source
+    assert "ProcessNativeCommandRequest" in source
     assert "newPlayerTaskSelectedCharacters" in source
     assert "control.approach_vendor" in source
     assert "VK_F10" in source
@@ -54,7 +54,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.2.0"' in source
+    assert 'PROTOCOL_VERSION = "0.3.0"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -69,3 +69,26 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     assert "last_target_id" in source
     assert "squad:" not in source
     assert "nearby:" not in source
+
+
+def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert 'PROTOCOL_VERSION = "0.3.0"' in source
+    assert "native_command.request.json" in source
+    assert "ProcessNativeCommandRequest" in source
+    assert "FindExactConfirmedVendor" in source
+    assert "FindNearestConfirmedVendor" not in source
+    assert "based_on_revision.telemetry_sequence" in source
+    assert "identity_session_id" in source
+    assert "native_assisted" in source
+    assert "selected_character_ids" in source
+    assert "duplicate_command_id" in source
+    assert "stale_revision" in source
+    assert "selection_mismatch" in source
+    assert "target_lifetime_changed" in source
+    assert "target_role_invalid" in source
+    assert "exact_dialogue_target_open" in source
+    assert "acknowledgements" in source
+    assert "MAX_NATIVE_ACKNOWLEDGEMENTS = 16" in source
+    assert "MonitorActiveNativeCommand" in source

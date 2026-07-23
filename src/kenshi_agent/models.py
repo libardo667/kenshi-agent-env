@@ -5,6 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 from time import monotonic
 from typing import Any, Literal, TypeAlias
+from uuid import uuid4
 
 from pydantic import (
     BaseModel,
@@ -200,13 +201,107 @@ class UIState(StrictModel):
     client_height: int | None = Field(default=None, gt=0)
 
 
+class NativeCommandStatus(StrEnum):
+    ACCEPTED = "accepted"
+    COMPLETED = "completed"
+    REJECTED = "rejected"
+    CANCELLED = "cancelled"
+
+
+class NativeCommandAcknowledgement(StrictModel):
+    command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
+    command: Literal["approach_confirmed_vendor"]
+    status: NativeCommandStatus
+    reason: str = Field(min_length=1, max_length=200)
+    target_id: str = Field(min_length=1, max_length=200)
+    selected_character_ids: list[str] = Field(min_length=1, max_length=1)
+    based_on_telemetry_sequence: int = Field(ge=0)
+    acknowledged_at_telemetry_sequence: int = Field(ge=0)
+    accepted_at_telemetry_sequence: int | None = Field(default=None, ge=0)
+    terminal_at_telemetry_sequence: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_causal_lifecycle(self) -> NativeCommandAcknowledgement:
+        if self.acknowledged_at_telemetry_sequence <= self.based_on_telemetry_sequence:
+            raise ValueError(
+                "acknowledged_at_telemetry_sequence must be later than the request basis"
+            )
+        if len(set(self.selected_character_ids)) != 1:
+            raise ValueError("native acknowledgement requires exactly one selected character")
+
+        if self.status == NativeCommandStatus.REJECTED:
+            if self.accepted_at_telemetry_sequence is not None:
+                raise ValueError("rejected acknowledgement must not report acceptance")
+            if self.terminal_at_telemetry_sequence is None:
+                raise ValueError("rejected acknowledgement requires terminal_at_telemetry_sequence")
+        else:
+            if self.accepted_at_telemetry_sequence is None:
+                raise ValueError(
+                    "accepted_at_telemetry_sequence is required after native acceptance"
+                )
+            if self.accepted_at_telemetry_sequence < self.acknowledged_at_telemetry_sequence:
+                raise ValueError("accepted_at_telemetry_sequence cannot predate acknowledgement")
+
+        if self.status in {
+            NativeCommandStatus.COMPLETED,
+            NativeCommandStatus.CANCELLED,
+        }:
+            if self.terminal_at_telemetry_sequence is None:
+                raise ValueError("terminal_at_telemetry_sequence is required for terminal status")
+        elif (
+            self.status == NativeCommandStatus.ACCEPTED
+            and self.terminal_at_telemetry_sequence is not None
+        ):
+            raise ValueError("accepted acknowledgement must not report a terminal sequence")
+
+        if (
+            self.terminal_at_telemetry_sequence is not None
+            and self.terminal_at_telemetry_sequence < self.acknowledged_at_telemetry_sequence
+        ):
+            raise ValueError("terminal_at_telemetry_sequence cannot predate acknowledgement")
+        return self
+
+
 class NativeControlState(StrictModel):
     available: bool = False
+    active_command_id: str | None = Field(
+        default=None,
+        pattern=r"^cmd-[0-9a-f]{32}$",
+    )
+    acknowledgements: list[NativeCommandAcknowledgement] = Field(
+        default_factory=list,
+        max_length=16,
+    )
     last_command_sequence: int = Field(default=0, ge=0)
     last_command: str | None = None
     last_result: str | None = None
     last_target: str | None = None
     last_target_id: str | None = None
+
+    @model_validator(mode="after")
+    def acknowledgement_ids_are_unique(self) -> NativeControlState:
+        command_ids = [ack.command_id for ack in self.acknowledgements]
+        if len(command_ids) != len(set(command_ids)):
+            raise ValueError("native acknowledgement command IDs must be unique")
+        if (
+            self.active_command_id is not None
+            and self.acknowledgement_for(self.active_command_id) is None
+        ):
+            raise ValueError("active native command must have an acknowledgement")
+        return self
+
+    def acknowledgement_for(
+        self,
+        command_id: str,
+    ) -> NativeCommandAcknowledgement | None:
+        return next(
+            (
+                acknowledgement
+                for acknowledgement in self.acknowledgements
+                if acknowledgement.command_id == command_id
+            ),
+            None,
+        )
 
 
 class TelemetrySnapshot(StrictModel):
@@ -237,9 +332,7 @@ class TelemetrySnapshot(StrictModel):
         if "identity.stable_handles" not in self.capabilities:
             return self
         if not self.identity_session_id:
-            raise ValueError(
-                "identity.stable_handles requires a non-empty identity_session_id"
-            )
+            raise ValueError("identity.stable_handles requires a non-empty identity_session_id")
 
         squad_ids = [character.id for character in self.squad]
         nearby_ids = [entity.id for entity in self.nearby_entities]
@@ -259,14 +352,18 @@ class TelemetrySnapshot(StrictModel):
             self.ui.selected_character_id is not None
             and self.ui.selected_character_id not in selected_ids
         ):
-            raise ValueError(
-                "selected_character_id must also appear in selected_character_ids"
-            )
+            raise ValueError("selected_character_id must also appear in selected_character_ids")
         flagged_selected = {character.id for character in self.squad if character.selected}
         if flagged_selected != set(selected_ids):
-            raise ValueError(
-                "squad selected flags must match selected_character_ids exactly"
-            )
+            raise ValueError("squad selected flags must match selected_character_ids exactly")
+        for acknowledgement in self.native_control.acknowledgements:
+            sequences = [
+                acknowledgement.acknowledged_at_telemetry_sequence,
+                acknowledgement.accepted_at_telemetry_sequence,
+                acknowledgement.terminal_at_telemetry_sequence,
+            ]
+            if any(sequence is not None and sequence > self.sequence for sequence in sequences):
+                raise ValueError("native acknowledgement sequences cannot exceed snapshot sequence")
         return self
 
 
@@ -380,6 +477,10 @@ Action: TypeAlias = (
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
 
+def new_command_id() -> str:
+    return f"cmd-{uuid4().hex}"
+
+
 def parse_action(value: Any) -> Action:
     return ACTION_ADAPTER.validate_python(value)
 
@@ -487,6 +588,30 @@ class WorldStateRevision(StrictModel):
             and (telemetry_advanced or frame_advanced or capability_advanced)
             and self.observed_at_monotonic >= other.observed_at_monotonic
         )
+
+
+class CommandDispatchContext(StrictModel):
+    command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
+    based_on_revision: WorldStateRevision
+
+
+class NativeCommandRequest(StrictModel):
+    schema_version: Literal["1.0"]
+    command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
+    command: Literal["approach_confirmed_vendor"]
+    control_mode: Literal[ControlMode.NATIVE_ASSISTED]
+    identity_session_id: str = Field(min_length=1, max_length=200)
+    based_on_revision: WorldStateRevision
+    selected_character_ids: list[str] = Field(min_length=1, max_length=1)
+    target_id: str = Field(min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_native_fences(self) -> NativeCommandRequest:
+        if self.based_on_revision.telemetry_sequence is None:
+            raise ValueError("native command basis requires a telemetry sequence")
+        if len(set(self.selected_character_ids)) != 1:
+            raise ValueError("native command requires exactly one selected character")
+        return self
 
 
 ConditionScalar: TypeAlias = str | int | float | bool | None
@@ -732,11 +857,12 @@ class ActionReceipt(StrictModel):
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
     command_id: str | None = Field(
         default=None,
-        pattern=r"^cmd-[0-9]{6,}$",
+        pattern=r"^cmd-[0-9a-f]{32}$",
     )
     started_after_revision: WorldStateRevision | None = None
     completed_at_revision: WorldStateRevision | None = None
     causal_revision_advanced: bool | None = None
+    native_acknowledgement: NativeCommandAcknowledgement | None = None
     accepted: bool
     executed: bool
     dry_run: bool

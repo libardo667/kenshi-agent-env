@@ -114,9 +114,12 @@ Control rules:
   `has_dialogue: true`, and non-hostile disposition, prefer
   `approach_confirmed_vendor` over guessed terrain clicks if that vendor is
   occluded or indoors. The native plugin rechecks those constraints, selects
-  the nearest match, and issues Kenshi's own `PLAYER_TALK_TO` pathing order.
-  Use a short pulse first; inspect `native_control`, distance, and any dialogue
-  or trade UI before repeating it.
+  only the exact stable `target_id` supplied in the action, and issues Kenshi's
+  own `PLAYER_TALK_TO` pathing order only after the caller command ID, world
+  revision, control mode, identity session, and one-character selection all
+  match. Use a short pulse first; inspect the matching native acknowledgement,
+  distance, and any dialogue or trade UI before considering new work. Never
+  reuse an acknowledgement from another command ID.
 - In the calibrated Barman dialogue, use `choose_show_goods` only when the first
   visible option actually reads "Show me your goods." This is a bounded
   dialogue-specific click; do not substitute a raw click.

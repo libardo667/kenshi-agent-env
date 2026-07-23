@@ -20,6 +20,7 @@ from .models import (
     ActionOutcomeAssessment,
     ActionReceipt,
     CharacterState,
+    CommandDispatchContext,
     ControlMode,
     NearbyEntity,
     Observation,
@@ -34,6 +35,7 @@ from .models import (
     TelemetrySnapshot,
     Transition,
     WorldStateRevision,
+    new_command_id,
 )
 from .planners import Planner
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
@@ -227,7 +229,40 @@ class AgentRuntime:
                     break
 
                 try:
-                    transition = await self.environment.step(action)
+                    dispatch_context = CommandDispatchContext(
+                        command_id=new_command_id(),
+                        based_on_revision=observation.world_revision,
+                    )
+                    transition = await self.environment.dispatch(
+                        action,
+                        command=dispatch_context,
+                    )
+                    if transition.receipt.command_id not in {
+                        None,
+                        dispatch_context.command_id,
+                    }:
+                        raise CommandCausalityError(
+                            "Environment acknowledgement command ID does not match "
+                            f"dispatched command {dispatch_context.command_id!r}."
+                        )
+                    transition = transition.model_copy(
+                        update={
+                            "receipt": transition.receipt.model_copy(
+                                update={
+                                    "command_id": dispatch_context.command_id,
+                                    "started_after_revision": (dispatch_context.based_on_revision),
+                                    "completed_at_revision": (
+                                        transition.observation.world_revision
+                                    ),
+                                    "causal_revision_advanced": (
+                                        transition.observation.world_revision.is_later_than(
+                                            dispatch_context.based_on_revision
+                                        )
+                                    ),
+                                }
+                            )
+                        }
+                    )
                 except Exception as exc:
                     self.logger.write(
                         "environment_error",
@@ -817,7 +852,13 @@ class AgentRuntime:
             },
         )
         try:
-            transition = await self.environment.step(guarded_action)
+            transition = await self.environment.dispatch(
+                guarded_action,
+                command=CommandDispatchContext(
+                    command_id=command.command_id,
+                    based_on_revision=start_revision,
+                ),
+            )
         except Exception as exc:
             state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
             reason = f"Safety pause execution failed: {type(exc).__name__}: {exc}"

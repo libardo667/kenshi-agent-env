@@ -12,10 +12,14 @@ from ..models import (
     Action,
     ActionReceipt,
     ClickAction,
+    CommandDispatchContext,
     ControlMode,
     HotkeyAction,
     KeyAction,
     MoveCursorAction,
+    NativeCommandAcknowledgement,
+    NativeCommandRequest,
+    NativeCommandStatus,
     NativeControlState,
     NoopAction,
     Observation,
@@ -28,12 +32,17 @@ from ..models import (
     WaitAction,
     WorldStateRevision,
 )
+from ..native_commands import write_native_command_request_atomic
 from ..skills import MacroRegistry
 from ..telemetry import TelemetryReader, TelemetryReadError
 from .base import AgentEnvironment
 
 
 class LiveEnvironment(AgentEnvironment):
+    _NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
+    _NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
+    _NATIVE_COMMAND_POLL_SECONDS = 0.025
+
     def __init__(
         self,
         *,
@@ -174,6 +183,22 @@ class LiveEnvironment(AgentEnvironment):
         return observation
 
     async def step(self, action: Action) -> Transition:
+        return await self._step(action, command=None)
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        return await self._step(action, command=command)
+
+    async def _step(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext | None,
+    ) -> Transition:
         started = datetime.now(UTC)
         terminated = isinstance(action, StopAction)
         if (
@@ -211,10 +236,10 @@ class LiveEnvironment(AgentEnvironment):
                     f"Emergency stop key {self.emergency_stop_key!r} is pressed; action aborted."
                 )
             if isinstance(action, (NoopAction, StopAction, WaitAction)):
-                receipt = await self._execute_live(action, started)
+                receipt = await self._execute_live(action, started, command)
             else:
                 async with self.controller.input_lease(alt_tab_on_restore=True):
-                    receipt = await self._execute_live(action, started)
+                    receipt = await self._execute_live(action, started, command)
                 lease_wait = self.controller.input_lease_wait_seconds()
                 if lease_wait >= 0.01:
                     receipt = receipt.model_copy(
@@ -231,6 +256,41 @@ class LiveEnvironment(AgentEnvironment):
         if self.runtime_config.settle_seconds:
             await asyncio.sleep(self.runtime_config.settle_seconds)
         observation = await self.observe()
+        if receipt.native_acknowledgement is not None and observation.telemetry is not None:
+            latest_acknowledgement = observation.telemetry.native_control.acknowledgement_for(
+                receipt.native_acknowledgement.command_id
+            )
+            if (
+                latest_acknowledgement is not None
+                and latest_acknowledgement != receipt.native_acknowledgement
+            ):
+                terminal_message = (
+                    f" Latest native status is "
+                    f"{latest_acknowledgement.status.value!r}: "
+                    f"{latest_acknowledgement.reason}."
+                )
+                receipt = receipt.model_copy(
+                    update={
+                        "native_acknowledgement": latest_acknowledgement,
+                        "message": receipt.message + terminal_message,
+                        "error_type": (
+                            "NativeCommandCancelled"
+                            if latest_acknowledgement.status == NativeCommandStatus.CANCELLED
+                            else receipt.error_type
+                        ),
+                    }
+                )
+        if command is not None:
+            receipt = receipt.model_copy(
+                update={
+                    "command_id": command.command_id,
+                    "started_after_revision": command.based_on_revision,
+                    "completed_at_revision": observation.world_revision,
+                    "causal_revision_advanced": (
+                        observation.world_revision.is_later_than(command.based_on_revision)
+                    ),
+                }
+            )
         return Transition(
             receipt=receipt,
             observation=observation,
@@ -239,7 +299,12 @@ class LiveEnvironment(AgentEnvironment):
             events=observation.events,
         )
 
-    async def _execute_live(self, action: Action, started: datetime) -> ActionReceipt:
+    async def _execute_live(
+        self,
+        action: Action,
+        started: datetime,
+        command: CommandDispatchContext | None,
+    ) -> ActionReceipt:
         if isinstance(action, NoopAction):
             return ActionReceipt(
                 action=action,
@@ -314,6 +379,20 @@ class LiveEnvironment(AgentEnvironment):
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
+                if (
+                    self.macros.requires_native_assisted(action.name)
+                    and action.name == "approach_confirmed_vendor"
+                ):
+                    if command is None:
+                        raise RuntimeError(
+                            "Native command execution requires caller-owned command context."
+                        )
+                    return await self._execute_native_vendor_approach(
+                        action,
+                        started,
+                        command,
+                        pulse_seconds=pulse_seconds,
+                    )
                 return await self._execute_movement_pulse(
                     action, started, pulse_seconds=pulse_seconds
                 )
@@ -402,6 +481,7 @@ class LiveEnvironment(AgentEnvironment):
         started: datetime,
         *,
         pulse_seconds: float,
+        prepared_primitives: tuple[int, list[str]] | None = None,
     ) -> ActionReceipt:
         paused = (
             self._last_observation.telemetry.game.paused
@@ -413,7 +493,10 @@ class LiveEnvironment(AgentEnvironment):
                 f"Movement pulse {action.name!r} requires confirmed paused live state."
             )
 
-        primitive_count, messages = await self._execute_skill_primitives(action)
+        if prepared_primitives is None:
+            primitive_count, messages = await self._execute_skill_primitives(action)
+        else:
+            primitive_count, messages = prepared_primitives
         unpause_sent = False
         emergency_stop = False
         user_interrupted = False
@@ -474,6 +557,170 @@ class LiveEnvironment(AgentEnvironment):
             primitive_actions=primitive_count,
             message=(f"Executed skill {action.name!r}. {outcome} " + " ".join(messages)),
         )
+
+    async def _execute_native_vendor_approach(
+        self,
+        action: SkillAction,
+        started: datetime,
+        command: CommandDispatchContext,
+        *,
+        pulse_seconds: float,
+    ) -> ActionReceipt:
+        request = self._native_vendor_request(action, command)
+        request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
+        write_native_command_request_atomic(request_path, request)
+        primitive_count, messages = await self._execute_skill_primitives(action)
+        acknowledgement = await self._wait_for_native_acknowledgement(request)
+        acknowledgement_message = (
+            f"Native acknowledgement {acknowledgement.status.value!r} "
+            f"for {acknowledgement.command_id}: {acknowledgement.reason}."
+        )
+        messages.append(acknowledgement_message)
+
+        if acknowledgement.status == NativeCommandStatus.REJECTED:
+            return ActionReceipt(
+                action=action,
+                command_id=command.command_id,
+                started_after_revision=command.based_on_revision,
+                accepted=False,
+                executed=False,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=primitive_count,
+                message=" ".join(messages),
+                error_type="NativeCommandRejected",
+                native_acknowledgement=acknowledgement,
+            )
+        if acknowledgement.status in {
+            NativeCommandStatus.CANCELLED,
+            NativeCommandStatus.COMPLETED,
+        }:
+            return ActionReceipt(
+                action=action,
+                command_id=command.command_id,
+                started_after_revision=command.based_on_revision,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=primitive_count,
+                message=" ".join(messages),
+                error_type=(
+                    "NativeCommandCancelled"
+                    if acknowledgement.status == NativeCommandStatus.CANCELLED
+                    else None
+                ),
+                native_acknowledgement=acknowledgement,
+            )
+        receipt = await self._execute_movement_pulse(
+            action,
+            started,
+            pulse_seconds=pulse_seconds,
+            prepared_primitives=(primitive_count, messages),
+        )
+        return receipt.model_copy(update={"native_acknowledgement": acknowledgement})
+
+    def _native_vendor_request(
+        self,
+        action: SkillAction,
+        command: CommandDispatchContext,
+    ) -> NativeCommandRequest:
+        observation = self._last_observation
+        if observation is None or observation.telemetry is None:
+            raise RuntimeError("Native command requires a current telemetry observation.")
+        if observation.telemetry_stale:
+            raise RuntimeError("Native command requires fresh telemetry.")
+        if observation.world_revision != command.based_on_revision:
+            raise RuntimeError(
+                "Native command basis does not match the current complete world revision."
+            )
+        telemetry = observation.telemetry
+        required_capabilities = {
+            "control.approach_vendor",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.roles",
+        }
+        missing = required_capabilities - set(telemetry.capabilities)
+        if missing:
+            raise RuntimeError(
+                "Native command lacks required capabilities: " + ", ".join(sorted(missing))
+            )
+        if not telemetry.identity_session_id:
+            raise RuntimeError("Native command requires a current identity session.")
+        selected_ids = telemetry.ui.selected_character_ids
+        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+            raise RuntimeError("Native command requires one exact primary selection.")
+        target_id = action.argument_map().get("target_id")
+        if not isinstance(target_id, str) or not target_id:
+            raise RuntimeError("Native vendor approach requires an exact target_id.")
+        target = next(
+            (entity for entity in telemetry.nearby_entities if entity.id == target_id),
+            None,
+        )
+        if target is None:
+            raise RuntimeError("Native command target is absent from current nearby telemetry.")
+        if (
+            target.is_animal is not False
+            or target.has_vendor_list is not True
+            or target.is_squad_leader is not True
+            or target.has_dialogue is not True
+            or target.conscious is not True
+            or target.disposition.value not in {"friendly", "neutral"}
+        ):
+            raise RuntimeError("Native command target lacks exact safe current vendor evidence.")
+        return NativeCommandRequest(
+            schema_version="1.0",
+            command_id=command.command_id,
+            command="approach_confirmed_vendor",
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            identity_session_id=telemetry.identity_session_id,
+            based_on_revision=command.based_on_revision,
+            selected_character_ids=list(selected_ids),
+            target_id=target_id,
+        )
+
+    async def _wait_for_native_acknowledgement(
+        self,
+        request: NativeCommandRequest,
+    ) -> NativeCommandAcknowledgement:
+        basis = request.based_on_revision.telemetry_sequence
+        assert basis is not None
+        deadline = time.monotonic() + self._NATIVE_COMMAND_ACK_TIMEOUT_SECONDS
+        while True:
+            try:
+                result = self.telemetry_reader.read()
+            except TelemetryReadError:
+                result = None
+            if result is not None and not result.stale:
+                snapshot = result.snapshot
+                if snapshot.identity_session_id != request.identity_session_id:
+                    raise RuntimeError(
+                        "Native identity session changed while awaiting acknowledgement."
+                    )
+                acknowledgement = snapshot.native_control.acknowledgement_for(request.command_id)
+                if acknowledgement is not None and snapshot.sequence > basis:
+                    if (
+                        acknowledgement.based_on_telemetry_sequence != basis
+                        or acknowledgement.target_id != request.target_id
+                        or acknowledgement.selected_character_ids != request.selected_character_ids
+                    ):
+                        raise RuntimeError(
+                            "Matching native acknowledgement violated request fences."
+                        )
+                    if acknowledgement.acknowledged_at_telemetry_sequence > snapshot.sequence:
+                        raise RuntimeError(
+                            "Native acknowledgement claims a future telemetry sequence."
+                        )
+                    return acknowledgement
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError(
+                    "Timed out without a causally later matching native acknowledgement."
+                )
+            await asyncio.sleep(min(self._NATIVE_COMMAND_POLL_SECONDS, remaining))
 
     async def _wait_for_pause_state(self, expected: bool, *, timeout_seconds: float = 3.0) -> bool:
         deadline = time.monotonic() + timeout_seconds

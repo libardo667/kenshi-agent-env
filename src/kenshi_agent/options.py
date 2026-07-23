@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .env import AgentEnvironment
-from .models import Observation, SkillAction, Transition, WorldStateRevision
+from .models import (
+    CommandDispatchContext,
+    Observation,
+    SkillAction,
+    Transition,
+    WorldStateRevision,
+)
 from .world_state import StoreUpdate
 
 
@@ -68,15 +74,20 @@ class StatefulMovementOption:
         self.reason = "Movement start state is capable and confirmed paused."
         return self._poll_result()
 
-    def start(self) -> asyncio.Task[Transition]:
+    def start(
+        self,
+        command: CommandDispatchContext | None = None,
+    ) -> asyncio.Task[Transition]:
         if self.status is not OptionStatus.PREPARED:
             raise OptionLifecycleError("Movement option must be prepared before start.")
         self.status = OptionStatus.RUNNING
         self.reason = "Movement action is running through the environment."
-        self.task = asyncio.create_task(
-            self.environment.step(self.action),
-            name=f"kenshi-agent-{self.option_id}",
+        work = (
+            self.environment.dispatch(self.action, command=command)
+            if command is not None
+            else self.environment.step(self.action)
         )
+        self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
         return self.task
 
     def poll(self, update: StoreUpdate | None = None) -> OptionPoll:
@@ -116,8 +127,7 @@ class StatefulMovementOption:
             except Exception as exc:
                 self.status = OptionStatus.FAILED
                 self.reason = (
-                    "Movement option cancellation cleanup failed: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"Movement option cancellation cleanup failed: {type(exc).__name__}: {exc}"
                 )
                 return self._poll_result()
         self.status = OptionStatus.CANCELLED

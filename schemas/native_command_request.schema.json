@@ -1,0 +1,107 @@
+{
+  "$defs": {
+    "WorldStateRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry Sequence"
+        },
+        "frame_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Sequence"
+        },
+        "capability_epoch": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Capability Epoch",
+          "type": "integer"
+        },
+        "observed_at_monotonic": {
+          "minimum": 0.0,
+          "title": "Observed At Monotonic",
+          "type": "number"
+        }
+      },
+      "title": "WorldStateRevision",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "command_id": {
+      "pattern": "^cmd-[0-9a-f]{32}$",
+      "title": "Command Id",
+      "type": "string"
+    },
+    "command": {
+      "const": "approach_confirmed_vendor",
+      "title": "Command",
+      "type": "string"
+    },
+    "control_mode": {
+      "const": "native_assisted",
+      "title": "Control Mode",
+      "type": "string"
+    },
+    "identity_session_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Identity Session Id",
+      "type": "string"
+    },
+    "based_on_revision": {
+      "$ref": "#/$defs/WorldStateRevision"
+    },
+    "selected_character_ids": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "title": "Selected Character Ids",
+      "type": "array"
+    },
+    "target_id": {
+      "maxLength": 200,
+      "minLength": 1,
+      "title": "Target Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "command_id",
+    "command",
+    "control_mode",
+    "identity_session_id",
+    "based_on_revision",
+    "selected_character_ids",
+    "target_id"
+  ],
+  "title": "NativeCommandRequest",
+  "type": "object"
+}

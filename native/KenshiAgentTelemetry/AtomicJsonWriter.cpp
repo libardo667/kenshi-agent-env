@@ -142,4 +142,56 @@ namespace KenshiAgentTelemetry
         }
         return true;
     }
+
+    bool ReadUtf8Bounded(
+        const std::wstring& directory,
+        const std::wstring& fileName,
+        unsigned int maximumBytes,
+        std::string& payloadOut,
+        std::string& errorOut)
+    {
+        payloadOut.clear();
+        const std::wstring path = JoinPath(directory, fileName);
+        HANDLE file = CreateFileW(
+            path.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL);
+        if (file == INVALID_HANDLE_VALUE)
+        {
+            errorOut = Win32ErrorMessage(GetLastError());
+            return false;
+        }
+
+        LARGE_INTEGER size;
+        if (!GetFileSizeEx(file, &size) ||
+            size.QuadPart <= 0 ||
+            size.QuadPart > static_cast<LONGLONG>(maximumBytes))
+        {
+            errorOut =
+                "Native command request is empty or exceeds the bounded size limit.";
+            CloseHandle(file);
+            return false;
+        }
+
+        payloadOut.resize(static_cast<size_t>(size.QuadPart));
+        DWORD bytesRead = 0;
+        const BOOL readOk = ReadFile(
+            file,
+            &payloadOut[0],
+            static_cast<DWORD>(payloadOut.size()),
+            &bytesRead,
+            NULL);
+        CloseHandle(file);
+        if (!readOk || bytesRead != payloadOut.size())
+        {
+            errorOut = Win32ErrorMessage(GetLastError());
+            payloadOut.clear();
+            return false;
+        }
+        return true;
+    }
 }

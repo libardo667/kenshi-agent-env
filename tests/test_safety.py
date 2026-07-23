@@ -2,12 +2,15 @@ import pytest
 
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
 from kenshi_agent.models import (
+    CharacterState,
     ClickAction,
     ControlMode,
     CoordinateSpace,
+    Disposition,
     GameState,
     KeyAction,
     MoveCursorAction,
+    NearbyEntity,
     Observation,
     PauseAction,
     ScrollAction,
@@ -156,9 +159,7 @@ def test_live_skill_must_be_configured_and_allowlisted() -> None:
 
 
 def test_interface_only_guard_rejects_native_assisted_skill() -> None:
-    config = safety_config().model_copy(
-        update={"allow_skills": ["approach_confirmed_vendor"]}
-    )
+    config = safety_config().model_copy(update={"allow_skills": ["approach_confirmed_vendor"]})
     macros = MacroRegistry(
         {
             "approach_confirmed_vendor": MacroConfig(
@@ -177,9 +178,7 @@ def test_interface_only_guard_rejects_native_assisted_skill() -> None:
 
 
 def test_native_assisted_guard_accepts_marked_skill_only_for_matching_observation() -> None:
-    config = safety_config().model_copy(
-        update={"allow_skills": ["approach_confirmed_vendor"]}
-    )
+    config = safety_config().model_copy(update={"allow_skills": ["approach_confirmed_vendor"]})
     macros = MacroRegistry(
         {
             "approach_confirmed_vendor": MacroConfig(
@@ -189,7 +188,10 @@ def test_native_assisted_guard_accepts_marked_skill_only_for_matching_observatio
         }
     )
     guard = ActionGuard(config, macros, control_mode=ControlMode.NATIVE_ASSISTED)
-    action = SkillAction(name="approach_confirmed_vendor")
+    action = SkillAction(
+        name="approach_confirmed_vendor",
+        args={"target_id": "entity-vendor"},  # type: ignore[arg-type]
+    )
 
     with pytest.raises(SafetyViolation, match="control mode"):
         guard.validate(action, Observation(run_id="run", step_index=0, mode="live"))
@@ -201,6 +203,41 @@ def test_native_assisted_guard_accepts_marked_skill_only_for_matching_observatio
             step_index=0,
             mode="live",
             control_mode=ControlMode.NATIVE_ASSISTED,
+            telemetry=TelemetrySnapshot(
+                protocol_version="0.3.0",
+                identity_session_id="session-test",
+                capabilities=[
+                    "game.pause",
+                    "control.approach_vendor",
+                    "identity.stable_handles",
+                    "nearby.characters",
+                    "nearby.roles",
+                ],
+                game=GameState(paused=True),
+                ui=UIState(
+                    selected_character_id="entity-selected",
+                    selected_character_ids=["entity-selected"],
+                ),
+                squad=[
+                    CharacterState(
+                        id="entity-selected",
+                        name="Wanderer",
+                        selected=True,
+                    )
+                ],
+                nearby_entities=[
+                    NearbyEntity(
+                        id="entity-vendor",
+                        name="Barman",
+                        is_animal=False,
+                        has_vendor_list=True,
+                        is_squad_leader=True,
+                        has_dialogue=True,
+                        conscious=True,
+                        disposition=Disposition.NEUTRAL,
+                    )
+                ],
+            ),
         ),
     )
     assert accepted == action
@@ -450,9 +487,7 @@ def test_purchase_rejects_missing_or_excessive_expected_price(
             "min_money_after_purchase": 250,
         }
     )
-    macros = MacroRegistry(
-        {"buy_inspected_shop_item": MacroConfig(actions=[])}
-    )
+    macros = MacroRegistry({"buy_inspected_shop_item": MacroConfig(actions=[])})
     observation = Observation.model_validate(
         {
             "run_id": "purchase",
@@ -477,9 +512,7 @@ def test_purchase_rejects_missing_or_excessive_expected_price(
     args: dict[str, float | int] = {"x": 0.316, "y": 0.357}
     if expected_price is not None:
         args["expected_price"] = expected_price
-    action = SkillAction.model_validate(
-        {"name": "buy_inspected_shop_item", "args": args}
-    )
+    action = SkillAction.model_validate({"name": "buy_inspected_shop_item", "args": args})
 
     with pytest.raises(SafetyViolation, match=message):
         ActionGuard(config, macros).validate(action, observation)
@@ -493,9 +526,7 @@ def test_purchase_rejects_insufficient_post_purchase_balance() -> None:
             "min_money_after_purchase": 400,
         }
     )
-    macros = MacroRegistry(
-        {"buy_inspected_shop_item": MacroConfig(actions=[])}
-    )
+    macros = MacroRegistry({"buy_inspected_shop_item": MacroConfig(actions=[])})
     observation = Observation.model_validate(
         {
             "run_id": "purchase",

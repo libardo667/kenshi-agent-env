@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
+    CommandDispatchContext,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -42,6 +44,8 @@ from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
+
+COMMAND_ID_PATTERN = re.compile(r"^cmd-[0-9a-f]{32}$")
 
 
 class FakeClock(PlanningClock):
@@ -98,6 +102,7 @@ class RevisionEnvironment(AgentEnvironment):
         self.speed = 1.0
         self.money = 180
         self.actions: list[Action] = []
+        self.dispatch_contexts: list[CommandDispatchContext] = []
 
     def observation(self) -> Observation:
         return Observation(
@@ -173,6 +178,15 @@ class RevisionEnvironment(AgentEnvironment):
             observation=self.observation(),
             terminated=isinstance(action, StopAction),
         )
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        self.dispatch_contexts.append(command)
+        return await self.step(action)
 
     async def close(self) -> None:
         return None
@@ -472,10 +486,17 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
             if event["event_type"] == "action_receipt"
             and event["payload"]["command_id"] is not None
         ]
-        assert [receipt["command_id"] for receipt in receipts] == [
-            "cmd-000001",
-            "cmd-000002",
-        ]
+        command_ids = [receipt["command_id"] for receipt in receipts]
+        assert len(set(command_ids)) == 2
+        assert all(
+            isinstance(command_id, str) and COMMAND_ID_PATTERN.fullmatch(command_id)
+            for command_id in command_ids
+        )
+        assert [context.command_id for context in environment.dispatch_contexts] == command_ids
+        assert [
+            context.based_on_revision.telemetry_sequence
+            for context in environment.dispatch_contexts
+        ] == [1, 2]
         assert [
             receipt["started_after_revision"]["telemetry_sequence"] for receipt in receipts
         ] == [1, 2]
@@ -568,7 +589,8 @@ def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
         assert terminal[0]["payload"]["status"] == "safe_paused"
         receipts = [event["payload"] for event in events if event["event_type"] == "action_receipt"]
         assert len(receipts) == 1
-        assert receipts[0]["command_id"] == "cmd-000001"
+        assert isinstance(receipts[0]["command_id"], str)
+        assert COMMAND_ID_PATTERN.fullmatch(receipts[0]["command_id"])
         assert receipts[0]["causal_revision_advanced"] is True
         metrics = evaluate_log(tmp_path / "events.jsonl")
         assert metrics.safety_supervisor_preemptions == 1
@@ -619,9 +641,7 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
         async def observe_without_capture(self) -> Observation:
             self.sequence += 1
             self.unsafe = True
-            return self.observation().model_copy(
-                update={"events": ["human_input_detected"]}
-            )
+            return self.observation().model_copy(update={"events": ["human_input_detected"]})
 
         async def step(self, action: Action) -> Transition:
             if isinstance(action, SkillAction):
@@ -875,14 +895,10 @@ def test_movement_option_overlaps_and_applies_a_valid_future_patch(
             if event["event_type"] == "plan_patch_staged"
         )
         succeeded_index = next(
-            index
-            for index, event in enumerate(events)
-            if event["event_type"] == "option_succeeded"
+            index for index, event in enumerate(events) if event["event_type"] == "option_succeeded"
         )
         patched_index = next(
-            index
-            for index, event in enumerate(events)
-            if event["event_type"] == "plan_patched"
+            index for index, event in enumerate(events) if event["event_type"] == "plan_patched"
         )
         assert staged_index < succeeded_index < patched_index
         assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 0
@@ -1016,9 +1032,7 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
         assert isinstance(environment.actions[1], SetSpeedAction)
         assert environment.actions[1].speed == 2
         events = read_events(tmp_path / "events.jsonl")
-        rejected = [
-            event for event in events if event["event_type"] == "plan_patch_rejected"
-        ]
+        rejected = [event for event in events if event["event_type"] == "plan_patch_rejected"]
         assert len(rejected) == 1
         assert "stale" in str(rejected[0]["payload"])
         assert sum(event["event_type"] == "plan_patched" for event in events) == 0
@@ -1187,7 +1201,8 @@ def test_old_but_fresh_revision_cannot_confirm_postcondition(
             and event["payload"]["command_id"] is not None
         ]
         assert len(receipts) == 1
-        assert receipts[0]["command_id"] == "cmd-000001"
+        assert isinstance(receipts[0]["command_id"], str)
+        assert COMMAND_ID_PATTERN.fullmatch(receipts[0]["command_id"])
         assert receipts[0]["causal_revision_advanced"] is False
         assert receipts[0]["completed_at_revision"] == receipts[0]["started_after_revision"]
         outcomes = [

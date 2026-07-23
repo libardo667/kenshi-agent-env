@@ -6,6 +6,7 @@ from pathlib import Path
 from .models import (
     ACTION_ADAPTER,
     ActionReceipt,
+    NativeCommandRequest,
     Observation,
     PlanEnvelope,
     PlannerDecision,
@@ -22,6 +23,7 @@ def export_schemas(output_dir: Path) -> list[Path]:
         "observation.schema.json": Observation.model_json_schema(),
         "decision.schema.json": PlannerDecision.model_json_schema(),
         "receipt.schema.json": ActionReceipt.model_json_schema(),
+        "native_command_request.schema.json": NativeCommandRequest.model_json_schema(),
         "plan.schema.json": PlanEnvelope.model_json_schema(),
         "plan_patch.schema.json": PlanPatch.model_json_schema(),
     }
