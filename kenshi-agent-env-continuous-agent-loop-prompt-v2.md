@@ -14,14 +14,13 @@ Do not treat this as prompt tuning. Do not regress toward “call the LLM betwee
 
 ## Current audited starting point
 
-The source checkpoint immediately before this evidence update is `main` at
-commit `7b55a682929a5f9c2baf6d4dca77397d46d4647e`
-(`Split title and loaded telemetry lifecycles`). It incorporates the earlier P6
-food-policy work plus the 2026-07-23 renderer crash, resolution/focus incident,
-semantic-launch recovery, explicit human/agent ownership slice, both rejected
-MyGUI title-telemetry integrations, and the split Kenshi-title/player
-replacement. That exact replacement subsequently passed the bounded live
-1920x1080 canary and semantic startup described below.
+The current audited checkpoint is `main` at commit
+`576640a` (`Budget planner observations semantically`). It incorporates the
+earlier P6 food-policy work, the 2026-07-23 renderer and startup incidents, the
+accepted split title/player telemetry lifecycle and 1920x1080 semantic startup,
+explicit human/agent ownership machinery, and deterministic semantic
+observation budgeting. The live validation handoff immediately before the
+budgeting slice is commit `12184fc`.
 Re-verify every material statement against the current checkout, tests, run
 artifacts, installed files, and `docs/ENGINEERING_LOOP_STATE.md` before relying
 on it.
@@ -51,6 +50,13 @@ on it.
 - Hosted output limits are dynamic and bounded: 4,096 base tokens plus 2,048
   per requested plan step, capped at 12,288. The burn-in uses medium reasoning
   rather than the older brute-forced high/xhigh setting.
+- Oversized planner observations are reduced over structured data rather than
+  sliced after serialization. The irreducible safety/revision/active-plan/
+  command/latest-outcome/selected-and-referenced-entity envelope is preserved;
+  lower-priority collections admit whole elements in deterministic tiers.
+  Valid bounded JSON includes truthful omission counts, while an undersized
+  budget raises an explicit error with the required size. Available skill names
+  and their machine-enforced specs are retained atomically.
 - Legacy gameplay pointer skills recheck the exact configured client size
   inside the acquired input lease and emit zero pointer input on mismatch.
 - Developer startup no longer uses fixed coordinates: it disables the optional
@@ -66,10 +72,18 @@ on it.
 
 ### Current evidence boundary
 
-- Repository documentation records 212 passing tests, Ruff, mypy across 48
+- Repository documentation records 218 passing tests, Ruff, mypy across 49
   source files, compile checks, schema parity, doctor, three deterministic
   single-step seeds, and a portable two-step continuous proof. Re-run the
   available gates; do not inherit those numbers as a pass.
+- The semantic-budget stress observation contains nested Unicode, long
+  rationales, 32 nearby entities, histories, events, UI controls, memories, an
+  active plan, exact command evidence, and distinct current/last-outcome target
+  IDs. Its full pretty JSON is 87,927 characters; its exact irreducible
+  semantic envelope is 9,399 characters. Tests parse every exercised budget at
+  or above that envelope, enforce the configured limit, verify truthful
+  original/retained counts, prove low-priority reordering invariance, and run
+  both OpenAI and OpenRouter adapter request paths.
 - Protocol `0.4.0` previously restored advancing live telemetry after a
   sequence-stall incident and has exact installed/replaced hashes and backup
   boundaries.
@@ -147,31 +161,30 @@ on it.
 
 ### Important open correctness and maturity issues
 
-1. `Observation.planner_payload()` still slices serialized text when over budget and can emit malformed JSON.
-2. The continuous executor rechecks assumptions and step preconditions before
+1. The continuous executor rechecks assumptions and step preconditions before
    `environment.dispatch()`, but a live input lease may then wait before the
    first primitive. Semantic startup targets and client-size calibration are
    rechecked inside that lease; ordinary gameplay pointer actions still do not
    receive the complete typed, step-specific world/UI/target fence there.
-3. Native vendor commands have stronger issue-time DLL fences than ordinary keyboard/mouse actions. Do not assume the native protection covers dialogue, trade, or inventory pointer actions.
-4. Exact configured client width/height is now a universal hard gate for
+2. Native vendor commands have stronger issue-time DLL fences than ordinary keyboard/mouse actions. Do not assume the native protection covers dialogue, trade, or inventory pointer actions.
+3. Exact configured client width/height is now a universal hard gate for
    pointer-bearing live actions, including a second check inside the lease.
    A versioned calibration identity covering UI scale, DPI transform, window
    mode, keymap, profile/macro hashes, and semantic-vs-calibrated action class
    is still missing.
-5. Safe pause is strong for movement/supervisor cleanup, but ordinary stop, exception, environment failure, and close paths still need one universal, measured final-safe-state contract.
-6. The live burn-in’s short movement option is too brief for meaningful 24-second strategic overlap.
-7. General live continuous execution remains intentionally absent; only `food_procurement_v1` is eligible.
-8. No CI workflow or reproducible Python lockfile was present at the audited point.
-9. Provider-specific OpenAI schema compatibility tests still depend on the optional SDK and must remain isolated from the dependency-free core baseline.
-10. Several new components are large. Refactor only when it simplifies a tested invariant; do not replace working architecture with broad aesthetic churn.
-11. The split title/player protocol has now passed a 1920x1080 no-Continue
+4. Safe pause is strong for movement/supervisor cleanup, but ordinary stop, exception, environment failure, and close paths still need one universal, measured final-safe-state contract.
+5. The live burn-in’s short movement option is too brief for meaningful 24-second strategic overlap.
+6. General live continuous execution remains intentionally absent; only `food_procurement_v1` is eligible.
+7. No CI workflow or reproducible Python lockfile was present at the audited point.
+8. Provider-specific OpenAI schema compatibility tests still depend on the optional SDK and must remain isolated from the dependency-free core baseline.
+9. Several new components are large. Refactor only when it simplifies a tested invariant; do not replace working architecture with broad aesthetic churn.
+10. The split title/player protocol has now passed a 1920x1080 no-Continue
     canary and full semantic load-to-pause test. A prior 1280x720 test proved
     the old fixed startup clicks were wrong and the old launcher could
     repeatedly reclaim focus. Deliberate interruption, one alternate-resolution
     semantic startup, and the visible ownership reset/disarm lifecycle still
     require separate bounded live tests.
-12. Kenshi reproduced a `BAD STUFF` out-of-video-memory/device-reset failure
+11. Kenshi reproduced a `BAD STUFF` out-of-video-memory/device-reset failure
     under shared-memory pressure. Low textures, disabled reflections/shadows,
     disabled fast zone hopping, and view distance 2500 are installed, but the
     reduced profile has now passed two short supervised launches with the split
@@ -552,13 +565,16 @@ Acceptance criteria:
 - Run artifacts record exact provenance and separate native-assisted evidence from interface-only evidence.
 - Documentation says only that this exact calibrated flow was proven.
 
-If live authorization is absent, do not simulate having completed this gate. Select P2 instead unless the ledger identifies a more urgent local regression.
+If live authorization is absent, do not simulate having completed this gate.
+Select P3 instead unless the ledger identifies a more urgent local regression.
 
-### P2 — Replace planner-payload string slicing with semantic valid-JSON budgeting
+### Completed P2 — Semantic valid-JSON planner-observation budgeting
 
-This is the default next local engineering slice when P1 cannot be performed.
+Status: completed at `576640a`. Preserve this contract and reopen it only for a
+demonstrated regression.
 
-Problem: the current payload budgeter can cut serialized JSON inside a string or object. That can send malformed evidence to the hosted planner and makes truncation behavior dependent on incidental serialization order.
+The prior payload budgeter could cut serialized JSON inside a string or object.
+The replacement operates on structured data and uses the following invariant.
 
 Required design:
 
@@ -592,7 +608,25 @@ Acceptance criteria:
 - Hosted planner adapters receive the same valid structured contract.
 - No single-step, continuous, schema, or deterministic seed regression occurs.
 
-Do not combine this slice with a large runtime refactor.
+Current evidence:
+
+- 218 tests pass; Ruff, mypy across 49 source files, compile checks, doctor,
+  and schema byte parity are green.
+- The deterministic stress fixture reduces from 87,927 characters to a
+  9,399-character irreducible envelope and parses at every exercised budget
+  from that minimum upward.
+- Exact control/planning mode, live policy, revision, active plan, command ID,
+  last target, latest causal outcome, selected character, current command
+  target, and latest-outcome target survive the minimum.
+- Omission metadata reports truthful original/retained counts. Nested Unicode
+  and long strings remain whole. Low-priority source reordering yields identical
+  constrained output.
+- Skill names and corresponding constraint specs are atomic. Both hosted
+  adapters receive valid bounded JSON.
+- Single-step seeds 7, 11, and 19 retain their 25/13/13-action one-day results.
+  The portable continuous proof retains two successful later-revision steps,
+  one completed plan, zero rejected actions, and the heuristic's explicit
+  terminal Stop.
 
 ### P3 — Add a final post-lease pre-input execution fence
 
@@ -1269,9 +1303,9 @@ The immediate decision rule is:
   longer stability soak in separately bounded tests;
 - only after P0 is green, and with explicit live-action authorization, finish
   the exact P6 Barman chain;
-- without current live-test readiness, replace malformed planner-payload
-  truncation with semantic valid-JSON budgeting;
-- then close the ordinary gameplay post-input-lease evidence race, complete
+- without current live-test readiness, close the ordinary gameplay
+  post-input-lease evidence race;
+- then complete
   calibration identity beyond exact client size, and unify final safe-state
   behavior;
 - then build a long-running monitored travel option so strategic thinking can overlap useful live execution;

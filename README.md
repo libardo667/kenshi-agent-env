@@ -257,10 +257,16 @@ the sort with `KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`.
 
 The planner receives a bounded JSON observation, including planning mode,
 control mode, exact world revision, and only the skills legal in that mode,
-plus a base64 image when enabled. It returns a validated `PlannerDecision` in
-`single_step`, a bounded `PlanEnvelope` in ordinary `continuous` work, or a
-future-only `PlanPatch` when `active_plan` is present; it does not call input
-APIs itself.
+plus a base64 image when enabled. Oversized observations are reduced
+semantically: the exact safety/revision/active-plan/command/latest-outcome and
+referenced-entity envelope survives, while whole lower-priority fields and
+collection elements are admitted deterministically as room permits.
+`observation_budget` reports truthful original/retained counts and omitted
+fields; a budget too small for the irreducible envelope fails explicitly.
+Available skills and their machine-enforced specs are retained together. The
+planner returns a validated `PlannerDecision` in `single_step`, a bounded
+`PlanEnvelope` in ordinary `continuous` work, or a future-only `PlanPatch` when
+`active_plan` is present; it does not call input APIs itself.
 
 ### Live decision overlay
 
@@ -568,10 +574,12 @@ then present the result as general play ability.
   still require exact calibration and screenshot-grounded confirmation.
 - Hosted vision-planner evidence is limited to supervised narrow live slices.
 - Live continuous execution is restricted to `food_procurement_v1`; its
-  deterministic live-shaped proof and native Release build pass, but the new
-  protocol `0.5.0` semantic launcher, ownership countdown, F12/human-input
-  latency, and full conditional chain still await supervised Kenshi
-  validation. There is no broad option conversion or general live policy.
+  deterministic live-shaped proof and native Release build pass. Protocol
+  `0.5.0` semantic startup passed at 1920x1080, but alternate-resolution
+  startup, deliberate interruption, ownership countdown/reset, F12 disarm,
+  longer stability, and the full conditional chain still await separate
+  supervised Kenshi validation. There is no broad option conversion or general
+  live policy.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.
