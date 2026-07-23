@@ -48,6 +48,20 @@
   paused postconditions. The exact pinned `0.4.0` Release x64 DLL loaded in
   Kenshi and emitted strict fresh paused telemetry with the new capabilities;
   supervised action-chain validation remains pending.
+- Hosted P6 dry preflight now returns a strict schema-valid world-phase plan in
+  23.95 seconds at medium reasoning. The policy still withheld execution while
+  remaining semantic issues were tightened. Live food planning may rebase only
+  across sequence-only updates with an identical identity/capability/game/UI/
+  native-command/selection/exact-vendor fence; generic stale outputs remain
+  rejected. The active burn-in disables concurrent option advice because its
+  pulse is shorter than measured hosted latency.
+- After a long session froze the latest atomic snapshot at sequence 3985, the
+  supervisor cancelled the planner with zero actions. The current protocol
+  `0.4.0` hotfix makes sampler-latch release exception-safe and retries
+  transient Windows replacement failures four times. Its 183,296-byte x64 DLL
+  SHA-256 is
+  `0096082215cbc1f842a8947291570328481c78cab9c23b8ae00a4dcdf6e888a3`;
+  fresh relaunch samples advanced 61 -> 69 -> 78.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.

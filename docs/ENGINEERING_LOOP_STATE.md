@@ -143,6 +143,15 @@ Hosted live preflight on 2026-07-23:
   three consecutive supervisor checks. Kenshi remained paused, responsive,
   foreground, and visually intact with no native command. The sampler hotfix
   and clean relaunch followed before another planner call.
+- Dry run `p6-live-continuous-dry-medium-20260723T203207Z` returned a strict
+  `PlanEnvelope` in 23.95 seconds and kept the repaired stream advancing. The
+  deterministic policy rejected it with zero actions because redundant
+  non-target IDs obscured otherwise-present checks, its game-time budget was
+  too small, and the exact planner revision had naturally advanced. Global
+  conditions now canonicalize redundant IDs, world-phase game time must cover
+  the approach duration plus one second, and only this live policy can rebase
+  sequence-only latency across an unchanged exact phase fence. Generic stale
+  output remains rejected.
 - Hosted live planning now defaults to `medium` reasoning. Direct OpenAI calls
   receive a deterministic output-token ceiling of 4,096 for one decision,
   growing by 2,048 per bounded plan step to at most 12,288. The runtime
@@ -153,7 +162,7 @@ Hosted live preflight on 2026-07-23:
   removed because its conditional `expected` shape was not represented by the
   strict schema. `food_procurement_v1` success checks also preserve the exact
   one-character selection invariant after every action.
-- Repository verification after these changes: 178 tests passed; Ruff passed;
+- Repository verification after these changes: 181 tests passed; Ruff passed;
   mypy passed for all 47 source files; compileall, schema export, diff check,
   and default doctor passed. The next gate is another zero-action hosted dry
   response before enabling any live input.

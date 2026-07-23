@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,7 +10,10 @@ import pytest
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log
-from kenshi_agent.food_procurement import FOOD_PROCUREMENT_CAPABILITIES
+from kenshi_agent.food_procurement import (
+    FOOD_PROCUREMENT_CAPABILITIES,
+    food_procurement_rebase_errors,
+)
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -397,6 +401,52 @@ def test_food_policy_requires_only_capabilities_emitted_by_live_protocol_04() ->
     assert "squad.hunger" not in FOOD_PROCUREMENT_CAPABILITIES
 
 
+def test_global_conditions_canonicalize_redundant_target_ids() -> None:
+    global_condition = field(
+        "telemetry.ui.dialogue_target_id",
+        TARGET_ID,
+        target_id=TARGET_ID,
+    )
+    target_condition = field(
+        "target.shop_inventory_owner",
+        False,
+        target_id=TARGET_ID,
+    )
+
+    assert global_condition.target_id is None
+    assert target_condition.target_id == TARGET_ID
+
+
+def test_live_food_plan_rebases_only_across_an_unchanged_exact_fence() -> None:
+    planner_observation = observation()
+    plan = procurement_plan(planner_observation)
+    telemetry = planner_observation.telemetry
+    assert telemetry is not None
+    later = planner_observation.model_copy(
+        update={
+            "world_revision": revision(11),
+            "telemetry": telemetry.model_copy(update={"sequence": 11}),
+        },
+        deep=True,
+    )
+
+    assert food_procurement_rebase_errors(plan, planner_observation, later) == []
+
+    changed_telemetry = later.telemetry
+    assert changed_telemetry is not None
+    changed = later.model_copy(
+        update={
+            "telemetry": changed_telemetry.model_copy(
+                update={"game": changed_telemetry.game.model_copy(update={"money": 999})}
+            )
+        },
+        deep=True,
+    )
+    assert food_procurement_rebase_errors(plan, planner_observation, changed) == [
+        "food rebase fence changed during planning: game"
+    ]
+
+
 def test_contains_condition_is_five_valued_and_capability_gated() -> None:
     current = observation(
         screen="trade",
@@ -643,6 +693,79 @@ class FoodChainPlanner(Planner):
             and current.telemetry.ui.active_screen == "world"
             else purchase_plan(current)
         )
+
+
+def test_live_runtime_rebases_sequence_only_planner_latency_before_execution(
+    tmp_path: Path,
+) -> None:
+    class AdvancingFoodEnvironment(FoodChainEnvironment):
+        async def observe(self) -> Observation:
+            self.sequence += 1
+            return self.current()
+
+    class DelayedFoodPlanner(FoodChainPlanner):
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            await asyncio.sleep(0.03)
+            return procurement_plan(current)
+
+    async def scenario() -> None:
+        environment = AdvancingFoodEnvironment()
+        planner = DelayedFoodPlanner()
+        registry = macros()
+        logger = SessionLogger(tmp_path / "events.jsonl", "p6-rebase")
+        safety = SafetyConfig(
+            supervisor_enabled=False,
+            allow_action_kinds=["skill", "click", "move_cursor", "hotkey"],
+            allow_skills=[
+                "approach_confirmed_vendor",
+                "choose_show_goods",
+                "inspect_shop_item",
+                "buy_inspected_shop_item",
+            ],
+            max_actions_per_minute=500,
+        )
+        config = planning_config().model_copy(
+            update={
+                "observation_pump_enabled": True,
+                "observation_pump_seconds": 0.005,
+            }
+        )
+        runtime = AgentRuntime(
+            run_id="p6-rebase",
+            environment=environment,
+            planner=planner,
+            guard=ActionGuard(
+                safety,
+                registry,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            planning_config=config,
+        )
+        try:
+            summary = await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 1
+        assert planner.calls == 1
+        assert [action.name for action in environment.actions] == [
+            "approach_confirmed_vendor"
+        ]
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        assert sum(event["event_type"] == "plan_rebased" for event in events) == 1
+        assert sum(event["event_type"] == "plan_accepted" for event in events) == 1
+
+    asyncio.run(scenario())
 
 
 def test_live_shaped_runtime_executes_four_actions_from_two_strategic_calls(

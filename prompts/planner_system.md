@@ -27,6 +27,11 @@ continuous plans:
   `at_most_once`, require a paused game and exactly one selected character
   before and after each action, and require every policy capability in the
   freshness assumption.
+- Use `target_id: null` on every condition except a `target.*` condition. For a
+  world-phase plan set `max_actions: 3`, `max_wall_seconds: 30`,
+  `max_game_seconds: 12`, and risk budgets of two pointer actions, zero
+  purchases, and one native-assisted action. Do not copy current elapsed game
+  time into a budget.
 - Require the approach to end at that exact dialogue target; require dialogue
   option zero to equal `Show me your goods.` before clicking; require one exact
   active shop owner matching the target before inspection or purchase.

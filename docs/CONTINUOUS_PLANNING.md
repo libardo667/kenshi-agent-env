@@ -79,6 +79,15 @@ part of the contract.
 epoch, and local monotonic observation time. A plan basis must match the
 observation used for acceptance.
 
+Generic output that becomes stale during a strategic call is rejected. The
+sole live `food_procurement_v1` policy has a narrower sequence-only rebase:
+the returned basis must match its immutable planner snapshot, the latest
+revision must be causally later, and identity session, capabilities, complete
+game/UI state, native-command state, selected character, and exact vendor must
+remain equal. Any fence change rejects the plan. A successful `plan_rebased`
+event moves only the basis to latest state; policy, assumptions, first-step
+preconditions, and the ordinary guard still validate afterward.
+
 Continuous mode publishes observations through one bounded
 `WorldStateStore`. The store rejects revision regression and state changes
 without a revision advance, detects duplicate telemetry sequences, carries
@@ -194,6 +203,11 @@ future entry become eligible. Each replacement action still passes ordinary
 precondition and guard checks. Wrong-type, failed, late, stale, mismatched, or
 invalid advisory output is logged and discarded; the original branch remains.
 
+The active live food profile disables this advisory because its measured
+hosted latency is longer than the short movement option and the accepted
+phase plan already contains its finite future steps. Portable profiles retain
+the feature.
+
 Cancellation keeps the existing P3 contract: dispatched movement remains spent
 and inconclusive, the option reaches cancelled/failed once, and the independent
 supervisor owns the single causally verified safe-pause cleanup.
@@ -292,6 +306,9 @@ Portable tests and the built-in heuristic prove:
   distinct positions;
 - a planner response made stale while the observation pump advances is rejected
   before execution;
+- the narrow live food policy rebases sequence-only planner latency when its
+  complete phase fence is unchanged, and rejects the same response after any
+  fenced value changes;
 - command receipts distinguish later causal evidence from an unchanged,
   inconclusive revision.
 - an unsafe update cancels a deliberately blocked planner and produces one
