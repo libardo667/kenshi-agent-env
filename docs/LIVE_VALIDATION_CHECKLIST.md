@@ -69,6 +69,11 @@ inspection alone.
 - [ ] F12 prevents the next primitive action.
 - [x] Dry-run logs proposed actions without sending input.
 - [x] One key action works in a disposable save.
+- [ ] A supervised launcher interruption emits no further input and does not
+      reclaim focus. Portable zero-input tests pass; Windows revalidation is
+      pending after the 1280x720 focus-retry incident.
+- [x] A mismatched calibrated client size blocks pointer input inside the
+      acquired input lease in portable tests.
 - [ ] One calibrated click works for 50 repeated trials without drift.
 - [ ] Loss of foreground focus aborts safely.
 

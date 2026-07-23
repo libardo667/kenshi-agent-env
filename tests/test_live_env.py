@@ -1,4 +1,5 @@
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -71,6 +72,8 @@ class PulseController(InputController):
         emergency_after: int | None = None,
         user_input_after: int | None = None,
         continuous_user_input: bool = False,
+        client_width: int = 1920,
+        client_height: int = 1080,
     ) -> None:
         self.telemetry = telemetry
         self.actions: list[PrimitiveInputAction] = []
@@ -79,6 +82,8 @@ class PulseController(InputController):
         self.user_input_after = user_input_after
         self.user_input_checks = 0
         self.continuous_user_input = continuous_user_input
+        self.client_width = client_width
+        self.client_height = client_height
 
     def focus_window(self) -> None:
         return None
@@ -126,7 +131,21 @@ class PulseController(InputController):
         return self.continuous_user_input
 
     def client_rect(self) -> WindowRect:
-        return WindowRect(left=0, top=0, right=1920, bottom=1080)
+        return WindowRect(
+            left=0,
+            top=0,
+            right=self.client_width,
+            bottom=self.client_height,
+        )
+
+
+class ResizeInsideLeaseController(PulseController):
+    @asynccontextmanager
+    async def input_lease(self, *, alt_tab_on_restore: bool = False):
+        del alt_tab_on_restore
+        self.client_width = 1280
+        self.client_height = 720
+        yield
 
 
 def movement_registry(
@@ -237,6 +256,66 @@ def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:
         assert [action.kind for action in controller.actions] == ["click", "key", "key"]
         assert transition.receipt.primitive_actions == 5
         assert "confirmed re-paused state" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_pointer_skill_rejects_mismatched_calibrated_client_before_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(
+            telemetry,
+            client_width=1280,
+            client_height=720,
+        )
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+        environment.controls_config = ControlsConfig(
+            post_input_delay_seconds=0.0,
+            calibrated_client_width=1920,
+            calibrated_client_height=1080,
+        )
+
+        await environment.reset()
+        with pytest.raises(RuntimeError, match=r"1280x720.*1920x1080"):
+            await environment.step(movement_action())
+
+        assert controller.actions == []
+        assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_pointer_skill_rechecks_calibrated_client_inside_input_lease(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = ResizeInsideLeaseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+        environment.controls_config = ControlsConfig(
+            post_input_delay_seconds=0.0,
+            calibrated_client_width=1920,
+            calibrated_client_height=1080,
+        )
+
+        await environment.reset()
+        with pytest.raises(RuntimeError, match=r"1280x720.*1920x1080"):
+            await environment.step(movement_action())
+
+        assert controller.actions == []
+        assert telemetry.paused is True
 
     asyncio.run(scenario())
 

@@ -4,39 +4,69 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 from .cli import main as agent_main
-from .config import AppConfig, load_config
+from .config import AppConfig, ControlsConfig, load_config
+from .control.base import InputController, PrimitiveInputAction, WindowRect
+from .control.calibration import validate_expected_client_size
 from .control.capture import WindowCapture
 from .control.win32 import Win32InputController
-from .models import ClickAction
+from .models import ClickAction, KeyAction
 from .telemetry import TelemetryReader, TelemetryReadError
+
+
+class LaunchInterrupted(RuntimeError):
+    pass
 
 
 def _controller(config: AppConfig) -> Win32InputController:
     return Win32InputController(
         config.capture.window_title_contains,
-        polite_input_enabled=False,
-        restore_foreground_after_input=False,
-        restore_cursor_after_input=False,
+        focus_before_input=config.controls.focus_before_input,
+        post_input_delay_seconds=config.controls.post_input_delay_seconds,
+        polite_input_enabled=True,
+        idle_seconds_before_input=0.0,
+        max_wait_for_input_turn_seconds=1.0,
+        restore_foreground_after_input=True,
+        restore_cursor_after_input=True,
         alt_tab_after_input=False,
         pointer_mode=config.controls.pointer_mode,
+        relative_pointer_max_step_pixels=config.controls.relative_pointer_max_step_pixels,
+        relative_pointer_tolerance_pixels=config.controls.relative_pointer_tolerance_pixels,
+        relative_pointer_settle_seconds=config.controls.relative_pointer_settle_seconds,
+        relative_pointer_max_attempts=config.controls.relative_pointer_max_attempts,
     )
 
 
-def _wait_until(predicate: Callable[[], bool], timeout: float, description: str) -> None:
+def _abort_if_human_input(controller: InputController) -> None:
+    if controller.continuous_user_input_detected():
+        raise LaunchInterrupted(
+            "Kenshi launcher stopped because human input was detected; "
+            "no further launcher input was sent."
+        )
+
+
+async def _wait_until(
+    predicate: Callable[[], bool],
+    timeout: float,
+    description: str,
+    *,
+    controller: InputController,
+) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        _abort_if_human_input(controller)
         try:
             if predicate():
                 return
         except (OSError, RuntimeError, ValueError):
             pass
-        time.sleep(0.25)
+        await asyncio.sleep(0.25)
     raise TimeoutError(f"Timed out waiting for {description}.")
 
 
@@ -65,10 +95,34 @@ def _telemetry_read(config: AppConfig) -> TelemetryReader:
     )
 
 
-async def _click(controller: Win32InputController, x: float, y: float) -> None:
-    receipt = await controller.execute(ClickAction(x=x, y=y))
+async def _execute_primitive(
+    controller: InputController,
+    action: PrimitiveInputAction,
+) -> None:
+    _abort_if_human_input(controller)
+    async with controller.input_lease():
+        _abort_if_human_input(controller)
+        receipt = await controller.execute(action)
     if not receipt.executed:
         raise RuntimeError(receipt.message)
+
+
+async def _click(controller: InputController, x: float, y: float) -> None:
+    await _execute_primitive(controller, ClickAction(x=x, y=y))
+
+
+def _validate_calibrated_client_rect(
+    rect: WindowRect,
+    controls: ControlsConfig,
+) -> None:
+    expected_width = getattr(controls, "calibrated_client_width", None)
+    expected_height = getattr(controls, "calibrated_client_height", None)
+    validate_expected_client_size(
+        rect.width,
+        rect.height,
+        expected_width=expected_width,
+        expected_height=expected_height,
+    )
 
 
 async def _launch(args: argparse.Namespace) -> int:
@@ -79,58 +133,95 @@ async def _launch(args: argparse.Namespace) -> int:
     launched_at = datetime.now(UTC)
     os.startfile(_shortcut())  # type: ignore[attr-defined]
 
-    _wait_until(lambda: controller.client_rect().width > 0, args.timeout, "Kenshi launcher")
-    launcher_rect = controller.client_rect()
-    if launcher_rect.width < 1200:
-        await _click(controller, 0.742, 0.965)
+    try:
+        await _wait_until(
+            lambda: controller.client_rect().width > 0,
+            args.timeout,
+            "Kenshi launcher",
+            controller=controller,
+        )
+        launcher_rect = controller.client_rect()
+        if launcher_rect.width < 1200:
+            await _click(controller, 0.742, 0.965)
 
-    status_path = config.telemetry.file.parent / "plugin_status.json"
+        status_path = config.telemetry.file.parent / "plugin_status.json"
 
-    def plugin_ready() -> bool:
-        payload = json.loads(status_path.read_text(encoding="utf-8"))
-        captured = datetime.fromisoformat(payload["captured_at"].replace("Z", "+00:00"))
-        return payload.get("state") == "ready" and captured >= launched_at
+        def plugin_ready() -> bool:
+            payload = json.loads(status_path.read_text(encoding="utf-8"))
+            captured = datetime.fromisoformat(payload["captured_at"].replace("Z", "+00:00"))
+            return payload.get("state") == "ready" and captured >= launched_at
 
-    _wait_until(plugin_ready, args.timeout, "fresh telemetry plugin startup")
-    _wait_until(
-        lambda: controller.client_rect().width >= 1200,
-        args.timeout,
-        "full-size Kenshi window",
-    )
-    time.sleep(2.0)
+        await _wait_until(
+            plugin_ready,
+            args.timeout,
+            "fresh telemetry plugin startup",
+            controller=controller,
+        )
+        await _wait_until(
+            lambda: controller.client_rect().width >= 1200,
+            args.timeout,
+            "full-size Kenshi window",
+            controller=controller,
+        )
+        _validate_calibrated_client_rect(controller.client_rect(), config.controls)
+        await asyncio.sleep(2.0)
+        _abort_if_human_input(controller)
 
-    if args.continue_game:
-        # RE_Kenshi can open its own settings panel over Continue at startup.
-        # This is a harmless title-screen click when that panel is disabled.
-        await _click(controller, 0.300, 0.110)
-        await _click(controller, 0.338, 0.171)
-        reader = _telemetry_read(config)
+        if args.continue_game:
+            # One calibrated title-screen sequence only. If RE_Kenshi reopens
+            # its panel or load does not begin, time out and yield to the user
+            # instead of repeatedly reclaiming focus.
+            _validate_calibrated_client_rect(controller.client_rect(), config.controls)
+            await _click(controller, 0.300, 0.110)
+            _validate_calibrated_client_rect(controller.client_rect(), config.controls)
+            await _click(controller, 0.338, 0.171)
+            reader = _telemetry_read(config)
 
-        def game_loaded() -> bool:
-            try:
-                result = reader.read()
-            except TelemetryReadError:
-                return False
-            return not result.stale and result.snapshot.game.loaded and bool(result.snapshot.squad)
+            def game_loaded() -> bool:
+                try:
+                    result = reader.read()
+                except TelemetryReadError:
+                    return False
+                return (
+                    not result.stale
+                    and result.snapshot.game.loaded
+                    and bool(result.snapshot.squad)
+                )
 
-        load_deadline = time.monotonic() + args.timeout
-        next_retry = time.monotonic() + 4.0
-        while not game_loaded():
-            now = time.monotonic()
-            if now >= load_deadline:
-                raise TimeoutError("Timed out waiting for loaded player squad.")
-            if now >= next_retry:
-                # The RE_Kenshi menu can appear late or reopen over Continue.
-                # Retrying this title-screen sequence is idempotent.
-                await _click(controller, 0.300, 0.110)
-                await _click(controller, 0.338, 0.171)
-                next_retry = now + 4.0
-            await asyncio.sleep(0.25)
-        snapshot = reader.read().snapshot
-        if snapshot.game.paused is False:
-            await _click(controller, 0.765, 0.723)
-        # Also clear the panel if RE_Kenshi reopened it during save load.
-        await _click(controller, 0.300, 0.110)
+            await _wait_until(
+                game_loaded,
+                args.timeout,
+                "loaded player squad",
+                controller=controller,
+            )
+            snapshot = reader.read().snapshot
+            if snapshot.game.paused is False:
+                await _execute_primitive(
+                    controller,
+                    KeyAction(key=config.controls.pause_key),
+                )
+
+            def game_paused() -> bool:
+                try:
+                    result = reader.read()
+                except TelemetryReadError:
+                    return False
+                return (
+                    not result.stale
+                    and result.snapshot.game.loaded
+                    and bool(result.snapshot.squad)
+                    and result.snapshot.game.paused is True
+                )
+
+            await _wait_until(
+                game_paused,
+                args.timeout,
+                "causally confirmed paused game",
+                controller=controller,
+            )
+    except LaunchInterrupted as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
 
     print("Kenshi launched" + (", loaded, and paused." if args.continue_game else "."))
     return 0

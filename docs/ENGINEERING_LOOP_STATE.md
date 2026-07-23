@@ -33,7 +33,77 @@
   bounded keyed lifecycle acknowledgements. It adds game time, exact dialogue,
   and current tooltip/source observations.
 
-## Active slice: P6 conditional food-procurement chain
+## Active slice: P0 low-memory and launcher-input safety recovery
+
+Problem: the previously mitigated Intel Iris Xe live profile reproduced
+Kenshi's `BAD STUFF` out-of-video-memory crash after roughly forty minutes.
+The captured dialog and prior incident evidence again point to a DirectX device
+reset under shared-memory pressure. The installed configuration had not rolled
+back: Low textures, disabled reflections and shadows, and disabled fast zone
+hopping all persisted. Broad live stability is therefore open again and takes
+precedence over another P6 action.
+
+Scope:
+
+- Preserve the crash evidence and the pre-restart configuration.
+- Keep the existing Low-texture/reflection/shadow/zone-hopping mitigations,
+  and reduce view distance from approximately 4000 to 2500.
+- Relaunch without gameplay input, confirm a fresh loaded paused state and
+  advancing protocol `0.4.0` telemetry, then measure Kenshi private memory,
+  GPU-local usage, and host headroom while the client settles.
+- Preserve the calibrated 1920x1080 client. Reject any other client size before
+  calibrated launcher or live pointer input.
+- Make the developer launcher yield permanently on new human input, use an
+  input lease, restore foreground/cursor, and remove automatic focus-taking
+  click retries and the ungrounded post-load click.
+- If the reduced profile is stable, make the proven profile/checks durable in
+  launcher-side Python/configuration rather than adding DirectX hooks to the
+  native telemetry plug-in.
+
+Non-goals:
+
+- No DirectX interception, renderer patch, graphics-driver modification, or
+  new native action surface.
+- No claim of broad or long-duration stability from one short verification.
+- No dialogue, trade, purchase, or other gameplay input during the stability
+  check.
+- No resumption of the P6 food chain unless the reduced launch is fresh,
+  paused, advancing, and below the immediate memory-pressure boundary.
+
+Acceptance criteria:
+
+- Installed graphics settings exactly match the intended reversible profile
+  after relaunch.
+- Kenshi reaches a loaded, causally confirmed paused state with fresh advancing
+  telemetry and the expected installed DLL/protocol.
+- The launcher and ordinary live environment both emit zero pointer input when
+  the client differs from the calibrated 1920x1080 profile.
+- Human input before or during a launcher input lease terminates launcher
+  automation with no further input; startup never retries focus-taking clicks.
+- Settled memory samples show no immediate monotonic rise or device-reset
+  symptom, and the evidence records any remaining headroom qualification.
+- The crash incident document and current ledger distinguish proven mitigation,
+  short validation, and still-unproven long-duration stability.
+
+Implementation status: offline implementation and focused tests complete;
+fresh Windows/live validation pending. The frozen process and `BAD STUFF`
+dialog were preserved before shutdown. Pre-restart configuration is retained
+under the associated run directory. A 1280x720 trial reached fresh advancing
+telemetry, but the user observed misaligned startup clicks and could not regain
+focus because the launcher retried with polite input disabled. That trial is
+rejected as a control-safety result. Kenshi was stopped, the renderer was
+restored to calibrated 1920x1080, and no gameplay action had been dispatched.
+The installed profile retains view distance `2500`, Low textures, disabled
+water reflections/shadows, and disabled fast zone hopping. The launcher now
+uses input leases, latches new human input as terminal, makes one startup
+sequence without click retries, uses a coordinate-independent pause key, and
+requires a causally confirmed paused result. The live environment rechecks the
+exact calibrated client size inside the acquired input lease before every
+pointer-bearing action. Full portable evidence is 194 passing tests, Ruff,
+mypy across 47 source files, compile checks, schema parity, default doctor,
+three fixed single-step seeds, and the continuous mock proof.
+
+## Pending live milestone: P6 conditional food-procurement chain
 
 Problem: P1-P5 can execute and causally acknowledge bounded continuous work,
 but live-labeled continuous mode is still hard-blocked. Removing that block
@@ -586,6 +656,25 @@ Acceptance criteria:
 
 ## Current checks
 
+P0 launcher/calibration recovery verification on 2026-07-23:
+
+- `.venv/bin/python -m pytest -o addopts='' -q`: 194 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src`: passed, 47 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `interface_only` / `single_step`.
+- A fresh temporary schema export matched `schemas/` byte-for-byte.
+- Focused launcher/config/live-environment evidence: 28 passed. It covers
+  human input before the lease, human input after lease acquisition, exact
+  1920x1080 acceptance, 1280x720 rejection, and a client-size change inside
+  the acquired live input lease with zero primitive actions.
+- Mock seeds 7, 11, and 19 survived one in-game day in 25, 13, and 13 actions.
+- Continuous run `p0-launcher-continuous-proof` completed two guarded actions
+  from one strategic call.
+- No fresh supervised Windows launch has exercised the revised launcher.
+  Kenshi remains stopped at the pre-live-test boundary.
+
 P5 causal-command offline verification on 2026-07-23:
 
 - `.venv/bin/pytest`: 160 passed.
@@ -776,16 +865,17 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Known risks and deferred debt
 
-- Broad live stability remains open. One Intel Iris Xe run reset the DirectX
-  device under high shared-memory pressure; a prior-DLL baseline reproduced it,
-  and the mitigated identity run passed only a narrow ten-minute soak.
+- Broad live stability remains open. The Intel Iris Xe client reproduced the
+  DirectX device reset after roughly forty minutes even with Low textures and
+  reflections disabled. View distance is now 2500, but that profile has not
+  completed a fresh supervised soak.
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
 - Strategic overlap and active patch application are intentionally limited to
   the portable configured-movement option adapter.
-- Continuous live execution and stateful live movement options are
-  intentionally blocked; the existing live pulse remains monolithic.
+- General continuous live execution and stateful live movement options remain
+  blocked; only `food_procurement_v1` is eligible behind all dedicated gates.
 - Legacy telemetry producers may still expose ordinal IDs; only snapshots with
   `identity.stable_handles` receive native identity trust.
 - Observation payload truncation can produce malformed JSON.
@@ -794,7 +884,10 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Ordered next candidates
 
-1. P6: the first conditional live food-procurement chain after P5 evidence
-   and explicit live authorization.
-2. P8: semantic observation budgeting that always emits valid JSON, plus CI
-   and a reproducible Python lockfile.
+1. P0: supervised 1920x1080 launcher interruption and reduced-view-distance
+   stability smoke, after a fresh user handoff.
+2. P6: resume the exact conditional live food-procurement chain only after the
+   P0 launch/stability gate closes and explicit live authorization remains
+   current.
+3. P8: semantic observation budgeting that always emits valid JSON, followed
+   by CI and a reproducible Python lockfile as separate bounded slices.
