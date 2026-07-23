@@ -36,6 +36,30 @@ inspection alone.
       stale pointers.
 - [x] Missing capabilities remain absent rather than fabricated.
 
+### Protocol 0.5 title-screen semantic lifecycle
+
+- [x] First 1920x1080 load reached a responsive title screen without the
+      optional RE_Kenshi settings panel. The 185,344-byte candidate
+      (`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`)
+      reported fresh `ready`, but retained the prior telemetry snapshot because
+      `PlayerInterface::update` does not run before a save is loaded.
+- [x] The semantic launcher failed closed after its bounded timeout with zero
+      title pointer input. A read-only capture showed the Continue, New Game,
+      Load Game, Import Game, Options, Credits, and Exit title controls at
+      1920x1080; no gameplay state was loaded or changed.
+- [x] Move two-hertz sampling to MyGUI's title-and-game frame path while
+      retaining native-command monitoring on `PlayerInterface::update`.
+      Focused contract/launcher tests pass. Pinned Release x64 output is
+      186,368 bytes, SHA-256
+      `ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`.
+- [ ] Back up the installed pre-hotfix `0.5.0` package, install the exact
+      lifecycle-hotfix artifact while Kenshi is stopped, and verify its hash.
+- [ ] Repeat 1920x1080 startup and prove fresh advancing title telemetry,
+      unique semantic Continue/save controls, a loaded squad, and causally
+      confirmed pause.
+- [ ] Repeat the semantic startup boundary at one alternate resolution, then
+      restore and re-verify the intended 1920x1080 profile.
+
 ### Evidence from 2026-07-22 smoke test
 
 - RE_Kenshi logged `KenshiAgentTelemetry -> KenshiAgentTelemetry.dll`, then the
