@@ -1,3 +1,8 @@
-from .metrics import LogMetrics, evaluate_log
+from .metrics import LogMetrics, PlanLifecycle, evaluate_log, replay_plan_lifecycle
 
-__all__ = ["LogMetrics", "evaluate_log"]
+__all__ = [
+    "LogMetrics",
+    "PlanLifecycle",
+    "evaluate_log",
+    "replay_plan_lifecycle",
+]

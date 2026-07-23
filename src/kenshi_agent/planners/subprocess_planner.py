@@ -4,7 +4,7 @@ import asyncio
 import json
 import shlex
 
-from ..models import Observation, PlannerDecision
+from ..models import Observation, PlanEnvelope, PlannerDecision, PlannerOutput, PlanningMode
 from .base import Planner
 
 
@@ -17,7 +17,7 @@ class SubprocessPlanner(Planner):
             raise ValueError("Subprocess planner command may not be empty.")
         self.timeout_seconds = timeout_seconds
 
-    async def decide(self, observation: Observation) -> PlannerDecision:
+    async def decide(self, observation: Observation) -> PlannerOutput:
         process = await asyncio.create_subprocess_exec(
             *self.command,
             stdin=asyncio.subprocess.PIPE,
@@ -43,6 +43,9 @@ class SubprocessPlanner(Planner):
         if not text:
             raise RuntimeError("Subprocess planner returned no JSON decision.")
         try:
-            return PlannerDecision.model_validate(json.loads(text.splitlines()[-1]))
+            payload = json.loads(text.splitlines()[-1])
+            if observation.planning_mode == PlanningMode.CONTINUOUS:
+                return PlanEnvelope.model_validate(payload)
+            return PlannerDecision.model_validate(payload)
         except Exception as exc:
             raise RuntimeError(f"Subprocess planner returned invalid decision JSON: {exc}") from exc

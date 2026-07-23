@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.config import load_config
-from kenshi_agent.models import ClickAction, ControlMode, SkillAction
+from kenshi_agent.models import (
+    ClickAction,
+    ControlMode,
+    PlanningMode,
+    SkillAction,
+)
 from kenshi_agent.skills import MacroRegistry
 
 
@@ -14,6 +19,10 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.mode == "mock"
     assert config.control.mode == ControlMode.INTERFACE_ONLY
     assert not config.control.native_assisted_actions_enabled
+    assert config.planning.mode == PlanningMode.SINGLE_STEP
+    assert config.planning.max_plan_steps == 4
+    assert config.planning.max_actions_per_plan == 8
+    assert config.planning.max_native_assisted_actions_per_plan == 0
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.reasoning_effort == "low"
     assert config.planner.openrouter_model == "openai/gpt-5.6-luna"

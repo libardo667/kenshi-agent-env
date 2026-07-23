@@ -26,6 +26,7 @@ from ..models import (
     StopAction,
     Transition,
     WaitAction,
+    WorldStateRevision,
 )
 from ..skills import MacroRegistry
 from ..telemetry import TelemetryReader, TelemetryReadError
@@ -67,6 +68,8 @@ class LiveEnvironment(AgentEnvironment):
         self._step_index = 0
         self._capture_sequence = 0
         self._last_observation: Observation | None = None
+        self._capability_epoch = 0
+        self._last_capability_signature: tuple[str, ...] | None = None
         self._capture = (
             WindowCapture(
                 controller,
@@ -81,6 +84,8 @@ class LiveEnvironment(AgentEnvironment):
     async def reset(self, *, seed: int | None = None) -> Observation:
         del seed
         self._step_index = 0
+        self._capability_epoch = 0
+        self._last_capability_signature = None
         return await self.observe()
 
     async def observe(self) -> Observation:
@@ -129,11 +134,26 @@ class LiveEnvironment(AgentEnvironment):
             except Exception as exc:
                 events.append(f"Screenshot capture failed: {type(exc).__name__}: {exc}")
 
+        capability_signature = tuple(
+            sorted(telemetry_snapshot.capabilities) if telemetry_snapshot is not None else []
+        )
+        if capability_signature != self._last_capability_signature:
+            self._capability_epoch += 1
+            self._last_capability_signature = capability_signature
+
         observation = Observation(
             run_id=self.run_id,
             step_index=self._step_index,
             mode="live",
             control_mode=self.control_mode,
+            world_revision=WorldStateRevision(
+                telemetry_sequence=(
+                    telemetry_snapshot.sequence if telemetry_snapshot is not None else None
+                ),
+                frame_sequence=(self._capture_sequence if screenshot_path is not None else None),
+                capability_epoch=self._capability_epoch,
+                observed_at_monotonic=time.monotonic(),
+            ),
             telemetry=telemetry_snapshot,
             telemetry_stale=telemetry_stale,
             telemetry_age_seconds=telemetry_age,
@@ -156,9 +176,7 @@ class LiveEnvironment(AgentEnvironment):
             and self.macros.requires_native_assisted(action.name)
             and self.control_mode != ControlMode.NATIVE_ASSISTED
         ):
-            raise RuntimeError(
-                f"Skill {action.name!r} requires native_assisted control mode."
-            )
+            raise RuntimeError(f"Skill {action.name!r} requires native_assisted control mode.")
         if isinstance(action, StopAction):
             receipt = ActionReceipt(
                 action=action,

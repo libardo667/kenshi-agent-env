@@ -18,7 +18,7 @@ from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
 from .memory import MemoryStore
-from .models import ControlMode
+from .models import ControlMode, PlanningMode
 from .overlay import show_overlay
 from .planners import (
     HeuristicPlanner,
@@ -120,13 +120,18 @@ def _controller_kwargs(config: AppConfig, args: argparse.Namespace) -> _Controll
 
 
 def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConfig:
-    if args.objective is None:
+    objective = getattr(args, "objective", None)
+    planning_mode = getattr(args, "planning_mode", None)
+    if objective is None and planning_mode is None:
         return config
-    return config.model_copy(
-        update={
-            "runtime": config.runtime.model_copy(update={"objective": args.objective})
-        }
-    )
+    updates: dict[str, object] = {}
+    if objective is not None:
+        updates["runtime"] = config.runtime.model_copy(update={"objective": objective})
+    if planning_mode is not None:
+        updates["planning"] = config.planning.model_copy(
+            update={"mode": PlanningMode(planning_mode)}
+        )
+    return config.model_copy(update=updates)
 
 
 def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
@@ -139,13 +144,11 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
     if config.control.mode == ControlMode.NATIVE_ASSISTED:
         if not config.control.native_assisted_actions_enabled:
             raise SystemExit(
-                "Native-assisted execution is disabled by "
-                "control.native_assisted_actions_enabled."
+                "Native-assisted execution is disabled by control.native_assisted_actions_enabled."
             )
         if not args.acknowledge_native_assisted_control:
             raise SystemExit(
-                "Native-assisted live execution requires "
-                "--acknowledge-native-assisted-control."
+                "Native-assisted live execution requires --acknowledge-native-assisted-control."
             )
     return True
 
@@ -245,6 +248,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             minimum_memory_salience=config.memory.minimum_salience,
             action_outcome_limit=config.runtime.observation_memory_limit,
             control_mode=run_control_mode,
+            planning_config=config.planning,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,
@@ -270,6 +274,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             "run_id": summary.run_id,
             "run_dir": str(run_dir),
             "control_mode": summary.control_mode.value,
+            "planning_mode": config.planning.mode.value,
             "steps_completed": summary.steps_completed,
             "terminated": summary.terminated,
             "success": summary.success,
@@ -291,6 +296,7 @@ def _doctor(args: argparse.Namespace) -> int:
     checks.append(("runs_dir", True, str(config.paths.runs_dir)))
     checks.append(("mode", True, args.mode or config.mode))
     checks.append(("control_mode", True, config.control.mode.value))
+    checks.append(("planning_mode", True, config.planning.mode.value))
     if (args.mode or config.mode) == "live":
         checks.append(("windows", os.name == "nt", platform.platform()))
         checks.append(
@@ -402,6 +408,11 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--mode", choices=["mock", "live", "replay"])
     planner_choices = ["heuristic", "scripted", "subprocess", "openai", "openrouter"]
     run.add_argument("--planner", choices=planner_choices)
+    run.add_argument(
+        "--planning-mode",
+        choices=[mode.value for mode in PlanningMode],
+        help="Override the configured single_step or continuous scheduler.",
+    )
     run.add_argument("--steps", type=int)
     run.add_argument("--seed", type=int)
     run.add_argument("--run-id")

@@ -5,6 +5,18 @@ control:
   mode: native_assisted
   native_assisted_actions_enabled: true
 
+planning:
+  mode: single_step
+  max_plan_steps: 4
+  max_actions_per_plan: 8
+  max_plan_wall_seconds: 30
+  max_plan_game_seconds: 12
+  max_pointer_actions_per_plan: 8
+  max_purchase_actions_per_plan: 1
+  max_native_assisted_actions_per_plan: 1
+  observation_poll_seconds: 0.1
+  max_consecutive_replans: 3
+
 paths:
   runs_dir: ../runs
   prompt_file: ../prompts/planner_system.md

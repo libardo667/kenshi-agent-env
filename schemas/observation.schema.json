@@ -1262,6 +1262,14 @@
       "title": "PauseAction",
       "type": "object"
     },
+    "PlanningMode": {
+      "enum": [
+        "single_step",
+        "continuous"
+      ],
+      "title": "PlanningMode",
+      "type": "string"
+    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -1755,6 +1763,50 @@
       ],
       "title": "WaitAction",
       "type": "object"
+    },
+    "WorldStateRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry Sequence"
+        },
+        "frame_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Sequence"
+        },
+        "capability_epoch": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Capability Epoch",
+          "type": "integer"
+        },
+        "observed_at_monotonic": {
+          "minimum": 0.0,
+          "title": "Observed At Monotonic",
+          "type": "number"
+        }
+      },
+      "title": "WorldStateRevision",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1785,6 +1837,13 @@
     "control_mode": {
       "$ref": "#/$defs/ControlMode",
       "default": "interface_only"
+    },
+    "planning_mode": {
+      "$ref": "#/$defs/PlanningMode",
+      "default": "single_step"
+    },
+    "world_revision": {
+      "$ref": "#/$defs/WorldStateRevision"
     },
     "telemetry": {
       "anyOf": [
