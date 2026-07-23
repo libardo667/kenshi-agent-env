@@ -134,5 +134,7 @@ Do not enable live Python input until these checks pass. The source is based on
 the pinned maintained headers and compiles as a VS2010 SP1 `Release | x64` DLL.
 Protocol `0.3.0` passed its load/two-hertz telemetry smoke test and one
 supervised stale-rejection/exact-target completion proof. The additive `0.5.0`
-semantic-control build passes offline compilation but still awaits the
-supervised multi-resolution checks in the broader checklist.
+split-lifecycle semantic-control build passed a supervised 1920x1080 title
+canary and full semantic load-to-pause test. Alternate-resolution,
+interruption/ownership, and longer stability checks remain open in the broader
+checklist.
