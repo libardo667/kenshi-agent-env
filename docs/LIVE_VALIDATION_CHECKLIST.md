@@ -294,7 +294,7 @@ Evidence from the supervised 2026-07-23 run:
 - [ ] Run the conditional continuous chain with all existing live/native gates
       plus `--acknowledge-continuous-live`; require one response to drive
       approach/dialogue/inspection and one later response to buy at most once.
-      Six no-input hosted preflights sent zero native commands and left money,
+      Seven no-input hosted preflights sent zero native commands and left money,
       food, and pause unchanged. `xhigh` exceeded the 90-second timeout; `high`
       returned after 62.70 seconds but used unsupported shorthand condition
       paths. Medium run
@@ -312,7 +312,13 @@ Evidence from the supervised 2026-07-23 run:
       sequence-only latency when its complete phase fence is unchanged. The
       follow-up contract uses medium reasoning, dynamic output-token ceilings,
       a schema-enumerated condition vocabulary, and bounded planner failure
-      logging.
+      logging. Run `p6-live-continuous-dry-medium-20260723T204004Z` returned a
+      structurally correct phase plan in 25.20 seconds and was stopped only
+      because transient client capture dimensions changed from 1920x1080 to
+      null; policy-authoritative UI state was identical. The fence now excludes
+      those dimensions, and trusted policy code compiles canonical safety
+      scaffolding after the proposed action structure, target, and arguments
+      match.
 - [ ] Record exact pre/post money, selected food count, pause, action count,
       strategic-call count, and final plan lifecycle.
 - [ ] Exercise one safe preemption (F12 or human input), confirm no repeated

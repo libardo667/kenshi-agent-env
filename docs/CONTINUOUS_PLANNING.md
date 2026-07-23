@@ -83,10 +83,19 @@ Generic output that becomes stale during a strategic call is rejected. The
 sole live `food_procurement_v1` policy has a narrower sequence-only rebase:
 the returned basis must match its immutable planner snapshot, the latest
 revision must be causally later, and identity session, capabilities, complete
-game/UI state, native-command state, selected character, and exact vendor must
-remain equal. Any fence change rejects the plan. A successful `plan_rebased`
-event moves only the basis to latest state; policy, assumptions, first-step
-preconditions, and the ordinary guard still validate afterward.
+game state, policy-authoritative UI state, native-command state, selected
+character, and exact vendor must remain equal. Transient client capture
+dimensions are excluded. Any fence change rejects the plan. A successful
+`plan_rebased` event moves only the basis to latest state; policy, assumptions,
+first-step preconditions, and the ordinary guard still validate afterward.
+
+When the live food response has the exact phase action sequence, one stable
+target, and typed arguments, `plan_canonicalized` records a trusted compilation
+step. Policy code replaces model-authored safety boilerplate with canonical
+freshness assumptions, per-action pre/postconditions, a linear graph, bounded
+timeouts, and exact risk budgets. The model cannot relax these fields, and a
+structurally wrong action proposal remains unchanged so deterministic policy
+rejects it.
 
 Continuous mode publishes observations through one bounded
 `WorldStateStore`. The store rejects revision regression and state changes

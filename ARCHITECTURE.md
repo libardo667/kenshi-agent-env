@@ -83,10 +83,18 @@ ambiguity-aware registry. See
 Generic strategic output must still match the current exact revision. The sole
 live `food_procurement_v1` exception may advance a plan basis across
 sequence-only updates after comparing an exact phase fence from the immutable
-planner observation to latest state. Any identity, capability, game/UI, native
-command, selection, or exact-target change rejects the plan; a successful
+planner observation to latest state. Any identity, capability, game,
+policy-authoritative UI, native command, selection, or exact-target change
+rejects the plan; transient capture dimensions are excluded. A successful
 rebase is a distinct lifecycle event and does not skip ordinary policy,
 precondition, or guard validation.
+
+For this policy, the hosted response chooses only the structurally constrained
+phase actions, target, and arguments. After that structure matches the current
+phase, trusted code compiles the canonical conditions, linear branches,
+timeouts, and risk budgets. This removes duplicated safety boilerplate from
+model discretion while retaining the typed plan executor and all immediate
+checks.
 
 ## Independent safety supervision
 

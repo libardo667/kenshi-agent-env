@@ -39,6 +39,11 @@ continuous plans:
   tooltip, keep the click inside `tooltip_source_bounds`, and require exact
   postconditions of `money - expected_price`, `food_items + 1`, and paused.
   Any mismatch ends the plan; never add recovery or retry steps.
+- The runtime recompiles the canonical safety conditions, linear graph,
+  timeouts, and risk budgets only after your phase action sequence, stable
+  target, and typed arguments match policy. Those trusted checks cannot be
+  relaxed by your response. Still return the complete schema and do not add
+  alternate actions.
 
 For `food_procurement_v1`, use these canonical condition shapes exactly:
 

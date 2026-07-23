@@ -8,11 +8,14 @@ from .models import (
     Condition,
     ConditionKind,
     ConditionOperator,
+    ConditionPath,
     ControlMode,
     IdempotencyPolicy,
     Observation,
+    ObservationPolicy,
     PlanEnvelope,
     PlanStep,
+    RiskBudget,
     SkillAction,
 )
 
@@ -125,7 +128,10 @@ def _food_rebase_fence(
         "identity_session_id": telemetry.identity_session_id,
         "capabilities": tuple(sorted(telemetry.capabilities)),
         "game": telemetry.game.model_dump(mode="json"),
-        "ui": telemetry.ui.model_dump(mode="json"),
+        "ui": telemetry.ui.model_dump(
+            mode="json",
+            exclude={"client_width", "client_height"},
+        ),
         "active_shop_trader_count": telemetry.active_shop_trader_count,
         "native_control": telemetry.native_control.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json"),
@@ -175,6 +181,237 @@ def food_procurement_rebase_errors(
             "food rebase fence changed during planning: " + ", ".join(changed)
         )
     return errors
+
+
+def _field(
+    path: str,
+    expected: str | int | float | bool,
+    *,
+    target_id: str | None = None,
+    operator: ConditionOperator = ConditionOperator.EQUALS,
+) -> Condition:
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=ConditionPath(path),
+        operator=operator,
+        expected=expected,
+        target_id=target_id,
+        max_age_seconds=3.0,
+    )
+
+
+def _fresh() -> Condition:
+    return Condition(
+        kind=ConditionKind.TELEMETRY_FRESH,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=3.0,
+        required_capabilities=sorted(FOOD_PROCUREMENT_CAPABILITIES),
+    )
+
+
+def _expected_action_names(observation: Observation) -> list[str]:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return []
+    tooltip_ready = bool(
+        telemetry.ui.tooltip_visible is True
+        and telemetry.ui.tooltip_text
+        and telemetry.ui.tooltip_source_bounds is not None
+    )
+    if telemetry.ui.active_screen == "world":
+        return [
+            "approach_confirmed_vendor",
+            "choose_show_goods",
+            "inspect_shop_item",
+        ]
+    if telemetry.ui.active_screen == "dialogue":
+        return ["choose_show_goods", "inspect_shop_item"]
+    if telemetry.ui.active_screen == "trade" and tooltip_ready:
+        return ["buy_inspected_shop_item"]
+    if telemetry.ui.active_screen == "trade":
+        return ["inspect_shop_item"]
+    return []
+
+
+def canonicalize_food_procurement_plan(
+    plan: PlanEnvelope,
+    observation: Observation,
+) -> PlanEnvelope:
+    """Compile trusted safety scaffolding around one structurally valid proposal."""
+
+    telemetry = observation.telemetry
+    actions = [
+        step.action for step in plan.steps if isinstance(step.action, SkillAction)
+    ]
+    names = [action.name for action in actions]
+    if (
+        telemetry is None
+        or len(actions) != len(plan.steps)
+        or names != _expected_action_names(observation)
+    ):
+        return plan
+    target_ids = _target_ids(actions)
+    if len(target_ids) != len(actions) or len(set(target_ids)) != 1:
+        return plan
+    target_id = target_ids[0]
+
+    paused = _field("telemetry.game.paused", True)
+    selected_one = _field("telemetry.ui.selected_character_count", 1)
+    compiled_steps: list[PlanStep] = []
+    for index, (step, action) in enumerate(zip(plan.steps, actions, strict=True)):
+        preconditions = [paused, selected_one]
+        success_conditions = [paused, selected_one]
+        if action.name == "approach_confirmed_vendor":
+            preconditions.extend(
+                [
+                    _field("telemetry.ui.active_screen", "world"),
+                    _field(
+                        "target.shop_inventory_owner",
+                        False,
+                        target_id=target_id,
+                    ),
+                ]
+            )
+            success_conditions.append(
+                _field("telemetry.ui.dialogue_target_id", target_id)
+            )
+        elif action.name == "choose_show_goods":
+            preconditions.extend(
+                [
+                    _field("telemetry.ui.dialogue_target_id", target_id),
+                    _field("telemetry.ui.dialogue_option_0", SHOW_GOODS_TEXT),
+                ]
+            )
+            success_conditions.extend(
+                [
+                    _field("telemetry.ui.active_screen", "trade"),
+                    _field("telemetry.active_shop_trader_count", 1),
+                    _field(
+                        "target.shop_inventory_owner",
+                        True,
+                        target_id=target_id,
+                    ),
+                ]
+            )
+        elif action.name == "inspect_shop_item":
+            preconditions.extend(
+                [
+                    _field("telemetry.ui.active_screen", "trade"),
+                    _field("telemetry.active_shop_trader_count", 1),
+                    _field(
+                        "target.shop_inventory_owner",
+                        True,
+                        target_id=target_id,
+                    ),
+                ]
+            )
+            success_conditions.extend(
+                [
+                    _field("telemetry.ui.tooltip_visible", True),
+                    _field("telemetry.active_shop_trader_count", 1),
+                    _field(
+                        "target.shop_inventory_owner",
+                        True,
+                        target_id=target_id,
+                    ),
+                ]
+            )
+        else:
+            arguments = action.argument_map()
+            item_name = arguments.get("item_name")
+            expected_price = arguments.get("expected_price")
+            money = telemetry.game.money
+            food_items = _selected_food_items(observation)
+            if (
+                not isinstance(item_name, str)
+                or isinstance(expected_price, bool)
+                or not isinstance(expected_price, int)
+                or money is None
+                or food_items is None
+            ):
+                return plan
+            preconditions.extend(
+                [
+                    _field("telemetry.ui.active_screen", "trade"),
+                    _field("telemetry.active_shop_trader_count", 1),
+                    _field(
+                        "target.shop_inventory_owner",
+                        True,
+                        target_id=target_id,
+                    ),
+                    _field("telemetry.ui.tooltip_visible", True),
+                    _field(
+                        "telemetry.ui.tooltip_text",
+                        item_name,
+                        operator=ConditionOperator.CONTAINS,
+                    ),
+                    _field(
+                        "telemetry.ui.tooltip_text",
+                        "[Food]",
+                        operator=ConditionOperator.CONTAINS,
+                    ),
+                    _field(
+                        "telemetry.ui.tooltip_text",
+                        f"c.{expected_price}",
+                        operator=ConditionOperator.CONTAINS,
+                    ),
+                    _field("telemetry.game.money", money),
+                    _field("selected.food_items", food_items),
+                ]
+            )
+            success_conditions.extend(
+                [
+                    _field("telemetry.game.money", money - expected_price),
+                    _field("selected.food_items", food_items + 1),
+                ]
+            )
+
+        compiled_steps.append(
+            step.model_copy(
+                update={
+                    "preconditions": preconditions,
+                    "success_conditions": success_conditions,
+                    "failure_conditions": [],
+                    "timeout_seconds": (
+                        12.0 if action.name == "approach_confirmed_vendor" else 8.0
+                    ),
+                    "retry_budget": 0,
+                    "idempotency": IdempotencyPolicy.AT_MOST_ONCE,
+                    "on_success": (
+                        plan.steps[index + 1].step_id
+                        if index + 1 < len(plan.steps)
+                        else None
+                    ),
+                    "on_failure": None,
+                    "observation_policy": ObservationPolicy.UNTIL_TERMINAL,
+                },
+                deep=True,
+            )
+        )
+
+    has_approach = "approach_confirmed_vendor" in names
+    has_purchase = "buy_inspected_shop_item" in names
+    pointer_actions = sum(
+        name in {"choose_show_goods", "inspect_shop_item", "buy_inspected_shop_item"}
+        for name in names
+    )
+    return plan.model_copy(
+        update={
+            "assumptions": [_fresh()],
+            "steps": compiled_steps,
+            "entry_step_id": compiled_steps[0].step_id,
+            "max_actions": len(compiled_steps),
+            "max_wall_seconds": 30.0 if has_approach else 10.0 * len(compiled_steps),
+            "max_game_seconds": 12.0 if has_approach else 3.0,
+            "risk_budget": RiskBudget(
+                max_pointer_actions=pointer_actions,
+                max_purchase_actions=int(has_purchase),
+                max_native_assisted_actions=int(has_approach),
+            ),
+        },
+        deep=True,
+    )
 
 
 def _skill(step: PlanStep, errors: list[str]) -> SkillAction | None:
@@ -234,25 +471,7 @@ def food_procurement_policy_errors(
     if len(actions) != len(plan.steps):
         return errors
     names = [action.name for action in actions]
-    tooltip_ready = bool(
-        telemetry.ui.tooltip_visible is True
-        and telemetry.ui.tooltip_text
-        and telemetry.ui.tooltip_source_bounds is not None
-    )
-    if telemetry.ui.active_screen == "world":
-        expected_names = [
-            "approach_confirmed_vendor",
-            "choose_show_goods",
-            "inspect_shop_item",
-        ]
-    elif telemetry.ui.active_screen == "dialogue":
-        expected_names = ["choose_show_goods", "inspect_shop_item"]
-    elif telemetry.ui.active_screen == "trade" and tooltip_ready:
-        expected_names = ["buy_inspected_shop_item"]
-    elif telemetry.ui.active_screen == "trade":
-        expected_names = ["inspect_shop_item"]
-    else:
-        expected_names = []
+    expected_names = _expected_action_names(observation)
     if names != expected_names:
         errors.append(
             "food procurement actions do not match the current authoritative phase; "
