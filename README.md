@@ -23,9 +23,12 @@ and game-integration failures.
 - An optional OpenAI vision planner using screenshot plus structured telemetry.
 - SQLite autobiographical memory and append-only JSONL run logs.
 - Replay summaries and JSON Schema export.
-- Feature-flagged continuous planning for mock/fake environments: one strategic
+- Feature-flagged continuous planning: one strategic
   call can authorize a bounded, revision-checked multi-action plan while the
   executor owns branches, retries, budgets, cancellation, and verification.
+  Live use remains disabled by default and is confined to the versioned
+  native-assisted `food_procurement_v1` policy plus a separate CLI
+  acknowledgement.
 - A bounded in-process world-state stream for continuous mode: one observation
   pump feeds validated revisions, state deltas, transient events, entity
   lifetimes, subscribers, and command/plan causality without each consumer
@@ -141,8 +144,12 @@ stages only an exact plan/version/revision match, never changes the running
 step, and revalidates the patch after movement before any replacement step can
 execute. Stale, mismatched, unsafe, or late output is discarded normally.
 
-Continuous mode is intentionally restricted to mock and fake event-driven
-environments in this slice. It is not a claim of live Kenshi continuity.
+Continuous mode remains unrestricted only in mock and fake event-driven
+environments. Live observations require an explicitly enabled versioned policy;
+the sole current policy accepts only the exact Hub food-procurement phases,
+same-target actions, authoritative dialogue/trade/tooltip evidence, and exact
+money/food/pause postconditions. It remains disabled in default and
+live-example configuration.
 The complete executor and condition contract is recorded in
 [Continuous planning](docs/CONTINUOUS_PLANNING.md).
 
@@ -387,24 +394,26 @@ The plugin hooks `PlayerInterface::update`, calls the original update first, and
 samples the game/UI thread at two hertz. Its telemetry path is observational. It
 currently exports:
 
-- loaded, paused, speed, and money;
+- loaded, paused, speed, money, and elapsed in-game minutes;
 - camera position and center;
 - basic squad identity, selection, life/consciousness state, position, movement
   speed, and food-item count;
 - bounded nearby-character identity, role flags, faction/disposition evidence,
   world positions, viewport visibility, and normalized screen positions;
-- current world, inventory, dialogue, and trade screen classification.
+- current world, inventory, dialogue, and trade screen classification;
+- exact open-dialogue target and bounded option captions;
+- the currently visible tooltip text and normalized bounds of its source
+  widget.
 
-Native protocol `0.3.0` retains the `0.2.0` validated-handle identity contract
+Native protocol `0.4.0` retains the `0.2.0` validated-handle identity contract
 for squad, complete selection, nearby, and native targets. Consumers treat IDs
 as opaque: duplicate display names and list order are not identities, and a
-session-generation change invalidates every older ID. Protocol `0.3.0` also
-adds a strict atomic command request and a bounded keyed acknowledgement ring.
+session-generation change invalidates every older ID. It also retains the
+`0.3.0` strict atomic command request and bounded keyed acknowledgement ring.
 
 It intentionally does not pretend to export fields that have not been validated:
-hunger, wound detail, getting-eaten state, generic inventory grids, dialogue
-option text, context menus, current tasks, and broader faction interpretation
-remain work items.
+hunger, wound detail, getting-eaten state, generic inventory grids, context
+menus, current tasks, and broader faction interpretation remain work items.
 
 The same DLL also contains a separately labeled native-assisted vendor-approach
 bridge. Python removes its capability and acknowledgement state in
@@ -514,10 +523,11 @@ then present the result as general play ability.
 - UI skills beyond ordinary configurable key macros require calibration and
   screenshot-grounded confirmation.
 - Hosted vision-planner evidence is limited to supervised narrow live slices.
-- Continuous execution has portable overlap/patch evidence only for configured
-  movement-pulse options. It still has no stateful live option, broad option
-  conversion, or live enablement. Portable supervisor tests do not establish
-  F12 or human-input preemption latency against a real Windows controller.
+- Live continuous execution is restricted to `food_procurement_v1`; its
+  deterministic live-shaped proof and native Release build pass, but its
+  protocol `0.4.0` observations, F12/human-input latency, and full conditional
+  chain still await supervised Kenshi validation. There is no broad option
+  conversion or general live policy.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.

@@ -5,9 +5,10 @@ Python environment. It hooks `PlayerInterface::update`, calls the original
 function first, samples on that same game/UI thread at two hertz, and atomically
 replaces `telemetry.latest.json`.
 
-It currently exports only fields that have a relatively clear KenshiLib surface:
-pause, speed, money, camera position, selected character, squad names, basic
-state, position, movement speed, food-item count, modal UI state, and bounded
+It exports fields with a relatively clear KenshiLib/MyGUI surface: pause, speed,
+money, elapsed game minutes, camera position, selected character, squad names,
+basic state, position, movement speed, food-item count, modal UI state, exact
+dialogue target/options, current tooltip text/source bounds, and bounded
 nearby-character telemetry. Nearby roles keep anatomy, platoon commerce,
 leadership, dialogue, Kenshi's native talk-task probability, and exact
 `ShopTrader::getTrader()` ownership separate. Exact ownership comes from a
@@ -16,12 +17,16 @@ installed before save load; Kenshi's spatial query does not enumerate these
 wrappers. A `GameWorld::resetGame` hook clears that registry and prior native
 command acknowledgements before Kenshi constructs a new or loaded session, since
 the plugin DLL remains resident across those transitions.
-Protocol `0.3.0` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.4.0` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
 `selected_character_ids` reports the full player-character selection set, while
 the singular ID identifies its active member.
+It retains the `0.3.0` causal command envelope and adds capability-gated
+`game.time`, `ui.dialogue.target`, `ui.dialogue.options`, and `ui.tooltip`.
+Dialogue choices remain null when the dialogue cannot be read. Tooltip text and
+source-widget bounds remain null when no tooltip is visible.
 It also recognizes a private `Ctrl+Shift+F10` bridge for
 `approach_confirmed_vendor`. Before the hotkey, Python atomically publishes a
 strict `native_command.request.json` carrying its UUID command ID, complete
@@ -41,7 +46,7 @@ The bounded nearby query uses a 400-world-unit town-local radius, which includes
 the Hub Barman from the default Wanderer spawn without encoding his identity or
 coordinates.
 It explicitly warns that hunger, wounds, getting-eaten state, detailed
-inventory, and click-target occlusion remain unimplemented. KenshiLib's raw
+inventory enumeration, and geometry occlusion remain unimplemented. KenshiLib's raw
 `isGettingEaten` byte is not exported because live validation found it set on a
 healthy new character.
 
@@ -108,8 +113,8 @@ folder component.
   errors or hitches.
 
 Do not enable live Python input until these checks pass. The source is based on
-the pinned maintained headers, compiles as a VS2010 SP1 `Release | x64` DLL,
-and passed its initial load/two-hertz telemetry smoke test plus one supervised
-protocol `0.3.0` stale-rejection and exact-target completion proof in the
-user's Kenshi installation. The broader checklist remains intentionally
-incomplete.
+the pinned maintained headers and compiles as a VS2010 SP1 `Release | x64` DLL.
+Protocol `0.3.0` passed its load/two-hertz telemetry smoke test and one
+supervised stale-rejection/exact-target completion proof. The additive `0.4.0`
+build passes offline but still awaits the supervised live checks in the broader
+checklist.

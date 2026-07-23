@@ -12,6 +12,11 @@
   In mock/fake environments, one strategic response can execute multiple
   guarded actions with causal postconditions, immediate precondition rechecks,
   bounded branches/retries/budgets, lifecycle replay, and plan metrics.
+- Live continuous scheduling remains disabled by default. The only current
+  exception is the native-assisted `food_procurement_v1` grammar, which binds
+  one stable vendor through approach, exact dialogue, exact trade ownership,
+  current tooltip inspection, and one exact-delta purchase. It additionally
+  requires `--acknowledge-continuous-live`.
 - Continuous mode has one cancellable observation pump and bounded authoritative
   store for monotonic revisions, telemetry-only ingest, visual carry-forward,
   deltas, transient events, isolated subscribers, active plan/step/command
@@ -26,11 +31,18 @@
   one strategic advisory can overlap movement, and a matching future-only patch
   is withheld until post-option state, assumptions, and remaining budgets pass
   a second deterministic validation.
-- Protocol `0.3.0` retains the `0.2.0` session-scoped opaque handle identities
-  and adds a bounded causal native-command envelope. Caller-owned UUID command
+- Protocol `0.4.0` retains the `0.2.0` session-scoped opaque handle identities
+  and `0.3.0` bounded causal native-command envelope. Caller-owned UUID command
   IDs, complete world revisions, control mode, identity session, exact
   selection, and exact target are checked before a player order; keyed
   acknowledgements report accepted, rejected, completed, or cancelled state.
+  The additive fields expose in-game elapsed minutes, exact dialogue
+  target/options, and current tooltip text/source bounds.
+- The deterministic live-shaped P6 proof completes approach, dialogue, and
+  inspection from one response, then an exact purchase from a second: four
+  actions, two strategic calls, exact 649-cat debit, one added food item, and
+  paused postconditions. The pinned `0.4.0` Release x64 DLL builds offline;
+  supervised Kenshi validation is pending.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.
@@ -127,8 +139,7 @@ new interface-only evidence.
 - Omniscient world-state extraction.
 - Automatic save reloads or hidden reset commands.
 - Unattended enabling of real keyboard/mouse injection.
-- Live continuous execution, general option conversion, and stateful live
-  movement options. Strategic overlap and active patch application currently
-  exist only for the portable configured-movement adapter. `single_step`
-  remains the default and the continuous path is restricted to mock/fake
-  environments.
+- General live continuous execution, general option conversion, and arbitrary
+  stateful live options. Strategic overlap and active patch application remain
+  narrow. `single_step` and a disabled live policy remain the defaults;
+  `food_procurement_v1` is the sole conditional live exception.

@@ -15,8 +15,9 @@
   limits, polite human-input yielding, and movement re-pause are invariants.
 - Missing telemetry remains unknown and capability-gated.
 - `single_step` remains the default. Feature-flagged `continuous` accepts a
-  strict bounded `PlanEnvelope` in mock/fake environments only; live-labeled
-  environments terminate before a strategic call or action.
+  strict bounded `PlanEnvelope`; live-labeled environments terminate before a
+  strategic call unless the explicitly configured versioned policy accepts the
+  exact plan.
 - Continuous mode owns one observation pump and bounded world-state store.
   Postcondition waits, planner snapshots, command receipts, deltas/events,
   entity lifetimes, and future subscribers share its canonical revisions.
@@ -27,9 +28,83 @@
   continuous mode. One future-only strategic patch may overlap movement, but
   it cannot execute until post-option state and remaining budgets are
   revalidated.
-- Native protocol `0.3.0` retains process/session-scoped opaque entity IDs from
-  validated handles and adds an exact caller/revision/session/selection/target
-  command envelope with bounded keyed lifecycle acknowledgements.
+- Native protocol `0.4.0` retains process/session-scoped opaque entity IDs and
+  the exact caller/revision/session/selection/target command envelope with
+  bounded keyed lifecycle acknowledgements. It adds game time, exact dialogue,
+  and current tooltip/source observations.
+
+## Active slice: P6 conditional food-procurement chain
+
+Problem: P1-P5 can execute and causally acknowledge bounded continuous work,
+but live-labeled continuous mode is still hard-blocked. Removing that block
+would not yet be a valid food-procurement result: the current plugin does not
+export authoritative game time, exact dialogue target/option text, or the
+currently visible inventory tooltip; purchase validation accepts any verified
+non-hostile owner rather than the plan's exact target; and no deterministic
+policy confines a live continuous plan to the calibrated Barman chain.
+
+Scope:
+
+- Add additive, capability-gated native observations for in-game elapsed time,
+  exact dialogue target, bounded dialogue options, and bounded visible tooltip
+  text. Missing or unreadable UI evidence remains null/unavailable.
+- Extend the typed condition language only with the scalar paths and string
+  containment needed to express those observations.
+- Add a versioned `food_procurement_v1` live-continuous policy. The default
+  remains disabled; the policy is native-assisted-only and accepts only the
+  calibrated world/dialogue/trade phases and action order.
+- Bind every phase to one stable vendor ID. Require exact first dialogue text
+  and exact trade ownership. Before purchase, require the visible tooltip to
+  contain the model-named item, `[Food]`, and exact expected price, and require
+  the click to lie inside the current tooltip source widget. This direct native
+  binding is stronger than trusting planner history about a prior coordinate.
+- Require exact later money and food-count deltas plus confirmed pause after
+  purchase. Preserve at-most-once purchase treatment and all existing plan,
+  guard, causal-revision, supervisor, and cleanup boundaries.
+- Add a separate explicit CLI acknowledgement before live continuous actions.
+- Prove the full multi-action conditional chain and all mismatch aborts in a
+  deterministic live-shaped fake environment before any Kenshi run.
+
+Non-goals:
+
+- No generic trader, inventory grid, tooltip parser, resolution, or
+  interface-only claim.
+- No arbitrary live-continuous plan execution outside
+  `food_procurement_v1`.
+- No new native action or automatic retry of an accepted/ambiguous vendor
+  command.
+- No supervised live test until the offline implementation, native build, and
+  documentation gates pass and the user is notified immediately beforehand.
+
+Acceptance criteria:
+
+- One strategic response executes approach, exact dialogue choice, and item
+  inspection without another strategic call; a later tooltip-grounded response
+  may execute one purchase.
+- The executor rechecks fresh pause, one exact selection, stable target role,
+  exact dialogue target/option, exact trade owner, and current tooltip evidence
+  immediately before the relevant action.
+- Changed selection, target, role, screen, dialogue option, ownership, tooltip,
+  price, item name, inspection coordinate, balance, or capability prevents the
+  sensitive future action before dispatch.
+- Purchase success requires causally later exact money and food-count changes
+  and `paused=true`; inconclusive delivery is never retried automatically.
+- Emergency stop, human input, stale/stalled telemetry, and capability loss can
+  still preempt independently of a blocked planner or running approach.
+- Default/live-example configuration remains unable to execute live continuous
+  work. The calibrated profile requires the policy flag, existing live/native
+  gates, and the new live-continuous acknowledgement.
+- Strict schemas, replay/evaluator output, fixed single-step seeds, the portable
+  continuous proof, and all prior tests remain green. The pinned Release x64
+  native project builds before live validation is considered.
+
+Implementation status: offline-complete, live-pending. The deterministic
+live-shaped proof performs four actions from two strategic calls and confirms
+the exact 649-cat debit, one-food increase, and pause. All 172 Python tests,
+lint, types, compile checks, schema export, and the pinned VS2010 SP1 Release x64
+build pass. The built protocol `0.4.0` DLL is 182,784 bytes with SHA-256
+`64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
+It has not yet been installed or exercised in Kenshi.
 
 ## Completed milestones
 

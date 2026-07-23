@@ -60,13 +60,23 @@ recorded in the live checklist before replacement.
 The protocol `0.3.0` causal-command build uses the same pinned dependencies and
 compiler. The offline Release x64 output built on 2026-07-23 is 175,104 bytes
 with SHA-256
-`bc5b9d033f98515e2c25ba462090e9ee7e59ced0b2f372b5da4200f0bca2f9d9`.
+`9bbeea1826216365c5492ee94db4b692848a105fbb36bc794b02723e953a293b`.
 The build emitted the existing upstream MyGUI C4091 warning plus Boost 1.60
 property-tree C4715 under whole-program code generation. The identical hash was
 installed for the supervised run. The prior `0.2.0` DLL was backed up at
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T184326Z-p5-causal`.
 RE_Kenshi loaded the new DLL, the bounded causal proof passed, and Kenshi closed
 normally without a new plugin, renderer, or Windows Application error.
+
+The additive protocol `0.4.0` conditional-food build uses the same pinned
+dependencies/compiler plus the pinned KenshiLib bundle's
+`MyGUIEngine_x64.lib` import library for public caption, widget-coordinate, and
+render-size APIs. The offline Release x64 output built on 2026-07-23 is 182,784
+bytes with SHA-256
+`64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
+The build emitted only the same upstream MyGUI C4091 and Boost C4715 warnings.
+Installation and supervised live evidence are recorded separately after they
+occur; this hash is currently an offline artifact only.
 
 ## Plugin staging/install layout
 

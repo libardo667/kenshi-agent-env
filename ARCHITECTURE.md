@@ -73,20 +73,24 @@ The store:
 
 This is an authoritative Python state stream over the plugin's existing atomic
 latest-snapshot file. It is not a native event transport. Native protocol
-`0.3.0` supplies session-scoped validated-handle identity and bounded keyed
-command acknowledgements; older producers still use the portable
+`0.4.0` supplies session-scoped validated-handle identity, bounded keyed
+command acknowledgements, game time, exact dialogue target/options, and current
+tooltip/source bounds; older producers still use the portable
 ambiguity-aware registry. See
 `docs/ADR_WORLD_STATE_STREAM.md` and
 `docs/ADR_STABLE_NATIVE_IDENTITY.md`.
 
 ## Independent safety supervision
 
-Portable continuous mode starts one `SafetySupervisor` subscriber before the
+Continuous mode starts one `SafetySupervisor` subscriber before the
 observation pump. It evaluates deterministic reflexes, telemetry staleness,
-consecutive sequence stalls, pause-capability withdrawal, and unexpected
-unpause from immutable `StoreUpdate` snapshots. Each update carries the active
-plan and command state that existed when it was published, so delayed
-subscriber processing cannot retroactively reclassify an authorized action.
+consecutive sequence stalls, pause-capability withdrawal, resumed human input,
+F12 emergency stop, and unexpected unpause from immutable `StoreUpdate`
+snapshots. Live duplicate sequences begin counting only after the configured
+telemetry wall age, because the 2 Hz native producer is slower than the Python
+observation cadence. Each update carries the active plan and command state that
+existed when it was published, so delayed subscriber processing cannot
+retroactively reclassify an authorized action.
 
 The scheduler races strategic planning and plan execution against the
 supervisor's first latched preemption. A blocked task is canceled once. If
@@ -98,9 +102,10 @@ cannot prevent an emergency pause. A cleanup terminal is `safe_paused` only
 after a later capable world revision confirms pause; otherwise it is explicitly
 failed or unverified.
 
-This portable implementation does not enable live continuous mode and does not
-measure Windows F12, human-input, or controller cancellation latency. See
-`docs/ADR_SAFETY_SUPERVISOR.md`.
+The Windows controller now reports human input even between its short input
+leases and carries F12 into the same supervisor stream. Deterministic tests
+cover the preemption semantics; real controller latency still requires
+supervised live validation. See `docs/ADR_SAFETY_SUPERVISOR.md`.
 
 ## Stateful movement options and concurrent patches
 
@@ -123,7 +128,8 @@ is logged and discarded.
 
 This is intentionally an adapter around the proven movement macro, not a
 rewrite of live movement control or a general option framework. Live continuous
-mode remains blocked. See `docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md`.
+mode is disabled by default; `food_procurement_v1` is the only policy that may
+cross that boundary. See `docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md`.
 
 ## Partial observability
 

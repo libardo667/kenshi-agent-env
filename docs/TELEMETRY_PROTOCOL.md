@@ -47,6 +47,9 @@ squad.health
 squad.inventory
 ui.modal
 ui.dialogue
+ui.dialogue.target
+ui.dialogue.options
+ui.tooltip
 nearby.characters
 nearby.roles
 nearby.shop_owners
@@ -55,6 +58,19 @@ control.approach_vendor
 
 Capabilities describe what the plugin can currently observe, not what exists in
 the world.
+
+Protocol `0.4.0` adds the observations needed by the narrow conditional
+food-procurement policy. `game.time` makes `game.elapsed_minutes` authoritative.
+When dialogue is open, `ui.dialogue.target` exposes the stable ID of its exact
+bound character and `ui.dialogue.options` exposes the bounded on-screen reply
+captions in order. A closed or unreadable dialogue serializes these fields as
+null, not an invented empty choice list.
+
+`ui.tooltip` exposes whether the shared MyGUI tooltip is visible, the joined
+left/right line captions, and normalized bounds of the widget that caused that
+tooltip. Those bounds bind a prospective click to the item currently supplying
+the evidence; they do not describe or enumerate the rest of the inventory.
+Text and bounds are null when no tooltip is visible.
 
 `nearby.characters` is limited to the plugin's bounded spatial query around the
 selected character. An entity with `visible: true` is rendered inside the
@@ -121,7 +137,7 @@ remain diagnostic compatibility fields, not the causal authority.
 ## Identity
 
 Protocol `0.2.0` introduced `identity.stable_handles`, retained by current
-protocol `0.3.0`. When that capability is
+protocol `0.4.0`. When that capability is
 present, `identity_session_id` is non-null and every squad, selection, nearby,
 and native target ID comes from a validated Kenshi `hand`, its lifetime serials,
 and the current process/session generations. The string layout is an internal

@@ -9,10 +9,33 @@
 - `continuous` accepts one bounded `PlanEnvelope` and may execute multiple
   guarded actions before another strategic planner call.
 
-The continuous path is currently enabled only for mock and fake event-driven
-environments. A live-labeled observation terminates the run before a strategic
-call or action. This milestone proves the planning substrate; it does not claim
-live Kenshi continuity.
+Mock and fake event-driven environments may use the general bounded contract.
+Live observations terminate before a strategic call unless
+`planning.live_execution_policy` names an implemented policy. The default and
+live-example profiles use `disabled`; the calibrated profile names
+`food_procurement_v1`, and live input still requires the ordinary execution
+gate, native-assisted acknowledgement, and the separate
+`--acknowledge-continuous-live` flag.
+
+## Conditional live policy
+
+`food_procurement_v1` is a deterministic action grammar, not general live
+planning permission. It accepts only:
+
+- world: approach the exact confirmed vendor, choose exact option zero, inspect
+  one item;
+- exact dialogue: choose option zero, then inspect;
+- trade without authoritative tooltip: inspect once;
+- trade with visible tooltip and source bounds: buy that one item once.
+
+Every action binds the same stable target ID, is at-most-once with no retry,
+and rechecks pause, one exact selection, phase-specific screen/dialogue/owner
+evidence, and the full capability set. A purchase additionally copies exact
+item name and price from the current tooltip. Its click must fall inside the
+tooltip's current source-widget bounds; this is stronger and less
+history-dependent than trusting a claimed earlier cursor coordinate. Success
+requires the exact later money debit, one additional selected-character food
+item, and `paused=true`.
 
 ## Plan authority
 
@@ -276,8 +299,9 @@ Portable tests and the built-in heuristic prove:
 - option success, failure, cleanup failure, cancellation, and repeated
   cancellation release their owned tasks/subscriptions.
 
-The current option conversion is deliberately narrow: only configured
-movement-pulse skills use it, and live continuous mode remains blocked. Stable
-native identity and causal bridge acknowledgements now use the same
-caller-owned command/revision semantics, but that does not establish Windows
-controller interruption latency or authorize live continuous execution.
+The current option conversion remains deliberately narrow: only configured
+movement-pulse skills use it. Live continuous work is disabled by default and
+restricted to `food_procurement_v1`. Stable native identity and causal bridge
+acknowledgements use the same caller-owned command/revision semantics; the
+deterministic live-shaped proof does not replace supervised Windows/Kenshi
+latency and end-to-end validation.
