@@ -253,6 +253,8 @@ different calibrated envelopes; see [Movement skills](docs/MOVEMENT_SKILLS.md).
 The next supervised vertical slice is a guarded one-item purchase; its staged
 state machine and spending policy are recorded in
 [Food procurement](docs/FOOD_PROCUREMENT.md).
+The installed keymap audit and open-source plugin/API survey are recorded in
+[Kenshi control and plugin research](docs/KENSHI_CONTROL_AND_PLUGIN_RESEARCH.md).
 
 ## Native telemetry bridge
 
