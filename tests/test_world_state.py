@@ -87,7 +87,12 @@ def observation(
     paused: bool = True,
     events: list[str] | None = None,
     nearby: list[NearbyEntity] | None = None,
+    stable_identity: bool = False,
+    identity_session_id: str | None = None,
 ) -> Observation:
+    capabilities = ["game.pause", "game.time", "nearby.characters"]
+    if stable_identity:
+        capabilities.append("identity.stable_handles")
     return Observation(
         run_id="world-state",
         step_index=sequence,
@@ -101,7 +106,8 @@ def observation(
         telemetry=TelemetrySnapshot(
             sequence=sequence,
             captured_at=datetime.now(UTC),
-            capabilities=["game.pause", "game.time", "nearby.characters"],
+            identity_session_id=identity_session_id if stable_identity else None,
+            capabilities=capabilities,
             game=GameState(
                 loaded=True,
                 paused=paused,
@@ -370,6 +376,89 @@ def test_entity_registry_does_not_conflate_duplicate_names_when_ordinals_swap() 
     assert left.id == stable_by_position[1.0]
     assert right.id == stable_by_position[9.0]
     assert sum(lifetime.ambiguous_matches for lifetime in store.entity_lifetimes()) == 1
+
+
+def test_validated_handle_ids_survive_reordering_and_duplicate_names_exactly() -> None:
+    store = WorldStateStore()
+    left_id = "entity-session-a-handle-101"
+    right_id = "entity-session-a-handle-202"
+    store.publish(
+        observation(
+            1,
+            nearby=[
+                entity(left_id, "Nomad", x=1.0),
+                entity(right_id, "Nomad", x=9.0),
+            ],
+            stable_identity=True,
+            identity_session_id="session-a",
+        )
+    )
+    store.publish(
+        observation(
+            2,
+            nearby=[
+                entity(right_id, "Nomad", x=9.1),
+                entity(left_id, "Nomad", x=1.1),
+            ],
+            stable_identity=True,
+            identity_session_id="session-a",
+        )
+    )
+
+    latest = store.latest
+    assert latest is not None and latest.telemetry is not None
+    assert [item.id for item in latest.telemetry.nearby_entities] == [
+        right_id,
+        left_id,
+    ]
+    lifetimes = {item.stable_id: item for item in store.entity_lifetimes()}
+    assert set(lifetimes) == {left_id, right_id}
+    assert all(item.active for item in lifetimes.values())
+    assert all(item.ambiguous_matches == 0 for item in lifetimes.values())
+
+
+def test_validated_handle_lifetime_tombstones_and_session_changes_do_not_alias() -> None:
+    store = WorldStateStore()
+    old_id = "entity-session-a-handle-101"
+    new_id = "entity-session-b-handle-101"
+    store.publish(
+        observation(
+            1,
+            nearby=[entity(old_id, "Barman", x=2.0)],
+            stable_identity=True,
+            identity_session_id="session-a",
+        )
+    )
+    store.publish(
+        observation(
+            2,
+            stable_identity=True,
+            identity_session_id="session-a",
+        )
+    )
+    old_lifetime = next(
+        item for item in store.entity_lifetimes() if item.stable_id == old_id
+    )
+    assert not old_lifetime.active
+    assert old_lifetime.ended_revision is not None
+    assert old_lifetime.ended_revision.telemetry_sequence == 2
+
+    update = store.publish(
+        observation(
+            3,
+            nearby=[entity(new_id, "Barman", x=2.0)],
+            stable_identity=True,
+            identity_session_id="session-b",
+        )
+    )
+    lifetimes = {item.stable_id: item for item in store.entity_lifetimes()}
+    assert not lifetimes[old_id].active
+    assert lifetimes[new_id].active
+    assert any(
+        event.event_type == "entity_appeared"
+        and event.payload["stable_id"] == new_id
+        for event in update.events
+    )
 
 
 def test_capability_withdrawal_advances_epoch_and_blocks_field_use() -> None:

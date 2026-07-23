@@ -32,7 +32,7 @@ namespace
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
-    const char* PROTOCOL_VERSION = "0.1.0";
+    const char* PROTOCOL_VERSION = "0.2.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
@@ -57,14 +57,20 @@ namespace
     DWORD g_lastSnapshotTick = 0;
     bool g_sampling = false;
     bool g_approachVendorHotkeyWasDown = false;
+    unsigned long long g_processGeneration = 0;
+    unsigned long long g_sessionGeneration = 0;
     unsigned long long g_nativeCommandSequence = 0;
     std::string g_lastNativeCommand;
     std::string g_lastNativeCommandResult;
     std::string g_lastNativeCommandTarget;
+    std::string g_lastNativeCommandTargetId;
     std::wstring g_outputDirectory;
 
     void ResetSessionState()
     {
+        ++g_sessionGeneration;
+        if (g_sessionGeneration == 0)
+            g_sessionGeneration = 1;
         g_trackedShopTraderCount = 0;
         g_shopTraderRegistryOverflow = false;
         g_approachVendorHotkeyWasDown = false;
@@ -72,6 +78,7 @@ namespace
         g_lastNativeCommand.clear();
         g_lastNativeCommandResult.clear();
         g_lastNativeCommandTarget.clear();
+        g_lastNativeCommandTargetId.clear();
     }
 
     std::string JsonEscape(const std::string& input)
@@ -108,6 +115,95 @@ namespace
     const char* JsonBool(bool value)
     {
         return value ? "true" : "false";
+    }
+
+    unsigned long long CreateProcessGeneration()
+    {
+        FILETIME creationTime;
+        FILETIME exitTime;
+        FILETIME kernelTime;
+        FILETIME userTime;
+        if (!GetProcessTimes(
+                GetCurrentProcess(),
+                &creationTime,
+                &exitTime,
+                &kernelTime,
+                &userTime))
+        {
+            GetSystemTimeAsFileTime(&creationTime);
+        }
+
+        ULARGE_INTEGER created;
+        created.LowPart = creationTime.dwLowDateTime;
+        created.HighPart = creationTime.dwHighDateTime;
+        unsigned long long generation =
+            created.QuadPart ^
+            (static_cast<unsigned long long>(GetCurrentProcessId()) << 32);
+        generation ^= generation >> 33;
+        generation *= 0xff51afd7ed558ccdULL;
+        generation ^= generation >> 33;
+        return generation != 0 ? generation : 1;
+    }
+
+    std::string IdentitySessionId()
+    {
+        std::ostringstream value;
+        value << "session-"
+              << std::hex << std::setfill('0')
+              << std::setw(16) << g_processGeneration
+              << "-" << std::setw(16) << g_sessionGeneration;
+        return value.str();
+    }
+
+    std::string StableEntityId(const hand& handle)
+    {
+        if (!handle.isValid())
+            return "";
+
+        // This deliberately encodes Kenshi's validated handle generations, not
+        // an address. Consumers must treat the complete value as opaque.
+        std::ostringstream value;
+        value << "entity-"
+              << std::hex << std::setfill('0')
+              << std::setw(16) << g_processGeneration
+              << "-" << std::setw(16) << g_sessionGeneration
+              << "-" << std::setw(8) << static_cast<unsigned int>(handle.type)
+              << "-" << std::setw(8) << handle.container
+              << "-" << std::setw(8) << handle.containerSerial
+              << "-" << std::setw(8) << handle.index
+              << "-" << std::setw(8) << handle.serial;
+        return value.str();
+    }
+
+    std::string StableEntityId(Character* character)
+    {
+        if (character == NULL || !character->isValid())
+            return "";
+        return StableEntityId(character->getHandle());
+    }
+
+    bool SameHandleIdentity(const hand& left, const hand& right)
+    {
+        return left.type == right.type &&
+               left.container == right.container &&
+               left.containerSerial == right.containerSerial &&
+               left.index == right.index &&
+               left.serial == right.serial;
+    }
+
+    bool IsSelected(PlayerInterface* player, const hand& handle)
+    {
+        if (player == NULL)
+            return false;
+        for (ogre_unordered_set<hand>::type::const_iterator it =
+                 player->selectedCharacters.begin();
+             it != player->selectedCharacters.end();
+             ++it)
+        {
+            if (SameHandleIdentity(*it, handle))
+                return true;
+        }
+        return false;
     }
 
     std::string UtcNowIso8601()
@@ -267,6 +363,7 @@ namespace
         ++g_nativeCommandSequence;
         g_lastNativeCommand = "approach_confirmed_vendor";
         g_lastNativeCommandTarget.clear();
+        g_lastNativeCommandTargetId.clear();
 
         Character* target = FindNearestConfirmedVendor(player);
         if (target == NULL)
@@ -276,6 +373,12 @@ namespace
         }
 
         const hand& targetHandle = target->getHandle();
+        const std::string targetId = StableEntityId(targetHandle);
+        if (targetId.empty())
+        {
+            g_lastNativeCommandResult = "invalid_target_handle";
+            return;
+        }
         Building* destinationIndoors = target->isIndoors().getBuilding();
         player->newPlayerTaskSelectedCharacters(
             PLAYER_TALK_TO,
@@ -285,6 +388,7 @@ namespace
             false);
         g_lastNativeCommandResult = "issued";
         g_lastNativeCommandTarget = target->getName();
+        g_lastNativeCommandTargetId = targetId;
     }
 
     void RegisterShopTrader(ShopTrader* object, Character* owner)
@@ -384,12 +488,15 @@ namespace
         json << "\"sequence\":" << ++g_sequence << ",";
         json << "\"captured_at\":\"" << UtcNowIso8601() << "\",";
         json << "\"source\":\"kenshilib-plugin\",";
+        json << "\"identity_session_id\":\""
+             << IdentitySessionId() << "\",";
         json << "\"capabilities\":["
              << "\"game.pause\",\"game.speed\",\"game.money\","
              << "\"camera.position\",\"squad.basic\","
              << "\"ui.inventory\",\"ui.dialogue\","
              << "\"nearby.characters\",\"nearby.roles\","
-             << "\"control.approach_vendor\"";
+             << "\"control.approach_vendor\","
+             << "\"identity.stable_handles\"";
         if (g_shopTraderRegistryReady)
             json << ",\"nearby.shop_owners\"";
         json << "],";
@@ -426,18 +533,34 @@ namespace
              << (dialogueOpen ? "dialogue" : (tradeOpen ? "trade" : (inventoryOpen ? "inventory" : "world")))
              << "\",";
         json << "\"modal_open\":" << JsonBool(dialogueOpen || inventoryOpen) << ",";
-        json << "\"dialogue_open\":" << JsonBool(dialogueOpen);
-        if (selected != NULL && characters != NULL)
+        json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
+        const std::string selectedId = StableEntityId(selected);
+        if (!selectedId.empty() &&
+            IsSelected(player, selected->getHandle()))
         {
-            for (unsigned int index = 0; index < characters->size(); ++index)
+            json << "\"selected_character_id\":\""
+                 << selectedId << "\",";
+        }
+        json << "\"selected_character_ids\":[";
+        if (player != NULL)
+        {
+            bool firstSelected = true;
+            for (ogre_unordered_set<hand>::type::const_iterator it =
+                     player->selectedCharacters.begin();
+                 it != player->selectedCharacters.end();
+                 ++it)
             {
-                if ((*characters)[index] == selected)
-                {
-                    json << ",\"selected_character_id\":\"squad:" << index << "\"";
-                    break;
-                }
+                Character* selectedCharacter = it->getCharacter();
+                const std::string id = StableEntityId(selectedCharacter);
+                if (id.empty() || !selectedCharacter->isPlayerCharacter())
+                    continue;
+                if (!firstSelected)
+                    json << ",";
+                firstSelected = false;
+                json << "\"" << id << "\"";
             }
         }
+        json << "]";
         json << "},";
 
         json << "\"active_shop_trader_count\":";
@@ -465,6 +588,11 @@ namespace
             json << ",\"last_target\":\""
                  << JsonEscape(g_lastNativeCommandTarget) << "\"";
         }
+        if (!g_lastNativeCommandTargetId.empty())
+        {
+            json << ",\"last_target_id\":\""
+                 << g_lastNativeCommandTargetId << "\"";
+        }
         json << "},";
 
         json << "\"squad\":[";
@@ -476,14 +604,18 @@ namespace
                 Character* character = (*characters)[index];
                 if (character == NULL || !character->isValid())
                     continue;
+                const std::string characterId = StableEntityId(character);
+                if (characterId.empty())
+                    continue;
                 if (!first)
                     json << ",";
                 first = false;
                 const Ogre::Vector3 position = character->getPosition();
                 json << "{";
-                json << "\"id\":\"squad:" << index << "\",";
+                json << "\"id\":\"" << characterId << "\",";
                 json << "\"name\":\"" << JsonEscape(character->getName()) << "\",";
-                json << "\"selected\":" << JsonBool(character == selected) << ",";
+                json << "\"selected\":"
+                     << JsonBool(IsSelected(player, character->getHandle())) << ",";
                 json << "\"alive\":" << JsonBool(!character->isDestroyed()) << ",";
                 json << "\"conscious\":" << JsonBool(!character->isUnconcious()) << ",";
                 json << "\"down\":" << JsonBool(character->isDown()) << ",";
@@ -512,13 +644,15 @@ namespace
                 selected);
 
             bool first = true;
-            unsigned int nearbyIndex = 0;
             for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
                  it != nearbyCharacters.end();
                  ++it)
             {
                 Character* target = reinterpret_cast<Character*>(*it);
                 if (target == NULL || !target->isValid() || target == selected || target->isPlayerCharacter())
+                    continue;
+                const std::string targetId = StableEntityId(target);
+                if (targetId.empty())
                     continue;
 
                 if (!first)
@@ -555,7 +689,7 @@ namespace
                     target->isOnScreen && target->getVisible() &&
                     TryGetScreenPosition(player, targetPosition, screenX, screenY);
                 json << "{";
-                json << "\"id\":\"nearby:" << nearbyIndex++ << "\",";
+                json << "\"id\":\"" << targetId << "\",";
                 json << "\"name\":\"" << JsonEscape(target->getName()) << "\",";
                 json << "\"kind\":\""
                      << (animal != NULL ? "animal" : "character")
@@ -668,6 +802,8 @@ namespace
 
 __declspec(dllexport) void startPlugin()
 {
+    g_processGeneration = CreateProcessGeneration();
+    ResetSessionState();
     g_outputDirectory = KenshiAgentTelemetry::ResolveTelemetryDirectory();
     WriteStatus(
         "starting",

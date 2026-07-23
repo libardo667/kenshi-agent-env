@@ -5,6 +5,7 @@ from openai.lib._pydantic import to_strict_json_schema
 from pydantic import ValidationError
 
 from kenshi_agent.models import (
+    CharacterState,
     ClickAction,
     NearbyEntity,
     Observation,
@@ -13,6 +14,7 @@ from kenshi_agent.models import (
     SkillAction,
     SkillSpec,
     TelemetrySnapshot,
+    UIState,
     parse_action,
 )
 from kenshi_agent.schema_export import export_schemas
@@ -26,6 +28,49 @@ def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
     assert entity.camera_bearing_degrees is None
     assert entity.screen_position is None
     assert entity.shop_inventory_owner is None
+
+
+def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids() -> None:
+    snapshot = TelemetrySnapshot(
+        protocol_version="0.2.0",
+        identity_session_id="session-process-1",
+        capabilities=["squad.basic", "nearby.characters", "identity.stable_handles"],
+        ui=UIState(
+            selected_character_id="entity-player",
+            selected_character_ids=["entity-player"],
+        ),
+        squad=[
+            CharacterState(
+                id="entity-player",
+                name="Wanderer",
+                selected=True,
+            )
+        ],
+        nearby_entities=[
+            NearbyEntity(id="entity-vendor", name="Barman", kind="character")
+        ],
+    )
+
+    assert snapshot.identity_session_id == "session-process-1"
+
+    invalid_selection = snapshot.model_dump(mode="python")
+    invalid_selection["ui"] = UIState(
+        selected_character_id="entity-missing",
+        selected_character_ids=["entity-missing"],
+    )
+    with pytest.raises(ValidationError, match="must refer to current squad IDs"):
+        TelemetrySnapshot.model_validate(invalid_selection)
+
+    with pytest.raises(ValidationError, match="must be unique"):
+        TelemetrySnapshot(
+            protocol_version="0.2.0",
+            identity_session_id="session-process-1",
+            capabilities=["identity.stable_handles"],
+            squad=[CharacterState(id="entity-shared", name="Wanderer")],
+            nearby_entities=[
+                NearbyEntity(id="entity-shared", name="Barman", kind="character")
+            ],
+        )
 
 
 def test_action_discriminator_parses_click() -> None:

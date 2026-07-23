@@ -195,6 +195,7 @@ class UIState(StrictModel):
     dialogue_options: list[str] = Field(default_factory=list)
     context_menu_open: bool | None = None
     selected_character_id: str | None = None
+    selected_character_ids: list[str] = Field(default_factory=list)
     client_width: int | None = Field(default=None, gt=0)
     client_height: int | None = Field(default=None, gt=0)
 
@@ -205,6 +206,7 @@ class NativeControlState(StrictModel):
     last_command: str | None = None
     last_result: str | None = None
     last_target: str | None = None
+    last_target_id: str | None = None
 
 
 class TelemetrySnapshot(StrictModel):
@@ -212,6 +214,7 @@ class TelemetrySnapshot(StrictModel):
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
+    identity_session_id: str | None = None
     capabilities: list[str] = Field(default_factory=list)
     game: GameState = Field(default_factory=GameState)
     camera: CameraState = Field(default_factory=CameraState)
@@ -228,6 +231,43 @@ class TelemetrySnapshot(StrictModel):
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value
+
+    @model_validator(mode="after")
+    def stable_identity_must_be_complete_and_consistent(self) -> TelemetrySnapshot:
+        if "identity.stable_handles" not in self.capabilities:
+            return self
+        if not self.identity_session_id:
+            raise ValueError(
+                "identity.stable_handles requires a non-empty identity_session_id"
+            )
+
+        squad_ids = [character.id for character in self.squad]
+        nearby_ids = [entity.id for entity in self.nearby_entities]
+        all_ids = squad_ids + nearby_ids
+        if any(not entity_id for entity_id in all_ids):
+            raise ValueError("stable entity IDs must be non-empty")
+        if len(all_ids) != len(set(all_ids)):
+            raise ValueError("stable entity IDs must be unique within a snapshot")
+
+        selected_ids = self.ui.selected_character_ids
+        if len(selected_ids) != len(set(selected_ids)):
+            raise ValueError("selected_character_ids must not contain duplicates")
+        unknown_selected = set(selected_ids) - set(squad_ids)
+        if unknown_selected:
+            raise ValueError("selected_character_ids must refer to current squad IDs")
+        if (
+            self.ui.selected_character_id is not None
+            and self.ui.selected_character_id not in selected_ids
+        ):
+            raise ValueError(
+                "selected_character_id must also appear in selected_character_ids"
+            )
+        flagged_selected = {character.id for character in self.squad if character.selected}
+        if flagged_selected != set(selected_ids):
+            raise ValueError(
+                "squad selected flags must match selected_character_ids exactly"
+            )
+        return self
 
 
 class NoopAction(StrictModel):
@@ -468,11 +508,13 @@ _ALLOWED_CONDITION_PATHS = {
     "telemetry.ui.dialogue_open",
     "telemetry.ui.context_menu_open",
     "telemetry.ui.selected_character_id",
+    "telemetry.ui.selected_character_count",
     "telemetry.native_control.available",
     "telemetry.native_control.last_command_sequence",
     "telemetry.native_control.last_command",
     "telemetry.native_control.last_result",
     "telemetry.native_control.last_target",
+    "telemetry.native_control.last_target_id",
     "selected.alive",
     "selected.conscious",
     "selected.down",

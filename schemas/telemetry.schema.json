@@ -584,6 +584,18 @@
           ],
           "default": null,
           "title": "Last Target"
+        },
+        "last_target_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Target Id"
         }
       },
       "title": "NativeControlState",
@@ -867,6 +879,13 @@
           "default": null,
           "title": "Selected Character Id"
         },
+        "selected_character_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Selected Character Ids",
+          "type": "array"
+        },
         "client_width": {
           "anyOf": [
             {
@@ -963,6 +982,18 @@
       "default": "unknown",
       "title": "Source",
       "type": "string"
+    },
+    "identity_session_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identity Session Id"
     },
     "capabilities": {
       "items": {

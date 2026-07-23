@@ -73,11 +73,13 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.dialogue_open": ("ui.dialogue",),
     "telemetry.ui.context_menu_open": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.selected_character_id": ("squad.basic",),
+    "telemetry.ui.selected_character_count": ("identity.stable_handles",),
     "telemetry.native_control.available": ("control.approach_vendor",),
     "telemetry.native_control.last_command_sequence": ("control.approach_vendor",),
     "telemetry.native_control.last_command": ("control.approach_vendor",),
     "telemetry.native_control.last_result": ("control.approach_vendor",),
     "telemetry.native_control.last_target": ("control.approach_vendor",),
+    "telemetry.native_control.last_target_id": ("control.approach_vendor",),
     "selected.alive": ("squad.basic",),
     "selected.conscious": ("squad.basic",),
     "selected.down": ("squad.basic",),
@@ -146,6 +148,7 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.ui.dialogue_open": telemetry.ui.dialogue_open,
         "telemetry.ui.context_menu_open": telemetry.ui.context_menu_open,
         "telemetry.ui.selected_character_id": telemetry.ui.selected_character_id,
+        "telemetry.ui.selected_character_count": len(telemetry.ui.selected_character_ids),
         "telemetry.native_control.available": telemetry.native_control.available,
         "telemetry.native_control.last_command_sequence": (
             telemetry.native_control.last_command_sequence
@@ -153,6 +156,7 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.native_control.last_command": telemetry.native_control.last_command,
         "telemetry.native_control.last_result": telemetry.native_control.last_result,
         "telemetry.native_control.last_target": telemetry.native_control.last_target,
+        "telemetry.native_control.last_target_id": telemetry.native_control.last_target_id,
     }
     if path in direct_paths:
         return direct_paths[path]
