@@ -9,6 +9,7 @@ import pytest
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log
+from kenshi_agent.food_procurement import FOOD_PROCUREMENT_CAPABILITIES
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -55,7 +56,6 @@ CAPABILITIES = [
     "nearby.roles",
     "nearby.shop_owners",
     "squad.basic",
-    "squad.hunger",
     "ui.dialogue",
     "ui.dialogue.options",
     "ui.dialogue.target",
@@ -386,6 +386,11 @@ def macros() -> MacroRegistry:
 
 def test_dialogue_options_preserve_unknown_instead_of_inventing_an_empty_list() -> None:
     assert UIState().dialogue_options is None
+
+
+def test_food_policy_requires_only_capabilities_emitted_by_live_protocol_04() -> None:
+    assert FOOD_PROCUREMENT_CAPABILITIES == frozenset(CAPABILITIES)
+    assert "squad.hunger" not in FOOD_PROCUREMENT_CAPABILITIES
 
 
 def test_contains_condition_is_five_valued_and_capability_gated() -> None:

@@ -26,7 +26,6 @@ FOOD_PROCUREMENT_CAPABILITIES = frozenset(
         "nearby.roles",
         "nearby.shop_owners",
         "squad.basic",
-        "squad.hunger",
         "ui.dialogue",
         "ui.dialogue.options",
         "ui.dialogue.target",
