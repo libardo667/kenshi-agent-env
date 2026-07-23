@@ -24,7 +24,9 @@ has not completed this end-to-end proof.
    the captured dialogue visibly contains that exact first option.
 5. **Buy one item.** Hover a candidate with `inspect_shop_item`, require a
    visible `[Food]` tooltip and affordable value, then use the separately
-   bounded purchase skill with that value as `expected_price`.
+   bounded purchase skill with its exact `target_id`, `item_name`, and
+   `expected_price`. The click must remain inside the source widget bounds of
+   that currently visible tooltip.
 6. **Verify and stop.** Require fresh telemetry to confirm the money change and,
    where available, the selected character's food-item count. Return paused.
 
@@ -67,23 +69,26 @@ calls evidence that an attempted recovery failed and should not be repeated.
 
 ## Purchase policy
 
-Before enabling a purchase action, the safety layer must enforce all of these:
+Before enabling a purchase action, the safety layer enforces all of these:
 
 - at most one item per action and a small per-run purchase limit;
 - an explicit expected price supplied with the action;
 - a configurable maximum item price;
 - a configurable minimum money balance after the expected purchase;
 - fresh money telemetry before the click and fresh post-action telemetry;
+- one exact stable shop-owner target and one exact selected character;
+- a visible tooltip containing the exact item name, `[Food]`, and price token;
+- a click point inside the current tooltip source widget;
 - a stop on a surprising money delta, unverified item identity, stale
   telemetry, or an unexpected screen transition.
 
 The live profile now enforces one purchase per run, a maximum expected price of
 750 cats, and a minimum expected post-purchase balance of 250 cats. It requires
 fresh trade telemetry, exactly one verified non-hostile shop owner, and a
-positive integer `expected_price`. Runtime success requires both a money
-decrease and an increased selected-character `food_items` count. Item identity
-still comes from the current visible tooltip, so the generic inventory-grid
-problem remains deliberately unsolved.
+positive integer `expected_price`. Runtime success requires the exact expected
+money debit, an increase of exactly one selected-character `food_items`, and
+confirmed pause. Item identity still comes from the current visible tooltip,
+so the generic inventory-grid problem remains deliberately unsolved.
 
 The current telemetry bridge reports money, a basic food-item count, nearby
 characters, faction disposition, dialogue/trade screen state, and normalized

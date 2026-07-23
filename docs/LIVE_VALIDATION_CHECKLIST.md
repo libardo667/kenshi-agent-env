@@ -254,3 +254,33 @@ Evidence from the supervised 2026-07-23 run:
   opens. It produced 30 executed receipts, zero safety rejections, zero
   environment errors, and `paused: true` in every observation. Lekko moved a
   net 969 world units while the objective kept exploration within The Hub.
+
+### Protocol 0.4 conditional food chain
+
+- [x] Deterministic live-shaped tests cover the three-action
+      approach/dialogue/inspection plan, the later one-action purchase plan,
+      exact target and tooltip binding, exact deltas, and default-disabled
+      policy.
+- [x] Full Python tests, lint, types, compile, and schema export pass.
+- [x] The pinned VS2010 SP1 Release x64 project builds with the required MyGUI
+      import library. Offline DLL is 182,784 bytes, SHA-256
+      `64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
+- [ ] Back up the installed protocol `0.3.0` DLL, install that exact `0.4.0`
+      artifact, and verify the installed hash before launch.
+- [ ] Launch Kenshi, confirm plugin `ready`, strict fresh protocol `0.4.0`,
+      increasing sequence, authoritative `game.time`, and paused state.
+- [ ] Confirm closed dialogue reports null target/options; open exact Barman
+      dialogue reports his stable target ID and option zero exactly
+      `Show me your goods.`.
+- [ ] Confirm the trade screen reports one exact shop owner. Hover one food
+      item and compare tooltip text plus normalized source bounds with the
+      visible UI.
+- [ ] Run the conditional continuous chain with all existing live/native gates
+      plus `--acknowledge-continuous-live`; require one response to drive
+      approach/dialogue/inspection and one later response to buy at most once.
+- [ ] Record exact pre/post money, selected food count, pause, action count,
+      strategic-call count, and final plan lifecycle.
+- [ ] Exercise one safe preemption (F12 or human input), confirm no repeated
+      sensitive action, and confirm cleanup/final pause.
+- [ ] Inspect `kenshi.log`, Windows Application events, and the BAD STUFF/
+      renderer incident surfaces before calling the slice live-validated.
