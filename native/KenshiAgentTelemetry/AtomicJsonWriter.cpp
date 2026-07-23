@@ -131,16 +131,29 @@ namespace KenshiAgentTelemetry
             return false;
         }
 
-        if (!MoveFileExW(
-                temporaryPath.c_str(),
-                targetPath.c_str(),
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+        DWORD moveError = ERROR_SUCCESS;
+        const DWORD maximumMoveAttempts = 4;
+        for (DWORD attempt = 0; attempt < maximumMoveAttempts; ++attempt)
         {
-            errorOut = Win32ErrorMessage(GetLastError());
-            DeleteFileW(temporaryPath.c_str());
-            return false;
+            if (MoveFileExW(
+                    temporaryPath.c_str(),
+                    targetPath.c_str(),
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH))
+            {
+                return true;
+            }
+            moveError = GetLastError();
+            const bool transientSharingFailure =
+                moveError == ERROR_ACCESS_DENIED ||
+                moveError == ERROR_SHARING_VIOLATION ||
+                moveError == ERROR_LOCK_VIOLATION;
+            if (!transientSharingFailure || attempt + 1 >= maximumMoveAttempts)
+                break;
+            Sleep(5 * (attempt + 1));
         }
-        return true;
+        errorOut = Win32ErrorMessage(moveError);
+        DeleteFileW(temporaryPath.c_str());
+        return false;
     }
 
     bool ReadUtf8Bounded(

@@ -25,6 +25,7 @@
 
 #include <cctype>
 #include <cmath>
+#include <exception>
 #include <iomanip>
 #include <locale>
 #include <sstream>
@@ -116,6 +117,26 @@ namespace
     unsigned int g_nativeAcknowledgementCount = 0;
     ActiveNativeCommand g_activeNativeCommand;
     std::wstring g_outputDirectory;
+
+    class SamplingGuard
+    {
+    public:
+        explicit SamplingGuard(bool& sampling)
+            : sampling_(sampling)
+        {
+            sampling_ = true;
+        }
+
+        ~SamplingGuard()
+        {
+            sampling_ = false;
+        }
+
+    private:
+        SamplingGuard(const SamplingGuard&);
+        SamplingGuard& operator=(const SamplingGuard&);
+        bool& sampling_;
+    };
 
     void ResetSessionState()
     {
@@ -1487,18 +1508,30 @@ namespace
     {
         if (g_sampling)
             return;
-        g_sampling = true;
-        std::string error;
-        const std::string snapshot = BuildSnapshot(player);
-        if (!KenshiAgentTelemetry::AtomicWriteUtf8(
-                g_outputDirectory,
-                L"telemetry.latest.json",
-                snapshot,
-                error))
+        SamplingGuard samplingGuard(g_sampling);
+        try
         {
-            ErrorLog(std::string("KenshiAgentTelemetry write failed: ") + error);
+            std::string error;
+            const std::string snapshot = BuildSnapshot(player);
+            if (!KenshiAgentTelemetry::AtomicWriteUtf8(
+                    g_outputDirectory,
+                    L"telemetry.latest.json",
+                    snapshot,
+                    error))
+            {
+                ErrorLog(std::string("KenshiAgentTelemetry write failed: ") + error);
+            }
         }
-        g_sampling = false;
+        catch (const std::exception& exception)
+        {
+            ErrorLog(
+                std::string("KenshiAgentTelemetry sample failed: ") +
+                exception.what());
+        }
+        catch (...)
+        {
+            ErrorLog("KenshiAgentTelemetry sample failed: unknown exception.");
+        }
     }
 
     void PlayerInterfaceUpdateHook(PlayerInterface* player)

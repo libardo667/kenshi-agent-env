@@ -276,6 +276,15 @@ Evidence from the supervised 2026-07-23 run:
       Read-only samples advanced 127 -> 130 -> 132; a strict CLI parse at 168
       reported `elapsed_minutes: 2063.742`, `paused: true`, and all new
       dialogue/tooltip capabilities.
+- [x] Recover the native snapshot stream after the first long live session
+      stopped at sequence 3985 while Kenshi remained foreground, responsive,
+      paused, and visually intact. The safety supervisor cancelled the pending
+      planner call before any action. The replaced protocol `0.4.0` plug-in is
+      backed up at
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T202819Z-p6-stream-hotfix`.
+      The exception-safe/retry-bounded hotfix is 183,296 bytes, SHA-256
+      `0096082215cbc1f842a8947291570328481c78cab9c23b8ae00a4dcdf6e888a3`;
+      it loaded ready and fresh samples advanced 61 -> 69 -> 78 after relaunch.
 - [ ] Confirm closed dialogue reports null target/options; open exact Barman
       dialogue reports his stable target ID and option zero exactly
       `Show me your goods.`.
@@ -285,16 +294,18 @@ Evidence from the supervised 2026-07-23 run:
 - [ ] Run the conditional continuous chain with all existing live/native gates
       plus `--acknowledge-continuous-live`; require one response to drive
       approach/dialogue/inspection and one later response to buy at most once.
-      Four no-input hosted preflights sent zero native commands and left money,
+      Five no-input hosted preflights sent zero native commands and left money,
       food, and pause unchanged. `xhigh` exceeded the 90-second timeout; `high`
       returned after 62.70 seconds but used unsupported shorthand condition
       paths. Medium run
       `p6-live-continuous-dry-medium-20260723T201345Z` returned in 31.45
       seconds and narrowed the remaining schema gap to the unused conditional
       shape of `exists`; that operator is now absent from the schema. The
-      follow-up contract uses medium reasoning, dynamic output-token ceilings,
-      a schema-enumerated condition vocabulary, and bounded planner failure
-      logging before execution is retried.
+      following medium call was cancelled after 18.91 seconds by the independent
+      sequence-stall supervisor; the native stream hotfix above was installed
+      before execution is retried. The follow-up contract uses medium reasoning,
+      dynamic output-token ceilings, a schema-enumerated condition vocabulary,
+      and bounded planner failure logging.
 - [ ] Record exact pre/post money, selected food count, pause, action count,
       strategic-call count, and final plan lifecycle.
 - [ ] Exercise one safe preemption (F12 or human input), confirm no repeated
