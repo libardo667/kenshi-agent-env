@@ -11,3 +11,15 @@ def test_native_plugin_does_not_export_unvalidated_raw_getting_eaten_byte() -> N
 
     assert "character->isGettingEaten" not in source
     assert "getting-eaten state" in source
+
+
+def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert "getCharactersWithinSphere" in source
+    assert "target->isATrader()" in source
+    assert "nearby.characters" in source
+    assert "gui->isAnyInventoryWindowOpen()" in source
+    assert "gui->dialogue->isVisible()" in source
+    assert '"trade"' in source
+    assert "spatially close, not necessarily visible" in source

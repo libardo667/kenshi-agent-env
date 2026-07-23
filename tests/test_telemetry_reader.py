@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -30,3 +31,35 @@ def test_invalid_protocol_raises(tmp_path: Path) -> None:
     write_snapshot_atomic(path, TelemetrySnapshot(protocol_version="1.0.0"))
     with pytest.raises(TelemetryReadError):
         TelemetryReader(path, require_protocol_major=0, retries=1).read()
+
+
+def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -> None:
+    path = tmp_path / "telemetry.json"
+    payload = TelemetrySnapshot(
+        captured_at=datetime.now(UTC),
+        source="kenshilib-plugin",
+    ).model_dump(mode="json")
+    payload["capabilities"] = ["ui.inventory", "ui.dialogue", "nearby.characters"]
+    payload["ui"] = {
+        "active_screen": "trade",
+        "modal_open": True,
+        "dialogue_open": False,
+    }
+    payload["nearby_entities"] = [
+        {
+            "id": "nearby:0",
+            "name": "Bar Trader",
+            "kind": "trader",
+            "faction": "Holy Nation Outlaws",
+            "disposition": "neutral",
+            "distance": 12.5,
+            "conscious": True,
+        }
+    ]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = TelemetryReader(path, max_age_seconds=5, retries=1).read()
+
+    assert result.snapshot.ui.active_screen == "trade"
+    assert result.snapshot.nearby_entities[0].kind == "trader"
+    assert result.snapshot.nearby_entities[0].visible is None

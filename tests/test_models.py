@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from kenshi_agent.models import (
     ClickAction,
+    NearbyEntity,
     Observation,
     PlannerDecision,
     ScrollAction,
@@ -14,6 +15,12 @@ from kenshi_agent.models import (
     TelemetrySnapshot,
     parse_action,
 )
+
+
+def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
+    entity = NearbyEntity(id="nearby:0", name="Bar Trader", kind="trader")
+
+    assert entity.visible is None
 
 
 def test_action_discriminator_parses_click() -> None:

@@ -1,15 +1,20 @@
 #include <Debug.h>
 #include <core/Functions.h>
 #include <kenshi/Character.h>
+#include <kenshi/Faction.h>
 #include <kenshi/GameWorld.h>
 #include <kenshi/Globals.h>
 #include <kenshi/PlayerInterface.h>
+#include <kenshi/RootObject.h>
+#include <kenshi/gui/DialogueWindow.h>
+#include <kenshi/gui/ForgottenGUI.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
 
+#include <cmath>
 #include <iomanip>
 #include <locale>
 #include <sstream>
@@ -91,6 +96,25 @@ namespace
              << ",\"z\":" << vector.z << "}";
     }
 
+    const char* GetDisposition(Character* observer, Character* target)
+    {
+        if (observer == NULL || target == NULL)
+            return "unknown";
+        if (observer->isEnemy(target, false))
+            return "hostile";
+        if (observer->isAlly(target, false))
+            return "friendly";
+        return "neutral";
+    }
+
+    float Distance(const Ogre::Vector3& a, const Ogre::Vector3& b)
+    {
+        const float dx = a.x - b.x;
+        const float dy = a.y - b.y;
+        const float dz = a.z - b.z;
+        return static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
     std::string BuildSnapshot(PlayerInterface* player)
     {
         std::ostringstream json;
@@ -115,7 +139,8 @@ namespace
         json << "\"source\":\"kenshilib-plugin\",";
         json << "\"capabilities\":["
              << "\"game.pause\",\"game.speed\",\"game.money\","
-             << "\"camera.position\",\"squad.basic\"],";
+             << "\"camera.position\",\"squad.basic\","
+             << "\"ui.inventory\",\"ui.dialogue\",\"nearby.characters\"],";
 
         json << "\"game\":{";
         json << "\"loaded\":" << JsonBool(ou != NULL && ou->initialized) << ",";
@@ -135,14 +160,28 @@ namespace
         }
         json << "},";
 
+        const bool dialogueOpen =
+            gui != NULL && gui->dialogue != NULL && gui->dialogue->isVisible();
+        const bool inventoryOpen = gui != NULL && gui->isAnyInventoryWindowOpen();
+        const bool tradeOpen =
+            gui != NULL &&
+            (gui->inventoryWindowTrader.getCharacter() != NULL ||
+             gui->tradeA.getCharacter() != NULL ||
+             gui->tradeB.getCharacter() != NULL);
+
         json << "\"ui\":{";
+        json << "\"active_screen\":\""
+             << (dialogueOpen ? "dialogue" : (tradeOpen ? "trade" : (inventoryOpen ? "inventory" : "world")))
+             << "\",";
+        json << "\"modal_open\":" << JsonBool(dialogueOpen || inventoryOpen) << ",";
+        json << "\"dialogue_open\":" << JsonBool(dialogueOpen);
         if (selected != NULL && characters != NULL)
         {
             for (unsigned int index = 0; index < characters->size(); ++index)
             {
                 if ((*characters)[index] == selected)
                 {
-                    json << "\"selected_character_id\":\"squad:" << index << "\"";
+                    json << ",\"selected_character_id\":\"squad:" << index << "\"";
                     break;
                 }
             }
@@ -178,10 +217,56 @@ namespace
             }
         }
         json << "],";
-        json << "\"nearby_entities\":[],";
+        json << "\"nearby_entities\":[";
+        if (ou != NULL && selected != NULL && selected->isValid())
+        {
+            lektor<RootObject*> nearbyCharacters;
+            const Ogre::Vector3 selectedPosition = selected->getPosition();
+            ou->getCharactersWithinSphere(
+                nearbyCharacters,
+                selectedPosition,
+                250.0f,
+                0.0f,
+                30.0f,
+                40,
+                0,
+                selected);
+
+            bool first = true;
+            unsigned int nearbyIndex = 0;
+            for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
+                 it != nearbyCharacters.end();
+                 ++it)
+            {
+                Character* target = reinterpret_cast<Character*>(*it);
+                if (target == NULL || !target->isValid() || target == selected || target->isPlayerCharacter())
+                    continue;
+
+                if (!first)
+                    json << ",";
+                first = false;
+
+                const Faction* faction = target->getFaction();
+                const Ogre::Vector3 targetPosition = target->getPosition();
+                json << "{";
+                json << "\"id\":\"nearby:" << nearbyIndex++ << "\",";
+                json << "\"name\":\"" << JsonEscape(target->getName()) << "\",";
+                json << "\"kind\":\""
+                     << (target->isATrader() ? "trader" : (target->isAnimal() != NULL ? "animal" : "character"))
+                     << "\",";
+                if (faction != NULL)
+                    json << "\"faction\":\"" << JsonEscape(const_cast<Faction*>(faction)->getName()) << "\",";
+                json << "\"disposition\":\"" << GetDisposition(selected, target) << "\",";
+                json << "\"distance\":" << Distance(targetPosition, selectedPosition) << ",";
+                json << "\"conscious\":" << JsonBool(!target->isUnconcious());
+                json << "}";
+            }
+        }
+        json << "],";
         json << "\"warnings\":["
              << "\"Partial telemetry only: hunger, wounds, getting-eaten state, inventory "
-             << "detail, UI modals, and nearby entities are not yet exported.\""
+             << "detail, and on-screen visibility are not yet exported. Nearby entities "
+             << "are spatially close, not necessarily visible in the current camera.\""
              << "]";
         json << "}";
         return json.str();

@@ -83,3 +83,4 @@ $checks | ForEach-Object {
 }
 
 if ($checks.Where({ -not $_.Passed }).Count -gt 0) { exit 1 }
+exit 0
