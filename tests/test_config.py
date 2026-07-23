@@ -6,6 +6,7 @@ from kenshi_agent.config import load_config
 from kenshi_agent.models import (
     ClickAction,
     ControlMode,
+    LiveContinuousPolicy,
     PlanningMode,
     SkillAction,
 )
@@ -20,6 +21,7 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.control.mode == ControlMode.INTERFACE_ONLY
     assert not config.control.native_assisted_actions_enabled
     assert config.planning.mode == PlanningMode.SINGLE_STEP
+    assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
     assert config.planning.max_plan_steps == 4
     assert config.planning.max_actions_per_plan == 8
     assert config.planning.max_native_assisted_actions_per_plan == 0
@@ -49,6 +51,7 @@ def test_live_example_uses_windows_local_app_data(
     assert config.paths.memory_db == (tmp_path / "KenshiAgent" / "state" / "live-memory.sqlite3")
     assert config.capture.window_title_contains == "Kenshi 1.0."
     assert config.control.mode == ControlMode.INTERFACE_ONLY
+    assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
 
 
 def test_live_example_accepts_telemetry_directory_override(
@@ -73,6 +76,10 @@ def test_live_burnin_profile_allows_only_audited_actions(
 
     assert config.safety.live_actions_enabled
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
+    assert (
+        config.planning.live_execution_policy
+        is LiveContinuousPolicy.FOOD_PROCUREMENT_V1
+    )
     assert config.control.native_assisted_actions_enabled
     assert config.safety.require_cli_execute_flag
     assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}
@@ -118,6 +125,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.safety.max_purchases_per_run == 1
     assert config.safety.supervisor_enabled
     assert config.safety.supervisor_max_sequence_stalls == 3
+    assert config.safety.supervisor_sequence_stall_min_age_seconds == 1.0
     assert config.safety.supervisor_pause_timeout_seconds == 2.0
     fine_bounds = config.macros["move_visible_terrain"].normalized_pointer_bounds
     map_bounds = config.macros["move_on_map"].normalized_pointer_bounds

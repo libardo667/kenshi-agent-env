@@ -150,6 +150,14 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
             raise SystemExit(
                 "Native-assisted live execution requires --acknowledge-native-assisted-control."
             )
+    if (
+        config.planning.mode == PlanningMode.CONTINUOUS
+        and config.planning.live_execution_policy.value != "disabled"
+        and not args.acknowledge_continuous_live
+    ):
+        raise SystemExit(
+            "Continuous live execution requires --acknowledge-continuous-live."
+        )
     return True
 
 
@@ -434,6 +442,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Required in addition to the normal live-action gates before a "
             "native_assisted run may execute internal player-order bridges."
+        ),
+    )
+    run.add_argument(
+        "--acknowledge-continuous-live",
+        action="store_true",
+        help=(
+            "Required in addition to all normal live-action gates before an "
+            "enabled continuous-live policy may execute."
         ),
     )
     run.add_argument(

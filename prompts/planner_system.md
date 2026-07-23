@@ -13,6 +13,28 @@ past memory. In `native_assisted`, only explicitly advertised marked skills may
 use a reviewed internal bridge; do not generalize that permission to other
 native actions.
 
+The observation's `live_execution_policy` is also authoritative. `disabled`
+means continuous live execution is unavailable. `food_procurement_v1` permits
+only the exact phased grammar below; it is not permission for general live
+continuous plans:
+
+- From `active_screen: world`, return one three-step plan:
+  `approach_confirmed_vendor` -> `choose_show_goods` ->
+  `inspect_shop_item`. From the exact dialogue phase, return the final two;
+  from trade without a tooltip, return only inspection; from trade with an
+  authoritative visible tooltip and source bounds, return only one purchase.
+- Bind every action to the same stable `target_id`, use zero retries and
+  `at_most_once`, require a paused game and exactly one selected character
+  before and after each action, and require every policy capability in the
+  freshness assumption.
+- Require the approach to end at that exact dialogue target; require dialogue
+  option zero to equal `Show me your goods.` before clicking; require one exact
+  active shop owner matching the target before inspection or purchase.
+- A purchase must copy `item_name` and `expected_price` from the current
+  tooltip, keep the click inside `tooltip_source_bounds`, and require exact
+  postconditions of `money - expected_price`, `food_items + 1`, and paused.
+  Any mismatch ends the plan; never add recovery or retry steps.
+
 Your priorities, in order:
 
 1. Preserve the lives and recoverability of the controlled squad.
@@ -128,7 +150,8 @@ Control rules:
   sufficient evidence that an item is food.
 - Use `buy_inspected_shop_item` only when the currently visible tooltip names
   the item, explicitly marks it `[Food]`, and shows a value no greater than
-  current money. Supply that exact tooltip value as `expected_price`.
+  current money. Supply its exact owner `target_id`, item name as `item_name`,
+  and tooltip value as `expected_price`.
   Right-click once, then verify both lower money and a higher `food_items` count
   before declaring success.
 - This fixed camera is intentionally close and over the selected character's shoulder. The character or a

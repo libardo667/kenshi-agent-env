@@ -8,7 +8,13 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .models import Action, ControlMode, PlanningMode, parse_action
+from .models import (
+    Action,
+    ControlMode,
+    LiveContinuousPolicy,
+    PlanningMode,
+    parse_action,
+)
 
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
 
@@ -39,6 +45,7 @@ class ControlConfig(ConfigModel):
 
 class PlanningConfig(ConfigModel):
     mode: PlanningMode = PlanningMode.SINGLE_STEP
+    live_execution_policy: LiveContinuousPolicy = LiveContinuousPolicy.DISABLED
     observation_pump_enabled: bool = True
     stateful_movement_options_enabled: bool = True
     concurrent_option_planning_enabled: bool = True
@@ -133,6 +140,11 @@ class SafetyConfig(ConfigModel):
     emergency_stop_key: str = "f12"
     supervisor_enabled: bool = True
     supervisor_max_sequence_stalls: int = Field(default=3, ge=1, le=100)
+    supervisor_sequence_stall_min_age_seconds: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=30.0,
+    )
     supervisor_pause_timeout_seconds: float = Field(default=2.0, gt=0.0, le=30.0)
     max_primitive_actions_per_step: int = Field(default=12, ge=1, le=100)
     max_actions_per_minute: int = Field(default=90, ge=1, le=1000)

@@ -866,6 +866,14 @@
       "title": "KeyAction",
       "type": "object"
     },
+    "LiveContinuousPolicy": {
+      "enum": [
+        "disabled",
+        "food_procurement_v1"
+      ],
+      "title": "LiveContinuousPolicy",
+      "type": "string"
+    },
     "MemoryKind": {
       "enum": [
         "fact",
@@ -1829,12 +1837,67 @@
           "default": null,
           "title": "Dialogue Open"
         },
+        "dialogue_target_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dialogue Target Id"
+        },
         "dialogue_options": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Dialogue Options",
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dialogue Options"
+        },
+        "tooltip_visible": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Visible"
+        },
+        "tooltip_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Text"
+        },
+        "tooltip_source_bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedPointerBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "context_menu_open": {
           "anyOf": [
@@ -2039,6 +2102,10 @@
     "planning_mode": {
       "$ref": "#/$defs/PlanningMode",
       "default": "single_step"
+    },
+    "live_execution_policy": {
+      "$ref": "#/$defs/LiveContinuousPolicy",
+      "default": "disabled"
     },
     "world_revision": {
       "$ref": "#/$defs/WorldStateRevision"

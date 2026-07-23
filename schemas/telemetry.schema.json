@@ -927,6 +927,43 @@
       "title": "NearbyEntity",
       "type": "object"
     },
+    "NormalizedPointerBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "min_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min X",
+          "type": "number"
+        },
+        "max_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max X",
+          "type": "number"
+        },
+        "min_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Y",
+          "type": "number"
+        },
+        "max_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min_x",
+        "max_x",
+        "min_y",
+        "max_y"
+      ],
+      "title": "NormalizedPointerBounds",
+      "type": "object"
+    },
     "UIState": {
       "additionalProperties": false,
       "properties": {
@@ -966,12 +1003,67 @@
           "default": null,
           "title": "Dialogue Open"
         },
+        "dialogue_target_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dialogue Target Id"
+        },
         "dialogue_options": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Dialogue Options",
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dialogue Options"
+        },
+        "tooltip_visible": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Visible"
+        },
+        "tooltip_text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Text"
+        },
+        "tooltip_source_bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedPointerBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "context_menu_open": {
           "anyOf": [

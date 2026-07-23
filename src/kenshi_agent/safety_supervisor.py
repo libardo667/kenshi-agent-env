@@ -19,6 +19,7 @@ from .world_state import (
 class SafetyCause(StrEnum):
     REFLEX = "reflex"
     HUMAN_INPUT = "human_input"
+    EMERGENCY_STOP = "emergency_stop"
     TELEMETRY_STALE = "telemetry_stale"
     SEQUENCE_STALLED = "sequence_stalled"
     PAUSE_CAPABILITY_WITHDRAWN = "pause_capability_withdrawn"
@@ -43,6 +44,7 @@ class SafetySupervisorMetrics:
     reflex_preemptions: int = 0
     unexpected_unpause_preemptions: int = 0
     human_input_preemptions: int = 0
+    emergency_stop_preemptions: int = 0
 
 
 class SafetySupervisor:
@@ -54,12 +56,16 @@ class SafetySupervisor:
         store: WorldStateStore,
         reflexes: ReflexEngine,
         max_sequence_stalls: int,
+        minimum_live_stall_age_seconds: float = 1.0,
     ) -> None:
         if max_sequence_stalls <= 0:
             raise ValueError("max_sequence_stalls must be positive.")
+        if minimum_live_stall_age_seconds < 0:
+            raise ValueError("minimum_live_stall_age_seconds must be non-negative.")
         self.store = store
         self.reflexes = reflexes
         self.max_sequence_stalls = max_sequence_stalls
+        self.minimum_live_stall_age_seconds = minimum_live_stall_age_seconds
         self.metrics = SafetySupervisorMetrics()
         self.task: asyncio.Task[None] | None = None
         self._subscription: WorldStateSubscription | None = None
@@ -128,6 +134,8 @@ class SafetySupervisor:
             self.metrics.unexpected_unpause_preemptions += 1
         elif cause is SafetyCause.HUMAN_INPUT:
             self.metrics.human_input_preemptions += 1
+        elif cause is SafetyCause.EMERGENCY_STOP:
+            self.metrics.emergency_stop_preemptions += 1
         self.store.record_event(
             "safety_preemption_requested",
             revision=observation.world_revision,
@@ -185,6 +193,23 @@ class SafetySupervisor:
                 ),
             )
 
+        emergency_stop_detected = any(
+            event.event_type == "observation_event"
+            and event.payload.get("message") == "emergency_stop_detected"
+            for event in update.events
+        )
+        if emergency_stop_detected:
+            return SafetyPreemption(
+                cause=SafetyCause.EMERGENCY_STOP,
+                reason="The emergency stop key was pressed.",
+                observation=observation,
+                decision=self._pause_or_stop(
+                    observation,
+                    capabilities,
+                    stop_reason="Emergency stop pressed; continuous execution stopped.",
+                ),
+            )
+
         human_input_detected = any(
             event.event_type == "observation_event"
             and event.payload.get("message") == "human_input_detected"
@@ -228,7 +253,18 @@ class SafetySupervisor:
                 decision=decision,
             )
 
-        if update.sequence_status is SequenceStatus.DUPLICATE:
+        live_duplicate_is_old_enough = bool(
+            observation.mode != "live"
+            or (
+                observation.telemetry_age_seconds is not None
+                and observation.telemetry_age_seconds
+                >= self.minimum_live_stall_age_seconds
+            )
+        )
+        if (
+            update.sequence_status is SequenceStatus.DUPLICATE
+            and live_duplicate_is_old_enough
+        ):
             self._consecutive_stalls += 1
         else:
             self._consecutive_stalls = 0

@@ -105,6 +105,10 @@ class LiveEnvironment(AgentEnvironment):
 
     async def _observe(self, *, capture: bool) -> Observation:
         events: list[str] = []
+        if self.execute_actions and self.controller.continuous_user_input_detected():
+            events.append("human_input_detected")
+        if self.controller.emergency_stop_pressed(self.emergency_stop_key):
+            events.append("emergency_stop_detected")
         telemetry_snapshot = None
         telemetry_stale = True
         telemetry_age = None

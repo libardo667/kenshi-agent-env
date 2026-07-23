@@ -4,6 +4,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SOURCE = REPO_ROOT / "native" / "KenshiAgentTelemetry" / "KenshiAgentTelemetry.cpp"
+PLUGIN_PROJECT = (
+    REPO_ROOT
+    / "native"
+    / "KenshiAgentTelemetry"
+    / "KenshiAgentTelemetry.vcxproj"
+)
 
 
 def test_native_plugin_does_not_export_unvalidated_raw_getting_eaten_byte() -> None:
@@ -54,7 +60,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.3.0"' in source
+    assert 'PROTOCOL_VERSION = "0.4.0"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -74,7 +80,7 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
 def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.3.0"' in source
+    assert 'PROTOCOL_VERSION = "0.4.0"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactConfirmedVendor" in source
@@ -92,3 +98,24 @@ def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     assert "acknowledgements" in source
     assert "MAX_NATIVE_ACKNOWLEDGEMENTS = 16" in source
     assert "MonitorActiveNativeCommand" in source
+
+
+def test_native_plugin_exports_food_chain_authoritative_ui_and_time_sources() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert "#include <kenshi/gui/ToolTip.h>" in source
+    assert "getTimeStamp_inGameHours().getTotalMinutes()" in source
+    assert "game.time" in source
+    assert "ui.dialogue.target" in source
+    assert "ui.dialogue.options" in source
+    assert "ui.tooltip" in source
+    assert "TryGetDialogueTargetId" in source
+    assert "replyTexts" in source
+    assert "getCaption().asUTF8()" in source
+    assert "gui->getToolTip()" in source
+    assert "tooltip->getVisible()" in source
+    assert "tooltip->caller->getAbsoluteCoord()" in source
+    assert "tooltip_source_bounds" in source
+
+    project = PLUGIN_PROJECT.read_text(encoding="utf-8")
+    assert project.count("MyGUIEngine_x64.lib") == 2

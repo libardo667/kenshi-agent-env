@@ -9,7 +9,12 @@ import pytest
 
 from kenshi_agent import cli
 from kenshi_agent.config import load_config
-from kenshi_agent.models import ControlMode, PlanningMode, TelemetrySnapshot
+from kenshi_agent.models import (
+    ControlMode,
+    LiveContinuousPolicy,
+    PlanningMode,
+    TelemetrySnapshot,
+)
 from kenshi_agent.telemetry import write_snapshot_atomic
 
 
@@ -141,6 +146,7 @@ def test_native_assisted_execution_requires_dedicated_cli_acknowledgement() -> N
     args = SimpleNamespace(
         execute_live_actions=True,
         acknowledge_native_assisted_control=False,
+        acknowledge_continuous_live=True,
     )
 
     with pytest.raises(SystemExit, match="acknowledge-native-assisted-control"):
@@ -159,9 +165,38 @@ def test_interface_only_execution_never_requires_native_acknowledgement() -> Non
     args = SimpleNamespace(
         execute_live_actions=True,
         acknowledge_native_assisted_control=False,
+        acknowledge_continuous_live=False,
     )
 
     assert config.control.mode == ControlMode.INTERFACE_ONLY
+    assert cli._live_actions_enabled(config, args)
+
+
+def test_continuous_live_policy_requires_its_own_cli_acknowledgement() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    config = config.model_copy(
+        update={
+            "planning": config.planning.model_copy(
+                update={
+                    "mode": PlanningMode.CONTINUOUS,
+                    "live_execution_policy": (
+                        LiveContinuousPolicy.FOOD_PROCUREMENT_V1
+                    ),
+                }
+            )
+        }
+    )
+    args = SimpleNamespace(
+        execute_live_actions=True,
+        acknowledge_native_assisted_control=True,
+        acknowledge_continuous_live=False,
+    )
+
+    with pytest.raises(SystemExit, match="acknowledge-continuous-live"):
+        cli._live_actions_enabled(config, args)
+
+    args.acknowledge_continuous_live = True
     assert cli._live_actions_enabled(config, args)
 
 

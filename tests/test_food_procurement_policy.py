@@ -1,0 +1,699 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
+from kenshi_agent.env import AgentEnvironment
+from kenshi_agent.evals import evaluate_log
+from kenshi_agent.models import (
+    Action,
+    ActionReceipt,
+    CommandDispatchContext,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    ConditionResult,
+    ControlMode,
+    IdempotencyPolicy,
+    LiveContinuousPolicy,
+    NearbyEntity,
+    NormalizedPointerBounds,
+    Observation,
+    PlanEnvelope,
+    PlannerOutput,
+    PlanningMode,
+    PlanStep,
+    RiskBudget,
+    SkillAction,
+    Transition,
+    UIState,
+    WorldStateRevision,
+)
+from kenshi_agent.planners.base import Planner
+from kenshi_agent.planning import PlanValidationError, evaluate_condition, validate_plan
+from kenshi_agent.reflexes import ReflexEngine
+from kenshi_agent.runtime import AgentRuntime
+from kenshi_agent.safety import ActionGuard, SafetyViolation
+from kenshi_agent.session_log import SessionLogger
+from kenshi_agent.skills import MacroRegistry
+
+TARGET_ID = "nearby:barman"
+FOOD_NAME = "Dried Meat"
+FOOD_PRICE = 649
+SHOW_GOODS_TEXT = "Show me your goods."
+CAPABILITIES = [
+    "control.approach_vendor",
+    "game.money",
+    "game.pause",
+    "game.time",
+    "identity.stable_handles",
+    "nearby.characters",
+    "nearby.roles",
+    "nearby.shop_owners",
+    "squad.basic",
+    "squad.hunger",
+    "ui.dialogue",
+    "ui.dialogue.options",
+    "ui.dialogue.target",
+    "ui.inventory",
+    "ui.tooltip",
+]
+
+
+def field(
+    path: str,
+    expected: str | int | float | bool,
+    *,
+    operator: ConditionOperator = ConditionOperator.EQUALS,
+    target_id: str | None = None,
+) -> Condition:
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=path,
+        operator=operator,
+        expected=expected,
+        target_id=target_id,
+        max_age_seconds=3.0,
+    )
+
+
+def fresh() -> Condition:
+    return Condition(
+        kind=ConditionKind.TELEMETRY_FRESH,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=3.0,
+        required_capabilities=CAPABILITIES,
+    )
+
+
+def revision(sequence: int = 10) -> WorldStateRevision:
+    return WorldStateRevision(
+        telemetry_sequence=sequence,
+        frame_sequence=sequence,
+        capability_epoch=1,
+        observed_at_monotonic=float(sequence),
+    )
+
+
+def observation(
+    *,
+    screen: str = "world",
+    dialogue_target_id: str | None = None,
+    dialogue_options: list[str] | None = None,
+    tooltip_text: str | None = None,
+    tooltip_bounds: NormalizedPointerBounds | None = None,
+    money: int = 1000,
+    food_items: int = 0,
+) -> Observation:
+    trade_open = screen == "trade"
+    return Observation.model_validate(
+        {
+            "run_id": "p6-policy",
+            "step_index": 0,
+            "mode": "live",
+            "control_mode": "native_assisted",
+            "planning_mode": "continuous",
+            "world_revision": revision(),
+            "telemetry_age_seconds": 0.0,
+            "telemetry_stale": False,
+            "telemetry": {
+                "sequence": 10,
+                "captured_at": datetime.now(UTC),
+                "identity_session_id": "session-p6",
+                "capabilities": CAPABILITIES,
+                "game": {
+                    "loaded": True,
+                    "paused": True,
+                    "elapsed_minutes": 123.0,
+                    "money": money,
+                },
+                "ui": {
+                    "active_screen": screen,
+                    "dialogue_open": screen == "dialogue",
+                    "dialogue_target_id": dialogue_target_id,
+                    "dialogue_options": dialogue_options,
+                    "tooltip_visible": tooltip_text is not None,
+                    "tooltip_text": tooltip_text,
+                    "tooltip_source_bounds": (
+                        tooltip_bounds.model_dump() if tooltip_bounds is not None else None
+                    ),
+                    "selected_character_id": "player:1",
+                    "selected_character_ids": ["player:1"],
+                },
+                "squad": [
+                    {
+                        "id": "player:1",
+                        "name": "Green",
+                        "selected": True,
+                        "food_items": food_items,
+                    }
+                ],
+                "active_shop_trader_count": 1 if trade_open else 0,
+                "nearby_entities": [
+                    {
+                        "id": TARGET_ID,
+                        "name": "Barman",
+                        "is_animal": False,
+                        "has_vendor_list": True,
+                        "is_squad_leader": True,
+                        "has_dialogue": True,
+                        "shop_inventory_owner": trade_open,
+                        "conscious": True,
+                        "disposition": "neutral",
+                    }
+                ],
+            },
+        }
+    )
+
+
+def step(
+    step_id: str,
+    action: SkillAction,
+    *,
+    preconditions: list[Condition],
+    success_conditions: list[Condition],
+    on_success: str | None = None,
+) -> PlanStep:
+    return PlanStep(
+        step_id=step_id,
+        action=action,
+        preconditions=preconditions,
+        success_conditions=success_conditions,
+        timeout_seconds=8.0,
+        retry_budget=0,
+        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+        on_success=on_success,
+    )
+
+
+def procurement_plan(current: Observation) -> PlanEnvelope:
+    paused = field("telemetry.game.paused", True)
+    selected_one = field("telemetry.ui.selected_character_count", 1)
+    approach = step(
+        "approach",
+        SkillAction(
+            name="approach_confirmed_vendor",
+            args={"target_id": TARGET_ID, "duration_seconds": 8.0},
+        ),
+        preconditions=[
+            paused,
+            selected_one,
+            field("telemetry.ui.active_screen", "world"),
+            field("target.shop_inventory_owner", False, target_id=TARGET_ID),
+        ],
+        success_conditions=[
+            paused,
+            field("telemetry.ui.dialogue_target_id", TARGET_ID),
+        ],
+        on_success="show_goods",
+    )
+    show_goods = step(
+        "show_goods",
+        SkillAction(name="choose_show_goods", args={"target_id": TARGET_ID}),
+        preconditions=[
+            paused,
+            selected_one,
+            field("telemetry.ui.dialogue_target_id", TARGET_ID),
+            field("telemetry.ui.dialogue_option_0", "Show me your goods."),
+        ],
+        success_conditions=[
+            paused,
+            field("telemetry.ui.active_screen", "trade"),
+            field("telemetry.active_shop_trader_count", 1),
+            field("target.shop_inventory_owner", True, target_id=TARGET_ID),
+        ],
+        on_success="inspect",
+    )
+    inspect = step(
+        "inspect",
+        SkillAction(
+            name="inspect_shop_item",
+            args={"target_id": TARGET_ID, "x": 0.316, "y": 0.357},
+        ),
+        preconditions=[
+            paused,
+            selected_one,
+            field("telemetry.ui.active_screen", "trade"),
+            field("telemetry.active_shop_trader_count", 1),
+            field("target.shop_inventory_owner", True, target_id=TARGET_ID),
+        ],
+        success_conditions=[
+            paused,
+            field("telemetry.ui.tooltip_visible", True),
+            field("telemetry.active_shop_trader_count", 1),
+            field("target.shop_inventory_owner", True, target_id=TARGET_ID),
+        ],
+    )
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="food-chain",
+        objective="Open the exact vendor trade screen and inspect one candidate.",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        based_on_revision=current.world_revision,
+        assumptions=[fresh()],
+        steps=[approach, show_goods, inspect],
+        entry_step_id="approach",
+        max_actions=3,
+        max_wall_seconds=30.0,
+        max_game_seconds=12.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=2,
+            max_purchase_actions=0,
+            max_native_assisted_actions=1,
+        ),
+    )
+
+
+def purchase_plan(current: Observation) -> PlanEnvelope:
+    purchase = step(
+        "purchase",
+        SkillAction(
+            name="buy_inspected_shop_item",
+            args={
+                "target_id": TARGET_ID,
+                "item_name": FOOD_NAME,
+                "expected_price": FOOD_PRICE,
+                "x": 0.316,
+                "y": 0.357,
+            },
+        ),
+        preconditions=[
+            field("telemetry.game.paused", True),
+            field("telemetry.ui.selected_character_count", 1),
+            field("telemetry.ui.active_screen", "trade"),
+            field("telemetry.active_shop_trader_count", 1),
+            field("target.shop_inventory_owner", True, target_id=TARGET_ID),
+            field("telemetry.ui.tooltip_visible", True),
+            field(
+                "telemetry.ui.tooltip_text",
+                FOOD_NAME,
+                operator=ConditionOperator.CONTAINS,
+            ),
+            field(
+                "telemetry.ui.tooltip_text",
+                "[Food]",
+                operator=ConditionOperator.CONTAINS,
+            ),
+            field(
+                "telemetry.ui.tooltip_text",
+                f"c.{FOOD_PRICE}",
+                operator=ConditionOperator.CONTAINS,
+            ),
+            field("telemetry.game.money", 1000),
+            field("selected.food_items", 0),
+        ],
+        success_conditions=[
+            field("telemetry.game.paused", True),
+            field("telemetry.game.money", 351),
+            field("selected.food_items", 1),
+        ],
+    )
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="food-purchase",
+        objective="Buy the exact inspected food item once.",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        based_on_revision=current.world_revision,
+        assumptions=[fresh()],
+        steps=[purchase],
+        entry_step_id="purchase",
+        max_actions=1,
+        max_wall_seconds=10.0,
+        max_game_seconds=3.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=1,
+            max_purchase_actions=1,
+            max_native_assisted_actions=0,
+        ),
+    )
+
+
+def planning_config(
+    policy: LiveContinuousPolicy = LiveContinuousPolicy.FOOD_PROCUREMENT_V1,
+) -> PlanningConfig:
+    return PlanningConfig(
+        mode=PlanningMode.CONTINUOUS,
+        live_execution_policy=policy,
+        observation_pump_enabled=False,
+        concurrent_option_planning_enabled=False,
+        max_native_assisted_actions_per_plan=1,
+    )
+
+
+def macros() -> MacroRegistry:
+    return MacroRegistry(
+        {
+            "approach_confirmed_vendor": MacroConfig(
+                movement_pulse_seconds=2.0,
+                movement_pulse_min_seconds=0.5,
+                movement_pulse_max_seconds=8.0,
+                requires_native_assisted=True,
+                actions=[{"kind": "hotkey", "keys": ["ctrl", "shift", "f10"]}],
+            ),
+            "choose_show_goods": MacroConfig(
+                actions=[{"kind": "click", "x": 0.5, "y": 0.812}]
+            ),
+            "inspect_shop_item": MacroConfig(
+                actions=[
+                    {
+                        "kind": "move_cursor",
+                        "x": "{{x}}",
+                        "y": "{{y}}",
+                        "space": "normalized",
+                    }
+                ]
+            ),
+            "buy_inspected_shop_item": MacroConfig(
+                actions=[
+                    {
+                        "kind": "click",
+                        "x": "{{x}}",
+                        "y": "{{y}}",
+                        "space": "normalized",
+                        "button": "right",
+                    }
+                ]
+            ),
+        }
+    )
+
+
+def test_dialogue_options_preserve_unknown_instead_of_inventing_an_empty_list() -> None:
+    assert UIState().dialogue_options is None
+
+
+def test_contains_condition_is_five_valued_and_capability_gated() -> None:
+    current = observation(
+        screen="trade",
+        tooltip_text=f"{FOOD_NAME}\n[Food]\nValue: c.{FOOD_PRICE}",
+    )
+    condition = field(
+        "telemetry.ui.tooltip_text",
+        "[Food]",
+        operator=ConditionOperator.CONTAINS,
+    )
+    assert evaluate_condition(condition, current).result is ConditionResult.TRUE
+
+    unknown = current.model_copy(
+        update={
+            "telemetry": current.telemetry.model_copy(
+                update={"ui": current.telemetry.ui.model_copy(update={"tooltip_text": None})}
+            )
+        }
+    )
+    assert evaluate_condition(condition, unknown).result is ConditionResult.UNKNOWN
+
+
+def test_food_policy_accepts_one_response_three_action_open_and_inspect_chain() -> None:
+    current = observation()
+    validate_plan(procurement_plan(current), current, planning_config(), macros())
+
+
+def test_food_policy_is_disabled_by_default_and_rejects_target_drift() -> None:
+    current = observation()
+    with pytest.raises(PlanValidationError, match="disabled"):
+        validate_plan(
+            procurement_plan(current),
+            current,
+            planning_config(LiveContinuousPolicy.DISABLED),
+            macros(),
+        )
+
+    changed = procurement_plan(current)
+    changed.steps[1].action = SkillAction(
+        name="choose_show_goods",
+        args={"target_id": "nearby:someone-else"},
+    )
+    with pytest.raises(PlanValidationError, match="same exact target"):
+        validate_plan(changed, current, planning_config(), macros())
+
+
+def test_food_policy_accepts_only_exact_tooltip_bound_purchase_delta() -> None:
+    current = observation(
+        screen="trade",
+        tooltip_text=f"{FOOD_NAME}\n[Food]\nValue: c.{FOOD_PRICE}",
+        tooltip_bounds=NormalizedPointerBounds(
+            min_x=0.30,
+            max_x=0.34,
+            min_y=0.34,
+            max_y=0.38,
+        ),
+    )
+    validate_plan(purchase_plan(current), current, planning_config(), macros())
+
+    unsafe = purchase_plan(current)
+    unsafe.steps[0].success_conditions[1] = field("telemetry.game.money", 350)
+    with pytest.raises(PlanValidationError, match="exact money delta"):
+        validate_plan(unsafe, current, planning_config(), macros())
+
+
+def test_purchase_guard_binds_click_to_exact_owner_and_current_tooltip_source() -> None:
+    current = observation(
+        screen="trade",
+        tooltip_text=f"{FOOD_NAME}\n[Food]\nValue: c.{FOOD_PRICE}",
+        tooltip_bounds=NormalizedPointerBounds(
+            min_x=0.30,
+            max_x=0.34,
+            min_y=0.34,
+            max_y=0.38,
+        ),
+    )
+    config = SafetyConfig(
+        allow_action_kinds=["skill", "click"],
+        allow_skills=["buy_inspected_shop_item"],
+        max_purchase_price=750,
+        min_money_after_purchase=250,
+        max_purchases_per_run=1,
+    )
+    action = purchase_plan(current).steps[0].action
+    assert isinstance(action, SkillAction)
+    assert (
+        ActionGuard(config, macros(), control_mode=ControlMode.NATIVE_ASSISTED).validate(
+            action, current
+        )
+        == action
+    )
+
+    wrong_coordinate = action.model_copy(
+        update={
+            "args": SkillAction(
+                name=action.name,
+                args={**action.argument_map(), "x": 0.50},
+            ).args
+        }
+    )
+    with pytest.raises(SafetyViolation, match="current tooltip source"):
+        ActionGuard(config, macros(), control_mode=ControlMode.NATIVE_ASSISTED).validate(
+            wrong_coordinate,
+            current,
+        )
+
+    wrong_owner = current.model_copy(
+        update={
+            "telemetry": current.telemetry.model_copy(
+                update={
+                    "nearby_entities": [
+                        NearbyEntity(
+                            id="nearby:someone-else",
+                            name="Someone Else",
+                            shop_inventory_owner=True,
+                            disposition="neutral",
+                        )
+                    ]
+                }
+            )
+        }
+    )
+    with pytest.raises(SafetyViolation, match="exact target"):
+        ActionGuard(config, macros(), control_mode=ControlMode.NATIVE_ASSISTED).validate(
+            action,
+            wrong_owner,
+        )
+
+
+class FoodChainEnvironment(AgentEnvironment):
+    def __init__(self) -> None:
+        self.sequence = 10
+        self.step_index = 0
+        self.stage = "world"
+        self.money = 1000
+        self.food_items = 0
+        self.actions: list[Action] = []
+
+    def current(self) -> Observation:
+        tooltip_ready = self.stage in {"tooltip", "purchased"}
+        current = observation(
+            screen=(
+                "dialogue"
+                if self.stage == "dialogue"
+                else "trade"
+                if self.stage in {"trade", "tooltip", "purchased"}
+                else "world"
+            ),
+            dialogue_target_id=TARGET_ID if self.stage == "dialogue" else None,
+            dialogue_options=(
+                [SHOW_GOODS_TEXT] if self.stage == "dialogue" else None
+            ),
+            tooltip_text=(
+                f"{FOOD_NAME}\n[Food]\nValue: c.{FOOD_PRICE}"
+                if tooltip_ready
+                else None
+            ),
+            tooltip_bounds=(
+                NormalizedPointerBounds(
+                    min_x=0.30,
+                    max_x=0.34,
+                    min_y=0.34,
+                    max_y=0.38,
+                )
+                if tooltip_ready
+                else None
+            ),
+            money=self.money,
+            food_items=self.food_items,
+        )
+        telemetry = current.telemetry
+        assert telemetry is not None
+        return current.model_copy(
+            update={
+                "step_index": self.step_index,
+                "world_revision": revision(self.sequence),
+                "telemetry": telemetry.model_copy(update={"sequence": self.sequence}),
+            }
+        )
+
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return self.current()
+
+    async def observe(self) -> Observation:
+        return self.current()
+
+    async def step(self, action: Action) -> Transition:
+        assert isinstance(action, SkillAction)
+        expected = {
+            "world": "approach_confirmed_vendor",
+            "dialogue": "choose_show_goods",
+            "trade": "inspect_shop_item",
+            "tooltip": "buy_inspected_shop_item",
+        }
+        assert action.name == expected[self.stage]
+        self.actions.append(action)
+        self.stage = {
+            "world": "dialogue",
+            "dialogue": "trade",
+            "trade": "tooltip",
+            "tooltip": "purchased",
+        }[self.stage]
+        if self.stage == "purchased":
+            self.money -= FOOD_PRICE
+            self.food_items += 1
+        self.sequence += 1
+        self.step_index += 1
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                primitive_actions=1,
+                message="deterministic live-shaped transition",
+            ),
+            observation=self.current(),
+        )
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+    ) -> Transition:
+        del command
+        return await self.step(action)
+
+    async def close(self) -> None:
+        return None
+
+
+class FoodChainPlanner(Planner):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def decide(self, current: Observation) -> PlannerOutput:
+        self.calls += 1
+        return (
+            procurement_plan(current)
+            if current.telemetry is not None
+            and current.telemetry.ui.active_screen == "world"
+            else purchase_plan(current)
+        )
+
+
+def test_live_shaped_runtime_executes_four_actions_from_two_strategic_calls(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment = FoodChainEnvironment()
+        planner = FoodChainPlanner()
+        registry = macros()
+        logger = SessionLogger(tmp_path / "events.jsonl", "p6-policy")
+        safety = SafetyConfig(
+            supervisor_enabled=False,
+            allow_action_kinds=["skill", "click", "move_cursor", "hotkey"],
+            allow_skills=[
+                "approach_confirmed_vendor",
+                "choose_show_goods",
+                "inspect_shop_item",
+                "buy_inspected_shop_item",
+            ],
+            max_actions_per_minute=500,
+            max_purchase_price=750,
+            min_money_after_purchase=250,
+            max_purchases_per_run=1,
+        )
+        runtime = AgentRuntime(
+            run_id="p6-policy",
+            environment=environment,
+            planner=planner,
+            guard=ActionGuard(
+                safety,
+                registry,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            planning_config=planning_config(),
+        )
+        try:
+            summary = await runtime.run(max_steps=4)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 4
+        assert planner.calls == 2
+        assert [action.name for action in environment.actions] == [
+            "approach_confirmed_vendor",
+            "choose_show_goods",
+            "inspect_shop_item",
+            "buy_inspected_shop_item",
+        ]
+        assert environment.money == 351
+        assert environment.food_items == 1
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.strategic_planner_calls == 2
+        assert metrics.plans_completed == 2
+        assert metrics.plan_steps_succeeded == 4
+        assert metrics.actions_per_strategic_planner_call == 2.0
+
+    asyncio.run(scenario())

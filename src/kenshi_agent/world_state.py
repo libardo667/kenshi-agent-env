@@ -320,6 +320,7 @@ class WorldStateStore:
             )
         contextual_fields = (
             "planning_mode",
+            "live_execution_policy",
             "objective",
             "recent_action_outcomes",
             "available_skills",
