@@ -63,6 +63,7 @@ def test_skill_specs_expose_arguments_and_visual_preconditions() -> None:
     assert spec.movement_pulse_min_seconds == 0.35
     assert spec.movement_pulse_max_seconds == 3.0
     assert registry.primitive_count(SkillAction(name="move_visible_terrain")) == 2
+    assert registry.is_stateful_movement(SkillAction(name="move_visible_terrain"))
 
 
 def test_movement_duration_must_stay_within_calibrated_range() -> None:

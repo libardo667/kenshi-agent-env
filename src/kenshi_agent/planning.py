@@ -21,6 +21,8 @@ from .models import (
     Observation,
     PauseAction,
     PlanEnvelope,
+    PlanPatch,
+    RiskBudget,
     ScrollAction,
     SetSpeedAction,
     SkillAction,
@@ -489,6 +491,73 @@ def validate_plan(
     if errors:
         raise PlanValidationError("; ".join(errors))
     return assumption_results
+
+
+def validate_future_plan_patch(
+    patch: PlanPatch,
+    *,
+    active_plan: PlanEnvelope,
+    planner_observation: Observation,
+    current_observation: Observation,
+    config: PlanningConfig,
+    macros: MacroRegistry,
+    budget: PlanBudgetLedger,
+    remaining_run_actions: int,
+    protected_step_ids: set[str],
+    require_current_basis: bool,
+) -> PlanEnvelope:
+    errors: list[str] = []
+    if patch.plan_id != active_plan.plan_id:
+        errors.append(
+            f"patch plan_id {patch.plan_id!r} does not match {active_plan.plan_id!r}"
+        )
+    if patch.based_on_plan_version != active_plan.plan_version:
+        errors.append(
+            f"patch version {patch.based_on_plan_version} does not match active "
+            f"version {active_plan.plan_version}"
+        )
+    if not patch.based_on_revision.same_snapshot_as(planner_observation.world_revision):
+        errors.append("patch basis does not match its immutable planner snapshot")
+    if require_current_basis and not patch.based_on_revision.same_snapshot_as(
+        current_observation.world_revision
+    ):
+        errors.append("patch became stale while the concurrent planner was running")
+    replacement_ids = {step.step_id for step in patch.replace_future_steps}
+    conflicts = sorted(replacement_ids & protected_step_ids)
+    if conflicts:
+        errors.append(f"patch attempts to replace active or completed steps: {conflicts}")
+    remaining_actions = min(budget.remaining_actions, remaining_run_actions)
+    if remaining_actions <= 0:
+        errors.append("no action budget remains for replacement steps")
+    if errors:
+        raise PlanValidationError("; ".join(errors))
+
+    try:
+        candidate = PlanEnvelope(
+            schema_version=active_plan.schema_version,
+            plan_id=active_plan.plan_id,
+            plan_version=active_plan.plan_version + 1,
+            objective=active_plan.objective,
+            control_mode=active_plan.control_mode,
+            based_on_revision=current_observation.world_revision,
+            assumptions=active_plan.assumptions,
+            steps=patch.replace_future_steps,
+            entry_step_id=patch.replace_future_steps[0].step_id,
+            max_actions=remaining_actions,
+            max_wall_seconds=active_plan.max_wall_seconds,
+            max_game_seconds=active_plan.max_game_seconds,
+            risk_budget=RiskBudget(
+                max_pointer_actions=budget.remaining_pointer_actions,
+                max_purchase_actions=budget.remaining_purchase_actions,
+                max_native_assisted_actions=(
+                    budget.remaining_native_assisted_actions
+                ),
+            ),
+        )
+    except ValueError as exc:
+        raise PlanValidationError(f"replacement graph is invalid: {exc}") from exc
+    validate_plan(candidate, current_observation, config, macros)
+    return candidate
 
 
 @dataclass(slots=True)

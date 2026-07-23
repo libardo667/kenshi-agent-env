@@ -40,6 +40,8 @@ class ControlConfig(ConfigModel):
 class PlanningConfig(ConfigModel):
     mode: PlanningMode = PlanningMode.SINGLE_STEP
     observation_pump_enabled: bool = True
+    stateful_movement_options_enabled: bool = True
+    concurrent_option_planning_enabled: bool = True
     observation_pump_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     state_history_limit: int = Field(default=128, ge=8, le=4096)
     state_delta_limit: int = Field(default=128, ge=8, le=4096)

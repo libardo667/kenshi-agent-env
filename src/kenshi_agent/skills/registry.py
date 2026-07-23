@@ -96,6 +96,13 @@ class MacroRegistry:
         except KeyError as exc:
             raise UnknownSkillError(name) from exc
 
+    def is_stateful_movement(self, action: Action) -> bool:
+        return bool(
+            isinstance(action, SkillAction)
+            and self.has(action.name)
+            and self.movement_pulse_seconds(action.name) is not None
+        )
+
     def resolve_movement_pulse_seconds(self, action: SkillAction) -> float | None:
         try:
             macro = self._macros[action.name]

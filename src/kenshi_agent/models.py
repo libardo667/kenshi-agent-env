@@ -635,6 +635,15 @@ class PlanPatch(StrictModel):
     rationale: str = Field(min_length=1, max_length=1000)
 
 
+class ActivePlanContext(StrictModel):
+    plan_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,95}$")
+    plan_version: int = Field(ge=1)
+    objective: str = Field(min_length=1, max_length=1000)
+    active_step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+    completed_step_ids: list[str] = Field(default_factory=list, max_length=16)
+    remaining_actions: int = Field(ge=0, le=16)
+
+
 class Observation(StrictModel):
     run_id: str
     step_index: int = Field(ge=0)
@@ -650,6 +659,7 @@ class Observation(StrictModel):
     screenshot_sha256: str | None = None
     events: list[str] = Field(default_factory=list)
     objective: str | None = Field(default=None, max_length=1000)
+    active_plan: ActivePlanContext | None = None
     recent_action_outcomes: list[ActionOutcome] = Field(default_factory=list, max_length=100)
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)

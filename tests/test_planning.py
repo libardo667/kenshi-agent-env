@@ -34,6 +34,7 @@ from kenshi_agent.planning import (
     PlanBudgetLedger,
     PlanValidationError,
     evaluate_condition,
+    validate_future_plan_patch,
     validate_plan,
 )
 from kenshi_agent.skills import MacroRegistry
@@ -340,6 +341,70 @@ def test_plan_patch_carries_optimistic_concurrency_basis() -> None:
 
     assert patch.based_on_plan_version == 1
     assert patch.based_on_revision.telemetry_sequence == 7
+
+
+def test_future_patch_requires_current_basis_and_cannot_restart_protected_steps() -> None:
+    current = observation(sequence=7)
+    active_plan = plan_for(current.world_revision)
+    ledger = PlanBudgetLedger.from_plan(active_plan)
+    ledger.reserve(PauseAction(paused=False), MacroRegistry({}))
+    ledger.commit()
+    patch = PlanPatch(
+        schema_version="1.0",
+        plan_id=active_plan.plan_id,
+        based_on_plan_version=active_plan.plan_version,
+        based_on_revision=current.world_revision,
+        replace_future_steps=[speed_step("patched-speed")],
+        rationale="Use the remaining safe speed step.",
+    )
+
+    candidate = validate_future_plan_patch(
+        patch,
+        active_plan=active_plan,
+        planner_observation=current,
+        current_observation=current,
+        config=PlanningConfig(),
+        macros=MacroRegistry({}),
+        budget=ledger,
+        remaining_run_actions=1,
+        protected_step_ids={"resume"},
+        require_current_basis=True,
+    )
+
+    assert candidate.plan_version == 2
+    assert candidate.entry_step_id == "patched-speed"
+    assert candidate.max_actions == 1
+
+    with pytest.raises(PlanValidationError, match="stale"):
+        validate_future_plan_patch(
+            patch,
+            active_plan=active_plan,
+            planner_observation=current,
+            current_observation=observation(sequence=8),
+            config=PlanningConfig(),
+            macros=MacroRegistry({}),
+            budget=ledger,
+            remaining_run_actions=1,
+            protected_step_ids={"resume"},
+            require_current_basis=True,
+        )
+
+    protected_patch = patch.model_copy(
+        update={"replace_future_steps": [speed_step("resume")]}
+    )
+    with pytest.raises(PlanValidationError, match="active or completed"):
+        validate_future_plan_patch(
+            protected_patch,
+            active_plan=active_plan,
+            planner_observation=current,
+            current_observation=current,
+            config=PlanningConfig(),
+            macros=MacroRegistry({}),
+            budget=ledger,
+            remaining_run_actions=1,
+            protected_step_ids={"resume"},
+            require_current_basis=True,
+        )
 
 
 def test_plan_budget_reservations_release_or_commit_transactionally() -> None:

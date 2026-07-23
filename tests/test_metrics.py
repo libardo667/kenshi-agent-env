@@ -52,6 +52,30 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
             "payload": {"cause": "reflex", "status": "safe_paused"},
         },
         {
+            "event_type": "plan_patch_staged",
+            "payload": {"plan_id": "plan"},
+        },
+        {
+            "event_type": "plan_patched",
+            "payload": {"plan_id": "plan"},
+        },
+        {
+            "event_type": "option_prepared",
+            "payload": {"option_id": "option-1"},
+        },
+        {
+            "event_type": "option_started",
+            "payload": {"option_id": "option-1"},
+        },
+        {
+            "event_type": "option_progress",
+            "payload": {"option_id": "option-1"},
+        },
+        {
+            "event_type": "option_succeeded",
+            "payload": {"option_id": "option-1"},
+        },
+        {
             "event_type": "run_finished",
             "payload": {"success": True, "steps_completed": 1, "stop_reason": "done"},
         },
@@ -75,3 +99,12 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.safety_supervisor_terminals == 1
     assert metrics.safety_supervisor_safe_paused == 1
     assert metrics.safety_cleanup_success_percentage == 100.0
+    assert metrics.plan_patches_staged == 1
+    assert metrics.plan_patches_applied == 1
+    assert metrics.options_prepared == 1
+    assert metrics.options_started == 1
+    assert metrics.option_progress_updates == 1
+    assert metrics.options_succeeded == 1
+    assert metrics.options_failed == 0
+    assert metrics.options_cancelled == 0
+    assert metrics.option_success_percentage == 100.0

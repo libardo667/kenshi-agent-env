@@ -196,3 +196,34 @@ def test_reflex_without_pause_capability_stops_instead_of_claiming_cleanup() -> 
         await supervisor.stop()
 
     asyncio.run(scenario())
+
+
+def test_human_input_event_preempts_an_authorized_active_plan() -> None:
+    async def scenario() -> None:
+        store = WorldStateStore()
+        current = store.publish(observation(1)).observation
+        store.activate_plan("plan", 1, current.world_revision)
+        store.activate_step("move")
+        supervisor = SafetySupervisor(
+            store=store,
+            reflexes=ReflexEngine(),
+            max_sequence_stalls=2,
+        )
+        await supervisor.start()
+
+        store.publish(
+            observation(2, paused=False).model_copy(
+                update={"events": ["human_input_detected"]}
+            )
+        )
+
+        preemption = await asyncio.wait_for(
+            supervisor.wait_for_preemption(),
+            timeout=1.0,
+        )
+        assert preemption.cause is SafetyCause.HUMAN_INPUT
+        assert isinstance(preemption.decision.action, PauseAction)
+        assert supervisor.metrics.human_input_preemptions == 1
+        await supervisor.stop()
+
+    asyncio.run(scenario())

@@ -18,6 +18,7 @@ from .world_state import (
 
 class SafetyCause(StrEnum):
     REFLEX = "reflex"
+    HUMAN_INPUT = "human_input"
     TELEMETRY_STALE = "telemetry_stale"
     SEQUENCE_STALLED = "sequence_stalled"
     PAUSE_CAPABILITY_WITHDRAWN = "pause_capability_withdrawn"
@@ -41,6 +42,7 @@ class SafetySupervisorMetrics:
     capability_withdrawal_preemptions: int = 0
     reflex_preemptions: int = 0
     unexpected_unpause_preemptions: int = 0
+    human_input_preemptions: int = 0
 
 
 class SafetySupervisor:
@@ -124,6 +126,8 @@ class SafetySupervisor:
             self.metrics.reflex_preemptions += 1
         elif cause is SafetyCause.UNEXPECTED_UNPAUSE:
             self.metrics.unexpected_unpause_preemptions += 1
+        elif cause is SafetyCause.HUMAN_INPUT:
+            self.metrics.human_input_preemptions += 1
         self.store.record_event(
             "safety_preemption_requested",
             revision=observation.world_revision,
@@ -178,6 +182,23 @@ class SafetySupervisor:
                 observation=observation,
                 decision=self._stop_decision(
                     "Pause capability was withdrawn; safe cleanup cannot be verified."
+                ),
+            )
+
+        human_input_detected = any(
+            event.event_type == "observation_event"
+            and event.payload.get("message") == "human_input_detected"
+            for event in update.events
+        )
+        if human_input_detected:
+            return SafetyPreemption(
+                cause=SafetyCause.HUMAN_INPUT,
+                reason="The authoritative state stream reported resumed human input.",
+                observation=observation,
+                decision=self._pause_or_stop(
+                    observation,
+                    capabilities,
+                    stop_reason="Human input resumed and safe pause cannot be verified.",
                 ),
             )
 
