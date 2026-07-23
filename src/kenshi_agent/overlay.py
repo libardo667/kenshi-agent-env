@@ -16,7 +16,10 @@ def format_event(record: dict[str, Any]) -> str | None:
     payload = record.get("payload") or {}
 
     if event_type == "run_started":
-        return f"RUN STARTED | {payload.get('max_steps', '?')} turns\n"
+        return (
+            f"RUN STARTED | {payload.get('max_steps', '?')} turns | "
+            f"CONTROL {payload.get('control_mode', 'unknown')}\n"
+        )
     if event_type == "decision":
         decision = PlannerDecision.model_validate(payload["decision"])
         latency = float(payload.get("planner_latency_seconds", 0.0))
@@ -36,7 +39,8 @@ def format_event(record: dict[str, Any]) -> str | None:
         return f"{step} | ERROR | {message}\n"
     if event_type == "run_finished":
         return (
-            f"RUN FINISHED | {payload.get('steps_completed', '?')} turns\n"
+            f"RUN FINISHED | {payload.get('steps_completed', '?')} turns | "
+            f"CONTROL {payload.get('control_mode', 'unknown')}\n"
             f"{payload.get('stop_reason', 'Episode ended.')}\n"
         )
     return None

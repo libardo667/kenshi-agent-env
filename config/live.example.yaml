@@ -1,6 +1,10 @@
 version: 1
 mode: live
 
+control:
+  mode: interface_only
+  native_assisted_actions_enabled: false
+
 paths:
   runs_dir: ../runs
   prompt_file: ../prompts/planner_system.md

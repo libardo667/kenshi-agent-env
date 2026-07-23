@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from io import StringIO
 
-from kenshi_agent.models import ActionReceipt, PlannerDecision, SkillAction
+from kenshi_agent.models import ActionReceipt, ControlMode, PlannerDecision, SkillAction
 from kenshi_agent.reporting import ConsoleDecisionReporter, format_action
 
 
@@ -19,6 +19,7 @@ def test_console_reporter_streams_decision_and_receipt() -> None:
         run_id="visible-run",
         planner_name="openai",
         model_name="gpt-5.6-luna",
+        control_mode=ControlMode.NATIVE_ASSISTED,
         stream=stream,
     )
     decision = PlannerDecision(
@@ -52,6 +53,7 @@ def test_console_reporter_streams_decision_and_receipt() -> None:
 
     output = stream.getvalue()
     assert "gpt-5.6-luna | 30 turns" in output
+    assert "control=native_assisted" in output
     assert "step 03  OBSERVE -> thinking" in output
     assert "DECIDE  1.25s | planner" in output
     assert "Why     The route looks clear" in output

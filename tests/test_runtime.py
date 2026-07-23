@@ -67,12 +67,19 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             )
             summary = await runtime.run(max_steps=30)
             assert summary.success is True
+            assert summary.control_mode == "interface_only"
             assert summary.steps_completed < 30
             event_lines = (tmp_path / "events.jsonl").read_text().splitlines()
             events = [json.loads(line) for line in event_lines]
             decisions = [event for event in events if event["event_type"] == "decision"]
             assert decisions
             assert decisions[0]["payload"]["planner_latency_seconds"] >= 0.0
+            started = next(event for event in events if event["event_type"] == "run_started")
+            finished = next(event for event in events if event["event_type"] == "run_finished")
+            receipt = next(event for event in events if event["event_type"] == "action_receipt")
+            assert started["payload"]["control_mode"] == "interface_only"
+            assert finished["payload"]["control_mode"] == "interface_only"
+            assert receipt["payload"]["control_mode"] == "interface_only"
         finally:
             logger.close()
             memory.close()

@@ -10,9 +10,11 @@ from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.models import (
     ActionReceipt,
     ClickAction,
+    ControlMode,
     GameState,
     KeyAction,
     MouseButton,
+    NativeControlState,
     PauseAction,
     SkillAction,
     TelemetrySnapshot,
@@ -26,6 +28,8 @@ class PulseTelemetry:
         self.paused = True
         self.sequence = 0
         self.auto_pause_after_reads = auto_pause_after_reads
+        self.capabilities: list[str] = []
+        self.native_control = NativeControlState()
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -39,7 +43,9 @@ class PulseTelemetry:
             snapshot=TelemetrySnapshot(
                 sequence=self.sequence,
                 captured_at=datetime.now(UTC),
+                capabilities=self.capabilities,
                 game=GameState(loaded=True, paused=self.paused),
+                native_control=self.native_control,
             ),
             age_seconds=0.0,
             stale=False,
@@ -165,6 +171,7 @@ def live_environment(
     *,
     pause_skill: str | None = None,
     unpause_skill: str | None = None,
+    control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
 ) -> LiveEnvironment:
     return LiveEnvironment(
         run_id="pulse-test",
@@ -182,6 +189,7 @@ def live_environment(
         execute_actions=True,
         emergency_stop_key="f12",
         available_skills=["move_visible_terrain"],
+        control_mode=control_mode,
     )
 
 
@@ -350,5 +358,84 @@ def test_user_input_ends_pulse_after_repausing(tmp_path: Path) -> None:
         assert "yielded control" in transition.receipt.message
         assert transition.observation.telemetry is not None
         assert transition.observation.telemetry.game.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_interface_only_environment_hides_and_rejects_native_assisted_skill(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.capabilities = ["game.pause", "control.approach_vendor"]
+        telemetry.native_control = NativeControlState(
+            available=True,
+            last_command_sequence=3,
+            last_command="approach_confirmed_vendor",
+            last_result="issued",
+        )
+        controller = PulseController(telemetry)
+        registry = MacroRegistry(
+            {
+                "open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}]),
+                "approach_confirmed_vendor": MacroConfig(
+                    requires_native_assisted=True,
+                    actions=[{"kind": "hotkey", "keys": ["ctrl", "shift", "f10"]}],
+                ),
+            }
+        )
+        environment = LiveEnvironment(
+            run_id="control-mode-test",
+            run_dir=tmp_path,
+            telemetry=telemetry,  # type: ignore[arg-type]
+            controller=controller,
+            macros=registry,
+            runtime_config=RuntimeConfig(settle_seconds=0.0),
+            controls_config=ControlsConfig(post_input_delay_seconds=0.0),
+            capture_config=CaptureConfig(enabled=False),
+            execute_actions=False,
+            emergency_stop_key="f12",
+            available_skills=["open_map", "approach_confirmed_vendor"],
+            control_mode=ControlMode.INTERFACE_ONLY,
+        )
+
+        observation = await environment.reset()
+
+        assert observation.control_mode == ControlMode.INTERFACE_ONLY
+        assert observation.available_skills == ["open_map"]
+        assert observation.telemetry is not None
+        assert observation.telemetry.capabilities == ["game.pause"]
+        assert not observation.telemetry.native_control.available
+        assert observation.telemetry.native_control.last_command is None
+        with pytest.raises(RuntimeError, match="requires native_assisted"):
+            await environment.step(SkillAction(name="approach_confirmed_vendor"))
+
+        native_environment = LiveEnvironment(
+            run_id="native-control-mode-test",
+            run_dir=tmp_path,
+            telemetry=telemetry,  # type: ignore[arg-type]
+            controller=controller,
+            macros=registry,
+            runtime_config=RuntimeConfig(settle_seconds=0.0),
+            controls_config=ControlsConfig(post_input_delay_seconds=0.0),
+            capture_config=CaptureConfig(enabled=False),
+            execute_actions=False,
+            emergency_stop_key="f12",
+            available_skills=["open_map", "approach_confirmed_vendor"],
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        )
+        native_observation = await native_environment.reset()
+        assert native_observation.available_skills == [
+            "approach_confirmed_vendor",
+            "open_map",
+        ]
+        assert native_observation.telemetry is not None
+        assert "control.approach_vendor" in native_observation.telemetry.capabilities
+        assert native_observation.telemetry.native_control.available
+        native_transition = await native_environment.step(
+            SkillAction(name="approach_confirmed_vendor")
+        )
+        assert native_transition.receipt.control_mode == ControlMode.NATIVE_ASSISTED
+        assert native_transition.receipt.dry_run
 
     asyncio.run(scenario())

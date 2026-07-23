@@ -8,6 +8,10 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     path = tmp_path / "events.jsonl"
     records = [
         {
+            "event_type": "run_started",
+            "payload": {"control_mode": "native_assisted"},
+        },
+        {
             "event_type": "decision",
             "payload": {"source": "reflex", "planner_latency_seconds": 0.001},
         },
@@ -39,6 +43,7 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.primitive_actions == 2
     assert metrics.stale_observations == 1
     assert metrics.success is True
+    assert metrics.control_mode == "native_assisted"
     assert metrics.mean_planner_latency_seconds == 2.0
     assert metrics.p50_planner_latency_seconds == 2.0
     assert metrics.p95_planner_latency_seconds == 3.0

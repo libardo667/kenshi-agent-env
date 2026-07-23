@@ -12,9 +12,11 @@ from ..models import (
     Action,
     ActionReceipt,
     ClickAction,
+    ControlMode,
     HotkeyAction,
     KeyAction,
     MoveCursorAction,
+    NativeControlState,
     NoopAction,
     Observation,
     PauseAction,
@@ -45,6 +47,7 @@ class LiveEnvironment(AgentEnvironment):
         execute_actions: bool,
         emergency_stop_key: str,
         available_skills: list[str] | None = None,
+        control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     ) -> None:
         self.run_id = run_id
         self.run_dir = run_dir
@@ -56,7 +59,11 @@ class LiveEnvironment(AgentEnvironment):
         self.capture_config = capture_config
         self.execute_actions = execute_actions
         self.emergency_stop_key = emergency_stop_key
-        self.available_skills = sorted(set(available_skills or macros.names()))
+        self.control_mode = control_mode
+        self.available_skills = macros.available_names(
+            available_skills or macros.names(),
+            control_mode=control_mode,
+        )
         self._step_index = 0
         self._capture_sequence = 0
         self._last_observation: Observation | None = None
@@ -84,6 +91,17 @@ class LiveEnvironment(AgentEnvironment):
         try:
             result = self.telemetry_reader.read()
             telemetry_snapshot = result.snapshot
+            if self.control_mode == ControlMode.INTERFACE_ONLY:
+                telemetry_snapshot = telemetry_snapshot.model_copy(
+                    update={
+                        "capabilities": [
+                            capability
+                            for capability in telemetry_snapshot.capabilities
+                            if not capability.startswith("control.")
+                        ],
+                        "native_control": NativeControlState(),
+                    }
+                )
             telemetry_stale = result.stale
             telemetry_age = result.age_seconds
             if result.stale:
@@ -115,6 +133,7 @@ class LiveEnvironment(AgentEnvironment):
             run_id=self.run_id,
             step_index=self._step_index,
             mode="live",
+            control_mode=self.control_mode,
             telemetry=telemetry_snapshot,
             telemetry_stale=telemetry_stale,
             telemetry_age_seconds=telemetry_age,
@@ -131,6 +150,15 @@ class LiveEnvironment(AgentEnvironment):
     async def step(self, action: Action) -> Transition:
         started = datetime.now(UTC)
         terminated = isinstance(action, StopAction)
+        if (
+            isinstance(action, SkillAction)
+            and self.macros.has(action.name)
+            and self.macros.requires_native_assisted(action.name)
+            and self.control_mode != ControlMode.NATIVE_ASSISTED
+        ):
+            raise RuntimeError(
+                f"Skill {action.name!r} requires native_assisted control mode."
+            )
         if isinstance(action, StopAction):
             receipt = ActionReceipt(
                 action=action,
@@ -174,6 +202,7 @@ class LiveEnvironment(AgentEnvironment):
                         }
                     )
 
+        receipt = receipt.model_copy(update={"control_mode": self.control_mode})
         self._step_index += 1
         if self.runtime_config.settle_seconds:
             await asyncio.sleep(self.runtime_config.settle_seconds)

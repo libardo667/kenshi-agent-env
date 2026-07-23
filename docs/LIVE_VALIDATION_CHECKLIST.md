@@ -5,6 +5,9 @@ When the human explicitly hands the whole desktop to the agent, pass
 keeps Kenshi foreground and leaves the guest cursor in place so the run is
 observable on a single display. Omit it during normal shared-computer use; the
 polite input lease then waits for idle input and restores the previous context.
+For a `native_assisted` profile, also pass
+`--acknowledge-native-assisted-control`; do not use that acknowledgement for an
+interface-only evidence run.
 
 Record evidence for every item. Do not mark an item complete based on code
 inspection alone.
@@ -79,6 +82,9 @@ inspection alone.
 - [ ] Every episode produces a complete JSONL log and final summary.
 
 ### Evidence from 2026-07-23 food-procurement proof
+
+This historical proof used the native vendor command and is classified
+`native_assisted`; its older run header did not yet record that field.
 
 - Camera-relative bearing was validated against reciprocal Q/E orbits. A
   negative off-screen bearing moves toward zero with `orbit_camera_right`; the

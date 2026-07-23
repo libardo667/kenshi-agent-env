@@ -3,13 +3,24 @@ import json
 from pathlib import Path
 
 from kenshi_agent.env import ReplayEnvironment
-from kenshi_agent.models import NoopAction, Observation
+from kenshi_agent.models import ControlMode, NoopAction, Observation
 
 
 def test_replay_environment_returns_recorded_observations(tmp_path: Path) -> None:
     observations = [
-        Observation(run_id="source", step_index=0, mode="mock"),
-        Observation(run_id="source", step_index=1, mode="mock", events=["next"]),
+        Observation(
+            run_id="source",
+            step_index=0,
+            mode="mock",
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        ),
+        Observation(
+            run_id="source",
+            step_index=1,
+            mode="mock",
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            events=["next"],
+        ),
     ]
     path = tmp_path / "events.jsonl"
     lines = [
@@ -25,9 +36,12 @@ def test_replay_environment_returns_recorded_observations(tmp_path: Path) -> Non
 
     async def scenario() -> None:
         environment = ReplayEnvironment(path)
+        assert environment.control_mode == ControlMode.NATIVE_ASSISTED
         first = await environment.reset()
         assert first.mode == "replay"
+        assert first.control_mode == ControlMode.NATIVE_ASSISTED
         transition = await environment.step(NoopAction())
+        assert transition.receipt.control_mode == ControlMode.NATIVE_ASSISTED
         assert transition.observation.step_index == 1
         assert transition.terminated
 

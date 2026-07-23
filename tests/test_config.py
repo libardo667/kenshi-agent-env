@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.config import load_config
-from kenshi_agent.models import ClickAction, SkillAction
+from kenshi_agent.models import ClickAction, ControlMode, SkillAction
 from kenshi_agent.skills import MacroRegistry
 
 
@@ -12,6 +12,8 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     monkeypatch.delenv("KENSHI_AGENT_MODEL", raising=False)
     config = load_config(root / "config" / "default.yaml")
     assert config.mode == "mock"
+    assert config.control.mode == ControlMode.INTERFACE_ONLY
+    assert not config.control.native_assisted_actions_enabled
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.reasoning_effort == "low"
     assert config.planner.openrouter_model == "openai/gpt-5.6-luna"
@@ -32,6 +34,7 @@ def test_live_example_uses_windows_local_app_data(
     assert config.telemetry.file == (tmp_path / "KenshiAgent" / "telemetry.latest.json")
     assert config.paths.memory_db == (tmp_path / "KenshiAgent" / "state" / "live-memory.sqlite3")
     assert config.capture.window_title_contains == "Kenshi 1.0."
+    assert config.control.mode == ControlMode.INTERFACE_ONLY
 
 
 def test_live_example_accepts_telemetry_directory_override(
@@ -55,6 +58,8 @@ def test_live_burnin_profile_allows_only_audited_actions(
     config = load_config(root / "config" / "live.burnin.yaml")
 
     assert config.safety.live_actions_enabled
+    assert config.control.mode == ControlMode.NATIVE_ASSISTED
+    assert config.control.native_assisted_actions_enabled
     assert config.safety.require_cli_execute_flag
     assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}
     assert set(config.safety.allow_skills) == {
@@ -133,6 +138,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert clear_highlights[0].key == "alt"
     assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
     assert config.macros["approach_confirmed_vendor"].movement_pulse_max_seconds == 8.0
+    assert config.macros["approach_confirmed_vendor"].requires_native_assisted
     approach_vendor = config.macros["approach_confirmed_vendor"].parsed_actions()
     assert len(approach_vendor) == 1
     assert approach_vendor[0].kind == "hotkey"

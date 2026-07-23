@@ -5,8 +5,9 @@ so failures can be attributed instead of blurred together.
 
 ```text
 Kenshi process
-  └─ KenshiLib telemetry plugin (read-only, game/UI thread)
-       └─ atomic telemetry.latest.json
+  └─ KenshiLib plugin (game/UI thread)
+       ├─ observational telemetry ──> atomic telemetry.latest.json
+       └─ reviewed native command bridge (native_assisted only)
 
 Python runtime
   ├─ telemetry reader ─────────┐
@@ -16,7 +17,9 @@ Python runtime
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
   ├─ schema + policy + rate-limit guard
   ├─ skill/macro compiler
-  └─ Windows SendInput executor ──> ordinary Kenshi UI
+  └─ executor
+       ├─ interface_only ──> Windows SendInput ──> ordinary Kenshi UI
+       └─ native_assisted ──> marked bounded bridge skills + Windows input
 
 Every boundary ──> JSONL session log ──> replay and evaluation
 ```
@@ -42,12 +45,24 @@ expand into bounded primitive sequences. The LLM chooses intent and one action;
 it does not micromanage input timing. Reflexes may pause or stop, but broad
 autonomy stays with the planner.
 
+Every run has a typed control mode. `interface_only` is the default and filters
+native command capabilities and marked skills before planning; the guard and
+environment reject them again at execution boundaries. `native_assisted`
+requires a configuration opt-in plus a dedicated CLI acknowledgement before
+live execution. Observations, receipts, lifecycle events, overlays, summaries,
+and metrics retain the mode.
+
 ## Native boundary
 
-The plugin owns no model logic. It serializes a versioned, partial snapshot at a
-low fixed frequency. It hooks a known main/UI-thread update point, calls the
-original function, samples only validated fields, and writes an atomic file.
-The Python process never loads Kenshi memory directly.
+The plugin owns no model logic. Its observational path serializes a versioned,
+partial snapshot at a low fixed frequency. It hooks a known main/UI-thread
+update point, calls the original function, samples only validated fields, and
+writes an atomic file. The Python process never loads Kenshi memory directly.
+
+The plugin also contains one reviewed `PLAYER_TALK_TO` command bridge used by
+`approach_confirmed_vendor`. This is not described as read-only or UI-only. It
+is marked `requires_native_assisted` in the macro schema and unavailable in the
+default mode. See `docs/ADR_CONTROL_MODES.md`.
 
 ## Failure attribution
 

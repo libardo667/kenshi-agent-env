@@ -14,6 +14,7 @@ from .models import (
     ActionOutcomeAssessment,
     ActionReceipt,
     CharacterState,
+    ControlMode,
     NearbyEntity,
     Observation,
     PlannerDecision,
@@ -31,6 +32,7 @@ from .session_log import SessionLogger
 @dataclass(frozen=True, slots=True)
 class RunSummary:
     run_id: str
+    control_mode: ControlMode
     steps_completed: int
     terminated: bool
     success: bool | None
@@ -56,6 +58,7 @@ class AgentRuntime:
         memory_limit: int,
         minimum_memory_salience: float,
         action_outcome_limit: int = 12,
+        control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         reporter: ConsoleDecisionReporter | None = None,
     ) -> None:
         self.run_id = run_id
@@ -68,6 +71,7 @@ class AgentRuntime:
         self.memory_limit = memory_limit
         self.minimum_memory_salience = minimum_memory_salience
         self.action_outcome_limit = action_outcome_limit
+        self.control_mode = control_mode
         self._action_outcomes: list[ActionOutcome] = []
         self.reporter = reporter
 
@@ -82,7 +86,14 @@ class AgentRuntime:
             self._action_outcomes.clear()
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
-            self.logger.write("run_started", payload={"max_steps": max_steps, "seed": seed})
+            self.logger.write(
+                "run_started",
+                payload={
+                    "max_steps": max_steps,
+                    "seed": seed,
+                    "control_mode": self.control_mode.value,
+                },
+            )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
             self.logger.write(
@@ -134,6 +145,7 @@ class AgentRuntime:
                     now = datetime.now(UTC)
                     rejected = ActionReceipt(
                         action=decision.action,
+                        control_mode=self.control_mode,
                         accepted=False,
                         executed=False,
                         dry_run=True,
@@ -218,6 +230,7 @@ class AgentRuntime:
             finished = datetime.now(UTC)
             summary = RunSummary(
                 run_id=self.run_id,
+                control_mode=self.control_mode,
                 steps_completed=steps_completed,
                 terminated=terminated,
                 success=success,
@@ -231,6 +244,7 @@ class AgentRuntime:
                 step_index=observation.step_index if observation else None,
                 payload={
                     "steps_completed": summary.steps_completed,
+                    "control_mode": summary.control_mode.value,
                     "terminated": summary.terminated,
                     "success": summary.success,
                     "stop_reason": summary.stop_reason,

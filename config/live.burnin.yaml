@@ -1,6 +1,10 @@
 version: 1
 mode: live
 
+control:
+  mode: native_assisted
+  native_assisted_actions_enabled: true
+
 paths:
   runs_dir: ../runs
   prompt_file: ../prompts/planner_system.md
@@ -329,6 +333,7 @@ macros:
         hold_seconds: 0.12
   approach_confirmed_vendor:
     description: Ask the native plugin to issue Kenshi's own PLAYER_TALK_TO order for the nearest neutral humanoid vendor with a vendor list, leader role, and dialogue, then advance for a bounded approach pulse.
+    requires_native_assisted: true
     arguments:
       duration_seconds: Approach time from 0.5 to 8.0 seconds; use a short pulse first and judge the vendor-distance delta.
     visual_precondition: The world HUD is visible, exactly one safe squad member is selected, telemetry identifies a confirmed vendor candidate, and no modal overlay is open.

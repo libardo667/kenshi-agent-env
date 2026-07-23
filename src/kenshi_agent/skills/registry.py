@@ -4,7 +4,14 @@ from copy import deepcopy
 from typing import Any
 
 from ..config import MacroConfig, NormalizedPointerBoundsConfig
-from ..models import Action, NormalizedPointerBounds, SkillAction, SkillSpec, parse_action
+from ..models import (
+    Action,
+    ControlMode,
+    NormalizedPointerBounds,
+    SkillAction,
+    SkillSpec,
+    parse_action,
+)
 
 
 class UnknownSkillError(KeyError):
@@ -22,6 +29,28 @@ class MacroRegistry:
 
     def has(self, name: str) -> bool:
         return name in self._macros
+
+    def available_names(
+        self,
+        names: list[str],
+        *,
+        control_mode: ControlMode,
+    ) -> list[str]:
+        return sorted(
+            name
+            for name in set(names)
+            if self.has(name)
+            and (
+                control_mode == ControlMode.NATIVE_ASSISTED
+                or not self.requires_native_assisted(name)
+            )
+        )
+
+    def requires_native_assisted(self, name: str) -> bool:
+        try:
+            return self._macros[name].requires_native_assisted
+        except KeyError as exc:
+            raise UnknownSkillError(name) from exc
 
     def description(self, name: str) -> str:
         try:
@@ -49,6 +78,7 @@ class MacroRegistry:
             movement_pulse_seconds=macro.movement_pulse_seconds,
             movement_pulse_min_seconds=macro.movement_pulse_min_seconds,
             movement_pulse_max_seconds=macro.movement_pulse_max_seconds,
+            requires_native_assisted=macro.requires_native_assisted,
         )
 
     def specs(self) -> list[SkillSpec]:

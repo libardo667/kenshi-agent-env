@@ -22,6 +22,9 @@ nearby characters and requires a conscious, non-hostile humanoid who has a
 vendor list, leads that platoon, and has dialogue. It then uses Kenshi's own
 `PLAYER_TALK_TO` player order with the exact handle and indoor destination.
 `native_control` acknowledges the command and selected target.
+This makes the DLL a native-assisted control bridge, not a globally read-only
+plugin. The Python runtime exposes this command only in `native_assisted` mode;
+`interface_only` filters the capability/state and rejects the marked skill.
 The bounded nearby query uses a 400-world-unit town-local radius, which includes
 the Hub Barman from the default Wanderer spawn without encoding his identity or
 coordinates.
