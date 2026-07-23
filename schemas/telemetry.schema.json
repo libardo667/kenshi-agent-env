@@ -535,6 +535,103 @@
       "title": "InventoryItem",
       "type": "object"
     },
+    "NativeCommandAcknowledgement": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "pattern": "^cmd-[0-9a-f]{32}$",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "command": {
+          "const": "approach_confirmed_vendor",
+          "title": "Command",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/NativeCommandStatus"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "selected_character_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "title": "Selected Character Ids",
+          "type": "array"
+        },
+        "based_on_telemetry_sequence": {
+          "minimum": 0,
+          "title": "Based On Telemetry Sequence",
+          "type": "integer"
+        },
+        "acknowledged_at_telemetry_sequence": {
+          "minimum": 0,
+          "title": "Acknowledged At Telemetry Sequence",
+          "type": "integer"
+        },
+        "accepted_at_telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accepted At Telemetry Sequence"
+        },
+        "terminal_at_telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Terminal At Telemetry Sequence"
+        }
+      },
+      "required": [
+        "command_id",
+        "command",
+        "status",
+        "reason",
+        "target_id",
+        "selected_character_ids",
+        "based_on_telemetry_sequence",
+        "acknowledged_at_telemetry_sequence"
+      ],
+      "title": "NativeCommandAcknowledgement",
+      "type": "object"
+    },
+    "NativeCommandStatus": {
+      "enum": [
+        "accepted",
+        "completed",
+        "rejected",
+        "cancelled"
+      ],
+      "title": "NativeCommandStatus",
+      "type": "string"
+    },
     "NativeControlState": {
       "additionalProperties": false,
       "properties": {
@@ -542,6 +639,27 @@
           "default": false,
           "title": "Available",
           "type": "boolean"
+        },
+        "active_command_id": {
+          "anyOf": [
+            {
+              "pattern": "^cmd-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Command Id"
+        },
+        "acknowledgements": {
+          "items": {
+            "$ref": "#/$defs/NativeCommandAcknowledgement"
+          },
+          "maxItems": 16,
+          "title": "Acknowledgements",
+          "type": "array"
         },
         "last_command_sequence": {
           "default": 0,

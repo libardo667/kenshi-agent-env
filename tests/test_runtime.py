@@ -15,6 +15,7 @@ from kenshi_agent.models import (
     SkillAction,
     TelemetrySnapshot,
     Transition,
+    WorldStateRevision,
 )
 from kenshi_agent.planners import HeuristicPlanner
 from kenshi_agent.planners.base import Planner
@@ -33,9 +34,7 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             tmp_path / "frames",
             run_id,
         )
-        macros = MacroRegistry(
-            {"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])}
-        )
+        macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
         safety = SafetyConfig(
             allow_action_kinds=[
                 "noop",
@@ -114,6 +113,9 @@ def test_runtime_carries_bounded_noop_feedback_between_decisions(
                 run_id="stagnation-test",
                 step_index=self.step_index,
                 mode="mock",
+                world_revision=WorldStateRevision(
+                    frame_sequence=self.step_index,
+                ),
                 screenshot_path=self.screenshot_path,
                 screenshot_sha256="unchanged-frame",
                 available_skills=["camera_recovery"],

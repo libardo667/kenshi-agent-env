@@ -2,6 +2,7 @@
 #include <core/Functions.h>
 #include <kenshi/Character.h>
 #include <kenshi/CameraClass.h>
+#include <kenshi/Dialogue.h>
 #include <kenshi/Faction.h>
 #include <kenshi/GameWorld.h>
 #include <kenshi/Globals.h>
@@ -18,6 +19,10 @@
 #endif
 #include <Windows.h>
 
+#include <boost/property_tree/json_parser.hpp>
+#include <boost/property_tree/ptree.hpp>
+
+#include <cctype>
 #include <cmath>
 #include <iomanip>
 #include <locale>
@@ -32,7 +37,11 @@ namespace
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
-    const char* PROTOCOL_VERSION = "0.2.0";
+    const unsigned int MAX_NATIVE_COMMAND_BYTES = 16384;
+    const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
+    const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
+        L"native_command.request.json";
+    const char* PROTOCOL_VERSION = "0.3.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
@@ -43,6 +52,43 @@ namespace
     {
         ShopTrader* object;
         Character* owner;
+    };
+
+    struct NativeCommandRequest
+    {
+        std::string commandId;
+        std::string command;
+        std::string controlMode;
+        std::string identitySessionId;
+        unsigned long long basedOnTelemetrySequence;
+        std::string selectedCharacterId;
+        std::string targetId;
+    };
+
+    struct NativeCommandAcknowledgement
+    {
+        std::string commandId;
+        std::string command;
+        std::string status;
+        std::string reason;
+        std::string targetId;
+        std::string selectedCharacterId;
+        unsigned long long basedOnTelemetrySequence;
+        unsigned long long acknowledgedAtTelemetrySequence;
+        unsigned long long acceptedAtTelemetrySequence;
+        unsigned long long terminalAtTelemetrySequence;
+        bool hasAcceptedSequence;
+        bool hasTerminalSequence;
+    };
+
+    struct ActiveNativeCommand
+    {
+        bool active;
+        std::string commandId;
+        std::string targetId;
+        std::string selectedCharacterId;
+        hand targetHandle;
+        hand selectedHandle;
     };
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
@@ -64,6 +110,10 @@ namespace
     std::string g_lastNativeCommandResult;
     std::string g_lastNativeCommandTarget;
     std::string g_lastNativeCommandTargetId;
+    NativeCommandAcknowledgement
+        g_nativeAcknowledgements[MAX_NATIVE_ACKNOWLEDGEMENTS];
+    unsigned int g_nativeAcknowledgementCount = 0;
+    ActiveNativeCommand g_activeNativeCommand;
     std::wstring g_outputDirectory;
 
     void ResetSessionState()
@@ -79,6 +129,11 @@ namespace
         g_lastNativeCommandResult.clear();
         g_lastNativeCommandTarget.clear();
         g_lastNativeCommandTargetId.clear();
+        g_nativeAcknowledgementCount = 0;
+        g_activeNativeCommand.active = false;
+        g_activeNativeCommand.commandId.clear();
+        g_activeNativeCommand.targetId.clear();
+        g_activeNativeCommand.selectedCharacterId.clear();
     }
 
     std::string JsonEscape(const std::string& input)
@@ -206,6 +261,273 @@ namespace
         return false;
     }
 
+    bool IsValidCommandId(const std::string& value)
+    {
+        if (value.size() != 36 || value.compare(0, 4, "cmd-") != 0)
+            return false;
+        for (size_t index = 4; index < value.size(); ++index)
+        {
+            const unsigned char character =
+                static_cast<unsigned char>(value[index]);
+            if (!std::isdigit(character) &&
+                !(character >= 'a' && character <= 'f'))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool HasOnlyKeys(
+        const boost::property_tree::ptree& tree,
+        const char* const* allowed,
+        unsigned int allowedCount)
+    {
+        unsigned int count = 0;
+        for (boost::property_tree::ptree::const_iterator it = tree.begin();
+             it != tree.end();
+             ++it)
+        {
+            bool found = false;
+            for (unsigned int index = 0; index < allowedCount; ++index)
+            {
+                if (it->first == allowed[index])
+                {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found)
+                return false;
+            ++count;
+        }
+        return count == allowedCount;
+    }
+
+    bool IsLeaf(const boost::property_tree::ptree& tree)
+    {
+        return tree.empty() && !tree.data().empty();
+    }
+
+    bool ParseNativeCommandRequest(
+        const std::string& payload,
+        NativeCommandRequest& request,
+        std::string& rejectionReason)
+    {
+        static const char* const rootKeys[] = {
+            "schema_version",
+            "command_id",
+            "command",
+            "control_mode",
+            "identity_session_id",
+            "based_on_revision",
+            "selected_character_ids",
+            "target_id"
+        };
+        static const char* const revisionKeys[] = {
+            "telemetry_sequence",
+            "frame_sequence",
+            "capability_epoch",
+            "observed_at_monotonic"
+        };
+
+        request.basedOnTelemetrySequence = 0;
+        request.selectedCharacterId.clear();
+        try
+        {
+            std::istringstream input(payload);
+            boost::property_tree::ptree root;
+            boost::property_tree::read_json(input, root);
+
+            request.commandId = root.get<std::string>("command_id", "");
+            request.command = root.get<std::string>("command", "");
+            request.controlMode = root.get<std::string>("control_mode", "");
+            request.identitySessionId =
+                root.get<std::string>("identity_session_id", "");
+            request.targetId = root.get<std::string>("target_id", "");
+            request.basedOnTelemetrySequence =
+                root.get<unsigned long long>(
+                    "based_on_revision.telemetry_sequence",
+                    0);
+            const boost::property_tree::ptree& selectedIds =
+                root.get_child("selected_character_ids");
+            if (selectedIds.size() == 1)
+            {
+                boost::property_tree::ptree::const_iterator selected =
+                    selectedIds.begin();
+                if (selected->first.empty() && IsLeaf(selected->second))
+                    request.selectedCharacterId = selected->second.data();
+            }
+
+            if (!HasOnlyKeys(root, rootKeys, 8))
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            if (root.get<std::string>("schema_version") != "1.0" ||
+                !IsValidCommandId(request.commandId) ||
+                request.command.empty() ||
+                request.command.size() > 80 ||
+                request.controlMode.empty() ||
+                request.controlMode.size() > 80 ||
+                request.identitySessionId.empty() ||
+                request.identitySessionId.size() > 200 ||
+                request.targetId.empty() ||
+                request.targetId.size() > 200)
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+
+            const boost::property_tree::ptree& revision =
+                root.get_child("based_on_revision");
+            if (!HasOnlyKeys(revision, revisionKeys, 4))
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            request.basedOnTelemetrySequence =
+                revision.get<unsigned long long>("telemetry_sequence");
+            revision.get<unsigned int>("capability_epoch");
+            revision.get<double>("observed_at_monotonic");
+            const boost::property_tree::ptree& frameSequence =
+                revision.get_child("frame_sequence");
+            if (!IsLeaf(frameSequence))
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+
+            if (selectedIds.size() != 1)
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            boost::property_tree::ptree::const_iterator selected =
+                selectedIds.begin();
+            if (!selected->first.empty() ||
+                !IsLeaf(selected->second) ||
+                selected->second.data().empty() ||
+                selected->second.data().size() > 200)
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            request.selectedCharacterId = selected->second.data();
+        }
+        catch (const std::exception&)
+        {
+            rejectionReason = "malformed_request";
+            return false;
+        }
+        return true;
+    }
+
+    int FindNativeAcknowledgement(const std::string& commandId)
+    {
+        for (unsigned int index = 0;
+             index < g_nativeAcknowledgementCount;
+             ++index)
+        {
+            if (g_nativeAcknowledgements[index].commandId == commandId)
+                return static_cast<int>(index);
+        }
+        return -1;
+    }
+
+    NativeCommandAcknowledgement& AddNativeAcknowledgement(
+        const NativeCommandRequest& request,
+        const char* status,
+        const char* reason,
+        bool accepted,
+        bool terminal)
+    {
+        if (g_nativeAcknowledgementCount >= MAX_NATIVE_ACKNOWLEDGEMENTS)
+        {
+            unsigned int removeIndex = 0;
+            if (g_activeNativeCommand.active &&
+                g_nativeAcknowledgements[removeIndex].commandId ==
+                    g_activeNativeCommand.commandId)
+            {
+                for (unsigned int index = 1;
+                     index < g_nativeAcknowledgementCount;
+                     ++index)
+                {
+                    if (g_nativeAcknowledgements[index].commandId !=
+                        g_activeNativeCommand.commandId)
+                    {
+                        removeIndex = index;
+                        break;
+                    }
+                }
+            }
+            for (unsigned int index = removeIndex + 1;
+                 index < g_nativeAcknowledgementCount;
+                 ++index)
+            {
+                g_nativeAcknowledgements[index - 1] =
+                    g_nativeAcknowledgements[index];
+            }
+            --g_nativeAcknowledgementCount;
+        }
+
+        NativeCommandAcknowledgement& acknowledgement =
+            g_nativeAcknowledgements[g_nativeAcknowledgementCount++];
+        acknowledgement.commandId = request.commandId;
+        acknowledgement.command = request.command;
+        acknowledgement.status = status;
+        acknowledgement.reason = reason;
+        acknowledgement.targetId = request.targetId;
+        acknowledgement.selectedCharacterId =
+            request.selectedCharacterId;
+        acknowledgement.basedOnTelemetrySequence =
+            request.basedOnTelemetrySequence;
+        acknowledgement.acknowledgedAtTelemetrySequence =
+            g_sequence + 1;
+        acknowledgement.hasAcceptedSequence = accepted;
+        acknowledgement.acceptedAtTelemetrySequence =
+            accepted ? g_sequence + 1 : 0;
+        acknowledgement.hasTerminalSequence = terminal;
+        acknowledgement.terminalAtTelemetrySequence =
+            terminal ? g_sequence + 1 : 0;
+        return acknowledgement;
+    }
+
+    void RejectNativeCommand(
+        const NativeCommandRequest& request,
+        const char* reason)
+    {
+        AddNativeAcknowledgement(
+            request,
+            "rejected",
+            reason,
+            false,
+            true);
+        g_lastNativeCommandResult = reason;
+        g_lastNativeCommandTargetId = request.targetId;
+    }
+
+    void FinishActiveNativeCommand(
+        const char* status,
+        const char* reason)
+    {
+        const int index =
+            FindNativeAcknowledgement(g_activeNativeCommand.commandId);
+        if (index >= 0)
+        {
+            NativeCommandAcknowledgement& acknowledgement =
+                g_nativeAcknowledgements[index];
+            acknowledgement.status = status;
+            acknowledgement.reason = reason;
+            acknowledgement.hasTerminalSequence = true;
+            acknowledgement.terminalAtTelemetrySequence =
+                g_sequence + 1;
+        }
+        g_lastNativeCommandResult = reason;
+        g_activeNativeCommand.active = false;
+        g_activeNativeCommand.commandId.clear();
+    }
+
     std::string UtcNowIso8601()
     {
         SYSTEMTIME now;
@@ -319,12 +641,46 @@ namespace
                target->hasDialogue();
     }
 
-    Character* FindNearestConfirmedVendor(PlayerInterface* player)
+    bool TryGetExactSelection(
+        PlayerInterface* player,
+        std::string& selectedId,
+        hand& selectedHandle)
     {
+        selectedId.clear();
+        if (player == NULL || player->selectedCharacters.size() != 1)
+            return false;
+        ogre_unordered_set<hand>::type::const_iterator it =
+            player->selectedCharacters.begin();
+        Character* selected = it->getCharacter();
+        if (selected == NULL ||
+            !selected->isValid() ||
+            !selected->isPlayerCharacter() ||
+            !SameHandleIdentity(*it, player->selectedCharacter))
+        {
+            return false;
+        }
+        selectedId = StableEntityId(*it);
+        if (selectedId.empty())
+            return false;
+        selectedHandle = *it;
+        return true;
+    }
+
+    Character* FindExactConfirmedVendor(
+        PlayerInterface* player,
+        const std::string& targetId,
+        bool& exactIdentityFound)
+    {
+        exactIdentityFound = false;
         Character* selected =
             player != NULL ? player->selectedCharacter.getCharacter() : NULL;
-        if (ou == NULL || selected == NULL || !selected->isValid())
+        if (ou == NULL ||
+            selected == NULL ||
+            !selected->isValid() ||
+            targetId.empty())
+        {
             return NULL;
+        }
 
         lektor<RootObject*> nearbyCharacters;
         const Ogre::Vector3 selectedPosition = selected->getPosition();
@@ -338,47 +694,197 @@ namespace
             0,
             selected);
 
-        Character* nearest = NULL;
-        float nearestDistance = 0.0f;
         for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
              it != nearbyCharacters.end();
              ++it)
         {
             Character* candidate = reinterpret_cast<Character*>(*it);
-            if (!IsConfirmedVendor(selected, candidate))
+            if (candidate == NULL || !candidate->isValid())
                 continue;
-            const float candidateDistance =
-                Distance(selectedPosition, candidate->getPosition());
-            if (nearest == NULL || candidateDistance < nearestDistance)
-            {
-                nearest = candidate;
-                nearestDistance = candidateDistance;
-            }
+            if (StableEntityId(candidate) != targetId)
+                continue;
+            exactIdentityFound = true;
+            return IsConfirmedVendor(selected, candidate) ? candidate : NULL;
         }
-        return nearest;
+        return NULL;
     }
 
-    void IssueApproachConfirmedVendor(PlayerInterface* player)
+    bool IsExactDialogueTargetOpen(const hand& targetHandle)
+    {
+        if (gui == NULL ||
+            gui->dialogue == NULL ||
+            !gui->dialogue->isVisible() ||
+            gui->dialogue->dialogue == NULL)
+        {
+            return false;
+        }
+        Dialogue* dialogue = gui->dialogue->dialogue;
+        Character* dialogueOwner = dialogue->getCharacter();
+        if (dialogueOwner != NULL &&
+            dialogueOwner->isValid() &&
+            SameHandleIdentity(dialogueOwner->getHandle(), targetHandle))
+        {
+            return true;
+        }
+        const hand conversationTarget = dialogue->getConversationTarget();
+        return conversationTarget.isValid() &&
+               SameHandleIdentity(conversationTarget, targetHandle);
+    }
+
+    void MonitorActiveNativeCommand(PlayerInterface* player)
+    {
+        if (!g_activeNativeCommand.active)
+            return;
+
+        std::string selectedId;
+        hand selectedHandle;
+        if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
+            selectedId != g_activeNativeCommand.selectedCharacterId ||
+            !SameHandleIdentity(
+                selectedHandle,
+                g_activeNativeCommand.selectedHandle))
+        {
+            FinishActiveNativeCommand("cancelled", "selection_mismatch");
+            return;
+        }
+
+        Character* target = g_activeNativeCommand.targetHandle.getCharacter();
+        if (target == NULL ||
+            !target->isValid() ||
+            StableEntityId(target) != g_activeNativeCommand.targetId)
+        {
+            FinishActiveNativeCommand(
+                "cancelled",
+                "target_lifetime_changed");
+            return;
+        }
+        Character* selected = selectedHandle.getCharacter();
+        if (!IsConfirmedVendor(selected, target))
+        {
+            FinishActiveNativeCommand(
+                "cancelled",
+                "target_role_invalid");
+            return;
+        }
+
+        if (IsExactDialogueTargetOpen(g_activeNativeCommand.targetHandle))
+        {
+            FinishActiveNativeCommand(
+                "completed",
+                "exact_dialogue_target_open");
+        }
+    }
+
+    void ProcessNativeCommandRequest(PlayerInterface* player)
     {
         ++g_nativeCommandSequence;
         g_lastNativeCommand = "approach_confirmed_vendor";
         g_lastNativeCommandTarget.clear();
         g_lastNativeCommandTargetId.clear();
 
-        Character* target = FindNearestConfirmedVendor(player);
+        std::string payload;
+        std::string error;
+        if (!KenshiAgentTelemetry::ReadUtf8Bounded(
+                g_outputDirectory,
+                NATIVE_COMMAND_REQUEST_FILE_W,
+                MAX_NATIVE_COMMAND_BYTES,
+                payload,
+                error))
+        {
+            g_lastNativeCommandResult = "malformed_request";
+            ErrorLog(
+                std::string("KenshiAgentTelemetry request read failed: ") +
+                error);
+            return;
+        }
+
+        NativeCommandRequest request;
+        std::string rejectionReason;
+        if (!ParseNativeCommandRequest(payload, request, rejectionReason))
+        {
+            g_lastNativeCommandResult = rejectionReason;
+            if (IsValidCommandId(request.commandId) &&
+                request.command == "approach_confirmed_vendor" &&
+                !request.targetId.empty() &&
+                !request.selectedCharacterId.empty() &&
+                FindNativeAcknowledgement(request.commandId) < 0)
+            {
+                RejectNativeCommand(request, "malformed_request");
+            }
+            ErrorLog(
+                "KenshiAgentTelemetry rejected malformed native command request.");
+            return;
+        }
+
+        if (FindNativeAcknowledgement(request.commandId) >= 0)
+        {
+            // Keep the original bounded acknowledgement unchanged so a
+            // duplicate command_id can never look like a new acceptance.
+            g_lastNativeCommandResult = "duplicate_command_id";
+            return;
+        }
+        if (g_activeNativeCommand.active)
+        {
+            RejectNativeCommand(request, "command_already_active");
+            return;
+        }
+        if (request.command != "approach_confirmed_vendor")
+        {
+            // The telemetry acknowledgement schema is intentionally limited
+            // to the one reviewed command. Do not publish an unparseable ack.
+            g_lastNativeCommandResult = "unsupported_command";
+            return;
+        }
+        if (request.controlMode != "native_assisted")
+        {
+            RejectNativeCommand(request, "wrong_control_mode");
+            return;
+        }
+        if (request.identitySessionId != IdentitySessionId())
+        {
+            RejectNativeCommand(request, "identity_session_mismatch");
+            return;
+        }
+        // based_on_revision.telemetry_sequence is an exact issue-time fence,
+        // not a minimum. A newer snapshot requires a newly planned command.
+        if (request.basedOnTelemetrySequence != g_sequence)
+        {
+            if (request.basedOnTelemetrySequence > g_sequence)
+            {
+                // Do not serialize an acknowledgement whose claimed request
+                // basis is in the future; that would poison strict telemetry.
+                g_lastNativeCommandResult = "future_revision";
+                return;
+            }
+            RejectNativeCommand(request, "stale_revision");
+            return;
+        }
+
+        std::string selectedId;
+        hand selectedHandle;
+        if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
+            selectedId != request.selectedCharacterId)
+        {
+            RejectNativeCommand(request, "selection_mismatch");
+            return;
+        }
+
+        bool exactIdentityFound = false;
+        Character* target = FindExactConfirmedVendor(
+            player,
+            request.targetId,
+            exactIdentityFound);
         if (target == NULL)
         {
-            g_lastNativeCommandResult = "no_confirmed_vendor";
+            RejectNativeCommand(
+                request,
+                exactIdentityFound
+                    ? "target_role_invalid"
+                    : "target_lifetime_changed");
             return;
         }
 
         const hand& targetHandle = target->getHandle();
-        const std::string targetId = StableEntityId(targetHandle);
-        if (targetId.empty())
-        {
-            g_lastNativeCommandResult = "invalid_target_handle";
-            return;
-        }
         Building* destinationIndoors = target->isIndoors().getBuilding();
         player->newPlayerTaskSelectedCharacters(
             PLAYER_TALK_TO,
@@ -386,9 +892,23 @@ namespace
             destinationIndoors,
             target->getPosition(),
             false);
+
+        AddNativeAcknowledgement(
+            request,
+            "accepted",
+            "issued",
+            true,
+            false);
+        g_activeNativeCommand.active = true;
+        g_activeNativeCommand.commandId = request.commandId;
+        g_activeNativeCommand.targetId = request.targetId;
+        g_activeNativeCommand.selectedCharacterId =
+            request.selectedCharacterId;
+        g_activeNativeCommand.targetHandle = targetHandle;
+        g_activeNativeCommand.selectedHandle = selectedHandle;
         g_lastNativeCommandResult = "issued";
         g_lastNativeCommandTarget = target->getName();
-        g_lastNativeCommandTargetId = targetId;
+        g_lastNativeCommandTargetId = request.targetId;
     }
 
     void RegisterShopTrader(ShopTrader* object, Character* owner)
@@ -572,6 +1092,52 @@ namespace
 
         json << "\"native_control\":{";
         json << "\"available\":true,";
+        if (g_activeNativeCommand.active)
+        {
+            json << "\"active_command_id\":\""
+                 << JsonEscape(g_activeNativeCommand.commandId)
+                 << "\",";
+        }
+        json << "\"acknowledgements\":[";
+        for (unsigned int index = 0;
+             index < g_nativeAcknowledgementCount;
+             ++index)
+        {
+            if (index > 0)
+                json << ",";
+            const NativeCommandAcknowledgement& acknowledgement =
+                g_nativeAcknowledgements[index];
+            json << "{";
+            json << "\"command_id\":\""
+                 << JsonEscape(acknowledgement.commandId) << "\",";
+            json << "\"command\":\""
+                 << JsonEscape(acknowledgement.command) << "\",";
+            json << "\"status\":\""
+                 << JsonEscape(acknowledgement.status) << "\",";
+            json << "\"reason\":\""
+                 << JsonEscape(acknowledgement.reason) << "\",";
+            json << "\"target_id\":\""
+                 << JsonEscape(acknowledgement.targetId) << "\",";
+            json << "\"selected_character_ids\":[\""
+                 << JsonEscape(acknowledgement.selectedCharacterId)
+                 << "\"],";
+            json << "\"based_on_telemetry_sequence\":"
+                 << acknowledgement.basedOnTelemetrySequence << ",";
+            json << "\"acknowledged_at_telemetry_sequence\":"
+                 << acknowledgement.acknowledgedAtTelemetrySequence;
+            if (acknowledgement.hasAcceptedSequence)
+            {
+                json << ",\"accepted_at_telemetry_sequence\":"
+                     << acknowledgement.acceptedAtTelemetrySequence;
+            }
+            if (acknowledgement.hasTerminalSequence)
+            {
+                json << ",\"terminal_at_telemetry_sequence\":"
+                     << acknowledgement.terminalAtTelemetrySequence;
+            }
+            json << "}";
+        }
+        json << "],";
         json << "\"last_command_sequence\":" << g_nativeCommandSequence;
         if (!g_lastNativeCommand.empty())
         {
@@ -783,12 +1349,13 @@ namespace
     void PlayerInterfaceUpdateHook(PlayerInterface* player)
     {
         g_originalPlayerInterfaceUpdate(player);
+        MonitorActiveNativeCommand(player);
         const bool approachVendorHotkeyDown =
             (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 &&
             (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 &&
             (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
         if (approachVendorHotkeyDown && !g_approachVendorHotkeyWasDown)
-            IssueApproachConfirmedVendor(player);
+            ProcessNativeCommandRequest(player);
         g_approachVendorHotkeyWasDown = approachVendorHotkeyDown;
 
         const DWORD now = GetTickCount();

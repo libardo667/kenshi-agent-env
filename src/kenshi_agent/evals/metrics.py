@@ -46,6 +46,11 @@ class _MetricValues(TypedDict):
     command_mismatches: int
     command_receipts: int
     command_receipts_with_post_revision: int
+    native_command_acknowledgements: int
+    native_commands_accepted: int
+    native_commands_completed: int
+    native_commands_rejected: int
+    native_commands_cancelled: int
     safety_supervisor_preemptions: int
     strategic_planner_cancellations: int
     plan_execution_cancellations: int
@@ -108,6 +113,11 @@ class LogMetrics:
     command_mismatches: int = 0
     command_receipts: int = 0
     command_receipts_with_post_revision: int = 0
+    native_command_acknowledgements: int = 0
+    native_commands_accepted: int = 0
+    native_commands_completed: int = 0
+    native_commands_rejected: int = 0
+    native_commands_cancelled: int = 0
     safety_supervisor_preemptions: int = 0
     strategic_planner_cancellations: int = 0
     plan_execution_cancellations: int = 0
@@ -134,6 +144,8 @@ class LogMetrics:
     p95_planner_latency_seconds: float | None = None
     actions_per_strategic_planner_call: float | None = None
     receipts_with_post_command_revision_percentage: float | None = None
+    mean_native_ack_sequence_lag: float | None = None
+    native_command_completion_percentage: float | None = None
     safety_cleanup_success_percentage: float | None = None
     option_success_percentage: float | None = None
 
@@ -141,6 +153,16 @@ class LogMetrics:
 def evaluate_log(path: Path) -> LogMetrics:
     decision_planner_latencies: list[float] = []
     strategic_planner_latencies: list[float] = []
+    native_acknowledgements: dict[str, dict[str, object]] = {}
+
+    def retain_native_acknowledgement(candidate: object) -> None:
+        if not isinstance(candidate, dict):
+            return
+        command_id = candidate.get("command_id")
+        if not isinstance(command_id, str):
+            return
+        native_acknowledgements[command_id] = candidate
+
     values: _MetricValues = {
         "control_mode": None,
         "decisions": 0,
@@ -179,6 +201,11 @@ def evaluate_log(path: Path) -> LogMetrics:
         "command_mismatches": 0,
         "command_receipts": 0,
         "command_receipts_with_post_revision": 0,
+        "native_command_acknowledgements": 0,
+        "native_commands_accepted": 0,
+        "native_commands_completed": 0,
+        "native_commands_rejected": 0,
+        "native_commands_cancelled": 0,
         "safety_supervisor_preemptions": 0,
         "strategic_planner_cancellations": 0,
         "plan_execution_cancellations": 0,
@@ -235,12 +262,21 @@ def evaluate_log(path: Path) -> LogMetrics:
                     values["command_receipts"] += 1
                     if payload.get("causal_revision_advanced") is True:
                         values["command_receipts_with_post_revision"] += 1
+                retain_native_acknowledgement(payload.get("native_acknowledgement"))
             elif event_type == "action_rejected":
                 values["rejected_actions"] += 1
             elif event_type == "observation":
                 values["observations"] += 1
                 if payload.get("telemetry_stale"):
                     values["stale_observations"] += 1
+                telemetry = payload.get("telemetry")
+                if isinstance(telemetry, dict):
+                    native_control = telemetry.get("native_control")
+                    if isinstance(native_control, dict):
+                        acknowledgements = native_control.get("acknowledgements")
+                        if isinstance(acknowledgements, list):
+                            for acknowledgement in acknowledgements:
+                                retain_native_acknowledgement(acknowledgement)
             elif event_type == "memory_written":
                 values["memory_writes"] += 1
             elif event_type == "plan_proposed":
@@ -372,20 +408,38 @@ def evaluate_log(path: Path) -> LogMetrics:
         if values["command_receipts"]
         else None
     )
+    native_ack_lags: list[float] = []
+    for acknowledgement in native_acknowledgements.values():
+        status = acknowledgement.get("status")
+        if status in {"accepted", "completed", "cancelled"}:
+            values["native_commands_accepted"] += 1
+        if status == "completed":
+            values["native_commands_completed"] += 1
+        elif status == "rejected":
+            values["native_commands_rejected"] += 1
+        elif status == "cancelled":
+            values["native_commands_cancelled"] += 1
+        basis = acknowledgement.get("based_on_telemetry_sequence")
+        acknowledged = acknowledgement.get("acknowledged_at_telemetry_sequence")
+        if isinstance(basis, int) and isinstance(acknowledged, int):
+            native_ack_lags.append(float(acknowledged - basis))
+    values["native_command_acknowledgements"] = len(native_acknowledgements)
+    native_completion_percentage = (
+        100.0 * values["native_commands_completed"] / values["native_commands_accepted"]
+        if values["native_commands_accepted"]
+        else None
+    )
+    mean_native_ack_sequence_lag = fmean(native_ack_lags) if native_ack_lags else None
     safety_cleanup_success_percentage = (
         100.0 * values["safety_cleanups_completed"] / values["safety_cleanups_started"]
         if values["safety_cleanups_started"]
         else None
     )
     terminal_options = (
-        values["options_succeeded"]
-        + values["options_failed"]
-        + values["options_cancelled"]
+        values["options_succeeded"] + values["options_failed"] + values["options_cancelled"]
     )
     option_success_percentage = (
-        100.0 * values["options_succeeded"] / terminal_options
-        if terminal_options
-        else None
+        100.0 * values["options_succeeded"] / terminal_options if terminal_options else None
     )
     planner_latencies = strategic_planner_latencies or decision_planner_latencies
     if not planner_latencies:
@@ -393,6 +447,8 @@ def evaluate_log(path: Path) -> LogMetrics:
             **values,
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
+            mean_native_ack_sequence_lag=mean_native_ack_sequence_lag,
+            native_command_completion_percentage=(native_completion_percentage),
             safety_cleanup_success_percentage=safety_cleanup_success_percentage,
             option_success_percentage=option_success_percentage,
         )
@@ -405,6 +461,8 @@ def evaluate_log(path: Path) -> LogMetrics:
         p95_planner_latency_seconds=ordered[p95_index],
         actions_per_strategic_planner_call=actions_per_call,
         receipts_with_post_command_revision_percentage=causal_receipt_percentage,
+        mean_native_ack_sequence_lag=mean_native_ack_sequence_lag,
+        native_command_completion_percentage=native_completion_percentage,
         safety_cleanup_success_percentage=safety_cleanup_success_percentage,
         option_success_percentage=option_success_percentage,
     )

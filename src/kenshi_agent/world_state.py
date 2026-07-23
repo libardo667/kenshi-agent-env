@@ -11,7 +11,7 @@ from math import dist
 from typing import TypeAlias
 
 from .env import AgentEnvironment
-from .models import NearbyEntity, Observation, WorldStateRevision
+from .models import NearbyEntity, Observation, WorldStateRevision, new_command_id
 from .planning import PlanningClock, SystemPlanningClock
 
 
@@ -253,7 +253,6 @@ class WorldStateStore:
         self._active_plan: ActivePlanState | None = None
         self._active_command: CommandState | None = None
         self._command_history: deque[CommandState] = deque(maxlen=event_limit)
-        self._next_command_id = 1
         self._closed = False
 
     @property
@@ -588,7 +587,7 @@ class WorldStateStore:
                 f"Command {self._active_command.command_id!r} is still active."
             )
         command = CommandState(
-            command_id=f"cmd-{self._next_command_id:06d}",
+            command_id=new_command_id(),
             plan_id=plan_id,
             plan_version=plan_version,
             step_id=step_id,
@@ -596,7 +595,6 @@ class WorldStateStore:
             started_revision=start_revision.model_copy(deep=True),
             started_at_monotonic=self.clock.monotonic(),
         )
-        self._next_command_id += 1
         self._active_command = command
         self.record_event(
             "command_started",
@@ -813,8 +811,7 @@ class WorldStateStore:
             nearby = telemetry.get("nearby_entities")
             capabilities = telemetry.get("capabilities")
             has_stable_source_ids = (
-                isinstance(capabilities, list)
-                and "identity.stable_handles" in capabilities
+                isinstance(capabilities, list) and "identity.stable_handles" in capabilities
             )
             if isinstance(nearby, list):
                 normalized_nearby: list[dict[str, object]] = []

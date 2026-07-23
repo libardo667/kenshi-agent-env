@@ -68,6 +68,8 @@ class ActionGuard:
                     raise SafetyViolation(
                         f"Movement pulse {action.name!r} requires confirmed paused live state."
                     )
+                if action.name == "approach_confirmed_vendor":
+                    self._validate_native_vendor_target(action, observation)
                 if action.name == "buy_inspected_shop_item":
                     self._validate_purchase(action, observation)
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
@@ -114,6 +116,54 @@ class ActionGuard:
         ):
             self._purchase_count += 1
         return action
+
+    @staticmethod
+    def _validate_native_vendor_target(
+        action: SkillAction,
+        observation: Observation,
+    ) -> None:
+        if observation.telemetry_stale or observation.telemetry is None:
+            raise SafetyViolation("Native vendor approach requires fresh authoritative telemetry.")
+        telemetry = observation.telemetry
+        required_capabilities = {
+            "control.approach_vendor",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.roles",
+        }
+        missing = required_capabilities - set(telemetry.capabilities)
+        if missing:
+            raise SafetyViolation(
+                "Native vendor approach lacks required capabilities: " + ", ".join(sorted(missing))
+            )
+        selected_ids = telemetry.ui.selected_character_ids
+        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+            raise SafetyViolation(
+                "Native vendor approach requires one exact primary selected character."
+            )
+        target_id = action.argument_map().get("target_id")
+        if not isinstance(target_id, str) or not target_id:
+            raise SafetyViolation("Native vendor approach requires an exact target_id.")
+        target = next(
+            (entity for entity in telemetry.nearby_entities if entity.id == target_id),
+            None,
+        )
+        if target is None:
+            raise SafetyViolation(
+                "Native vendor target is absent from the current bounded nearby set."
+            )
+        if (
+            target.is_animal is not False
+            or target.has_vendor_list is not True
+            or target.is_squad_leader is not True
+            or target.has_dialogue is not True
+            or target.conscious is not True
+            or target.disposition.value not in {"friendly", "neutral"}
+        ):
+            raise SafetyViolation(
+                "Native vendor target lacks exact current role, consciousness, "
+                "or non-hostile evidence."
+            )
 
     def validate_safety_pause(
         self,

@@ -9,15 +9,24 @@ from kenshi_agent.control.base import InputController, PrimitiveInputAction, Win
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.models import (
     ActionReceipt,
+    CharacterState,
     ClickAction,
+    CommandDispatchContext,
     ControlMode,
+    Disposition,
     GameState,
+    HotkeyAction,
     KeyAction,
     MouseButton,
+    NativeCommandAcknowledgement,
+    NativeCommandRequest,
+    NativeCommandStatus,
     NativeControlState,
+    NearbyEntity,
     PauseAction,
     SkillAction,
     TelemetrySnapshot,
+    UIState,
 )
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
@@ -30,6 +39,7 @@ class PulseTelemetry:
         self.auto_pause_after_reads = auto_pause_after_reads
         self.capabilities: list[str] = []
         self.native_control = NativeControlState()
+        self.path = Path("telemetry.json")
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -437,5 +447,305 @@ def test_interface_only_environment_hides_and_rejects_native_assisted_skill(
         )
         assert native_transition.receipt.control_mode == ControlMode.NATIVE_ASSISTED
         assert native_transition.receipt.dry_run
+
+    asyncio.run(scenario())
+
+
+class NativePulseTelemetry(PulseTelemetry):
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+        self.capabilities = [
+            "game.pause",
+            "control.approach_vendor",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.roles",
+        ]
+
+    def read(self) -> TelemetryRead:
+        self.sequence += 1
+        return TelemetryRead(
+            snapshot=TelemetrySnapshot(
+                protocol_version="0.3.0",
+                sequence=self.sequence,
+                captured_at=datetime.now(UTC),
+                identity_session_id="session-native-test",
+                capabilities=self.capabilities,
+                game=GameState(loaded=True, paused=self.paused),
+                ui=UIState(
+                    selected_character_id="entity-selected",
+                    selected_character_ids=["entity-selected"],
+                ),
+                native_control=self.native_control,
+                squad=[
+                    CharacterState(
+                        id="entity-selected",
+                        name="Wanderer",
+                        selected=True,
+                    )
+                ],
+                nearby_entities=[
+                    NearbyEntity(
+                        id="entity-vendor",
+                        name="Barman",
+                        is_animal=False,
+                        has_vendor_list=True,
+                        is_squad_leader=True,
+                        has_dialogue=True,
+                        conscious=True,
+                        disposition=Disposition.NEUTRAL,
+                    )
+                ],
+            ),
+            age_seconds=0.0,
+            stale=False,
+            path=self.path,
+        )
+
+
+class NativeAckController(PulseController):
+    def __init__(
+        self,
+        telemetry: NativePulseTelemetry,
+        request_path: Path,
+        *,
+        status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
+        acknowledgement_command_id: str | None = None,
+    ) -> None:
+        super().__init__(telemetry)
+        self.request_path = request_path
+        self.status = status
+        self.acknowledgement_command_id = acknowledgement_command_id
+        self.request_seen_before_hotkey = False
+        self.request: NativeCommandRequest | None = None
+
+    async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
+        if isinstance(action, HotkeyAction):
+            assert self.request_path.is_file()
+            self.request_seen_before_hotkey = True
+            self.request = NativeCommandRequest.model_validate_json(self.request_path.read_bytes())
+            request = self.request
+            basis = request.based_on_revision.telemetry_sequence
+            assert basis is not None
+            acknowledgement_sequence = max(self.telemetry.sequence + 1, basis + 1)
+            accepted_sequence = (
+                None if self.status == NativeCommandStatus.REJECTED else acknowledgement_sequence
+            )
+            terminal_sequence = (
+                acknowledgement_sequence
+                if self.status
+                in {
+                    NativeCommandStatus.REJECTED,
+                    NativeCommandStatus.CANCELLED,
+                    NativeCommandStatus.COMPLETED,
+                }
+                else None
+            )
+            self.telemetry.native_control = NativeControlState(
+                available=True,
+                acknowledgements=[
+                    NativeCommandAcknowledgement(
+                        command_id=(self.acknowledgement_command_id or request.command_id),
+                        command=request.command,
+                        status=self.status,
+                        reason=(
+                            "issued"
+                            if self.status == NativeCommandStatus.ACCEPTED
+                            else self.status.value
+                        ),
+                        target_id=request.target_id,
+                        selected_character_ids=request.selected_character_ids,
+                        based_on_telemetry_sequence=basis,
+                        acknowledged_at_telemetry_sequence=acknowledgement_sequence,
+                        accepted_at_telemetry_sequence=accepted_sequence,
+                        terminal_at_telemetry_sequence=terminal_sequence,
+                    )
+                ],
+            )
+        return await super().execute(action)
+
+
+def native_vendor_environment(
+    tmp_path: Path,
+    *,
+    status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
+    acknowledgement_command_id: str | None = None,
+) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
+    telemetry_path = tmp_path / "telemetry.latest.json"
+    request_path = tmp_path / "native_command.request.json"
+    telemetry = NativePulseTelemetry(telemetry_path)
+    controller = NativeAckController(
+        telemetry,
+        request_path,
+        status=status,
+        acknowledgement_command_id=acknowledgement_command_id,
+    )
+    registry = MacroRegistry(
+        {
+            "approach_confirmed_vendor": MacroConfig(
+                requires_native_assisted=True,
+                movement_pulse_seconds=0.01,
+                movement_pulse_min_seconds=0.005,
+                movement_pulse_max_seconds=0.02,
+                actions=[
+                    {
+                        "kind": "hotkey",
+                        "keys": ["ctrl", "shift", "f10"],
+                        "hold_seconds": 0.01,
+                    }
+                ],
+            )
+        }
+    )
+    environment = LiveEnvironment(
+        run_id="native-command-test",
+        run_dir=tmp_path,
+        telemetry=telemetry,  # type: ignore[arg-type]
+        controller=controller,
+        macros=registry,
+        runtime_config=RuntimeConfig(settle_seconds=0.0),
+        controls_config=ControlsConfig(post_input_delay_seconds=0.0),
+        capture_config=CaptureConfig(enabled=False),
+        execute_actions=True,
+        emergency_stop_key="f12",
+        available_skills=["approach_confirmed_vendor"],
+        control_mode=ControlMode.NATIVE_ASSISTED,
+    )
+    return environment, telemetry, controller
+
+
+def native_vendor_action(target_id: str = "entity-vendor") -> SkillAction:
+    return SkillAction(
+        name="approach_confirmed_vendor",
+        args={
+            "target_id": target_id,
+            "duration_seconds": 0.01,
+        },  # type: ignore[arg-type]
+    )
+
+
+def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        initial = await environment.reset()
+        command = CommandDispatchContext(
+            command_id="cmd-0123456789abcdef0123456789abcdef",
+            based_on_revision=initial.world_revision,
+        )
+
+        transition = await environment.dispatch(
+            native_vendor_action(),
+            command=command,
+        )
+
+        assert controller.request_seen_before_hotkey
+        assert controller.request is not None
+        assert controller.request.command_id == command.command_id
+        assert controller.request.based_on_revision == initial.world_revision
+        assert controller.request.selected_character_ids == ["entity-selected"]
+        assert controller.request.target_id == "entity-vendor"
+        assert [action.kind for action in controller.actions] == [
+            "hotkey",
+            "key",
+            "key",
+        ]
+        assert telemetry.paused is True
+        assert transition.receipt.accepted
+        assert transition.receipt.executed
+        assert transition.receipt.command_id == command.command_id
+        assert transition.receipt.causal_revision_advanced is True
+        assert transition.receipt.native_acknowledgement is not None
+        assert transition.receipt.native_acknowledgement.command_id == command.command_id
+        assert "acknowledgement 'accepted'" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_old_native_ack_cannot_satisfy_new_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            acknowledgement_command_id=("cmd-ffffffffffffffffffffffffffffffff"),
+        )
+        monkeypatch.setattr(
+            environment,
+            "_NATIVE_COMMAND_ACK_TIMEOUT_SECONDS",
+            0.03,
+        )
+        monkeypatch.setattr(environment, "_NATIVE_COMMAND_POLL_SECONDS", 0.005)
+        initial = await environment.reset()
+
+        with pytest.raises(RuntimeError, match="matching native acknowledgement"):
+            await environment.dispatch(
+                native_vendor_action(),
+                command=CommandDispatchContext(
+                    command_id="cmd-0123456789abcdef0123456789abcdef",
+                    based_on_revision=initial.world_revision,
+                ),
+            )
+
+        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_definitive_native_rejection_does_not_start_movement(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.REJECTED,
+        )
+        initial = await environment.reset()
+        command = CommandDispatchContext(
+            command_id="cmd-0123456789abcdef0123456789abcdef",
+            based_on_revision=initial.world_revision,
+        )
+
+        transition = await environment.dispatch(
+            native_vendor_action(),
+            command=command,
+        )
+
+        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert telemetry.paused is True
+        assert not transition.receipt.accepted
+        assert not transition.receipt.executed
+        assert transition.receipt.error_type == "NativeCommandRejected"
+        assert transition.receipt.command_id == command.command_id
+        assert (
+            transition.receipt.native_acknowledgement is not None
+            and transition.receipt.native_acknowledgement.status == NativeCommandStatus.REJECTED
+        )
+
+    asyncio.run(scenario())
+
+
+def test_native_target_must_still_match_current_stable_observation(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        initial = await environment.reset()
+
+        with pytest.raises(RuntimeError, match="absent from current nearby"):
+            await environment.dispatch(
+                native_vendor_action("entity-replaced"),
+                command=CommandDispatchContext(
+                    command_id="cmd-0123456789abcdef0123456789abcdef",
+                    based_on_revision=initial.world_revision,
+                ),
+            )
+
+        assert controller.actions == []
+        assert telemetry.paused is True
 
     asyncio.run(scenario())

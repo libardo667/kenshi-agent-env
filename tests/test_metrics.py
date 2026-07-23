@@ -25,11 +25,41 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
         },
         {
             "event_type": "action_receipt",
-            "payload": {"primitive_actions": 2, "dry_run": False, "executed": True},
+            "payload": {
+                "primitive_actions": 2,
+                "dry_run": False,
+                "executed": True,
+                "native_acknowledgement": {
+                    "command_id": "cmd-0123456789abcdef0123456789abcdef",
+                    "status": "accepted",
+                    "based_on_telemetry_sequence": 10,
+                    "acknowledged_at_telemetry_sequence": 11,
+                },
+            },
         },
         {
             "event_type": "observation",
-            "payload": {"telemetry_stale": True},
+            "payload": {
+                "telemetry_stale": True,
+                "telemetry": {
+                    "native_control": {
+                        "acknowledgements": [
+                            {
+                                "command_id": ("cmd-0123456789abcdef0123456789abcdef"),
+                                "status": "completed",
+                                "based_on_telemetry_sequence": 10,
+                                "acknowledged_at_telemetry_sequence": 11,
+                            },
+                            {
+                                "command_id": ("cmd-ffffffffffffffffffffffffffffffff"),
+                                "status": "rejected",
+                                "based_on_telemetry_sequence": 12,
+                                "acknowledged_at_telemetry_sequence": 14,
+                            },
+                        ]
+                    }
+                },
+            },
         },
         {
             "event_type": "safety_supervisor_preempted",
@@ -108,3 +138,10 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.options_failed == 0
     assert metrics.options_cancelled == 0
     assert metrics.option_success_percentage == 100.0
+    assert metrics.native_command_acknowledgements == 2
+    assert metrics.native_commands_accepted == 1
+    assert metrics.native_commands_completed == 1
+    assert metrics.native_commands_rejected == 1
+    assert metrics.native_commands_cancelled == 0
+    assert metrics.mean_native_ack_sequence_lag == 1.5
+    assert metrics.native_command_completion_percentage == 100.0

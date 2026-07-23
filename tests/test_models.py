@@ -46,9 +46,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
                 selected=True,
             )
         ],
-        nearby_entities=[
-            NearbyEntity(id="entity-vendor", name="Barman", kind="character")
-        ],
+        nearby_entities=[NearbyEntity(id="entity-vendor", name="Barman", kind="character")],
     )
 
     assert snapshot.identity_session_id == "session-process-1"
@@ -67,9 +65,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
             identity_session_id="session-process-1",
             capabilities=["identity.stable_handles"],
             squad=[CharacterState(id="entity-shared", name="Wanderer")],
-            nearby_entities=[
-                NearbyEntity(id="entity-shared", name="Barman", kind="character")
-            ],
+            nearby_entities=[NearbyEntity(id="entity-shared", name="Barman", kind="character")],
         )
 
 
@@ -176,3 +172,4 @@ def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> Non
     assert "plan.schema.json" in exported
     assert "plan_patch.schema.json" in exported
     assert "receipt.schema.json" in exported
+    assert "native_command_request.schema.json" in exported

@@ -10,6 +10,7 @@ from .config import PlanningConfig
 from .env import AgentEnvironment
 from .models import (
     ActivePlanContext,
+    CommandDispatchContext,
     ConditionEvaluation,
     ConditionResult,
     Observation,
@@ -311,16 +312,12 @@ class ContinuousPlanExecutor:
                             patched_plan = validate_future_plan_patch(
                                 step_result.staged_patch.patch,
                                 active_plan=plan,
-                                planner_observation=(
-                                    step_result.staged_patch.planner_observation
-                                ),
+                                planner_observation=(step_result.staged_patch.planner_observation),
                                 current_observation=observation,
                                 config=self.planning_config,
                                 macros=self.guard.macros,
                                 budget=budget,
-                                remaining_run_actions=(
-                                    remaining_run_actions - actions_completed
-                                ),
+                                remaining_run_actions=(remaining_run_actions - actions_completed),
                                 protected_step_ids=completed_step_ids,
                                 require_current_basis=False,
                             )
@@ -331,8 +328,7 @@ class ContinuousPlanExecutor:
                                 observation,
                                 step=step,
                                 reason=(
-                                    "Staged future patch failed post-option "
-                                    f"revalidation: {exc}"
+                                    f"Staged future patch failed post-option revalidation: {exc}"
                                 ),
                                 evidence={
                                     "patch": (
@@ -521,9 +517,7 @@ class ContinuousPlanExecutor:
         ):
             assert isinstance(action, SkillAction)
             movement_option = StatefulMovementOption(
-                option_id=(
-                    f"option-{plan.plan_id}-{plan.plan_version}-{step.step_id}"
-                ),
+                option_id=(f"option-{plan.plan_id}-{plan.plan_version}-{step.step_id}"),
                 action=action,
                 environment=self.environment,
             )
@@ -577,6 +571,10 @@ class ContinuousPlanExecutor:
             action_kind=action.kind,
             start_revision=action_start_revision,
         )
+        dispatch_context = CommandDispatchContext(
+            command_id=command.command_id,
+            based_on_revision=action_start_revision,
+        )
         step_deadline = self.clock.monotonic() + step.timeout_seconds
         self._event(
             "plan_step_started",
@@ -600,11 +598,15 @@ class ContinuousPlanExecutor:
                     step,
                     observation,
                     budget,
+                    dispatch_context,
                     remaining_run_actions=remaining_run_actions,
                     protected_step_ids=protected_step_ids,
                 )
             else:
-                transition = await self.environment.step(action)
+                transition = await self.environment.dispatch(
+                    action,
+                    command=dispatch_context,
+                )
         except asyncio.CancelledError:
             budget.commit()
             reason = (
@@ -677,6 +679,14 @@ class ContinuousPlanExecutor:
                 "The environment accepted or may have executed the dispatched action."
             )
         try:
+            if transition.receipt.command_id not in {
+                None,
+                command.command_id,
+            }:
+                raise CommandCausalityError(
+                    "Environment acknowledgement command ID does not match "
+                    f"active command {command.command_id!r}."
+                )
             latest = self.observe_transition(
                 plan,
                 step,
@@ -762,11 +772,11 @@ class ContinuousPlanExecutor:
                     observation=latest,
                     succeeded=True,
                     actions_completed=1,
-                reason="All success conditions are true on a later world revision.",
-                terminated=transition.terminated,
-                success=transition.success,
-                staged_patch=staged_patch,
-            )
+                    reason="All success conditions are true on a later world revision.",
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch,
+                )
             if transition.terminated:
                 return _StepResult(
                     observation=latest,
@@ -850,11 +860,12 @@ class ContinuousPlanExecutor:
         step: PlanStep,
         observation: Observation,
         budget: PlanBudgetLedger,
+        command: CommandDispatchContext,
         *,
         remaining_run_actions: int,
         protected_step_ids: set[str],
     ) -> tuple[Transition, _StagedPatch | None]:
-        option_task = option.start()
+        option_task = option.start(command)
         self._event(
             "option_started",
             plan,
@@ -884,9 +895,7 @@ class ContinuousPlanExecutor:
                         plan_version=plan.plan_version,
                         objective=plan.objective,
                         active_step_id=step.step_id,
-                        completed_step_ids=sorted(
-                            protected_step_ids - {step.step_id}
-                        ),
+                        completed_step_ids=sorted(protected_step_ids - {step.step_id}),
                         remaining_actions=budget.remaining_actions,
                     )
                 },
@@ -921,9 +930,7 @@ class ContinuousPlanExecutor:
                         budget,
                         remaining_run_actions=remaining_run_actions - 1,
                         protected_step_ids=protected_step_ids,
-                        planner_latency_seconds=(
-                            self.clock.monotonic() - planner_started_at
-                        ),
+                        planner_latency_seconds=(self.clock.monotonic() - planner_started_at),
                     )
                     planner_task = None
 
@@ -944,9 +951,7 @@ class ContinuousPlanExecutor:
                         },
                     )
                     update_task = (
-                        None
-                        if option_task.done()
-                        else asyncio.create_task(subscription.get())
+                        None if option_task.done() else asyncio.create_task(subscription.get())
                     )
 
             terminal = option.poll()
@@ -1052,9 +1057,7 @@ class ContinuousPlanExecutor:
                 payload={
                     "source": "concurrent_option_error",
                     "planner_latency_seconds": planner_latency_seconds,
-                    "world_revision": (
-                        planner_observation.world_revision.model_dump(mode="json")
-                    ),
+                    "world_revision": (planner_observation.world_revision.model_dump(mode="json")),
                     "control_mode": planner_observation.control_mode.value,
                     "output_type": "error",
                 },
@@ -1086,8 +1089,7 @@ class ContinuousPlanExecutor:
                 self.state_store.latest or planner_observation,
                 step=step,
                 reason=(
-                    "Concurrent option planning accepts only a future-only "
-                    "PlanPatch advisory."
+                    "Concurrent option planning accepts only a future-only PlanPatch advisory."
                 ),
                 evidence={"output_type": type(output).__name__},
             )
