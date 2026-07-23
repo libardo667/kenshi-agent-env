@@ -15,13 +15,17 @@ and game-integration failures.
 
 - A deterministic Kenshi-like mock environment with the same `reset`, `observe`,
   `step`, and `close` interface used by live mode.
-- Strict action, telemetry, observation, decision, receipt, and memory schemas.
+- Strict action, telemetry, observation, single-step decision, bounded plan,
+  plan-patch, receipt, and memory schemas.
 - A heuristic baseline that can complete the bundled one-day survival mock
   benchmark.
 - Scripted and subprocess planner adapters.
 - An optional OpenAI vision planner using screenshot plus structured telemetry.
 - SQLite autobiographical memory and append-only JSONL run logs.
 - Replay summaries and JSON Schema export.
+- Feature-flagged continuous planning for mock/fake environments: one strategic
+  call can authorize a bounded, revision-checked multi-action plan while the
+  executor owns branches, retries, budgets, cancellation, and verification.
 - A Windows client-area screenshot and SendInput controller.
 - Two independent gates before real keyboard or mouse input is allowed.
 - Typed `interface_only` and `native_assisted` control modes, with an additional
@@ -80,6 +84,33 @@ Summarize a run with:
 kenshi-agent summarize runs\<RUN_ID>\events.jsonl
 ```
 
+### Continuous mock proof
+
+`single_step` remains the default regression path. To exercise the first
+continuous-planning slice without changing YAML:
+
+```powershell
+kenshi-agent run `
+  --config config/default.yaml `
+  --mode mock `
+  --planner heuristic `
+  --planning-mode continuous `
+  --steps 2
+```
+
+The heuristic returns one two-step `PlanEnvelope` (`pause=false`, then
+`speed=3`). Before each action, deterministic code rechecks the plan assumptions,
+capabilities, typed preconditions, control mode, and remaining budgets, then
+uses the same `ActionGuard` and environment path as `single_step`. A
+postcondition counts only on a later telemetry revision. Changed, unknown,
+unavailable, or stale preconditions cancel the future action instead of being
+treated as false or silently repaired.
+
+Continuous mode is intentionally restricted to mock and fake event-driven
+environments in this slice. It is not a claim of live Kenshi continuity.
+The complete executor and condition contract is recorded in
+[Continuous planning](docs/CONTINUOUS_PLANNING.md).
+
 ## Planner options
 
 ### Heuristic baseline
@@ -93,7 +124,9 @@ kenshi-agent run --config config/default.yaml --planner heuristic --steps 40
 
 ### Scripted policy
 
-Each non-comment line is one complete `PlannerDecision` JSON object.
+In `single_step`, each non-comment line is one complete `PlannerDecision` JSON
+object. Continuous scripts may contain a `PlanEnvelope`; `PlanPatch` parsing is
+versioned now, while active-plan patch application is deferred.
 
 ```powershell
 kenshi-agent run `
@@ -106,9 +139,9 @@ kenshi-agent run `
 ### External subprocess
 
 The runtime writes one `Observation` JSON line to the child process's stdin. The
-child must write one `PlannerDecision` JSON object to stdout and exit zero. This
-is the cleanest connector for a coding-agent harness, local model, or custom
-orchestrator.
+child must write one `PlannerDecision` JSON object in `single_step`, or one
+`PlanEnvelope` in `continuous`, to stdout and exit zero. This is the cleanest
+connector for a coding-agent harness, local model, or custom orchestrator.
 
 ```powershell
 kenshi-agent run `
@@ -151,9 +184,11 @@ OpenRouter is also supported through its OpenAI-compatible Chat API. Add
 routing is sorted by latency and requires structured-output support. Override
 the sort with `KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`.
 
-The planner receives a bounded JSON observation, including its control mode and
-only the skills legal in that mode, plus a base64 image when enabled. It returns
-a validated `PlannerDecision`; it does not call input APIs itself.
+The planner receives a bounded JSON observation, including planning mode,
+control mode, exact world revision, and only the skills legal in that mode,
+plus a base64 image when enabled. It returns a validated `PlannerDecision` in
+`single_step` or a bounded `PlanEnvelope` in `continuous`; it does not call input
+APIs itself.
 
 ### Live decision overlay
 
@@ -412,6 +447,9 @@ then present the result as general play ability.
 - UI skills beyond ordinary configurable key macros require calibration and
   screenshot-grounded confirmation.
 - The OpenAI planner is optional and untested against a live game session.
+- Continuous execution currently has no independent observation pump,
+  planner/executor overlap, live movement option, or active patch application;
+  those are later milestones.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.
