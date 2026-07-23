@@ -88,6 +88,7 @@ safety:
     - pause_game
     - focus_selected
     - close_overlay
+    - clear_item_highlights
     - zoom_world_in
     - zoom_world_out
     - survey_camera_up
@@ -179,6 +180,13 @@ macros:
     actions:
       - kind: key
         key: escape
+  clear_item_highlights:
+    description: Clear a stuck world-item highlight state with one complete Left Alt press and release.
+    visual_precondition: The normal 3D world HUD is visible and item-name labels remain visible even though Alt is not physically held.
+    actions:
+      - kind: key
+        key: alt
+        hold_seconds: 0.04
   zoom_world_in:
     description: Zoom the 3D world camera in one bounded wheel step at the demonstrated central viewport point.
     visual_precondition: The normal 3D world HUD is visible with no map, dialogue, trade window, or other modal overlay.
