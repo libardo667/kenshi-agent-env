@@ -107,6 +107,9 @@ class LiveEnvironment(AgentEnvironment):
         events: list[str] = []
         if self.execute_actions and self.controller.continuous_user_input_detected():
             events.append("human_input_detected")
+            diagnostic = self.controller.continuous_user_input_diagnostic()
+            if diagnostic is not None:
+                events.append(diagnostic)
         if self.controller.emergency_stop_pressed(self.emergency_stop_key):
             events.append("emergency_stop_detected")
         telemetry_snapshot = None
