@@ -75,7 +75,8 @@ class CaptureConfig(ConfigModel):
 
 class ControlsConfig(ConfigModel):
     pause_key: str = "space"
-    speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "1", 2: "2", 3: "3"})
+    pause_skill: str | None = Field(default=None, min_length=1, max_length=80)
+    speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "f2", 2: "f3", 3: "f4"})
     focus_before_input: bool = True
     post_input_delay_seconds: float = Field(default=0.08, ge=0.0, le=2.0)
     polite_input_enabled: bool = True
@@ -84,6 +85,11 @@ class ControlsConfig(ConfigModel):
     restore_foreground_after_input: bool = True
     restore_cursor_after_input: bool = True
     alt_tab_after_input: bool = True
+    pointer_mode: Literal["absolute", "relative"] = "absolute"
+    relative_pointer_max_step_pixels: int = Field(default=12, ge=1, le=100)
+    relative_pointer_tolerance_pixels: int = Field(default=1, ge=0, le=10)
+    relative_pointer_settle_seconds: float = Field(default=0.006, ge=0.0, le=0.1)
+    relative_pointer_max_attempts: int = Field(default=500, ge=1, le=2000)
 
     @field_validator("speed_keys")
     @classmethod

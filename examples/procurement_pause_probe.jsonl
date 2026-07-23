@@ -1,0 +1,1 @@
+{"intent":"Return the live game to a safe deliberation state.","rationale":"The game is visibly running, so click its calibrated pause transport before further work.","action":{"kind":"skill","name":"pause_game","args":{}},"confidence":1.0,"memory_writes":[]}

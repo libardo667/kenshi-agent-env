@@ -60,10 +60,17 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "zoom_map_in",
         "zoom_map_out",
         "open_inventory",
+        "pause_game",
         "focus_selected",
         "close_overlay",
         "zoom_world_in",
         "zoom_world_out",
+        "survey_camera_up",
+        "survey_camera_down",
+        "survey_camera_left",
+        "survey_camera_right",
+        "survey_camera_rotate_left",
+        "survey_camera_rotate_right",
         "move_visible_terrain",
         "move_on_map",
         "interact_visible_person",
@@ -72,6 +79,11 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.openrouter_provider_sort == "latency"
     assert config.controls.alt_tab_after_input
+    assert config.controls.pause_skill == "pause_game"
+    assert config.controls.speed_keys == {1: "f2", 2: "f3", 3: "f4"}
+    assert config.controls.pointer_mode == "relative"
+    assert config.controls.relative_pointer_max_step_pixels == 12
+    assert config.controls.relative_pointer_tolerance_pixels == 1
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
     assert not config.safety.allow_live_unpause_actions
@@ -88,8 +100,9 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.macros["move_on_map"].movement_pulse_max_seconds == 8.0
     assert len(config.macros["move_on_map"].actions) == 2
     focus_actions = config.macros["focus_selected"].parsed_actions()
-    assert len(focus_actions) == 1
-    assert focus_actions[0].kind == "click"
+    assert [action.kind for action in focus_actions] == ["click"]
+    assert focus_actions[0].x == 0.349
+    assert focus_actions[0].y == 0.906
     assert focus_actions[0].clicks == 2
     assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
     zoom_in = config.macros["zoom_map_in"].parsed_actions()[0]
@@ -102,6 +115,18 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert world_zoom_out.x == 0.503
     assert world_zoom_out.y == 0.523
     assert world_zoom_out.notches == -1
+    survey_left = config.macros["survey_camera_left"].parsed_actions()
+    assert [action.kind for action in survey_left] == ["click", "key"]
+    assert survey_left[0].x == 0.349
+    assert survey_left[0].clicks == 2
+    assert survey_left[1].key == "a"
+    assert survey_left[1].hold_seconds == 0.08
+    rotate_right = config.macros["survey_camera_rotate_right"].parsed_actions()
+    assert [action.kind for action in rotate_right] == ["click", "key"]
+    assert rotate_right[0].x == 0.349
+    assert rotate_right[0].clicks == 2
+    assert rotate_right[1].key == "e"
+    assert rotate_right[1].hold_seconds == 0.1
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:

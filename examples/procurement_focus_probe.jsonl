@@ -1,1 +1,1 @@
-{"intent":"Recover a clear view of Lekko before looking for a trader.","rationale":"A bounded double-click on Lekko's first squad portrait is the calibrated camera-recovery action.","action":{"kind":"skill","name":"focus_selected","args":{}},"confidence":1.0,"memory_writes":[]}
+{"intent":"Recover a clear view of Lekko before looking for a trader.","rationale":"Kenshi's documented portrait double-click both selects Lekko and centers the camera without depending on keyboard focus.","action":{"kind":"skill","name":"focus_selected","args":{}},"confidence":1.0,"memory_writes":[]}

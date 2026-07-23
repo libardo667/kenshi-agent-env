@@ -42,10 +42,11 @@ capture:
 
 controls:
   pause_key: space
+  pause_skill: pause_game
   speed_keys:
-    1: "1"
-    2: "2"
-    3: "3"
+    1: f2
+    2: f3
+    3: f4
   focus_before_input: true
   post_input_delay_seconds: 0.10
   polite_input_enabled: true
@@ -54,6 +55,13 @@ controls:
   restore_foreground_after_input: true
   restore_cursor_after_input: true
   alt_tab_after_input: true
+  # Kenshi ignores absolute cursor teleports while it owns the mouse. Small
+  # relative SendInput corrections keep its drawn cursor synchronized.
+  pointer_mode: relative
+  relative_pointer_max_step_pixels: 12
+  relative_pointer_tolerance_pixels: 1
+  relative_pointer_settle_seconds: 0.006
+  relative_pointer_max_attempts: 500
 
 safety:
   # This profile permits only the audited skills below. The CLI must still
@@ -77,10 +85,17 @@ safety:
     - zoom_map_in
     - zoom_map_out
     - open_inventory
+    - pause_game
     - focus_selected
     - close_overlay
     - zoom_world_in
     - zoom_world_out
+    - survey_camera_up
+    - survey_camera_down
+    - survey_camera_left
+    - survey_camera_right
+    - survey_camera_rotate_left
+    - survey_camera_rotate_right
     - move_visible_terrain
     - move_on_map
     - interact_visible_person
@@ -93,10 +108,19 @@ memory:
 
 macros:
   pause_game:
-    description: Toggle pause through the normal interface.
+    description: Click Kenshi's visible pause transport button.
+    visual_precondition: The normal bottom HUD is visible and its transport controls are unobstructed.
+    normalized_pointer_bounds:
+      min_x: 0.75
+      max_x: 0.78
+      min_y: 0.70
+      max_y: 0.75
     actions:
-      - kind: key
-        key: space
+      - kind: click
+        x: 0.765
+        y: 0.723
+        space: normalized
+        button: left
   open_map:
     description: Open or close the map.
     actions:
@@ -136,8 +160,8 @@ macros:
       - kind: key
         key: i
   focus_selected:
-    description: Select and center the first squad member by double-clicking the first squad portrait.
-    visual_precondition: The normal world HUD is visible and the first squad portrait occupies its calibrated bottom portrait slot.
+    description: Center the 3D camera by double-clicking Lekko's calibrated squad portrait.
+    visual_precondition: The normal world HUD is visible, Lekko occupies the first portrait slot, and no modal overlay is open.
     normalized_pointer_bounds:
       min_x: 0.31
       max_x: 0.39
@@ -183,6 +207,84 @@ macros:
         y: 0.523
         space: normalized
         notches: -1
+  survey_camera_up:
+    description: Recenter on the selected squad member, then pan the paused 3D camera one bounded screen-up step.
+    visual_precondition: The normal 3D world HUD is visible, the intended squad member is selected, and no modal overlay is open.
+    actions:
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
+      - kind: key
+        key: w
+        hold_seconds: 0.08
+  survey_camera_down:
+    description: Recenter on the selected squad member, then pan the paused 3D camera one bounded screen-down step.
+    visual_precondition: The normal 3D world HUD is visible, the intended squad member is selected, and no modal overlay is open.
+    actions:
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
+      - kind: key
+        key: s
+        hold_seconds: 0.08
+  survey_camera_left:
+    description: Recenter on the selected squad member, then pan the paused 3D camera one bounded screen-left step.
+    visual_precondition: The normal 3D world HUD is visible, the intended squad member is selected, and no modal overlay is open.
+    actions:
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
+      - kind: key
+        key: a
+        hold_seconds: 0.08
+  survey_camera_right:
+    description: Recenter on the selected squad member, then pan the paused 3D camera one bounded screen-right step.
+    visual_precondition: The normal 3D world HUD is visible, the intended squad member is selected, and no modal overlay is open.
+    actions:
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
+      - kind: key
+        key: d
+        hold_seconds: 0.08
+  survey_camera_rotate_left:
+    description: Recenter on the selected squad member, then rotate the paused 3D camera one bounded step to the left.
+    visual_precondition: The normal 3D world HUD is visible, the intended squad member is selected, and no modal overlay is open.
+    actions:
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
+      - kind: key
+        key: q
+        hold_seconds: 0.1
+  survey_camera_rotate_right:
+    description: Recenter on the selected squad member, then rotate the paused 3D camera one bounded step to the right.
+    visual_precondition: The normal 3D world HUD is visible, the intended squad member is selected, and no modal overlay is open.
+    actions:
+      - kind: click
+        x: 0.349
+        y: 0.906
+        space: normalized
+        button: left
+        clicks: 2
+      - kind: key
+        key: e
+        hold_seconds: 0.1
   move_visible_terrain:
     description: Fine movement by right-clicking nearby visible terrain, advancing briefly, and returning paused.
     arguments:

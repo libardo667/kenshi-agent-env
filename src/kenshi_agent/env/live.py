@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
-from ..control.base import InputController
+from ..control.base import InputController, PrimitiveInputAction
 from ..control.capture import WindowCapture
 from ..models import (
     Action,
@@ -232,17 +232,19 @@ class LiveEnvironment(AgentEnvironment):
                 raise RuntimeError(
                     "Refusing to toggle Kenshi pause because the current pause state is unknown."
                 )
-            primitive = KeyAction(key=self.controls_config.pause_key)
-            primitive_receipt = await self.controller.execute(primitive)
-            return primitive_receipt.model_copy(
-                update={
-                    "action": action,
-                    "message": (
-                        f"Pressed {self.controls_config.pause_key!r} to request "
-                        f"paused={action.paused}. "
-                        "A later observation must confirm the state."
-                    ),
-                }
+            primitive_count, pause_control = await self._execute_pause_toggle()
+            return ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=primitive_count,
+                message=(
+                    f"Used {pause_control} to request paused={action.paused}. "
+                    "A later observation must confirm the state."
+                ),
             )
         if isinstance(action, SetSpeedAction):
             primitive = KeyAction(key=self.controls_config.speed_keys[action.speed])
@@ -304,6 +306,34 @@ class LiveEnvironment(AgentEnvironment):
             messages.append(primitive_receipt.message)
         return primitive_count, messages
 
+    def _pause_primitives(self) -> tuple[list[PrimitiveInputAction], str]:
+        if self.controls_config.pause_skill is None:
+            return [KeyAction(key=self.controls_config.pause_key)], (
+                f"pause key {self.controls_config.pause_key!r}"
+            )
+        skill_name = self.controls_config.pause_skill
+        primitives = self.macros.expand(SkillAction(name=skill_name))
+        if not primitives or not all(
+            isinstance(item, (KeyAction, ClickAction)) for item in primitives
+        ):
+            raise RuntimeError(
+                f"Configured pause skill {skill_name!r} must contain only key or click actions."
+            )
+        pause_primitives: list[PrimitiveInputAction] = []
+        pause_primitives.extend(
+            item for item in primitives if isinstance(item, (KeyAction, ClickAction))
+        )
+        return pause_primitives, f"pause skill {skill_name!r}"
+
+    async def _execute_pause_toggle(self, *, safety: bool = False) -> tuple[int, str]:
+        primitives, description = self._pause_primitives()
+        primitive_count = 0
+        for primitive in primitives:
+            execute = self.controller.execute_safety if safety else self.controller.execute
+            receipt = await execute(primitive)
+            primitive_count += receipt.primitive_actions
+        return primitive_count, description
+
     async def _execute_movement_pulse(
         self,
         action: SkillAction,
@@ -322,15 +352,14 @@ class LiveEnvironment(AgentEnvironment):
             )
 
         primitive_count, messages = await self._execute_skill_primitives(action)
-        pause_key = KeyAction(key=self.controls_config.pause_key)
         unpause_sent = False
         emergency_stop = False
         user_interrupted = False
         auto_paused = False
         try:
-            unpause_receipt = await self.controller.execute(pause_key)
+            unpause_count, _ = await self._execute_pause_toggle()
             unpause_sent = True
-            primitive_count += unpause_receipt.primitive_actions
+            primitive_count += unpause_count
             if not await self._wait_for_pause_state(False):
                 if self._fresh_pause_state() is True:
                     unpause_sent = False
@@ -354,12 +383,12 @@ class LiveEnvironment(AgentEnvironment):
                 await asyncio.sleep(min(0.1, remaining))
         finally:
             if unpause_sent:
-                pause_receipt = await self.controller.execute_safety(pause_key)
-                primitive_count += pause_receipt.primitive_actions
+                pause_count, _ = await self._execute_pause_toggle(safety=True)
+                primitive_count += pause_count
                 if not await self._wait_for_pause_state(True):
                     if self._fresh_pause_state() is False:
-                        retry_receipt = await self.controller.execute_safety(pause_key)
-                        primitive_count += retry_receipt.primitive_actions
+                        retry_count, _ = await self._execute_pause_toggle(safety=True)
+                        primitive_count += retry_count
                     if not await self._wait_for_pause_state(True):
                         raise RuntimeError(
                             "Movement pulse ended but Kenshi did not confirm re-paused state."
@@ -381,9 +410,7 @@ class LiveEnvironment(AgentEnvironment):
             started_at=started,
             finished_at=datetime.now(UTC),
             primitive_actions=primitive_count,
-            message=(
-                f"Executed skill {action.name!r}. {outcome} " + " ".join(messages)
-            ),
+            message=(f"Executed skill {action.name!r}. {outcome} " + " ".join(messages)),
         )
 
     async def _wait_for_pause_state(self, expected: bool, *, timeout_seconds: float = 3.0) -> bool:

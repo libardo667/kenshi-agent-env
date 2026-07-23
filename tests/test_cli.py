@@ -60,6 +60,54 @@ def test_console_safe_escapes_characters_missing_from_stdout_encoding(monkeypatc
     assert cli._console_safe("spinner ⠸") == r"spinner \u2838"
 
 
+def test_exclusive_input_session_keeps_kenshi_foreground() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    args = SimpleNamespace(exclusive_input_session=True, execute_live_actions=True)
+
+    options = cli._controller_kwargs(config, args)
+
+    assert options["polite_input_enabled"] is False
+    assert options["restore_foreground_after_input"] is False
+    assert options["restore_cursor_after_input"] is False
+    assert options["alt_tab_after_input"] is False
+    assert options["pointer_mode"] == "relative"
+
+
+def test_exclusive_input_session_requires_live_execution_gate() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    args = SimpleNamespace(exclusive_input_session=True, execute_live_actions=False)
+
+    with pytest.raises(SystemExit, match="requires --execute-live-actions"):
+        cli._controller_kwargs(config, args)
+
+
+def test_shared_input_session_preserves_configured_polite_controls() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    config = config.model_copy(
+        update={"controls": config.controls.model_copy(update={"pointer_mode": "absolute"})}
+    )
+    args = SimpleNamespace(exclusive_input_session=False, execute_live_actions=True)
+
+    options = cli._controller_kwargs(config, args)
+
+    assert options["polite_input_enabled"] is True
+    assert options["restore_foreground_after_input"] is True
+    assert options["restore_cursor_after_input"] is True
+    assert options["alt_tab_after_input"] is True
+
+
+def test_relative_pointer_requires_exclusive_live_session() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    args = SimpleNamespace(exclusive_input_session=False, execute_live_actions=True)
+
+    with pytest.raises(SystemExit, match="relative requires --exclusive-input-session"):
+        cli._controller_kwargs(config, args)
+
+
 def test_live_doctor_rejects_stale_telemetry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

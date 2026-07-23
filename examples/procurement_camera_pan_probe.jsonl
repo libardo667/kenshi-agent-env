@@ -1,0 +1,1 @@
+{"intent":"Inspect the town sector to Lekko's screen-left from a stable anchor.","rationale":"The whole-town overview is clear; recentering on Lekko before one bounded leftward camera pan tests the local survey operation without moving the character.","action":{"kind":"skill","name":"survey_camera_left","args":{}},"confidence":1.0,"memory_writes":[]}
