@@ -94,6 +94,9 @@ size. Both values are null and the capability is absent if either lifecycle
 hook fails.
 
 `control.approach_vendor` is a narrowly constrained native control capability.
+The plugin may emit it, but `LiveEnvironment` removes it and resets
+`native_control` before constructing an `interface_only` observation. It is
+planner-visible only in an explicitly configured `native_assisted` run.
 The plugin responds to its private `Ctrl+Shift+F10` bridge only on the game/UI
 thread, re-enumerates nearby characters, and selects the nearest conscious,
 non-hostile humanoid whose platoon has a vendor list, who is that platoon's

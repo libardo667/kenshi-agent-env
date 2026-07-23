@@ -5,6 +5,7 @@ param(
     [ValidateSet("openai", "openrouter")]
     [string]$Planner = "openai",
     [switch]$ExecuteLiveActions,
+    [switch]$AcknowledgeNativeAssistedControl,
     [ValidateRange(0.25, 1.0)]
     [double]$Opacity = 0.82,
     [ValidateRange(0, 3600)]
@@ -53,6 +54,12 @@ $runArgs = @(
 )
 if ($ExecuteLiveActions) {
     $runArgs += "--execute-live-actions"
+}
+if ($AcknowledgeNativeAssistedControl) {
+    if (-not $ExecuteLiveActions) {
+        throw "-AcknowledgeNativeAssistedControl requires -ExecuteLiveActions."
+    }
+    $runArgs += "--acknowledge-native-assisted-control"
 }
 
 try {

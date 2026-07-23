@@ -6,6 +6,11 @@ non-hostile trader, then return control with the game paused. The controller
 must prefer declining or stopping over guessing at a person, dialogue option,
 item, or price.
 
+The proven approach path is a `native_assisted` workflow because step 3 issues
+an internal `PLAYER_TALK_TO` order. It is not interface-only evidence. The
+interface-only alternative remains the guarded visible-person interaction and
+has not completed this end-to-end proof.
+
 ## Intended loop
 
 1. **Recover the camera.** Double-click the first selected squad portrait to
@@ -23,7 +28,7 @@ item, or price.
 6. **Verify and stop.** Require fresh telemetry to confirm the money change and,
    where available, the selected character's food-item count. Return paused.
 
-All six stages have now passed one supervised live run. This is a narrow proof
+All six stages have now passed one supervised native-assisted live run. This is a narrow proof
 for the current 1920x1080 HUD, Hub Barman dialogue, and Barman grid—not a claim
 that arbitrary traders or resolutions are calibrated.
 
@@ -107,6 +112,8 @@ the UI thread, repeats the vendor-role and disposition checks, and calls
 `newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, ...)` with the target handle,
 indoor building, and position. Kenshi—not screen-coordinate guesswork—therefore
 owns the route through the bar door and interior.
+The macro is marked `requires_native_assisted`; interface-only observations omit
+both the skill and its `control.approach_vendor` capability.
 
 ## Interaction safety
 

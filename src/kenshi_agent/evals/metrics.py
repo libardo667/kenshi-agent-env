@@ -9,6 +9,7 @@ from typing import TypedDict
 
 
 class _MetricValues(TypedDict):
+    control_mode: str | None
     decisions: int
     reflex_decisions: int
     planner_errors: int
@@ -27,6 +28,7 @@ class _MetricValues(TypedDict):
 
 @dataclass(frozen=True, slots=True)
 class LogMetrics:
+    control_mode: str | None = None
     decisions: int = 0
     reflex_decisions: int = 0
     planner_errors: int = 0
@@ -49,6 +51,7 @@ class LogMetrics:
 def evaluate_log(path: Path) -> LogMetrics:
     planner_latencies: list[float] = []
     values: _MetricValues = {
+        "control_mode": None,
         "decisions": 0,
         "reflex_decisions": 0,
         "planner_errors": 0,
@@ -69,7 +72,12 @@ def evaluate_log(path: Path) -> LogMetrics:
             record = json.loads(line)
             event_type = record.get("event_type")
             payload = record.get("payload") or {}
-            if event_type == "decision":
+            if event_type == "run_started":
+                control_mode = payload.get("control_mode")
+                values["control_mode"] = (
+                    str(control_mode) if control_mode is not None else None
+                )
+            elif event_type == "decision":
                 values["decisions"] += 1
                 source = payload.get("source")
                 if source == "reflex":
@@ -95,6 +103,9 @@ def evaluate_log(path: Path) -> LogMetrics:
             elif event_type == "memory_written":
                 values["memory_writes"] += 1
             elif event_type == "run_finished":
+                control_mode = payload.get("control_mode")
+                if control_mode is not None:
+                    values["control_mode"] = str(control_mode)
                 values["success"] = payload.get("success")
                 values["steps_completed"] = payload.get("steps_completed")
                 values["stop_reason"] = payload.get("stop_reason")

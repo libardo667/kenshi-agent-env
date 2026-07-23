@@ -3,6 +3,7 @@ import pytest
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
 from kenshi_agent.models import (
     ClickAction,
+    ControlMode,
     CoordinateSpace,
     GameState,
     KeyAction,
@@ -128,6 +129,57 @@ def test_live_skill_must_be_configured_and_allowlisted() -> None:
     observation = Observation(run_id="run", step_index=0, mode="live")
     action = guard.validate(SkillAction(name="open_map"), observation)
     assert action.kind == "skill"
+
+
+def test_interface_only_guard_rejects_native_assisted_skill() -> None:
+    config = safety_config().model_copy(
+        update={"allow_skills": ["approach_confirmed_vendor"]}
+    )
+    macros = MacroRegistry(
+        {
+            "approach_confirmed_vendor": MacroConfig(
+                requires_native_assisted=True,
+                actions=[{"kind": "hotkey", "keys": ["ctrl", "shift", "f10"]}],
+            )
+        }
+    )
+    observation = Observation(run_id="run", step_index=0, mode="live")
+
+    with pytest.raises(SafetyViolation, match="requires native_assisted"):
+        ActionGuard(config, macros, control_mode=ControlMode.INTERFACE_ONLY).validate(
+            SkillAction(name="approach_confirmed_vendor"),
+            observation,
+        )
+
+
+def test_native_assisted_guard_accepts_marked_skill_only_for_matching_observation() -> None:
+    config = safety_config().model_copy(
+        update={"allow_skills": ["approach_confirmed_vendor"]}
+    )
+    macros = MacroRegistry(
+        {
+            "approach_confirmed_vendor": MacroConfig(
+                requires_native_assisted=True,
+                actions=[{"kind": "hotkey", "keys": ["ctrl", "shift", "f10"]}],
+            )
+        }
+    )
+    guard = ActionGuard(config, macros, control_mode=ControlMode.NATIVE_ASSISTED)
+    action = SkillAction(name="approach_confirmed_vendor")
+
+    with pytest.raises(SafetyViolation, match="control mode"):
+        guard.validate(action, Observation(run_id="run", step_index=0, mode="live"))
+
+    accepted = guard.validate(
+        action,
+        Observation(
+            run_id="run",
+            step_index=0,
+            mode="live",
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        ),
+    )
+    assert accepted == action
 
 
 def test_allowlisted_skill_can_expand_to_a_blocked_top_level_primitive() -> None:

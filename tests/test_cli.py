@@ -9,7 +9,7 @@ import pytest
 
 from kenshi_agent import cli
 from kenshi_agent.config import load_config
-from kenshi_agent.models import TelemetrySnapshot
+from kenshi_agent.models import ControlMode, TelemetrySnapshot
 from kenshi_agent.telemetry import write_snapshot_atomic
 
 
@@ -120,6 +120,38 @@ def test_relative_pointer_requires_exclusive_live_session() -> None:
 
     with pytest.raises(SystemExit, match="relative requires --exclusive-input-session"):
         cli._controller_kwargs(config, args)
+
+
+def test_native_assisted_execution_requires_dedicated_cli_acknowledgement() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    args = SimpleNamespace(
+        execute_live_actions=True,
+        acknowledge_native_assisted_control=False,
+    )
+
+    with pytest.raises(SystemExit, match="acknowledge-native-assisted-control"):
+        cli._live_actions_enabled(config, args)
+
+    args.acknowledge_native_assisted_control = True
+    assert cli._live_actions_enabled(config, args)
+
+
+def test_interface_only_execution_never_requires_native_acknowledgement() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.example.yaml")
+    config = config.model_copy(
+        update={
+            "safety": config.safety.model_copy(update={"live_actions_enabled": True})
+        }
+    )
+    args = SimpleNamespace(
+        execute_live_actions=True,
+        acknowledge_native_assisted_control=False,
+    )
+
+    assert config.control.mode == ControlMode.INTERFACE_ONLY
+    assert cli._live_actions_enabled(config, args)
 
 
 def test_live_doctor_rejects_stale_telemetry(

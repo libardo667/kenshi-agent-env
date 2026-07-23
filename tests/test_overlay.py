@@ -34,3 +34,25 @@ def test_format_event_renders_decision_for_overlay() -> None:
 
 def test_format_event_ignores_observations() -> None:
     assert format_event({"event_type": "observation", "payload": {}}) is None
+
+
+def test_format_event_labels_control_mode_in_run_lifecycle() -> None:
+    started = format_event(
+        {
+            "event_type": "run_started",
+            "payload": {"max_steps": 4, "control_mode": "native_assisted"},
+        }
+    )
+    finished = format_event(
+        {
+            "event_type": "run_finished",
+            "payload": {
+                "steps_completed": 2,
+                "control_mode": "native_assisted",
+                "stop_reason": "done",
+            },
+        }
+    )
+
+    assert started is not None and "CONTROL native_assisted" in started
+    assert finished is not None and "CONTROL native_assisted" in finished

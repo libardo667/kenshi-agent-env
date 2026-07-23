@@ -1,5 +1,6 @@
 id: one-day-survival-v1
 title: Survive one in-game day without reloading
+control_mode: interface_only
 initial_instruction: >-
   Keep the starting character alive for one in-game day. You may choose any
   lawful or unlawful strategy, but you may not load an earlier save.

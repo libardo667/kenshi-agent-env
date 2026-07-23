@@ -7,6 +7,7 @@ from .config import SafetyConfig
 from .models import (
     Action,
     ClickAction,
+    ControlMode,
     CoordinateSpace,
     MoveCursorAction,
     Observation,
@@ -23,16 +24,36 @@ class SafetyViolation(RuntimeError):
 
 
 class ActionGuard:
-    def __init__(self, config: SafetyConfig, macros: MacroRegistry) -> None:
+    def __init__(
+        self,
+        config: SafetyConfig,
+        macros: MacroRegistry,
+        *,
+        control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+    ) -> None:
         self.config = config
         self.macros = macros
+        self.control_mode = control_mode
         self._action_times: deque[float] = deque()
         self._purchase_count = 0
 
     def validate(self, action: Action, observation: Observation) -> Action:
+        if observation.mode == "live" and observation.control_mode != self.control_mode:
+            raise SafetyViolation(
+                f"Observation control mode {observation.control_mode.value!r} does not match "
+                f"guard control mode {self.control_mode.value!r}."
+            )
         self._validate_action_constraints(action, observation)
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
+            if (
+                self.macros.has(action.name)
+                and self.macros.requires_native_assisted(action.name)
+                and self.control_mode != ControlMode.NATIVE_ASSISTED
+            ):
+                raise SafetyViolation(
+                    f"Skill {action.name!r} requires native_assisted control mode."
+                )
             if action.name not in self.config.allow_skills and observation.mode == "live":
                 raise SafetyViolation(f"Skill {action.name!r} is not allowlisted for live use.")
             if observation.mode == "live" and not self.macros.has(action.name):

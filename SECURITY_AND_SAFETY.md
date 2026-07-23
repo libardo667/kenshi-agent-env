@@ -7,6 +7,17 @@ Live actions require both `safety.live_actions_enabled: true` in configuration
 and the CLI flag `--execute-live-actions`. Dry-run is the default. F12 is the
 default emergency-stop key and is checked before every primitive action.
 
+`interface_only` is the default control mode. It removes `control.*`
+capabilities and native command acknowledgement state from planner
+observations, omits marked native-assisted skills, and rejects those skills in
+both `ActionGuard` and `LiveEnvironment`.
+
+`native_assisted` permits only skills explicitly marked
+`requires_native_assisted`. Executing that mode requires
+`control.native_assisted_actions_enabled: true` and
+`--acknowledge-native-assisted-control` in addition to the normal two
+live-action gates. Logs, receipts, overlays, and summaries carry the mode.
+
 The Windows controller uses a polite input lease by default. It waits for a
 configurable idle interval before capture or input, records foreground/cursor
 state, and Alt+Tabs away from Kenshi before restoring the cursor after actions.
@@ -20,10 +31,11 @@ one as administrator and the other normally. Keep the Kenshi window title
 filter narrow. Close applications containing secrets before live tests. Start
 with a disposable save and a fixed resolution/UI scale.
 
-The native plugin is read-only by design. It may inspect game objects and write
-telemetry, but it must never issue player orders, alter health, teleport units,
-change money, modify factions, or invoke save/load. All player actions must be
-visible keyboard/mouse operations through the ordinary interface.
+The plugin's telemetry path is observational, but the DLL is not globally
+read-only: in native-assisted mode its bounded vendor bridge may issue a
+`PLAYER_TALK_TO` player order. No mode permits health, position, money, faction,
+save/load, or arbitrary task mutation. Interface-only actions remain visible
+keyboard/mouse operations through the ordinary UI.
 
 Do not read Kenshi or MyGUI object state from a worker thread. Sample game state
 on a known game/UI thread, copy it into plain data, and only then hand it to

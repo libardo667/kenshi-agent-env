@@ -8,7 +8,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .models import Action, parse_action
+from .models import Action, ControlMode, parse_action
 
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
 
@@ -30,6 +30,11 @@ class RuntimeConfig(ConfigModel):
     stop_when_terminated: bool = True
     objective: str | None = Field(default=None, max_length=1000)
     decision_stream: bool = False
+
+
+class ControlConfig(ConfigModel):
+    mode: ControlMode = ControlMode.INTERFACE_ONLY
+    native_assisted_actions_enabled: bool = False
 
 
 class PlannerConfig(ConfigModel):
@@ -150,6 +155,7 @@ class MacroConfig(ConfigModel):
     movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    requires_native_assisted: bool = False
     actions: list[dict[str, Any]] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -174,6 +180,7 @@ class MacroConfig(ConfigModel):
 class AppConfig(ConfigModel):
     version: int = 1
     mode: Literal["mock", "live", "replay"] = "mock"
+    control: ControlConfig = Field(default_factory=ControlConfig)
     paths: PathsConfig
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     planner: PlannerConfig = Field(default_factory=PlannerConfig)

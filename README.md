@@ -2,8 +2,10 @@
 
 A safety-first scaffold for turning Kenshi into an agentic environment with a
 versioned observation protocol, screenshots, persistent memory, structured
-planning, bounded skills, ordinary Windows input, replayable logs, and a
-read-only native telemetry bridge.
+planning, bounded skills, replayable logs, and explicitly labeled control
+modes. The default `interface_only` mode uses ordinary Windows input. The
+optional `native_assisted` mode may also use narrowly reviewed internal command
+bridges and is never merged silently into interface-only evidence.
 
 This is not a claim that an LLM can already play Kenshi well. It is the machinery
 needed to run that experiment without confusing perception, planning, input,
@@ -22,8 +24,11 @@ and game-integration failures.
 - Replay summaries and JSON Schema export.
 - A Windows client-area screenshot and SendInput controller.
 - Two independent gates before real keyboard or mouse input is allowed.
+- Typed `interface_only` and `native_assisted` control modes, with an additional
+  acknowledgement before native-assisted live execution.
 - Native KenshiLib plugin source that emits partial telemetry through an atomic
-  JSON file.
+  JSON file and, only when explicitly enabled by the Python control mode, exposes
+  one bounded vendor-approach command bridge.
 - Automated tests for the platform-independent path.
 
 The native plugin compiles as a VS2010 SP1 `Release | x64` DLL against the
@@ -41,14 +46,15 @@ prompts/                 Planner and memory prompts
 schemas/                 Generated JSON Schemas
 src/kenshi_agent/        Python environment and agent runtime
 native/KenshiAgentTelemetry/
-                         Read-only KenshiLib telemetry plugin
+                         KenshiLib telemetry and reviewed command bridge
 benchmarks/              Experiment definitions
 examples/                Sample telemetry and scripted policy
 docs/                    Protocol and validation notes
 scripts/                 Bootstrap, test, run, and staging helpers
 tests/                   Platform-independent automated tests
 runs/                    Local screenshots, logs, and outputs; gitignored
-CODING_AGENT_PROMPT.md   Full implementation brief for a coding agent
+kenshi-agent-env-continuous-agent-loop-prompt.md
+                         Loopable continuous-agent engineering brief
 ```
 
 ## Five-minute mock run
@@ -145,14 +151,14 @@ OpenRouter is also supported through its OpenAI-compatible Chat API. Add
 routing is sorted by latency and requires structured-output support. Override
 the sort with `KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`.
 
-The planner receives a bounded JSON observation and, when enabled, a base64 image
-of the current frame. It returns a validated `PlannerDecision`; it does not call
-input APIs itself.
+The planner receives a bounded JSON observation, including its control mode and
+only the skills legal in that mode, plus a base64 image when enabled. It returns
+a validated `PlannerDecision`; it does not call input APIs itself.
 
 ### Live decision overlay
 
-The active profile prints a human-readable stream for every turn: planning
-latency, intent, concise rationale, action, confidence, and execution result.
+The active profile prints a human-readable stream for every turn: control mode,
+planning latency, intent, concise rationale, action, confidence, and execution result.
 It also records planner latency in `events.jsonl`, and `kenshi-agent summarize`
 reports mean, median, and p95 latency for new runs.
 
@@ -163,7 +169,8 @@ always-on-top window over the game:
 .\scripts\run_live_overlay.ps1 `
   -Planner openai `
   -Steps 30 `
-  -ExecuteLiveActions
+  -ExecuteLiveActions `
+  -AcknowledgeNativeAssistedControl
 ```
 
 Use `-Planner openrouter` after adding `OPENROUTER_API_KEY`. The viewer is an
@@ -204,15 +211,25 @@ gate, so proposed actions are logged but not sent to Kenshi.
 
 For the active burn-in, use the dedicated profile. It enables live input but
 allows only pause, wait, map, calibrated map zoom, inventory, close-overlay,
-focus-selected, and bounded movement/person-interaction skills. Raw keys and
-clicks, combat, purchasing, and save operations remain blocked:
+focus-selected, bounded movement/person-interaction, and the one guarded
+purchase flow. Raw keys and clicks, combat, unbounded purchasing, and save
+operations remain blocked:
 
 ```powershell
 kenshi-agent run `
   --config config/live.burnin.yaml `
   --planner openai `
-  --execute-live-actions
+  --execute-live-actions `
+  --acknowledge-native-assisted-control
 ```
+
+The burn-in profile is explicitly `native_assisted` because
+`approach_confirmed_vendor` asks the plugin to issue Kenshi's internal
+`PLAYER_TALK_TO` order. The dedicated CLI acknowledgement is required in
+addition to the normal live-input gates. Use `config/live.example.yaml` for the
+default `interface_only` experiment; that mode omits native control capabilities
+and skills from observations and rejects a native-assisted skill even if it is
+submitted manually.
 
 The active profile defaults to 30 planner decisions and the lower-latency Luna
 planner. Fine and coarse movement run as executor-controlled pulses: while
@@ -246,6 +263,16 @@ and:
 kenshi-agent run --config config/my-live.yaml --mode live --execute-live-actions
 ```
 
+Native-assisted execution additionally requires:
+
+```yaml
+control:
+  mode: native_assisted
+  native_assisted_actions_enabled: true
+```
+
+and `--acknowledge-native-assisted-control`.
+
 F12 is the default emergency-stop key and is checked before each primitive input.
 The Kenshi process and controller should run at the same Windows integrity level.
 Fine world movement and coarse map travel use separate right-click skills with
@@ -270,19 +297,22 @@ and provides short commands for the operations used during live iteration:
 ./dev shot --label bar-entrance
 ./dev telemetry
 ./dev journey --objective "Locate the visible bar entrance" --steps 8
-./dev journey --objective "Approach the Barman safely" --steps 8 --execute --exclusive
+./dev journey --objective "Approach the Barman safely" --steps 8 --execute \
+  --exclusive --native-assisted
 ```
 
 `launch` opens the RE_Kenshi shortcut, advances the video launcher, continues
 the current save, and returns with fresh telemetry and the game paused. Journey
 objectives override the YAML profile for one run only. Live input still requires
-the explicit `--execute` gate; `--exclusive` keeps Kenshi in the foreground only
-when the human has handed the session to the agent.
+the explicit `--execute` gate; native-assisted execution additionally requires
+`--native-assisted`. `--exclusive` keeps Kenshi in the foreground only when the
+human has handed the session to the agent.
 
 ## Native telemetry bridge
 
 The plugin hooks `PlayerInterface::update`, calls the original update first, and
-samples the game/UI thread at two hertz. It currently exports:
+samples the game/UI thread at two hertz. Its telemetry path is observational. It
+currently exports:
 
 - loaded, paused, speed, and money;
 - camera position and center;
@@ -293,6 +323,11 @@ It intentionally does not pretend to export fields that have not been validated:
 hunger, wound detail, getting-eaten state, inventory grids, modals, dialogue,
 context menus, current tasks, nearby entities, and faction interpretation
 remain work items.
+
+The same DLL also contains a separately labeled native-assisted vendor-approach
+bridge. Python removes its capability and acknowledgement state in
+`interface_only`; `ActionGuard` and `LiveEnvironment` independently reject its
+skill in that mode.
 
 Build instructions and the manual verification sequence are in
 [the native plugin README](native/KenshiAgentTelemetry/README.md). Contributors
@@ -327,9 +362,14 @@ See `docs/TELEMETRY_PROTOCOL.md`.
 
 ## Safety model
 
-The native side is read-only. It must not issue tasks, teleport characters,
-change health, alter money, modify factions, trigger save/load, or invoke hidden
-game actions. Player actions go through visible keyboard and mouse input.
+`interface_only` is the default experiment boundary: player actions go through
+visible keyboard and mouse input, native control capabilities are filtered out,
+and native-assisted skills are rejected twice. `native_assisted` permits only
+the specifically marked and reviewed internal command bridges; it does not
+permit teleporting, stat/money/faction mutation, save/load, or arbitrary game
+methods. Run logs and summaries label the mode so evidence cannot be conflated.
+The rationale and enforcement points are recorded in
+[ADR: Explicit control modes](docs/ADR_CONTROL_MODES.md).
 
 The Python guard enforces:
 

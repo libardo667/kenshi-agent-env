@@ -13,6 +13,9 @@
   and explicit no-op feedback.
 - Windows client-area capture and SendInput controller behind two independent
   live-execution gates.
+- Explicit `interface_only` and `native_assisted` control modes. Interface-only
+  observations omit native command capabilities and skills; native-assisted
+  live execution adds a dedicated configuration opt-in and CLI acknowledgement.
 - Macro/skill expansion with action and rate limits.
 - Native KenshiLib plugin source that hooks PlayerInterface::update and emits a
   partial, atomic telemetry snapshot from the game/UI thread.
@@ -59,6 +62,10 @@
   no rejected actions or environment errors, and paused telemetry at every
   observation.
 
+The supervised evidence above predates explicit run-level control-mode labels.
+Treat the vendor-approach evidence as native-assisted and do not merge it with
+new interface-only evidence.
+
 ## Still requires broader live validation
 
 - Squad enumeration and state across recruit, dismiss, reorder, KO, death,
@@ -74,7 +81,9 @@
 
 ## Deliberately not implemented
 
-- Direct mutation of Kenshi internals for actions.
+- Arbitrary internal Kenshi actions or direct mutation of game state.
 - Omniscient world-state extraction.
 - Automatic save reloads or hidden reset commands.
 - Unattended enabling of real keyboard/mouse injection.
+- The feature-flagged continuous planner/executor described in the engineering
+  loop prompt; `single_step` remains the current planning mode.

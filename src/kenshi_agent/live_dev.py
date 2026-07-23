@@ -195,6 +195,8 @@ def _journey(args: argparse.Namespace) -> int:
         argv.extend(["--objective", args.objective])
     if args.execute:
         argv.append("--execute-live-actions")
+    if args.native_assisted:
+        argv.append("--acknowledge-native-assisted-control")
     if args.exclusive:
         argv.append("--exclusive-input-session")
     return agent_main(argv)
@@ -224,6 +226,11 @@ def build_parser() -> argparse.ArgumentParser:
     journey.add_argument("--steps", type=int, default=8)
     journey.add_argument("--run-id")
     journey.add_argument("--execute", action="store_true")
+    journey.add_argument(
+        "--native-assisted",
+        action="store_true",
+        help="Acknowledge execution through configured native-assisted command bridges.",
+    )
     journey.add_argument("--exclusive", action="store_true")
 
     return parser

@@ -12,6 +12,7 @@ class ReplayEnvironment(AgentEnvironment):
     def __init__(self, log_path: Path) -> None:
         self.log_path = log_path
         self._observations = self._load_observations(log_path)
+        self.control_mode = self._observations[0].control_mode
         self._index = 0
 
     @staticmethod
@@ -43,6 +44,7 @@ class ReplayEnvironment(AgentEnvironment):
         return Transition(
             receipt=ActionReceipt(
                 action=action,
+                control_mode=observation.control_mode,
                 accepted=True,
                 executed=False,
                 dry_run=True,

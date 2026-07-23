@@ -4,7 +4,7 @@ import sys
 from datetime import datetime
 from typing import TextIO
 
-from .models import Action, ActionReceipt, PlannerDecision, SkillAction
+from .models import Action, ActionReceipt, ControlMode, PlannerDecision, SkillAction
 
 
 def format_action(action: Action) -> str:
@@ -27,17 +27,20 @@ class ConsoleDecisionReporter:
         run_id: str,
         planner_name: str,
         model_name: str | None,
+        control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         stream: TextIO | None = None,
     ) -> None:
         self.run_id = run_id
         self.planner_name = planner_name
         self.model_name = model_name
+        self.control_mode = control_mode
         self.stream = stream or sys.stdout
 
     def run_started(self, max_steps: int) -> None:
         model = f" | {self.model_name}" if self.model_name else ""
         self._write(
-            f"Kenshi Agent | {self.planner_name}{model} | {max_steps} turns\n"
+            f"Kenshi Agent | {self.planner_name}{model} | {max_steps} turns | "
+            f"control={self.control_mode.value}\n"
             f"Run {self.run_id}\n"
         )
 

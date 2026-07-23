@@ -560,6 +560,14 @@
       "title": "ClickAction",
       "type": "object"
     },
+    "ControlMode": {
+      "enum": [
+        "interface_only",
+        "native_assisted"
+      ],
+      "title": "ControlMode",
+      "type": "string"
+    },
     "CoordinateSpace": {
       "enum": [
         "normalized",
@@ -1469,6 +1477,11 @@
           ],
           "default": null,
           "title": "Movement Pulse Max Seconds"
+        },
+        "requires_native_assisted": {
+          "default": false,
+          "title": "Requires Native Assisted",
+          "type": "boolean"
         }
       },
       "required": [
@@ -1768,6 +1781,10 @@
       ],
       "title": "Mode",
       "type": "string"
+    },
+    "control_mode": {
+      "$ref": "#/$defs/ControlMode",
+      "default": "interface_only"
     },
     "telemetry": {
       "anyOf": [

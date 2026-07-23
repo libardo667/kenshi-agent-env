@@ -18,6 +18,7 @@ from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
 from .memory import MemoryStore
+from .models import ControlMode
 from .overlay import show_overlay
 from .planners import (
     HeuristicPlanner,
@@ -128,6 +129,27 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
     )
 
 
+def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
+    if not args.execute_live_actions:
+        return False
+    if not config.safety.live_actions_enabled:
+        raise SystemExit(
+            "--execute-live-actions was supplied, but safety.live_actions_enabled is false."
+        )
+    if config.control.mode == ControlMode.NATIVE_ASSISTED:
+        if not config.control.native_assisted_actions_enabled:
+            raise SystemExit(
+                "Native-assisted execution is disabled by "
+                "control.native_assisted_actions_enabled."
+            )
+        if not args.acknowledge_native_assisted_control:
+            raise SystemExit(
+                "Native-assisted live execution requires "
+                "--acknowledge-native-assisted-control."
+            )
+    return True
+
+
 def _build_environment(
     config: AppConfig,
     args: argparse.Namespace,
@@ -138,7 +160,12 @@ def _build_environment(
 ) -> AgentEnvironment:
     mode = args.mode or config.mode
     if mode == "mock":
-        return MockEnvironment(config.mock, run_dir / "frames", run_id)
+        return MockEnvironment(
+            config.mock,
+            run_dir / "frames",
+            run_id,
+            control_mode=config.control.mode,
+        )
     if mode == "replay":
         if not args.log:
             raise SystemExit("--log is required for replay mode.")
@@ -146,11 +173,7 @@ def _build_environment(
     if mode == "live":
         if os.name != "nt":
             raise SystemExit("Live mode requires Windows.")
-        if args.execute_live_actions and not config.safety.live_actions_enabled:
-            raise SystemExit(
-                "--execute-live-actions was supplied, but safety.live_actions_enabled is false."
-            )
-        execute_actions = bool(args.execute_live_actions and config.safety.live_actions_enabled)
+        execute_actions = _live_actions_enabled(config, args)
         controller = Win32InputController(
             config.capture.window_title_contains,
             **_controller_kwargs(config, args),
@@ -174,6 +197,7 @@ def _build_environment(
             execute_actions=execute_actions,
             emergency_stop_key=config.safety.emergency_stop_key,
             available_skills=config.safety.allow_skills,
+            control_mode=config.control.mode,
         )
     raise SystemExit(f"Unsupported environment mode: {mode}")
 
@@ -200,17 +224,27 @@ async def _run_command(args: argparse.Namespace) -> int:
             run_dir=run_dir,
             macros=macros,
         )
+        run_control_mode = (
+            environment.control_mode
+            if isinstance(environment, ReplayEnvironment)
+            else config.control.mode
+        )
         runtime = AgentRuntime(
             run_id=run_id,
             environment=environment,
             planner=planner,
-            guard=ActionGuard(config.safety, macros),
+            guard=ActionGuard(
+                config.safety,
+                macros,
+                control_mode=run_control_mode,
+            ),
             reflexes=ReflexEngine(),
             logger=logger,
             memory=memory,
             memory_limit=config.memory.max_recalled_memories,
             minimum_memory_salience=config.memory.minimum_salience,
             action_outcome_limit=config.runtime.observation_memory_limit,
+            control_mode=run_control_mode,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,
@@ -222,6 +256,7 @@ async def _run_command(args: argparse.Namespace) -> int:
                         if planner_kind == "openai"
                         else None
                     ),
+                    control_mode=run_control_mode,
                 )
                 if config.runtime.decision_stream
                 else None
@@ -234,6 +269,7 @@ async def _run_command(args: argparse.Namespace) -> int:
         output = {
             "run_id": summary.run_id,
             "run_dir": str(run_dir),
+            "control_mode": summary.control_mode.value,
             "steps_completed": summary.steps_completed,
             "terminated": summary.terminated,
             "success": summary.success,
@@ -254,6 +290,7 @@ def _doctor(args: argparse.Namespace) -> int:
     checks.append(("prompt", config.paths.prompt_file.exists(), str(config.paths.prompt_file)))
     checks.append(("runs_dir", True, str(config.paths.runs_dir)))
     checks.append(("mode", True, args.mode or config.mode))
+    checks.append(("control_mode", True, config.control.mode.value))
     if (args.mode or config.mode) == "live":
         checks.append(("windows", os.name == "nt", platform.platform()))
         checks.append(
@@ -379,6 +416,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--execute-live-actions",
         action="store_true",
         help="Second safety gate required before real keyboard/mouse input.",
+    )
+    run.add_argument(
+        "--acknowledge-native-assisted-control",
+        action="store_true",
+        help=(
+            "Required in addition to the normal live-action gates before a "
+            "native_assisted run may execute internal player-order bridges."
+        ),
     )
     run.add_argument(
         "--exclusive-input-session",

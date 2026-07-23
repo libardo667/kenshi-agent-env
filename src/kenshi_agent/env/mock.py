@@ -15,6 +15,7 @@ from ..models import (
     ActionReceipt,
     CameraState,
     CharacterState,
+    ControlMode,
     Disposition,
     GameState,
     InventoryItem,
@@ -56,10 +57,17 @@ class MockWorld:
 class MockEnvironment(AgentEnvironment):
     """Small deterministic world for testing the full agent loop off-game."""
 
-    def __init__(self, config: MockConfig, run_dir: Path, run_id: str) -> None:
+    def __init__(
+        self,
+        config: MockConfig,
+        run_dir: Path,
+        run_id: str,
+        control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+    ) -> None:
         self.config = config
         self.run_dir = run_dir
         self.run_id = run_id
+        self.control_mode = control_mode
         self.run_dir.mkdir(parents=True, exist_ok=True)
         self._rng = random.Random(config.seed)
         self._step_index = 0
@@ -188,6 +196,7 @@ class MockEnvironment(AgentEnvironment):
             run_id=self.run_id,
             step_index=self._step_index,
             mode="mock",
+            control_mode=self.control_mode,
             telemetry=telemetry,
             telemetry_stale=False,
             telemetry_age_seconds=0.0,
@@ -244,6 +253,7 @@ class MockEnvironment(AgentEnvironment):
         finished = datetime.now(UTC)
         receipt = ActionReceipt(
             action=action,
+            control_mode=self.control_mode,
             accepted=True,
             executed=True,
             dry_run=False,

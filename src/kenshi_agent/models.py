@@ -19,6 +19,11 @@ class MemoryKind(StrEnum):
     HYPOTHESIS = "hypothesis"
 
 
+class ControlMode(StrEnum):
+    INTERFACE_ONLY = "interface_only"
+    NATIVE_ASSISTED = "native_assisted"
+
+
 class MouseButton(StrEnum):
     LEFT = "left"
     RIGHT = "right"
@@ -344,6 +349,7 @@ class SkillSpec(StrictModel):
     movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    requires_native_assisted: bool = False
 
 
 class Observation(StrictModel):
@@ -351,6 +357,7 @@ class Observation(StrictModel):
     step_index: int = Field(ge=0)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     mode: Literal["mock", "live", "replay"]
+    control_mode: ControlMode = ControlMode.INTERFACE_ONLY
     telemetry: TelemetrySnapshot | None = None
     telemetry_stale: bool = False
     telemetry_age_seconds: float | None = None
@@ -382,6 +389,7 @@ class PlannerDecision(StrictModel):
 
 class ActionReceipt(StrictModel):
     action: Action
+    control_mode: ControlMode = ControlMode.INTERFACE_ONLY
     accepted: bool
     executed: bool
     dry_run: bool
