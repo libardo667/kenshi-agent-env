@@ -726,6 +726,41 @@ Acceptance criteria:
 
 ## Current checks
 
+P2 semantic planner-observation budgeting verification on 2026-07-23:
+
+- Commit `576640a` replaces serialized-text slicing with deterministic
+  structured-data budgeting. Full observations retain their existing contract;
+  oversized observations receive `observation_budget` metadata with bounded,
+  truthful original/retained counts and whole-field omissions.
+- The irreducible envelope preserves exact control/planning/live-policy state,
+  freshness, world revision, active plan, active/latest native command
+  evidence, latest causal outcome, selected characters, and exact referenced
+  entities. An undersized budget raises `PlannerPayloadBudgetError` with the
+  required character count.
+- Capabilities, UI/dialogue/tooltip evidence, events, available skill plus
+  constraint-spec pairs, older outcomes, memories, and unrelated entities are
+  admitted in deterministic priority order. Stable IDs, command/plan IDs,
+  enums, numeric values, and condition operands are never substring-truncated.
+- The Unicode/nested stress fixture is 87,927 characters in full and 9,399
+  characters at its irreducible boundary. Tests cover budgets from zero through
+  the minimum and upward, truthful count metadata, exact critical fields,
+  low-priority reorder invariance, and both OpenAI and OpenRouter request
+  adapters.
+- `.venv/bin/python -m pytest -q`: 218 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src`: passed, 49 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `interface_only` / `single_step`.
+- A fresh schema export matched `schemas/` byte-for-byte.
+- Mock seeds 7, 11, and 19 retained the accepted one-day results in 25, 13, and
+  13 actions.
+- Continuous run `p2-observation-budget-continuous-proof` completed two guarded
+  steps on later revisions, completed one plan, emitted zero rejected actions,
+  and then reached the heuristic's explicit terminal Stop.
+- No Windows input, native build/install, hosted network call, or live Kenshi
+  action was performed in this slice.
+
 P0 semantic-launch/control-ownership offline verification on 2026-07-23:
 
 - `.venv/bin/python -m pytest -q`: 212 passed after the title/player split and
@@ -1020,8 +1055,9 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 - Broad live stability remains open. The Intel Iris Xe client reproduced the
   DirectX device reset after roughly forty minutes even with Low textures and
-  reflections disabled. View distance is now 2500, but that profile has not
-  completed a fresh supervised soak.
+  reflections disabled. View distance is now 2500 and the reduced profile
+  passed two short supervised launches, but it has not completed a longer
+  stability soak.
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
@@ -1031,7 +1067,6 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
   blocked; only `food_procurement_v1` is eligible behind all dedicated gates.
 - Legacy telemetry producers may still expose ordinal IDs; only snapshots with
   `identity.stable_handles` receive native identity trust.
-- Observation payload truncation can produce malformed JSON.
 - Several declared config fields remain behaviorally unused.
 - There is no CI workflow or Python lockfile.
 
@@ -1039,8 +1074,11 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 1. P0: supervised 1920x1080 launcher interruption and reduced-view-distance
    stability smoke, after a fresh user handoff.
-2. P6: resume the exact conditional live food-procurement chain only after the
+2. P3: add the final post-input-lease typed execution fence as the next offline
+   slice when no live handoff is active.
+3. P6: resume the exact conditional live food-procurement chain only after the
    P0 launch/stability gate closes and explicit live authorization remains
    current.
-3. P8: semantic observation budgeting that always emits valid JSON, followed
-   by CI and a reproducible Python lockfile as separate bounded slices.
+4. P4/P5: complete calibration identity beyond client size, then unify terminal
+   safe-state behavior.
+5. P8: add CI and a reproducible Python lockfile as separate bounded slices.
