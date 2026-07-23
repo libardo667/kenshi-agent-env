@@ -20,6 +20,9 @@
 - Continuous mode owns one observation pump and bounded world-state store.
   Postcondition waits, planner snapshots, command receipts, deltas/events,
   entity lifetimes, and future subscribers share its canonical revisions.
+- Portable continuous mode owns an independent deterministic safety subscriber
+  that can cancel blocked planner/executor work and report safe cleanup only
+  after a causally later capable revision confirms pause.
 
 ## Completed milestones
 
@@ -36,6 +39,9 @@
 - One cancellable observation pump, bounded authoritative world-state stream,
   causal command receipts, transient-event journal, isolated subscribers, and
   ambiguity-aware portable entity lifetimes.
+- Independent blocked-work preemption, conservative cancellation causality,
+  narrowly guarded safe-pause cleanup, and supervisor-specific lifecycle
+  metrics.
 
 ## Previous completed slice: explicit control modes
 
@@ -134,7 +140,7 @@ requires later revisions for postconditions, emits replayable lifecycle and
 transactional budget events, and is deliberately blocked in live-labeled
 environments pending later milestones.
 
-## Latest completed slice: P2 world-state stream and causal waits
+## Previous completed slice: P2 world-state stream and causal waits
 
 Problem: P1 still asks the executor to poll `environment.observe()` directly
 while waiting for a postcondition. There is no single authoritative observation
@@ -194,7 +200,77 @@ transient events and entity lifetimes survive snapshot replacement, and bounded
 subscribers share one ingest path. The default single-step behavior and live
 continuous block remain intact.
 
+## Latest completed slice: P3 independent safety supervisor
+
+Problem: P2 keeps observation moving while the strategic planner is blocked,
+but immediate safety still depends on the scheduler reaching its next reflex
+check. A slow or hung planner can therefore delay deterministic pause/stop
+behavior even when the state stream has already exposed a threat, stale stream,
+capability loss, or unexpected unpause.
+
+Scope:
+
+- Add one independent supervisor task subscribed to the P2 store.
+- Detect deterministic reflexes, stale/stalled telemetry, pause-capability
+  withdrawal, and unpaused state with no active authorized command.
+- Race strategic planner and active-plan execution tasks against supervisor
+  preemption without waiting for model completion.
+- Cancel obsolete planner/executor work once, record uncertain dispatched
+  commands conservatively, and emit supervisor-specific lifecycle evidence.
+- Route safe-pause cleanup through the existing guard/environment path, bind it
+  to a command ID and causal revision, and require a later confirmed paused
+  state before reporting safe cleanup.
+- Make repeated preemption and stop calls idempotent and leak-free.
+
+Non-goals:
+
+- No live continuous enablement, controller worker-thread polling, or claim of
+  measured F12/human-input latency.
+- No general stateful option abstraction or planner/executor overlap (P4).
+- No active plan-patch application or strategic recovery policy.
+- No weakening of the existing live movement pulse's own guaranteed re-pause.
+
+Acceptance criteria:
+
+- A fake planner deliberately blocked on an await is cancelled when the pump
+  publishes an unsafe state.
+- A blocked fake movement action is cancelled and followed by one guarded pause
+  request with a causally later confirmed paused revision.
+- Repeated preemption produces one cleanup and one terminal supervisor event.
+- Planner/executor cancellation leaves no active command, plan, subscription,
+  or owned task.
+- Supervisor actions and causes are distinguishable from planner/reflex
+  decisions in logs and evaluator metrics.
+- Existing single-step, P1, and P2 behavior remains green; continuous live
+  execution remains blocked.
+
+Result: complete in `8f1c9c2`. The first deterministic preemption is latched
+from immutable store updates, obsolete planner/executor tasks are canceled once,
+and uncertain in-flight dispatch remains spent and inconclusive. The only
+cleanup exception is `PauseAction(paused=true)`; it preserves allowlist and
+control-mode checks, bypasses only the rate counter, and requires a later
+capable paused revision. Failure and missing capability remain explicit. The
+portable live-continuous block is unchanged.
+
 ## Current checks
+
+P3 completion verification on 2026-07-23:
+
+- `.venv/bin/python -m pytest -o addopts='' -q`: 138 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src/kenshi_agent`: passed, 44 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `control_mode interface_only` and `planning_mode single_step`.
+- A fresh schema export matched checked-in `schemas/` byte-for-byte.
+- Continuous run `p3-final-verified` completed two guarded actions from one
+  strategic call with two causal receipts, 100% later-revision coverage, no
+  stream errors, and no supervisor preemption in the ordinary safe case.
+- Deterministic blocked-planner and blocked-movement tests each recorded one
+  supervisor preemption and one confirmed safe-pause terminal. The explicit
+  unconfirmed-pause case recorded one cleanup failure and no false completion.
+- Single-step seeds 7, 11, and 19 retained the one-day outcomes in 25, 13, and
+  13 actions.
 
 P2 completion verification on 2026-07-23:
 
@@ -247,6 +323,13 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Evidence
 
+- Automated portable evidence for P3 covers blocked-planner cancellation,
+  cancellation during fake movement dispatch, conservative command/budget
+  treatment, later-revision pause confirmation, cleanup timeout/failure,
+  missing pause capability, capability withdrawal, consecutive stalled
+  sequences, immutable authorization snapshots, rate-budget-safe pause,
+  idempotent preemption/stop, subscription cleanup, distinct lifecycle events,
+  and evaluator metrics.
 - Automated portable evidence for P2 covers duplicate/regressing/conflicting
   revisions, capability withdrawal, causal wait timeout/cancellation, bounded
   histories and subscriber overflow, isolated subscriber data, transient-event
@@ -289,9 +372,9 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Ordered next candidates
 
-1. P3: independent safety supervisor that preempts a blocked planner and owns
-   idempotent safe-pause cleanup.
-2. P4: cancellable stateful options, starting with bounded movement, plus
+1. P4: cancellable stateful options, starting with bounded movement, plus
    planner/executor overlap and optimistic future-step patch application.
-3. P5: native bridge command acknowledgements and validated stable-handle
+2. P5: native bridge command acknowledgements and validated stable-handle
    generations without conflating them with the portable lifetime registry.
+3. P6: the first conditional live food-procurement chain after P4/P5 evidence
+   and explicit live authorization.

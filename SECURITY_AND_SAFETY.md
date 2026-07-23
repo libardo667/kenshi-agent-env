@@ -43,10 +43,21 @@ State-changing plan actions receive a command ID and start/completion revision;
 unchanged, regressing, or conflicting state cannot certify progress. Missing
 nearby capability does not become evidence that an entity disappeared.
 
-This stream is prerequisite safety infrastructure, not an independent safety
-supervisor. Until the P3 supervisor exists, there is no claim that a blocked
-strategic planner can be preempted concurrently or that live movement cleanup
-is continuously supervised.
+An independent portable supervisor subscribes to that stream and can cancel a
+blocked planner or plan action without waiting for the strategic loop. It
+reacts to deterministic reflexes, stale/stalled telemetry, pause-capability
+withdrawal, and unauthorized unpause. A canceled in-flight action is treated as
+possibly delivered: its budget stays spent and its command outcome is
+inconclusive.
+
+The only cleanup exception is `PauseAction(paused=true)`. It still requires the
+configured action allowlist and matching control mode, and it never permits an
+unpause; it bypasses only the per-minute rate counter so prior activity cannot
+lock out the safest local action. Cleanup is not reported successful until a
+causally later revision with `game.pause` capability confirms `paused=true`.
+Failure, missing capability, or timeout remains explicit. This has portable
+fake-environment evidence only: live continuous mode is blocked, so there is no
+claim yet about concurrent F12, human-input, or Windows-controller latency.
 
 Do not read Kenshi or MyGUI object state from a worker thread. Sample game state
 on a known game/UI thread, copy it into plain data, and only then hand it to

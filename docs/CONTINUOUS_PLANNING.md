@@ -152,10 +152,37 @@ reports strategic calls, plan and step outcomes, budget transactions, and
 actions per strategic planner call. It also reports causal command-receipt
 coverage, sequence stalls, transient-event retention/loss, subscriber drops,
 pump errors, revision failures, entity lifetime counts, and command mismatches.
+Supervisor preemptions, strategic/executor cancellations, cleanup starts,
+completions/failures, terminal states, and cleanup success percentage are
+reported separately from planner/reflex counts.
 `replay_plan_lifecycle` reconstructs each plan's terminal status and succeeded,
 failed, and cancelled step IDs.
 
-## Proven P1-P2 cases
+## Independent safety supervisor
+
+Continuous mode starts one deterministic supervisor subscriber before starting
+the observation pump. It does not call a model. It latches the first detected
+reflex, stale telemetry, consecutive sequence stall, pause-capability
+withdrawal, or unexpected unpause without an active authorized plan/command.
+Active authorization is copied into each `StoreUpdate`, preventing queued old
+updates from being judged against newer mutable executor state.
+
+The scheduler races strategic planning and plan execution against that latch.
+When the supervisor wins, it cancels the obsolete task once. Cancellation
+during dispatch commits the reserved budget and records the command
+inconclusive because delivery cannot be disproved. The supervisor then
+terminates or issues one `PauseAction(paused=true)` through a narrow guard path.
+That path preserves the action allowlist and control-mode checks, permits no
+unpause, and bypasses only the per-minute action counter.
+
+A pause input receipt is not enough. Cleanup completes only when a causally
+later revision exposes `game.pause` and confirms `paused=true`. Timeout,
+execution error, policy rejection, command mismatch, or lost capability emits
+`safety_cleanup_failed` and a terminal failure/unverified state. The supervisor
+and observation pump are stopped before the store shuts down, and repeated
+preemption/stop calls are idempotent.
+
+## Proven P1-P3 cases
 
 Portable tests and the built-in heuristic prove:
 
@@ -181,7 +208,19 @@ Portable tests and the built-in heuristic prove:
   before execution;
 - command receipts distinguish later causal evidence from an unchanged,
   inconclusive revision.
+- an unsafe update cancels a deliberately blocked planner and produces one
+  causally confirmed pause;
+- an unsafe update cancels an in-flight fake movement, records its delivery as
+  inconclusive, clears its plan, and performs one confirmed cleanup;
+- an accepted pause input without later paused evidence produces cleanup
+  failure rather than a false safe-state claim;
+- pause-capability withdrawal stops without treating missing capability as a
+  false value, and consecutive duplicate revisions preempt deterministically;
+- repeated preemption and shutdown are idempotent and release the supervisor
+  subscription.
 
-The next architectural step is an independent safety supervisor. Until that
-exists, there is no claim of planner/executor overlap or blocked-planner safety
-preemption.
+The next architectural step is a stateful option abstraction, beginning with
+bounded movement, plus strategic planner/executor overlap. The current P3
+preemption race does not make future strategic plans executable during an
+active option, does not enable live continuous execution, and does not establish
+Windows controller interruption latency.
