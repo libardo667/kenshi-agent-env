@@ -62,14 +62,19 @@ The store:
   subscriber queues;
 - retains transient observation events after the latest snapshot drops them;
 - tracks capability epochs without converting unavailable data into absence;
-- normalizes nearby ordinal IDs into process-local lifetime IDs using observed
-  fingerprint and position evidence, while logging ambiguous matches;
+- preserves validated native handle IDs exactly when
+  `identity.stable_handles` is present, and otherwise normalizes legacy nearby
+  ordinal IDs into process-local lifetime IDs using observed fingerprint and
+  position evidence while logging ambiguous matches;
 - owns active plan, step, command ID, and causal start/completion revisions;
 - provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
 
 This is an authoritative Python state stream over the plugin's existing atomic
-latest-snapshot file. It is not a native event transport, and its entity IDs are
-not validated Kenshi object handles. See `docs/ADR_WORLD_STATE_STREAM.md`.
+latest-snapshot file. It is not a native event transport. Native protocol
+`0.2.0` now supplies session-scoped validated-handle identity; older producers
+still use the portable ambiguity-aware registry. See
+`docs/ADR_WORLD_STATE_STREAM.md` and
+`docs/ADR_STABLE_NATIVE_IDENTITY.md`.
 
 ## Independent safety supervision
 
@@ -149,7 +154,9 @@ writes an atomic file. The Python process never loads Kenshi memory directly.
 The plugin also contains one reviewed `PLAYER_TALK_TO` command bridge used by
 `approach_confirmed_vendor`. This is not described as read-only or UI-only. It
 is marked `requires_native_assisted` in the macro schema and unavailable in the
-default mode. See `docs/ADR_CONTROL_MODES.md`.
+default mode. Its stable target ID is diagnostic only until the bridge gains a
+caller command ID, revision/selection fences, accepted/rejected reasons, and a
+completion revision. See `docs/ADR_CONTROL_MODES.md`.
 
 ## Failure attribution
 

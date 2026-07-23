@@ -50,6 +50,13 @@ DLL SHA-256 was
 `61693dc6489f371eb151f638be4eba7c5922086d4ffcf62e421983c6776751e1`.
 The only compiler warning was C4091 in upstream MyGUI header `BaseLayout.h`.
 
+The P5 stable-identity rebuild on 2026-07-23 used the same pinned dependency
+and compiler set. Release x64 succeeded with only that same upstream C4091
+warning. The live-loaded DLL SHA-256 was
+`2227f3d97124149917d1c5736fb69bf29100b4ac1d6af4badcb76455ff478e16`.
+The previously installed DLL was copied to the Windows-local recovery folder
+recorded in the live checklist before replacement.
+
 ## Plugin staging/install layout
 
 ```text

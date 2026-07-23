@@ -104,15 +104,54 @@ leader, and who has dialogue. It then calls
 `PlayerInterface::newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, ...)` with
 the character's handle, indoor building, and world position. Kenshi therefore
 owns the pathfinding through doors and interior floors. `native_control`
-reports the last command sequence, result, and target; it does not imply that
-the resulting path has completed.
+reports the last command sequence, result, target display name, and stable
+`last_target_id`; it does not imply that the resulting path has completed.
+This acknowledgement is still non-causal: it has no caller-supplied command ID,
+selection/revision fence, or completion revision. P5 command-envelope work must
+replace it before a continuous live plan can rely on the bridge.
 
 ## Identity
 
-`squad:<index>` is only a provisional episode-local identity. It can change when
-squad order changes. The native implementation should eventually expose a
-stable, non-address identifier derived from a validated Kenshi handle. Never
-persist raw process pointers as autobiographical identity.
+Protocol `0.2.0` adds `identity.stable_handles`. When that capability is
+present, `identity_session_id` is non-null and every squad, selection, nearby,
+and native target ID comes from a validated Kenshi `hand`, its lifetime serials,
+and the current process/session generations. The string layout is an internal
+plugin detail. Consumers must compare the complete string and never parse it
+into game meaning. No raw pointer or display name participates as the sole
+identity key.
+
+The native session generation advances whenever the plugin starts or
+`GameWorld::resetGame` begins a new/load transition. A process restart also
+changes the process generation. An ID is therefore valid only inside the
+matching `identity_session_id`; a session change tombstones every prior ID.
+
+Lifecycle terms are:
+
+- **birth**: the first authoritative observation of an ID in an identity
+  session;
+- **update**: a later authoritative observation carrying the same complete ID,
+  even if its name, position, role, or list position changed;
+- **tombstone**: omission from a later authoritative bounded list, or any
+  identity-session change.
+
+A nearby-list tombstone means “no longer in the current observed set,” not proof
+of death or destruction. Target-bound execution must nevertheless cancel
+because the exact target is unavailable. If the same still-valid handle later
+re-enters the bounded query, it may reappear with the same ID. If Kenshi
+destroys/reuses the object lifetime, handle serial changes produce a different
+ID.
+
+`ui.selected_character_ids` is the complete validated player-character
+selection set. `ui.selected_character_id` is the primary active selection and,
+when present, must also occur in that set. Squad `selected` flags must match the
+set exactly. This makes an exactly-one-selection precondition mechanically
+checkable rather than inferred from a portrait name.
+
+Snapshots without `identity.stable_handles`, including older `squad:<index>`
+and `nearby:<index>` producers, retain provisional source IDs. The Python
+world-state store continues its ambiguity-aware fingerprint/position
+normalization only for those legacy sources. With the stable capability it
+preserves native IDs exactly.
 
 ## Partial and unknown values
 

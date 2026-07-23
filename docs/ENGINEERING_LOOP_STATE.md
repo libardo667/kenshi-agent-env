@@ -27,6 +27,9 @@
   continuous mode. One future-only strategic patch may overlap movement, but
   it cannot execute until post-option state and remaining budgets are
   revalidated.
+- Native protocol `0.2.0` supplies process/session-scoped opaque entity IDs
+  derived from validated handles, plus a complete mechanically consistent
+  player-character selection set.
 
 ## Completed milestones
 
@@ -49,6 +52,8 @@
 - Stateful configured-movement lifecycle, concurrent future advisory,
   optimistic patch staging/application, stale-output rejection, and option
   replay metrics.
+- Stable native squad/selection/nearby/target identity, explicit lifecycle
+  semantics, legacy-source fallback, and a supervised live identity proof.
 
 ## Previous completed slice: explicit control modes
 
@@ -317,7 +322,70 @@ again. Stale/mismatched output stays advisory. Human-input events and safety
 preemption cancel the option through P3's single verified-pause path. Live
 continuous mode remains blocked.
 
+## Latest completed slice: P5 stable native identity
+
+Problem: native squad and nearby IDs were list ordinals, and the bridge retained
+only a target display name. List reorder, duplicate names, object reuse, and
+save/process transitions could therefore alias identity.
+
+Scope:
+
+- Bump native telemetry to additive protocol `0.2.0`.
+- Derive opaque IDs from validated Kenshi handle components plus process and
+  game-session generations; never serialize pointers.
+- Use those IDs for squad, full selection set, nearby entities, and the legacy
+  native target diagnostic.
+- Define birth/update/tombstone and session-change semantics.
+- Strictly validate session metadata, unique IDs, selection membership, and
+  squad selection agreement when the capability is asserted.
+- Preserve native IDs exactly in the Python store while retaining the
+  ambiguity-aware registry for legacy ordinal producers.
+
+Non-goals:
+
+- No caller-driven native command transport.
+- No claim that the current native acknowledgement is causal or complete.
+- No live continuous enablement or food-chain generalization.
+
+Acceptance evidence:
+
+- Automated tests preserve two duplicate-named IDs across reorder, tombstone an
+  omitted ID, and prevent the same handle-shaped value in a new session from
+  aliasing the old ID.
+- The pinned VS2010 SP1 Release x64 build passed.
+- Live protocol `0.2.0` agreed on exactly one primary/set/squad selection.
+  Eighteen nearby characters had eighteen IDs, including four distinct
+  same-named Ninja Guards.
+- A paused camera orbit changed presentation but not session, selection, or the
+  complete nearby ID set. Native query order did not change in that run, so
+  live reorder is not claimed.
+
+Result: complete in the current worktree. The first live pass was usefully
+rejected because Kenshi's overloaded handle equality disagreed with the
+selected-set handle fields. Direct equality over type, container, container
+serial, index, and serial fixed the mismatch; rebuild and reload passed. The
+legacy hotkey acknowledgement remains explicitly non-causal.
+
 ## Current checks
+
+P5 stable-identity boundary verification on 2026-07-23:
+
+- `.venv/bin/python -m pytest -o addopts='' -q`: 151 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src/kenshi_agent`: passed, 45 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/python -m kenshi_agent doctor --config config/default.yaml`:
+  passed and reported `control_mode interface_only` and `planning_mode
+  single_step`.
+- Fresh schema export matched checked-in `schemas/` byte-for-byte.
+- The pinned VS2010 SP1 Release x64 native build passed with only the existing
+  upstream MyGUI C4091 warning. The rebuilt plugin loaded through RE_Kenshi,
+  reached fresh ready/telemetry state, and left the save paused.
+- Live identity evidence covered exact one-selection agreement, 18 unique IDs
+  for 18 nearby characters, four IDs for four same-named Ninja Guards, and
+  unchanged session/selection/nearby ID set across a paused camera change.
+- Single-step seeds 7, 11, and 19 retained the one-day outcomes in 25, 13, and
+  13 actions.
 
 P4 completion verification on 2026-07-23:
 
@@ -456,16 +524,16 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
   the portable configured-movement option adapter.
 - Continuous live execution and stateful live movement options are
   intentionally blocked; the existing live pulse remains monolithic.
-- Raw nearby and squad ordinal IDs remain unstable. The portable nearby
-  registry normalizes observed lifetimes but does not prove native identity.
+- Legacy telemetry producers may still expose ordinal IDs; only snapshots with
+  `identity.stable_handles` receive native identity trust.
 - Observation payload truncation can produce malformed JSON.
 - Several declared config fields remain behaviorally unused.
 - There is no CI workflow or Python lockfile.
 
 ## Ordered next candidates
 
-1. P5: native bridge command acknowledgements and validated stable-handle
-   generations without conflating them with the portable lifetime registry.
+1. Finish P5: causal native command envelopes and acknowledgements bound to the
+   new stable IDs, exact selection, control mode, and based-on revision.
 2. P6: the first conditional live food-procurement chain after P5 evidence
    and explicit live authorization.
 3. P8: semantic observation budgeting that always emits valid JSON, plus CI

@@ -16,12 +16,21 @@ installed before save load; Kenshi's spatial query does not enumerate these
 wrappers. A `GameWorld::resetGame` hook clears that registry and prior native
 command acknowledgements before Kenshi constructs a new or loaded session, since
 the plugin DLL remains resident across those transitions.
+Protocol `0.2.0` also derives opaque entity IDs from validated Kenshi handles
+plus process/session generations. These IDs survive squad/nearby list
+reordering and distinguish duplicate names without serializing addresses.
+`identity_session_id` changes across process or game-session lifetimes.
+`selected_character_ids` reports the full player-character selection set, while
+the singular ID identifies its active member.
 It also recognizes a private `Ctrl+Shift+F10` bridge for
 `approach_confirmed_vendor`. Before issuing anything, the plugin re-enumerates
 nearby characters and requires a conscious, non-hostile humanoid who has a
 vendor list, leads that platoon, and has dialogue. It then uses Kenshi's own
 `PLAYER_TALK_TO` player order with the exact handle and indoor destination.
-`native_control` acknowledges the command and selected target.
+`native_control` reports the legacy command sequence/result plus both the target
+display name and stable target ID. It still lacks a caller command ID,
+revision/selection fence, and completion revision, so it is not yet a causal
+command protocol.
 This makes the DLL a native-assisted control bridge, not a globally read-only
 plugin. The Python runtime exposes this command only in `native_assisted` mode;
 `interface_only` filters the capability/state and rejects the marked skill.
@@ -78,7 +87,12 @@ folder component.
 - Launch to the title screen and confirm `plugin_status.json` says `ready`.
 - Enter a disposable save and confirm telemetry sequence numbers increase.
 - Pause/unpause and verify the field changes.
-- Select different squad members and verify `selected_character_id` changes.
+- Select different squad members and verify the singular ID, complete selected
+  ID set, and squad `selected` flags agree.
+- Reorder a squad and change the camera/nearby presentation; verify entity IDs
+  remain attached to handles rather than list positions or names.
+- Load a disposable save and verify `identity_session_id` changes without
+  retaining old selection, nearby, or native target IDs.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin

@@ -394,6 +394,11 @@ currently exports:
   world positions, viewport visibility, and normalized screen positions;
 - current world, inventory, dialogue, and trade screen classification.
 
+Native protocol `0.2.0` binds squad, complete selection, nearby, and native
+target IDs to validated Kenshi handles plus a process/session generation.
+Consumers treat those IDs as opaque. Duplicate display names and list order are
+not identities, and a session-generation change invalidates every older ID.
+
 It intentionally does not pretend to export fields that have not been validated:
 hunger, wound detail, getting-eaten state, generic inventory grids, dialogue
 option text, context menus, current tasks, and broader faction interpretation
@@ -447,6 +452,8 @@ The rationale and enforcement points are recorded in
 [ADR: Explicit control modes](docs/ADR_CONTROL_MODES.md).
 Continuous-mode revision ownership and its current identity limits are recorded
 in [ADR: Authoritative world-state stream](docs/ADR_WORLD_STATE_STREAM.md).
+Native handle identity and lifecycle semantics are recorded in
+[ADR: Stable native identity](docs/ADR_STABLE_NATIVE_IDENTITY.md).
 Independent preemption and the narrow safe-pause exception are recorded in
 [ADR: Independent safety supervision](docs/ADR_SAFETY_SUPERVISOR.md).
 Portable movement lifecycle and future-only patch authority are recorded in

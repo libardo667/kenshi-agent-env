@@ -37,6 +37,13 @@ read-only: in native-assisted mode its bounded vendor bridge may issue a
 save/load, or arbitrary task mutation. Interface-only actions remain visible
 keyboard/mouse operations through the ordinary UI.
 
+Stable native entity IDs contain no process pointer and are scoped to an
+explicit process/session generation. Display names remain descriptive only.
+Any session change or target omission invalidates target-bound work. The
+current vendor bridge's stable target ID is not sufficient acknowledgement:
+until a caller command ID and revision/selection fences are implemented, old
+bridge state must not certify a new action.
+
 Continuous mode is still blocked for live-labeled environments. In portable
 continuous runs, one observation pump feeds an authoritative bounded store.
 State-changing plan actions receive a command ID and start/completion revision;
