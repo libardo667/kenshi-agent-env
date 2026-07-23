@@ -359,12 +359,19 @@ Acceptance evidence:
 - A paused camera orbit changed presentation but not session, selection, or the
   complete nearby ID set. Native query order did not change in that run, so
   live reorder is not claimed.
+- A later renderer reset in the same process was diagnosed separately. The
+  prior DLL reproduced the same DirectX device-removal/driver-internal error
+  after a ten-minute baseline, while the identity DLL passed a subsequent
+  mitigated ten-minute soak and clean exit. This rules out stable identity as a
+  necessary cause; it does not establish broad live stability.
 
-Result: complete in the current worktree. The first live pass was usefully
+Result: complete in `28489cc`. The first live pass was usefully
 rejected because Kenshi's overloaded handle equality disagreed with the
 selected-set handle fields. Direct equality over type, container, container
 serial, index, and serial fixed the mismatch; rebuild and reload passed. The
-legacy hotkey acknowledgement remains explicitly non-causal.
+legacy hotkey acknowledgement remains explicitly non-causal. The separate GPU
+incident and reversible mitigation are recorded in
+`docs/LIVE_STABILITY_INCIDENT_20260723.md`.
 
 ## Current checks
 
@@ -384,6 +391,10 @@ P5 stable-identity boundary verification on 2026-07-23:
 - Live identity evidence covered exact one-selection agreement, 18 unique IDs
   for 18 nearby characters, four IDs for four same-named Ninja Guards, and
   unchanged session/selection/nearby ID set across a paused camera change.
+- Crash triage matched Windows SDK constants for a DirectX device reset and
+  internal driver error. The prior DLL reproduced it; Low textures plus
+  disabled water reflections then passed a more-than-ten-minute identity soak
+  and clean exit under continued system-memory pressure.
 - Single-step seeds 7, 11, and 19 retained the one-day outcomes in 25, 13, and
   13 actions.
 
@@ -517,6 +528,9 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 - Native bridge acknowledgement still lacks command IDs and revision fences;
   current command causality is owned inside the portable Python runtime.
+- Broad live stability remains open. One Intel Iris Xe run reset the DirectX
+  device under high shared-memory pressure; a prior-DLL baseline reproduced it,
+  and the mitigated identity run passed only a narrow ten-minute soak.
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
