@@ -72,6 +72,15 @@ inspection alone.
 - [ ] A supervised launcher interruption emits no further input and does not
       reclaim focus. Portable zero-input tests pass; Windows revalidation is
       pending after the 1280x720 focus-retry incident.
+- [ ] At 1920x1080 and one alternate client size, the video launcher advances
+      by Enter, RE_Kenshi does not open its settings panel, and exact current
+      `Continue`/save semantic controls load the save without a fixed startup
+      coordinate.
+- [ ] Human input during a continuous live run produces a visible
+      `human_control` banner and confirmed pause. After three quiet seconds the
+      five-second takeover countdown appears; new input resets it, F12 disarms
+      it, and a completed countdown causes a fresh replan rather than resuming
+      the cancelled plan.
 - [x] A mismatched calibrated client size blocks pointer input inside the
       acquired input lease in portable tests.
 - [ ] One calibrated click works for 50 repeated trials without drift.

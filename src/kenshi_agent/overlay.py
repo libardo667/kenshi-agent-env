@@ -9,6 +9,33 @@ from .models import PlannerDecision
 from .reporting import format_action
 
 
+def ownership_banner(record: dict[str, Any]) -> tuple[str, str] | None:
+    event_type = record.get("event_type")
+    payload = record.get("payload") or {}
+    if event_type == "agent_takeover_countdown":
+        remaining = payload.get("seconds_remaining", "?")
+        return (
+            f"AGENT TAKEOVER IN {remaining}s  |  MOVE MOUSE TO CANCEL  |  F12 DISARMS",
+            "#8a5b00",
+        )
+    if event_type not in {
+        "control_ownership_changed",
+        "agent_takeover_cancelled",
+        "agent_takeover_ready",
+    }:
+        return None
+    state = payload.get("state")
+    if state == "human_control":
+        return ("HUMAN CONTROL  |  AGENT YIELDED", "#164e63")
+    if state == "takeover_pending":
+        return ("AGENT TAKEOVER PENDING  |  MOVE MOUSE TO CANCEL", "#8a5b00")
+    if state == "agent_active":
+        return ("AGENT ACTIVE  |  AUTOMATION OWNS INPUT", "#14532d")
+    if state == "disarmed":
+        return ("AGENT DISARMED  |  HUMAN CONTROL", "#7f1d1d")
+    return None
+
+
 def format_event(record: dict[str, Any]) -> str | None:
     event_type = record.get("event_type")
     step_index = record.get("step_index")
@@ -34,6 +61,23 @@ def format_event(record: dict[str, Any]) -> str | None:
     if event_type == "action_receipt":
         status = "DONE" if payload.get("accepted") and not payload.get("error_type") else "FAILED"
         return f"{step} | {status} | {payload.get('message') or 'Action completed.'}\n"
+    if event_type == "control_ownership_changed":
+        return (
+            f"CONTROL {str(payload.get('state', 'unknown')).upper()}\n"
+            f"{payload.get('reason', 'Control ownership changed.')}\n"
+        )
+    if event_type == "agent_takeover_countdown":
+        return (
+            f"*** AGENT TAKEOVER IN {payload.get('seconds_remaining', '?')}s ***\n"
+            "Move the mouse or press a key to keep human control. F12 disarms.\n"
+        )
+    if event_type == "agent_takeover_cancelled":
+        return f"TAKEOVER CANCELLED | {payload.get('reason', 'Human control retained.')}\n"
+    if event_type == "agent_takeover_ready":
+        return (
+            "TAKEOVER COUNTDOWN COMPLETE\n"
+            f"{payload.get('reason', 'Current state is being revalidated.')}\n"
+        )
     if event_type in {"action_rejected", "environment_error"}:
         message = payload.get("message") or payload.get("error_type") or "Unknown error."
         return f"{step} | ERROR | {message}\n"
@@ -133,6 +177,10 @@ def show_overlay(
                         continue
                     if rendered is not None:
                         append(rendered)
+                    banner = ownership_banner(record)
+                    if banner is not None:
+                        banner_text, banner_colour = banner
+                        heading.configure(text=banner_text, bg=banner_colour)
                     if (
                         record.get("event_type") == "run_finished"
                         and auto_close_seconds > 0

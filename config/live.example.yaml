@@ -93,6 +93,10 @@ controls:
   restore_foreground_after_input: true
   restore_cursor_after_input: true
   alt_tab_after_input: true
+  startup_continue_control_labels:
+    - Continue
+  startup_save_control_labels:
+    - autosave1
 
 safety:
   # Keep false through telemetry and screenshot validation. Turning this true
@@ -105,6 +109,10 @@ safety:
   supervisor_max_sequence_stalls: 3
   supervisor_sequence_stall_min_age_seconds: 1.0
   supervisor_pause_timeout_seconds: 2.0
+  automatic_takeover_enabled: false
+  human_control_quiet_seconds: 3.0
+  takeover_countdown_seconds: 5.0
+  takeover_poll_seconds: 0.1
   max_primitive_actions_per_step: 10
   max_actions_per_minute: 60
   max_wait_seconds: 8.0

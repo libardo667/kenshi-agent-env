@@ -212,6 +212,19 @@ class NormalizedPointerBounds(StrictModel):
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
 
+class VisibleUIControl(StrictModel):
+    label: str = Field(min_length=1, max_length=500)
+    role: Literal["button", "text"]
+    bounds: NormalizedPointerBounds
+
+    @property
+    def center(self) -> tuple[float, float]:
+        return (
+            (self.bounds.min_x + self.bounds.max_x) / 2.0,
+            (self.bounds.min_y + self.bounds.max_y) / 2.0,
+        )
+
+
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
@@ -221,6 +234,10 @@ class UIState(StrictModel):
     tooltip_visible: bool | None = None
     tooltip_text: str | None = None
     tooltip_source_bounds: NormalizedPointerBounds | None = None
+    visible_controls: list[VisibleUIControl] | None = Field(
+        default=None,
+        max_length=64,
+    )
     context_menu_open: bool | None = None
     selected_character_id: str | None = None
     selected_character_ids: list[str] = Field(default_factory=list)

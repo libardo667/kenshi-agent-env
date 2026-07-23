@@ -98,6 +98,12 @@ controls:
   # measured at this exact client size. A mismatch must emit no pointer input.
   calibrated_client_width: 1920
   calibrated_client_height: 1080
+  # Startup uses exact current MyGUI labels and their live exported bounds.
+  # These are not fixed coordinates and remain valid across client sizes.
+  startup_continue_control_labels:
+    - Continue
+  startup_save_control_labels:
+    - autosave1
 
 safety:
   # This profile permits only the audited skills below. The CLI must still
@@ -109,6 +115,13 @@ safety:
   supervisor_max_sequence_stalls: 3
   supervisor_sequence_stall_min_age_seconds: 1.0
   supervisor_pause_timeout_seconds: 2.0
+  # Human input first receives explicit ownership. After three quiet seconds,
+  # a visible five-second countdown starts; any new input resets it and F12
+  # disarms automatic takeover for the run.
+  automatic_takeover_enabled: true
+  human_control_quiet_seconds: 3.0
+  takeover_countdown_seconds: 5.0
+  takeover_poll_seconds: 0.1
   max_primitive_actions_per_step: 4
   max_actions_per_minute: 40
   max_wait_seconds: 8.0

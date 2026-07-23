@@ -4,6 +4,7 @@ import sys
 from datetime import datetime
 from typing import TextIO
 
+from .control_ownership import ControlOwnershipEvent, ControlOwnershipEventType
 from .models import Action, ActionReceipt, ControlMode, PlannerDecision, SkillAction
 
 
@@ -75,6 +76,19 @@ class ConsoleDecisionReporter:
 
     def error(self, *, step_index: int, label: str, message: str) -> None:
         self._write(f"[{self._clock()}] step {step_index:02d}  {label} | {message}\n\n")
+
+    def control_ownership(self, event: ControlOwnershipEvent) -> None:
+        if event.event_type is ControlOwnershipEventType.COUNTDOWN:
+            self._write(
+                f"\n*** AGENT TAKEOVER IN {event.seconds_remaining}s ***\n"
+                "Move the mouse or press a key to keep human control. "
+                "Press F12 to disarm takeover.\n"
+            )
+            return
+        self._write(
+            f"\n*** CONTROL {event.state.value.upper()} ***\n"
+            f"{event.reason}\n"
+        )
 
     def run_finished(self, *, steps_completed: int, stop_reason: str) -> None:
         self._write(

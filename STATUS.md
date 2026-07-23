@@ -30,6 +30,12 @@
   pause-capability loss, an exact human-input event, or unauthorized unpause;
   uncertain dispatch is recorded conservatively, and cleanup is successful only
   after a later paused revision.
+- The burn-in profile now has an explicit control-ownership lifecycle. Human
+  input cancels the active plan and yields a confirmed paused game; a visible
+  resettable countdown must finish before fresh revision/control-mode checks
+  can start a new safety supervisor and a new strategic plan. F12 disarms
+  automatic takeover. The former silent quiet-interval reacquisition is no
+  longer the scheduler's authority.
 - Configured movement-pulse skills become stateful options in portable
   continuous mode. Their lifecycle and state-stream progress are replayable;
   one strategic advisory can overlap movement, and a matching future-only patch
@@ -42,6 +48,16 @@
   acknowledgements report accepted, rejected, completed, or cancelled state.
   The additive fields expose in-game elapsed minutes, exact dialogue
   target/options, and current tooltip text/source bounds.
+- The offline protocol `0.5.0` candidate adds a bounded, read-only
+  `ui.visible_controls` surface for current MyGUI captions/roles/bounds. The
+  developer launcher now uses Enter for the native video dialog and exact
+  current semantic labels for title/save selection, with an in-lease
+  label/bounds recheck and no fixed startup coordinates. Its 185,344-byte
+  Release x64 DLL SHA-256 is
+  `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`;
+  it is installed while Kenshi is stopped but has not yet been loaded or
+  live-tested. The replaced `0.4.0` DLL is preserved under
+  `runs/p0-semantic-launch-preinstall-20260723T2208Z/installed-plugin-backup/`.
 - The deterministic live-shaped P6 proof completes approach, dialogue, and
   inspection from one response, then an exact purchase from a second: four
   actions, two strategic calls, exact 649-cat debit, one added food item, and

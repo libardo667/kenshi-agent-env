@@ -8,6 +8,7 @@ from kenshi_agent.models import (
     CharacterState,
     ClickAction,
     NearbyEntity,
+    NormalizedPointerBounds,
     Observation,
     PlannerDecision,
     ScrollAction,
@@ -15,6 +16,7 @@ from kenshi_agent.models import (
     SkillSpec,
     TelemetrySnapshot,
     UIState,
+    VisibleUIControl,
     parse_action,
 )
 from kenshi_agent.schema_export import export_schemas
@@ -28,6 +30,21 @@ def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
     assert entity.camera_bearing_degrees is None
     assert entity.screen_position is None
     assert entity.shop_inventory_owner is None
+
+
+def test_visible_ui_control_exposes_resolution_independent_center() -> None:
+    control = VisibleUIControl(
+        label="Continue",
+        role="button",
+        bounds=NormalizedPointerBounds(
+            min_x=0.2,
+            max_x=0.4,
+            min_y=0.1,
+            max_y=0.2,
+        ),
+    )
+
+    assert control.center == pytest.approx((0.3, 0.15))
 
 
 def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids() -> None:

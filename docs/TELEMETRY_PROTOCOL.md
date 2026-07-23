@@ -50,6 +50,7 @@ ui.dialogue
 ui.dialogue.target
 ui.dialogue.options
 ui.tooltip
+ui.visible_controls
 nearby.characters
 nearby.roles
 nearby.shop_owners
@@ -71,6 +72,15 @@ left/right line captions, and normalized bounds of the widget that caused that
 tooltip. Those bounds bind a prospective click to the item currently supplying
 the evidence; they do not describe or enumerate the rest of the inventory.
 Text and bounds are null when no tooltip is visible.
+
+Protocol `0.5.0` adds `ui.visible_controls`: a bounded list of at most 64
+currently visible and enabled MyGUI text/button widgets, each with its rendered
+caption, role, and normalized current bounds. Traversal is additionally capped
+at 2,048 widgets and depth 32. This is a semantic pointer anchor, not a direct
+MyGUI action surface: Python may select only an exact configured label, must
+re-read the same unique label and bounds inside its input lease, and still acts
+through ordinary mouse input. Missing, duplicate, changed, disabled, or hidden
+matches emit no click.
 
 `nearby.characters` is limited to the plugin's bounded spatial query around the
 selected character. An entity with `visible: true` is rendered inside the
@@ -137,7 +147,7 @@ remain diagnostic compatibility fields, not the causal authority.
 ## Identity
 
 Protocol `0.2.0` introduced `identity.stable_handles`, retained by current
-protocol `0.4.0`. When that capability is
+protocol `0.5.0`. When that capability is
 present, `identity_session_id` is non-null and every squad, selection, nearby,
 and native target ID comes from a validated Kenshi `hand`, its lifetime serials,
 and the current process/session generations. The string layout is an internal
