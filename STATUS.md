@@ -12,6 +12,14 @@
   In mock/fake environments, one strategic response can execute multiple
   guarded actions with causal postconditions, immediate precondition rechecks,
   bounded branches/retries/budgets, lifecycle replay, and plan metrics.
+- Continuous mode has one cancellable observation pump and bounded authoritative
+  store for monotonic revisions, telemetry-only ingest, visual carry-forward,
+  deltas, transient events, isolated subscribers, active plan/step/command
+  state, and command receipts with causal start/completion revisions.
+- The portable nearby-entity registry preserves observed lifetimes across
+  ordinal reordering using fingerprint and position evidence, records ambiguous
+  matches, and does not infer disappearance while the entity-list capability is
+  unavailable. It is not a native stable-handle claim.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.
@@ -89,7 +97,10 @@ new interface-only evidence.
 - Omniscient world-state extraction.
 - Automatic save reloads or hidden reset commands.
 - Unattended enabling of real keyboard/mouse injection.
-- Live continuous execution, an independent observation pump, planner/executor
-  overlap, active plan-patch application, and cancellable live movement options.
-  `single_step` remains the default and continuous P1 is restricted to
-  mock/fake environments.
+- Live continuous execution, an independent safety supervisor,
+  planner/executor overlap, active plan-patch application, and cancellable live
+  movement options. `single_step` remains the default and the continuous path
+  is restricted to mock/fake environments.
+- Native stable entity handles and bridge-level command acknowledgement. The
+  current in-process registry and command IDs establish portable causal
+  semantics but do not make the native plugin protocol P5-complete.

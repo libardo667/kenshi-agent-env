@@ -39,6 +39,13 @@ work.
 epoch, and local monotonic observation time. A plan basis must match the
 observation used for acceptance.
 
+Continuous mode publishes observations through one bounded
+`WorldStateStore`. The store rejects revision regression and state changes
+without a revision advance, detects duplicate telemetry sequences, carries
+forward the last validated visual frame on telemetry-only updates, and feeds
+isolated subscriber queues. `wait_for(predicate, after_revision=R)` subscribes
+to that stream and cannot succeed from `R` or an earlier revision.
+
 Postconditions use the relevant causal channel:
 
 - telemetry, selected-character, target, freshness, and capability conditions
@@ -47,6 +54,25 @@ Postconditions use the relevant causal channel:
 
 A value already present in the action-start snapshot cannot confirm that action,
 even when the snapshot remains below its wall-clock staleness threshold.
+Each plan command also has a deterministic command ID. Its receipt records the
+action-start revision, canonical store completion revision, and whether that
+revision causally advanced. Raw environment state rejected by the store cannot
+become a successful action outcome.
+
+## Bounded history, events, and identity
+
+The store bounds snapshot history, semantic deltas, transient-event journal,
+command history, and subscriber queues. Slow subscribers drop their oldest
+queued update with an explicit metric; the transport is never polled once per
+consumer. Shutdown wakes subscribers and cancels the pump without leaving
+owned tasks.
+
+Nearby source IDs such as `nearby:0` are treated as weak evidence. The store
+issues process-local lifetime IDs and matches subsequent observations using
+typed fingerprints and spatial continuity, including same-name ordinal swaps.
+Ambiguous matches are journaled. Disappearance closes a lifetime only while an
+authoritative entity-list capability is present; capability withdrawal keeps
+the prior lifetime unresolved. These IDs are not native Kenshi stable handles.
 
 ## Typed condition outcomes
 
@@ -123,10 +149,13 @@ safety_preempted
 
 Budget reservation, commit, and release are logged separately. The evaluator
 reports strategic calls, plan and step outcomes, budget transactions, and
-actions per strategic planner call. `replay_plan_lifecycle` reconstructs each
-plan's terminal status and succeeded, failed, and cancelled step IDs.
+actions per strategic planner call. It also reports causal command-receipt
+coverage, sequence stalls, transient-event retention/loss, subscriber drops,
+pump errors, revision failures, entity lifetime counts, and command mismatches.
+`replay_plan_lifecycle` reconstructs each plan's terminal status and succeeded,
+failed, and cancelled step IDs.
 
-## Proven P1 cases
+## Proven P1-P2 cases
 
 Portable tests and the built-in heuristic prove:
 
@@ -141,7 +170,18 @@ Portable tests and the built-in heuristic prove:
 - invalid graph topology, unsafe retries, excessive horizons, and policy budgets
   are rejected;
 - lifecycle replay reaches the logged terminal state.
+- multiple subscribers receive isolated copies of the same validated update;
+- a transient event remains queryable after it leaves the latest snapshot;
+- telemetry-only ingest preserves the last visual revision;
+- duplicate, regressing, conflicting, and capability-withdrawal cases remain
+  explicit;
+- stable lifetime IDs survive ordinal reorder, including duplicate names at
+  distinct positions;
+- a planner response made stale while the observation pump advances is rejected
+  before execution;
+- command receipts distinguish later causal evidence from an unchanged,
+  inconclusive revision.
 
-The next architectural step is an independent observation pump and world-state
-store. Until that exists, there is no claim of planner/executor overlap or
-blocked-planner safety preemption.
+The next architectural step is an independent safety supervisor. Until that
+exists, there is no claim of planner/executor overlap or blocked-planner safety
+preemption.
