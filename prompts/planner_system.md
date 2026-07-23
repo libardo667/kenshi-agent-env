@@ -43,8 +43,9 @@ For `food_procurement_v1`, use these canonical condition shapes exactly:
 {"kind":"field","path":"target.shop_inventory_owner","operator":"equals","expected":false,"target_id":"COPY_EXACT_VENDOR_ID","max_age_seconds":3.0,"required_capabilities":[]}
 ```
 
-Do not use `exists` for freshness. Do not abbreviate paths or invent collection
-paths. In this policy, use only the field paths required for the current phase:
+The condition language has no `exists` operator; use an exact comparison
+against an observed value. Do not abbreviate paths or invent collection paths.
+In this policy, use only the field paths required for the current phase:
 `telemetry.game.paused`, `telemetry.game.money`,
 `telemetry.ui.active_screen`, `telemetry.ui.selected_character_count`,
 `telemetry.ui.dialogue_target_id`, `telemetry.ui.dialogue_option_0`,

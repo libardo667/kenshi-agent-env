@@ -354,9 +354,7 @@ def evaluate_condition(
             f"Condition value for {condition.path or condition.kind.value!r} is unknown.",
         )
 
-    if condition.operator == ConditionOperator.EXISTS:
-        result = ConditionResult.TRUE
-    elif condition.operator == ConditionOperator.EQUALS:
+    if condition.operator == ConditionOperator.EQUALS:
         result = ConditionResult.TRUE if actual == condition.expected else ConditionResult.FALSE
     elif condition.operator == ConditionOperator.NOT_EQUALS:
         result = ConditionResult.TRUE if actual != condition.expected else ConditionResult.FALSE
