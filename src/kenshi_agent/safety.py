@@ -197,7 +197,6 @@ class ActionGuard:
             "nearby.characters",
             "nearby.shop_owners",
             "squad.basic",
-            "squad.hunger",
             "ui.inventory",
             "ui.tooltip",
         }
