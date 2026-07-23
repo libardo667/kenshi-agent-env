@@ -47,9 +47,11 @@ skill's arguments and visual precondition. The live action guard independently
 expands the selected skill and rejects pointer output outside its configured
 envelope. Direct click actions remain blocked by the active profile.
 
-The Windows controller submits absolute cursor placement and mouse-button
-events in one `SendInput` batch. This prevents physical cursor movement from
-interleaving between placement and the click and silently redirecting a command.
+The Windows controller moves Kenshi's software cursor with bounded relative
+`SendInput` corrections. Command right-clicks hold the button for 120 ms before
+release because Kenshi polls `Mouse2` per frame; a zero-duration down/up batch
+can disappear between frames even though Windows accepts both events. The
+release is guaranteed in a `finally` block.
 
 Movement is also time-bounded. The model chooses a duration inside the
 skill-specific range; 0.75 seconds for fine movement and 2.0 seconds for map
@@ -128,3 +130,14 @@ executor returned paused. The four-turn run completed with four executed
 actions, no stale observations, rejections, or environment errors, and paused
 final telemetry. Separate native probes confirmed exact foreground/cursor
 restoration and preservation of a simulated human pointer handoff.
+
+Live probes on 2026-07-22 later exposed a different input semantic: three
+movement receipts reported successful Windows injection, yet Lekko stayed
+`Aimless` and did not move. A direct zero-duration right-click reproduced the
+failure. Holding `Mouse2` for 120 ms queued `Goal: Move order` while paused; a
+guarded Play/right-click/Pause probe then moved Lekko about 43 world units and
+returned paused. Movement and person-interaction macros now use that bounded
+hold while ordinary GUI clicks retain their atomic zero-duration behavior.
+Production run `held-right-click-runtime-proof-20260723` then exercised the
+normal planner and executor path, moved Lekko about 39 more world units, and
+ended with fresh `paused: true` telemetry.

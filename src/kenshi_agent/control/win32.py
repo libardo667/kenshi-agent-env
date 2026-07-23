@@ -707,12 +707,19 @@ class Win32InputController(InputController):
                 MouseButton.MIDDLE: (self.MOUSEEVENTF_MIDDLEDOWN, self.MOUSEEVENTF_MIDDLEUP),
             }[action.button]
             for click_index in range(action.clicks):
-                self._send(
-                    [
-                        self._mouse_input(0, 0, button_flags[0]),
-                        self._mouse_input(0, 0, button_flags[1]),
-                    ]
-                )
+                if action.hold_seconds:
+                    self._send([self._mouse_input(0, 0, button_flags[0])])
+                    try:
+                        await asyncio.sleep(action.hold_seconds)
+                    finally:
+                        self._send([self._mouse_input(0, 0, button_flags[1])])
+                else:
+                    self._send(
+                        [
+                            self._mouse_input(0, 0, button_flags[0]),
+                            self._mouse_input(0, 0, button_flags[1]),
+                        ]
+                    )
                 if click_index + 1 < action.clicks and action.interval_seconds:
                     await asyncio.sleep(action.interval_seconds)
             primitive_count = action.clicks * 2 + 1

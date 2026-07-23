@@ -121,6 +121,12 @@ inspection alone.
   blocked.
 - A supervised fine-movement trial reached speed 54.0 and moved Lekko about
   26.7 world units toward nearby visible terrain before the game was re-paused.
+- A later regression showed that zero-duration `Mouse2` down/up events could be
+  accepted by Windows but missed by Kenshi's per-frame command polling. A
+  120 ms held right-click queued `Goal: Move order` while paused, and a guarded
+  live probe moved Lekko about 43 world units before telemetry-confirmed pause.
+  Run `held-right-click-runtime-proof-20260723` then validated the production
+  macro path with another roughly 39-unit move and fresh paused telemetry.
 - The first map trial exposed a real cursor race: physical mouse movement could
   interleave between separate synthetic move and button calls, sending the
   destination to the prior pointer location. The controller now submits the
