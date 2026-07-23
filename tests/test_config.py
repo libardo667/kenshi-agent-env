@@ -75,6 +75,10 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "move_visible_terrain",
         "move_on_map",
         "interact_visible_person",
+        "approach_confirmed_vendor",
+        "choose_show_goods",
+        "inspect_shop_item",
+        "buy_inspected_shop_item",
     }
     assert config.runtime.max_steps == 30
     assert config.planner.reasoning_effort == "xhigh"
@@ -90,6 +94,9 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
     assert not config.safety.allow_live_unpause_actions
+    assert config.safety.max_purchase_price == 750
+    assert config.safety.min_money_after_purchase == 250
+    assert config.safety.max_purchases_per_run == 1
     fine_bounds = config.macros["move_visible_terrain"].normalized_pointer_bounds
     map_bounds = config.macros["move_on_map"].normalized_pointer_bounds
     assert fine_bounds is not None and fine_bounds.contains(0.5, 0.5)
@@ -125,6 +132,30 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert clear_highlights[0].kind == "key"
     assert clear_highlights[0].key == "alt"
     assert config.macros["interact_visible_person"].movement_pulse_max_seconds == 6.0
+    assert config.macros["approach_confirmed_vendor"].movement_pulse_max_seconds == 8.0
+    approach_vendor = config.macros["approach_confirmed_vendor"].parsed_actions()
+    assert len(approach_vendor) == 1
+    assert approach_vendor[0].kind == "hotkey"
+    assert approach_vendor[0].keys == ["ctrl", "shift", "f10"]
+    show_goods = config.macros["choose_show_goods"].parsed_actions()
+    assert len(show_goods) == 1
+    assert isinstance(show_goods[0], ClickAction)
+    assert show_goods[0].x == 0.50
+    assert show_goods[0].y == 0.812
+    inspect_item = registry.expand(
+        SkillAction(name="inspect_shop_item", args={"x": 0.316, "y": 0.357})  # type: ignore[arg-type]
+    )
+    assert len(inspect_item) == 1
+    assert inspect_item[0].kind == "move_cursor"
+    buy_item = registry.expand(
+        SkillAction(  # type: ignore[arg-type]
+            name="buy_inspected_shop_item",
+            args={"x": 0.316, "y": 0.357, "expected_price": 649},
+        )
+    )
+    assert len(buy_item) == 1
+    assert isinstance(buy_item[0], ClickAction)
+    assert buy_item[0].button.value == "right"
     zoom_in = config.macros["zoom_map_in"].parsed_actions()[0]
     assert zoom_in.kind == "scroll"
     assert zoom_in.x == 0.534
@@ -141,7 +172,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert orbit_right[0].key == "f"
     assert orbit_right[0].hold_seconds == 0.04
     assert orbit_right[1].key == "e"
-    assert orbit_right[1].hold_seconds == 0.1
+    assert orbit_right[1].hold_seconds == 0.25
 
 
 def test_real_env_file_is_ignored_but_template_is_trackable() -> None:

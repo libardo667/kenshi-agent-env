@@ -14,6 +14,7 @@ from .models import (
     ActionOutcomeAssessment,
     ActionReceipt,
     CharacterState,
+    NearbyEntity,
     Observation,
     PlannerDecision,
     SkillAction,
@@ -341,7 +342,7 @@ class AgentRuntime:
                     "This movement skill did not move Lekko by a measurable amount. Treat the "
                     "destination as failed or blocked and choose a different grounded route.",
                 )
-            if name == "interact_visible_person":
+            if name in {"interact_visible_person", "approach_confirmed_vendor"}:
                 active_screen = after.ui.active_screen if after is not None else None
                 interaction_opened = after is not None and (
                     after.ui.dialogue_open is True
@@ -363,6 +364,22 @@ class AgentRuntime:
                     ActionOutcomeAssessment.NO_OP,
                     "The interaction opened no dialogue or trade and did not move Lekko. The "
                     "click failed to make progress; do not repeat it on the same evidence.",
+                )
+            if name == "buy_inspected_shop_item":
+                money_changed = any(change.startswith("money: ") for change in telemetry_changes)
+                food_changed = any(
+                    change.startswith("food items: ") for change in telemetry_changes
+                )
+                if money_changed and food_changed:
+                    return (
+                        ActionOutcomeAssessment.CHANGED,
+                        "Purchase verified: money decreased and the selected character's "
+                        "food-item count increased.",
+                    )
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    "Purchase was not verified by both a money decrease and food-item increase. "
+                    "Do not click another item.",
                 )
 
         if telemetry_changes or (
@@ -477,7 +494,47 @@ class AgentRuntime:
             changes.append(f"visible entities appeared: {', '.join(appeared)}")
         if disappeared:
             changes.append(f"visible entities disappeared: {', '.join(disappeared)}")
+
+        candidate_before = cls._vendor_candidates(before)
+        candidate_after = cls._vendor_candidates(after)
+        for key in sorted(candidate_before.keys() & candidate_after.keys()):
+            old = candidate_before[key]
+            new = candidate_after[key]
+            if old.distance is not None and new.distance is not None:
+                delta = new.distance - old.distance
+                if abs(delta) >= 0.5:
+                    direction = "farther" if delta > 0 else "closer"
+                    changes.append(
+                        f"distance to {new.name}: {old.distance:.2f} -> "
+                        f"{new.distance:.2f} ({abs(delta):.2f} {direction})"
+                    )
+            if (
+                old.camera_bearing_degrees is not None
+                and new.camera_bearing_degrees is not None
+            ):
+                bearing_delta = (
+                    new.camera_bearing_degrees - old.camera_bearing_degrees + 180.0
+                ) % 360.0 - 180.0
+                if abs(bearing_delta) >= 3.0:
+                    changes.append(
+                        f"camera bearing to {new.name}: "
+                        f"{old.camera_bearing_degrees:.1f} -> "
+                        f"{new.camera_bearing_degrees:.1f} degrees"
+                    )
         return changes
+
+    @staticmethod
+    def _vendor_candidates(
+        snapshot: TelemetrySnapshot,
+    ) -> dict[tuple[str, str | None], NearbyEntity]:
+        return {
+            (entity.name, entity.faction): entity
+            for entity in snapshot.nearby_entities
+            if entity.is_animal is False
+            and entity.has_vendor_list is True
+            and entity.is_squad_leader is True
+            and entity.has_dialogue is True
+        }
 
     @staticmethod
     def _selected_character(snapshot: TelemetrySnapshot | None) -> CharacterState | None:

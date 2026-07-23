@@ -52,6 +52,11 @@ namespace
     unsigned long long g_sequence = 0;
     DWORD g_lastSnapshotTick = 0;
     bool g_sampling = false;
+    bool g_approachVendorHotkeyWasDown = false;
+    unsigned long long g_nativeCommandSequence = 0;
+    std::string g_lastNativeCommand;
+    std::string g_lastNativeCommandResult;
+    std::string g_lastNativeCommandTarget;
     std::wstring g_outputDirectory;
 
     std::string JsonEscape(const std::string& input)
@@ -134,6 +139,35 @@ namespace
         return x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f;
     }
 
+    bool TryGetCameraBearing(
+        PlayerInterface* player,
+        const Ogre::Vector3& position,
+        float& bearingDegrees)
+    {
+        CameraClass* cameraClass = player != NULL ? player->getCamera() : NULL;
+        Ogre::Camera* camera = cameraClass != NULL ? cameraClass->camera : NULL;
+        if (camera == NULL)
+            return false;
+
+        const Ogre::Matrix4& viewMatrix = camera->getViewMatrix();
+        const float* view = reinterpret_cast<const float*>(&viewMatrix);
+        const float cameraX =
+            view[0] * position.x +
+            view[1] * position.y +
+            view[2] * position.z +
+            view[3];
+        const float cameraZ =
+            view[8] * position.x +
+            view[9] * position.y +
+            view[10] * position.z +
+            view[11];
+        const float radians =
+            static_cast<float>(std::atan2(cameraX, -cameraZ));
+        bearingDegrees =
+            radians * static_cast<float>(180.0 / 3.14159265358979323846);
+        return true;
+    }
+
     const char* GetDisposition(Character* observer, Character* target)
     {
         if (observer == NULL || target == NULL)
@@ -151,6 +185,91 @@ namespace
         const float dy = a.y - b.y;
         const float dz = a.z - b.z;
         return static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
+    bool IsConfirmedVendor(Character* selected, Character* target)
+    {
+        if (selected == NULL ||
+            target == NULL ||
+            !target->isValid() ||
+            target == selected ||
+            target->isPlayerCharacter() ||
+            target->isAnimal() != NULL ||
+            target->isUnconcious() ||
+            selected->isEnemy(target, false))
+        {
+            return false;
+        }
+
+        ActivePlatoon* platoon = target->getPlatoon();
+        return platoon != NULL &&
+               platoon->getHasVendorList() &&
+               platoon->getSquadLeader() == target &&
+               target->hasDialogue();
+    }
+
+    Character* FindNearestConfirmedVendor(PlayerInterface* player)
+    {
+        Character* selected =
+            player != NULL ? player->selectedCharacter.getCharacter() : NULL;
+        if (ou == NULL || selected == NULL || !selected->isValid())
+            return NULL;
+
+        lektor<RootObject*> nearbyCharacters;
+        const Ogre::Vector3 selectedPosition = selected->getPosition();
+        ou->getCharactersWithinSphere(
+            nearbyCharacters,
+            selectedPosition,
+            250.0f,
+            0.0f,
+            30.0f,
+            40,
+            0,
+            selected);
+
+        Character* nearest = NULL;
+        float nearestDistance = 0.0f;
+        for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
+             it != nearbyCharacters.end();
+             ++it)
+        {
+            Character* candidate = reinterpret_cast<Character*>(*it);
+            if (!IsConfirmedVendor(selected, candidate))
+                continue;
+            const float candidateDistance =
+                Distance(selectedPosition, candidate->getPosition());
+            if (nearest == NULL || candidateDistance < nearestDistance)
+            {
+                nearest = candidate;
+                nearestDistance = candidateDistance;
+            }
+        }
+        return nearest;
+    }
+
+    void IssueApproachConfirmedVendor(PlayerInterface* player)
+    {
+        ++g_nativeCommandSequence;
+        g_lastNativeCommand = "approach_confirmed_vendor";
+        g_lastNativeCommandTarget.clear();
+
+        Character* target = FindNearestConfirmedVendor(player);
+        if (target == NULL)
+        {
+            g_lastNativeCommandResult = "no_confirmed_vendor";
+            return;
+        }
+
+        const hand& targetHandle = target->getHandle();
+        Building* destinationIndoors = target->isIndoors().getBuilding();
+        player->newPlayerTaskSelectedCharacters(
+            PLAYER_TALK_TO,
+            targetHandle,
+            destinationIndoors,
+            target->getPosition(),
+            false);
+        g_lastNativeCommandResult = "issued";
+        g_lastNativeCommandTarget = target->getName();
     }
 
     void RegisterShopTrader(ShopTrader* object, Character* owner)
@@ -245,7 +364,8 @@ namespace
              << "\"game.pause\",\"game.speed\",\"game.money\","
              << "\"camera.position\",\"squad.basic\","
              << "\"ui.inventory\",\"ui.dialogue\","
-             << "\"nearby.characters\",\"nearby.roles\"";
+             << "\"nearby.characters\",\"nearby.roles\","
+             << "\"control.approach_vendor\"";
         if (g_shopTraderRegistryReady)
             json << ",\"nearby.shop_owners\"";
         json << "],";
@@ -302,6 +422,26 @@ namespace
         else
             json << "null";
         json << ",";
+
+        json << "\"native_control\":{";
+        json << "\"available\":true,";
+        json << "\"last_command_sequence\":" << g_nativeCommandSequence;
+        if (!g_lastNativeCommand.empty())
+        {
+            json << ",\"last_command\":\""
+                 << JsonEscape(g_lastNativeCommand) << "\"";
+        }
+        if (!g_lastNativeCommandResult.empty())
+        {
+            json << ",\"last_result\":\""
+                 << JsonEscape(g_lastNativeCommandResult) << "\"";
+        }
+        if (!g_lastNativeCommandTarget.empty())
+        {
+            json << ",\"last_target\":\""
+                 << JsonEscape(g_lastNativeCommandTarget) << "\"";
+        }
+        json << "},";
 
         json << "\"squad\":[";
         if (characters != NULL)
@@ -381,6 +521,12 @@ namespace
                         talkTaskProbability);
                 float screenX = 0.0f;
                 float screenY = 0.0f;
+                float cameraBearingDegrees = 0.0f;
+                const bool hasCameraBearing =
+                    TryGetCameraBearing(
+                        player,
+                        targetPosition,
+                        cameraBearingDegrees);
                 const bool hasScreenPosition =
                     target->isOnScreen && target->getVisible() &&
                     TryGetScreenPosition(player, targetPosition, screenX, screenY);
@@ -412,6 +558,11 @@ namespace
                 json << "\"position\":";
                 AppendVector3(json, targetPosition);
                 json << ",";
+                if (hasCameraBearing)
+                {
+                    json << "\"camera_bearing_degrees\":"
+                         << cameraBearingDegrees << ",";
+                }
                 if (hasScreenPosition)
                 {
                     json << "\"screen_position\":{\"x\":" << screenX
@@ -474,6 +625,14 @@ namespace
     void PlayerInterfaceUpdateHook(PlayerInterface* player)
     {
         g_originalPlayerInterfaceUpdate(player);
+        const bool approachVendorHotkeyDown =
+            (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 &&
+            (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0 &&
+            (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
+        if (approachVendorHotkeyDown && !g_approachVendorHotkeyWasDown)
+            IssueApproachConfirmedVendor(player);
+        g_approachVendorHotkeyWasDown = approachVendorHotkeyDown;
+
         const DWORD now = GetTickCount();
         if (now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
         {

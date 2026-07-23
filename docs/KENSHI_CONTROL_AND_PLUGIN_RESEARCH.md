@@ -100,6 +100,15 @@ registry, and matches its owner pointers against nearby characters. For
 pre-click validity it also asks Kenshi directly through
 `getPlayerTaskProbability(PLAYER_TALK_TO, target, probability)`.
 
+The headers also expose the exact player-order seam needed for an occluded
+indoor vendor:
+`PlayerInterface::newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, handle,
+destinationIndoors, position, false)`. The live plugin now invokes that method
+only after repeating its humanoid, vendor-list, leader, dialogue, conscious,
+and non-hostile checks. In the Hub proof, Kenshi pathfinding reduced the Barman
+distance by 146.60 units in one two-second pulse and opened dialogue on the
+next.
+
 ### Inventory and trade implementations
 
 [XxAtreuSSxX/BetterLooting](https://github.com/XxAtreuSSxX/BetterLooting)
@@ -121,19 +130,22 @@ provides minimal hook, dialogue, UI-button, export, and import examples.
 provides an offline symbol and relationship map for finding reconstructed
 classes, methods, globals, and real plugin examples.
 
-## Recommended architecture
+## Implemented command seam and next architecture
 
-The smallest high-leverage native extension is an atomic command bridge beside
-the existing telemetry writer. The Windows agent writes one bounded command;
-the `PlayerInterface::update` hook validates and executes it on Kenshi's main/UI
-thread, then writes an acknowledgement into telemetry. Initial commands should
-be deliberately narrow:
+The first high-leverage native control is now implemented beside the telemetry
+writer. A private input chord is observed by the `PlayerInterface::update` hook,
+validated and executed on Kenshi's main/UI thread, and acknowledged in
+`native_control` telemetry. Its only command is the deliberately narrow
+`approach_confirmed_vendor`.
+
+Further commands should preserve the same shape:
 
 1. `set_pause(expected_current, desired)` using `GameWorld::userPause`;
 2. `select_character(expected_name)` and `focus_selected` using
    `PlayerInterface` methods;
 3. read-only `ui_state` fields for dialogue, inventory, and trade windows;
-4. later, a native movement order with a bounded destination and pause envelope;
+4. additional native movement orders with bounded destinations and pause
+   envelopes;
 5. only after observation is trustworthy, a one-item guarded trade operation.
 
 This preserves screenshots as perceptual evidence while moving brittle,

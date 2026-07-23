@@ -13,6 +13,7 @@ from kenshi_agent.models import (
     Observation,
     PlannerDecision,
     SkillAction,
+    TelemetrySnapshot,
     Transition,
 )
 from kenshi_agent.planners import HeuristicPlanner
@@ -203,3 +204,75 @@ def test_interaction_requires_movement_or_dialogue_not_ambient_frame_change() ->
 
     assert assessment == "no_op"
     assert "opened no dialogue or trade" in feedback
+
+
+def test_telemetry_changes_report_vendor_route_progress() -> None:
+    before = TelemetrySnapshot.model_validate(
+        {
+            "nearby_entities": [
+                {
+                    "id": "nearby:3",
+                    "name": "Barman",
+                    "kind": "character",
+                    "is_animal": False,
+                    "has_vendor_list": True,
+                    "is_squad_leader": True,
+                    "has_dialogue": True,
+                    "faction": "Trade Ninjas",
+                    "distance": 96.0,
+                    "camera_bearing_degrees": -70.0,
+                }
+            ]
+        }
+    )
+    after = TelemetrySnapshot.model_validate(
+        {
+            "nearby_entities": [
+                {
+                    "id": "nearby:8",
+                    "name": "Barman",
+                    "kind": "character",
+                    "is_animal": False,
+                    "has_vendor_list": True,
+                    "is_squad_leader": True,
+                    "has_dialogue": True,
+                    "faction": "Trade Ninjas",
+                    "distance": 82.0,
+                    "camera_bearing_degrees": -25.0,
+                }
+            ]
+        }
+    )
+
+    changes = AgentRuntime._telemetry_changes(before, after)
+
+    assert "distance to Barman: 96.00 -> 82.00 (14.00 closer)" in changes
+    assert "camera bearing to Barman: -70.0 -> -25.0 degrees" in changes
+
+
+def test_purchase_outcome_requires_money_and_food_confirmation() -> None:
+    receipt = ActionReceipt(
+        action=SkillAction(name="buy_inspected_shop_item"),
+        accepted=True,
+        executed=True,
+        dry_run=False,
+    )
+
+    verified = AgentRuntime._assess_outcome(
+        receipt,
+        TelemetrySnapshot(),
+        visual_change=0.1,
+        telemetry_changes=["money: 1000 -> 351", "food items: 0 -> 1"],
+        movement_distance=0.0,
+    )
+    unverified = AgentRuntime._assess_outcome(
+        receipt,
+        TelemetrySnapshot(),
+        visual_change=0.1,
+        telemetry_changes=["money: 1000 -> 351"],
+        movement_distance=0.0,
+    )
+
+    assert verified[0] == "changed"
+    assert "Purchase verified" in verified[1]
+    assert unverified[0] == "no_op"

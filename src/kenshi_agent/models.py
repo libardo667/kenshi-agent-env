@@ -107,6 +107,7 @@ class NearbyEntity(StrictModel):
     disposition: Disposition = Disposition.UNKNOWN
     distance: float | None = None
     position: Vec3 | None = None
+    camera_bearing_degrees: float | None = Field(default=None, ge=-180.0, le=180.0)
     screen_position: Vec2 | None = None
     visible: bool | None = None
     conscious: bool | None = None
@@ -141,6 +142,14 @@ class UIState(StrictModel):
     client_height: int | None = Field(default=None, gt=0)
 
 
+class NativeControlState(StrictModel):
+    available: bool = False
+    last_command_sequence: int = Field(default=0, ge=0)
+    last_command: str | None = None
+    last_result: str | None = None
+    last_target: str | None = None
+
+
 class TelemetrySnapshot(StrictModel):
     protocol_version: str = "0.1.0"
     sequence: int = Field(default=0, ge=0)
@@ -150,6 +159,7 @@ class TelemetrySnapshot(StrictModel):
     game: GameState = Field(default_factory=GameState)
     camera: CameraState = Field(default_factory=CameraState)
     ui: UIState = Field(default_factory=UIState)
+    native_control: NativeControlState = Field(default_factory=NativeControlState)
     squad: list[CharacterState] = Field(default_factory=list)
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)

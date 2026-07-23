@@ -110,6 +110,9 @@ class SafetyConfig(ConfigModel):
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
     block_clicks_when_telemetry_stale: bool = True
     allow_live_unpause_actions: bool = False
+    max_purchase_price: int = Field(default=1000, ge=1)
+    min_money_after_purchase: int = Field(default=0, ge=0)
+    max_purchases_per_run: int = Field(default=1, ge=0, le=20)
     allow_action_kinds: list[str] = Field(default_factory=list)
     allow_skills: list[str] = Field(default_factory=list)
 

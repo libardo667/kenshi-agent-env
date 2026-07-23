@@ -1,9 +1,9 @@
 # KenshiAgentTelemetry native plugin
 
-This DLL is the read-only bridge from Kenshi to the Python environment. It hooks
-`PlayerInterface::update`, calls the original function first, samples on that
-same game/UI thread at two hertz, and atomically replaces
-`telemetry.latest.json`.
+This DLL is the telemetry and narrowly bounded control bridge from Kenshi to the
+Python environment. It hooks `PlayerInterface::update`, calls the original
+function first, samples on that same game/UI thread at two hertz, and atomically
+replaces `telemetry.latest.json`.
 
 It currently exports only fields that have a relatively clear KenshiLib surface:
 pause, speed, money, camera position, selected character, squad names, basic
@@ -14,6 +14,12 @@ leadership, dialogue, Kenshi's native talk-task probability, and exact
 bounded registry maintained by `ShopTrader` constructor/destructor hooks
 installed before save load; Kenshi's spatial query does not enumerate these
 wrappers.
+It also recognizes a private `Ctrl+Shift+F10` bridge for
+`approach_confirmed_vendor`. Before issuing anything, the plugin re-enumerates
+nearby characters and requires a conscious, non-hostile humanoid who has a
+vendor list, leads that platoon, and has dialogue. It then uses Kenshi's own
+`PLAYER_TALK_TO` player order with the exact handle and indoor destination.
+`native_control` acknowledges the command and selected target.
 It explicitly warns that hunger, wounds, getting-eaten state, detailed
 inventory, and click-target occlusion remain unimplemented. KenshiLib's raw
 `isGettingEaten` byte is not exported because live validation found it set on a

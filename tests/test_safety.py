@@ -297,6 +297,160 @@ def test_live_movement_pulse_rejects_duration_outside_bounds() -> None:
         ActionGuard(config, macros).validate(action, paused)
 
 
+def test_purchase_requires_verified_owner_budget_and_one_per_run() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_skills": ["buy_inspected_shop_item"],
+            "max_purchase_price": 750,
+            "min_money_after_purchase": 250,
+            "max_purchases_per_run": 1,
+        }
+    )
+    macros = MacroRegistry(
+        {
+            "buy_inspected_shop_item": MacroConfig(
+                actions=[
+                    {
+                        "kind": "click",
+                        "x": "{{x}}",
+                        "y": "{{y}}",
+                        "space": "normalized",
+                        "button": "right",
+                    }
+                ]
+            )
+        }
+    )
+    observation = Observation.model_validate(
+        {
+            "run_id": "purchase",
+            "step_index": 0,
+            "mode": "live",
+            "telemetry_stale": False,
+            "telemetry": {
+                "game": {"paused": True, "money": 1000},
+                "ui": {"active_screen": "trade"},
+                "active_shop_trader_count": 1,
+                "nearby_entities": [
+                    {
+                        "id": "nearby:0",
+                        "name": "Barman",
+                        "shop_inventory_owner": True,
+                        "disposition": "neutral",
+                    }
+                ],
+            },
+        }
+    )
+    action = SkillAction.model_validate(
+        {
+            "name": "buy_inspected_shop_item",
+            "args": {"x": 0.316, "y": 0.357, "expected_price": 649},
+        }
+    )
+    guard = ActionGuard(config, macros)
+
+    assert guard.validate(action, observation) == action
+    with pytest.raises(SafetyViolation, match="purchase limit"):
+        guard.validate(action, observation)
+
+
+@pytest.mark.parametrize(
+    ("expected_price", "message"),
+    [
+        (None, "positive integer"),
+        (751, "exceeds maximum"),
+        (800, "exceeds maximum"),
+    ],
+)
+def test_purchase_rejects_missing_or_excessive_expected_price(
+    expected_price: int | None,
+    message: str,
+) -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_skills": ["buy_inspected_shop_item"],
+            "max_purchase_price": 750,
+            "min_money_after_purchase": 250,
+        }
+    )
+    macros = MacroRegistry(
+        {"buy_inspected_shop_item": MacroConfig(actions=[])}
+    )
+    observation = Observation.model_validate(
+        {
+            "run_id": "purchase",
+            "step_index": 0,
+            "mode": "live",
+            "telemetry_stale": False,
+            "telemetry": {
+                "game": {"money": 1000},
+                "ui": {"active_screen": "trade"},
+                "active_shop_trader_count": 1,
+                "nearby_entities": [
+                    {
+                        "id": "nearby:0",
+                        "name": "Barman",
+                        "shop_inventory_owner": True,
+                        "disposition": "neutral",
+                    }
+                ],
+            },
+        }
+    )
+    args: dict[str, float | int] = {"x": 0.316, "y": 0.357}
+    if expected_price is not None:
+        args["expected_price"] = expected_price
+    action = SkillAction.model_validate(
+        {"name": "buy_inspected_shop_item", "args": args}
+    )
+
+    with pytest.raises(SafetyViolation, match=message):
+        ActionGuard(config, macros).validate(action, observation)
+
+
+def test_purchase_rejects_insufficient_post_purchase_balance() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_skills": ["buy_inspected_shop_item"],
+            "max_purchase_price": 750,
+            "min_money_after_purchase": 400,
+        }
+    )
+    macros = MacroRegistry(
+        {"buy_inspected_shop_item": MacroConfig(actions=[])}
+    )
+    observation = Observation.model_validate(
+        {
+            "run_id": "purchase",
+            "step_index": 0,
+            "mode": "live",
+            "telemetry": {
+                "game": {"money": 1000},
+                "ui": {"active_screen": "trade"},
+                "active_shop_trader_count": 1,
+                "nearby_entities": [
+                    {
+                        "id": "nearby:0",
+                        "name": "Barman",
+                        "shop_inventory_owner": True,
+                        "disposition": "neutral",
+                    }
+                ],
+            },
+        }
+    )
+    action = SkillAction.model_validate(
+        {
+            "name": "buy_inspected_shop_item",
+            "args": {"expected_price": 649},
+        }
+    )
+
+    with pytest.raises(SafetyViolation, match="minimum is 400"):
+        ActionGuard(config, macros).validate(action, observation)
+
+
 def test_wait_limit() -> None:
     guard = ActionGuard(safety_config(), MacroRegistry({}))
     observation = Observation(run_id="run", step_index=0, mode="mock")

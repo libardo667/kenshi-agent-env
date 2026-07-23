@@ -26,12 +26,18 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "target->hasDialogue()" in source
     assert "getPlayerTaskProbability" in source
     assert "PLAYER_TALK_TO" in source
+    assert "IssueApproachConfirmedVendor" in source
+    assert "newPlayerTaskSelectedCharacters" in source
+    assert "control.approach_vendor" in source
+    assert "VK_F10" in source
     assert "nearby.roles" in source
     assert "AppendVector3(json, targetPosition)" in source
     assert "target->isOnScreen" in source
     assert "target->getVisible()" in source
     assert "getViewMatrix()" in source
     assert "worldToScreenRel" in source
+    assert "camera_bearing_degrees" in source
+    assert "std::atan2(cameraX, -cameraZ)" in source
     assert "screen_position" in source
     assert "nearby.characters" in source
     assert "gui->isAnyInventoryWindowOpen()" in source

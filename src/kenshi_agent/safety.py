@@ -27,6 +27,7 @@ class ActionGuard:
         self.config = config
         self.macros = macros
         self._action_times: deque[float] = deque()
+        self._purchase_count = 0
 
     def validate(self, action: Action, observation: Observation) -> Action:
         self._validate_action_constraints(action, observation)
@@ -50,6 +51,8 @@ class ActionGuard:
                     raise SafetyViolation(
                         f"Movement pulse {action.name!r} requires confirmed paused live state."
                     )
+                if action.name == "buy_inspected_shop_item":
+                    self._validate_purchase(action, observation)
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
                 for primitive in primitives:
                     if primitive.kind not in {
@@ -87,7 +90,51 @@ class ActionGuard:
                 f"{self.config.max_primitive_actions_per_step}."
             )
         self._consume_rate_budget(primitive_count)
+        if (
+            isinstance(action, SkillAction)
+            and action.name == "buy_inspected_shop_item"
+            and observation.mode == "live"
+        ):
+            self._purchase_count += 1
         return action
+
+    def _validate_purchase(self, action: SkillAction, observation: Observation) -> None:
+        if observation.telemetry_stale or observation.telemetry is None:
+            raise SafetyViolation("Purchase blocked because live telemetry is stale or absent.")
+        telemetry = observation.telemetry
+        if telemetry.ui.active_screen != "trade":
+            raise SafetyViolation("Purchase blocked because the exact trade screen is not open.")
+        if telemetry.active_shop_trader_count != 1 or not any(
+            entity.shop_inventory_owner is True
+            and entity.disposition.value != "hostile"
+            for entity in telemetry.nearby_entities
+        ):
+            raise SafetyViolation(
+                "Purchase blocked because exactly one non-hostile shop owner is not verified."
+            )
+        if self._purchase_count >= self.config.max_purchases_per_run:
+            raise SafetyViolation("Per-run purchase limit has already been reached.")
+
+        expected_price = action.argument_map().get("expected_price")
+        if (
+            isinstance(expected_price, bool)
+            or not isinstance(expected_price, int)
+            or expected_price <= 0
+        ):
+            raise SafetyViolation("Purchase requires a positive integer expected_price.")
+        if expected_price > self.config.max_purchase_price:
+            raise SafetyViolation(
+                f"Expected price {expected_price} exceeds maximum "
+                f"{self.config.max_purchase_price}."
+            )
+        money = telemetry.game.money
+        if money is None:
+            raise SafetyViolation("Purchase blocked because current money is unknown.")
+        if money - expected_price < self.config.min_money_after_purchase:
+            raise SafetyViolation(
+                f"Expected purchase would leave {money - expected_price} cats; minimum is "
+                f"{self.config.min_money_after_purchase}."
+            )
 
     def _validate_action_constraints(
         self,

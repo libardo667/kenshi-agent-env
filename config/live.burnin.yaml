@@ -75,6 +75,9 @@ safety:
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
   allow_live_unpause_actions: false
+  max_purchase_price: 750
+  min_money_after_purchase: 250
+  max_purchases_per_run: 1
   allow_action_kinds:
     - noop
     - stop
@@ -99,6 +102,10 @@ safety:
     - move_visible_terrain
     - move_on_map
     - interact_visible_person
+    - approach_confirmed_vendor
+    - choose_show_goods
+    - inspect_shop_item
+    - buy_inspected_shop_item
 
 memory:
   enabled: true
@@ -233,7 +240,7 @@ macros:
         key: d
         hold_seconds: 0.08
   orbit_camera_left:
-    description: Recenter on Lekko with F, then orbit the paused fixed-distance camera left one bounded step with Q.
+    description: Recenter on Lekko with F, then orbit the paused fixed-distance camera left about 14 degrees with Q.
     visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
     actions:
       - kind: key
@@ -241,9 +248,9 @@ macros:
         hold_seconds: 0.04
       - kind: key
         key: q
-        hold_seconds: 0.1
+        hold_seconds: 0.25
   orbit_camera_right:
-    description: Recenter on Lekko with F, then orbit the paused fixed-distance camera right one bounded step with E.
+    description: Recenter on Lekko with F, then orbit the paused fixed-distance camera right about 14 degrees with E.
     visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
     actions:
       - kind: key
@@ -251,7 +258,7 @@ macros:
         hold_seconds: 0.04
       - kind: key
         key: e
-        hold_seconds: 0.1
+        hold_seconds: 0.25
   move_visible_terrain:
     description: Fine movement by right-clicking nearby visible terrain, advancing briefly, and returning paused.
     arguments:
@@ -313,6 +320,71 @@ macros:
     movement_pulse_seconds: 2.0
     movement_pulse_min_seconds: 0.5
     movement_pulse_max_seconds: 6.0
+    actions:
+      - kind: click
+        x: "{{x}}"
+        y: "{{y}}"
+        space: normalized
+        button: right
+        hold_seconds: 0.12
+  approach_confirmed_vendor:
+    description: Ask the native plugin to issue Kenshi's own PLAYER_TALK_TO order for the nearest neutral humanoid vendor with a vendor list, leader role, and dialogue, then advance for a bounded approach pulse.
+    arguments:
+      duration_seconds: Approach time from 0.5 to 8.0 seconds; use a short pulse first and judge the vendor-distance delta.
+    visual_precondition: The world HUD is visible, exactly one safe squad member is selected, telemetry identifies a confirmed vendor candidate, and no modal overlay is open.
+    movement_pulse_seconds: 2.0
+    movement_pulse_min_seconds: 0.5
+    movement_pulse_max_seconds: 8.0
+    actions:
+      - kind: hotkey
+        keys:
+          - ctrl
+          - shift
+          - f10
+        hold_seconds: 0.08
+  choose_show_goods:
+    description: Select the first calibrated Barman dialogue option, Show me your goods.
+    visual_precondition: The Barman dialogue panel is visibly open and its first option reads Show me your goods.
+    normalized_pointer_bounds:
+      min_x: 0.43
+      max_x: 0.58
+      min_y: 0.79
+      max_y: 0.84
+    actions:
+      - kind: click
+        x: 0.50
+        y: 0.812
+        space: normalized
+        button: left
+        hold_seconds: 0.12
+  inspect_shop_item:
+    description: Hover one item in the calibrated Barman inventory grid so its tooltip can be read before any purchase.
+    arguments:
+      x: Normalized horizontal coordinate of the candidate item inside the Barman inventory grid.
+      y: Normalized vertical coordinate of the candidate item inside the Barman inventory grid.
+    visual_precondition: The exact Barman trade window is open and telemetry reports him as shop_inventory_owner.
+    normalized_pointer_bounds:
+      min_x: 0.30
+      max_x: 0.55
+      min_y: 0.13
+      max_y: 0.54
+    actions:
+      - kind: move_cursor
+        x: "{{x}}"
+        y: "{{y}}"
+        space: normalized
+  buy_inspected_shop_item:
+    description: Right-click one previously inspected and visibly confirmed affordable food item in the calibrated Barman inventory grid.
+    arguments:
+      x: Normalized horizontal coordinate of the confirmed food item inside the Barman inventory grid.
+      y: Normalized vertical coordinate of the confirmed food item inside the Barman inventory grid.
+      expected_price: Exact visible tooltip value in cats; the safety guard rejects a mismatch with its spending limits.
+    visual_precondition: The exact Barman trade window is open, the current tooltip marks this item as Food, its value is affordable, and telemetry reports Barman as shop_inventory_owner.
+    normalized_pointer_bounds:
+      min_x: 0.30
+      max_x: 0.55
+      min_y: 0.13
+      max_y: 0.54
     actions:
       - kind: click
         x: "{{x}}"
