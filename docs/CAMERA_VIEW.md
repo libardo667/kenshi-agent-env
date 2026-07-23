@@ -18,10 +18,12 @@ updated its `continue` and `autosaveindex` entries normally. Making the whole
 file read-only would also prevent legitimate preference and save-selection
 updates, so it is not the default recommendation.
 
-The lock freezes zoom input; it does not lock rotation or guarantee that the
-camera remains behind the character after panning. `focus_selected` remains the
-recovery action. To recalibrate, exit, restore `camera zoom=125`, relaunch,
-choose a new distance, then repeat the lock step.
+The lock freezes zoom input; 3D zoom skills must therefore not be offered in
+the live profile. The truthful agent controls are `recenter_camera` (the
+live-proven F binding), bounded WASD pans that recenter first, and bounded Q/E
+orbits that recenter first. Rotation remains available, and moving Lekko can
+also change a clipped follow view. To recalibrate distance, exit, restore
+`camera zoom=125`, relaunch, choose a new distance, then repeat the lock step.
 
 Community references:
 

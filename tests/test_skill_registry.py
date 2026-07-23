@@ -1,6 +1,6 @@
 import pytest
 
-from kenshi_agent.config import MacroConfig
+from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig
 from kenshi_agent.models import ClickAction, SkillAction
 from kenshi_agent.skills import MacroRegistry
 
@@ -35,6 +35,12 @@ def test_skill_specs_expose_arguments_and_visual_preconditions() -> None:
                 description="Fine movement in the world.",
                 arguments={"x": "Normalized x coordinate."},
                 visual_precondition="The map is closed.",
+                normalized_pointer_bounds=NormalizedPointerBoundsConfig(
+                    min_x=0.15,
+                    max_x=0.85,
+                    min_y=0.15,
+                    max_y=0.65,
+                ),
                 movement_pulse_seconds=0.75,
                 movement_pulse_min_seconds=0.35,
                 movement_pulse_max_seconds=3.0,
@@ -48,6 +54,11 @@ def test_skill_specs_expose_arguments_and_visual_preconditions() -> None:
     assert spec.name == "move_visible_terrain"
     assert spec.arguments == {"x": "Normalized x coordinate."}
     assert spec.visual_precondition == "The map is closed."
+    assert spec.normalized_pointer_bounds is not None
+    assert spec.normalized_pointer_bounds.min_x == 0.15
+    assert spec.normalized_pointer_bounds.max_x == 0.85
+    assert spec.normalized_pointer_bounds.min_y == 0.15
+    assert spec.normalized_pointer_bounds.max_y == 0.65
     assert spec.movement_pulse_seconds == 0.75
     assert spec.movement_pulse_min_seconds == 0.35
     assert spec.movement_pulse_max_seconds == 3.0

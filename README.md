@@ -257,6 +257,8 @@ The installed keymap audit and open-source plugin/API survey are recorded in
 [Kenshi control and plugin research](docs/KENSHI_CONTROL_AND_PLUGIN_RESEARCH.md).
 The live-validated close follow-camera setup is recorded in
 [Camera view for agent runs](docs/CAMERA_VIEW.md).
+Short-horizon continuity and no-op feedback are recorded in the
+[Action continuity ledger](docs/ACTION_LEDGER.md).
 
 ### Live development console
 

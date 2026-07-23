@@ -268,6 +268,35 @@ def parse_action(value: Any) -> Action:
     return ACTION_ADAPTER.validate_python(value)
 
 
+class ActionOutcomeAssessment(StrEnum):
+    CHANGED = "changed"
+    NO_OP = "no_op"
+    NOT_EXECUTED = "not_executed"
+    UNKNOWN = "unknown"
+
+
+class ActionOutcome(StrictModel):
+    step_index: int = Field(ge=0)
+    intent: str = Field(min_length=1, max_length=1000)
+    action: Action
+    executed: bool
+    receipt_message: str = Field(default="", max_length=2000)
+    assessment: ActionOutcomeAssessment
+    feedback: str = Field(min_length=1, max_length=1000)
+    visual_change_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
+    telemetry_changes: list[str] = Field(default_factory=list, max_length=30)
+    selected_character_name: str | None = Field(default=None, max_length=200)
+    position_before: Vec3 | None = None
+    position_after: Vec3 | None = None
+
+
+class NormalizedPointerBounds(StrictModel):
+    min_x: float = Field(ge=0.0, le=1.0)
+    max_x: float = Field(ge=0.0, le=1.0)
+    min_y: float = Field(ge=0.0, le=1.0)
+    max_y: float = Field(ge=0.0, le=1.0)
+
+
 class MemoryWrite(StrictModel):
     kind: MemoryKind
     content: str = Field(min_length=1, max_length=2000)
@@ -292,6 +321,7 @@ class SkillSpec(StrictModel):
     description: str = Field(default="", max_length=1000)
     arguments: dict[str, str] = Field(default_factory=dict)
     visual_precondition: str | None = Field(default=None, max_length=1000)
+    normalized_pointer_bounds: NormalizedPointerBounds | None = None
     movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
@@ -309,6 +339,7 @@ class Observation(StrictModel):
     screenshot_sha256: str | None = None
     events: list[str] = Field(default_factory=list)
     objective: str | None = Field(default=None, max_length=1000)
+    recent_action_outcomes: list[ActionOutcome] = Field(default_factory=list, max_length=100)
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)

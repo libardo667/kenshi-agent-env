@@ -1,5 +1,155 @@
 {
   "$defs": {
+    "ActionOutcome": {
+      "additionalProperties": false,
+      "properties": {
+        "step_index": {
+          "minimum": 0,
+          "title": "Step Index",
+          "type": "integer"
+        },
+        "intent": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Intent",
+          "type": "string"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NoopAction"
+            },
+            {
+              "$ref": "#/$defs/StopAction"
+            },
+            {
+              "$ref": "#/$defs/PauseAction"
+            },
+            {
+              "$ref": "#/$defs/SetSpeedAction"
+            },
+            {
+              "$ref": "#/$defs/WaitAction"
+            },
+            {
+              "$ref": "#/$defs/KeyAction"
+            },
+            {
+              "$ref": "#/$defs/HotkeyAction"
+            },
+            {
+              "$ref": "#/$defs/MoveCursorAction"
+            },
+            {
+              "$ref": "#/$defs/ClickAction"
+            },
+            {
+              "$ref": "#/$defs/ScrollAction"
+            },
+            {
+              "$ref": "#/$defs/SkillAction"
+            }
+          ],
+          "title": "Action"
+        },
+        "executed": {
+          "title": "Executed",
+          "type": "boolean"
+        },
+        "receipt_message": {
+          "default": "",
+          "maxLength": 2000,
+          "title": "Receipt Message",
+          "type": "string"
+        },
+        "assessment": {
+          "$ref": "#/$defs/ActionOutcomeAssessment"
+        },
+        "feedback": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Feedback",
+          "type": "string"
+        },
+        "visual_change_fraction": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visual Change Fraction"
+        },
+        "telemetry_changes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 30,
+          "title": "Telemetry Changes",
+          "type": "array"
+        },
+        "selected_character_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Character Name"
+        },
+        "position_before": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "position_after": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec3"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "step_index",
+        "intent",
+        "action",
+        "executed",
+        "assessment",
+        "feedback"
+      ],
+      "title": "ActionOutcome",
+      "type": "object"
+    },
+    "ActionOutcomeAssessment": {
+      "enum": [
+        "changed",
+        "no_op",
+        "not_executed",
+        "unknown"
+      ],
+      "title": "ActionOutcomeAssessment",
+      "type": "string"
+    },
     "BodyPartState": {
       "additionalProperties": false,
       "properties": {
@@ -356,6 +506,69 @@
       "title": "CharacterState",
       "type": "object"
     },
+    "ClickAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "click",
+          "default": "click",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton",
+          "default": "left"
+        },
+        "clicks": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Clicks",
+          "type": "integer"
+        },
+        "hold_seconds": {
+          "default": 0.0,
+          "maximum": 0.5,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        },
+        "interval_seconds": {
+          "default": 0.08,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Interval Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ClickAction",
+      "type": "object"
+    },
+    "CoordinateSpace": {
+      "enum": [
+        "normalized",
+        "client",
+        "screen"
+      ],
+      "title": "CoordinateSpace",
+      "type": "string"
+    },
     "Disposition": {
       "enum": [
         "friendly",
@@ -479,6 +692,38 @@
       "title": "GameState",
       "type": "object"
     },
+    "HotkeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "hotkey",
+          "default": "hotkey",
+          "title": "Kind",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 2,
+          "title": "Keys",
+          "type": "array"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "HotkeyAction",
+      "type": "object"
+    },
     "InventoryItem": {
       "additionalProperties": false,
       "properties": {
@@ -533,6 +778,35 @@
         "name"
       ],
       "title": "InventoryItem",
+      "type": "object"
+    },
+    "KeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "key",
+          "default": "key",
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "KeyAction",
       "type": "object"
     },
     "MemoryKind": {
@@ -605,6 +879,44 @@
         "last_accessed_at"
       ],
       "title": "MemoryRecord",
+      "type": "object"
+    },
+    "MouseButton": {
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ],
+      "title": "MouseButton",
+      "type": "string"
+    },
+    "MoveCursorAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "move_cursor",
+          "default": "move_cursor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "MoveCursorAction",
       "type": "object"
     },
     "NearbyEntity": {
@@ -705,6 +1017,207 @@
       "title": "NearbyEntity",
       "type": "object"
     },
+    "NoopAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "noop",
+          "default": "noop",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "No action required.",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "title": "NoopAction",
+      "type": "object"
+    },
+    "NormalizedPointerBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "min_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min X",
+          "type": "number"
+        },
+        "max_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max X",
+          "type": "number"
+        },
+        "min_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Y",
+          "type": "number"
+        },
+        "max_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min_x",
+        "max_x",
+        "min_y",
+        "max_y"
+      ],
+      "title": "NormalizedPointerBounds",
+      "type": "object"
+    },
+    "PauseAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "pause",
+          "default": "pause",
+          "title": "Kind",
+          "type": "string"
+        },
+        "paused": {
+          "default": true,
+          "title": "Paused",
+          "type": "boolean"
+        }
+      },
+      "title": "PauseAction",
+      "type": "object"
+    },
+    "ScrollAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scroll",
+          "default": "scroll",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "notches": {
+          "maximum": 8,
+          "minimum": -8,
+          "title": "Notches",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "notches"
+      ],
+      "title": "ScrollAction",
+      "type": "object"
+    },
+    "SetSpeedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "set_speed",
+          "default": "set_speed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "speed": {
+          "enum": [
+            1,
+            2,
+            3
+          ],
+          "title": "Speed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "speed"
+      ],
+      "title": "SetSpeedAction",
+      "type": "object"
+    },
+    "SkillAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "skill",
+          "default": "skill",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "$ref": "#/$defs/SkillArgument"
+          },
+          "maxItems": 20,
+          "title": "Args",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SkillAction",
+      "type": "object"
+    },
+    "SkillArgument": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "SkillArgument",
+      "type": "object"
+    },
     "SkillSpec": {
       "additionalProperties": false,
       "properties": {
@@ -739,6 +1252,17 @@
           ],
           "default": null,
           "title": "Visual Precondition"
+        },
+        "normalized_pointer_bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedPointerBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "movement_pulse_seconds": {
           "anyOf": [
@@ -787,6 +1311,26 @@
         "name"
       ],
       "title": "SkillSpec",
+      "type": "object"
+    },
+    "StopAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "stop",
+          "default": "stop",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "StopAction",
       "type": "object"
     },
     "TelemetrySnapshot": {
@@ -996,6 +1540,28 @@
       ],
       "title": "Vec3",
       "type": "object"
+    },
+    "WaitAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "wait",
+          "default": "wait",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seconds": {
+          "maximum": 60.0,
+          "minimum": 0.0,
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "title": "WaitAction",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1095,6 +1661,14 @@
       ],
       "default": null,
       "title": "Objective"
+    },
+    "recent_action_outcomes": {
+      "items": {
+        "$ref": "#/$defs/ActionOutcome"
+      },
+      "maxItems": 100,
+      "title": "Recent Action Outcomes",
+      "type": "array"
     },
     "available_skills": {
       "items": {

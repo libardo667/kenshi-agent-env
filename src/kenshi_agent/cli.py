@@ -210,6 +210,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             memory=memory,
             memory_limit=config.memory.max_recalled_memories,
             minimum_memory_salience=config.memory.minimum_salience,
+            action_outcome_limit=config.runtime.observation_memory_limit,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,

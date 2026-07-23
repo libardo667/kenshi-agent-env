@@ -1,1 +1,0 @@
-{"intent":"Recover a readable 3D survey view.","rationale":"The camera is clipped between building meshes, so one bounded world-camera zoom-out is required before local navigation.","action":{"kind":"skill","name":"zoom_world_out","args":{}},"confidence":1.0,"memory_writes":[]}

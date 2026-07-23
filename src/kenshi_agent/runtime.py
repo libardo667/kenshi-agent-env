@@ -2,11 +2,24 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import dist
 from time import monotonic
+
+from PIL import Image, ImageChops
 
 from .env import AgentEnvironment
 from .memory import MemoryStore
-from .models import ActionReceipt, Observation, PlannerDecision, StopAction
+from .models import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
+    ActionReceipt,
+    CharacterState,
+    Observation,
+    PlannerDecision,
+    SkillAction,
+    StopAction,
+    TelemetrySnapshot,
+)
 from .planners import Planner
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
@@ -27,6 +40,8 @@ class RunSummary:
 
 
 class AgentRuntime:
+    _MATERIAL_VISUAL_CHANGE_FRACTION = 0.01
+
     def __init__(
         self,
         *,
@@ -39,6 +54,7 @@ class AgentRuntime:
         memory: MemoryStore | None,
         memory_limit: int,
         minimum_memory_salience: float,
+        action_outcome_limit: int = 12,
         reporter: ConsoleDecisionReporter | None = None,
     ) -> None:
         self.run_id = run_id
@@ -50,6 +66,8 @@ class AgentRuntime:
         self.memory = memory
         self.memory_limit = memory_limit
         self.minimum_memory_salience = minimum_memory_salience
+        self.action_outcome_limit = action_outcome_limit
+        self._action_outcomes: list[ActionOutcome] = []
         self.reporter = reporter
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
@@ -60,6 +78,7 @@ class AgentRuntime:
         stop_reason = "Maximum step count reached."
         observation: Observation | None = None
         try:
+            self._action_outcomes.clear()
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
             self.logger.write("run_started", payload={"max_steps": max_steps, "seed": seed})
@@ -167,6 +186,12 @@ class AgentRuntime:
                         step_index=observation.step_index,
                         receipt=transition.receipt,
                     )
+                self._record_action_outcome(
+                    decision,
+                    transition.receipt,
+                    observation,
+                    transition.observation,
+                )
                 self._store_memories(decision)
                 observation = self._with_memories(transition.observation)
                 self.logger.write(
@@ -222,13 +247,17 @@ class AgentRuntime:
             await self.environment.close()
 
     def _with_memories(self, observation: Observation) -> Observation:
-        if self.memory is None or self.memory_limit <= 0:
-            return observation
-        memories = self.memory.recall(
-            limit=self.memory_limit,
-            minimum_salience=self.minimum_memory_salience,
-        )
-        return observation.model_copy(update={"memories": memories})
+        updates: dict[str, object] = {
+            "recent_action_outcomes": self._action_outcomes[-self.action_outcome_limit :]
+            if self.action_outcome_limit > 0
+            else []
+        }
+        if self.memory is not None and self.memory_limit > 0:
+            updates["memories"] = self.memory.recall(
+                limit=self.memory_limit,
+                minimum_salience=self.minimum_memory_salience,
+            )
+        return observation.model_copy(update=updates)
 
     def _store_memories(self, decision: PlannerDecision) -> None:
         if self.memory is None:
@@ -239,3 +268,242 @@ class AgentRuntime:
                 "memory_written",
                 payload={"memory_id": memory_id, "memory": write.model_dump(mode="json")},
             )
+
+    def _record_action_outcome(
+        self,
+        decision: PlannerDecision,
+        receipt: ActionReceipt,
+        before: Observation,
+        after: Observation,
+    ) -> None:
+        visual_change = self._visual_change_fraction(before, after)
+        telemetry_changes = self._telemetry_changes(before.telemetry, after.telemetry)
+        selected_before = self._selected_character(before.telemetry)
+        selected_after = self._selected_character(after.telemetry)
+        movement_distance = self._movement_distance(selected_before, selected_after)
+        assessment, feedback = self._assess_outcome(
+            receipt,
+            after.telemetry,
+            visual_change=visual_change,
+            telemetry_changes=telemetry_changes,
+            movement_distance=movement_distance,
+        )
+        outcome = ActionOutcome(
+            step_index=before.step_index,
+            intent=decision.intent,
+            action=receipt.action,
+            executed=receipt.executed,
+            receipt_message=receipt.message,
+            assessment=assessment,
+            feedback=feedback,
+            visual_change_fraction=visual_change,
+            telemetry_changes=telemetry_changes,
+            selected_character_name=(
+                selected_after.name
+                if selected_after is not None
+                else selected_before.name
+                if selected_before is not None
+                else None
+            ),
+            position_before=(selected_before.position if selected_before is not None else None),
+            position_after=(selected_after.position if selected_after is not None else None),
+        )
+        self._action_outcomes.append(outcome)
+        self.logger.write("action_outcome", step_index=before.step_index, payload=outcome)
+
+    @classmethod
+    def _assess_outcome(
+        cls,
+        receipt: ActionReceipt,
+        after: TelemetrySnapshot | None,
+        *,
+        visual_change: float | None,
+        telemetry_changes: list[str],
+        movement_distance: float | None,
+    ) -> tuple[ActionOutcomeAssessment, str]:
+        if not receipt.executed:
+            return (
+                ActionOutcomeAssessment.NOT_EXECUTED,
+                "The executor did not perform this action. Do not treat it as progress.",
+            )
+
+        if isinstance(receipt.action, SkillAction):
+            name = receipt.action.name
+            if name in {"move_visible_terrain", "move_on_map"}:
+                if movement_distance is not None and movement_distance >= 0.5:
+                    return (
+                        ActionOutcomeAssessment.CHANGED,
+                        f"Lekko moved {movement_distance:.2f} world units; use the new position "
+                        "and view to judge route progress.",
+                    )
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    "This movement skill did not move Lekko by a measurable amount. Treat the "
+                    "destination as failed or blocked and choose a different grounded route.",
+                )
+            if name == "interact_visible_person":
+                active_screen = after.ui.active_screen if after is not None else None
+                interaction_opened = after is not None and (
+                    after.ui.dialogue_open is True
+                    or active_screen in {"dialogue", "trade"}
+                )
+                if interaction_opened:
+                    return (
+                        ActionOutcomeAssessment.CHANGED,
+                        "The interaction opened dialogue or trade. Inspect that UI before any "
+                        "further click.",
+                    )
+                if movement_distance is not None and movement_distance >= 0.5:
+                    return (
+                        ActionOutcomeAssessment.CHANGED,
+                        f"The interaction approach moved Lekko {movement_distance:.2f} world "
+                        "units but opened no dialogue or trade yet.",
+                    )
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    "The interaction opened no dialogue or trade and did not move Lekko. The "
+                    "click failed to make progress; do not repeat it on the same evidence.",
+                )
+
+        if telemetry_changes or (
+            visual_change is not None
+            and visual_change >= cls._MATERIAL_VISUAL_CHANGE_FRACTION
+        ):
+            return (
+                ActionOutcomeAssessment.CHANGED,
+                "The action produced an observed change. Use the listed telemetry deltas and "
+                "current screenshot to judge whether it advanced the objective.",
+            )
+        if visual_change is not None:
+            return (
+                ActionOutcomeAssessment.NO_OP,
+                "No material visual or tracked telemetry change followed this action. Treat it "
+                "as a no-op in the observed state and do not repeat it without new evidence.",
+            )
+        return (
+            ActionOutcomeAssessment.UNKNOWN,
+            "The runtime could not verify a visual or telemetry outcome. Do not assume the "
+            "action succeeded.",
+        )
+
+    @staticmethod
+    def _visual_change_fraction(before: Observation, after: Observation) -> float | None:
+        if before.screenshot_path is None or after.screenshot_path is None:
+            return None
+        try:
+            with Image.open(before.screenshot_path) as before_image:
+                before_gray = before_image.convert("L").resize(
+                    (96, 54), Image.Resampling.BILINEAR
+                )
+            with Image.open(after.screenshot_path) as after_image:
+                after_gray = after_image.convert("L").resize(
+                    (96, 54), Image.Resampling.BILINEAR
+                )
+        except (OSError, ValueError):
+            return None
+        histogram = ImageChops.difference(before_gray, after_gray).histogram()
+        changed_pixels = sum(histogram[8:])
+        return changed_pixels / (96 * 54)
+
+    @classmethod
+    def _telemetry_changes(
+        cls,
+        before: TelemetrySnapshot | None,
+        after: TelemetrySnapshot | None,
+    ) -> list[str]:
+        if before is None or after is None:
+            return []
+
+        changes: list[str] = []
+
+        def changed(label: str, old: object, new: object) -> None:
+            if old != new:
+                changes.append(f"{label}: {old!r} -> {new!r}")
+
+        changed("paused", before.game.paused, after.game.paused)
+        changed("speed", before.game.speed_multiplier, after.game.speed_multiplier)
+        changed("money", before.game.money, after.game.money)
+        changed("location", before.game.location_name, after.game.location_name)
+        changed("active screen", before.ui.active_screen, after.ui.active_screen)
+        changed("modal open", before.ui.modal_open, after.ui.modal_open)
+        changed("dialogue open", before.ui.dialogue_open, after.ui.dialogue_open)
+        changed("dialogue options", before.ui.dialogue_options, after.ui.dialogue_options)
+        changed("context menu open", before.ui.context_menu_open, after.ui.context_menu_open)
+        changed(
+            "selected character",
+            before.ui.selected_character_id,
+            after.ui.selected_character_id,
+        )
+
+        selected_before = cls._selected_character(before)
+        selected_after = cls._selected_character(after)
+        if selected_before is not None and selected_after is not None:
+            changed("food items", selected_before.food_items, selected_after.food_items)
+            changed("current goal", selected_before.current_goal, selected_after.current_goal)
+            changed("alive", selected_before.alive, selected_after.alive)
+            changed("conscious", selected_before.conscious, selected_after.conscious)
+            changed("in combat", selected_before.in_combat, selected_after.in_combat)
+            if (
+                selected_before.hunger is not None
+                and selected_after.hunger is not None
+                and abs(selected_before.hunger - selected_after.hunger) >= 0.1
+            ):
+                changes.append(
+                    f"hunger: {selected_before.hunger:.2f} -> {selected_after.hunger:.2f}"
+                )
+            if selected_before.position is not None and selected_after.position is not None:
+                distance = dist(
+                    (
+                        selected_before.position.x,
+                        selected_before.position.y,
+                        selected_before.position.z,
+                    ),
+                    (
+                        selected_after.position.x,
+                        selected_after.position.y,
+                        selected_after.position.z,
+                    ),
+                )
+                if distance >= 0.5:
+                    changes.append(f"{selected_after.name} moved {distance:.2f} world units")
+
+        visible_before = {
+            entity.name for entity in before.nearby_entities if entity.visible is True
+        }
+        visible_after = {entity.name for entity in after.nearby_entities if entity.visible is True}
+        appeared = sorted(visible_after - visible_before)
+        disappeared = sorted(visible_before - visible_after)
+        if appeared:
+            changes.append(f"visible entities appeared: {', '.join(appeared)}")
+        if disappeared:
+            changes.append(f"visible entities disappeared: {', '.join(disappeared)}")
+        return changes
+
+    @staticmethod
+    def _selected_character(snapshot: TelemetrySnapshot | None) -> CharacterState | None:
+        if snapshot is None:
+            return None
+        selected_id = snapshot.ui.selected_character_id
+        if selected_id is not None:
+            selected = next(
+                (character for character in snapshot.squad if character.id == selected_id),
+                None,
+            )
+            if selected is not None:
+                return selected
+        return next(
+            (character for character in snapshot.squad if character.selected),
+            snapshot.squad[0] if snapshot.squad else None,
+        )
+
+    @staticmethod
+    def _movement_distance(
+        before: CharacterState | None,
+        after: CharacterState | None,
+    ) -> float | None:
+        if before is None or after is None or before.position is None or after.position is None:
+            return None
+        return dist(
+            (before.position.x, before.position.y, before.position.z),
+            (after.position.x, after.position.y, after.position.z),
+        )
