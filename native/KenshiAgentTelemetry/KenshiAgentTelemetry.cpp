@@ -12,6 +12,7 @@
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
+#include <kenshi/gui/TitleScreen.h>
 #include <kenshi/gui/ToolTip.h>
 #include <kenshi/util/UtilityT.h>
 #include <mygui/MyGUI_Button.h>
@@ -52,6 +53,7 @@ namespace
     const char* PROTOCOL_VERSION = "0.5.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
+    typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
     typedef ShopTrader* (*ShopTraderConstructorFunction)(ShopTrader*, Character*);
     typedef void (*ShopTraderDestructorFunction)(ShopTrader*);
@@ -100,6 +102,7 @@ namespace
     };
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
+    TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
     GameWorldResetFunction g_originalGameWorldReset = NULL;
     ShopTraderConstructorFunction g_originalShopTraderConstructor = NULL;
     ShopTraderDestructorFunction g_originalShopTraderDestructor = NULL;
@@ -1619,6 +1622,40 @@ namespace
         return json.str();
     }
 
+    std::string BuildTitleSnapshot()
+    {
+        std::ostringstream json;
+        json.imbue(std::locale::classic());
+        json << std::setprecision(7);
+
+        json << "{";
+        json << "\"protocol_version\":\"" << PROTOCOL_VERSION << "\",";
+        json << "\"sequence\":" << ++g_sequence << ",";
+        json << "\"captured_at\":\"" << UtcNowIso8601() << "\",";
+        json << "\"source\":\"kenshilib-plugin-title\",";
+        json << "\"capabilities\":[\"ui.visible_controls\"],";
+        json << "\"game\":{\"loaded\":false},";
+        json << "\"ui\":{";
+        json << "\"active_screen\":\"title\",";
+        json << "\"visible_controls\":";
+        AppendVisibleUIControls(json);
+        json << "},";
+        json << "\"native_control\":{";
+        json << "\"available\":false,";
+        json << "\"acknowledgements\":[],";
+        json << "\"last_command_sequence\":0";
+        json << "},";
+        json << "\"squad\":[],";
+        json << "\"active_shop_trader_count\":null,";
+        json << "\"nearby_entities\":[],";
+        json << "\"warnings\":[";
+        json << "\"Title-screen snapshot: loaded-game, entity, command, and "
+             << "world capabilities are intentionally unavailable.\"";
+        json << "]";
+        json << "}";
+        return json.str();
+    }
+
     void WriteStatus(const char* state, const char* message)
     {
         std::ostringstream json;
@@ -1633,7 +1670,7 @@ namespace
             error);
     }
 
-    void Sample(PlayerInterface* player)
+    void Sample(PlayerInterface* player, bool titleOnly)
     {
         if (g_sampling)
             return;
@@ -1641,7 +1678,8 @@ namespace
         try
         {
             std::string error;
-            const std::string snapshot = BuildSnapshot(player);
+            const std::string snapshot =
+                titleOnly ? BuildTitleSnapshot() : BuildSnapshot(player);
             if (!KenshiAgentTelemetry::AtomicWriteUtf8(
                     g_outputDirectory,
                     L"telemetry.latest.json",
@@ -1674,18 +1712,27 @@ namespace
         if (approachVendorHotkeyDown && !g_approachVendorHotkeyWasDown)
             ProcessNativeCommandRequest(player);
         g_approachVendorHotkeyWasDown = approachVendorHotkeyDown;
-    }
 
-    void MyGUIFrameSample(float elapsed)
-    {
-        (void)elapsed;
         const DWORD now = GetTickCount();
-        if (now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
+        if (ou != NULL &&
+            ou->initialized &&
+            player != NULL &&
+            now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
         {
             g_lastSnapshotTick = now;
-            PlayerInterface* player =
-                ou != NULL && ou->initialized ? ou->player : NULL;
-            Sample(player);
+            Sample(player, false);
+        }
+    }
+
+    void TitleScreenUpdateHook(TitleScreen* titleScreen)
+    {
+        g_originalTitleScreenUpdate(titleScreen);
+        const DWORD now = GetTickCount();
+        if ((ou == NULL || !ou->initialized) &&
+            now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
+        {
+            g_lastSnapshotTick = now;
+            Sample(NULL, true);
         }
     }
 }
@@ -1697,19 +1744,7 @@ __declspec(dllexport) void startPlugin()
     g_outputDirectory = KenshiAgentTelemetry::ResolveTelemetryDirectory();
     WriteStatus(
         "starting",
-        "Installing title/game UI telemetry and ShopTrader lifecycle hooks.");
-
-    MyGUI::Gui* myGui = MyGUI::Gui::getInstancePtr();
-    if (myGui == NULL)
-    {
-        ErrorLog(
-            "KenshiAgentTelemetry: MyGUI instance unavailable during plug-in startup.");
-        WriteStatus(
-            "error",
-            "MyGUI instance unavailable; title/game telemetry was not installed.");
-        return;
-    }
-    myGui->eventFrameStart += MyGUI::newDelegate(MyGUIFrameSample);
+        "Installing Kenshi title/player telemetry and ShopTrader lifecycle hooks.");
 
     const KenshiLib::HookStatus updateStatus = KenshiLib::AddHook(
         KenshiLib::GetRealAddress(&PlayerInterface::update),
@@ -1720,6 +1755,17 @@ __declspec(dllexport) void startPlugin()
     {
         ErrorLog("KenshiAgentTelemetry: could not hook PlayerInterface::update.");
         WriteStatus("error", "Could not hook PlayerInterface::update.");
+        return;
+    }
+
+    const KenshiLib::HookStatus titleStatus = KenshiLib::AddHook(
+        KenshiLib::GetRealAddress(&TitleScreen::_NV_update),
+        TitleScreenUpdateHook,
+        &g_originalTitleScreenUpdate);
+    if (titleStatus != KenshiLib::SUCCESS)
+    {
+        ErrorLog("KenshiAgentTelemetry: could not hook TitleScreen::update.");
+        WriteStatus("error", "Could not hook TitleScreen::update.");
         return;
     }
 
@@ -1747,10 +1793,10 @@ __declspec(dllexport) void startPlugin()
     }
 
     DebugLog(
-        "KenshiAgentTelemetry: title/game UI telemetry event subscriber installed.");
+        "KenshiAgentTelemetry: Kenshi title/player telemetry hooks installed.");
     WriteStatus(
         "ready",
         g_shopTraderRegistryReady
-            ? "Title/game UI telemetry and session-scoped ShopTrader lifecycle hooks installed."
-            : "Title/game UI telemetry installed; exact session-scoped ShopTrader registry unavailable.");
+            ? "Kenshi title/player telemetry and session-scoped ShopTrader lifecycle hooks installed."
+            : "Kenshi title/player telemetry installed; exact session-scoped ShopTrader registry unavailable.");
 }

@@ -63,8 +63,24 @@ inspection alone.
       Full offline tests are 211 passing; Ruff, mypy, compile, and doctor pass.
       Pinned Release x64 output is 189,440 bytes, SHA-256
       `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
-- [ ] Back up the restored package, install the exact event-subscription
-      candidate while Kenshi is stopped, and verify its hash.
+- [x] Back up the restored package under
+      `runs/p0-title-telemetry-event-subscription-preinstall-20260723T225933Z/`,
+      install the exact event-subscription candidate while Kenshi is stopped,
+      and verify its hash.
+- [x] Reject the event-subscription candidate after it reproduced the immediate
+      startup crash without publishing title telemetry. Preserve its dump,
+      matching DLL/PDB, logs, configs, and screenshot under
+      `runs/p0-title-telemetry-event-subscription-crash-20260723T230002Z/`;
+      terminate the crashed process and restore the installed DLL to
+      `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
+- [x] Build the split-lifecycle replacement: hook Kenshi's pinned
+      `TitleScreen::_NV_update`, emit a minimal title-only snapshot, and use
+      `PlayerInterface::update` only after `GameWorld::initialized`. It must not
+      modify MyGUI's function or delegate machinery. Pinned Release x64 output
+      is 188,416 bytes, SHA-256
+      `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
+- [ ] Back up the restored package, install the exact split-lifecycle candidate
+      while Kenshi is stopped, and verify its hash.
 - [ ] Repeat 1920x1080 startup and prove fresh advancing title telemetry,
       unique semantic Continue/save controls, a loaded squad, and causally
       confirmed pause.

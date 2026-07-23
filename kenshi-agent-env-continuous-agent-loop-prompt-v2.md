@@ -15,14 +15,14 @@ Do not treat this as prompt tuning. Do not regress toward “call the LLM betwee
 ## Current audited starting point
 
 The checkpoint immediately before this prompt iteration is `main` at commit
-`47615a4c78d78ead3997836cfe68bb5ba7ed7afe`
-(`Sample semantic UI before save load`). It incorporates the earlier P6
+`62307385258c380968b665daf1c856aae889a8f9`
+(`Use supported UI sampling lifecycle`). It incorporates the earlier P6
 food-policy work plus the 2026-07-23 renderer crash, resolution/focus incident,
-semantic-launch recovery, explicit human/agent ownership slice, and the first
-title-telemetry lifecycle correction. The direct MyGUI function detour in that
-checkpoint was rejected by the subsequent live crash evidence and is replaced
-in the current tree by the supported event-subscription candidate described
-below.
+semantic-launch recovery, explicit human/agent ownership slice, the first
+title-telemetry lifecycle failure, and rejection of the direct MyGUI detour.
+The MyGUI event-subscription candidate in that checkpoint was also rejected by
+the subsequent live crash evidence and is replaced in the current tree by the
+split Kenshi-title/player candidate described below.
 Re-verify every material statement against the current checkout, tests, run
 artifacts, installed files, and `docs/ENGINEERING_LOOP_STATE.md` before relying
 on it.
@@ -67,7 +67,7 @@ on it.
 
 ### Current evidence boundary
 
-- Repository documentation records 211 passing tests, Ruff, mypy across 48
+- Repository documentation records 212 passing tests, Ruff, mypy across 48
   source files, compile checks, schema parity, doctor, three deterministic
   single-step seeds, and a portable two-step continuous proof. Re-run the
   available gates; do not inherit those numbers as a pass.
@@ -96,12 +96,24 @@ on it.
   configs, and screenshot are under
   `runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`; the reporter
   was not submitted, and the original DLL was restored.
-- The current uninstalled candidate subscribes to MyGUI's supported
-  `eventFrameStart`, retains loaded-game native-command monitoring on
-  `PlayerInterface::update`, fails closed when MyGUI is unavailable, and makes
-  the launcher stop immediately on fresh plug-in error or Crash Reporter. Its
-  pinned Release x64 DLL is 189,440 bytes with SHA-256
-  `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
+- The 189,440-byte MyGUI `eventFrameStart` candidate
+  (`6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`)
+  also reported fresh `ready`, published no title telemetry, and crashed
+  during startup. Its exact evidence is under
+  `runs/p0-title-telemetry-event-subscription-crash-20260723T230002Z/`;
+  the complete preinstall package is under
+  `runs/p0-title-telemetry-event-subscription-preinstall-20260723T225933Z/`,
+  and the original DLL is restored again.
+- Direct MyGUI detours and delegate subscription are both rejected. The current
+  uninstalled candidate hooks Kenshi's pinned `TitleScreen::_NV_update`, emits
+  a minimal title-only snapshot with no world/player/camera/entity/native-
+  command dereferences, and emits loaded-game snapshots from the already-proven
+  `PlayerInterface::update` only after `GameWorld::initialized`. Its pinned
+  Release x64 DLL is 188,416 bytes with SHA-256
+  `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
+- The launcher treats both `RE_Kenshi Crash Reporter` and `Kenshi has crashed`
+  window titles, plus fresh native plug-in error state, as immediate terminal
+  no-input outcomes.
 - Semantic controls, multi-resolution startup, and the ownership countdown
   remain unproven live.
 - The current portable architecture demonstrates continuous chain execution and portable planner/executor overlap. It does not yet prove general live concurrent agency.
@@ -126,11 +138,11 @@ on it.
 8. No CI workflow or reproducible Python lockfile was present at the audited point.
 9. Provider-specific OpenAI schema compatibility tests still depend on the optional SDK and must remain isolated from the dependency-free core baseline.
 10. Several new components are large. Refactor only when it simplifies a tested invariant; do not replace working architecture with broad aesthetic churn.
-11. The supported-event protocol/launcher/ownership candidate has not been
-    loaded. A prior 1280x720 test proved the old fixed startup clicks were wrong
-    and the old launcher could repeatedly reclaim focus. The first semantic
-    title trial failed closed on stale title telemetry; the following direct
-    third-party function detour crashed and is permanently rejected.
+11. The current split title/player protocol candidate has not been loaded. A
+    prior 1280x720 test proved the old fixed startup clicks were wrong and the
+    old launcher could repeatedly reclaim focus. The first semantic title trial
+    failed closed on stale telemetry; both attempts to integrate with MyGUI's
+    own frame/delegate machinery crashed and are permanently rejected.
 12. Kenshi reproduced a `BAD STUFF` out-of-video-memory/device-reset failure
     under shared-memory pressure. Low textures, disabled reflections/shadows,
     disabled fast zone hopping, and view distance 2500 are installed, but the
@@ -421,13 +433,13 @@ Required sequence:
    original `0.5.0` rollback and replaced `0.4.0` rollback both exist, the
    restored installed hash is
    `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`,
-   the supported-event build hash is
-   `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`,
+   the split title/player build hash is
+   `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`,
    `OpenSettingOnStart` is false, and all intended reduced graphics settings
    persisted.
 2. After a fresh explicit live boundary, back up the restored package, install
-   that exact supported-event build while Kenshi is stopped, and verify byte
-   identity. Never reinstall the rejected direct-detour DLL.
+   that exact split title/player build while Kenshi is stopped, and verify byte
+   identity. Never reinstall either rejected MyGUI-integrated DLL.
 3. Launch once at 1920x1080. Verify the native video dialog advances from one
    Enter action, the RE_Kenshi panel does not appear, protocol `0.5.0` reaches
    fresh advancing telemetry, and `ui.visible_controls` exposes a unique
@@ -459,8 +471,9 @@ Acceptance criteria:
 - No startup pointer coordinate is hard-coded or inferred from resolution.
 - Duplicate, missing, stale, changed, disabled, or hidden semantic targets
   produce zero pointer input.
-- Fresh native plug-in `error` state or a Crash Reporter title terminates the
-  launcher immediately with no additional input.
+- Fresh native plug-in `error` state, `RE_Kenshi Crash Reporter`, or
+  `Kenshi has crashed` title terminates the launcher immediately with no
+  additional input.
 - 1920x1080 and the chosen alternate resolution both reach the expected title/
   save transition from current semantic bounds; this proves the startup path,
   not general resolution support for gameplay macros.

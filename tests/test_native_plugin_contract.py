@@ -128,12 +128,33 @@ def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
     assert "#include <mygui/MyGUI_Gui.h>" in source
-    assert "MyGUIFrameSample" in source
-    assert "MyGUI::Gui::getInstancePtr()" in source
-    assert "eventFrameStart += MyGUI::newDelegate(MyGUIFrameSample)" in source
+    assert "#include <kenshi/gui/TitleScreen.h>" in source
+    assert "BuildTitleSnapshot" in source
+    assert '"capabilities\\\":[\\\"ui.visible_controls\\\"]' in source
+    assert '"game\\\":{\\\"loaded\\\":false}' in source
+    assert '"source\\\":\\\"kenshilib-plugin-title\\\"' in source
+    assert "GetRealAddress(&TitleScreen::_NV_update)" in source
+    assert "TitleScreenUpdateHook" in source
+    assert "g_originalTitleScreenUpdate(titleScreen);" in source
+    assert "Sample(NULL, true);" in source
+    title_builder = source.split("std::string BuildTitleSnapshot()", 1)[1].split(
+        "void WriteStatus",
+        1,
+    )[0]
+    for forbidden_loaded_state in (
+        "ou->",
+        "player->",
+        "gui->",
+        "selected->",
+        "g_activeNativeCommand",
+    ):
+        assert forbidden_loaded_state not in title_builder
+    assert "eventFrameStart" not in source
     assert "GetProcAddress" not in source
     assert "?frameEvent@Gui@MyGUI" not in source
-    assert "ou != NULL && ou->initialized ? ou->player : NULL" in source
+    assert "ou->initialized &&" in source
+    assert "(ou == NULL || !ou->initialized)" in source
+    assert "Sample(player, false);" in source
     assert "ui.visible_controls" in source
     assert "AppendVisibleUIControls" in source
     assert "MAX_VISIBLE_UI_CONTROLS = 64" in source
