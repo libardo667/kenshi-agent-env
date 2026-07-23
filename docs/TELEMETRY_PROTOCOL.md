@@ -97,22 +97,31 @@ hook fails.
 The plugin may emit it, but `LiveEnvironment` removes it and resets
 `native_control` before constructing an `interface_only` observation. It is
 planner-visible only in an explicitly configured `native_assisted` run.
-The plugin responds to its private `Ctrl+Shift+F10` bridge only on the game/UI
-thread, re-enumerates nearby characters, and selects the nearest conscious,
-non-hostile humanoid whose platoon has a vendor list, who is that platoon's
-leader, and who has dialogue. It then calls
+Python atomically replaces `native_command.request.json` before sending the
+private `Ctrl+Shift+F10` bridge hotkey. The strict request contains a globally
+unique caller command ID, complete based-on world revision, control mode,
+identity session, exactly one selected stable ID, and one exact target stable
+ID. The plugin reads it only on the game/UI thread and rejects a malformed,
+duplicate, stale, wrong-mode/session/selection, unavailable, replaced, or
+role-invalid request without choosing a substitute.
+
+After every fence passes, the plugin calls
 `PlayerInterface::newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, ...)` with
 the character's handle, indoor building, and world position. Kenshi therefore
-owns the pathfinding through doors and interior floors. `native_control`
-reports the last command sequence, result, target display name, and stable
-`last_target_id`; it does not imply that the resulting path has completed.
-This acknowledgement is still non-causal: it has no caller-supplied command ID,
-selection/revision fence, or completion revision. P5 command-envelope work must
-replace it before a continuous live plan can rely on the bridge.
+owns the pathfinding through doors and interior floors. `native_control` keeps
+at most 16 acknowledgements keyed by command ID. Each includes the request
+basis, acknowledgement sequence, exact target/selection, status, and reason.
+Accepted commands also record their acceptance sequence. The active command is
+cancelled if selection, target lifetime, or vendor-role evidence changes, and
+is completed only when the open dialogue is bound to that exact target. Python
+waits for the matching acknowledgement on a later telemetry sequence; an old
+or different command cannot certify execution. Legacy last-command fields
+remain diagnostic compatibility fields, not the causal authority.
 
 ## Identity
 
-Protocol `0.2.0` adds `identity.stable_handles`. When that capability is
+Protocol `0.2.0` introduced `identity.stable_handles`, retained by current
+protocol `0.3.0`. When that capability is
 present, `identity_session_id` is non-null and every squad, selection, nearby,
 and native target ID comes from a validated Kenshi `hand`, its lifetime serials,
 and the current process/session generations. The string layout is an internal

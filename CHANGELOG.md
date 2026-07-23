@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added protocol `0.3.0` causal native vendor commands with caller-owned UUID
+  IDs, exact revision/session/selection/target fences, bounded keyed lifecycle
+  acknowledgements, replay metrics, and no implicit retry.
 - Added lower-latency GPT-5.6 Luna defaults with configurable reasoning effort.
 - Added an OpenRouter vision planner with structured outputs, image input, and
   latency/throughput/price provider routing.

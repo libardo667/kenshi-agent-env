@@ -18,7 +18,7 @@ has not completed this end-to-end proof.
 2. **Locate a trader.** Use the native role split to distinguish a real
    humanoid vendor leader from guards, followers, and trader-squad animals.
 3. **Approach and talk.** Ask the bounded native bridge to issue Kenshi's own
-   `PLAYER_TALK_TO` order for the nearest role-confirmed, non-hostile vendor,
+   `PLAYER_TALK_TO` order for one exact stable-ID, role-confirmed, non-hostile vendor,
    then advance through a short pause-bounded pulse.
 4. **Enter trade.** Use the calibrated `choose_show_goods` envelope only when
    the captured dialogue visibly contains that exact first option.

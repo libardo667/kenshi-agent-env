@@ -27,9 +27,9 @@
   continuous mode. One future-only strategic patch may overlap movement, but
   it cannot execute until post-option state and remaining budgets are
   revalidated.
-- Native protocol `0.2.0` supplies process/session-scoped opaque entity IDs
-  derived from validated handles, plus a complete mechanically consistent
-  player-character selection set.
+- Native protocol `0.3.0` retains process/session-scoped opaque entity IDs from
+  validated handles and adds an exact caller/revision/session/selection/target
+  command envelope with bounded keyed lifecycle acknowledgements.
 
 ## Completed milestones
 
@@ -54,6 +54,9 @@
   replay metrics.
 - Stable native squad/selection/nearby/target identity, explicit lifecycle
   semantics, legacy-source fallback, and a supervised live identity proof.
+- Causal native command requests with exact issue-time fences, bounded keyed
+  lifecycle acknowledgements, replay metrics, and a supervised stale-rejection
+  plus exact-target completion proof.
 
 ## Previous completed slice: explicit control modes
 
@@ -373,7 +376,109 @@ legacy hotkey acknowledgement remains explicitly non-causal. The separate GPU
 incident and reversible mitigation are recorded in
 `docs/LIVE_STABILITY_INCIDENT_20260723.md`.
 
+## Latest completed slice: P5 causal native command envelope
+
+Implementation status: portable code/tests, schemas, documentation, replay
+metrics, the pinned DLL build, and supervised live rejection/acceptance/
+completion/final-pause validation are complete.
+
+Problem addressed by this slice: `approach_confirmed_vendor` sent only a private
+hotkey. The plugin chose a nearest role match and exposed one mutable result, so a
+pre-command snapshot, old acknowledgement, changed selection, replaced target,
+or later run can be mistaken for the current caller's command. That breaks the
+same causal ownership rules already enforced by the portable continuous
+executor.
+
+Scope:
+
+- Carry the executor/runtime-owned unique command ID and complete based-on
+  world revision through the environment dispatch boundary.
+- Require the native-assisted vendor action to name one exact stable target ID;
+  bind the request to `native_assisted`, the current identity session, and the
+  exact one-member selection set observed during guard validation.
+- Atomically write a strict bounded request before sending the private hotkey.
+- Make the native game/UI-thread bridge parse that request, reject malformed,
+  duplicate, stale, wrong-mode, wrong-session, selection-mismatched, missing,
+  replaced, or role-invalid targets without issuing a player order.
+- Emit bounded acknowledgements keyed by command ID with accepted/rejected/
+  completed/cancelled status, reason, target, selection, request basis, and
+  causal telemetry sequences.
+- Keep accepted target/selection handles under observation; cancel on lifetime
+  or selection change and complete only when the exact target becomes the
+  active dialogue conversation target.
+- Make Python wait only for the matching command's acknowledgement on a later
+  telemetry revision. A different or old acknowledgement is not progress.
+
+Non-goals:
+
+- No live-continuous enablement.
+- No generic native method dispatcher or additional native action.
+- No P6 dialogue, trade, or purchase chain.
+- No automatic retry after ambiguous dispatch or acknowledgement timeout.
+
+Acceptance criteria:
+
+- Strict model tests reject a missing telemetry basis, non-native mode,
+  non-exact selection, malformed ID, and inconsistent acknowledgement
+  sequences.
+- The ordinary continuous executor passes its own command ID and based-on
+  revision through both atomic and stateful-option dispatch; single-step live
+  dispatch also supplies a unique caller ID.
+- Live-environment tests prove the request is written before the hotkey, an old
+  acknowledgement cannot satisfy a new command, exact rejection performs no
+  movement pulse, and accepted acknowledgement is tied to a later telemetry
+  revision.
+- Native contract/build evidence covers exact target lookup, strict request
+  fences, duplicate rejection, selection/target-loss cancellation, and exact
+  dialogue-target completion.
+- Existing single-step and portable continuous behavior, causal receipts,
+  safety cancellation, option cleanup, schemas, fixed seeds, and control-mode
+  separation remain green.
+- Supervised live evidence records exact commit/config/plugin hashes, request
+  and acknowledgement IDs/revisions, target/selection IDs, final paused state,
+  and any operator intervention. If live validation is unsafe or unavailable,
+  that gate remains explicitly open rather than being inferred from a build.
+
 ## Current checks
+
+P5 causal-command offline verification on 2026-07-23:
+
+- `.venv/bin/pytest`: 160 passed.
+- `.venv/bin/ruff check src tests`: passed.
+- `.venv/bin/mypy src`: passed, 46 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `interface_only` / `single_step`.
+- Fresh exported schemas matched checked-in `schemas/` byte-for-byte, including
+  the new native-request schema and acknowledgement-bearing telemetry/receipt
+  schemas.
+- The pinned VS2010 SP1 Release x64 build passed. Its 175,104-byte offline DLL
+  SHA-256 is
+  `9bbeea1826216365c5492ee94db4b692848a105fbb36bc794b02723e953a293b`.
+  It emitted upstream MyGUI C4091 and Boost 1.60 property-tree C4715 warnings.
+- Mock seeds 7, 11, and 19 survived one day in 25, 13, and 13 actions.
+- Continuous run `p5-causal-continuous` completed two guarded actions from one
+  strategic call. Both receipts had later causal revisions; replay metrics
+  reported 100% post-command revisions, no rejected actions, no command/
+  revision/stream errors, and one retained transient event.
+- No DLL was staged, installed, launched, or exercised by the offline checks;
+  the separate supervised evidence below closes the live gate.
+- The installed DLL SHA-256 was
+  `9bbeea1826216365c5492ee94db4b692848a105fbb36bc794b02723e953a293b`;
+  the prior DLL was backed up under
+  `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T184326Z-p5-causal`.
+- Stale command `cmd-fc8d78b68bf54babb8d6f360a14f4bbc` was rejected as
+  `stale_revision` at sequence 170 with unchanged selected position, no active
+  command, and confirmed pause.
+- Current command `cmd-77f7735532484c11b0be9cb46fb29081` was based on
+  sequence 248, accepted at 249 for the exact selected Hep and Barman target
+  IDs, and completed at 423 only when exact-target dialogue opened. It cleared
+  active state and remained paused. Two explicitly recorded operator
+  continuation pulses advanced the already issued task without another native
+  command.
+- Final telemetry 475 retained both keyed acknowledgements and pause. Kenshi
+  closed normally; no new plugin error, DXGI device removal, BAD STUFF message,
+  or Windows Application error was found.
 
 P5 stable-identity boundary verification on 2026-07-23:
 
@@ -526,8 +631,6 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Known risks and deferred debt
 
-- Native bridge acknowledgement still lacks command IDs and revision fences;
-  current command causality is owned inside the portable Python runtime.
 - Broad live stability remains open. One Intel Iris Xe run reset the DirectX
   device under high shared-memory pressure; a prior-DLL baseline reproduced it,
   and the mitigated identity run passed only a narrow ten-minute soak.
@@ -546,9 +649,7 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Ordered next candidates
 
-1. Finish P5: causal native command envelopes and acknowledgements bound to the
-   new stable IDs, exact selection, control mode, and based-on revision.
-2. P6: the first conditional live food-procurement chain after P5 evidence
+1. P6: the first conditional live food-procurement chain after P5 evidence
    and explicit live authorization.
-3. P8: semantic observation budgeting that always emits valid JSON, plus CI
+2. P8: semantic observation budgeting that always emits valid JSON, plus CI
    and a reproducible Python lockfile.

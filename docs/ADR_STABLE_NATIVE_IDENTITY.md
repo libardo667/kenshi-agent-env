@@ -2,8 +2,8 @@
 
 ## Status
 
-Accepted for the P5 identity boundary. Causal native command envelopes remain
-separate unfinished P5 work.
+Accepted for the P5 identity boundary. The later causal command boundary is
+recorded separately in `ADR_CAUSAL_NATIVE_COMMANDS.md`.
 
 ## Problem
 
@@ -45,9 +45,10 @@ creates a different identity and prevents aliasing with the old lifetime.
 - Exactly-one selection is mechanically testable.
 - A missing, destroyed, reused, or prior-session target cannot silently become
   another character.
-- Stable identity does not make the legacy native command acknowledgement
-  causal. The next P5 boundary must add caller command IDs, mode/selection/
-  target/revision fences, accepted/rejected reasons, and completion revisions.
+- Stable identity did not by itself make the legacy native command
+  acknowledgement causal. Protocol `0.3.0` subsequently added caller command
+  IDs, mode/selection/target/revision fences, accepted/rejected reasons, and
+  completion revisions as a separate contract.
 
 ## Evidence
 

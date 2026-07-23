@@ -39,10 +39,16 @@ keyboard/mouse operations through the ordinary UI.
 
 Stable native entity IDs contain no process pointer and are scoped to an
 explicit process/session generation. Display names remain descriptive only.
-Any session change or target omission invalidates target-bound work. The
-current vendor bridge's stable target ID is not sufficient acknowledgement:
-until a caller command ID and revision/selection fences are implemented, old
-bridge state must not certify a new action.
+Any session change or target omission invalidates target-bound work. The native
+vendor bridge additionally requires a globally unique caller command ID, exact
+based-on telemetry revision, `native_assisted` mode, current identity session,
+one exact selected character, and one exact role-confirmed target. Python waits
+only for that command's acknowledgement on a later snapshot. The plugin retains
+at most 16 keyed acknowledgements, never reissues a duplicate ID, cancels on
+selection or target-lifetime/role change, and completes only for dialogue bound
+to the exact target. Rejection is definitive and does not start a movement
+pulse; timeout or transport failure remains uncertain and is never retried
+automatically.
 
 Continuous mode is still blocked for live-labeled environments. In portable
 continuous runs, one observation pump feeds an authoritative bounded store.

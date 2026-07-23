@@ -40,9 +40,11 @@ Every boundary ──> JSONL session log ──> replay and evaluation
 `reset()` establishes an episode and returns an observation. `observe()` is
 side-effect free and requests a visual frame when capture exists.
 `observe_without_capture()` supplies telemetry without forcing a new visual
-frame. `step(action)` validates or executes one action, waits for a bounded
-settle interval, and returns a receipt plus the next observation. `close()`
-releases resources without manipulating the game.
+frame. `dispatch(action, command=...)` is the causal execution seam: the runtime
+supplies one globally unique command ID and complete based-on revision, and the
+receipt binds the result to the later observation. `step(action)` remains the
+legacy primitive beneath that seam. `close()` releases resources without
+manipulating the game.
 
 ## Continuous world-state stream
 
@@ -71,8 +73,9 @@ The store:
 
 This is an authoritative Python state stream over the plugin's existing atomic
 latest-snapshot file. It is not a native event transport. Native protocol
-`0.2.0` now supplies session-scoped validated-handle identity; older producers
-still use the portable ambiguity-aware registry. See
+`0.3.0` supplies session-scoped validated-handle identity and bounded keyed
+command acknowledgements; older producers still use the portable
+ambiguity-aware registry. See
 `docs/ADR_WORLD_STATE_STREAM.md` and
 `docs/ADR_STABLE_NATIVE_IDENTITY.md`.
 
@@ -154,9 +157,13 @@ writes an atomic file. The Python process never loads Kenshi memory directly.
 The plugin also contains one reviewed `PLAYER_TALK_TO` command bridge used by
 `approach_confirmed_vendor`. This is not described as read-only or UI-only. It
 is marked `requires_native_assisted` in the macro schema and unavailable in the
-default mode. Its stable target ID is diagnostic only until the bridge gains a
-caller command ID, revision/selection fences, accepted/rejected reasons, and a
-completion revision. See `docs/ADR_CONTROL_MODES.md`.
+default mode. Python atomically writes one strict request before the bridge
+hotkey. The plugin accepts only the exact caller command ID, world-revision
+sequence, native mode, identity session, one-character selection, and stable
+vendor target. A bounded acknowledgement ring reports rejection reasons,
+acceptance, exact-dialogue completion, and selection/target cancellation.
+See `docs/ADR_CONTROL_MODES.md` and
+`docs/ADR_CAUSAL_NATIVE_COMMANDS.md`.
 
 ## Failure attribution
 

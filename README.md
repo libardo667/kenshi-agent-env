@@ -16,7 +16,7 @@ and game-integration failures.
 - A deterministic Kenshi-like mock environment with the same `reset`, `observe`,
   `step`, and `close` interface used by live mode.
 - Strict action, telemetry, observation, single-step decision, bounded plan,
-  plan-patch, receipt, and memory schemas.
+  plan-patch, receipt, native-command request, and memory schemas.
 - A heuristic baseline that can complete the bundled one-day survival mock
   benchmark.
 - Scripted and subprocess planner adapters.
@@ -44,7 +44,8 @@ and game-integration failures.
   acknowledgement before native-assisted live execution.
 - Native KenshiLib plugin source that emits partial telemetry through an atomic
   JSON file and, only when explicitly enabled by the Python control mode, exposes
-  one bounded vendor-approach command bridge.
+  one bounded vendor-approach command bridge with exact caller/revision/
+  session/selection/target fences and keyed lifecycle acknowledgements.
 - Automated tests for the platform-independent path.
 
 The native plugin compiles as a VS2010 SP1 `Release | x64` DLL against the
@@ -394,10 +395,11 @@ currently exports:
   world positions, viewport visibility, and normalized screen positions;
 - current world, inventory, dialogue, and trade screen classification.
 
-Native protocol `0.2.0` binds squad, complete selection, nearby, and native
-target IDs to validated Kenshi handles plus a process/session generation.
-Consumers treat those IDs as opaque. Duplicate display names and list order are
-not identities, and a session-generation change invalidates every older ID.
+Native protocol `0.3.0` retains the `0.2.0` validated-handle identity contract
+for squad, complete selection, nearby, and native targets. Consumers treat IDs
+as opaque: duplicate display names and list order are not identities, and a
+session-generation change invalidates every older ID. Protocol `0.3.0` also
+adds a strict atomic command request and a bounded keyed acknowledgement ring.
 
 It intentionally does not pretend to export fields that have not been validated:
 hunger, wound detail, getting-eaten state, generic inventory grids, dialogue
@@ -407,7 +409,10 @@ remain work items.
 The same DLL also contains a separately labeled native-assisted vendor-approach
 bridge. Python removes its capability and acknowledgement state in
 `interface_only`; `ActionGuard` and `LiveEnvironment` independently reject its
-skill in that mode.
+skill in that mode. In `native_assisted`, the bridge issues only the exact
+stable target named by the caller after the command ID, complete world
+revision, identity session, and one-character selection match. Old or different
+acknowledgements cannot satisfy the request.
 
 Build instructions and the manual verification sequence are in
 [the native plugin README](native/KenshiAgentTelemetry/README.md). Contributors
@@ -454,6 +459,8 @@ Continuous-mode revision ownership and its current identity limits are recorded
 in [ADR: Authoritative world-state stream](docs/ADR_WORLD_STATE_STREAM.md).
 Native handle identity and lifecycle semantics are recorded in
 [ADR: Stable native identity](docs/ADR_STABLE_NATIVE_IDENTITY.md).
+Causal native request and acknowledgement semantics are recorded in
+[ADR: Causal native commands](docs/ADR_CAUSAL_NATIVE_COMMANDS.md).
 The 2026-07-23 DirectX device-reset diagnosis, prior-DLL reproduction, and
 reversible live-test mitigation are recorded in the
 [live stability incident](docs/LIVE_STABILITY_INCIDENT_20260723.md).
@@ -498,6 +505,9 @@ then present the result as general play ability.
 - Existing native build/load and supervised Kenshi evidence is version-specific
   and predates explicit run-level control-mode labels; it is not a generic
   compatibility claim.
+- Protocol `0.3.0` passed portable tests, the pinned DLL build, and one
+  supervised stale-rejection plus exact-target acceptance/completion proof. It
+  remains a narrow version-specific result, not broad native compatibility.
 - Stable native character handles are exported for squad, selection, nearby,
   and native-target telemetry. Broader lifecycle transitions and
   safety-critical medical detail remain unvalidated or unexported.

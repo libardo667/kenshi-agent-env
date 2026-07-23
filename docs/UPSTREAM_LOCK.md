@@ -57,6 +57,17 @@ warning. The live-loaded DLL SHA-256 was
 The previously installed DLL was copied to the Windows-local recovery folder
 recorded in the live checklist before replacement.
 
+The protocol `0.3.0` causal-command build uses the same pinned dependencies and
+compiler. The offline Release x64 output built on 2026-07-23 is 175,104 bytes
+with SHA-256
+`bc5b9d033f98515e2c25ba462090e9ee7e59ced0b2f372b5da4200f0bca2f9d9`.
+The build emitted the existing upstream MyGUI C4091 warning plus Boost 1.60
+property-tree C4715 under whole-program code generation. The identical hash was
+installed for the supervised run. The prior `0.2.0` DLL was backed up at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T184326Z-p5-causal`.
+RE_Kenshi loaded the new DLL, the bounded causal proof passed, and Kenshi closed
+normally without a new plugin, renderer, or Windows Application error.
+
 ## Plugin staging/install layout
 
 ```text
