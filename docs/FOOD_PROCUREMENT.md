@@ -76,9 +76,21 @@ Before enabling a purchase action, the safety layer must enforce all of these:
 The current telemetry bridge reports money, a basic food-item count, nearby
 characters, faction disposition, dialogue/trade screen state, and normalized
 screen positions for characters Kenshi says are rendered in the viewport. It
-does not yet report inventory grids, item prices, affordable items, or
-click-target occlusion. Visual evidence is therefore necessary, but it is never
-a substitute for a narrow click region and numeric spending guards.
+also keeps anatomy separate from trade roles. A safe vendor candidate is a
+non-animal character whose platoon has a vendor list and who is both its leader
+and dialogue-capable; `trader_squad` by itself is explicitly insufficient
+because followers, guards, and animals inherit it. Kenshi's native
+`PLAYER_TALK_TO` score reports whether the talk task is available at the current
+range.
+
+The plugin maintains a lifecycle-backed registry of exact
+`ShopTrader::getTrader()` owners. Live validation established that the registry
+is empty after save load: Kenshi creates those wrappers lazily when trade
+inventory is requested. Exact ownership is therefore a post-interaction
+verification signal, not a prerequisite for approaching a vendor. The bridge
+still does not report inventory grids, item prices, affordable items, or
+click-target occlusion. Visual evidence is necessary, but it is never a
+substitute for a narrow click region and numeric spending guards.
 
 ## Interaction safety
 

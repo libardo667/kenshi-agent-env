@@ -5,8 +5,10 @@
 #include <kenshi/Faction.h>
 #include <kenshi/GameWorld.h>
 #include <kenshi/Globals.h>
+#include <kenshi/Platoon.h>
 #include <kenshi/PlayerInterface.h>
 #include <kenshi/RootObject.h>
+#include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
 #include <kenshi/util/UtilityT.h>
@@ -27,10 +29,26 @@
 namespace
 {
     const DWORD SNAPSHOT_INTERVAL_MS = 500;
+    const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const char* PROTOCOL_VERSION = "0.1.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
+    typedef ShopTrader* (*ShopTraderConstructorFunction)(ShopTrader*, Character*);
+    typedef void (*ShopTraderDestructorFunction)(ShopTrader*);
+
+    struct TrackedShopTrader
+    {
+        ShopTrader* object;
+        Character* owner;
+    };
+
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
+    ShopTraderConstructorFunction g_originalShopTraderConstructor = NULL;
+    ShopTraderDestructorFunction g_originalShopTraderDestructor = NULL;
+    TrackedShopTrader g_trackedShopTraders[MAX_TRACKED_SHOP_TRADERS];
+    unsigned int g_trackedShopTraderCount = 0;
+    bool g_shopTraderRegistryReady = false;
+    bool g_shopTraderRegistryOverflow = false;
     unsigned long long g_sequence = 0;
     DWORD g_lastSnapshotTick = 0;
     bool g_sampling = false;
@@ -135,6 +153,72 @@ namespace
         return static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
     }
 
+    void RegisterShopTrader(ShopTrader* object, Character* owner)
+    {
+        if (object == NULL || owner == NULL)
+            return;
+
+        for (unsigned int index = 0; index < g_trackedShopTraderCount; ++index)
+        {
+            if (g_trackedShopTraders[index].object == object)
+            {
+                g_trackedShopTraders[index].owner = owner;
+                return;
+            }
+        }
+
+        if (g_trackedShopTraderCount >= MAX_TRACKED_SHOP_TRADERS)
+        {
+            g_shopTraderRegistryOverflow = true;
+            return;
+        }
+
+        g_trackedShopTraders[g_trackedShopTraderCount].object = object;
+        g_trackedShopTraders[g_trackedShopTraderCount].owner = owner;
+        ++g_trackedShopTraderCount;
+    }
+
+    void UnregisterShopTrader(ShopTrader* object)
+    {
+        for (unsigned int index = 0; index < g_trackedShopTraderCount; ++index)
+        {
+            if (g_trackedShopTraders[index].object == object)
+            {
+                --g_trackedShopTraderCount;
+                g_trackedShopTraders[index] =
+                    g_trackedShopTraders[g_trackedShopTraderCount];
+                return;
+            }
+        }
+    }
+
+    bool IsTrackedShopOwner(Character* candidate)
+    {
+        if (!g_shopTraderRegistryReady || candidate == NULL)
+            return false;
+        for (unsigned int index = 0; index < g_trackedShopTraderCount; ++index)
+        {
+            if (g_trackedShopTraders[index].owner == candidate)
+                return true;
+        }
+        return false;
+    }
+
+    ShopTrader* ShopTraderConstructorHook(
+        ShopTrader* self,
+        Character* trader)
+    {
+        ShopTrader* result = g_originalShopTraderConstructor(self, trader);
+        RegisterShopTrader(result, trader);
+        return result;
+    }
+
+    void ShopTraderDestructorHook(ShopTrader* self)
+    {
+        UnregisterShopTrader(self);
+        g_originalShopTraderDestructor(self);
+    }
+
     std::string BuildSnapshot(PlayerInterface* player)
     {
         std::ostringstream json;
@@ -160,7 +244,11 @@ namespace
         json << "\"capabilities\":["
              << "\"game.pause\",\"game.speed\",\"game.money\","
              << "\"camera.position\",\"squad.basic\","
-             << "\"ui.inventory\",\"ui.dialogue\",\"nearby.characters\"],";
+             << "\"ui.inventory\",\"ui.dialogue\","
+             << "\"nearby.characters\",\"nearby.roles\"";
+        if (g_shopTraderRegistryReady)
+            json << ",\"nearby.shop_owners\"";
+        json << "],";
 
         json << "\"game\":{";
         json << "\"loaded\":" << JsonBool(ou != NULL && ou->initialized) << ",";
@@ -207,6 +295,13 @@ namespace
             }
         }
         json << "},";
+
+        json << "\"active_shop_trader_count\":";
+        if (g_shopTraderRegistryReady)
+            json << g_trackedShopTraderCount;
+        else
+            json << "null";
+        json << ",";
 
         json << "\"squad\":[";
         if (characters != NULL)
@@ -268,6 +363,22 @@ namespace
 
                 const Faction* faction = target->getFaction();
                 const Ogre::Vector3 targetPosition = target->getPosition();
+                CharacterAnimal* animal = target->isAnimal();
+                ActivePlatoon* platoon = target->getPlatoon();
+                const bool traderSquad =
+                    platoon != NULL && platoon->getIsTrader();
+                const bool hasVendorList =
+                    platoon != NULL && platoon->getHasVendorList();
+                const bool isSquadLeader =
+                    platoon != NULL && platoon->getSquadLeader() == target;
+                const bool isShopInventoryOwner =
+                    IsTrackedShopOwner(target);
+                float talkTaskProbability = 0.0f;
+                const bool talkTaskAvailable =
+                    player->getPlayerTaskProbability(
+                        PLAYER_TALK_TO,
+                        target,
+                        talkTaskProbability);
                 float screenX = 0.0f;
                 float screenY = 0.0f;
                 const bool hasScreenPosition =
@@ -277,8 +388,23 @@ namespace
                 json << "\"id\":\"nearby:" << nearbyIndex++ << "\",";
                 json << "\"name\":\"" << JsonEscape(target->getName()) << "\",";
                 json << "\"kind\":\""
-                     << (target->isATrader() ? "trader" : (target->isAnimal() != NULL ? "animal" : "character"))
+                     << (animal != NULL ? "animal" : "character")
                      << "\",";
+                json << "\"is_animal\":" << JsonBool(animal != NULL) << ",";
+                json << "\"trader_squad\":" << JsonBool(traderSquad) << ",";
+                json << "\"has_vendor_list\":" << JsonBool(hasVendorList) << ",";
+                json << "\"is_squad_leader\":" << JsonBool(isSquadLeader) << ",";
+                json << "\"has_dialogue\":" << JsonBool(target->hasDialogue()) << ",";
+                json << "\"shop_inventory_owner\":";
+                if (g_shopTraderRegistryReady)
+                    json << JsonBool(isShopInventoryOwner);
+                else
+                    json << "null";
+                json << ",";
+                json << "\"talk_task_available\":"
+                     << JsonBool(talkTaskAvailable) << ",";
+                json << "\"talk_task_probability\":"
+                     << talkTaskProbability << ",";
                 if (faction != NULL)
                     json << "\"faction\":\"" << JsonEscape(const_cast<Faction*>(faction)->getName()) << "\",";
                 json << "\"disposition\":\"" << GetDisposition(selected, target) << "\",";
@@ -301,7 +427,13 @@ namespace
              << "\"Partial telemetry only: hunger, wounds, getting-eaten state, inventory "
              << "detail, and click-target occlusion are not yet exported. A visible nearby "
              << "entity is rendered inside the current viewport, but geometry can still "
-             << "occlude it or intercept a click.\""
+             << "occlude it or intercept a click.\"";
+        if (g_shopTraderRegistryOverflow)
+        {
+            json << ",\"The live ShopTrader registry exceeded its bounded capacity; "
+                 << "shop_inventory_owner is incomplete.\"";
+        }
+        json
              << "]";
         json << "}";
         return json.str();
@@ -354,20 +486,44 @@ namespace
 __declspec(dllexport) void startPlugin()
 {
     g_outputDirectory = KenshiAgentTelemetry::ResolveTelemetryDirectory();
-    WriteStatus("starting", "Installing PlayerInterface::update telemetry hook.");
+    WriteStatus(
+        "starting",
+        "Installing telemetry and ShopTrader lifecycle hooks.");
 
-    const KenshiLib::HookStatus status = KenshiLib::AddHook(
+    const KenshiLib::HookStatus updateStatus = KenshiLib::AddHook(
         KenshiLib::GetRealAddress(&PlayerInterface::update),
         PlayerInterfaceUpdateHook,
         &g_originalPlayerInterfaceUpdate);
 
-    if (status != KenshiLib::SUCCESS)
+    if (updateStatus != KenshiLib::SUCCESS)
     {
         ErrorLog("KenshiAgentTelemetry: could not hook PlayerInterface::update.");
         WriteStatus("error", "Could not hook PlayerInterface::update.");
         return;
     }
 
+    const KenshiLib::HookStatus constructorStatus = KenshiLib::AddHook(
+        KenshiLib::GetRealAddress(&ShopTrader::_CONSTRUCTOR),
+        ShopTraderConstructorHook,
+        &g_originalShopTraderConstructor);
+    const KenshiLib::HookStatus destructorStatus = KenshiLib::AddHook(
+        KenshiLib::GetRealAddress(&ShopTrader::_DESTRUCTOR),
+        ShopTraderDestructorHook,
+        &g_originalShopTraderDestructor);
+    g_shopTraderRegistryReady =
+        constructorStatus == KenshiLib::SUCCESS &&
+        destructorStatus == KenshiLib::SUCCESS;
+    if (!g_shopTraderRegistryReady)
+    {
+        ErrorLog(
+            "KenshiAgentTelemetry: ShopTrader lifecycle hooks unavailable; "
+            "exact shop-owner telemetry disabled.");
+    }
+
     DebugLog("KenshiAgentTelemetry: telemetry hook installed.");
-    WriteStatus("ready", "Telemetry hook installed. Waiting for game/UI updates.");
+    WriteStatus(
+        "ready",
+        g_shopTraderRegistryReady
+            ? "Telemetry and ShopTrader lifecycle hooks installed."
+            : "Telemetry hook installed; exact ShopTrader registry unavailable.");
 }

@@ -83,6 +83,23 @@ still a research source rather than a dependency: our existing native telemetry
 plugin can expose a much smaller JSON command surface without embedding a second
 language runtime.
 
+The class split is important for target selection. `Character::isATrader()` is
+not an exact-person signal: live telemetry marked caravan members, guards, and
+animals alike when their platoon traded. KenshiLib separately exposes
+`ActivePlatoon::getIsTrader()`, `getHasVendorList()`, `getSquadLeader()`, and
+`Character::hasDialogue()`. Most decisively, `ShopTrader::getTrader()` returns
+the exact `Character*` that owns its inventory.
+
+Live validation ruled out a seemingly direct lookup:
+`GameWorld::getObjectsWithinSphere(..., SHOP_TRADER_CLASS, ...)` returned zero
+objects with the Hub Barman nearby. Disassembly of Kenshi 1.0.65 confirmed that
+`InventoryManager` is not a registry either: the singleton is eight bytes and
+holds one transient `ShopTrader*`. The plugin therefore hooks `ShopTrader`
+construction and destruction before save load, maintains a bounded live
+registry, and matches its owner pointers against nearby characters. For
+pre-click validity it also asks Kenshi directly through
+`getPlayerTaskProbability(PLAYER_TALK_TO, target, probability)`.
+
 ### Inventory and trade implementations
 
 [XxAtreuSSxX/BetterLooting](https://github.com/XxAtreuSSxX/BetterLooting)

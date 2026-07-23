@@ -49,7 +49,15 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
         {
             "id": "nearby:0",
             "name": "Bar Trader",
-            "kind": "trader",
+            "kind": "character",
+            "is_animal": False,
+            "trader_squad": True,
+            "has_vendor_list": True,
+            "is_squad_leader": True,
+            "has_dialogue": True,
+            "shop_inventory_owner": True,
+            "talk_task_available": True,
+            "talk_task_probability": 1.0,
             "faction": "Holy Nation Outlaws",
             "disposition": "neutral",
             "distance": 12.5,
@@ -58,12 +66,17 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "conscious": True,
         }
     ]
+    payload["active_shop_trader_count"] = 1
     path.write_text(json.dumps(payload), encoding="utf-8")
 
     result = TelemetryReader(path, max_age_seconds=5, retries=1).read()
 
     assert result.snapshot.ui.active_screen == "trade"
-    assert result.snapshot.nearby_entities[0].kind == "trader"
+    assert result.snapshot.nearby_entities[0].kind == "character"
+    assert result.snapshot.nearby_entities[0].shop_inventory_owner is True
+    assert result.snapshot.nearby_entities[0].is_squad_leader is True
+    assert result.snapshot.nearby_entities[0].talk_task_available is True
+    assert result.snapshot.active_shop_trader_count == 1
     assert result.snapshot.nearby_entities[0].position is not None
     assert result.snapshot.nearby_entities[0].position.x == -100.0
     assert result.snapshot.nearby_entities[0].screen_position is not None

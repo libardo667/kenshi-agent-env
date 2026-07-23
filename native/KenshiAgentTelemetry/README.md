@@ -7,10 +7,17 @@ same game/UI thread at two hertz, and atomically replaces
 
 It currently exports only fields that have a relatively clear KenshiLib surface:
 pause, speed, money, camera position, selected character, squad names, basic
-state, position, movement speed, and food-item count. It explicitly warns that
-hunger, wounds, getting-eaten state, detailed inventory, modal UI state, and
-nearby entities remain unimplemented. KenshiLib's raw `isGettingEaten` byte is
-not exported because live validation found it set on a healthy new character.
+state, position, movement speed, food-item count, modal UI state, and bounded
+nearby-character telemetry. Nearby roles keep anatomy, platoon commerce,
+leadership, dialogue, Kenshi's native talk-task probability, and exact
+`ShopTrader::getTrader()` ownership separate. Exact ownership comes from a
+bounded registry maintained by `ShopTrader` constructor/destructor hooks
+installed before save load; Kenshi's spatial query does not enumerate these
+wrappers.
+It explicitly warns that hunger, wounds, getting-eaten state, detailed
+inventory, and click-target occlusion remain unimplemented. KenshiLib's raw
+`isGettingEaten` byte is not exported because live validation found it set on a
+healthy new character.
 
 ## Build
 

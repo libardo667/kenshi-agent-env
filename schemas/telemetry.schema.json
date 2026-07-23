@@ -551,6 +551,102 @@
           "title": "Kind",
           "type": "string"
         },
+        "is_animal": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Animal"
+        },
+        "trader_squad": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trader Squad"
+        },
+        "has_vendor_list": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Has Vendor List"
+        },
+        "is_squad_leader": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Is Squad Leader"
+        },
+        "has_dialogue": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Has Dialogue"
+        },
+        "shop_inventory_owner": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shop Inventory Owner"
+        },
+        "talk_task_available": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Talk Task Available"
+        },
+        "talk_task_probability": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Talk Task Probability"
+        },
         "faction": {
           "anyOf": [
             {
@@ -822,6 +918,19 @@
       },
       "title": "Squad",
       "type": "array"
+    },
+    "active_shop_trader_count": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Active Shop Trader Count"
     },
     "nearby_entities": {
       "items": {
