@@ -123,6 +123,30 @@ def test_live_pause_requires_known_current_state() -> None:
         guard.validate(PauseAction(paused=False), known)
 
 
+def test_safety_pause_bypasses_only_the_rate_budget() -> None:
+    config = safety_config().model_copy(update={"max_actions_per_minute": 1})
+    guard = ActionGuard(config, MacroRegistry({}))
+    observation = Observation(run_id="run", step_index=0, mode="mock")
+
+    guard.validate(PauseAction(paused=True), observation)
+    with pytest.raises(SafetyViolation, match="rate limit"):
+        guard.validate(PauseAction(paused=True), observation)
+
+    assert guard.validate_safety_pause(PauseAction(paused=True), observation).paused is True
+    with pytest.raises(SafetyViolation, match="paused=true"):
+        guard.validate_safety_pause(PauseAction(paused=False), observation)
+
+    mismatched = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        telemetry=TelemetrySnapshot(game=GameState(paused=False)),
+    )
+    with pytest.raises(SafetyViolation, match="does not match"):
+        guard.validate_safety_pause(PauseAction(paused=True), mismatched)
+
+
 def test_live_skill_must_be_configured_and_allowlisted() -> None:
     macros = MacroRegistry({"open_map": MacroConfig(actions=[{"kind": "key", "key": "m"}])})
     guard = ActionGuard(safety_config(), macros)

@@ -129,6 +129,9 @@ class SafetyConfig(ConfigModel):
     live_actions_enabled: bool = False
     require_cli_execute_flag: bool = True
     emergency_stop_key: str = "f12"
+    supervisor_enabled: bool = True
+    supervisor_max_sequence_stalls: int = Field(default=3, ge=1, le=100)
+    supervisor_pause_timeout_seconds: float = Field(default=2.0, gt=0.0, le=30.0)
     max_primitive_actions_per_step: int = Field(default=12, ge=1, le=100)
     max_actions_per_minute: int = Field(default=90, ge=1, le=1000)
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)

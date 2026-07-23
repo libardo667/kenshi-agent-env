@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -440,6 +441,35 @@ class ContinuousPlanExecutor:
 
         try:
             transition = await self.environment.step(action)
+        except asyncio.CancelledError:
+            budget.commit()
+            reason = (
+                "Independent safety supervision cancelled the in-flight action; "
+                "delivery is uncertain and the reservation remains spent."
+            )
+            self.state_store.fail_active_command(reason)
+            self._event(
+                "plan_budget_committed",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            self._event(
+                "plan_step_cancelled",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            self._event(
+                "plan_aborted",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            raise
         except Exception as exc:
             # An environment error leaves command delivery uncertain. Commit the
             # reservation conservatively so an at-most-once action is not duplicated.

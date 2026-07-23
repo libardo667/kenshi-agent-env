@@ -23,6 +23,9 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.planning.max_plan_steps == 4
     assert config.planning.max_actions_per_plan == 8
     assert config.planning.max_native_assisted_actions_per_plan == 0
+    assert config.safety.supervisor_enabled
+    assert config.safety.supervisor_max_sequence_stalls == 3
+    assert config.safety.supervisor_pause_timeout_seconds == 2.0
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.reasoning_effort == "low"
     assert config.planner.openrouter_model == "openai/gpt-5.6-luna"
@@ -111,6 +114,9 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.safety.max_purchase_price == 750
     assert config.safety.min_money_after_purchase == 250
     assert config.safety.max_purchases_per_run == 1
+    assert config.safety.supervisor_enabled
+    assert config.safety.supervisor_max_sequence_stalls == 3
+    assert config.safety.supervisor_pause_timeout_seconds == 2.0
     fine_bounds = config.macros["move_visible_terrain"].normalized_pointer_bounds
     map_bounds = config.macros["move_on_map"].normalized_pointer_bounds
     assert fine_bounds is not None and fine_bounds.contains(0.5, 0.5)
