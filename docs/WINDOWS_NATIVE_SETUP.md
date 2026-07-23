@@ -146,3 +146,38 @@ Inspect the staged DLL, `.mod` marker, `RE_Kenshi.json`, notices, and README.
 Only then follow the [live validation checklist](LIVE_VALIDATION_CHECKLIST.md)
 to install against a supported Kenshi/RE_Kenshi combination and a disposable
 save.
+
+## Smart App Control and local DLLs
+
+Windows 11 Smart App Control can block a freshly compiled, unsigned plugin even
+when the build succeeds and RE_Kenshi finds the DLL. This is different from the
+downloaded-file `Unblock` checkbox: `Unblock-File` only removes
+`Zone.Identifier` metadata, while Smart App Control enforcement also evaluates
+the binary's reputation and signature.
+
+Confirm an enforcement block in
+`Microsoft-Windows-CodeIntegrity/Operational`. Event 3077 names the exact DLL
+that Windows refused to load. RE_Kenshi may only report `Could not load plugin`
+and `No error` because Windows rejects the image before its entry point runs.
+
+Do not tell contributors to disable Smart App Control casually. Microsoft says
+there is no per-file exception. Current Windows support documentation says
+recent updates can re-enable it after a temporary disable, while older builds
+and policy configurations can still behave differently; confirm the actual
+Windows Security UI and record the prior state before changing it. Supported
+paths are:
+
+- sign release DLLs with an RSA code-signing certificate from a CA in the
+  Microsoft Trusted Root Program;
+- use Microsoft Artifact Signing Public Trust (currently $9.99/month for the
+  Basic tier) and sign release/CI artifacts;
+- perform local inner-loop testing in a separate development machine or VM
+  where Smart App Control is not enforcing; or
+- temporarily change to Microsoft's developer evaluation/audit configuration
+  only after the machine owner explicitly accepts the system-wide security
+  tradeoff.
+
+See Microsoft's [Smart App Control overview](https://learn.microsoft.com/en-us/windows/apps/develop/smart-app-control/overview),
+[current Smart App Control FAQ](https://support.microsoft.com/en-us/topic/smart-app-control-frequently-asked-questions-285ea03d-fa88-4d56-882e-6698afdb7003),
+[code-signing options](https://learn.microsoft.com/en-us/windows/apps/package-and-deploy/code-signing-options),
+and [Artifact Signing tiers](https://learn.microsoft.com/en-us/azure/artifact-signing/how-to-change-sku).

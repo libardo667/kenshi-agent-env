@@ -50,6 +50,12 @@ inspection alone.
   crash. The staging script now emits the exact 46-byte stub shared by current
   upstream examples, guarded by a hash regression test. The corrected run
   loaded cleanly.
+- A later unsigned telemetry rebuild with nearby-character and UI fields was
+  found by RE_Kenshi but blocked before load by Smart App Control enforcement.
+  Code Integrity events 3033 and 3077 named `KenshiAgentTelemetry.dll`; the
+  file had no `Zone.Identifier`, so downloaded-file unblocking was not the
+  remedy. The game was immediately paused and the signing/development-host
+  decision remains open.
 
 ## Capture and input
 
