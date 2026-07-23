@@ -152,6 +152,15 @@ Hosted live preflight on 2026-07-23:
   the approach duration plus one second, and only this live policy can rebase
   sequence-only latency across an unchanged exact phase fence. Generic stale
   output remains rejected.
+- Dry run `p6-live-continuous-dry-medium-20260723T204004Z` returned a
+  structurally correct world-phase plan in 25.20 seconds. Rebase correctly
+  stopped because `ui` differed; inspection showed only transient
+  `client_width/client_height` changing from 1920x1080 to null while all
+  policy-authoritative UI state remained identical. Capture dimensions are now
+  excluded from the gameplay fence. Trusted policy code also compiles
+  canonical conditions, graph, timeouts, and risks after action
+  structure/target/arguments match, rather than trusting duplicated hosted
+  boilerplate. The run sent zero actions.
 - Hosted live planning now defaults to `medium` reasoning. Direct OpenAI calls
   receive a deterministic output-token ceiling of 4,096 for one decision,
   growing by 2,048 per bounded plan step to at most 12,288. The runtime
@@ -162,7 +171,7 @@ Hosted live preflight on 2026-07-23:
   removed because its conditional `expected` shape was not represented by the
   strict schema. `food_procurement_v1` success checks also preserve the exact
   one-character selection invariant after every action.
-- Repository verification after these changes: 181 tests passed; Ruff passed;
+- Repository verification after these changes: 182 tests passed; Ruff passed;
   mypy passed for all 47 source files; compileall, schema export, diff check,
   and default doctor passed. The next gate is another zero-action hosted dry
   response before enabling any live input.

@@ -55,6 +55,11 @@
   native-command/selection/exact-vendor fence; generic stale outputs remain
   rejected. The active burn-in disables concurrent option advice because its
   pulse is shorter than measured hosted latency.
+- Once the model proposes the exact phase action sequence, target, and typed
+  arguments, trusted food-policy code compiles the canonical conditions,
+  branches, timeouts, and risk budgets. Model-authored duplicated safety
+  scaffolding is no longer relied upon; a wrong action structure is still
+  rejected unchanged.
 - After a long session froze the latest atomic snapshot at sequence 3985, the
   supervisor cancelled the planner with zero actions. The current protocol
   `0.4.0` hotfix makes sampler-latch release exception-safe and retries

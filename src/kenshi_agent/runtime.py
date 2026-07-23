@@ -699,6 +699,40 @@ class AgentRuntime:
                             "new_basis": plan.based_on_revision.model_dump(mode="json"),
                         },
                     )
+                if (
+                    observation.mode == "live"
+                    and self.planning_config.live_execution_policy
+                    == LiveContinuousPolicy.FOOD_PROCUREMENT_V1
+                ):
+                    from .food_procurement import canonicalize_food_procurement_plan
+
+                    canonical_plan = canonicalize_food_procurement_plan(
+                        plan,
+                        observation,
+                    )
+                    if canonical_plan != plan:
+                        plan = canonical_plan
+                        self._plan_event(
+                            "plan_canonicalized",
+                            plan_id=plan.plan_id,
+                            plan_version=plan.plan_version,
+                            observation=observation,
+                            reason=(
+                                "Trusted food policy compiled conditions, graph, "
+                                "timeouts, and risk budgets around the proposed actions."
+                            ),
+                            evidence={
+                                "actions": [
+                                    step.action.kind + ":"
+                                    + (
+                                        step.action.name
+                                        if isinstance(step.action, SkillAction)
+                                        else step.action.kind
+                                    )
+                                    for step in plan.steps
+                                ]
+                            },
+                        )
                 try:
                     assumption_evidence = validate_plan(
                         plan,

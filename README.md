@@ -152,9 +152,14 @@ money/food/pause postconditions. It remains disabled in default and
 live-example configuration. Ordinary stale planner output still executes
 nothing. This one live policy may rebase a returned plan from its immutable
 planner revision to a later telemetry sequence only when the complete
-phase-critical fence—identity session, capabilities, game/UI state, native
-command state, selected character, and exact vendor—remains byte-for-byte
-equivalent. Every action is then checked again against the latest observation.
+phase-critical fence—identity session, capabilities, game state,
+policy-authoritative UI state, native command state, selected character, and
+exact vendor—remains equivalent. Transient client capture dimensions are not a
+gameplay fence. Every action is then checked again against the latest
+observation. Once the proposed action sequence and exact target are
+structurally valid, trusted policy code compiles the canonical conditions,
+linear graph, timeouts, and risk budgets around those actions; safety does not
+depend on the hosted model remembering duplicated scaffolding.
 The burn-in disables concurrent option advisories because the measured hosted
 latency is longer than the short movement pulse and the accepted phase plan
 already contains its bounded future steps.

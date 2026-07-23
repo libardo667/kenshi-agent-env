@@ -12,6 +12,7 @@ from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log
 from kenshi_agent.food_procurement import (
     FOOD_PROCUREMENT_CAPABILITIES,
+    canonicalize_food_procurement_plan,
     food_procurement_rebase_errors,
 )
 from kenshi_agent.models import (
@@ -28,6 +29,7 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    ObservationPolicy,
     PlanEnvelope,
     PlannerOutput,
     PlanningMode,
@@ -419,13 +421,34 @@ def test_global_conditions_canonicalize_redundant_target_ids() -> None:
 
 def test_live_food_plan_rebases_only_across_an_unchanged_exact_fence() -> None:
     planner_observation = observation()
+    planner_telemetry = planner_observation.telemetry
+    assert planner_telemetry is not None
+    planner_observation = planner_observation.model_copy(
+        update={
+            "telemetry": planner_telemetry.model_copy(
+                update={
+                    "ui": planner_telemetry.ui.model_copy(
+                        update={"client_width": 1920, "client_height": 1080}
+                    )
+                }
+            )
+        },
+        deep=True,
+    )
     plan = procurement_plan(planner_observation)
     telemetry = planner_observation.telemetry
     assert telemetry is not None
     later = planner_observation.model_copy(
         update={
             "world_revision": revision(11),
-            "telemetry": telemetry.model_copy(update={"sequence": 11}),
+            "telemetry": telemetry.model_copy(
+                update={
+                    "sequence": 11,
+                    "ui": telemetry.ui.model_copy(
+                        update={"client_width": None, "client_height": None}
+                    ),
+                }
+            ),
         },
         deep=True,
     )
@@ -445,6 +468,56 @@ def test_live_food_plan_rebases_only_across_an_unchanged_exact_fence() -> None:
     assert food_procurement_rebase_errors(plan, planner_observation, changed) == [
         "food rebase fence changed during planning: game"
     ]
+
+    changed_ui_telemetry = later.telemetry
+    assert changed_ui_telemetry is not None
+    changed_ui = later.model_copy(
+        update={
+            "telemetry": changed_ui_telemetry.model_copy(
+                update={
+                    "ui": changed_ui_telemetry.ui.model_copy(
+                        update={"active_screen": "dialogue"}
+                    )
+                }
+            )
+        },
+        deep=True,
+    )
+    assert food_procurement_rebase_errors(plan, planner_observation, changed_ui) == [
+        "food rebase fence changed during planning: ui"
+    ]
+
+
+def test_food_policy_compiles_safety_scaffolding_around_valid_actions() -> None:
+    current = observation()
+    proposal = procurement_plan(current)
+    proposal.steps[1].success_conditions = [
+        field("telemetry.game.paused", True),
+        field("telemetry.ui.selected_character_count", 1),
+        field("telemetry.ui.active_screen", "trade"),
+    ]
+    proposal.steps[2].success_conditions = [
+        field("telemetry.game.paused", True),
+        field("telemetry.ui.selected_character_count", 1),
+        field("telemetry.ui.tooltip_visible", True),
+    ]
+    proposal.max_game_seconds = 0.5
+
+    compiled = canonicalize_food_procurement_plan(proposal, current)
+
+    validate_plan(compiled, current, planning_config(), macros())
+    assert compiled.max_game_seconds == 12.0
+    assert compiled.steps[0].observation_policy is ObservationPolicy.UNTIL_TERMINAL
+    assert any(
+        condition.path == "target.shop_inventory_owner"
+        and condition.expected is True
+        for condition in compiled.steps[1].success_conditions
+    )
+    assert any(
+        condition.path == "telemetry.active_shop_trader_count"
+        and condition.expected == 1
+        for condition in compiled.steps[2].success_conditions
+    )
 
 
 def test_contains_condition_is_five_valued_and_capability_gated() -> None:
