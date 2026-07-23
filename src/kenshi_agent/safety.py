@@ -11,6 +11,7 @@ from .models import (
     ControlMode,
     CoordinateSpace,
     MoveCursorAction,
+    NativeCommandStatus,
     Observation,
     PauseAction,
     ScrollAction,
@@ -71,6 +72,8 @@ class ActionGuard:
                     )
                 if action.name == "approach_confirmed_vendor":
                     self._validate_native_vendor_target(action, observation)
+                if action.name == "continue_confirmed_vendor_approach":
+                    self._validate_native_vendor_continuation(action, observation)
                 if action.name == "buy_inspected_shop_item":
                     self._validate_purchase(action, observation)
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
@@ -164,6 +167,34 @@ class ActionGuard:
             raise SafetyViolation(
                 "Native vendor target lacks exact current role, consciousness, "
                 "or non-hostile evidence."
+            )
+
+    @classmethod
+    def _validate_native_vendor_continuation(
+        cls,
+        action: SkillAction,
+        observation: Observation,
+    ) -> None:
+        cls._validate_native_vendor_target(action, observation)
+        assert observation.telemetry is not None
+        telemetry = observation.telemetry
+        active_id = telemetry.native_control.active_command_id
+        acknowledgement = (
+            telemetry.native_control.acknowledgement_for(active_id)
+            if active_id is not None
+            else None
+        )
+        target_id = action.argument_map().get("target_id")
+        if (
+            acknowledgement is None
+            or acknowledgement.status != NativeCommandStatus.ACCEPTED
+            or acknowledgement.target_id != target_id
+            or acknowledgement.selected_character_ids
+            != telemetry.ui.selected_character_ids
+        ):
+            raise SafetyViolation(
+                "Native vendor continuation requires the exact active accepted "
+                "command, target, and selection."
             )
 
     def validate_safety_pause(

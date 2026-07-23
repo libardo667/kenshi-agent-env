@@ -115,6 +115,7 @@ def observation(
     tooltip_bounds: NormalizedPointerBounds | None = None,
     money: int = 1000,
     food_items: int = 0,
+    active_native_approach: bool = False,
 ) -> Observation:
     trade_open = screen == "trade"
     return Observation.model_validate(
@@ -138,6 +139,31 @@ def observation(
                     "elapsed_minutes": 123.0,
                     "money": money,
                 },
+                "native_control": (
+                    {
+                        "available": True,
+                        "active_command_id": (
+                            "cmd-0123456789abcdef0123456789abcdef"
+                        ),
+                        "acknowledgements": [
+                            {
+                                "command_id": (
+                                    "cmd-0123456789abcdef0123456789abcdef"
+                                ),
+                                "command": "approach_confirmed_vendor",
+                                "status": "accepted",
+                                "reason": "issued",
+                                "target_id": TARGET_ID,
+                                "selected_character_ids": ["player:1"],
+                                "based_on_telemetry_sequence": 7,
+                                "acknowledged_at_telemetry_sequence": 8,
+                                "accepted_at_telemetry_sequence": 8,
+                            }
+                        ],
+                    }
+                    if active_native_approach
+                    else {"available": True}
+                ),
                 "ui": {
                     "active_screen": screen,
                     "dialogue_open": screen == "dialogue",
@@ -270,7 +296,7 @@ def procurement_plan(current: Observation) -> PlanEnvelope:
         entry_step_id="approach",
         max_actions=3,
         max_wall_seconds=30.0,
-        max_game_seconds=12.0,
+        max_game_seconds=540.0,
         risk_budget=RiskBudget(
             max_pointer_actions=2,
             max_purchase_actions=0,
@@ -352,6 +378,7 @@ def planning_config(
         live_execution_policy=policy,
         observation_pump_enabled=False,
         concurrent_option_planning_enabled=False,
+        max_plan_game_seconds=540.0,
         max_native_assisted_actions_per_plan=1,
     )
 
@@ -365,6 +392,12 @@ def macros() -> MacroRegistry:
                 movement_pulse_max_seconds=8.0,
                 requires_native_assisted=True,
                 actions=[{"kind": "hotkey", "keys": ["ctrl", "shift", "f10"]}],
+            ),
+            "continue_confirmed_vendor_approach": MacroConfig(
+                movement_pulse_seconds=2.0,
+                movement_pulse_min_seconds=0.5,
+                movement_pulse_max_seconds=8.0,
+                requires_native_assisted=True,
             ),
             "choose_show_goods": MacroConfig(
                 actions=[{"kind": "click", "x": 0.5, "y": 0.812}]
@@ -506,7 +539,7 @@ def test_food_policy_compiles_safety_scaffolding_around_valid_actions() -> None:
     compiled = canonicalize_food_procurement_plan(proposal, current)
 
     validate_plan(compiled, current, planning_config(), macros())
-    assert compiled.max_game_seconds == 12.0
+    assert compiled.max_game_seconds == 540.0
     assert compiled.steps[0].observation_policy is ObservationPolicy.UNTIL_TERMINAL
     assert any(
         condition.path == "target.shop_inventory_owner"
@@ -518,6 +551,21 @@ def test_food_policy_compiles_safety_scaffolding_around_valid_actions() -> None:
         and condition.expected == 1
         for condition in compiled.steps[2].success_conditions
     )
+
+
+def test_food_policy_continues_exact_active_native_approach_without_reissue() -> None:
+    current = observation(active_native_approach=True)
+    proposal = procurement_plan(current)
+    proposal.steps[0].action = SkillAction(
+        name="continue_confirmed_vendor_approach",
+        args={"target_id": TARGET_ID, "duration_seconds": 2.0},
+    )
+
+    compiled = canonicalize_food_procurement_plan(proposal, current)
+
+    validate_plan(compiled, current, planning_config(), macros())
+    assert compiled.steps[0].action.name == "continue_confirmed_vendor_approach"
+    assert compiled.max_game_seconds == 180.0
 
 
 def test_contains_condition_is_five_valued_and_capability_gated() -> None:

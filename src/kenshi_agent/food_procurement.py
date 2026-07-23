@@ -11,6 +11,7 @@ from .models import (
     ConditionPath,
     ControlMode,
     IdempotencyPolicy,
+    NativeCommandStatus,
     Observation,
     ObservationPolicy,
     PlanEnvelope,
@@ -19,6 +20,13 @@ from .models import (
     SkillAction,
 )
 
+NATIVE_VENDOR_APPROACH_SKILLS = frozenset(
+    {
+        "approach_confirmed_vendor",
+        "continue_confirmed_vendor_approach",
+    }
+)
+MAX_GAME_SECONDS_PER_APPROACH_WALL_SECOND = 60.0
 FOOD_PROCUREMENT_CAPABILITIES = frozenset(
     {
         "control.approach_vendor",
@@ -210,6 +218,36 @@ def _fresh() -> Condition:
     )
 
 
+def _continuable_vendor_target_id(observation: Observation) -> str | None:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return None
+    active_id = telemetry.native_control.active_command_id
+    if active_id is None:
+        return None
+    acknowledgement = telemetry.native_control.acknowledgement_for(active_id)
+    selected_ids = telemetry.ui.selected_character_ids
+    if (
+        acknowledgement is None
+        or acknowledgement.status != NativeCommandStatus.ACCEPTED
+        or acknowledgement.selected_character_ids != selected_ids
+        or len(selected_ids) != 1
+    ):
+        return None
+    return acknowledgement.target_id
+
+
+def _approach_game_budget_seconds(actions: Iterable[SkillAction]) -> float:
+    for action in actions:
+        if action.name not in NATIVE_VENDOR_APPROACH_SKILLS:
+            continue
+        duration = action.argument_map().get("duration_seconds")
+        if isinstance(duration, bool) or not isinstance(duration, (int, float)):
+            return 0.0
+        return (float(duration) + 1.0) * MAX_GAME_SECONDS_PER_APPROACH_WALL_SECOND
+    return 0.0
+
+
 def _expected_action_names(observation: Observation) -> list[str]:
     telemetry = observation.telemetry
     if telemetry is None:
@@ -220,8 +258,13 @@ def _expected_action_names(observation: Observation) -> list[str]:
         and telemetry.ui.tooltip_source_bounds is not None
     )
     if telemetry.ui.active_screen == "world":
+        approach_skill = (
+            "continue_confirmed_vendor_approach"
+            if _continuable_vendor_target_id(observation) is not None
+            else "approach_confirmed_vendor"
+        )
         return [
-            "approach_confirmed_vendor",
+            approach_skill,
             "choose_show_goods",
             "inspect_shop_item",
         ]
@@ -262,7 +305,7 @@ def canonicalize_food_procurement_plan(
     for index, (step, action) in enumerate(zip(plan.steps, actions, strict=True)):
         preconditions = [paused, selected_one]
         success_conditions = [paused, selected_one]
-        if action.name == "approach_confirmed_vendor":
+        if action.name in NATIVE_VENDOR_APPROACH_SKILLS:
             preconditions.extend(
                 [
                     _field("telemetry.ui.active_screen", "world"),
@@ -374,7 +417,9 @@ def canonicalize_food_procurement_plan(
                     "success_conditions": success_conditions,
                     "failure_conditions": [],
                     "timeout_seconds": (
-                        12.0 if action.name == "approach_confirmed_vendor" else 8.0
+                        12.0
+                        if action.name in NATIVE_VENDOR_APPROACH_SKILLS
+                        else 8.0
                     ),
                     "retry_budget": 0,
                     "idempotency": IdempotencyPolicy.AT_MOST_ONCE,
@@ -390,7 +435,7 @@ def canonicalize_food_procurement_plan(
             )
         )
 
-    has_approach = "approach_confirmed_vendor" in names
+    has_approach = any(name in NATIVE_VENDOR_APPROACH_SKILLS for name in names)
     has_purchase = "buy_inspected_shop_item" in names
     pointer_actions = sum(
         name in {"choose_show_goods", "inspect_shop_item", "buy_inspected_shop_item"}
@@ -403,7 +448,9 @@ def canonicalize_food_procurement_plan(
             "entry_step_id": compiled_steps[0].step_id,
             "max_actions": len(compiled_steps),
             "max_wall_seconds": 30.0 if has_approach else 10.0 * len(compiled_steps),
-            "max_game_seconds": 12.0 if has_approach else 3.0,
+            "max_game_seconds": (
+                _approach_game_budget_seconds(actions) if has_approach else 3.0
+            ),
             "risk_budget": RiskBudget(
                 max_pointer_actions=pointer_actions,
                 max_purchase_actions=int(has_purchase),
@@ -477,17 +524,21 @@ def food_procurement_policy_errors(
             "food procurement actions do not match the current authoritative phase; "
             f"expected {expected_names}, observed {names}"
         )
-    if "approach_confirmed_vendor" in names:
-        approach_action = actions[names.index("approach_confirmed_vendor")]
+    approach_names = [
+        name for name in names if name in NATIVE_VENDOR_APPROACH_SKILLS
+    ]
+    if approach_names:
+        approach_action = actions[names.index(approach_names[0])]
         duration = approach_action.argument_map().get("duration_seconds")
+        required_game_seconds = _approach_game_budget_seconds([approach_action])
         if (
             isinstance(duration, bool)
             or not isinstance(duration, (int, float))
-            or plan.max_game_seconds < float(duration) + 1.0
+            or plan.max_game_seconds < required_game_seconds
         ):
             errors.append(
-                "food approach plan game-time budget must cover duration_seconds "
-                "plus one second"
+                "food approach plan game-time budget must cover the bounded "
+                "wall-to-game-time conversion"
             )
 
     target_ids = _target_ids(actions)
@@ -511,6 +562,13 @@ def food_procurement_policy_errors(
         or target.disposition.value not in {"friendly", "neutral"}
     ):
         errors.append("food procurement exact target lacks the required safe vendor roles")
+    if (
+        "continue_confirmed_vendor_approach" in names
+        and _continuable_vendor_target_id(observation) != target_id
+    ):
+        errors.append(
+            "food continuation must match the exact active accepted native vendor command"
+        )
 
     for step, action in zip(plan.steps, actions, strict=True):
         _requires(
@@ -542,7 +600,7 @@ def food_procurement_policy_errors(
             expected=1,
         )
 
-        if action.name == "approach_confirmed_vendor":
+        if action.name in NATIVE_VENDOR_APPROACH_SKILLS:
             _requires(
                 errors,
                 step.preconditions,
