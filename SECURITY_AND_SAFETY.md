@@ -46,9 +46,9 @@ nearby capability does not become evidence that an entity disappeared.
 An independent portable supervisor subscribes to that stream and can cancel a
 blocked planner or plan action without waiting for the strategic loop. It
 reacts to deterministic reflexes, stale/stalled telemetry, pause-capability
-withdrawal, and unauthorized unpause. A canceled in-flight action is treated as
-possibly delivered: its budget stays spent and its command outcome is
-inconclusive.
+withdrawal, an exact `human_input_detected` stream event, and unauthorized
+unpause. A canceled in-flight action is treated as possibly delivered: its
+budget stays spent and its command outcome is inconclusive.
 
 The only cleanup exception is `PauseAction(paused=true)`. It still requires the
 configured action allowlist and matching control mode, and it never permits an
@@ -58,6 +58,14 @@ causally later revision with `game.pause` capability confirms `paused=true`.
 Failure, missing capability, or timeout remains explicit. This has portable
 fake-environment evidence only: live continuous mode is blocked, so there is no
 claim yet about concurrent F12, human-input, or Windows-controller latency.
+
+Portable configured movement pulses expose an executor-owned option lifecycle.
+A concurrent planner sees an immutable active-plan snapshot and has advisory
+authority over future steps only. Its output cannot alter the running movement,
+restart an active/completed step, or execute until it matches the original
+plan/version/revision and passes a second post-movement validation against
+latest state and remaining budgets. This does not replace the live movement
+pulse's own re-pause guarantee, and live continuous mode remains blocked.
 
 Do not read Kenshi or MyGUI object state from a worker thread. Sample game state
 on a known game/UI thread, copy it into plain data, and only then hand it to

@@ -34,6 +34,10 @@ and game-integration failures.
   It can cancel a blocked strategic call or in-flight action, conservatively
   close uncertain command state, request one narrowly guarded pause, and report
   success only after a causally later revision confirms the paused state.
+- A stateful movement-option adapter in portable continuous mode. Configured
+  movement pulses expose prepare/start/progress/cancel/terminal lifecycle, may
+  overlap one strategic future-plan advisory, and apply a patch only after
+  latest-state and remaining-budget revalidation.
 - A Windows client-area screenshot and SendInput controller.
 - Two independent gates before real keyboard or mouse input is allowed.
 - Typed `interface_only` and `native_assisted` control modes, with an additional
@@ -124,9 +128,17 @@ inconclusive rather than progress.
 
 The safety supervisor consumes that same stream independently of the strategic
 planner. Threat reflexes, stale or stalled telemetry, pause-capability
-withdrawal, and an unpaused state without an authorized plan/command can
-preempt slow work. Supervisor decisions, cancellations, cleanup attempts, and
-terminal results have distinct log events and evaluator metrics.
+withdrawal, an exact human-input stream event, and an unpaused state without an
+authorized plan/command can preempt slow work. Supervisor decisions,
+cancellations, cleanup attempts, and terminal results have distinct log events
+and evaluator metrics.
+
+Configured movement-pulse skills use a stateful option lifecycle in portable
+continuous mode. While the movement is active, one strategic call may propose a
+future-only `PlanPatch` from an immutable `active_plan` snapshot. The runtime
+stages only an exact plan/version/revision match, never changes the running
+step, and revalidates the patch after movement before any replacement step can
+execute. Stale, mismatched, unsafe, or late output is discarded normally.
 
 Continuous mode is intentionally restricted to mock and fake event-driven
 environments in this slice. It is not a claim of live Kenshi continuity.
@@ -147,8 +159,9 @@ kenshi-agent run --config config/default.yaml --planner heuristic --steps 40
 ### Scripted policy
 
 In `single_step`, each non-comment line is one complete `PlannerDecision` JSON
-object. Continuous scripts may contain a `PlanEnvelope`; `PlanPatch` parsing is
-versioned now, while active-plan patch application is deferred.
+object. Continuous scripts may contain a `PlanEnvelope`; when an observation
+includes `active_plan`, a concurrent movement advisory may return a matching
+future-only `PlanPatch`.
 
 ```powershell
 kenshi-agent run `
@@ -161,9 +174,11 @@ kenshi-agent run `
 ### External subprocess
 
 The runtime writes one `Observation` JSON line to the child process's stdin. The
-child must write one `PlannerDecision` JSON object in `single_step`, or one
-`PlanEnvelope` in `continuous`, to stdout and exit zero. This is the cleanest
-connector for a coding-agent harness, local model, or custom orchestrator.
+child must write one `PlannerDecision` JSON object in `single_step`, one
+`PlanEnvelope` in ordinary `continuous` planning, or a `PlanPatch` when the
+continuous observation includes `active_plan`, then exit zero. This is the
+cleanest connector for a coding-agent harness, local model, or custom
+orchestrator.
 
 ```powershell
 kenshi-agent run `
@@ -434,6 +449,8 @@ Continuous-mode revision ownership and its current identity limits are recorded
 in [ADR: Authoritative world-state stream](docs/ADR_WORLD_STATE_STREAM.md).
 Independent preemption and the narrow safe-pause exception are recorded in
 [ADR: Independent safety supervision](docs/ADR_SAFETY_SUPERVISOR.md).
+Portable movement lifecycle and future-only patch authority are recorded in
+[ADR: Stateful movement options](docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md).
 
 The Python guard enforces:
 
@@ -475,10 +492,10 @@ then present the result as general play ability.
 - UI skills beyond ordinary configurable key macros require calibration and
   screenshot-grounded confirmation.
 - Hosted vision-planner evidence is limited to supervised narrow live slices.
-- Continuous execution still has no strategic planner/executor overlap,
-  stateful live movement option, active patch application, or live enablement.
-  Portable supervisor tests do not establish F12 or human-input preemption
-  latency against a real Windows controller.
+- Continuous execution has portable overlap/patch evidence only for configured
+  movement-pulse options. It still has no stateful live option, broad option
+  conversion, or live enablement. Portable supervisor tests do not establish
+  F12 or human-input preemption latency against a real Windows controller.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.

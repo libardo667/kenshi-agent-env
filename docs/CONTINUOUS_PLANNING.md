@@ -28,10 +28,10 @@ A plan is advisory until deterministic code accepts it. Acceptance requires:
 - every plan assumption evaluating to `true`.
 
 `PlanPatch` carries plan ID, base plan version, and base world revision for
-optimistic concurrency. It is schema-exported and parsed by scripted planners,
-but application to an active plan is intentionally deferred. A patch returned
-without an active matching plan is rejected normally, not treated as executable
-work.
+optimistic concurrency. A patch returned without an active matching movement
+option is rejected normally. During a stateful movement option, only a
+future-only patch matching the immutable planner snapshot may be staged, and it
+is revalidated after the option before application.
 
 ## World revisions and causal confirmation
 
@@ -125,6 +125,39 @@ Before every action it:
 Environment errors after dispatch conservatively consume the reservation so an
 at-most-once action is not duplicated.
 
+## Stateful movement option and future-only patching
+
+When enabled, a configured movement-pulse skill is adapted into one
+`StatefulMovementOption`. The macro and environment still own the proven
+movement mechanics; the adapter adds explicit prepare, start, state-stream
+progress, success, failure, and idempotent cancel states. Preparation requires a
+capable confirmed-paused start. The option owns one named action task and one
+bounded store subscription, both released on every terminal path.
+
+While the option runs, one concurrent strategic call receives an immutable
+observation with `ActivePlanContext`: plan ID/version, active and completed step
+IDs, objective, and remaining action count. It may return only a `PlanPatch`.
+The executor stages the patch only when:
+
+- plan ID and version match the active plan;
+- patch revision exactly matches both the planner snapshot and still-current
+  store revision;
+- no replacement step reuses an active or completed step ID;
+- the replacement graph is finite, acyclic, reachable, and policy-valid;
+- its declared actions fit remaining action and risk budgets.
+
+Staging never changes the running option. After the movement succeeds and its
+transition is recorded, the executor validates again against latest state,
+unchanged assumptions, remaining run/plan/risk/time budgets, and the protected
+completed-step set. Only then does the plan version advance and its replacement
+future entry become eligible. Each replacement action still passes ordinary
+precondition and guard checks. Wrong-type, failed, late, stale, mismatched, or
+invalid advisory output is logged and discarded; the original branch remains.
+
+Cancellation keeps the existing P3 contract: dispatched movement remains spent
+and inconclusive, the option reaches cancelled/failed once, and the independent
+supervisor owns the single causally verified safe-pause cleanup.
+
 ## Lifecycle and replay
 
 Append-only logs carry plan ID, plan version, step ID where applicable, world
@@ -142,9 +175,18 @@ plan_step_succeeded
 plan_step_failed
 plan_step_cancelled
 plan_patch_requested
+plan_patch_staged
+plan_patch_rejected
+plan_patched
 plan_completed
 plan_aborted
 safety_preempted
+option_prepared
+option_started
+option_progress
+option_succeeded
+option_failed
+option_cancelled
 ```
 
 Budget reservation, commit, and release are logged separately. The evaluator
@@ -155,6 +197,8 @@ pump errors, revision failures, entity lifetime counts, and command mismatches.
 Supervisor preemptions, strategic/executor cancellations, cleanup starts,
 completions/failures, terminal states, and cleanup success percentage are
 reported separately from planner/reflex counts.
+Future patches, concurrent advisory discards, option lifecycle counts, and
+option success percentage are also separate metrics.
 `replay_plan_lifecycle` reconstructs each plan's terminal status and succeeded,
 failed, and cancelled step IDs.
 
@@ -163,9 +207,10 @@ failed, and cancelled step IDs.
 Continuous mode starts one deterministic supervisor subscriber before starting
 the observation pump. It does not call a model. It latches the first detected
 reflex, stale telemetry, consecutive sequence stall, pause-capability
-withdrawal, or unexpected unpause without an active authorized plan/command.
-Active authorization is copied into each `StoreUpdate`, preventing queued old
-updates from being judged against newer mutable executor state.
+withdrawal, exact `human_input_detected` event, or unexpected unpause without an
+active authorized plan/command. Active authorization is copied into each
+`StoreUpdate`, preventing queued old updates from being judged against newer
+mutable executor state.
 
 The scheduler races strategic planning and plan execution against that latch.
 When the supervisor wins, it cancels the obsolete task once. Cancellation
@@ -182,7 +227,7 @@ execution error, policy rejection, command mismatch, or lost capability emits
 and observation pump are stopped before the store shuts down, and repeated
 preemption/stop calls are idempotent.
 
-## Proven P1-P3 cases
+## Proven P1-P4 cases
 
 Portable tests and the built-in heuristic prove:
 
@@ -218,9 +263,20 @@ Portable tests and the built-in heuristic prove:
   false value, and consecutive duplicate revisions preempt deterministically;
 - repeated preemption and shutdown are idempotent and release the supervisor
   subscription.
+- one concurrent strategic advisory returns while fake movement remains active;
+  its exact future-only patch is staged but cannot execute before movement
+  succeeds and latest-state/budget revalidation passes;
+- patch replay advances the plan version and preserves the completed movement
+  step without restarting it;
+- a pump update that makes the advisory basis stale rejects the patch and
+  executes the original future step;
+- an exact human-input stream event cancels movement, records its command
+  inconclusive, and reaches one confirmed supervisor pause;
+- option success, failure, cleanup failure, cancellation, and repeated
+  cancellation release their owned tasks/subscriptions.
 
-The next architectural step is a stateful option abstraction, beginning with
-bounded movement, plus strategic planner/executor overlap. The current P3
-preemption race does not make future strategic plans executable during an
-active option, does not enable live continuous execution, and does not establish
-Windows controller interruption latency.
+The current option conversion is deliberately narrow: only configured
+movement-pulse skills use it, and live continuous mode remains blocked. Next
+work can harden/generalize the option protocol or proceed to native bridge
+acknowledgements and stable identity, without claiming Windows controller
+interruption latency from portable evidence.

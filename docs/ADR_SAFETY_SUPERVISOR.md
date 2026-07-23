@@ -21,8 +21,8 @@ authoritative `WorldStateStore`.
 
 - It applies only deterministic rules: the existing reflex engine, telemetry
   staleness, a configured consecutive sequence-stall threshold,
-  pause-capability withdrawal, and unpause without an active authorized plan or
-  command.
+  pause-capability withdrawal, an exact `human_input_detected` observation
+  event, and unpause without an active authorized plan or command.
 - `StoreUpdate` includes immutable copies of active plan and command state at
   publication time. Subscriber delay cannot turn a formerly authorized update
   into an unauthorized one.

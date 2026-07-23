@@ -23,6 +23,10 @@
 - Portable continuous mode owns an independent deterministic safety subscriber
   that can cancel blocked planner/executor work and report safe cleanup only
   after a causally later capable revision confirms pause.
+- Configured movement-pulse skills become stateful options in portable
+  continuous mode. One future-only strategic patch may overlap movement, but
+  it cannot execute until post-option state and remaining budgets are
+  revalidated.
 
 ## Completed milestones
 
@@ -42,6 +46,9 @@
 - Independent blocked-work preemption, conservative cancellation causality,
   narrowly guarded safe-pause cleanup, and supervisor-specific lifecycle
   metrics.
+- Stateful configured-movement lifecycle, concurrent future advisory,
+  optimistic patch staging/application, stale-output rejection, and option
+  replay metrics.
 
 ## Previous completed slice: explicit control modes
 
@@ -252,7 +259,86 @@ control-mode checks, bypasses only the rate counter, and requires a later
 capable paused revision. Failure and missing capability remain explicit. The
 portable live-continuous block is unchanged.
 
+## Latest completed slice: P4 stateful movement-option lifecycle
+
+Problem: movement is still represented to the continuous executor as one opaque
+`environment.step()` await. P3 can cancel that await, but there is no typed
+prepare/start/poll/cancel lifecycle, no option-specific progress record, and no
+safe seam for a concurrent strategic advisory or future-only patch.
+
+Scope:
+
+- Adapt configured movement-pulse skills into an executor-owned stateful option
+  without deleting the existing macro implementation.
+- Give the option explicit prepared/running/succeeded/failed/cancelled states,
+  immutable start evidence, state-stream polling, and idempotent cancellation.
+- Log and evaluate option lifecycle separately from plan-step and raw action
+  events.
+- Run one strategic advisory concurrently with an active portable movement
+  option. Stage only a matching, current, bounded `PlanPatch`; discard errors,
+  wrong output types, stale bases, and version/plan mismatches.
+- Revalidate a staged future-only patch against the post-option revision,
+  remaining action/risk/time budgets, assumptions, and ordinary per-step guards
+  before applying it. Never alter or restart the active/completed step.
+- Keep `single_step`, non-movement continuous actions, and live-continuous
+  blocking behavior unchanged.
+
+Non-goals:
+
+- No live continuous enablement or rewrite of the proven live movement pulse.
+- No native command bridge/stable-handle change.
+- No broad option conversion beyond configured movement-pulse skills.
+- No claim of Windows user-input/F12 latency from portable tests.
+
+Acceptance criteria:
+
+- A fake movement option exposes prepared, started, progress, and succeeded
+  events while one strategic patch call overlaps it.
+- A matching patch returned before the movement completes is not applied until
+  the movement succeeds and the patch passes a second latest-state/budget
+  validation; only its future steps execute.
+- A stale or mismatched concurrent output executes no future action and is
+  logged as discarded/rejected rather than a planner crash.
+- Safety cancellation during the option produces one option-cancelled event,
+  one inconclusive command outcome, and the existing single confirmed-pause
+  cleanup.
+- Completion, failure, and repeated cancellation leave no option task,
+  advisory task, subscription, active command, or active plan.
+- Full portable gates, the continuous two-action proof, and fixed single-step
+  seeds remain green; live/Windows behavior remains untested.
+
+Result: complete in `58736e8`. Configured movement pulses now have explicit
+prepared/running/progress/succeeded/failed/cancelled state while retaining the
+existing macro/environment mechanics. One immutable active-plan observation may
+produce a matching future-only patch during movement. The running/completed
+step is protected; a staged patch is applied only after movement succeeds and
+the latest revision, assumptions, topology, policy, and remaining budgets pass
+again. Stale/mismatched output stays advisory. Human-input events and safety
+preemption cancel the option through P3's single verified-pause path. Live
+continuous mode remains blocked.
+
 ## Current checks
+
+P4 completion verification on 2026-07-23:
+
+- `.venv/bin/python -m pytest -o addopts='' -q`: 146 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src/kenshi_agent`: passed, 45 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `control_mode interface_only` and `planning_mode single_step`.
+- Fresh schema export matched checked-in `schemas/` byte-for-byte; the
+  observation schema now includes nullable `ActivePlanContext`.
+- Deterministic fake movement proved concurrent patch staging before option
+  success, post-option revalidation/application as plan version 2, execution of
+  only the replacement future step, and matching lifecycle replay/metrics.
+- A concurrent advisory made stale by a pump update was rejected and the
+  original future step ran. A `human_input_detected` event cancelled blocked
+  movement, left its command inconclusive, and produced one confirmed pause.
+- Continuous run `p4-final-verified` retained the ordinary two-action/one-call
+  proof with two later-revision receipts and no option/supervisor activity.
+- Single-step seeds 7, 11, and 19 retained the one-day outcomes in 25, 13, and
+  13 actions.
 
 P3 completion verification on 2026-07-23:
 
@@ -323,6 +409,12 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Evidence
 
+- Automated portable evidence for P4 covers option prepare/start/progress/
+  success/failure/cancel states, idempotent cancellation, cancellation cleanup
+  failure, concurrent advisory overlap, immutable active-plan context, valid
+  future-only patch staging and post-option application, protected step IDs,
+  stale patch rejection, versioned replay, option/patch evaluator metrics,
+  human-input preemption, and owned task/subscription cleanup.
 - Automated portable evidence for P3 covers blocked-planner cancellation,
   cancellation during fake movement dispatch, conservative command/budget
   treatment, later-revision pause confirmation, cleanup timeout/failure,
@@ -360,10 +452,10 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
-- Strategic planning does not yet overlap execution; active plan patches are
-  parsed/versioned but not applied.
-- Continuous live execution and stateful cancellable movement options are
-  intentionally blocked.
+- Strategic overlap and active patch application are intentionally limited to
+  the portable configured-movement option adapter.
+- Continuous live execution and stateful live movement options are
+  intentionally blocked; the existing live pulse remains monolithic.
 - Raw nearby and squad ordinal IDs remain unstable. The portable nearby
   registry normalizes observed lifetimes but does not prove native identity.
 - Observation payload truncation can produce malformed JSON.
@@ -372,9 +464,9 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Ordered next candidates
 
-1. P4: cancellable stateful options, starting with bounded movement, plus
-   planner/executor overlap and optimistic future-step patch application.
-2. P5: native bridge command acknowledgements and validated stable-handle
+1. P5: native bridge command acknowledgements and validated stable-handle
    generations without conflating them with the portable lifetime registry.
-3. P6: the first conditional live food-procurement chain after P4/P5 evidence
+2. P6: the first conditional live food-procurement chain after P5 evidence
    and explicit live authorization.
+3. P8: semantic observation budgeting that always emits valid JSON, plus CI
+   and a reproducible Python lockfile.

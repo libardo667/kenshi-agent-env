@@ -44,9 +44,12 @@ branches, budget accounting, condition evaluation, cancellation, and
 postcondition polling. A snapshot at or before the action-start revision cannot
 confirm success.
 
-The current subprocess adapter accepts a full `PlanEnvelope`, not an active-plan
-patch. `PlanPatch` is schema-exported for optimistic-concurrency compatibility,
-but patch application is deferred.
+For an ordinary continuous observation, return a full `PlanEnvelope`. When the
+observation contains `active_plan`, a configured movement option is already
+running and the subprocess may return a future-only `PlanPatch` matching that
+context's plan ID/version and the observation's exact revision. Wrong-type,
+late, stale, mismatched, or unsafe patches are logged and discarded; a staged
+patch is revalidated again after the option before any future step executes.
 
 ## Errors
 

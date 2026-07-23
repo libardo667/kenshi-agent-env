@@ -22,6 +22,8 @@ Python runtime
   │                                      ├─> safety supervisor
   │                                      │     └─ cancel + guarded safe pause
   │                                      └─> scheduler/executor
+  │                                             └─ stateful movement option
+  │                                                   ↕ future-only advisory
   ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
   ├─ schema + policy + rate-limit guard
@@ -91,6 +93,29 @@ failed or unverified.
 This portable implementation does not enable live continuous mode and does not
 measure Windows F12, human-input, or controller cancellation latency. See
 `docs/ADR_SAFETY_SUPERVISOR.md`.
+
+## Stateful movement options and concurrent patches
+
+In portable continuous mode, a configured movement-pulse `SkillAction` is
+adapted into `StatefulMovementOption` instead of remaining an opaque executor
+await. The existing macro/environment code still performs the action; the
+adapter adds explicit prepared, running, progress, succeeded, failed, and
+cancelled state. It polls the shared store, owns one task, and makes repeated
+cancellation idempotent.
+
+While that option is active, the executor may give the strategic planner an
+immutable observation containing `ActivePlanContext`. Only a `PlanPatch`
+matching that plan ID, version, and exact start revision can be staged. The
+active or completed step IDs are protected. After the option succeeds, the
+executor rebases only the proposed future graph onto the latest revision and
+revalidates topology, assumptions, policy, and remaining action/risk/time
+budgets. The ordinary guard and precondition checks still run before every
+replacement action. Any stale, mismatched, wrong-type, invalid, or late advisory
+is logged and discarded.
+
+This is intentionally an adapter around the proven movement macro, not a
+rewrite of live movement control or a general option framework. Live continuous
+mode remains blocked. See `docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md`.
 
 ## Partial observability
 
