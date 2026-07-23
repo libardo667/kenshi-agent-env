@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -19,6 +20,7 @@ from kenshi_agent.models import (
 )
 from kenshi_agent.planners.base import output_token_budget, structured_output_model
 from kenshi_agent.planners.openai_planner import OpenAIPlanner
+from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 
 
 def observation(
@@ -122,15 +124,71 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
 
     responses = FakeResponses()
     planner = object.__new__(OpenAIPlanner)
-    planner.config = PlannerConfig(include_screenshot=False)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        max_observation_chars=2000,
+    )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(responses=responses)
     planner.max_plan_steps = 4
 
-    result = asyncio.run(
-        planner.decide(observation(planning_mode=PlanningMode.SINGLE_STEP))
+    oversized = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+        update={"events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)]}
     )
+    result = asyncio.run(planner.decide(oversized))
 
     assert isinstance(result, PlannerDecision)
     assert responses.kwargs["max_output_tokens"] == 4096
     assert responses.kwargs["reasoning"] == {"effort": "low"}
+    input_text = responses.kwargs["input"][0]["content"][0]["text"]
+    planner_payload = input_text.split("\n\n", maxsplit=1)[1]
+    parsed_payload = json.loads(planner_payload)
+    assert len(planner_payload) <= 2000
+    assert parsed_payload["observation_budget"]["truncated"] is True
+
+
+def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, Any] = {}
+
+        async def parse(self, **kwargs: Any) -> SimpleNamespace:
+            self.kwargs = kwargs
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            parsed=PlannerDecision(
+                                intent="Stop safely.",
+                                rationale="The fake hosted response is complete.",
+                                action=StopAction(reason="Test complete."),
+                                confidence=1.0,
+                            ),
+                            content="",
+                        )
+                    )
+                ]
+            )
+
+    completions = FakeCompletions()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        max_observation_chars=2000,
+    )
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    oversized = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+        update={"events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)]}
+    )
+    result = asyncio.run(planner.decide(oversized))
+
+    assert isinstance(result, PlannerDecision)
+    input_text = completions.kwargs["messages"][1]["content"][0]["text"]
+    planner_payload = input_text.split("\n\n", maxsplit=1)[1]
+    parsed_payload = json.loads(planner_payload)
+    assert len(planner_payload) <= 2000
+    assert parsed_payload["observation_budget"]["truncated"] is True

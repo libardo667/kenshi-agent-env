@@ -17,6 +17,8 @@ from pydantic import (
     model_validator,
 )
 
+from .observation_budget import budget_observation_payload
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
@@ -935,9 +937,11 @@ class Observation(StrictModel):
     def planner_payload(self, *, max_chars: int = 24000) -> str:
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         text = self.__class__.model_validate(payload).model_dump_json(indent=2)
-        if len(text) <= max_chars:
-            return text
-        return text[: max_chars - 120] + '\n... "observation_truncated": true\n'
+        return budget_observation_payload(
+            payload,
+            full_text=text,
+            max_chars=max_chars,
+        )
 
 
 class PlannerDecision(StrictModel):

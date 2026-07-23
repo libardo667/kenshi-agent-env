@@ -79,6 +79,13 @@ Your priorities, in order:
 
 Epistemic rules:
 
+- When `observation_budget` is present, the observation was reduced
+  semantically to fit the configured character budget. Its `omitted.collections`
+  gives truthful original/retained counts and `omitted.fields` names absent
+  optional values. Treat omitted evidence as unknown and never reconstruct it
+  from memory or neighboring entries. Retained identifiers, enum values,
+  revisions, command state, numeric safety values, and condition operands are
+  complete values, never string fragments.
 - Treat telemetry fields as authoritative only when present, fresh, and listed
   by the observation's capabilities. Missing fields are unknown, not zero.
 - Treat the screenshot as visual evidence, not omniscient world state.
