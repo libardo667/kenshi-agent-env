@@ -18,8 +18,14 @@
   state, and command receipts with causal start/completion revisions.
 - Portable continuous mode has an independent deterministic safety subscriber.
   It preempts blocked planner or action work on reflex, stale/stalled stream,
-  pause-capability loss, or unauthorized unpause; uncertain dispatch is recorded
-  conservatively, and cleanup is successful only after a later paused revision.
+  pause-capability loss, an exact human-input event, or unauthorized unpause;
+  uncertain dispatch is recorded conservatively, and cleanup is successful only
+  after a later paused revision.
+- Configured movement-pulse skills become stateful options in portable
+  continuous mode. Their lifecycle and state-stream progress are replayable;
+  one strategic advisory can overlap movement, and a matching future-only patch
+  is withheld until post-option state, assumptions, and remaining budgets pass
+  a second deterministic validation.
 - The portable nearby-entity registry preserves observed lifetimes across
   ordinal reordering using fingerprint and position evidence, records ambiguous
   matches, and does not infer disappearance while the entity-list capability is
@@ -101,10 +107,11 @@ new interface-only evidence.
 - Omniscient world-state extraction.
 - Automatic save reloads or hidden reset commands.
 - Unattended enabling of real keyboard/mouse injection.
-- Live continuous execution, strategic planner/executor overlap, active
-  plan-patch application, and cancellable stateful live movement options.
-  `single_step` remains the default and the continuous path is restricted to
-  mock/fake environments.
+- Live continuous execution, general option conversion, and stateful live
+  movement options. Strategic overlap and active patch application currently
+  exist only for the portable configured-movement adapter. `single_step`
+  remains the default and the continuous path is restricted to mock/fake
+  environments.
 - Native stable entity handles and bridge-level command acknowledgement. The
   current in-process registry and command IDs establish portable causal
   semantics but do not make the native plugin protocol P5-complete.
