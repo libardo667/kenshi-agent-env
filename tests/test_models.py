@@ -15,6 +15,7 @@ from kenshi_agent.models import (
     TelemetrySnapshot,
     parse_action,
 )
+from kenshi_agent.schema_export import export_schemas
 
 
 def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
@@ -122,3 +123,10 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     assert '"objective": "Explore nearby."' in payload
     assert '"name": "move_on_map"' in payload
     assert '"visual_precondition": "The map is open."' in payload
+
+
+def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> None:
+    exported = {path.name for path in export_schemas(tmp_path)}
+
+    assert "plan.schema.json" in exported
+    assert "plan_patch.schema.json" in exported

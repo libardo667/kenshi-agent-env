@@ -3,7 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .models import ACTION_ADAPTER, Observation, PlannerDecision, TelemetrySnapshot
+from .models import (
+    ACTION_ADAPTER,
+    Observation,
+    PlanEnvelope,
+    PlannerDecision,
+    PlanPatch,
+    TelemetrySnapshot,
+)
 
 
 def export_schemas(output_dir: Path) -> list[Path]:
@@ -13,6 +20,8 @@ def export_schemas(output_dir: Path) -> list[Path]:
         "telemetry.schema.json": TelemetrySnapshot.model_json_schema(),
         "observation.schema.json": Observation.model_json_schema(),
         "decision.schema.json": PlannerDecision.model_json_schema(),
+        "plan.schema.json": PlanEnvelope.model_json_schema(),
+        "plan_patch.schema.json": PlanPatch.model_json_schema(),
     }
     paths: list[Path] = []
     for name, schema in schemas.items():

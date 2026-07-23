@@ -3,7 +3,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ..models import Observation, PlannerDecision, StopAction
+from ..models import (
+    Observation,
+    PlanEnvelope,
+    PlannerDecision,
+    PlannerOutput,
+    PlanPatch,
+    StopAction,
+)
 from .base import Planner
 
 
@@ -14,22 +21,28 @@ class ScriptedPlanner(Planner):
         self._index = 0
 
     @staticmethod
-    def _load(path: Path) -> list[PlannerDecision]:
-        decisions: list[PlannerDecision] = []
+    def _load(path: Path) -> list[PlannerOutput]:
+        decisions: list[PlannerOutput] = []
         with path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
                 stripped = line.strip()
                 if not stripped or stripped.startswith("#"):
                     continue
                 try:
-                    decisions.append(PlannerDecision.model_validate(json.loads(stripped)))
+                    payload = json.loads(stripped)
+                    if "replace_future_steps" in payload:
+                        decisions.append(PlanPatch.model_validate(payload))
+                    elif "steps" in payload:
+                        decisions.append(PlanEnvelope.model_validate(payload))
+                    else:
+                        decisions.append(PlannerDecision.model_validate(payload))
                 except Exception as exc:
                     raise ValueError(
                         f"Invalid scripted decision at {path}:{line_number}: {exc}"
                     ) from exc
         return decisions
 
-    async def decide(self, observation: Observation) -> PlannerDecision:
+    async def decide(self, observation: Observation) -> PlannerOutput:
         if self._index >= len(self._decisions):
             return PlannerDecision(
                 intent="End the scripted episode.",

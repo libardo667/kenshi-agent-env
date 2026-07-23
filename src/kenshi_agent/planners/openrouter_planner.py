@@ -8,7 +8,13 @@ from pathlib import Path
 from typing import Any
 
 from ..config import PlannerConfig
-from ..models import Observation, PlannerDecision
+from ..models import (
+    Observation,
+    PlanEnvelope,
+    PlannerDecision,
+    PlannerOutput,
+    PlanningMode,
+)
 from .base import Planner
 
 
@@ -30,13 +36,22 @@ class OpenRouterPlanner(Planner):
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
 
-    async def decide(self, observation: Observation) -> PlannerDecision:
+    async def decide(self, observation: Observation) -> PlannerOutput:
+        output_model = (
+            PlanEnvelope
+            if observation.planning_mode == PlanningMode.CONTINUOUS
+            else PlannerDecision
+        )
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
                 "text": (
-                    "Choose exactly one next action from this observation. "
-                    "Return the PlannerDecision schema only.\n\n"
+                    (
+                        "Return one bounded PlanEnvelope grounded in the exact world_revision. "
+                        if observation.planning_mode == PlanningMode.CONTINUOUS
+                        else "Choose exactly one next action from this observation. "
+                    )
+                    + f"Return the {output_model.__name__} schema only.\n\n"
                     + observation.planner_payload(max_chars=self.config.max_observation_chars)
                 ),
             }
@@ -63,7 +78,7 @@ class OpenRouterPlanner(Planner):
                     {"role": "system", "content": self.instructions},
                     {"role": "user", "content": content},
                 ],
-                response_format=PlannerDecision,
+                response_format=output_model,
                 reasoning_effort=self.config.reasoning_effort,
                 extra_body={
                     "provider": {
@@ -77,11 +92,9 @@ class OpenRouterPlanner(Planner):
         parsed = message.parsed
         if parsed is None:
             if not message.content:
-                raise RuntimeError(
-                    "OpenRouter response contained neither parsed output nor text."
-                )
-            parsed = PlannerDecision.model_validate_json(message.content)
-        return PlannerDecision.model_validate(parsed)
+                raise RuntimeError("OpenRouter response contained neither parsed output nor text.")
+            parsed = output_model.model_validate_json(message.content)
+        return output_model.model_validate(parsed)
 
     @staticmethod
     def _data_url(path: Path) -> str:

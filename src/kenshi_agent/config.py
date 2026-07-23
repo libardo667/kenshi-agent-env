@@ -8,7 +8,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .models import Action, ControlMode, parse_action
+from .models import Action, ControlMode, PlanningMode, parse_action
 
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
 
@@ -35,6 +35,19 @@ class RuntimeConfig(ConfigModel):
 class ControlConfig(ConfigModel):
     mode: ControlMode = ControlMode.INTERFACE_ONLY
     native_assisted_actions_enabled: bool = False
+
+
+class PlanningConfig(ConfigModel):
+    mode: PlanningMode = PlanningMode.SINGLE_STEP
+    max_plan_steps: int = Field(default=4, ge=1, le=8)
+    max_actions_per_plan: int = Field(default=8, ge=1, le=16)
+    max_plan_wall_seconds: float = Field(default=30.0, gt=0.0, le=120.0)
+    max_plan_game_seconds: float = Field(default=12.0, gt=0.0, le=3600.0)
+    max_pointer_actions_per_plan: int = Field(default=8, ge=0, le=32)
+    max_purchase_actions_per_plan: int = Field(default=1, ge=0, le=8)
+    max_native_assisted_actions_per_plan: int = Field(default=0, ge=0, le=8)
+    observation_poll_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
+    max_consecutive_replans: int = Field(default=3, ge=0, le=20)
 
 
 class PlannerConfig(ConfigModel):
@@ -181,6 +194,7 @@ class AppConfig(ConfigModel):
     version: int = 1
     mode: Literal["mock", "live", "replay"] = "mock"
     control: ControlConfig = Field(default_factory=ControlConfig)
+    planning: PlanningConfig = Field(default_factory=PlanningConfig)
     paths: PathsConfig
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     planner: PlannerConfig = Field(default_factory=PlannerConfig)
@@ -191,6 +205,17 @@ class AppConfig(ConfigModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     macros: dict[str, MacroConfig] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def planning_risk_matches_control_mode(self) -> AppConfig:
+        if (
+            self.control.mode == ControlMode.INTERFACE_ONLY
+            and self.planning.max_native_assisted_actions_per_plan != 0
+        ):
+            raise ValueError(
+                "interface_only control requires planning.max_native_assisted_actions_per_plan=0"
+            )
+        return self
 
 
 def _expand_env_string(value: str) -> str:

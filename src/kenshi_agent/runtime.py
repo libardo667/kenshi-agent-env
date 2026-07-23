@@ -7,6 +7,8 @@ from time import monotonic
 
 from PIL import Image, ImageChops
 
+from .config import PlanningConfig
+from .continuous_executor import ContinuousPlanExecutor
 from .env import AgentEnvironment
 from .memory import MemoryStore
 from .models import (
@@ -17,12 +19,18 @@ from .models import (
     ControlMode,
     NearbyEntity,
     Observation,
+    PlanEnvelope,
     PlannerDecision,
+    PlanningMode,
+    PlanPatch,
+    PlanStep,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
+    Transition,
 )
 from .planners import Planner
+from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .safety import ActionGuard, SafetyViolation
@@ -60,6 +68,8 @@ class AgentRuntime:
         action_outcome_limit: int = 12,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         reporter: ConsoleDecisionReporter | None = None,
+        planning_config: PlanningConfig | None = None,
+        planning_clock: PlanningClock | None = None,
     ) -> None:
         self.run_id = run_id
         self.environment = environment
@@ -74,8 +84,20 @@ class AgentRuntime:
         self.control_mode = control_mode
         self._action_outcomes: list[ActionOutcome] = []
         self.reporter = reporter
+        self.planning_config = planning_config or PlanningConfig()
+        self.planning_clock = planning_clock or SystemPlanningClock()
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
+        if self.planning_config.mode == PlanningMode.CONTINUOUS:
+            return await self._run_continuous(max_steps=max_steps, seed=seed)
+        return await self._run_single_step(max_steps=max_steps, seed=seed)
+
+    async def _run_single_step(
+        self,
+        *,
+        max_steps: int,
+        seed: int | None = None,
+    ) -> RunSummary:
         started = datetime.now(UTC)
         steps_completed = 0
         terminated = False
@@ -96,21 +118,35 @@ class AgentRuntime:
             )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
-            self.logger.write(
-                "observation", step_index=observation.step_index, payload=observation
-            )
+            self.logger.write("observation", step_index=observation.step_index, payload=observation)
 
             for _ in range(max_steps):
                 planning_started = monotonic()
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
                 decision_source = "planner"
-                decision = self.reflexes.decide(observation)
-                if decision is not None:
+                reflex_decision = self.reflexes.decide(observation)
+                if reflex_decision is not None:
+                    decision = reflex_decision
                     decision_source = "reflex"
                 else:
                     try:
-                        decision = await self.planner.decide(observation)
+                        planner_output = await self.planner.decide(observation)
+                        if isinstance(planner_output, PlannerDecision):
+                            decision = planner_output
+                        else:
+                            decision = PlannerDecision(
+                                intent="Stop after incompatible planner output.",
+                                rationale=(
+                                    "Single-step mode requires PlannerDecision, but "
+                                    f"received {type(planner_output).__name__}."
+                                ),
+                                action=StopAction(
+                                    reason="Planner output did not match single-step mode."
+                                ),
+                                confidence=1.0,
+                            )
+                            decision_source = "planner_error"
                     except Exception as exc:
                         decision = PlannerDecision(
                             intent="Stop after planner failure.",
@@ -218,8 +254,7 @@ class AgentRuntime:
                         stop_reason = transition.events[-1]
                     else:
                         stop_reason = (
-                            transition.receipt.message
-                            or "Environment terminated the episode."
+                            transition.receipt.message or "Environment terminated the episode."
                         )
                     break
                 if isinstance(action, StopAction):
@@ -261,11 +296,443 @@ class AgentRuntime:
         finally:
             await self.environment.close()
 
+    async def _run_continuous(
+        self,
+        *,
+        max_steps: int,
+        seed: int | None = None,
+    ) -> RunSummary:
+        started = datetime.now(UTC)
+        steps_completed = 0
+        terminated = False
+        success: bool | None = None
+        stop_reason = "Maximum action count reached."
+        observation: Observation | None = None
+        consecutive_replans = 0
+
+        try:
+            self._action_outcomes.clear()
+            observation = self._with_memories(await self.environment.reset(seed=seed))
+            self.logger.write(
+                "run_started",
+                payload={
+                    "max_steps": max_steps,
+                    "seed": seed,
+                    "control_mode": self.control_mode.value,
+                    "planning_mode": self.planning_config.mode.value,
+                },
+            )
+            if self.reporter is not None:
+                self.reporter.run_started(max_steps)
+            self.logger.write(
+                "observation",
+                step_index=observation.step_index,
+                payload=observation,
+            )
+            if observation.mode == "live":
+                return self._finish_continuous_summary(
+                    started=started,
+                    steps_completed=0,
+                    terminated=True,
+                    success=None,
+                    stop_reason=(
+                        "Continuous execution is currently restricted to mock and "
+                        "fake event-driven environments; live validation is deferred."
+                    ),
+                    observation=observation,
+                )
+
+            while steps_completed < max_steps and not terminated:
+                reflex = self.reflexes.decide(observation)
+                if reflex is not None:
+                    (
+                        observation,
+                        completed,
+                        terminated,
+                        success,
+                        stop_reason,
+                    ) = await self._execute_continuous_decision(
+                        reflex,
+                        observation,
+                        source="reflex",
+                        planner_latency_seconds=0.0,
+                    )
+                    steps_completed += completed
+                    continue
+
+                planning_started = monotonic()
+                if self.reporter is not None:
+                    self.reporter.planning_started(observation.step_index)
+                planner_source = "planner"
+                try:
+                    output = await self.planner.decide(observation)
+                except Exception as exc:
+                    planner_source = "planner_error"
+                    output = PlannerDecision(
+                        intent="Stop after planner failure.",
+                        rationale=f"Planner raised {type(exc).__name__}: {exc}",
+                        action=StopAction(reason="Planner failure."),
+                        confidence=1.0,
+                    )
+                planner_latency_seconds = monotonic() - planning_started
+                self.logger.write(
+                    "strategic_planner_call",
+                    step_index=observation.step_index,
+                    payload={
+                        "source": planner_source,
+                        "planner_latency_seconds": planner_latency_seconds,
+                        "world_revision": observation.world_revision.model_dump(mode="json"),
+                        "control_mode": observation.control_mode.value,
+                        "output_type": type(output).__name__,
+                    },
+                )
+
+                if isinstance(output, PlannerDecision):
+                    if not isinstance(output.action, StopAction):
+                        stop_reason = (
+                            "Continuous mode rejected a single-action planner output; "
+                            "a PlanEnvelope or safe StopAction is required."
+                        )
+                        self.logger.write(
+                            "planner_output_rejected",
+                            step_index=observation.step_index,
+                            payload={
+                                "reason": stop_reason,
+                                "output": output.model_dump(mode="json"),
+                                "world_revision": (
+                                    observation.world_revision.model_dump(mode="json")
+                                ),
+                                "control_mode": observation.control_mode.value,
+                            },
+                        )
+                        terminated = True
+                        continue
+                    (
+                        observation,
+                        completed,
+                        terminated,
+                        success,
+                        stop_reason,
+                    ) = await self._execute_continuous_decision(
+                        output,
+                        observation,
+                        source=planner_source,
+                        planner_latency_seconds=planner_latency_seconds,
+                    )
+                    steps_completed += completed
+                    continue
+
+                if isinstance(output, PlanPatch):
+                    stop_reason = "A PlanPatch cannot be applied without an active matching plan."
+                    self._plan_event(
+                        "plan_rejected",
+                        plan_id=output.plan_id,
+                        plan_version=output.based_on_plan_version,
+                        observation=observation,
+                        reason=stop_reason,
+                        evidence={"patch": output.model_dump(mode="json")},
+                    )
+                    terminated = True
+                    continue
+
+                plan = output
+                self._plan_event(
+                    "plan_proposed",
+                    plan_id=plan.plan_id,
+                    plan_version=plan.plan_version,
+                    observation=observation,
+                    reason="Strategic planner returned a bounded typed plan.",
+                    evidence={
+                        "plan": plan.model_dump(mode="json"),
+                        "planner_latency_seconds": planner_latency_seconds,
+                    },
+                )
+                try:
+                    assumption_evidence = validate_plan(
+                        plan,
+                        observation,
+                        self.planning_config,
+                        self.guard.macros,
+                    )
+                except PlanValidationError as exc:
+                    stop_reason = f"Plan rejected before execution: {exc}"
+                    self._plan_event(
+                        "plan_rejected",
+                        plan_id=plan.plan_id,
+                        plan_version=plan.plan_version,
+                        observation=observation,
+                        reason=stop_reason,
+                        evidence={"plan_basis": plan.based_on_revision.model_dump(mode="json")},
+                    )
+                    terminated = True
+                    continue
+
+                self._plan_event(
+                    "plan_accepted",
+                    plan_id=plan.plan_id,
+                    plan_version=plan.plan_version,
+                    observation=observation,
+                    reason=(
+                        "Schema, causal basis, assumptions, control mode, graph, "
+                        "and budgets passed validation."
+                    ),
+                    evidence={
+                        "assumptions": [
+                            result.model_dump(mode="json") for result in assumption_evidence
+                        ]
+                    },
+                )
+                executor = ContinuousPlanExecutor(
+                    environment=self.environment,
+                    guard=self.guard,
+                    reflexes=self.reflexes,
+                    logger=self.logger,
+                    config=self.planning_config,
+                    clock=self.planning_clock,
+                    observe_transition=self._observe_plan_transition,
+                )
+                result = await executor.execute(
+                    plan,
+                    observation,
+                    remaining_run_actions=max_steps - steps_completed,
+                )
+                observation = result.observation
+                steps_completed += result.actions_completed
+                stop_reason = result.reason
+                if result.terminated:
+                    terminated = True
+                    success = result.success
+                    continue
+                if result.completed:
+                    consecutive_replans = 0
+                    if steps_completed >= max_steps:
+                        stop_reason = "Maximum action count reached after plan completion."
+                    continue
+
+                consecutive_replans += 1
+                if result.reflex_decision is not None:
+                    # The next scheduler pass executes the deterministic reflex
+                    # through the ordinary guard/environment path before replanning.
+                    continue
+                if consecutive_replans > self.planning_config.max_consecutive_replans:
+                    stop_reason = (
+                        "Continuous planning stopped after exceeding the bounded "
+                        "consecutive replan limit."
+                    )
+                    terminated = True
+
+            return self._finish_continuous_summary(
+                started=started,
+                steps_completed=steps_completed,
+                terminated=terminated,
+                success=success,
+                stop_reason=stop_reason,
+                observation=observation,
+            )
+        finally:
+            await self.environment.close()
+
+    async def _execute_continuous_decision(
+        self,
+        decision: PlannerDecision,
+        observation: Observation,
+        *,
+        source: str,
+        planner_latency_seconds: float,
+    ) -> tuple[Observation, int, bool, bool | None, str]:
+        self.logger.write(
+            "decision",
+            step_index=observation.step_index,
+            payload={
+                "source": source,
+                "planner_latency_seconds": planner_latency_seconds,
+                "decision": decision.model_dump(mode="json"),
+            },
+        )
+        if self.reporter is not None:
+            self.reporter.decision(
+                step_index=observation.step_index,
+                source=source,
+                decision=decision,
+                latency_seconds=planner_latency_seconds,
+            )
+        try:
+            action = self.guard.validate(decision.action, observation)
+        except SafetyViolation as exc:
+            now = datetime.now(UTC)
+            rejected = ActionReceipt(
+                action=decision.action,
+                control_mode=self.control_mode,
+                accepted=False,
+                executed=False,
+                dry_run=True,
+                started_at=now,
+                finished_at=now,
+                primitive_actions=0,
+                message=str(exc),
+                error_type=type(exc).__name__,
+            )
+            self.logger.write(
+                "action_rejected",
+                step_index=observation.step_index,
+                payload=rejected,
+            )
+            return (
+                observation,
+                0,
+                True,
+                None,
+                f"Safety policy rejected action: {exc}",
+            )
+        try:
+            transition = await self.environment.step(action)
+        except Exception as exc:
+            self.logger.write(
+                "environment_error",
+                step_index=observation.step_index,
+                payload={"type": type(exc).__name__, "message": str(exc)},
+            )
+            return (
+                observation,
+                0,
+                True,
+                None,
+                f"Environment error: {type(exc).__name__}: {exc}",
+            )
+
+        latest = self._record_transition(decision, observation, transition)
+        is_terminated = transition.terminated or isinstance(action, StopAction)
+        reason = (
+            transition.events[-1]
+            if transition.events
+            else action.reason
+            if isinstance(action, StopAction)
+            else transition.receipt.message or "Deterministic decision completed."
+        )
+        return latest, 1, is_terminated, transition.success, reason
+
+    def _observe_plan_transition(
+        self,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        before: Observation,
+        transition: Transition,
+    ) -> Observation:
+        decision = PlannerDecision(
+            intent=f"Execute plan {plan.plan_id} step {step.step_id}.",
+            rationale=(
+                "The executor revalidated this typed step against the latest "
+                "revision and remaining budgets."
+            ),
+            action=step.action,
+            confidence=1.0,
+        )
+        return self._record_transition(decision, before, transition)
+
+    def _record_transition(
+        self,
+        decision: PlannerDecision,
+        before: Observation,
+        transition: Transition,
+    ) -> Observation:
+        self.logger.write(
+            "action_receipt",
+            step_index=before.step_index,
+            payload=transition.receipt,
+        )
+        if self.reporter is not None:
+            self.reporter.action_receipt(
+                step_index=before.step_index,
+                receipt=transition.receipt,
+            )
+        self._record_action_outcome(
+            decision,
+            transition.receipt,
+            before,
+            transition.observation,
+        )
+        self._store_memories(decision)
+        latest = self._with_memories(transition.observation)
+        self.logger.write(
+            "observation",
+            step_index=latest.step_index,
+            payload=latest,
+        )
+        return latest
+
+    def _finish_continuous_summary(
+        self,
+        *,
+        started: datetime,
+        steps_completed: int,
+        terminated: bool,
+        success: bool | None,
+        stop_reason: str,
+        observation: Observation | None,
+    ) -> RunSummary:
+        finished = datetime.now(UTC)
+        summary = RunSummary(
+            run_id=self.run_id,
+            control_mode=self.control_mode,
+            steps_completed=steps_completed,
+            terminated=terminated,
+            success=success,
+            stop_reason=stop_reason,
+            started_at=started,
+            finished_at=finished,
+            final_observation=observation,
+        )
+        self.logger.write(
+            "run_finished",
+            step_index=observation.step_index if observation else None,
+            payload={
+                "steps_completed": summary.steps_completed,
+                "control_mode": summary.control_mode.value,
+                "planning_mode": self.planning_config.mode.value,
+                "terminated": summary.terminated,
+                "success": summary.success,
+                "stop_reason": summary.stop_reason,
+                "started_at": summary.started_at.isoformat(),
+                "finished_at": summary.finished_at.isoformat(),
+            },
+        )
+        if self.reporter is not None:
+            self.reporter.run_finished(
+                steps_completed=summary.steps_completed,
+                stop_reason=summary.stop_reason,
+            )
+        return summary
+
+    def _plan_event(
+        self,
+        event_type: str,
+        *,
+        plan_id: str,
+        plan_version: int,
+        observation: Observation,
+        reason: str,
+        evidence: dict[str, object] | None = None,
+    ) -> None:
+        self.logger.write(
+            event_type,
+            step_index=observation.step_index,
+            payload={
+                "plan_id": plan_id,
+                "plan_version": plan_version,
+                "step_id": None,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "control_mode": observation.control_mode.value,
+                "reason": reason,
+                "evidence": evidence or {},
+            },
+        )
+
     def _with_memories(self, observation: Observation) -> Observation:
         updates: dict[str, object] = {
+            "planning_mode": self.planning_config.mode,
             "recent_action_outcomes": self._action_outcomes[-self.action_outcome_limit :]
             if self.action_outcome_limit > 0
-            else []
+            else [],
         }
         if self.memory is not None and self.memory_limit > 0:
             updates["memories"] = self.memory.recall(
@@ -361,8 +828,7 @@ class AgentRuntime:
             if name in {"interact_visible_person", "approach_confirmed_vendor"}:
                 active_screen = after.ui.active_screen if after is not None else None
                 interaction_opened = after is not None and (
-                    after.ui.dialogue_open is True
-                    or active_screen in {"dialogue", "trade"}
+                    after.ui.dialogue_open is True or active_screen in {"dialogue", "trade"}
                 )
                 if interaction_opened:
                     return (
@@ -401,8 +867,7 @@ class AgentRuntime:
                 )
 
         if telemetry_changes or (
-            visual_change is not None
-            and visual_change >= cls._MATERIAL_VISUAL_CHANGE_FRACTION
+            visual_change is not None and visual_change >= cls._MATERIAL_VISUAL_CHANGE_FRACTION
         ):
             return (
                 ActionOutcomeAssessment.CHANGED,
@@ -427,13 +892,9 @@ class AgentRuntime:
             return None
         try:
             with Image.open(before.screenshot_path) as before_image:
-                before_gray = before_image.convert("L").resize(
-                    (96, 54), Image.Resampling.BILINEAR
-                )
+                before_gray = before_image.convert("L").resize((96, 54), Image.Resampling.BILINEAR)
             with Image.open(after.screenshot_path) as after_image:
-                after_gray = after_image.convert("L").resize(
-                    (96, 54), Image.Resampling.BILINEAR
-                )
+                after_gray = after_image.convert("L").resize((96, 54), Image.Resampling.BILINEAR)
         except (OSError, ValueError):
             return None
         histogram = ImageChops.difference(before_gray, after_gray).histogram()
@@ -526,10 +987,7 @@ class AgentRuntime:
                         f"distance to {new.name}: {old.distance:.2f} -> "
                         f"{new.distance:.2f} ({abs(delta):.2f} {direction})"
                     )
-            if (
-                old.camera_bearing_degrees is not None
-                and new.camera_bearing_degrees is not None
-            ):
+            if old.camera_bearing_degrees is not None and new.camera_bearing_degrees is not None:
                 bearing_delta = (
                     new.camera_bearing_degrees - old.camera_bearing_degrees + 180.0
                 ) % 360.0 - 180.0

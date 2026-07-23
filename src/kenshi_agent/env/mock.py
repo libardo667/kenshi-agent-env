@@ -30,6 +30,7 @@ from ..models import (
     UIState,
     Vec3,
     WaitAction,
+    WorldStateRevision,
 )
 from .base import AgentEnvironment
 
@@ -197,6 +198,11 @@ class MockEnvironment(AgentEnvironment):
             step_index=self._step_index,
             mode="mock",
             control_mode=self.control_mode,
+            world_revision=WorldStateRevision(
+                telemetry_sequence=self._sequence,
+                frame_sequence=self._sequence,
+                capability_epoch=1,
+            ),
             telemetry=telemetry,
             telemetry_stale=False,
             telemetry_age_seconds=0.0,

@@ -9,7 +9,7 @@ import pytest
 
 from kenshi_agent import cli
 from kenshi_agent.config import load_config
-from kenshi_agent.models import ControlMode, TelemetrySnapshot
+from kenshi_agent.models import ControlMode, PlanningMode, TelemetrySnapshot
 from kenshi_agent.telemetry import write_snapshot_atomic
 
 
@@ -72,6 +72,19 @@ def test_run_objective_override_is_ephemeral() -> None:
 
     assert overridden.runtime.objective == "Inspect the bar entrance."
     assert config.runtime.objective == original
+
+
+def test_run_planning_mode_override_is_ephemeral() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+
+    overridden = cli._apply_run_overrides(
+        config,
+        SimpleNamespace(objective=None, planning_mode="continuous"),
+    )
+
+    assert overridden.planning.mode is PlanningMode.CONTINUOUS
+    assert config.planning.mode is PlanningMode.SINGLE_STEP
 
 
 def test_exclusive_input_session_keeps_kenshi_foreground() -> None:
@@ -141,9 +154,7 @@ def test_interface_only_execution_never_requires_native_acknowledgement() -> Non
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "live.example.yaml")
     config = config.model_copy(
-        update={
-            "safety": config.safety.model_copy(update={"live_actions_enabled": True})
-        }
+        update={"safety": config.safety.model_copy(update={"live_actions_enabled": True})}
     )
     args = SimpleNamespace(
         execute_live_actions=True,

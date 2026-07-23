@@ -3,9 +3,18 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
+from time import monotonic
 from typing import Any, Literal, TypeAlias
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    JsonValue,
+    TypeAdapter,
+    field_validator,
+    model_validator,
+)
 
 
 class StrictModel(BaseModel):
@@ -22,6 +31,49 @@ class MemoryKind(StrEnum):
 class ControlMode(StrEnum):
     INTERFACE_ONLY = "interface_only"
     NATIVE_ASSISTED = "native_assisted"
+
+
+class PlanningMode(StrEnum):
+    SINGLE_STEP = "single_step"
+    CONTINUOUS = "continuous"
+
+
+class ConditionKind(StrEnum):
+    FIELD = "field"
+    CAPABILITY = "capability"
+    TELEMETRY_FRESH = "telemetry_fresh"
+
+
+class ConditionOperator(StrEnum):
+    EQUALS = "equals"
+    NOT_EQUALS = "not_equals"
+    LESS_THAN = "less_than"
+    LESS_THAN_OR_EQUAL = "less_than_or_equal"
+    GREATER_THAN = "greater_than"
+    GREATER_THAN_OR_EQUAL = "greater_than_or_equal"
+    EXISTS = "exists"
+
+
+class ConditionResult(StrEnum):
+    TRUE = "true"
+    FALSE = "false"
+    UNKNOWN = "unknown"
+    UNAVAILABLE = "unavailable"
+    STALE = "stale"
+
+
+class InterruptPolicy(StrEnum):
+    CANCEL_ON_REFLEX = "cancel_on_reflex"
+
+
+class ObservationPolicy(StrEnum):
+    AFTER_ACTION = "after_action"
+    UNTIL_TERMINAL = "until_terminal"
+
+
+class IdempotencyPolicy(StrEnum):
+    AT_MOST_ONCE = "at_most_once"
+    SAFE_TO_RETRY = "safe_to_retry"
 
 
 class MouseButton(StrEnum):
@@ -352,12 +404,230 @@ class SkillSpec(StrictModel):
     requires_native_assisted: bool = False
 
 
+class WorldStateRevision(StrictModel):
+    telemetry_sequence: int | None = Field(default=None, ge=0)
+    frame_sequence: int | None = Field(default=None, ge=0)
+    capability_epoch: int = Field(default=0, ge=0)
+    observed_at_monotonic: float = Field(default_factory=monotonic, ge=0.0)
+
+    def same_snapshot_as(self, other: WorldStateRevision) -> bool:
+        return (
+            self.telemetry_sequence == other.telemetry_sequence
+            and self.frame_sequence == other.frame_sequence
+            and self.capability_epoch == other.capability_epoch
+        )
+
+    def is_later_than(self, other: WorldStateRevision) -> bool:
+        telemetry_advanced = (
+            self.telemetry_sequence is not None
+            and other.telemetry_sequence is not None
+            and self.telemetry_sequence > other.telemetry_sequence
+        )
+        frame_advanced = (
+            self.frame_sequence is not None
+            and other.frame_sequence is not None
+            and self.frame_sequence > other.frame_sequence
+        )
+        return bool(
+            (telemetry_advanced or frame_advanced)
+            and self.observed_at_monotonic >= other.observed_at_monotonic
+        )
+
+
+ConditionScalar: TypeAlias = str | int | float | bool | None
+
+_ALLOWED_CONDITION_PATHS = {
+    "control_mode",
+    "telemetry_stale",
+    "telemetry.game.loaded",
+    "telemetry.game.paused",
+    "telemetry.game.speed_multiplier",
+    "telemetry.game.elapsed_minutes",
+    "telemetry.game.money",
+    "telemetry.game.location_name",
+    "telemetry.game.day",
+    "telemetry.game.hour",
+    "telemetry.game.minute",
+    "telemetry.ui.active_screen",
+    "telemetry.ui.modal_open",
+    "telemetry.ui.dialogue_open",
+    "telemetry.ui.context_menu_open",
+    "telemetry.ui.selected_character_id",
+    "telemetry.native_control.available",
+    "telemetry.native_control.last_command_sequence",
+    "telemetry.native_control.last_command",
+    "telemetry.native_control.last_result",
+    "telemetry.native_control.last_target",
+    "selected.alive",
+    "selected.conscious",
+    "selected.down",
+    "selected.in_combat",
+    "selected.position.x",
+    "selected.position.y",
+    "selected.position.z",
+    "selected.movement_speed",
+    "selected.hunger",
+    "selected.bleeding_rate",
+    "selected.food_items",
+    "selected.first_aid_kits",
+    "selected.current_goal",
+    "target.disposition",
+    "target.distance",
+    "target.visible",
+    "target.conscious",
+    "target.has_vendor_list",
+    "target.is_squad_leader",
+    "target.has_dialogue",
+    "target.shop_inventory_owner",
+    "target.talk_task_available",
+}
+
+
+class Condition(StrictModel):
+    kind: ConditionKind
+    path: str | None = Field(default=None, min_length=1, max_length=120)
+    operator: ConditionOperator
+    expected: ConditionScalar = None
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    max_age_seconds: float = Field(gt=0.0, le=300.0)
+    required_capabilities: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def validate_shape(self) -> Condition:
+        if self.kind == ConditionKind.FIELD:
+            if self.path not in _ALLOWED_CONDITION_PATHS:
+                raise ValueError(f"Unsupported condition path: {self.path!r}")
+            if self.path is not None and self.path.startswith("target.") and not self.target_id:
+                raise ValueError("target.* conditions require target_id")
+        elif self.kind == ConditionKind.CAPABILITY:
+            if self.path is None:
+                raise ValueError("Capability conditions require path")
+            if self.target_id is not None:
+                raise ValueError("Capability conditions do not accept target_id")
+        elif self.path is not None or self.target_id is not None:
+            raise ValueError("telemetry_fresh conditions do not accept path or target_id")
+        if self.operator == ConditionOperator.EXISTS:
+            if self.expected is not None:
+                raise ValueError("exists conditions must omit expected")
+        elif self.expected is None:
+            raise ValueError(f"{self.operator.value} conditions require expected")
+        return self
+
+
+class ConditionEvaluation(StrictModel):
+    condition: Condition
+    result: ConditionResult
+    actual: ConditionScalar = None
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+class RiskBudget(StrictModel):
+    max_pointer_actions: int = Field(ge=0, le=32)
+    max_purchase_actions: int = Field(ge=0, le=8)
+    max_native_assisted_actions: int = Field(ge=0, le=8)
+
+
+class PlanStep(StrictModel):
+    step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+    action: Action
+    preconditions: list[Condition] = Field(min_length=1, max_length=12)
+    success_conditions: list[Condition] = Field(min_length=1, max_length=12)
+    failure_conditions: list[Condition] = Field(default_factory=list, max_length=12)
+    timeout_seconds: float = Field(gt=0.0, le=60.0)
+    retry_budget: int = Field(default=0, ge=0, le=2)
+    idempotency: IdempotencyPolicy = IdempotencyPolicy.AT_MOST_ONCE
+    on_success: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+    )
+    on_failure: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+    )
+    interrupt_policy: InterruptPolicy = InterruptPolicy.CANCEL_ON_REFLEX
+    observation_policy: ObservationPolicy = ObservationPolicy.UNTIL_TERMINAL
+
+    @model_validator(mode="after")
+    def retry_requires_idempotency(self) -> PlanStep:
+        if self.retry_budget and self.idempotency != IdempotencyPolicy.SAFE_TO_RETRY:
+            raise ValueError("retry_budget requires idempotency=safe_to_retry")
+        return self
+
+
+class PlanEnvelope(StrictModel):
+    schema_version: Literal["1.0"]
+    plan_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,95}$")
+    plan_version: int = Field(default=1, ge=1)
+    objective: str = Field(min_length=1, max_length=1000)
+    control_mode: ControlMode
+    based_on_revision: WorldStateRevision
+    assumptions: list[Condition] = Field(min_length=1, max_length=12)
+    steps: list[PlanStep] = Field(min_length=1, max_length=8)
+    entry_step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+    max_actions: int = Field(ge=1, le=16)
+    max_wall_seconds: float = Field(gt=0.0, le=120.0)
+    max_game_seconds: float = Field(gt=0.0, le=3600.0)
+    risk_budget: RiskBudget
+
+    @model_validator(mode="after")
+    def validate_graph_and_action_bound(self) -> PlanEnvelope:
+        by_id = {step.step_id: step for step in self.steps}
+        if len(by_id) != len(self.steps):
+            raise ValueError("Plan step_id values must be unique")
+        if self.entry_step_id not in by_id:
+            raise ValueError("entry_step_id does not identify a plan step")
+        for step in self.steps:
+            for branch in (step.on_success, step.on_failure):
+                if branch is not None and branch not in by_id:
+                    raise ValueError(f"Step {step.step_id!r} references unknown branch {branch!r}")
+
+        visiting: set[str] = set()
+        visited: set[str] = set()
+
+        def visit(step_id: str) -> None:
+            if step_id in visiting:
+                raise ValueError("Plan graph must be acyclic")
+            if step_id in visited:
+                return
+            visiting.add(step_id)
+            step = by_id[step_id]
+            for branch in (step.on_success, step.on_failure):
+                if branch is not None:
+                    visit(branch)
+            visiting.remove(step_id)
+            visited.add(step_id)
+
+        visit(self.entry_step_id)
+        unreachable = set(by_id) - visited
+        if unreachable:
+            raise ValueError(f"Plan contains unreachable steps: {sorted(unreachable)}")
+
+        worst_case_actions = sum(1 + step.retry_budget for step in self.steps)
+        if worst_case_actions > self.max_actions:
+            raise ValueError(
+                f"Plan can attempt {worst_case_actions} actions but max_actions is "
+                f"{self.max_actions}"
+            )
+        return self
+
+
+class PlanPatch(StrictModel):
+    schema_version: Literal["1.0"]
+    plan_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,95}$")
+    based_on_plan_version: int = Field(ge=1)
+    based_on_revision: WorldStateRevision
+    replace_future_steps: list[PlanStep] = Field(min_length=1, max_length=8)
+    rationale: str = Field(min_length=1, max_length=1000)
+
+
 class Observation(StrictModel):
     run_id: str
     step_index: int = Field(ge=0)
     observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     mode: Literal["mock", "live", "replay"]
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
+    planning_mode: PlanningMode = PlanningMode.SINGLE_STEP
+    world_revision: WorldStateRevision = Field(default_factory=WorldStateRevision)
     telemetry: TelemetrySnapshot | None = None
     telemetry_stale: bool = False
     telemetry_age_seconds: float | None = None
@@ -385,6 +655,9 @@ class PlannerDecision(StrictModel):
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     expected_observation: str | None = Field(default=None, max_length=1000)
     memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
+
+
+PlannerOutput: TypeAlias = PlannerDecision | PlanEnvelope | PlanPatch
 
 
 class ActionReceipt(StrictModel):
