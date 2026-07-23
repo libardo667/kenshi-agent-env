@@ -12,6 +12,7 @@ from kenshi_agent.models import (
     ClickAction,
     GameState,
     KeyAction,
+    MouseButton,
     SkillAction,
     TelemetrySnapshot,
 )
@@ -67,6 +68,13 @@ class PulseController(InputController):
         self.actions.append(action)
         if isinstance(action, KeyAction) and action.key == "space":
             self.telemetry.paused = not self.telemetry.paused
+        if (
+            isinstance(action, ClickAction)
+            and action.button == MouseButton.LEFT
+            and action.x == 0.765
+            and action.y == 0.723
+        ):
+            self.telemetry.paused = not self.telemetry.paused
         now = datetime.now(UTC)
         return ActionReceipt(
             action=action,
@@ -97,25 +105,37 @@ def movement_registry(
     pulse_seconds: float = 0.01,
     minimum: float | None = None,
     maximum: float | None = None,
+    include_pause_skill: bool = False,
 ) -> MacroRegistry:
-    return MacroRegistry(
-        {
-            "move_visible_terrain": MacroConfig(
-                movement_pulse_seconds=pulse_seconds,
-                movement_pulse_min_seconds=minimum,
-                movement_pulse_max_seconds=maximum,
-                actions=[
-                    {
-                        "kind": "click",
-                        "x": "{{x}}",
-                        "y": "{{y}}",
-                        "space": "normalized",
-                        "button": "right",
-                    }
-                ],
-            )
-        }
-    )
+    macros = {
+        "move_visible_terrain": MacroConfig(
+            movement_pulse_seconds=pulse_seconds,
+            movement_pulse_min_seconds=minimum,
+            movement_pulse_max_seconds=maximum,
+            actions=[
+                {
+                    "kind": "click",
+                    "x": "{{x}}",
+                    "y": "{{y}}",
+                    "space": "normalized",
+                    "button": "right",
+                }
+            ],
+        )
+    }
+    if include_pause_skill:
+        macros["pause_game"] = MacroConfig(
+            actions=[
+                {
+                    "kind": "click",
+                    "x": 0.765,
+                    "y": 0.723,
+                    "space": "normalized",
+                    "button": "left",
+                }
+            ]
+        )
+    return MacroRegistry(macros)
 
 
 def live_environment(
@@ -123,6 +143,8 @@ def live_environment(
     telemetry: PulseTelemetry,
     controller: PulseController,
     registry: MacroRegistry,
+    *,
+    pause_skill: str | None = None,
 ) -> LiveEnvironment:
     return LiveEnvironment(
         run_id="pulse-test",
@@ -131,7 +153,10 @@ def live_environment(
         controller=controller,
         macros=registry,
         runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Explore nearby."),
-        controls_config=ControlsConfig(post_input_delay_seconds=0.0),
+        controls_config=ControlsConfig(
+            post_input_delay_seconds=0.0,
+            pause_skill=pause_skill,
+        ),
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,
         emergency_stop_key="f12",
@@ -167,6 +192,29 @@ def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:
         assert transition.observation.telemetry.game.paused is True
         assert [action.kind for action in controller.actions] == ["click", "key", "key"]
         assert transition.receipt.primitive_actions == 5
+        assert "confirmed re-paused state" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_movement_pulse_can_use_click_based_pause_skill(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(include_pause_skill=True),
+            pause_skill="pause_game",
+        )
+
+        await environment.reset()
+        transition = await environment.step(movement_action())
+
+        assert telemetry.paused is True
+        assert [action.kind for action in controller.actions] == ["click", "click", "click"]
+        assert transition.receipt.primitive_actions == 9
         assert "confirmed re-paused state" in transition.receipt.message
 
     asyncio.run(scenario())

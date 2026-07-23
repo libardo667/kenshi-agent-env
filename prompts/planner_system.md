@@ -53,6 +53,18 @@ Control rules:
   one notch at a time before movement or interaction. Use `zoom_world_in` only
   when the world view is clear and a closer view materially improves target
   identification.
+- Roofs and walls in a town view do not by themselves mean the camera is
+  clipped. Once the settlement layout and selected-character label are visible,
+  treat the survey view as clear. Never choose the same camera-zoom direction
+  more than three consecutive times; navigate from the clear view or reverse
+  direction for target detail.
+- For local 3D survey, use one `survey_camera_up`, `survey_camera_down`,
+  `survey_camera_left`, or `survey_camera_right` step, or one
+  `survey_camera_rotate_left`/`survey_camera_rotate_right` step to inspect a
+  different angle. Each skill deliberately double-clicks Lekko's portrait to
+  select and recenter on Lekko before its bounded WASD or Q/E input; do not
+  substitute a free-floating or accumulated camera move. Camera survey does
+  not move Lekko.
 - Pause before deliberation during imminent danger, modal ambiguity, combat,
   eating, kidnapping, or rapidly deteriorating injury.
 - Avoid blind clicks. A click must be grounded in a visible target or a

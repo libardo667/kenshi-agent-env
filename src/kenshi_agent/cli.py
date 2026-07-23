@@ -9,6 +9,7 @@ import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TypedDict
 
 from dotenv import load_dotenv
 
@@ -71,6 +72,52 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
     raise SystemExit(f"Unsupported planner kind: {kind}")
 
 
+class _ControllerKwargs(TypedDict):
+    focus_before_input: bool
+    post_input_delay_seconds: float
+    polite_input_enabled: bool
+    idle_seconds_before_input: float
+    max_wait_for_input_turn_seconds: float
+    restore_foreground_after_input: bool
+    restore_cursor_after_input: bool
+    alt_tab_after_input: bool
+    pointer_mode: str
+    relative_pointer_max_step_pixels: int
+    relative_pointer_tolerance_pixels: int
+    relative_pointer_settle_seconds: float
+    relative_pointer_max_attempts: int
+
+
+def _controller_kwargs(config: AppConfig, args: argparse.Namespace) -> _ControllerKwargs:
+    exclusive = bool(args.exclusive_input_session)
+    if exclusive and not args.execute_live_actions:
+        raise SystemExit("--exclusive-input-session requires --execute-live-actions.")
+    if args.execute_live_actions and config.controls.pointer_mode == "relative" and not exclusive:
+        raise SystemExit(
+            "controls.pointer_mode=relative requires --exclusive-input-session "
+            "when live actions are enabled."
+        )
+    return {
+        "focus_before_input": config.controls.focus_before_input,
+        "post_input_delay_seconds": config.controls.post_input_delay_seconds,
+        "polite_input_enabled": False if exclusive else config.controls.polite_input_enabled,
+        "idle_seconds_before_input": config.controls.idle_seconds_before_input,
+        "max_wait_for_input_turn_seconds": config.controls.max_wait_for_input_turn_seconds,
+        "restore_foreground_after_input": (
+            False if exclusive else config.controls.restore_foreground_after_input
+        ),
+        "restore_cursor_after_input": (
+            False if exclusive else config.controls.restore_cursor_after_input
+        ),
+        "alt_tab_after_input": False if exclusive else config.controls.alt_tab_after_input,
+        "pointer_mode": config.controls.pointer_mode,
+        "relative_pointer_max_step_pixels": (config.controls.relative_pointer_max_step_pixels),
+        "relative_pointer_tolerance_pixels": (config.controls.relative_pointer_tolerance_pixels),
+        "relative_pointer_settle_seconds": (config.controls.relative_pointer_settle_seconds),
+        "relative_pointer_max_attempts": config.controls.relative_pointer_max_attempts,
+    }
+
+
 def _build_environment(
     config: AppConfig,
     args: argparse.Namespace,
@@ -96,14 +143,7 @@ def _build_environment(
         execute_actions = bool(args.execute_live_actions and config.safety.live_actions_enabled)
         controller = Win32InputController(
             config.capture.window_title_contains,
-            focus_before_input=config.controls.focus_before_input,
-            post_input_delay_seconds=config.controls.post_input_delay_seconds,
-            polite_input_enabled=config.controls.polite_input_enabled,
-            idle_seconds_before_input=config.controls.idle_seconds_before_input,
-            max_wait_for_input_turn_seconds=(config.controls.max_wait_for_input_turn_seconds),
-            restore_foreground_after_input=(config.controls.restore_foreground_after_input),
-            restore_cursor_after_input=config.controls.restore_cursor_after_input,
-            alt_tab_after_input=config.controls.alt_tab_after_input,
+            **_controller_kwargs(config, args),
         )
         telemetry = TelemetryReader(
             config.telemetry.file,
@@ -324,6 +364,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--execute-live-actions",
         action="store_true",
         help="Second safety gate required before real keyboard/mouse input.",
+    )
+    run.add_argument(
+        "--exclusive-input-session",
+        action="store_true",
+        help=(
+            "Keep Kenshi foreground and do not restore host focus/cursor. Use only when "
+            "the human has explicitly handed the keyboard and mouse to the agent."
+        ),
     )
 
     doctor = subparsers.add_parser("doctor", help="Check configuration and live prerequisites.")

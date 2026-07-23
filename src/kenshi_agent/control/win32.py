@@ -82,6 +82,32 @@ def wheel_delta_data(notches: int) -> int:
     return ctypes.c_uint32(notches * 120).value
 
 
+def relative_pointer_delta(
+    current: tuple[int, int],
+    target: tuple[int, int],
+    *,
+    max_step_pixels: int,
+    tolerance_pixels: int,
+) -> tuple[int, int]:
+    """Return one bounded relative correction toward a screen-space target."""
+    error_x = target[0] - current[0]
+    error_y = target[1] - current[1]
+    if abs(error_x) <= tolerance_pixels and abs(error_y) <= tolerance_pixels:
+        return 0, 0
+
+    def damped(error: int) -> int:
+        if error == 0:
+            return 0
+        half_error = max(1, abs(error) // 2)
+        magnitude = min(max_step_pixels, half_error)
+        return magnitude if error > 0 else -magnitude
+
+    return (
+        damped(error_x),
+        damped(error_y),
+    )
+
+
 if os.name == "nt":
     ULONG_PTR = wintypes.WPARAM
 
@@ -205,6 +231,11 @@ class Win32InputController(InputController):
         restore_foreground_after_input: bool = True,
         restore_cursor_after_input: bool = True,
         alt_tab_after_input: bool = True,
+        pointer_mode: str = "absolute",
+        relative_pointer_max_step_pixels: int = 12,
+        relative_pointer_tolerance_pixels: int = 1,
+        relative_pointer_settle_seconds: float = 0.006,
+        relative_pointer_max_attempts: int = 500,
     ) -> None:
         if os.name != "nt":
             raise RuntimeError("Win32InputController is available only on Windows.")
@@ -217,6 +248,13 @@ class Win32InputController(InputController):
         self.restore_foreground_after_input = restore_foreground_after_input
         self.restore_cursor_after_input = restore_cursor_after_input
         self.alt_tab_after_input = alt_tab_after_input
+        if pointer_mode not in {"absolute", "relative"}:
+            raise ValueError(f"Unsupported pointer mode: {pointer_mode!r}")
+        self.pointer_mode = pointer_mode
+        self.relative_pointer_max_step_pixels = relative_pointer_max_step_pixels
+        self.relative_pointer_tolerance_pixels = relative_pointer_tolerance_pixels
+        self.relative_pointer_settle_seconds = relative_pointer_settle_seconds
+        self.relative_pointer_max_attempts = relative_pointer_max_attempts
         self.user32 = getattr(ctypes, "windll").user32  # noqa: B009 - Windows-only
         self.kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows-only
         enable_per_monitor_dpi_awareness(self.user32)
@@ -444,8 +482,7 @@ class Win32InputController(InputController):
                 self._lease_alt_tab_on_restore
                 and self.alt_tab_after_input
                 and self._lease_kenshi_foreground is not None
-                and int(self.user32.GetForegroundWindow() or 0)
-                == self._lease_kenshi_foreground
+                and int(self.user32.GetForegroundWindow() or 0) == self._lease_kenshi_foreground
             )
             if use_alt_tab:
                 self._alt_tab_to_previous_context()
@@ -573,21 +610,48 @@ class Win32InputController(InputController):
         except ValueError as exc:
             raise RuntimeError("Windows reported an invalid virtual desktop size.") from exc
 
-    def _move_cursor(self, x: float, y: float, space: CoordinateSpace) -> None:
+    async def _move_cursor(self, x: float, y: float, space: CoordinateSpace) -> None:
         if self._lease_active and self.user_input_detected() and not self._safety_override_active:
             raise RuntimeError("User input resumed; yielding the planned input turn.")
         screen_x, screen_y = self._screen_point(x, y, space)
-        if not self.user32.SetCursorPos(screen_x, screen_y):
-            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
-        actual = wintypes.POINT()
-        if not self.user32.GetCursorPos(ctypes.byref(actual)):
-            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
-        if (actual.x, actual.y) != (screen_x, screen_y):
-            raise RuntimeError(
-                "Windows did not place the cursor at the requested target: "
-                f"requested=({screen_x}, {screen_y}) actual=({actual.x}, {actual.y})."
+        if self.pointer_mode == "absolute":
+            if not self.user32.SetCursorPos(screen_x, screen_y):
+                raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+            actual = self._cursor_position()
+            if actual != (screen_x, screen_y):
+                raise RuntimeError(
+                    "Windows did not place the cursor at the requested target: "
+                    f"requested=({screen_x}, {screen_y}) actual={actual}."
+                )
+            self._mark_agent_input()
+            return
+
+        target = (screen_x, screen_y)
+        for _ in range(self.relative_pointer_max_attempts):
+            actual = self._cursor_position()
+            delta_x, delta_y = relative_pointer_delta(
+                actual,
+                target,
+                max_step_pixels=self.relative_pointer_max_step_pixels,
+                tolerance_pixels=self.relative_pointer_tolerance_pixels,
             )
-        self._mark_agent_input()
+            if (delta_x, delta_y) == (0, 0):
+                return
+            self._send([self._mouse_input(delta_x, delta_y, self.MOUSEEVENTF_MOVE)])
+            if self.relative_pointer_settle_seconds:
+                await asyncio.sleep(self.relative_pointer_settle_seconds)
+        actual = self._cursor_position()
+        if relative_pointer_delta(
+            actual,
+            target,
+            max_step_pixels=self.relative_pointer_max_step_pixels,
+            tolerance_pixels=self.relative_pointer_tolerance_pixels,
+        ) != (0, 0):
+            raise RuntimeError(
+                "Relative mouse input did not reach the requested target: "
+                f"requested={target} actual={actual} after "
+                f"{self.relative_pointer_max_attempts} attempts."
+            )
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         return await self._execute(action, safety_override=False)
@@ -634,15 +698,9 @@ class Win32InputController(InputController):
                     self._send([self._keyboard_input(vk, key_up=True) for vk in reversed(pressed)])
             primitive_count = len(keys) * 2
         elif isinstance(action, MoveCursorAction):
-            self._move_cursor(action.x, action.y, action.space)
+            await self._move_cursor(action.x, action.y, action.space)
         elif isinstance(action, ClickAction):
-            screen_x, screen_y = self._screen_point(action.x, action.y, action.space)
-            absolute_x, absolute_y = self._absolute_virtual_coordinates(screen_x, screen_y)
-            move_input = self._mouse_input(
-                absolute_x,
-                absolute_y,
-                self.MOUSEEVENTF_MOVE | self.MOUSEEVENTF_ABSOLUTE | self.MOUSEEVENTF_VIRTUALDESK,
-            )
+            await self._move_cursor(action.x, action.y, action.space)
             button_flags = {
                 MouseButton.LEFT: (self.MOUSEEVENTF_LEFTDOWN, self.MOUSEEVENTF_LEFTUP),
                 MouseButton.RIGHT: (self.MOUSEEVENTF_RIGHTDOWN, self.MOUSEEVENTF_RIGHTUP),
@@ -651,7 +709,6 @@ class Win32InputController(InputController):
             for click_index in range(action.clicks):
                 self._send(
                     [
-                        move_input,
                         self._mouse_input(0, 0, button_flags[0]),
                         self._mouse_input(0, 0, button_flags[1]),
                     ]
@@ -660,18 +717,10 @@ class Win32InputController(InputController):
                     await asyncio.sleep(action.interval_seconds)
             primitive_count = action.clicks * 2 + 1
         elif isinstance(action, ScrollAction):
-            screen_x, screen_y = self._screen_point(action.x, action.y, action.space)
-            absolute_x, absolute_y = self._absolute_virtual_coordinates(screen_x, screen_y)
+            await self._move_cursor(action.x, action.y, action.space)
             wheel_data = wheel_delta_data(action.notches)
             self._send(
                 [
-                    self._mouse_input(
-                        absolute_x,
-                        absolute_y,
-                        self.MOUSEEVENTF_MOVE
-                        | self.MOUSEEVENTF_ABSOLUTE
-                        | self.MOUSEEVENTF_VIRTUALDESK,
-                    ),
                     self._mouse_input(
                         0,
                         0,

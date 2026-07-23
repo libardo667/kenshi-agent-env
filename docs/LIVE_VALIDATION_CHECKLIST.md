@@ -1,5 +1,11 @@
 # Live validation checklist
 
+When the human explicitly hands the whole desktop to the agent, pass
+`--exclusive-input-session` together with `--execute-live-actions`. That mode
+keeps Kenshi foreground and leaves the guest cursor in place so the run is
+observable on a single display. Omit it during normal shared-computer use; the
+polite input lease then waits for idle input and restores the previous context.
+
 Record evidence for every item. Do not mark an item complete based on code
 inspection alone.
 

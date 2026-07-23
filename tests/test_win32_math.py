@@ -7,6 +7,7 @@ from kenshi_agent.control.win32 import (
     AmbiguousWindowError,
     enable_per_monitor_dpi_awareness,
     normalize_virtual_desktop_point,
+    relative_pointer_delta,
     resolve_screen_point,
     select_unique_window,
     wheel_delta_data,
@@ -57,9 +58,7 @@ def test_virtual_desktop_normalization_supports_negative_origin() -> None:
     assert normalize_virtual_desktop_point(
         -1920, 0, left=-1920, top=0, width=3840, height=1080
     ) == (0, 0)
-    x, y = normalize_virtual_desktop_point(
-        1919, 1079, left=-1920, top=0, width=3840, height=1080
-    )
+    x, y = normalize_virtual_desktop_point(1919, 1079, left=-1920, top=0, width=3840, height=1080)
     assert x == 65535
     assert y == 65535
 
@@ -74,9 +73,23 @@ def test_wheel_delta_data_encodes_both_directions() -> None:
     assert wheel_delta_data(-1) == 0xFFFFFF88
 
 
+def test_relative_pointer_delta_is_bounded_and_converges() -> None:
+    assert relative_pointer_delta((0, 0), (100, -50), max_step_pixels=12, tolerance_pixels=1) == (
+        12,
+        -12,
+    )
+    assert relative_pointer_delta(
+        (99, -49), (100, -50), max_step_pixels=12, tolerance_pixels=1
+    ) == (0, 0)
+    assert relative_pointer_delta(
+        (102, -48), (100, -50), max_step_pixels=12, tolerance_pixels=1
+    ) == (-1, -1)
+    assert relative_pointer_delta(
+        (100, 10), (100, 0), max_step_pixels=12, tolerance_pixels=1
+    ) == (0, -5)
+
+
 def test_window_target_must_be_unique() -> None:
     assert select_unique_window([(42, "Kenshi 1.0.68")], "kenshi") == 42
     with pytest.raises(AmbiguousWindowError, match="narrower window title"):
-        select_unique_window(
-            [(42, "Kenshi 1.0.68"), (84, "Kenshi crash reporter")], "kenshi"
-        )
+        select_unique_window([(42, "Kenshi 1.0.68"), (84, "Kenshi crash reporter")], "kenshi")
