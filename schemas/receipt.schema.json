@@ -1,0 +1,569 @@
+{
+  "$defs": {
+    "ClickAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "click",
+          "default": "click",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton",
+          "default": "left"
+        },
+        "clicks": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Clicks",
+          "type": "integer"
+        },
+        "hold_seconds": {
+          "default": 0.0,
+          "maximum": 0.5,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        },
+        "interval_seconds": {
+          "default": 0.08,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Interval Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ClickAction",
+      "type": "object"
+    },
+    "ControlMode": {
+      "enum": [
+        "interface_only",
+        "native_assisted"
+      ],
+      "title": "ControlMode",
+      "type": "string"
+    },
+    "CoordinateSpace": {
+      "enum": [
+        "normalized",
+        "client",
+        "screen"
+      ],
+      "title": "CoordinateSpace",
+      "type": "string"
+    },
+    "HotkeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "hotkey",
+          "default": "hotkey",
+          "title": "Kind",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 2,
+          "title": "Keys",
+          "type": "array"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "HotkeyAction",
+      "type": "object"
+    },
+    "KeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "key",
+          "default": "key",
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "KeyAction",
+      "type": "object"
+    },
+    "MouseButton": {
+      "enum": [
+        "left",
+        "right",
+        "middle"
+      ],
+      "title": "MouseButton",
+      "type": "string"
+    },
+    "MoveCursorAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "move_cursor",
+          "default": "move_cursor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "MoveCursorAction",
+      "type": "object"
+    },
+    "NoopAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "noop",
+          "default": "noop",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "default": "No action required.",
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "title": "NoopAction",
+      "type": "object"
+    },
+    "PauseAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "pause",
+          "default": "pause",
+          "title": "Kind",
+          "type": "string"
+        },
+        "paused": {
+          "default": true,
+          "title": "Paused",
+          "type": "boolean"
+        }
+      },
+      "title": "PauseAction",
+      "type": "object"
+    },
+    "ScrollAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scroll",
+          "default": "scroll",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "notches": {
+          "maximum": 8,
+          "minimum": -8,
+          "title": "Notches",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "notches"
+      ],
+      "title": "ScrollAction",
+      "type": "object"
+    },
+    "SetSpeedAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "set_speed",
+          "default": "set_speed",
+          "title": "Kind",
+          "type": "string"
+        },
+        "speed": {
+          "enum": [
+            1,
+            2,
+            3
+          ],
+          "title": "Speed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "speed"
+      ],
+      "title": "SetSpeedAction",
+      "type": "object"
+    },
+    "SkillAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "skill",
+          "default": "skill",
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "args": {
+          "items": {
+            "$ref": "#/$defs/SkillArgument"
+          },
+          "maxItems": 20,
+          "title": "Args",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "SkillAction",
+      "type": "object"
+    },
+    "SkillArgument": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "SkillArgument",
+      "type": "object"
+    },
+    "StopAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "stop",
+          "default": "stop",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "title": "StopAction",
+      "type": "object"
+    },
+    "WaitAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "wait",
+          "default": "wait",
+          "title": "Kind",
+          "type": "string"
+        },
+        "seconds": {
+          "maximum": 60.0,
+          "minimum": 0.0,
+          "title": "Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "seconds"
+      ],
+      "title": "WaitAction",
+      "type": "object"
+    },
+    "WorldStateRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry Sequence"
+        },
+        "frame_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Sequence"
+        },
+        "capability_epoch": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Capability Epoch",
+          "type": "integer"
+        },
+        "observed_at_monotonic": {
+          "minimum": 0.0,
+          "title": "Observed At Monotonic",
+          "type": "number"
+        }
+      },
+      "title": "WorldStateRevision",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NoopAction"
+        },
+        {
+          "$ref": "#/$defs/StopAction"
+        },
+        {
+          "$ref": "#/$defs/PauseAction"
+        },
+        {
+          "$ref": "#/$defs/SetSpeedAction"
+        },
+        {
+          "$ref": "#/$defs/WaitAction"
+        },
+        {
+          "$ref": "#/$defs/KeyAction"
+        },
+        {
+          "$ref": "#/$defs/HotkeyAction"
+        },
+        {
+          "$ref": "#/$defs/MoveCursorAction"
+        },
+        {
+          "$ref": "#/$defs/ClickAction"
+        },
+        {
+          "$ref": "#/$defs/ScrollAction"
+        },
+        {
+          "$ref": "#/$defs/SkillAction"
+        }
+      ],
+      "title": "Action"
+    },
+    "control_mode": {
+      "$ref": "#/$defs/ControlMode",
+      "default": "interface_only"
+    },
+    "command_id": {
+      "anyOf": [
+        {
+          "pattern": "^cmd-[0-9]{6,}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Command Id"
+    },
+    "started_after_revision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "completed_at_revision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "causal_revision_advanced": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causal Revision Advanced"
+    },
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "executed": {
+      "title": "Executed",
+      "type": "boolean"
+    },
+    "dry_run": {
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "primitive_actions": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Primitive Actions",
+      "type": "integer"
+    },
+    "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+    },
+    "error_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Type"
+    }
+  },
+  "required": [
+    "action",
+    "accepted",
+    "executed",
+    "dry_run"
+  ],
+  "title": "ActionReceipt",
+  "type": "object"
+}

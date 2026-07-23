@@ -89,6 +89,12 @@ class LiveEnvironment(AgentEnvironment):
         return await self.observe()
 
     async def observe(self) -> Observation:
+        return await self._observe(capture=True)
+
+    async def observe_without_capture(self) -> Observation:
+        return await self._observe(capture=False)
+
+    async def _observe(self, *, capture: bool) -> Observation:
         events: list[str] = []
         telemetry_snapshot = None
         telemetry_stale = True
@@ -116,7 +122,7 @@ class LiveEnvironment(AgentEnvironment):
 
         screenshot_path = None
         screenshot_hash = None
-        if self._capture is not None:
+        if capture and self._capture is not None:
             try:
                 self._capture_sequence += 1
                 async with self.controller.input_lease():

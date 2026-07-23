@@ -14,6 +14,11 @@ class AgentEnvironment(ABC):
     async def observe(self) -> Observation:
         raise NotImplementedError
 
+    async def observe_without_capture(self) -> Observation:
+        """Read current state without requesting a new visual frame when supported."""
+
+        return await self.observe()
+
     @abstractmethod
     async def step(self, action: Action) -> Transition:
         raise NotImplementedError

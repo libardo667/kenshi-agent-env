@@ -34,6 +34,18 @@ class _MetricValues(TypedDict):
     budget_reservations: int
     budget_commits: int
     budget_releases: int
+    sequence_stall_incidents: int
+    transient_events_retained: int
+    transient_events_lost: int
+    subscriber_update_drops: int
+    observation_pump_errors: int
+    revision_regressions: int
+    revision_conflicts: int
+    entity_lifetimes_started: int
+    entity_lifetimes_ended: int
+    command_mismatches: int
+    command_receipts: int
+    command_receipts_with_post_revision: int
     success: bool | None
     steps_completed: int | None
     stop_reason: str | None
@@ -66,6 +78,18 @@ class LogMetrics:
     budget_reservations: int = 0
     budget_commits: int = 0
     budget_releases: int = 0
+    sequence_stall_incidents: int = 0
+    transient_events_retained: int = 0
+    transient_events_lost: int = 0
+    subscriber_update_drops: int = 0
+    observation_pump_errors: int = 0
+    revision_regressions: int = 0
+    revision_conflicts: int = 0
+    entity_lifetimes_started: int = 0
+    entity_lifetimes_ended: int = 0
+    command_mismatches: int = 0
+    command_receipts: int = 0
+    command_receipts_with_post_revision: int = 0
     success: bool | None = None
     steps_completed: int | None = None
     stop_reason: str | None = None
@@ -73,6 +97,7 @@ class LogMetrics:
     p50_planner_latency_seconds: float | None = None
     p95_planner_latency_seconds: float | None = None
     actions_per_strategic_planner_call: float | None = None
+    receipts_with_post_command_revision_percentage: float | None = None
 
 
 def evaluate_log(path: Path) -> LogMetrics:
@@ -104,6 +129,18 @@ def evaluate_log(path: Path) -> LogMetrics:
         "budget_reservations": 0,
         "budget_commits": 0,
         "budget_releases": 0,
+        "sequence_stall_incidents": 0,
+        "transient_events_retained": 0,
+        "transient_events_lost": 0,
+        "subscriber_update_drops": 0,
+        "observation_pump_errors": 0,
+        "revision_regressions": 0,
+        "revision_conflicts": 0,
+        "entity_lifetimes_started": 0,
+        "entity_lifetimes_ended": 0,
+        "command_mismatches": 0,
+        "command_receipts": 0,
+        "command_receipts_with_post_revision": 0,
         "success": None,
         "steps_completed": None,
         "stop_reason": None,
@@ -138,6 +175,10 @@ def evaluate_log(path: Path) -> LogMetrics:
                     values["dry_run_actions"] += 1
                 if payload.get("executed"):
                     values["executed_actions"] += 1
+                if payload.get("command_id") is not None:
+                    values["command_receipts"] += 1
+                    if payload.get("causal_revision_advanced") is True:
+                        values["command_receipts_with_post_revision"] += 1
             elif event_type == "action_rejected":
                 values["rejected_actions"] += 1
             elif event_type == "observation":
@@ -170,6 +211,53 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["budget_commits"] += 1
             elif event_type == "plan_budget_released":
                 values["budget_releases"] += 1
+            elif event_type == "world_state_update":
+                if payload.get("sequence_status") == "duplicate":
+                    values["sequence_stall_incidents"] += 1
+                values["transient_events_lost"] = max(
+                    values["transient_events_lost"],
+                    int(payload.get("transient_events_lost", 0)),
+                )
+                values["subscriber_update_drops"] = max(
+                    values["subscriber_update_drops"],
+                    int(payload.get("subscriber_update_drops", 0)),
+                )
+                values["observation_pump_errors"] = max(
+                    values["observation_pump_errors"],
+                    int(payload.get("observation_pump_errors", 0)),
+                )
+            elif event_type == "world_state_event":
+                if payload.get("event_type") == "observation_event":
+                    values["transient_events_retained"] += 1
+            elif event_type == "world_state_finished":
+                values["sequence_stall_incidents"] = max(
+                    values["sequence_stall_incidents"],
+                    int(payload.get("sequence_stall_incidents", 0)),
+                )
+                values["transient_events_retained"] = max(
+                    values["transient_events_retained"],
+                    int(payload.get("transient_events_retained", 0)),
+                )
+                for field_name in (
+                    "transient_events_lost",
+                    "revision_regressions",
+                    "revision_conflicts",
+                    "entity_lifetimes_started",
+                    "entity_lifetimes_ended",
+                    "command_mismatches",
+                ):
+                    values[field_name] = max(
+                        values[field_name],
+                        int(payload.get(field_name, 0)),
+                    )
+                values["subscriber_update_drops"] = max(
+                    values["subscriber_update_drops"],
+                    int(payload.get("subscriber_drops", 0)),
+                )
+                values["observation_pump_errors"] = max(
+                    values["observation_pump_errors"],
+                    int(payload.get("pump_errors", 0)),
+                )
             elif event_type == "run_finished":
                 control_mode = payload.get("control_mode")
                 if control_mode is not None:
@@ -187,11 +275,17 @@ def evaluate_log(path: Path) -> LogMetrics:
         if values["strategic_planner_calls"]
         else None
     )
+    causal_receipt_percentage = (
+        100.0 * values["command_receipts_with_post_revision"] / values["command_receipts"]
+        if values["command_receipts"]
+        else None
+    )
     planner_latencies = strategic_planner_latencies or decision_planner_latencies
     if not planner_latencies:
         return LogMetrics(
             **values,
             actions_per_strategic_planner_call=actions_per_call,
+            receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
         )
     ordered = sorted(planner_latencies)
     p95_index = max(0, ceil(len(ordered) * 0.95) - 1)
@@ -201,6 +295,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         p50_planner_latency_seconds=median(ordered),
         p95_planner_latency_seconds=ordered[p95_index],
         actions_per_strategic_planner_call=actions_per_call,
+        receipts_with_post_command_revision_percentage=causal_receipt_percentage,
     )
 
 

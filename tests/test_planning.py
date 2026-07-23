@@ -262,6 +262,19 @@ def test_postcondition_requires_a_later_relevant_revision() -> None:
     )
 
 
+def test_capability_epoch_advance_is_a_later_world_revision() -> None:
+    before = revision(8, capability_epoch=1)
+    after = before.model_copy(
+        update={
+            "capability_epoch": 2,
+            "observed_at_monotonic": before.observed_at_monotonic + 0.1,
+        }
+    )
+
+    assert after.is_later_than(before)
+    assert not before.is_later_than(after)
+
+
 @pytest.mark.parametrize(
     "steps",
     [

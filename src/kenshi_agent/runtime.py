@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from math import dist
 from time import monotonic
@@ -28,6 +28,7 @@ from .models import (
     StopAction,
     TelemetrySnapshot,
     Transition,
+    WorldStateRevision,
 )
 from .planners import Planner
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
@@ -35,6 +36,13 @@ from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .safety import ActionGuard, SafetyViolation
 from .session_log import SessionLogger
+from .world_state import (
+    ObservationPump,
+    StoreUpdate,
+    WorldEvent,
+    WorldStateError,
+    WorldStateStore,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +78,7 @@ class AgentRuntime:
         reporter: ConsoleDecisionReporter | None = None,
         planning_config: PlanningConfig | None = None,
         planning_clock: PlanningClock | None = None,
+        observation_clock: PlanningClock | None = None,
     ) -> None:
         self.run_id = run_id
         self.environment = environment
@@ -86,6 +95,8 @@ class AgentRuntime:
         self.reporter = reporter
         self.planning_config = planning_config or PlanningConfig()
         self.planning_clock = planning_clock or SystemPlanningClock()
+        self.observation_clock = observation_clock or SystemPlanningClock()
+        self._state_store: WorldStateStore | None = None
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
         if self.planning_config.mode == PlanningMode.CONTINUOUS:
@@ -309,6 +320,8 @@ class AgentRuntime:
         stop_reason = "Maximum action count reached."
         observation: Observation | None = None
         consecutive_replans = 0
+        observation_pump: ObservationPump | None = None
+        state_store: WorldStateStore | None = None
 
         try:
             self._action_outcomes.clear()
@@ -324,12 +337,12 @@ class AgentRuntime:
             )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
-            self.logger.write(
-                "observation",
-                step_index=observation.step_index,
-                payload=observation,
-            )
             if observation.mode == "live":
+                self.logger.write(
+                    "observation",
+                    step_index=observation.step_index,
+                    payload=observation,
+                )
                 return self._finish_continuous_summary(
                     started=started,
                     steps_completed=0,
@@ -342,7 +355,32 @@ class AgentRuntime:
                     observation=observation,
                 )
 
+            state_store = WorldStateStore(
+                history_limit=self.planning_config.state_history_limit,
+                delta_limit=self.planning_config.state_delta_limit,
+                event_limit=self.planning_config.event_journal_limit,
+                subscriber_queue_limit=(self.planning_config.subscriber_queue_limit),
+                max_delta_paths=self.planning_config.max_delta_paths,
+                clock=self.planning_clock,
+                event_sink=self._log_world_event,
+            )
+            self._state_store = state_store
+            initial_update = state_store.publish(observation)
+            observation = initial_update.observation
+            self._log_world_state_update(initial_update)
+            if self.planning_config.observation_pump_enabled:
+                observation_pump = ObservationPump(
+                    self.environment,
+                    state_store,
+                    interval_seconds=(self.planning_config.observation_pump_seconds),
+                    clock=self.observation_clock,
+                    transform=self._with_memories,
+                    on_update=self._log_world_state_update,
+                )
+                await observation_pump.start()
+
             while steps_completed < max_steps and not terminated:
+                observation = state_store.latest or observation
                 reflex = self.reflexes.decide(observation)
                 if reflex is not None:
                     (
@@ -386,6 +424,7 @@ class AgentRuntime:
                         "output_type": type(output).__name__,
                     },
                 )
+                observation = state_store.latest or observation
 
                 if isinstance(output, PlannerDecision):
                     if not isinstance(output.action, StopAction):
@@ -487,8 +526,8 @@ class AgentRuntime:
                     guard=self.guard,
                     reflexes=self.reflexes,
                     logger=self.logger,
-                    config=self.planning_config,
                     clock=self.planning_clock,
+                    state_store=state_store,
                     observe_transition=self._observe_plan_transition,
                 )
                 result = await executor.execute(
@@ -530,6 +569,15 @@ class AgentRuntime:
                 observation=observation,
             )
         finally:
+            if observation_pump is not None:
+                await observation_pump.stop()
+            if state_store is not None:
+                state_store.shutdown()
+                self.logger.write(
+                    "world_state_finished",
+                    payload=asdict(state_store.metrics),
+                )
+            self._state_store = None
             await self.environment.close()
 
     async def _execute_continuous_decision(
@@ -617,6 +665,8 @@ class AgentRuntime:
         step: PlanStep,
         before: Observation,
         transition: Transition,
+        command_id: str,
+        action_start_revision: WorldStateRevision,
     ) -> Observation:
         decision = PlannerDecision(
             intent=f"Execute plan {plan.plan_id} step {step.step_id}.",
@@ -627,38 +677,140 @@ class AgentRuntime:
             action=step.action,
             confidence=1.0,
         )
-        return self._record_transition(decision, before, transition)
+        return self._record_transition(
+            decision,
+            before,
+            transition,
+            command_id=command_id,
+            action_start_revision=action_start_revision,
+        )
 
     def _record_transition(
         self,
         decision: PlannerDecision,
         before: Observation,
         transition: Transition,
+        *,
+        command_id: str | None = None,
+        action_start_revision: WorldStateRevision | None = None,
     ) -> Observation:
+        candidate = self._with_memories(transition.observation)
+        update: StoreUpdate | None = None
+        if self._state_store is None:
+            latest = candidate
+        else:
+            try:
+                update = self._state_store.publish(candidate)
+            except WorldStateError as exc:
+                self.logger.write(
+                    "observation_rejected",
+                    step_index=candidate.step_index,
+                    payload={
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                        "world_revision": candidate.world_revision.model_dump(mode="json"),
+                    },
+                )
+                latest = self._state_store.latest or before
+            else:
+                latest = update.observation
+
+        receipt = transition.receipt
+        if command_id is not None and action_start_revision is not None:
+            receipt = receipt.model_copy(
+                update={
+                    "command_id": command_id,
+                    "started_after_revision": action_start_revision,
+                    "completed_at_revision": latest.world_revision,
+                    "causal_revision_advanced": (
+                        latest.world_revision.is_later_than(action_start_revision)
+                    ),
+                }
+            )
         self.logger.write(
             "action_receipt",
             step_index=before.step_index,
-            payload=transition.receipt,
+            payload=receipt,
         )
         if self.reporter is not None:
             self.reporter.action_receipt(
                 step_index=before.step_index,
-                receipt=transition.receipt,
+                receipt=receipt,
             )
         self._record_action_outcome(
             decision,
-            transition.receipt,
+            receipt,
             before,
-            transition.observation,
+            latest,
         )
         self._store_memories(decision)
-        latest = self._with_memories(transition.observation)
-        self.logger.write(
-            "observation",
-            step_index=latest.step_index,
-            payload=latest,
-        )
+        latest = self._with_memories(latest)
+        if self._state_store is None:
+            self.logger.write(
+                "observation",
+                step_index=latest.step_index,
+                payload=latest,
+            )
+        else:
+            latest = self._state_store.decorate_latest(latest)
+            if update is not None:
+                self._log_world_state_update(
+                    StoreUpdate(
+                        observation=latest,
+                        sequence_status=update.sequence_status,
+                        delta=update.delta,
+                        events=update.events,
+                    )
+                )
         return latest
+
+    def _log_world_state_update(
+        self,
+        update: StoreUpdate,
+        *,
+        log_observation: bool = True,
+    ) -> None:
+        observation = update.observation
+        world_metrics = self._state_store.metrics if self._state_store is not None else None
+        self.logger.write(
+            "world_state_update",
+            step_index=observation.step_index,
+            payload={
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "sequence_status": update.sequence_status.value,
+                "changed_paths": list(update.delta.changed_paths),
+                "delta_truncated": update.delta.truncated,
+                "transient_events_lost": (
+                    world_metrics.transient_events_lost if world_metrics is not None else 0
+                ),
+                "subscriber_update_drops": (
+                    world_metrics.subscriber_drops if world_metrics is not None else 0
+                ),
+                "observation_pump_errors": (
+                    world_metrics.pump_errors if world_metrics is not None else 0
+                ),
+            },
+        )
+        if log_observation:
+            self.logger.write(
+                "observation",
+                step_index=observation.step_index,
+                payload=observation,
+            )
+
+    def _log_world_event(self, event: WorldEvent) -> None:
+        self.logger.write(
+            "world_state_event",
+            payload={
+                "event_id": event.event_id,
+                "event_type": event.event_type,
+                "world_revision": (
+                    event.revision.model_dump(mode="json") if event.revision is not None else None
+                ),
+                "observed_at_monotonic": event.observed_at_monotonic,
+                "evidence": event.payload,
+            },
+        )
 
     def _finish_continuous_summary(
         self,
@@ -807,6 +959,12 @@ class AgentRuntime:
             return (
                 ActionOutcomeAssessment.NOT_EXECUTED,
                 "The executor did not perform this action. Do not treat it as progress.",
+            )
+        if receipt.causal_revision_advanced is False:
+            return (
+                ActionOutcomeAssessment.UNKNOWN,
+                "The action has no causally later validated world revision. "
+                "Do not treat raw or pre-command state as progress.",
             )
 
         if isinstance(receipt.action, SkillAction):
