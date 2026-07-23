@@ -100,6 +100,9 @@ async def _launch(args: argparse.Namespace) -> int:
     time.sleep(2.0)
 
     if args.continue_game:
+        # RE_Kenshi can open its own settings panel over Continue at startup.
+        # This is a harmless title-screen click when that panel is disabled.
+        await _click(controller, 0.300, 0.110)
         await _click(controller, 0.338, 0.171)
         reader = _telemetry_read(config)
 
@@ -111,8 +114,7 @@ async def _launch(args: argparse.Namespace) -> int:
         snapshot = reader.read().snapshot
         if snapshot.game.paused is False:
             await _click(controller, 0.765, 0.723)
-        # RE_Kenshi opens its own panel after loading on this machine. This is
-        # a harmless world-space left click when that panel is already disabled.
+        # Also clear the panel if RE_Kenshi reopened it during save load.
         await _click(controller, 0.300, 0.110)
 
     print("Kenshi launched" + (", loaded, and paused." if args.continue_game else "."))
@@ -151,6 +153,7 @@ def _telemetry(args: argparse.Namespace) -> int:
         "paused": snapshot.game.paused,
         "screen": snapshot.ui.active_screen,
         "money": snapshot.game.money,
+        "active_shop_trader_count": snapshot.active_shop_trader_count,
         "selected": selected.model_dump(mode="json") if selected else None,
         "barman": barman.model_dump(mode="json") if barman else None,
     }

@@ -48,6 +48,8 @@ squad.inventory
 ui.modal
 ui.dialogue
 nearby.characters
+nearby.roles
+nearby.shop_owners
 ```
 
 Capabilities describe what the plugin can currently observe, not what exists in
@@ -58,6 +60,23 @@ selected character. An entity with `visible: true` is rendered inside the
 current camera viewport and has a normalized `screen_position`. It may still be
 hidden by a roof, wall, character, or other geometry, so this is not proof that
 a click at that point will reach the character.
+
+`nearby.roles` keeps physical type separate from trade roles. `kind` is
+`character` or `animal`; it is never inferred from squad commerce. The
+`trader_squad` and `has_vendor_list` fields describe the entity's active
+platoon, while `is_squad_leader`, `has_dialogue`, and
+`talk_task_available` describe that exact character. The latter comes from
+Kenshi's own `getPlayerTaskProbability(PLAYER_TALK_TO, ...)` query; its
+companion `talk_task_probability` preserves Kenshi's score.
+
+`nearby.shop_owners` means `shop_inventory_owner` is authoritative. Kenshi does
+not keep `ShopTrader` objects in its spatial query and its `InventoryManager`
+holds only one transient wrapper, so the plugin builds a bounded live registry
+by hooking `ShopTrader` construction and destruction before a save loads. It
+then compares each registered `ShopTrader::getTrader()` owner by pointer
+against nearby characters. `active_shop_trader_count` reports the registry
+size. Both values are null and the capability is absent if either lifecycle
+hook fails.
 
 ## Identity
 

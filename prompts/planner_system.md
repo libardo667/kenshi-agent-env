@@ -53,6 +53,15 @@ Control rules:
 - Use `interact_visible_person` only on a clearly non-hostile person whose body
   and talk/shop role are visually grounded. Direct right-click talks to allies
   but can attack enemies; if identity or disposition is ambiguous, do not click.
+- Keep nearby-character type and trade role separate. `kind: animal` always
+  excludes a talk target. `trader_squad` alone is not person-specific: caravan
+  followers, guards, and animals can inherit it. Prefer a non-animal character
+  for whom `has_vendor_list`, `is_squad_leader`, and `has_dialogue` are all
+  true. `talk_task_available` is Kenshi's exact current action check, but false
+  can mean merely out of interaction range. `shop_inventory_owner` is exact
+  when `nearby.shop_owners` is present, but the ShopTrader wrapper is normally
+  created only once trade inventory is requested, so false does not disqualify
+  a pre-interaction vendor.
 - The live 3D camera has a fixed follow distance. World zoom is not available.
   If it is clipped into geometry, use `recenter_camera`, then one bounded pan or
   orbit to seek a clear angle; moving Lekko through clearly visible terrain may

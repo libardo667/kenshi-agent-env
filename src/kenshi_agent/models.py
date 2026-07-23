@@ -95,6 +95,14 @@ class NearbyEntity(StrictModel):
     id: str
     name: str
     kind: str = "unknown"
+    is_animal: bool | None = None
+    trader_squad: bool | None = None
+    has_vendor_list: bool | None = None
+    is_squad_leader: bool | None = None
+    has_dialogue: bool | None = None
+    shop_inventory_owner: bool | None = None
+    talk_task_available: bool | None = None
+    talk_task_probability: float | None = None
     faction: str | None = None
     disposition: Disposition = Disposition.UNKNOWN
     distance: float | None = None
@@ -143,6 +151,7 @@ class TelemetrySnapshot(StrictModel):
     camera: CameraState = Field(default_factory=CameraState)
     ui: UIState = Field(default_factory=UIState)
     squad: list[CharacterState] = Field(default_factory=list)
+    active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 

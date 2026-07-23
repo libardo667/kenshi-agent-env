@@ -18,11 +18,12 @@ from kenshi_agent.models import (
 
 
 def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
-    entity = NearbyEntity(id="nearby:0", name="Bar Trader", kind="trader")
+    entity = NearbyEntity(id="nearby:0", name="Bar Trader", kind="character")
 
     assert entity.visible is None
     assert entity.position is None
     assert entity.screen_position is None
+    assert entity.shop_inventory_owner is None
 
 
 def test_action_discriminator_parses_click() -> None:
