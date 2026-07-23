@@ -43,6 +43,7 @@ capture:
 controls:
   pause_key: space
   pause_skill: pause_game
+  unpause_skill: unpause_game
   speed_keys:
     1: f2
     2: f3
@@ -109,7 +110,7 @@ memory:
 
 macros:
   pause_game:
-    description: Click Kenshi's visible pause transport button.
+    description: Click Kenshi's visible Pause transport button.
     visual_precondition: The normal bottom HUD is visible and its transport controls are unobstructed.
     normalized_pointer_bounds:
       min_x: 0.75
@@ -119,6 +120,20 @@ macros:
     actions:
       - kind: click
         x: 0.765
+        y: 0.723
+        space: normalized
+        button: left
+  unpause_game:
+    description: Click Kenshi's visible Play transport button.
+    visual_precondition: The normal bottom HUD is visible and its transport controls are unobstructed.
+    normalized_pointer_bounds:
+      min_x: 0.78
+      max_x: 0.805
+      min_y: 0.70
+      max_y: 0.75
+    actions:
+      - kind: click
+        x: 0.792
         y: 0.723
         space: normalized
         button: left

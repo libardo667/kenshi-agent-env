@@ -31,6 +31,10 @@ build, absolute Windows cursor positioning did not move Kenshi's drawn cursor,
 raw relative movement did, and a scan-code Space request failed to pause even
 though the installed binding is Space. Clicking the visible pause transport via
 relative input produced the `PAUSED` banner and is the proven fallback.
+Live calibration subsequently established that the bottom HUD has distinct
+Play and Pause buttons, not a toggle: Play resumes at normalized
+`(0.792, 0.723)`, while Pause stops at `(0.765, 0.723)` in the current 1920x1080
+client. Runtime movement therefore uses separate state-specific controls.
 
 ## Reference repositories
 

@@ -13,6 +13,7 @@ from kenshi_agent.models import (
     GameState,
     KeyAction,
     MouseButton,
+    PauseAction,
     SkillAction,
     TelemetrySnapshot,
 )
@@ -74,7 +75,14 @@ class PulseController(InputController):
             and action.x == 0.765
             and action.y == 0.723
         ):
-            self.telemetry.paused = not self.telemetry.paused
+            self.telemetry.paused = True
+        if (
+            isinstance(action, ClickAction)
+            and action.button == MouseButton.LEFT
+            and action.x == 0.792
+            and action.y == 0.723
+        ):
+            self.telemetry.paused = False
         now = datetime.now(UTC)
         return ActionReceipt(
             action=action,
@@ -135,6 +143,17 @@ def movement_registry(
                 }
             ]
         )
+        macros["unpause_game"] = MacroConfig(
+            actions=[
+                {
+                    "kind": "click",
+                    "x": 0.792,
+                    "y": 0.723,
+                    "space": "normalized",
+                    "button": "left",
+                }
+            ]
+        )
     return MacroRegistry(macros)
 
 
@@ -145,6 +164,7 @@ def live_environment(
     registry: MacroRegistry,
     *,
     pause_skill: str | None = None,
+    unpause_skill: str | None = None,
 ) -> LiveEnvironment:
     return LiveEnvironment(
         run_id="pulse-test",
@@ -156,6 +176,7 @@ def live_environment(
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
             pause_skill=pause_skill,
+            unpause_skill=unpause_skill,
         ),
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,
@@ -207,6 +228,7 @@ def test_movement_pulse_can_use_click_based_pause_skill(tmp_path: Path) -> None:
             controller,
             movement_registry(include_pause_skill=True),
             pause_skill="pause_game",
+            unpause_skill="unpause_game",
         )
 
         await environment.reset()
@@ -216,6 +238,32 @@ def test_movement_pulse_can_use_click_based_pause_skill(tmp_path: Path) -> None:
         assert [action.kind for action in controller.actions] == ["click", "click", "click"]
         assert transition.receipt.primitive_actions == 9
         assert "confirmed re-paused state" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_separate_transport_controls_are_state_specific(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(include_pause_skill=True),
+            pause_skill="pause_game",
+            unpause_skill="unpause_game",
+        )
+
+        await environment.reset()
+        await environment.step(PauseAction(paused=False))
+        await environment.step(PauseAction(paused=False))
+        await environment.step(PauseAction(paused=True))
+        await environment.step(PauseAction(paused=True))
+
+        clicks = [action for action in controller.actions if isinstance(action, ClickAction)]
+        assert [(action.x, action.y) for action in clicks] == [(0.792, 0.723), (0.765, 0.723)]
+        assert telemetry.paused is True
 
     asyncio.run(scenario())
 
