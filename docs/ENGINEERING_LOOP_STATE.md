@@ -128,12 +128,31 @@ logs, configs, and screenshot are preserved under
 complete preinstall package is under
 `runs/p0-title-telemetry-event-subscription-preinstall-20260723T225933Z/`, and
 the 185,344-byte DLL is restored again. Both MyGUI integration paths are
-rejected. The current uninstalled candidate hooks Kenshi's pinned
+rejected. The replacement hooks Kenshi's pinned
 `TitleScreen::_NV_update`, emits a minimal title-only snapshot with no
 world/player/camera/entity/native-command access, and uses the already proven
 `PlayerInterface::update` only after world initialization. Its pinned Release
 x64 DLL is 188,416 bytes with SHA-256
 `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
+The complete restored package was backed up under
+`runs/p0-title-player-split-preinstall-20260723T231348Z/`, and the exact
+replacement was installed and byte-compared. A no-Continue 1920x1080 canary
+then produced fresh protocol `0.5.0` title telemetry from
+`kenshilib-plugin-title`: sequence advanced 28→46 in four seconds and later to
+134, `game.loaded` was false, native control was unavailable, and one
+`CONTINUE` button appeared at normalized bounds
+`(0.2604167, 0.1388889)–(0.4166667, 0.2027778)`. The responsive title process
+held essentially flat memory and closed normally. A second full semantic launch
+loaded the save and returned paused. Loaded source switched to
+`kenshilib-plugin`, sequence advanced 36→245, Hep was selected with 1,000 cats,
+and no native command was issued. RE_Kenshi logged the hooks, main menu, and
+in-game state without error. One informational Windows `RADAR_PRE_LEAK_64`
+event appeared during world startup; there was no Application Error or fresh
+crash dump, and observed private memory later fell to 4.199 GiB while the
+process remained responsive. GPU-local accounting was unavailable. Both
+launches closed normally, the reduced settings persisted, and the validated
+split DLL remains installed while Kenshi is stopped. Local evidence is under
+the split preinstall run's `live-validation/` directory.
 The replaced protocol `0.4.0` DLL is preserved under
 `runs/p0-semantic-launch-preinstall-20260723T2208Z/installed-plugin-backup/`.
 The frozen process and `BAD STUFF`
@@ -767,10 +786,28 @@ P0 semantic-launch/control-ownership offline verification on 2026-07-23:
   Release x64 DLL is 188,416 bytes with SHA-256
   `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
   The launcher now recognizes both `RE_Kenshi Crash Reporter` and
-  `Kenshi has crashed` as terminal no-input states. This candidate remains
-  uninstalled pending a new supervised boundary.
-- Alternate-resolution semantic startup and visible ownership reset/disarm
-  remain live gates.
+  `Kenshi has crashed` as terminal no-input states.
+- The complete restored package was backed up under
+  `runs/p0-title-player-split-preinstall-20260723T231348Z/`; the split candidate
+  was installed byte-for-byte and remains installed while Kenshi is stopped.
+- A no-Continue 1920x1080 canary reached a responsive title screen without the
+  optional RE_Kenshi panel. Fresh title telemetry advanced 28→46 in four
+  seconds and later to 134, exposed exactly one `CONTINUE` button with current
+  normalized bounds, reported `game.loaded: false`, and disabled native
+  control. Title-screen memory was essentially flat and Kenshi closed normally.
+- The next full semantic launch loaded the save and returned paused. Loaded
+  telemetry advanced 36→245, selected Hep, reported 1,000 cats, and retained
+  native command sequence zero. RE_Kenshi logged the title/player hooks at
+  4.358 seconds, main menu at 6.175 seconds, and in-game state at 12.399
+  seconds.
+- Low graphics settings persisted. One informational `RADAR_PRE_LEAK_64` event
+  appeared during world startup, but there was no Application Error or fresh
+  crash dump; observed private memory fell to 4.199 GiB while Kenshi stayed
+  responsive. GPU-local accounting was unavailable. The loaded game closed
+  normally and Windows free memory recovered to 5.84 GiB.
+- Alternate-resolution semantic startup, deliberate launcher interruption,
+  visible ownership reset/disarm, and a longer stability soak remain live
+  gates.
 
 P0 launcher/calibration recovery verification on 2026-07-23:
 

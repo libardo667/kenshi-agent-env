@@ -124,9 +124,13 @@ retains loaded-game sampling on `PlayerInterface::update` only after
 `GameWorld::initialized`. It neither detours MyGUI nor subscribes to its
 delegate list. Its pinned Release x64 output is 188,416 bytes with SHA-256
 `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
-The build emitted only the same upstream warnings. At this checkpoint the
-original 185,344-byte DLL is restored on disk and the split-lifecycle candidate
-is uninstalled.
+The build emitted only the same upstream warnings. The complete original
+185,344-byte package is preserved under
+`runs/p0-title-player-split-preinstall-20260723T231348Z/`; the split-lifecycle
+DLL was installed byte-for-byte and passed both a no-Continue 1920x1080 title
+canary and a full semantic load-to-pause test. It remains the installed DLL
+while Kenshi is stopped. This live result changes validation status only; the
+pinned upstream dependency and toolchain boundary is unchanged.
 
 ## Plugin staging/install layout
 

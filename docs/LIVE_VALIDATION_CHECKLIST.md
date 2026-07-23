@@ -79,11 +79,23 @@ inspection alone.
       modify MyGUI's function or delegate machinery. Pinned Release x64 output
       is 188,416 bytes, SHA-256
       `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`.
-- [ ] Back up the restored package, install the exact split-lifecycle candidate
-      while Kenshi is stopped, and verify its hash.
-- [ ] Repeat 1920x1080 startup and prove fresh advancing title telemetry,
+- [x] Back up the restored package under
+      `runs/p0-title-player-split-preinstall-20260723T231348Z/`, install the
+      exact split-lifecycle candidate while Kenshi is stopped, and verify its
+      installed hash byte-for-byte.
+- [x] Repeat 1920x1080 startup and prove fresh advancing title telemetry,
       unique semantic Continue/save controls, a loaded squad, and causally
-      confirmed pause.
+      confirmed pause. The no-Continue canary advanced title sequence
+      28→46→134, exposed one `CONTINUE` button at normalized bounds
+      `(0.2604167, 0.1388889)–(0.4166667, 0.2027778)`, and closed normally. The
+      full launcher then loaded Hep, advanced world sequence 36→245, and
+      returned paused without issuing a native command.
+- [x] Reconfirm the reduced graphics profile after both launches and inspect
+      RE_Kenshi/Kenshi logs, Windows Application events, process memory, and
+      crash artifacts. One informational `RADAR_PRE_LEAK_64` event appeared
+      during world load, but memory subsequently fell while the process stayed
+      responsive; no Application Error or fresh crash dump appeared. GPU-local
+      process accounting was unavailable and remains an evidence gap.
 - [ ] Repeat the semantic startup boundary at one alternate resolution, then
       restore and re-verify the intended 1920x1080 profile.
 
