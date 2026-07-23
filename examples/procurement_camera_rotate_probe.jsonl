@@ -1,1 +1,1 @@
-{"intent":"Inspect The Hub from a different anchored angle.","rationale":"Recentering on Lekko before one bounded rightward rotation tests the second half of the local camera survey vocabulary without moving the character.","action":{"kind":"skill","name":"survey_camera_rotate_right","args":{}},"confidence":1.0,"memory_writes":[]}
+{"intent":"Inspect The Hub from a different anchored angle.","rationale":"One bounded orbit recenters with F, then sends E without moving Lekko.","action":{"kind":"skill","name":"orbit_camera_right","args":{}},"confidence":1.0,"memory_writes":[]}

@@ -45,26 +45,21 @@ The Hub and support settlement-scale travel, but it cannot identify the bar or
 another individual business. Procurement must switch to a 3D-town survey after
 arrival instead of spending turns reopening or zooming the map.
 
-Local search also needs recoverable 3D framing. `zoom_world_out` and
-`zoom_world_in` expose one wheel notch at a demonstrated central viewport target
-only while the normal world HUD is visible. A live user gesture recorded
-world-camera zoom-out as delta `-120` at normalized `(0.503, 0.523)`. The planner
-should zoom out of clipped building geometry one observed step at a time before
-it attempts grounded movement or person interaction.
+Local search also needs recoverable 3D framing. The current `camera zoom=0`
+follow lock intentionally makes wheel zoom inert, so the live profile does not
+advertise world-zoom skills. An unguided 18-turn food run exposed why this
+matters: the planner spent every turn repeating an impossible zoom-out action
+while the screenshot remained unchanged.
 
-A supervised planner run showed that repeated zoom-out eventually exposed the
-whole town and Lekko's label, but the model continued because it mistook normal
-roofs and walls for clipping. The planner now treats visible settlement layout
-plus the selected-character label as a clear survey view and caps consecutive
-same-direction camera zoom at three steps.
-
-Local camera survey follows a stricter compound operation: double-click Lekko's
-portrait to select and recenter on Lekko, then hold exactly one of W/A/S/D for a short pan
-or Q/E for a short rotation. All six `survey_camera_*` skills include that
-recenter, so a planner cannot pan or rotate from an unknown accumulated camera
-anchor. They
-inspect adjacent town sectors and angles while the game remains paused and do
-not move Lekko.
+The truthful local camera vocabulary is `recenter_camera` with the live-proven
+F binding, four bounded WASD pan skills, and two bounded Q/E orbit skills. Each
+pan or orbit first recenters on selected Lekko, so the planner cannot accumulate
+movement from an unknown camera anchor. Camera actions remain paused and do not
+move Lekko. Every next observation now includes a bounded action-outcome ledger:
+the chosen action, execution receipt, material frame-change score, meaningful
+telemetry deltas, selected-character positions, and an explicit `no_op`
+assessment when nothing tracked changed. This gives otherwise stateless planner
+calls evidence that an attempted recovery failed and should not be repeated.
 
 ## Purchase policy
 

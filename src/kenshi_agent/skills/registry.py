@@ -4,7 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 from ..config import MacroConfig, NormalizedPointerBoundsConfig
-from ..models import Action, SkillAction, SkillSpec, parse_action
+from ..models import Action, NormalizedPointerBounds, SkillAction, SkillSpec, parse_action
 
 
 class UnknownSkillError(KeyError):
@@ -39,6 +39,13 @@ class MacroRegistry:
             description=macro.description,
             arguments=macro.arguments,
             visual_precondition=macro.visual_precondition,
+            normalized_pointer_bounds=(
+                NormalizedPointerBounds.model_validate(
+                    macro.normalized_pointer_bounds.model_dump()
+                )
+                if macro.normalized_pointer_bounds is not None
+                else None
+            ),
             movement_pulse_seconds=macro.movement_pulse_seconds,
             movement_pulse_min_seconds=macro.movement_pulse_min_seconds,
             movement_pulse_max_seconds=macro.movement_pulse_max_seconds,

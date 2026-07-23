@@ -8,6 +8,9 @@
   receipts, and memories.
 - Heuristic, scripted, subprocess, OpenAI Responses, and OpenRouter vision planners.
 - JSONL event logs, SQLite memory, replay summaries, schema export, and tests.
+- A bounded per-journey action-outcome ledger that feeds each planner call its
+  recent validated actions, material frame changes, telemetry/position deltas,
+  and explicit no-op feedback.
 - Windows client-area capture and SendInput controller behind two independent
   live-execution gates.
 - Macro/skill expansion with action and rate limits.
