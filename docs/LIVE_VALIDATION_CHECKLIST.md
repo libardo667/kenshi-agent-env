@@ -271,8 +271,11 @@ Evidence from the supervised 2026-07-23 run:
       launch. The backup DLL is 175,104 bytes with SHA-256
       `9bbeea1826216365c5492ee94db4b692848a105fbb36bc794b02723e953a293b`;
       the installed DLL is 182,784 bytes with the pinned `0.4.0` hash above.
-- [ ] Launch Kenshi, confirm plugin `ready`, strict fresh protocol `0.4.0`,
+- [x] Launch Kenshi, confirm plugin `ready`, strict fresh protocol `0.4.0`,
       increasing sequence, authoritative `game.time`, and paused state.
+      Read-only samples advanced 127 -> 130 -> 132; a strict CLI parse at 168
+      reported `elapsed_minutes: 2063.742`, `paused: true`, and all new
+      dialogue/tooltip capabilities.
 - [ ] Confirm closed dialogue reports null target/options; open exact Barman
       dialogue reports his stable target ID and option zero exactly
       `Show me your goods.`.
@@ -282,6 +285,12 @@ Evidence from the supervised 2026-07-23 run:
 - [ ] Run the conditional continuous chain with all existing live/native gates
       plus `--acknowledge-continuous-live`; require one response to drive
       approach/dialogue/inspection and one later response to buy at most once.
+      Two no-input hosted preflights sent zero native commands and left money,
+      food, and pause unchanged. `xhigh` exceeded the 90-second timeout; `high`
+      returned after 62.70 seconds but used unsupported shorthand condition
+      paths. The follow-up contract uses medium reasoning, dynamic output-token
+      ceilings, a schema-enumerated condition vocabulary, and bounded planner
+      failure logging before execution is retried.
 - [ ] Record exact pre/post money, selected food count, pause, action count,
       strategic-call count, and final plan lifecycle.
 - [ ] Exercise one safe preemption (F12 or human input), confirm no repeated

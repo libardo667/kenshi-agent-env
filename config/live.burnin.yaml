@@ -42,11 +42,14 @@ runtime:
 planner:
   kind: openai
   model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
-  reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-xhigh}
+  reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-medium}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
   openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
   temperature: 0.1
   timeout_seconds: 90
+  max_output_tokens_base: 4096
+  max_output_tokens_per_plan_step: 2048
+  max_output_tokens_ceiling: 12288
   include_screenshot: true
   screenshot_detail: high
   max_observation_chars: 30000

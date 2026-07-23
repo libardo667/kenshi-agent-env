@@ -11,11 +11,10 @@ from ..config import PlannerConfig
 from ..models import (
     Observation,
     PlanEnvelope,
-    PlannerDecision,
     PlannerOutput,
-    PlanningMode,
+    PlanPatch,
 )
-from .base import Planner
+from .base import Planner, structured_output_model
 
 
 class OpenRouterPlanner(Planner):
@@ -37,20 +36,23 @@ class OpenRouterPlanner(Planner):
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
 
     async def decide(self, observation: Observation) -> PlannerOutput:
-        output_model = (
-            PlanEnvelope
-            if observation.planning_mode == PlanningMode.CONTINUOUS
-            else PlannerDecision
-        )
+        output_model = structured_output_model(observation)
+        if output_model is PlanPatch:
+            request = (
+                "Return one future-only PlanPatch grounded in active_plan and the "
+                "exact world_revision. "
+            )
+        elif output_model is PlanEnvelope:
+            request = (
+                "Return one bounded PlanEnvelope grounded in the exact world_revision. "
+            )
+        else:
+            request = "Choose exactly one next action from this observation. "
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
                 "text": (
-                    (
-                        "Return one bounded PlanEnvelope grounded in the exact world_revision. "
-                        if observation.planning_mode == PlanningMode.CONTINUOUS
-                        else "Choose exactly one next action from this observation. "
-                    )
+                    request
                     + f"Return the {output_model.__name__} schema only.\n\n"
                     + observation.planner_payload(max_chars=self.config.max_observation_chars)
                 ),

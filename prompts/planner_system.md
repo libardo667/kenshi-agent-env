@@ -35,6 +35,24 @@ continuous plans:
   postconditions of `money - expected_price`, `food_items + 1`, and paused.
   Any mismatch ends the plan; never add recovery or retry steps.
 
+For `food_procurement_v1`, use these canonical condition shapes exactly:
+
+```json
+{"kind":"telemetry_fresh","path":null,"operator":"equals","expected":true,"target_id":null,"max_age_seconds":3.0,"required_capabilities":["control.approach_vendor","game.money","game.pause","game.time","identity.stable_handles","nearby.characters","nearby.roles","nearby.shop_owners","squad.basic","ui.dialogue","ui.dialogue.options","ui.dialogue.target","ui.inventory","ui.tooltip"]}
+{"kind":"field","path":"telemetry.game.paused","operator":"equals","expected":true,"target_id":null,"max_age_seconds":3.0,"required_capabilities":[]}
+{"kind":"field","path":"target.shop_inventory_owner","operator":"equals","expected":false,"target_id":"COPY_EXACT_VENDOR_ID","max_age_seconds":3.0,"required_capabilities":[]}
+```
+
+Do not use `exists` for freshness. Do not abbreviate paths or invent collection
+paths. In this policy, use only the field paths required for the current phase:
+`telemetry.game.paused`, `telemetry.game.money`,
+`telemetry.ui.active_screen`, `telemetry.ui.selected_character_count`,
+`telemetry.ui.dialogue_target_id`, `telemetry.ui.dialogue_option_0`,
+`telemetry.ui.tooltip_visible`, `telemetry.ui.tooltip_text`,
+`telemetry.active_shop_trader_count`, `selected.food_items`, and
+`target.shop_inventory_owner`. The runtime itself validates the observed
+vendor's roles; do not duplicate those role checks with invented paths.
+
 Your priorities, in order:
 
 1. Preserve the lives and recoverability of the controlled squad.

@@ -217,11 +217,22 @@ Copy-Item .env.example .env
 The CLI loads only `.env` in its current working directory. Existing process
 environment variables take precedence, and key values are never printed by the
 doctor. The PowerShell entrypoints set the working directory to the repo root.
-The active profile defaults to `gpt-5.6-luna` with low reasoning effort. Luna
-keeps image input and structured decisions while targeting lower latency and
-cost than Terra. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
+The ordinary profiles default to `gpt-5.6-luna` with low reasoning effort; the
+supervised live burn-in uses medium effort after live measurements showed
+`xhigh` could exceed its 90-second deadline on the constrained three-step food
+plan. Luna keeps image input and structured decisions while targeting lower
+latency and cost than Terra. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
 Set `KENSHI_AGENT_REASONING_EFFORT` to compare `none`, `low`, or a higher
 model-supported effort without editing the profile.
+
+OpenAI Responses calls also receive a mode-aware output ceiling. The base
+single-decision allowance is 4,096 tokens; continuous responses add 2,048 per
+expected plan/patch step, capped at 12,288. The live food phases therefore
+request 10,240 tokens from world, 8,192 from dialogue, and 6,144 from trade.
+This limit includes the model's hidden reasoning tokens as well as visible
+structured output. The condition path itself is a schema enum, so unsupported
+abbreviations are rejected by structured generation rather than only by a
+later executor validator.
 
 OpenRouter is also supported through its OpenAI-compatible Chat API. Add
 `OPENROUTER_API_KEY` to `.env`, select `--planner openrouter`, and optionally set
@@ -232,7 +243,8 @@ the sort with `KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`.
 The planner receives a bounded JSON observation, including planning mode,
 control mode, exact world revision, and only the skills legal in that mode,
 plus a base64 image when enabled. It returns a validated `PlannerDecision` in
-`single_step` or a bounded `PlanEnvelope` in `continuous`; it does not call input
+`single_step`, a bounded `PlanEnvelope` in ordinary `continuous` work, or a
+future-only `PlanPatch` when `active_plan` is present; it does not call input
 APIs itself.
 
 ### Live decision overlay

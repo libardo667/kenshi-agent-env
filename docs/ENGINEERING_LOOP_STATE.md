@@ -98,16 +98,48 @@ Acceptance criteria:
   continuous proof, and all prior tests remain green. The pinned Release x64
   native project builds before live validation is considered.
 
-Implementation status: offline-complete, installed, live-pending. The
-deterministic live-shaped proof performs four actions from two strategic calls
-and confirms the exact 649-cat debit, one-food increase, and pause. All 172
-Python tests, lint, types, compile checks, schema export, and the pinned VS2010
-SP1 Release x64 build pass. The installed protocol `0.4.0` DLL is 182,784 bytes
-with SHA-256
+Implementation status: offline-complete, installed, read-only-live-validated,
+conditional-action-live-pending. The deterministic live-shaped proof performs
+four actions from two strategic calls and confirms the exact 649-cat debit,
+one-food increase, and pause. All 177 Python tests, lint, source types, compile
+checks, schema export, and the pinned VS2010 SP1 Release x64 build pass. The
+installed protocol `0.4.0` DLL is 182,784 bytes with SHA-256
 `64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
 The full prior protocol `0.3.0` plug-in is backed up at
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T193734Z-p6-protocol-0.4`.
-Kenshi has not yet been launched with or exercised against the new DLL.
+Kenshi launched successfully with the new DLL. Fresh protocol `0.4.0`
+telemetry, stable identities, game time, dialogue/tooltip capabilities, strict
+validation, pause, and zero-command baseline were confirmed live. No
+conditional action has yet been dispatched.
+
+Hosted live preflight on 2026-07-23:
+
+- Read-only launch validation passed at telemetry sequence 168. Later
+  observation at sequence 3186 remained fresh, loaded, paused, responsive, at
+  1,000 cats and zero food, with native command sequence zero.
+- Dry run `p6-live-continuous-dry-20260723T1949Z` exposed an unbounded
+  planner-validation error crossing the runtime's own bounded rationale field.
+  The runtime now truncates the safe-stop rationale and preserves a separate
+  bounded diagnostic event; a 20,000-character regression case passes.
+- Dry run `p6-live-continuous-dry-20260723T1955Z` then stopped safely on the
+  90-second `xhigh` hosted-call timeout with no action or native command.
+- Dry run `p6-live-continuous-dry-high-20260723T1956Z` returned in 62.7
+  seconds and stopped safely because the model invented shorthand condition
+  paths and malformed freshness conditions. This was a structured-schema gap,
+  not an action-policy bypass.
+- Hosted live planning now defaults to `medium` reasoning. Direct OpenAI calls
+  receive a deterministic output-token ceiling of 4,096 for one decision,
+  growing by 2,048 per bounded plan step to at most 12,288. The runtime
+  mechanically requests `PlannerDecision`, `PlanEnvelope`, or future-only
+  `PlanPatch` from current planning state.
+- Every supported condition path is now a strict schema enum, so the hosted
+  response cannot invent shorthand paths. `food_procurement_v1` success checks
+  also preserve the exact one-character selection invariant after every
+  action.
+- Repository verification after these changes: 177 tests passed; Ruff passed;
+  mypy passed for all 47 source files; compileall, schema export, diff check,
+  and default doctor passed. The next gate is another zero-action hosted dry
+  response before enabling any live input.
 
 ## Completed milestones
 

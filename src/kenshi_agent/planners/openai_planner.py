@@ -10,17 +10,22 @@ from ..config import PlannerConfig
 from ..models import (
     Observation,
     PlanEnvelope,
-    PlannerDecision,
     PlannerOutput,
-    PlanningMode,
+    PlanPatch,
 )
-from .base import Planner
+from .base import Planner, output_token_budget, structured_output_model
 
 
 class OpenAIPlanner(Planner):
     """Optional vision planner using the OpenAI Responses API and Pydantic output."""
 
-    def __init__(self, config: PlannerConfig, prompt_file: Path) -> None:
+    def __init__(
+        self,
+        config: PlannerConfig,
+        prompt_file: Path,
+        *,
+        max_plan_steps: int = 4,
+    ) -> None:
         try:
             from openai import AsyncOpenAI
         except ImportError as exc:
@@ -30,22 +35,26 @@ class OpenAIPlanner(Planner):
         self.config = config
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI()
+        self.max_plan_steps = max_plan_steps
 
     async def decide(self, observation: Observation) -> PlannerOutput:
-        output_model = (
-            PlanEnvelope
-            if observation.planning_mode == PlanningMode.CONTINUOUS
-            else PlannerDecision
-        )
+        output_model = structured_output_model(observation)
+        if output_model is PlanPatch:
+            request = (
+                "Return one future-only PlanPatch grounded in active_plan and the "
+                "exact world_revision. "
+            )
+        elif output_model is PlanEnvelope:
+            request = (
+                "Return one bounded PlanEnvelope grounded in the exact world_revision. "
+            )
+        else:
+            request = "Choose exactly one next action from this observation. "
         content: list[dict[str, Any]] = [
             {
                 "type": "input_text",
                 "text": (
-                    (
-                        "Return one bounded PlanEnvelope grounded in the exact world_revision. "
-                        if observation.planning_mode == PlanningMode.CONTINUOUS
-                        else "Choose exactly one next action from this observation. "
-                    )
+                    request
                     + f"Return the {output_model.__name__} schema only.\n\n"
                     + observation.planner_payload(max_chars=self.config.max_observation_chars)
                 ),
@@ -70,6 +79,11 @@ class OpenAIPlanner(Planner):
                 input=[{"role": "user", "content": content}],
                 text_format=output_model,
                 reasoning={"effort": self.config.reasoning_effort},
+                max_output_tokens=output_token_budget(
+                    self.config,
+                    observation,
+                    max_plan_steps=self.max_plan_steps,
+                ),
             )
         parsed = response.output_parsed
         if parsed is None:

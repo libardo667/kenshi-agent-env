@@ -71,12 +71,21 @@ class PlannerConfig(ConfigModel):
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "low"
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
+    max_output_tokens_base: int = Field(default=4096, ge=512, le=100000)
+    max_output_tokens_per_plan_step: int = Field(default=2048, ge=256, le=50000)
+    max_output_tokens_ceiling: int = Field(default=12288, ge=768, le=100000)
     include_screenshot: bool = True
     screenshot_detail: Literal["low", "high", "auto"] = "high"
     max_observation_chars: int = Field(default=24000, ge=1000, le=200000)
     openrouter_model: str = "openai/gpt-5.6-luna"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_provider_sort: Literal["latency", "throughput", "price"] = "latency"
+
+    @model_validator(mode="after")
+    def output_token_ceiling_covers_base(self) -> PlannerConfig:
+        if self.max_output_tokens_ceiling < self.max_output_tokens_base:
+            raise ValueError("max_output_tokens_ceiling must cover max_output_tokens_base")
+        return self
 
 
 class MockConfig(ConfigModel):

@@ -56,6 +56,21 @@ option is rejected normally. During a stateful movement option, only a
 future-only patch matching the immutable planner snapshot may be staged, and it
 is revalidated after the option before application.
 
+Hosted structured output follows the same state machine rather than always
+requesting a plan envelope: `single_step` requests `PlannerDecision`, idle
+continuous mode requests `PlanEnvelope`, and an observation with
+`ActivePlanContext` requests `PlanPatch`. The OpenAI request's
+`max_output_tokens` is computed from that expected response complexity using a
+configured base, per-step increment, and ceiling. The current live profile uses
+medium reasoning effort and budgets 10,240/8,192/6,144 tokens for the
+world/dialogue/trade food phases respectively.
+
+`Condition.path` is a closed schema enum containing the field and capability
+vocabulary the evaluator implements. This makes unsupported shorthand visible
+to structured generation. Cross-field rules still remain deterministic code:
+freshness uses `operator=equals` and `expected=true`, target paths carry the
+exact stable target ID, and `exists` omits `expected`.
+
 ## World revisions and causal confirmation
 
 `WorldStateRevision` carries telemetry sequence, frame sequence, capability

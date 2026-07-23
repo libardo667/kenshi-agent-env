@@ -7,6 +7,10 @@
 - Strict Pydantic schemas for telemetry, observations, decisions, bounded plans,
   plan patches, typed conditions, actions, receipts, and memories.
 - Heuristic, scripted, subprocess, OpenAI Responses, and OpenRouter vision planners.
+- Hosted structured output is scheduler-aware: it requests a decision, plan, or
+  future-only patch according to current plan state. OpenAI Responses output
+  tokens use a bounded base-plus-per-step budget, and condition paths are a
+  schema enum rather than unconstrained strings.
 - JSONL event logs, SQLite memory, replay summaries, schema export, and tests.
 - Default-compatible `single_step` and feature-flagged `continuous` schedulers.
   In mock/fake environments, one strategic response can execute multiple
@@ -41,8 +45,9 @@
 - The deterministic live-shaped P6 proof completes approach, dialogue, and
   inspection from one response, then an exact purchase from a second: four
   actions, two strategic calls, exact 649-cat debit, one added food item, and
-  paused postconditions. The pinned `0.4.0` Release x64 DLL builds offline;
-  supervised Kenshi validation is pending.
+  paused postconditions. The exact pinned `0.4.0` Release x64 DLL loaded in
+  Kenshi and emitted strict fresh paused telemetry with the new capabilities;
+  supervised action-chain validation remains pending.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.
