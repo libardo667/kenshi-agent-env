@@ -26,6 +26,10 @@ and game-integration failures.
 - Feature-flagged continuous planning for mock/fake environments: one strategic
   call can authorize a bounded, revision-checked multi-action plan while the
   executor owns branches, retries, budgets, cancellation, and verification.
+- A bounded in-process world-state stream for continuous mode: one observation
+  pump feeds validated revisions, state deltas, transient events, entity
+  lifetimes, subscribers, and command/plan causality without each consumer
+  polling the environment.
 - A Windows client-area screenshot and SendInput controller.
 - Two independent gates before real keyboard or mouse input is allowed.
 - Typed `interface_only` and `native_assisted` control modes, with an additional
@@ -74,9 +78,9 @@ pytest
 kenshi-agent run --config config/default.yaml --mode mock --planner heuristic --steps 40
 ```
 
-The command prints a run directory. Its `events.jsonl` records every observation,
-decision, action receipt, memory write, and termination event. Mock screenshots
-are saved under that run.
+The command prints a run directory. Its `events.jsonl` records observations,
+world-state updates/events, decisions, action receipts, memory writes, and
+termination events. Mock screenshots are saved under that run.
 
 Summarize a run with:
 
@@ -105,6 +109,14 @@ uses the same `ActionGuard` and environment path as `single_step`. A
 postcondition counts only on a later telemetry revision. Changed, unknown,
 unavailable, or stale preconditions cancel the future action instead of being
 treated as false or silently repaired.
+
+One independently owned observation pump supplies telemetry-only updates unless
+a consumer explicitly requests a new visual frame. Its bounded store preserves
+the latest validated snapshot, the last valid visual frame, deltas, transient
+events, nearby-entity lifetimes, active plan/step/command state, and isolated
+subscriber queues. Command receipts carry their command ID plus start and
+canonical completion revisions; an unchanged revision is logged as
+inconclusive rather than progress.
 
 Continuous mode is intentionally restricted to mock and fake event-driven
 environments in this slice. It is not a claim of live Kenshi continuity.
@@ -352,11 +364,14 @@ currently exports:
 - loaded, paused, speed, and money;
 - camera position and center;
 - basic squad identity, selection, life/consciousness state, position, movement
-  speed, and food-item count.
+  speed, and food-item count;
+- bounded nearby-character identity, role flags, faction/disposition evidence,
+  world positions, viewport visibility, and normalized screen positions;
+- current world, inventory, dialogue, and trade screen classification.
 
 It intentionally does not pretend to export fields that have not been validated:
-hunger, wound detail, getting-eaten state, inventory grids, modals, dialogue,
-context menus, current tasks, nearby entities, and faction interpretation
+hunger, wound detail, getting-eaten state, generic inventory grids, dialogue
+option text, context menus, current tasks, and broader faction interpretation
 remain work items.
 
 The same DLL also contains a separately labeled native-assisted vendor-approach
@@ -405,6 +420,8 @@ permit teleporting, stat/money/faction mutation, save/load, or arbitrary game
 methods. Run logs and summaries label the mode so evidence cannot be conflated.
 The rationale and enforcement points are recorded in
 [ADR: Explicit control modes](docs/ADR_CONTROL_MODES.md).
+Continuous-mode revision ownership and its current identity limits are recorded
+in [ADR: Authoritative world-state stream](docs/ADR_WORLD_STATE_STREAM.md).
 
 The Python guard enforces:
 
@@ -439,17 +456,15 @@ then present the result as general play ability.
 
 ## Known limitations
 
-- No real Kenshi build or runtime verification was possible in the environment
-  where this scaffold was produced.
-- The native ABI and field access must be tested against the exact executable,
-  RE_Kenshi release, KenshiLib dependency package, and active mods.
-- Nearby entities and medical detail are not yet exported natively.
+- Existing native build/load and supervised Kenshi evidence is version-specific
+  and predates explicit run-level control-mode labels; it is not a generic
+  compatibility claim.
+- Native stable entity handles and medical detail are not yet exported.
 - UI skills beyond ordinary configurable key macros require calibration and
   screenshot-grounded confirmation.
-- The OpenAI planner is optional and untested against a live game session.
-- Continuous execution currently has no independent observation pump,
-  planner/executor overlap, live movement option, or active patch application;
-  those are later milestones.
+- Hosted vision-planner evidence is limited to supervised narrow live slices.
+- Continuous execution currently has no independent safety supervisor,
+  planner/executor overlap, live movement option, or active patch application.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.

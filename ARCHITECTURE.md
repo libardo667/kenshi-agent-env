@@ -11,8 +11,14 @@ Kenshi process
 
 Python runtime
   ├─ telemetry reader ─────────┐
-  ├─ client-area screenshot ──┼─> Observation
-  ├─ SQLite memory ────────────┘
+  ├─ triggered screenshot ─────┼─> observation pump
+  ├─ SQLite memory ────────────┘          │
+  │                                      v
+  │                            bounded world-state store
+  │                              ├─ latest + deltas/events
+  │                              ├─ entity lifetimes
+  │                              ├─ active plan/command
+  │                              └─ subscriber queues
   ├─ reflex layer (pause/stop only by default)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
   ├─ schema + policy + rate-limit guard
@@ -27,9 +33,38 @@ Every boundary ──> JSONL session log ──> replay and evaluation
 ## Environment contract
 
 `reset()` establishes an episode and returns an observation. `observe()` is
-side-effect free. `step(action)` validates or executes one action, waits for a
-bounded settle interval, and returns a receipt plus the next observation.
-`close()` releases resources without manipulating the game.
+side-effect free and requests a visual frame when capture exists.
+`observe_without_capture()` supplies telemetry without forcing a new visual
+frame. `step(action)` validates or executes one action, waits for a bounded
+settle interval, and returns a receipt plus the next observation. `close()`
+releases resources without manipulating the game.
+
+## Continuous world-state stream
+
+Only feature-flagged continuous mode creates the in-process
+`WorldStateStore`. One cancellable `ObservationPump` reads the environment on a
+configured cadence; consumers subscribe to the store rather than independently
+polling the telemetry file. Publishing is synchronous within the asyncio event
+loop, so validation, registry updates, journal writes, and subscriber fan-out
+are one ordered operation.
+
+The store:
+
+- rejects regressing or state-conflicting revisions and reports telemetry
+  sequence stalls;
+- carries forward the last validated screenshot on telemetry-only updates;
+- bounds snapshot history, semantic deltas, event journal, command history, and
+  subscriber queues;
+- retains transient observation events after the latest snapshot drops them;
+- tracks capability epochs without converting unavailable data into absence;
+- normalizes nearby ordinal IDs into process-local lifetime IDs using observed
+  fingerprint and position evidence, while logging ambiguous matches;
+- owns active plan, step, command ID, and causal start/completion revisions;
+- provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
+
+This is an authoritative Python state stream over the plugin's existing atomic
+latest-snapshot file. It is not a native event transport, and its entity IDs are
+not validated Kenshi object handles. See `docs/ADR_WORLD_STATE_STREAM.md`.
 
 ## Partial observability
 
@@ -41,8 +76,9 @@ could reasonably observe them.
 ## Action hierarchy
 
 Primitives are pause, speed, wait, key, hotkey, cursor move, and click. Skills
-expand into bounded primitive sequences. The LLM chooses intent and one action;
-it does not micromanage input timing. Reflexes may pause or stop, but broad
+expand into bounded primitive sequences. In `single_step` the LLM chooses one
+action; in `continuous` it may propose a bounded typed plan. It never
+micromanages primitive input timing. Reflexes may pause or stop, but broad
 autonomy stays with the planner.
 
 Every run has a typed control mode. `interface_only` is the default and filters

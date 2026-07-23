@@ -37,6 +37,17 @@ read-only: in native-assisted mode its bounded vendor bridge may issue a
 save/load, or arbitrary task mutation. Interface-only actions remain visible
 keyboard/mouse operations through the ordinary UI.
 
+Continuous mode is still blocked for live-labeled environments. In portable
+continuous runs, one observation pump feeds an authoritative bounded store.
+State-changing plan actions receive a command ID and start/completion revision;
+unchanged, regressing, or conflicting state cannot certify progress. Missing
+nearby capability does not become evidence that an entity disappeared.
+
+This stream is prerequisite safety infrastructure, not an independent safety
+supervisor. Until the P3 supervisor exists, there is no claim that a blocked
+strategic planner can be preempted concurrently or that live movement cleanup
+is continuously supervised.
+
 Do not read Kenshi or MyGUI object state from a worker thread. Sample game state
 on a known game/UI thread, copy it into plain data, and only then hand it to
 other threads or files. Use atomic replace for telemetry so the Python reader

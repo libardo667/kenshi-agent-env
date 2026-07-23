@@ -17,6 +17,9 @@
 - `single_step` remains the default. Feature-flagged `continuous` accepts a
   strict bounded `PlanEnvelope` in mock/fake environments only; live-labeled
   environments terminate before a strategic call or action.
+- Continuous mode owns one observation pump and bounded world-state store.
+  Postcondition waits, planner snapshots, command receipts, deltas/events,
+  entity lifetimes, and future subscribers share its canonical revisions.
 
 ## Completed milestones
 
@@ -30,6 +33,9 @@
 - Typed bounded plan graphs, five-valued capability-aware conditions,
   executor-owned causal verification and budgets, lifecycle replay, and a
   deterministic two-action continuous mock proof.
+- One cancellable observation pump, bounded authoritative world-state stream,
+  causal command receipts, transient-event journal, isolated subscribers, and
+  ambiguity-aware portable entity lifetimes.
 
 ## Previous completed slice: explicit control modes
 
@@ -70,7 +76,7 @@ Result: complete in the current worktree. No new action surface was added.
 Interface-only filtering and rejection are enforced independently by the live
 observation/environment boundary and `ActionGuard`.
 
-## Latest completed slice: P1 typed bounded plans
+## Previous completed slice: P1 typed bounded plans
 
 Problem: `PlannerDecision` carried exactly one action and `AgentRuntime` waited
 for a complete planner/action/observation cycle before every next action.
@@ -128,7 +134,85 @@ requires later revisions for postconditions, emits replayable lifecycle and
 transactional budget events, and is deliberately blocked in live-labeled
 environments pending later milestones.
 
+## Latest completed slice: P2 world-state stream and causal waits
+
+Problem: P1 still asks the executor to poll `environment.observe()` directly
+while waiting for a postcondition. There is no single authoritative observation
+stream, bounded event history, subscriber API, or active-command registry, so
+future safety supervision and planner/executor overlap would either race or
+poll the transport independently.
+
+Scope:
+
+- Add one independently running observation pump with explicit start/stop
+  ownership and optional visual-capture requests.
+- Add a bounded world-state store that validates monotonic telemetry/frame/
+  capability revisions, detects duplicates and regressions, preserves the last
+  visual frame across telemetry-only observations, and exposes immutable latest
+  snapshots.
+- Retain bounded state deltas and transient observation events even after they
+  disappear from the latest snapshot.
+- Add a stable nearby-entity registry with explicit observed lifetimes that
+  survives source-ID reordering and closes a lifetime when the entity vanishes.
+- Add bounded subscriber queues and causal `wait_for` APIs that cannot succeed
+  from the starting revision.
+- Track active plan/step and command ID/start/completion revisions in
+  deterministic runtime state.
+- Integrate continuous plan acceptance, pre-action reads, and postcondition
+  waits with the store. Keep `single_step` behavior unchanged.
+
+Non-goals:
+
+- No independent safety supervisor or blocked-planner preemption (P3).
+- No live movement option, cleanup protocol, planner/executor overlap, or active
+  future-step patch application (P4).
+- No stable Kenshi-native character ID claim; the portable registry is an
+  evidence-based continuity layer and exposes ambiguity.
+- No live continuous execution.
+
+Acceptance criteria:
+
+- Duplicate/stalled sequences are observable and regressing revisions are
+  rejected.
+- A causal wait starting at revision `R` never succeeds from `R` or earlier.
+- Transient events remain queryable after the latest observation no longer
+  contains them.
+- Entity identity survives source-ID reordering, while disappearance closes the
+  old lifetime.
+- Multiple subscribers receive the same update without polling the environment.
+- Command completion rejects a mismatched command ID and records causal start/
+  completion revisions.
+- Pump stop/cancellation leaves no task or subscription leak; fake-clock tests
+  remain deterministic.
+- Continuous runtime postconditions use the store, and a planner result that
+  became stale while awaiting the planner is rejected before any action.
+
+Result: complete in commits `c48bc2b` and the following documentation commit.
+Continuous mode now has a single validated stream rather than executor-owned
+transport polling. Raw changes on an unchanged revision cannot become progress,
+transient events and entity lifetimes survive snapshot replacement, and bounded
+subscribers share one ingest path. The default single-step behavior and live
+continuous block remain intact.
+
 ## Current checks
+
+P2 completion verification on 2026-07-23:
+
+- `.venv/bin/python -m pytest -o addopts='' -q`: 129 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src/kenshi_agent`: passed, 43 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `control_mode interface_only` and `planning_mode single_step`.
+- A fresh schema export matched checked-in `schemas/` byte-for-byte, including
+  the new standalone `receipt.schema.json`.
+- Continuous run `p2-final-verified` completed two guarded actions from one
+  strategic call. Its summary reported two causal command receipts, 100% with
+  post-command revisions, one retained transient event, no stream errors,
+  `actions_per_strategic_planner_call: 2.0`, and `control_mode:
+  interface_only`.
+- Single-step seeds 7, 11, and 19 retained the one-day outcomes in 25, 13, and
+  13 actions.
 
 P1 completion verification on 2026-07-23:
 
@@ -163,6 +247,13 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Evidence
 
+- Automated portable evidence for P2 covers duplicate/regressing/conflicting
+  revisions, capability withdrawal, causal wait timeout/cancellation, bounded
+  histories and subscriber overflow, isolated subscriber data, transient-event
+  retention/loss, visual carry-forward, entity ordinal reorder/destruction,
+  same-name identity ambiguity, command mismatch/completion, pump capture and
+  shutdown, stale planner output, causal receipts, and unchanged-revision
+  inconclusive outcomes.
 - Automated portable evidence for the previous control-mode slice:
   - `.venv/bin/python -m pytest -q`: 91 passed.
   - `.venv/bin/ruff check .`: passed.
@@ -181,21 +272,26 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Known risks and deferred debt
 
-- Native command acknowledgement lacks causal command IDs and revision fences.
-- Telemetry remains latest-snapshot polling rather than an event-driven store.
+- Native bridge acknowledgement still lacks command IDs and revision fences;
+  current command causality is owned inside the portable Python runtime.
+- The plugin transport remains an atomically replaced latest snapshot. One
+  Python pump now ingests it into an event stream, but this is not native event
+  transport.
 - Strategic planning does not yet overlap execution; active plan patches are
   parsed/versioned but not applied.
 - Continuous live execution and stateful cancellable movement options are
   intentionally blocked.
-- Nearby and squad ordinal IDs are unstable.
+- Raw nearby and squad ordinal IDs remain unstable. The portable nearby
+  registry normalizes observed lifetimes but does not prove native identity.
 - Observation payload truncation can produce malformed JSON.
 - Several declared config fields remain behaviorally unused.
 - There is no CI workflow or Python lockfile.
 
 ## Ordered next candidates
 
-1. P2: monotonic world-state revisions, causal waits, event journal, and
-   independent observation pump.
-2. P3: independent safety supervisor that preempts a blocked planner.
-3. P4: cancellable stateful options, planner/executor overlap, and optimistic
-   future-step patch application.
+1. P3: independent safety supervisor that preempts a blocked planner and owns
+   idempotent safe-pause cleanup.
+2. P4: cancellable stateful options, starting with bounded movement, plus
+   planner/executor overlap and optimistic future-step patch application.
+3. P5: native bridge command acknowledgements and validated stable-handle
+   generations without conflating them with the portable lifetime registry.
