@@ -4,10 +4,14 @@
 
 - Deterministic mock Kenshi-like environment implementing reset, observe, step,
   and close.
-- Strict Pydantic schemas for telemetry, observations, decisions, actions,
-  receipts, and memories.
+- Strict Pydantic schemas for telemetry, observations, decisions, bounded plans,
+  plan patches, typed conditions, actions, receipts, and memories.
 - Heuristic, scripted, subprocess, OpenAI Responses, and OpenRouter vision planners.
 - JSONL event logs, SQLite memory, replay summaries, schema export, and tests.
+- Default-compatible `single_step` and feature-flagged `continuous` schedulers.
+  In mock/fake environments, one strategic response can execute multiple
+  guarded actions with causal postconditions, immediate precondition rechecks,
+  bounded branches/retries/budgets, lifecycle replay, and plan metrics.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.
@@ -85,5 +89,7 @@ new interface-only evidence.
 - Omniscient world-state extraction.
 - Automatic save reloads or hidden reset commands.
 - Unattended enabling of real keyboard/mouse injection.
-- The feature-flagged continuous planner/executor described in the engineering
-  loop prompt; `single_step` remains the current planning mode.
+- Live continuous execution, an independent observation pump, planner/executor
+  overlap, active plan-patch application, and cancellable live movement options.
+  `single_step` remains the default and continuous P1 is restricted to
+  mock/fake environments.

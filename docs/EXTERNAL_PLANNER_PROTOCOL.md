@@ -12,8 +12,13 @@ child process.
 
 ## Response
 
-The child writes one `PlannerDecision` JSON object to stdout and exits with code
-zero. Diagnostic logs belong on stderr. If several stdout lines are written, the
+The child writes one JSON object to stdout and exits with code zero:
+
+- `planning_mode: single_step` requires `PlannerDecision`.
+- `planning_mode: continuous` requires a bounded `PlanEnvelope` tied to the
+  observation's exact `world_revision`.
+
+Diagnostic logs belong on stderr. If several stdout lines are written, the
 runtime parses the final non-empty line.
 
 Example:
@@ -31,6 +36,18 @@ Example:
 
 The rationale must be a concise decision basis, not private chain-of-thought.
 
+For continuous output, use `schemas/plan.schema.json`. Every plan is bounded and
+acyclic, binds its control mode and causal revision, declares typed assumptions,
+preconditions and postconditions, and carries action, wall-clock, game-time, and
+risk budgets. The executor—not the child process—owns active state, retries,
+branches, budget accounting, condition evaluation, cancellation, and
+postcondition polling. A snapshot at or before the action-start revision cannot
+confirm success.
+
+The current subprocess adapter accepts a full `PlanEnvelope`, not an active-plan
+patch. `PlanPatch` is schema-exported for optimistic-concurrency compatibility,
+but patch application is deferred.
+
 ## Errors
 
 A timeout, non-zero exit code, empty stdout, or schema violation becomes a
@@ -41,4 +58,5 @@ attempting to repair arbitrary output silently.
 
 When process startup becomes material, add a separate planner implementation
 using localhost HTTP, a named pipe, or stdio JSON-RPC. Preserve the same
-`Observation` and `PlannerDecision` schemas so evaluation remains comparable.
+`Observation`, `PlannerDecision`, and `PlanEnvelope` schemas so evaluation
+remains comparable.
