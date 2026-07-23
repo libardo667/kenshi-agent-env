@@ -21,6 +21,11 @@
 - Initial read-only field validation: schema-valid two-hertz snapshots, fresh
   UTC timestamps, one-character squad identity/selection, money, camera and
   character position, movement speed, pause, and speed multiplier.
+- Nearby-character and UI telemetry: names, factions, dispositions, world
+  positions, trader capability, current world/inventory/dialogue/trade screen,
+  and game-rendered viewport visibility with normalized screen positions. Live
+  validation placed a visible goat at the matching upper-left screenshot point;
+  the signal deliberately does not claim geometry-occlusion or clickability.
 - Windows live dry-run validation: a bounded heuristic episode captured five
   isolated 1920x1080 Kenshi frames, paired them with fresh telemetry, logged
   four proposed actions, and withheld every input action at the safety gate.
@@ -61,6 +66,8 @@
 - Broader hosted vision-planner behavior beyond the safe movement burn-in.
 - Comparative Luna/OpenRouter latency and action-quality trials from a fixed save.
 - Repeated click-drift testing across resolutions, window modes, and UI scales.
+- Screen-position validation across camera rotations, zoom levels, interiors,
+  and partially occluded characters.
 
 ## Deliberately not implemented
 

@@ -54,6 +54,7 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "disposition": "neutral",
             "distance": 12.5,
             "position": {"x": -100.0, "y": 25.0, "z": 80.0},
+            "screen_position": {"x": 0.45, "y": 0.35},
             "conscious": True,
         }
     ]
@@ -65,4 +66,6 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
     assert result.snapshot.nearby_entities[0].kind == "trader"
     assert result.snapshot.nearby_entities[0].position is not None
     assert result.snapshot.nearby_entities[0].position.x == -100.0
+    assert result.snapshot.nearby_entities[0].screen_position is not None
+    assert result.snapshot.nearby_entities[0].screen_position.x == 0.45
     assert result.snapshot.nearby_entities[0].visible is None

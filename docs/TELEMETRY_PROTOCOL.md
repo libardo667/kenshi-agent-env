@@ -47,11 +47,17 @@ squad.health
 squad.inventory
 ui.modal
 ui.dialogue
-nearby.visible_entities
+nearby.characters
 ```
 
 Capabilities describe what the plugin can currently observe, not what exists in
 the world.
+
+`nearby.characters` is limited to the plugin's bounded spatial query around the
+selected character. An entity with `visible: true` is rendered inside the
+current camera viewport and has a normalized `screen_position`. It may still be
+hidden by a roof, wall, character, or other geometry, so this is not proof that
+a click at that point will reach the character.
 
 ## Identity
 

@@ -1,6 +1,7 @@
 #include <Debug.h>
 #include <core/Functions.h>
 #include <kenshi/Character.h>
+#include <kenshi/CameraClass.h>
 #include <kenshi/Faction.h>
 #include <kenshi/GameWorld.h>
 #include <kenshi/Globals.h>
@@ -8,6 +9,7 @@
 #include <kenshi/RootObject.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
+#include <kenshi/util/UtilityT.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -94,6 +96,24 @@ namespace
         json << "{\"x\":" << vector.x
              << ",\"y\":" << vector.y
              << ",\"z\":" << vector.z << "}";
+    }
+
+    bool TryGetScreenPosition(
+        PlayerInterface* player,
+        const Ogre::Vector3& position,
+        float& x,
+        float& y)
+    {
+        CameraClass* cameraClass = player != NULL ? player->getCamera() : NULL;
+        Ogre::Camera* camera = cameraClass != NULL ? cameraClass->camera : NULL;
+        if (camera == NULL)
+            return false;
+
+        UtilityT utility;
+        utility.cachedViewMatrix = camera->getViewMatrix();
+        if (!utility.worldToScreenRel(position, x, y))
+            return false;
+        return x >= 0.0f && x <= 1.0f && y >= 0.0f && y <= 1.0f;
     }
 
     const char* GetDisposition(Character* observer, Character* target)
@@ -248,6 +268,11 @@ namespace
 
                 const Faction* faction = target->getFaction();
                 const Ogre::Vector3 targetPosition = target->getPosition();
+                float screenX = 0.0f;
+                float screenY = 0.0f;
+                const bool hasScreenPosition =
+                    target->isOnScreen && target->getVisible() &&
+                    TryGetScreenPosition(player, targetPosition, screenX, screenY);
                 json << "{";
                 json << "\"id\":\"nearby:" << nearbyIndex++ << "\",";
                 json << "\"name\":\"" << JsonEscape(target->getName()) << "\",";
@@ -261,6 +286,12 @@ namespace
                 json << "\"position\":";
                 AppendVector3(json, targetPosition);
                 json << ",";
+                if (hasScreenPosition)
+                {
+                    json << "\"screen_position\":{\"x\":" << screenX
+                         << ",\"y\":" << screenY << "},";
+                }
+                json << "\"visible\":" << JsonBool(hasScreenPosition) << ",";
                 json << "\"conscious\":" << JsonBool(!target->isUnconcious());
                 json << "}";
             }
@@ -268,8 +299,9 @@ namespace
         json << "],";
         json << "\"warnings\":["
              << "\"Partial telemetry only: hunger, wounds, getting-eaten state, inventory "
-             << "detail, and on-screen visibility are not yet exported. Nearby entities "
-             << "are spatially close, not necessarily visible in the current camera.\""
+             << "detail, and click-target occlusion are not yet exported. A visible nearby "
+             << "entity is rendered inside the current viewport, but geometry can still "
+             << "occlude it or intercept a click.\""
              << "]";
         json << "}";
         return json.str();

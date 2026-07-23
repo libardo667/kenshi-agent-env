@@ -99,6 +99,7 @@ class NearbyEntity(StrictModel):
     disposition: Disposition = Disposition.UNKNOWN
     distance: float | None = None
     position: Vec3 | None = None
+    screen_position: Vec2 | None = None
     visible: bool | None = None
     conscious: bool | None = None
 
