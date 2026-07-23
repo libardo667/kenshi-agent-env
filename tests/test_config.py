@@ -81,6 +81,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.planner.openrouter_provider_sort == "latency"
     assert config.controls.alt_tab_after_input
     assert config.controls.pause_skill == "pause_game"
+    assert config.controls.unpause_skill == "unpause_game"
     assert config.controls.speed_keys == {1: "f2", 2: "f3", 3: "f4"}
     assert config.controls.pointer_mode == "relative"
     assert config.controls.relative_pointer_max_step_pixels == 12

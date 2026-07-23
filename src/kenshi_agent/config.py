@@ -76,6 +76,7 @@ class CaptureConfig(ConfigModel):
 class ControlsConfig(ConfigModel):
     pause_key: str = "space"
     pause_skill: str | None = Field(default=None, min_length=1, max_length=80)
+    unpause_skill: str | None = Field(default=None, min_length=1, max_length=80)
     speed_keys: dict[int, str] = Field(default_factory=lambda: {1: "f2", 2: "f3", 3: "f4"})
     focus_before_input: bool = True
     post_input_delay_seconds: float = Field(default=0.08, ge=0.0, le=2.0)

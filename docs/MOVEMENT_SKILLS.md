@@ -60,6 +60,13 @@ confirm both the unpause and final re-pause. All screenshot analysis and model
 planning happen while paused. Model-selected direct unpause is blocked, so API
 latency never becomes blind gameplay time.
 
+Kenshi's bottom transport uses separate controls rather than a single toggle.
+The active 1920x1080 profile resumes with the Play button at normalized
+`(0.792, 0.723)` and stops with the Pause button at `(0.765, 0.723)`. The
+executor selects the control from the requested state, and tests model both
+buttons as idempotent. This matters during failure cleanup: clicking Pause on
+an already paused game remains paused instead of accidentally resuming it.
+
 The map skill closes the map before advancing. F12 is checked during each pulse;
 if pressed, the pulse ends early and the executor re-pauses before reporting the
 emergency stop. If re-pause cannot be confirmed, the episode terminates with an

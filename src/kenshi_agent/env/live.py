@@ -230,9 +230,9 @@ class LiveEnvironment(AgentEnvironment):
                 )
             if paused is None:
                 raise RuntimeError(
-                    "Refusing to toggle Kenshi pause because the current pause state is unknown."
+                    "Refusing to change Kenshi pause because the current pause state is unknown."
                 )
-            primitive_count, pause_control = await self._execute_pause_toggle()
+            primitive_count, pause_control = await self._execute_pause_request(action.paused)
             return ActionReceipt(
                 action=action,
                 accepted=True,
@@ -306,27 +306,36 @@ class LiveEnvironment(AgentEnvironment):
             messages.append(primitive_receipt.message)
         return primitive_count, messages
 
-    def _pause_primitives(self) -> tuple[list[PrimitiveInputAction], str]:
-        if self.controls_config.pause_skill is None:
+    def _pause_primitives(self, paused: bool) -> tuple[list[PrimitiveInputAction], str]:
+        skill_name = (
+            self.controls_config.pause_skill
+            if paused
+            else self.controls_config.unpause_skill or self.controls_config.pause_skill
+        )
+        if skill_name is None:
             return [KeyAction(key=self.controls_config.pause_key)], (
                 f"pause key {self.controls_config.pause_key!r}"
             )
-        skill_name = self.controls_config.pause_skill
         primitives = self.macros.expand(SkillAction(name=skill_name))
         if not primitives or not all(
             isinstance(item, (KeyAction, ClickAction)) for item in primitives
         ):
             raise RuntimeError(
-                f"Configured pause skill {skill_name!r} must contain only key or click actions."
+                f"Configured pause control {skill_name!r} must contain only key or click actions."
             )
         pause_primitives: list[PrimitiveInputAction] = []
         pause_primitives.extend(
             item for item in primitives if isinstance(item, (KeyAction, ClickAction))
         )
-        return pause_primitives, f"pause skill {skill_name!r}"
+        return pause_primitives, f"pause control {skill_name!r}"
 
-    async def _execute_pause_toggle(self, *, safety: bool = False) -> tuple[int, str]:
-        primitives, description = self._pause_primitives()
+    async def _execute_pause_request(
+        self,
+        paused: bool,
+        *,
+        safety: bool = False,
+    ) -> tuple[int, str]:
+        primitives, description = self._pause_primitives(paused)
         primitive_count = 0
         for primitive in primitives:
             execute = self.controller.execute_safety if safety else self.controller.execute
@@ -357,7 +366,7 @@ class LiveEnvironment(AgentEnvironment):
         user_interrupted = False
         auto_paused = False
         try:
-            unpause_count, _ = await self._execute_pause_toggle()
+            unpause_count, _ = await self._execute_pause_request(False)
             unpause_sent = True
             primitive_count += unpause_count
             if not await self._wait_for_pause_state(False):
@@ -383,11 +392,11 @@ class LiveEnvironment(AgentEnvironment):
                 await asyncio.sleep(min(0.1, remaining))
         finally:
             if unpause_sent:
-                pause_count, _ = await self._execute_pause_toggle(safety=True)
+                pause_count, _ = await self._execute_pause_request(True, safety=True)
                 primitive_count += pause_count
                 if not await self._wait_for_pause_state(True):
                     if self._fresh_pause_state() is False:
-                        retry_count, _ = await self._execute_pause_toggle(safety=True)
+                        retry_count, _ = await self._execute_pause_request(True, safety=True)
                         primitive_count += retry_count
                     if not await self._wait_for_pause_state(True):
                         raise RuntimeError(
