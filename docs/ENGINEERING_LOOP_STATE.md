@@ -98,13 +98,16 @@ Acceptance criteria:
   continuous proof, and all prior tests remain green. The pinned Release x64
   native project builds before live validation is considered.
 
-Implementation status: offline-complete, live-pending. The deterministic
-live-shaped proof performs four actions from two strategic calls and confirms
-the exact 649-cat debit, one-food increase, and pause. All 172 Python tests,
-lint, types, compile checks, schema export, and the pinned VS2010 SP1 Release x64
-build pass. The built protocol `0.4.0` DLL is 182,784 bytes with SHA-256
+Implementation status: offline-complete, installed, live-pending. The
+deterministic live-shaped proof performs four actions from two strategic calls
+and confirms the exact 649-cat debit, one-food increase, and pause. All 172
+Python tests, lint, types, compile checks, schema export, and the pinned VS2010
+SP1 Release x64 build pass. The installed protocol `0.4.0` DLL is 182,784 bytes
+with SHA-256
 `64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
-It has not yet been installed or exercised in Kenshi.
+The full prior protocol `0.3.0` plug-in is backed up at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T193734Z-p6-protocol-0.4`.
+Kenshi has not yet been launched with or exercised against the new DLL.
 
 ## Completed milestones
 

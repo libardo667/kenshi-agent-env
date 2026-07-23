@@ -265,8 +265,12 @@ Evidence from the supervised 2026-07-23 run:
 - [x] The pinned VS2010 SP1 Release x64 project builds with the required MyGUI
       import library. Offline DLL is 182,784 bytes, SHA-256
       `64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
-- [ ] Back up the installed protocol `0.3.0` DLL, install that exact `0.4.0`
-      artifact, and verify the installed hash before launch.
+- [x] Back up the full installed protocol `0.3.0` plug-in at
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T193734Z-p6-protocol-0.4`,
+      install that exact `0.4.0` artifact, and verify the installed hash before
+      launch. The backup DLL is 175,104 bytes with SHA-256
+      `9bbeea1826216365c5492ee94db4b692848a105fbb36bc794b02723e953a293b`;
+      the installed DLL is 182,784 bytes with the pinned `0.4.0` hash above.
 - [ ] Launch Kenshi, confirm plugin `ready`, strict fresh protocol `0.4.0`,
       increasing sequence, authoritative `game.time`, and paused state.
 - [ ] Confirm closed dialogue reports null target/options; open exact Barman
