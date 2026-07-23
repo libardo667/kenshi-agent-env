@@ -52,7 +52,6 @@ namespace
     const char* PROTOCOL_VERSION = "0.5.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
-    typedef void (*MyGUIFrameEventFunction)(MyGUI::Gui*, float);
     typedef void (*GameWorldResetFunction)(GameWorld*);
     typedef ShopTrader* (*ShopTraderConstructorFunction)(ShopTrader*, Character*);
     typedef void (*ShopTraderDestructorFunction)(ShopTrader*);
@@ -101,7 +100,6 @@ namespace
     };
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
-    MyGUIFrameEventFunction g_originalMyGUIFrameEvent = NULL;
     GameWorldResetFunction g_originalGameWorldReset = NULL;
     ShopTraderConstructorFunction g_originalShopTraderConstructor = NULL;
     ShopTraderDestructorFunction g_originalShopTraderDestructor = NULL;
@@ -1678,9 +1676,9 @@ namespace
         g_approachVendorHotkeyWasDown = approachVendorHotkeyDown;
     }
 
-    void MyGUIFrameEventHook(MyGUI::Gui* myGui, float elapsed)
+    void MyGUIFrameSample(float elapsed)
     {
-        g_originalMyGUIFrameEvent(myGui, elapsed);
+        (void)elapsed;
         const DWORD now = GetTickCount();
         if (now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
         {
@@ -1701,26 +1699,17 @@ __declspec(dllexport) void startPlugin()
         "starting",
         "Installing title/game UI telemetry and ShopTrader lifecycle hooks.");
 
-    HMODULE myGuiModule = GetModuleHandleW(L"MyGUIEngine_x64.dll");
-    FARPROC myGuiFrameEvent =
-        myGuiModule != NULL
-            ? GetProcAddress(
-                  myGuiModule,
-                  "?frameEvent@Gui@MyGUI@@QEAAXM@Z")
-            : NULL;
-    const KenshiLib::HookStatus myGuiFrameStatus =
-        myGuiFrameEvent != NULL
-            ? KenshiLib::AddHook(
-                  myGuiFrameEvent,
-                  MyGUIFrameEventHook,
-                  &g_originalMyGUIFrameEvent)
-            : KenshiLib::FAIL;
-    if (myGuiFrameStatus != KenshiLib::SUCCESS)
+    MyGUI::Gui* myGui = MyGUI::Gui::getInstancePtr();
+    if (myGui == NULL)
     {
-        ErrorLog("KenshiAgentTelemetry: could not hook MyGUI::Gui::frameEvent.");
-        WriteStatus("error", "Could not hook MyGUI::Gui::frameEvent.");
+        ErrorLog(
+            "KenshiAgentTelemetry: MyGUI instance unavailable during plug-in startup.");
+        WriteStatus(
+            "error",
+            "MyGUI instance unavailable; title/game telemetry was not installed.");
         return;
     }
+    myGui->eventFrameStart += MyGUI::newDelegate(MyGUIFrameSample);
 
     const KenshiLib::HookStatus updateStatus = KenshiLib::AddHook(
         KenshiLib::GetRealAddress(&PlayerInterface::update),
@@ -1757,7 +1746,8 @@ __declspec(dllexport) void startPlugin()
             "exact session-scoped shop-owner telemetry disabled.");
     }
 
-    DebugLog("KenshiAgentTelemetry: title/game UI telemetry hook installed.");
+    DebugLog(
+        "KenshiAgentTelemetry: title/game UI telemetry event subscriber installed.");
     WriteStatus(
         "ready",
         g_shopTraderRegistryReady

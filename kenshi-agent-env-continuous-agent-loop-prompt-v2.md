@@ -15,10 +15,14 @@ Do not treat this as prompt tuning. Do not regress toward “call the LLM betwee
 ## Current audited starting point
 
 The checkpoint immediately before this prompt iteration is `main` at commit
-`8938faececb164d4f65a4e6c81ba60f292638fc1`
-(`Make live launch and control handoff semantic`). It incorporates the earlier
-P6 food-policy work plus the 2026-07-23 renderer crash, resolution/focus
-incident, semantic-launch recovery, and explicit human/agent ownership slice.
+`47615a4c78d78ead3997836cfe68bb5ba7ed7afe`
+(`Sample semantic UI before save load`). It incorporates the earlier P6
+food-policy work plus the 2026-07-23 renderer crash, resolution/focus incident,
+semantic-launch recovery, explicit human/agent ownership slice, and the first
+title-telemetry lifecycle correction. The direct MyGUI function detour in that
+checkpoint was rejected by the subsequent live crash evidence and is replaced
+in the current tree by the supported event-subscription candidate described
+below.
 Re-verify every material statement against the current checkout, tests, run
 artifacts, installed files, and `docs/ENGINEERING_LOOP_STATE.md` before relying
 on it.
@@ -63,7 +67,7 @@ on it.
 
 ### Current evidence boundary
 
-- Repository documentation records 209 passing tests, Ruff, mypy across 48
+- Repository documentation records 211 passing tests, Ruff, mypy across 48
   source files, compile checks, schema parity, doctor, three deterministic
   single-step seeds, and a portable two-step continuous proof. Re-run the
   available gates; do not inherit those numbers as a pass.
@@ -78,13 +82,28 @@ on it.
 - That run then aborted on a reported human-input event before dialogue, trade,
   inspection, or purchase. Input attribution and restoration were subsequently
   repaired, but the full conditional chain remains unproven.
-- The 185,344-byte protocol `0.5.0` DLL
+- The original 185,344-byte protocol `0.5.0` DLL
   (`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`)
-  is installed while Kenshi is stopped. The replaced `0.4.0` DLL is preserved
+  is restored and installed while Kenshi is stopped. The replaced `0.4.0` DLL is preserved
   under `runs/p0-semantic-launch-preinstall-20260723T2208Z/`.
-- **No Windows process has loaded protocol `0.5.0`; its semantic controls,
-  multi-resolution startup behavior, and ownership countdown have only
-  portable/build evidence.**
+- The first 1920x1080 `0.5.0` load reached a responsive title screen without
+  the optional RE_Kenshi panel. Plug-in status was fresh, but telemetry stayed
+  on the previous session because `PlayerInterface::update` does not exist
+  before a save loads. The launcher timed out with zero title pointer input.
+- A 186,368-byte direct-MyGUI-detour build
+  (`ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`)
+  then crashed during startup and is rejected. Its dump, exact DLL/PDB, logs,
+  configs, and screenshot are under
+  `runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`; the reporter
+  was not submitted, and the original DLL was restored.
+- The current uninstalled candidate subscribes to MyGUI's supported
+  `eventFrameStart`, retains loaded-game native-command monitoring on
+  `PlayerInterface::update`, fails closed when MyGUI is unavailable, and makes
+  the launcher stop immediately on fresh plug-in error or Crash Reporter. Its
+  pinned Release x64 DLL is 189,440 bytes with SHA-256
+  `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
+- Semantic controls, multi-resolution startup, and the ownership countdown
+  remain unproven live.
 - The current portable architecture demonstrates continuous chain execution and portable planner/executor overlap. It does not yet prove general live concurrent agency.
 
 ### Important open correctness and maturity issues
@@ -107,15 +126,16 @@ on it.
 8. No CI workflow or reproducible Python lockfile was present at the audited point.
 9. Provider-specific OpenAI schema compatibility tests still depend on the optional SDK and must remain isolated from the dependency-free core baseline.
 10. Several new components are large. Refactor only when it simplifies a tested invariant; do not replace working architecture with broad aesthetic churn.
-11. The latest protocol/launcher/ownership candidate has not been loaded. A
-    prior 1280x720 test proved the old fixed startup clicks were wrong and the
-    old launcher could repeatedly reclaim focus. The replacement has portable
-    evidence only.
+11. The supported-event protocol/launcher/ownership candidate has not been
+    loaded. A prior 1280x720 test proved the old fixed startup clicks were wrong
+    and the old launcher could repeatedly reclaim focus. The first semantic
+    title trial failed closed on stale title telemetry; the following direct
+    third-party function detour crashed and is permanently rejected.
 12. Kenshi reproduced a `BAD STUFF` out-of-video-memory/device-reset failure
     under shared-memory pressure. Low textures, disabled reflections/shadows,
     disabled fast zone hopping, and view distance 2500 are installed, but the
-    reduced profile and protocol `0.5.0` still lack a fresh supervised smoke
-    and longer stability soak.
+    reduced profile and current supported-event protocol candidate still lack a
+    successful supervised smoke and longer stability soak.
 
 The audit’s priority is not automatically the current priority. The ledger, working tree, failing tests, and any active incident take precedence.
 
@@ -398,32 +418,39 @@ then, keep Kenshi stopped and choose the strongest offline slice.
 Required sequence:
 
 1. Confirm Kenshi is stopped, the current commit/tree is understood, the
-   installed protocol `0.5.0` hash matches the staged build, the replaced
-   `0.4.0` rollback exists, `OpenSettingOnStart` is false, and all intended
-   reduced graphics settings persisted.
-2. Launch once at 1920x1080. Verify the native video dialog advances from one
+   original `0.5.0` rollback and replaced `0.4.0` rollback both exist, the
+   restored installed hash is
+   `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`,
+   the supported-event build hash is
+   `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`,
+   `OpenSettingOnStart` is false, and all intended reduced graphics settings
+   persisted.
+2. After a fresh explicit live boundary, back up the restored package, install
+   that exact supported-event build while Kenshi is stopped, and verify byte
+   identity. Never reinstall the rejected direct-detour DLL.
+3. Launch once at 1920x1080. Verify the native video dialog advances from one
    Enter action, the RE_Kenshi panel does not appear, protocol `0.5.0` reaches
    fresh advancing telemetry, and `ui.visible_controls` exposes a unique
    configured title/save target before each semantic click.
-3. Confirm the current semantic label and bounds are re-read inside the input
+4. Confirm the current semantic label and bounds are re-read inside the input
    lease and the loaded game reaches a causally confirmed paused state.
-4. Record client size, control labels/bounds, telemetry/protocol/identity
+5. Record client size, control labels/bounds, telemetry/protocol/identity
    sequences, installed settings, process memory, GPU-local usage, host memory
    headroom, logs, and any operator intervention.
-5. Exercise launcher interruption deliberately once. New human input must
+6. Exercise launcher interruption deliberately once. New human input must
    permanently cancel the remaining startup sequence, never retry focus, and
    send at most one coordinate-independent safety pause only when fresh
    telemetry proves a loaded unpaused game.
-6. At one alternate client resolution, repeat the semantic startup boundary.
+7. At one alternate client resolution, repeat the semantic startup boundary.
    Legacy calibrated gameplay pointer skills must remain blocked; only
    semantic startup controls and coordinate-independent keys may act. Restore
    the intended profile afterward and verify it persisted.
-7. In a separately bounded safe continuous run, exercise
+8. In a separately bounded safe continuous run, exercise
    `human_control → takeover_pending → agent_active`, one countdown reset from
    new input, and F12 `disarmed`. Prove the cancelled plan never resumes and
    any post-countdown planner call starts from a newer validated paused
    revision.
-8. Inspect `kenshi.log`, RE_Kenshi/plugin logs, Windows Application events,
+9. Inspect `kenshi.log`, RE_Kenshi/plugin logs, Windows Application events,
    renderer/device-reset evidence, and the BAD STUFF surface before closing the
    gate.
 
@@ -432,6 +459,8 @@ Acceptance criteria:
 - No startup pointer coordinate is hard-coded or inferred from resolution.
 - Duplicate, missing, stale, changed, disabled, or hidden semantic targets
   produce zero pointer input.
+- Fresh native plug-in `error` state or a Crash Reporter title terminates the
+  launcher immediately with no additional input.
 - 1920x1080 and the chosen alternate resolution both reach the expected title/
   save transition from current semantic bounds; this proves the startup path,
   not general resolution support for gameplay macros.

@@ -55,6 +55,11 @@ class InputController(ABC):
     def input_lease_wait_seconds(self) -> float:
         return 0.0
 
+    def target_window_title(self) -> str | None:
+        """Return the current target-window title when the backend can read it."""
+
+        return None
+
     @abstractmethod
     def focus_window(self) -> None:
         raise NotImplementedError
