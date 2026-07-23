@@ -126,6 +126,14 @@ budgets. The ordinary guard and precondition checks still run before every
 replacement action. Any stale, mismatched, wrong-type, invalid, or late advisory
 is logged and discarded.
 
+Both hosted planners select their structured output type mechanically:
+`PlannerDecision` for `single_step`, `PlanEnvelope` for an idle continuous
+scheduler, and `PlanPatch` whenever `ActivePlanContext` is present. The
+Responses planner also applies a configured base-plus-per-step output-token
+budget, capped independently of the strategic timeout. Condition paths are a
+closed schema enum; semantic shape, capabilities, revision binding, topology,
+and action policy remain application-validated after structured decoding.
+
 This is intentionally an adapter around the proven movement macro, not a
 rewrite of live movement control or a general option framework. Live continuous
 mode is disabled by default; `food_procurement_v1` is the only policy that may

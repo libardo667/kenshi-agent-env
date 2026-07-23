@@ -224,6 +224,13 @@ def food_procurement_policy_errors(
             path="telemetry.game.paused",
             expected=True,
         )
+        _requires(
+            errors,
+            step.success_conditions,
+            label=step.step_id,
+            path="telemetry.ui.selected_character_count",
+            expected=1,
+        )
 
         if action.name == "approach_confirmed_vendor":
             _requires(

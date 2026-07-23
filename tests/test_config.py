@@ -107,7 +107,10 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "buy_inspected_shop_item",
     }
     assert config.runtime.max_steps == 30
-    assert config.planner.reasoning_effort == "xhigh"
+    assert config.planner.reasoning_effort == "medium"
+    assert config.planner.max_output_tokens_base == 4096
+    assert config.planner.max_output_tokens_per_plan_step == 2048
+    assert config.planner.max_output_tokens_ceiling == 12288
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.openrouter_provider_sort == "latency"
     assert config.controls.alt_tab_after_input

@@ -209,6 +209,7 @@ def procurement_plan(current: Observation) -> PlanEnvelope:
         ],
         success_conditions=[
             paused,
+            selected_one,
             field("telemetry.ui.dialogue_target_id", TARGET_ID),
         ],
         on_success="show_goods",
@@ -224,6 +225,7 @@ def procurement_plan(current: Observation) -> PlanEnvelope:
         ],
         success_conditions=[
             paused,
+            selected_one,
             field("telemetry.ui.active_screen", "trade"),
             field("telemetry.active_shop_trader_count", 1),
             field("target.shop_inventory_owner", True, target_id=TARGET_ID),
@@ -245,6 +247,7 @@ def procurement_plan(current: Observation) -> PlanEnvelope:
         ],
         success_conditions=[
             paused,
+            selected_one,
             field("telemetry.ui.tooltip_visible", True),
             field("telemetry.active_shop_trader_count", 1),
             field("target.shop_inventory_owner", True, target_id=TARGET_ID),
@@ -310,6 +313,7 @@ def purchase_plan(current: Observation) -> PlanEnvelope:
         ],
         success_conditions=[
             field("telemetry.game.paused", True),
+            field("telemetry.ui.selected_character_count", 1),
             field("telemetry.game.money", 351),
             field("selected.food_items", 1),
         ],
@@ -453,7 +457,7 @@ def test_food_policy_accepts_only_exact_tooltip_bound_purchase_delta() -> None:
     validate_plan(purchase_plan(current), current, planning_config(), macros())
 
     unsafe = purchase_plan(current)
-    unsafe.steps[0].success_conditions[1] = field("telemetry.game.money", 350)
+    unsafe.steps[0].success_conditions[2] = field("telemetry.game.money", 350)
     with pytest.raises(PlanValidationError, match="exact money delta"):
         validate_plan(unsafe, current, planning_config(), macros())
 

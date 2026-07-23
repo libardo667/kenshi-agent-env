@@ -4,6 +4,7 @@ from ..models import (
     Condition,
     ConditionKind,
     ConditionOperator,
+    ConditionPath,
     IdempotencyPolicy,
     MemoryKind,
     MemoryWrite,
@@ -193,14 +194,14 @@ class HeuristicPlanner(Planner):
                     action=PauseAction(paused=False),
                     preconditions=[
                         cls._field_condition(
-                            "telemetry.game.paused",
+                            ConditionPath.TELEMETRY_GAME_PAUSED,
                             True,
                             "game.pause",
                         )
                     ],
                     success_conditions=[
                         cls._field_condition(
-                            "telemetry.game.paused",
+                            ConditionPath.TELEMETRY_GAME_PAUSED,
                             False,
                             "game.pause",
                         )
@@ -222,14 +223,14 @@ class HeuristicPlanner(Planner):
                     action=SetSpeedAction(speed=3),
                     preconditions=[
                         cls._field_condition(
-                            "telemetry.game.paused",
+                            ConditionPath.TELEMETRY_GAME_PAUSED,
                             False,
                             "game.pause",
                         )
                     ],
                     success_conditions=[
                         cls._field_condition(
-                            "telemetry.game.speed_multiplier",
+                            ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
                             3.0,
                             "game.speed",
                         )
@@ -270,7 +271,7 @@ class HeuristicPlanner(Planner):
 
     @staticmethod
     def _field_condition(
-        path: str,
+        path: ConditionPath,
         expected: str | int | float | bool,
         capability: str,
     ) -> Condition:

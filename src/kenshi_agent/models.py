@@ -637,64 +637,99 @@ class NativeCommandRequest(StrictModel):
 
 ConditionScalar: TypeAlias = str | int | float | bool | None
 
+
+class ConditionPath(StrEnum):
+    CONTROL_MODE = "control_mode"
+    TELEMETRY_STALE = "telemetry_stale"
+    TELEMETRY_GAME_LOADED = "telemetry.game.loaded"
+    TELEMETRY_GAME_PAUSED = "telemetry.game.paused"
+    TELEMETRY_GAME_SPEED_MULTIPLIER = "telemetry.game.speed_multiplier"
+    TELEMETRY_GAME_ELAPSED_MINUTES = "telemetry.game.elapsed_minutes"
+    TELEMETRY_GAME_MONEY = "telemetry.game.money"
+    TELEMETRY_GAME_LOCATION_NAME = "telemetry.game.location_name"
+    TELEMETRY_GAME_DAY = "telemetry.game.day"
+    TELEMETRY_GAME_HOUR = "telemetry.game.hour"
+    TELEMETRY_GAME_MINUTE = "telemetry.game.minute"
+    TELEMETRY_UI_ACTIVE_SCREEN = "telemetry.ui.active_screen"
+    TELEMETRY_UI_MODAL_OPEN = "telemetry.ui.modal_open"
+    TELEMETRY_UI_DIALOGUE_OPEN = "telemetry.ui.dialogue_open"
+    TELEMETRY_UI_DIALOGUE_TARGET_ID = "telemetry.ui.dialogue_target_id"
+    TELEMETRY_UI_DIALOGUE_OPTION_COUNT = "telemetry.ui.dialogue_option_count"
+    TELEMETRY_UI_DIALOGUE_OPTION_0 = "telemetry.ui.dialogue_option_0"
+    TELEMETRY_UI_TOOLTIP_VISIBLE = "telemetry.ui.tooltip_visible"
+    TELEMETRY_UI_TOOLTIP_TEXT = "telemetry.ui.tooltip_text"
+    TELEMETRY_UI_CONTEXT_MENU_OPEN = "telemetry.ui.context_menu_open"
+    TELEMETRY_UI_SELECTED_CHARACTER_ID = "telemetry.ui.selected_character_id"
+    TELEMETRY_UI_SELECTED_CHARACTER_COUNT = "telemetry.ui.selected_character_count"
+    TELEMETRY_ACTIVE_SHOP_TRADER_COUNT = "telemetry.active_shop_trader_count"
+    TELEMETRY_NATIVE_CONTROL_AVAILABLE = "telemetry.native_control.available"
+    TELEMETRY_NATIVE_CONTROL_LAST_COMMAND_SEQUENCE = (
+        "telemetry.native_control.last_command_sequence"
+    )
+    TELEMETRY_NATIVE_CONTROL_LAST_COMMAND = "telemetry.native_control.last_command"
+    TELEMETRY_NATIVE_CONTROL_LAST_RESULT = "telemetry.native_control.last_result"
+    TELEMETRY_NATIVE_CONTROL_LAST_TARGET = "telemetry.native_control.last_target"
+    TELEMETRY_NATIVE_CONTROL_LAST_TARGET_ID = "telemetry.native_control.last_target_id"
+    SELECTED_ALIVE = "selected.alive"
+    SELECTED_CONSCIOUS = "selected.conscious"
+    SELECTED_DOWN = "selected.down"
+    SELECTED_IN_COMBAT = "selected.in_combat"
+    SELECTED_POSITION_X = "selected.position.x"
+    SELECTED_POSITION_Y = "selected.position.y"
+    SELECTED_POSITION_Z = "selected.position.z"
+    SELECTED_MOVEMENT_SPEED = "selected.movement_speed"
+    SELECTED_HUNGER = "selected.hunger"
+    SELECTED_BLEEDING_RATE = "selected.bleeding_rate"
+    SELECTED_FOOD_ITEMS = "selected.food_items"
+    SELECTED_FIRST_AID_KITS = "selected.first_aid_kits"
+    SELECTED_CURRENT_GOAL = "selected.current_goal"
+    TARGET_DISPOSITION = "target.disposition"
+    TARGET_DISTANCE = "target.distance"
+    TARGET_VISIBLE = "target.visible"
+    TARGET_CONSCIOUS = "target.conscious"
+    TARGET_HAS_VENDOR_LIST = "target.has_vendor_list"
+    TARGET_IS_SQUAD_LEADER = "target.is_squad_leader"
+    TARGET_HAS_DIALOGUE = "target.has_dialogue"
+    TARGET_SHOP_INVENTORY_OWNER = "target.shop_inventory_owner"
+    TARGET_TALK_TASK_AVAILABLE = "target.talk_task_available"
+    GAME_PAUSE_CAPABILITY = "game.pause"
+    GAME_SPEED_CAPABILITY = "game.speed"
+    GAME_TIME_CAPABILITY = "game.time"
+    GAME_MONEY_CAPABILITY = "game.money"
+    GAME_LOCATION_CAPABILITY = "game.location"
+    CAMERA_POSITION_CAPABILITY = "camera.position"
+    SQUAD_BASIC_CAPABILITY = "squad.basic"
+    SQUAD_HUNGER_CAPABILITY = "squad.hunger"
+    SQUAD_HEALTH_CAPABILITY = "squad.health"
+    SQUAD_INVENTORY_CAPABILITY = "squad.inventory"
+    UI_MODAL_CAPABILITY = "ui.modal"
+    UI_INVENTORY_CAPABILITY = "ui.inventory"
+    UI_DIALOGUE_CAPABILITY = "ui.dialogue"
+    UI_DIALOGUE_TARGET_CAPABILITY = "ui.dialogue.target"
+    UI_DIALOGUE_OPTIONS_CAPABILITY = "ui.dialogue.options"
+    UI_TOOLTIP_CAPABILITY = "ui.tooltip"
+    NEARBY_CHARACTERS_CAPABILITY = "nearby.characters"
+    NEARBY_VISIBLE_ENTITIES_CAPABILITY = "nearby.visible_entities"
+    NEARBY_ROLES_CAPABILITY = "nearby.roles"
+    NEARBY_SHOP_OWNERS_CAPABILITY = "nearby.shop_owners"
+    CONTROL_APPROACH_VENDOR_CAPABILITY = "control.approach_vendor"
+    IDENTITY_STABLE_HANDLES_CAPABILITY = "identity.stable_handles"
+
+
 _ALLOWED_CONDITION_PATHS = {
-    "control_mode",
-    "telemetry_stale",
-    "telemetry.game.loaded",
-    "telemetry.game.paused",
-    "telemetry.game.speed_multiplier",
-    "telemetry.game.elapsed_minutes",
-    "telemetry.game.money",
-    "telemetry.game.location_name",
-    "telemetry.game.day",
-    "telemetry.game.hour",
-    "telemetry.game.minute",
-    "telemetry.ui.active_screen",
-    "telemetry.ui.modal_open",
-    "telemetry.ui.dialogue_open",
-    "telemetry.ui.dialogue_target_id",
-    "telemetry.ui.dialogue_option_count",
-    "telemetry.ui.dialogue_option_0",
-    "telemetry.ui.tooltip_visible",
-    "telemetry.ui.tooltip_text",
-    "telemetry.ui.context_menu_open",
-    "telemetry.ui.selected_character_id",
-    "telemetry.ui.selected_character_count",
-    "telemetry.active_shop_trader_count",
-    "telemetry.native_control.available",
-    "telemetry.native_control.last_command_sequence",
-    "telemetry.native_control.last_command",
-    "telemetry.native_control.last_result",
-    "telemetry.native_control.last_target",
-    "telemetry.native_control.last_target_id",
-    "selected.alive",
-    "selected.conscious",
-    "selected.down",
-    "selected.in_combat",
-    "selected.position.x",
-    "selected.position.y",
-    "selected.position.z",
-    "selected.movement_speed",
-    "selected.hunger",
-    "selected.bleeding_rate",
-    "selected.food_items",
-    "selected.first_aid_kits",
-    "selected.current_goal",
-    "target.disposition",
-    "target.distance",
-    "target.visible",
-    "target.conscious",
-    "target.has_vendor_list",
-    "target.is_squad_leader",
-    "target.has_dialogue",
-    "target.shop_inventory_owner",
-    "target.talk_task_available",
+    path.value
+    for path in ConditionPath
+    if path.value.startswith(("telemetry.", "selected.", "target."))
+    or path in {ConditionPath.CONTROL_MODE, ConditionPath.TELEMETRY_STALE}
+}
+_ALLOWED_CAPABILITY_PATHS = {
+    path.value for path in ConditionPath if path.value not in _ALLOWED_CONDITION_PATHS
 }
 
 
 class Condition(StrictModel):
     kind: ConditionKind
-    path: str | None = Field(default=None, min_length=1, max_length=120)
+    path: ConditionPath | None = None
     operator: ConditionOperator
     expected: ConditionScalar = None
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
@@ -711,6 +746,8 @@ class Condition(StrictModel):
         elif self.kind == ConditionKind.CAPABILITY:
             if self.path is None:
                 raise ValueError("Capability conditions require path")
+            if self.path not in _ALLOWED_CAPABILITY_PATHS:
+                raise ValueError(f"Unsupported capability path: {self.path!r}")
             if self.target_id is not None:
                 raise ValueError("Capability conditions do not accept target_id")
         elif self.path is not None or self.target_id is not None:

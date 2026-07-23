@@ -459,6 +459,7 @@ def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
 
 def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
     schema = to_strict_json_schema(PlanEnvelope)
+    condition_paths = schema["$defs"]["ConditionPath"]["enum"]
 
     def assert_supported_nodes(value: object) -> None:
         if isinstance(value, dict):
@@ -473,6 +474,9 @@ def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
                 assert_supported_nodes(child)
 
     assert schema["type"] == "object"
+    assert "telemetry.game.paused" in condition_paths
+    assert "target.shop_inventory_owner" in condition_paths
+    assert "game.paused" not in condition_paths
     assert_supported_nodes(schema)
 
 

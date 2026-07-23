@@ -67,7 +67,11 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
             raise SystemExit("--command is required for the subprocess planner.")
         return SubprocessPlanner(args.command, timeout_seconds=config.planner.timeout_seconds)
     if kind == "openai":
-        return OpenAIPlanner(config.planner, config.paths.prompt_file)
+        return OpenAIPlanner(
+            config.planner,
+            config.paths.prompt_file,
+            max_plan_steps=config.planning.max_plan_steps,
+        )
     if kind == "openrouter":
         return OpenRouterPlanner(config.planner, config.paths.prompt_file)
     raise SystemExit(f"Unsupported planner kind: {kind}")
