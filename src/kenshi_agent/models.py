@@ -58,7 +58,6 @@ class ConditionOperator(StrEnum):
     GREATER_THAN = "greater_than"
     GREATER_THAN_OR_EQUAL = "greater_than_or_equal"
     CONTAINS = "contains"
-    EXISTS = "exists"
 
 
 class ConditionResult(StrEnum):
@@ -752,10 +751,7 @@ class Condition(StrictModel):
                 raise ValueError("Capability conditions do not accept target_id")
         elif self.path is not None or self.target_id is not None:
             raise ValueError("telemetry_fresh conditions do not accept path or target_id")
-        if self.operator == ConditionOperator.EXISTS:
-            if self.expected is not None:
-                raise ValueError("exists conditions must omit expected")
-        elif self.expected is None:
+        if self.expected is None:
             raise ValueError(f"{self.operator.value} conditions require expected")
         if self.operator == ConditionOperator.CONTAINS and not isinstance(
             self.expected, str

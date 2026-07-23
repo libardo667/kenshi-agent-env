@@ -67,9 +67,11 @@ world/dialogue/trade food phases respectively.
 
 `Condition.path` is a closed schema enum containing the field and capability
 vocabulary the evaluator implements. This makes unsupported shorthand visible
-to structured generation. Cross-field rules still remain deterministic code:
-freshness uses `operator=equals` and `expected=true`, target paths carry the
-exact stable target ID, and `exists` omits `expected`.
+to structured generation. Cross-field rules remain deterministic code:
+freshness uses `operator=equals` and `expected=true`, and target paths carry the
+exact stable target ID. Every supported operator compares against an explicit
+expected value; the unused and structurally ambiguous `exists` operator is not
+part of the contract.
 
 ## World revisions and causal confirmation
 

@@ -127,15 +127,19 @@ Hosted live preflight on 2026-07-23:
   seconds and stopped safely because the model invented shorthand condition
   paths and malformed freshness conditions. This was a structured-schema gap,
   not an action-policy bypass.
+- Dry run `p6-live-continuous-dry-medium-20260723T201345Z` returned in 31.45
+  seconds and stopped safely on the remaining `exists` cross-field shape.
+  Money, food, pause, and native command sequence remained unchanged.
 - Hosted live planning now defaults to `medium` reasoning. Direct OpenAI calls
   receive a deterministic output-token ceiling of 4,096 for one decision,
   growing by 2,048 per bounded plan step to at most 12,288. The runtime
   mechanically requests `PlannerDecision`, `PlanEnvelope`, or future-only
   `PlanPatch` from current planning state.
 - Every supported condition path is now a strict schema enum, so the hosted
-  response cannot invent shorthand paths. `food_procurement_v1` success checks
-  also preserve the exact one-character selection invariant after every
-  action.
+  response cannot invent shorthand paths. The unused `exists` operator was
+  removed because its conditional `expected` shape was not represented by the
+  strict schema. `food_procurement_v1` success checks also preserve the exact
+  one-character selection invariant after every action.
 - Repository verification after these changes: 177 tests passed; Ruff passed;
   mypy passed for all 47 source files; compileall, schema export, diff check,
   and default doctor passed. The next gate is another zero-action hosted dry

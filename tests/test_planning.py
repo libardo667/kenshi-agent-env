@@ -477,6 +477,7 @@ def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
     assert "telemetry.game.paused" in condition_paths
     assert "target.shop_inventory_owner" in condition_paths
     assert "game.paused" not in condition_paths
+    assert "exists" not in schema["$defs"]["ConditionOperator"]["enum"]
     assert_supported_nodes(schema)
 
 

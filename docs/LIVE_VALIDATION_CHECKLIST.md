@@ -285,12 +285,16 @@ Evidence from the supervised 2026-07-23 run:
 - [ ] Run the conditional continuous chain with all existing live/native gates
       plus `--acknowledge-continuous-live`; require one response to drive
       approach/dialogue/inspection and one later response to buy at most once.
-      Two no-input hosted preflights sent zero native commands and left money,
+      Four no-input hosted preflights sent zero native commands and left money,
       food, and pause unchanged. `xhigh` exceeded the 90-second timeout; `high`
       returned after 62.70 seconds but used unsupported shorthand condition
-      paths. The follow-up contract uses medium reasoning, dynamic output-token
-      ceilings, a schema-enumerated condition vocabulary, and bounded planner
-      failure logging before execution is retried.
+      paths. Medium run
+      `p6-live-continuous-dry-medium-20260723T201345Z` returned in 31.45
+      seconds and narrowed the remaining schema gap to the unused conditional
+      shape of `exists`; that operator is now absent from the schema. The
+      follow-up contract uses medium reasoning, dynamic output-token ceilings,
+      a schema-enumerated condition vocabulary, and bounded planner failure
+      logging before execution is retried.
 - [ ] Record exact pre/post money, selected food count, pause, action count,
       strategic-call count, and final plan lifecycle.
 - [ ] Exercise one safe preemption (F12 or human input), confirm no repeated
