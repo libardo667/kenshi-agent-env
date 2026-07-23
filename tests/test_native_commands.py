@@ -63,6 +63,25 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
         NativeCommandRequest.model_validate(valid.model_dump(mode="python") | {"unexpected": True})
 
 
+def test_native_telemetry_snapshot_identity_ignores_capture_and_observation_time() -> None:
+    basis = revision()
+    same_telemetry = basis.model_copy(
+        update={
+            "frame_sequence": None,
+            "observed_at_monotonic": 11.0,
+        }
+    )
+
+    assert basis.same_telemetry_snapshot_as(same_telemetry)
+    assert not basis.same_snapshot_as(same_telemetry)
+    assert not basis.same_telemetry_snapshot_as(
+        same_telemetry.model_copy(update={"telemetry_sequence": 8})
+    )
+    assert not basis.same_telemetry_snapshot_as(
+        same_telemetry.model_copy(update={"capability_epoch": 3})
+    )
+
+
 def test_native_acknowledgement_requires_causal_sequences_for_each_status() -> None:
     accepted = NativeCommandAcknowledgement(
         command_id=COMMAND_ID,

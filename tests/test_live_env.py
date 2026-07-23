@@ -694,6 +694,61 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
     asyncio.run(scenario())
 
 
+def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _, controller = native_vendor_environment(tmp_path)
+        initial = await environment.reset()
+        command = CommandDispatchContext(
+            command_id="cmd-0123456789abcdef0123456789abcdef",
+            based_on_revision=initial.world_revision.model_copy(
+                update={
+                    "frame_sequence": 7,
+                    "observed_at_monotonic": (
+                        initial.world_revision.observed_at_monotonic + 1.0
+                    ),
+                }
+            ),
+        )
+
+        transition = await environment.dispatch(
+            native_vendor_action(),
+            command=command,
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.based_on_revision == command.based_on_revision
+
+    asyncio.run(scenario())
+
+
+def test_native_vendor_dispatch_rejects_different_telemetry_basis(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _, controller = native_vendor_environment(tmp_path)
+        initial = await environment.reset()
+        sequence = initial.world_revision.telemetry_sequence
+        assert sequence is not None
+
+        with pytest.raises(RuntimeError, match="current telemetry snapshot"):
+            await environment.dispatch(
+                native_vendor_action(),
+                command=CommandDispatchContext(
+                    command_id="cmd-0123456789abcdef0123456789abcdef",
+                    based_on_revision=initial.world_revision.model_copy(
+                        update={"telemetry_sequence": sequence + 1}
+                    ),
+                ),
+            )
+
+        assert controller.actions == []
+
+    asyncio.run(scenario())
+
+
 def test_old_native_ack_cannot_satisfy_new_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
