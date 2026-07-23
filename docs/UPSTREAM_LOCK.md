@@ -75,8 +75,11 @@ render-size APIs. The offline Release x64 output built on 2026-07-23 is 182,784
 bytes with SHA-256
 `64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
 The build emitted only the same upstream MyGUI C4091 and Boost C4715 warnings.
-Installation and supervised live evidence are recorded separately after they
-occur; this hash is currently an offline artifact only.
+The exact artifact was installed, without launching Kenshi, after the full
+protocol `0.3.0` plug-in was copied to
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T193734Z-p6-protocol-0.4`.
+The installed DLL hash was verified against the offline artifact. Supervised
+load and live evidence remain pending.
 
 ## Plugin staging/install layout
 
