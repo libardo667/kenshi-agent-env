@@ -26,10 +26,10 @@
   one strategic advisory can overlap movement, and a matching future-only patch
   is withheld until post-option state, assumptions, and remaining budgets pass
   a second deterministic validation.
-- The portable nearby-entity registry preserves observed lifetimes across
-  ordinal reordering using fingerprint and position evidence, records ambiguous
-  matches, and does not infer disappearance while the entity-list capability is
-  unavailable. It is not a native stable-handle claim.
+- Protocol `0.2.0` emits session-scoped opaque squad, selection, nearby, and
+  native-target IDs derived from validated Kenshi handles rather than list
+  positions or names. The store preserves these IDs exactly; legacy producers
+  still use the ambiguity-aware fingerprint/position registry.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.
@@ -49,6 +49,11 @@
 - Initial read-only field validation: schema-valid two-hertz snapshots, fresh
   UTC timestamps, one-character squad identity/selection, money, camera and
   character position, movement speed, pause, and speed multiplier.
+- Stable-identity live boundary validation: exactly one selected ID agreed with
+  the squad flag; 18 nearby characters had 18 IDs; four same-named Ninja Guards
+  had four IDs; and a paused camera orbit changed camera state without changing
+  the session, selection, or nearby ID set. Native list reordering was not
+  observed in that run and remains an automated/source-level case.
 - Nearby-character and UI telemetry: names, factions, dispositions, world
   positions, trader capability, current world/inventory/dialogue/trade screen,
   and game-rendered viewport visibility with normalized screen positions. Live
@@ -112,6 +117,7 @@ new interface-only evidence.
   exist only for the portable configured-movement adapter. `single_step`
   remains the default and the continuous path is restricted to mock/fake
   environments.
-- Native stable entity handles and bridge-level command acknowledgement. The
-  current in-process registry and command IDs establish portable causal
-  semantics but do not make the native plugin protocol P5-complete.
+- Causal native command envelopes and completion acknowledgement. Stable native
+  identity is implemented, but the current hotkey bridge still lacks a
+  caller-supplied command ID, mode/selection/target/revision fences, explicit
+  accepted/rejected reason, and completion revision.

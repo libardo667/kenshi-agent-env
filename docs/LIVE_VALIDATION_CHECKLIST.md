@@ -99,6 +99,28 @@ This historical proof used the native vendor command and is classified
   `[Food]`, 50 nutrition, value 649 cats. One purchase changed money from 1,000
   to 351 and selected food items from 0 to 1. The game was confirmed paused.
 
+### Evidence from 2026-07-23 stable-identity boundary
+
+- Protocol `0.2.0` loaded through RE_Kenshi, reached a fresh `ready` status,
+  parsed strictly, loaded the current save, and ended paused.
+- The first live pass exposed a real selection mismatch: Kenshi's overloaded
+  handle equality returned false even though the selected-set and squad handles
+  serialized to the same components. Strict validation rejected the snapshot.
+  Direct component equality replaced that operator; the pinned VS2010 build and
+  second live load passed.
+- `selected_character_id`, the one-member `selected_character_ids` set, and the
+  one true squad `selected` flag all named the same stable ID.
+- All 18 nearby characters had distinct IDs. Four characters named
+  `Ninja Guard` had four IDs, proving display names were not identity keys.
+- A paused camera orbit changed camera state while the identity session,
+  selection, and complete nearby ID set stayed unchanged across later
+  snapshots. The native query retained its order, so this run does not claim a
+  live list-reordering observation.
+- The installed identity-test DLL SHA-256 was
+  `2227f3d97124149917d1c5736fb69bf29100b4ac1d6af4badcb76455ff478e16`.
+  The prior installed plugin was backed up under
+  `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T1008-stable-identity`.
+
 ### Evidence from 2026-07-22 live dry-run
 
 - The initial title filter `Kenshi` also matched a terminal opened in the
