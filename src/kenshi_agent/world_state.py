@@ -156,6 +156,8 @@ class StoreUpdate:
     sequence_status: SequenceStatus
     delta: StateDelta
     events: tuple[WorldEvent, ...] = ()
+    active_plan: ActivePlanState | None = None
+    active_command: CommandState | None = None
 
 
 class WorldStateSubscription:
@@ -391,6 +393,8 @@ class WorldStateStore:
             sequence_status=status,
             delta=delta,
             events=tuple(emitted),
+            active_plan=self.active_plan,
+            active_command=self.active_command,
         )
         for queue in self._subscribers.values():
             if queue.full():
@@ -1037,6 +1041,15 @@ class WorldStateStore:
             sequence_status=update.sequence_status,
             delta=cls._copy_delta(update.delta),
             events=tuple(cls._copy_event(event) for event in update.events),
+            active_plan=(
+                replace(
+                    update.active_plan,
+                    accepted_revision=(update.active_plan.accepted_revision.model_copy(deep=True)),
+                )
+                if update.active_plan is not None
+                else None
+            ),
+            active_command=cls._copy_command(update.active_command),
         )
 
 

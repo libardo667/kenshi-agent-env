@@ -28,6 +28,7 @@ from kenshi_agent.models import (
     PlanStep,
     RiskBudget,
     SetSpeedAction,
+    SkillAction,
     StopAction,
     TelemetrySnapshot,
     Transition,
@@ -296,6 +297,22 @@ class PlanThenStopPlanner(Planner):
         return plan
 
 
+class BlockedPlanner(Planner):
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+
+    async def decide(self, observation: Observation) -> PlannerOutput:
+        del observation
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        raise AssertionError("Blocked planner unexpectedly resumed.")
+
+
 def runtime_for(
     tmp_path: Path,
     environment: RevisionEnvironment,
@@ -307,7 +324,7 @@ def runtime_for(
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry({"unused": MacroConfig(actions=[{"kind": "key", "key": "u"}])})
     safety = SafetyConfig(
-        allow_action_kinds=["pause", "set_speed", "stop"],
+        allow_action_kinds=["pause", "set_speed", "skill", "stop"],
         max_actions_per_minute=500,
     )
     logger = SessionLogger(tmp_path / "events.jsonl", "continuous")
@@ -395,6 +412,338 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
             "resume",
             "accelerate",
         ]
+
+    asyncio.run(scenario())
+
+
+def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
+    tmp_path: Path,
+) -> None:
+    class UnsafeObserveEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.unsafe = False
+
+        def observation(self) -> Observation:
+            current = super().observation()
+            if not self.unsafe or current.telemetry is None:
+                return current
+            return current.model_copy(
+                update={
+                    "telemetry": current.telemetry.model_copy(
+                        update={
+                            "nearby_entities": [
+                                NearbyEntity(
+                                    id="threat",
+                                    name="Hungry Bandit",
+                                    disposition=Disposition.HOSTILE,
+                                    distance=10.0,
+                                    visible=True,
+                                )
+                            ]
+                        }
+                    )
+                }
+            )
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            self.paused = False
+            self.unsafe = True
+            return self.observation()
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = UnsafeObserveEnvironment(clock=plan_clock)
+        planner = BlockedPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await planner.started.wait()
+            pump_clock.advance(0.1)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert planner.cancelled.is_set()
+        assert summary.terminated
+        assert environment.paused is True
+        assert [
+            action.paused for action in environment.actions if isinstance(action, PauseAction)
+        ] == [True]
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "strategic_planner_cancelled" for event in events) == 1
+        assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
+        terminal = [
+            event for event in events if event["event_type"] == "safety_supervisor_terminal"
+        ]
+        assert len(terminal) == 1
+        assert terminal[0]["payload"]["status"] == "safe_paused"
+        receipts = [event["payload"] for event in events if event["event_type"] == "action_receipt"]
+        assert len(receipts) == 1
+        assert receipts[0]["command_id"] == "cmd-000001"
+        assert receipts[0]["causal_revision_advanced"] is True
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.safety_supervisor_preemptions == 1
+        assert metrics.strategic_planner_cancellations == 1
+        assert metrics.plan_execution_cancellations == 0
+        assert metrics.safety_cleanups_started == 1
+        assert metrics.safety_cleanups_completed == 1
+        assert metrics.safety_cleanups_failed == 0
+        assert metrics.safety_supervisor_terminals == 1
+        assert metrics.safety_supervisor_safe_paused == 1
+        assert metrics.safety_cleanup_success_percentage == 100.0
+
+    asyncio.run(scenario())
+
+
+def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
+    tmp_path: Path,
+) -> None:
+    class BlockingMovementEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.movement_cancelled = asyncio.Event()
+            self.unsafe = False
+
+        def observation(self) -> Observation:
+            current = super().observation()
+            if not self.unsafe or current.telemetry is None:
+                return current
+            return current.model_copy(
+                update={
+                    "telemetry": current.telemetry.model_copy(
+                        update={
+                            "nearby_entities": [
+                                NearbyEntity(
+                                    id="threat",
+                                    name="Hungry Bandit",
+                                    disposition=Disposition.HOSTILE,
+                                    distance=8.0,
+                                    visible=True,
+                                )
+                            ]
+                        }
+                    )
+                }
+            )
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            self.unsafe = True
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            if isinstance(action, SkillAction):
+                self.actions.append(action)
+                self.paused = False
+                self.sequence += 1
+                self.movement_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.movement_cancelled.set()
+                    raise
+                raise AssertionError("Blocked movement unexpectedly resumed.")
+            return await super().step(action)
+
+    class MovementPlanner(Planner):
+        async def decide(self, current: Observation) -> PlannerOutput:
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id="blocked-movement",
+                plan_version=1,
+                objective="Exercise cancellable movement supervision.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="move",
+                        action=SkillAction(name="mock_move"),
+                        preconditions=[
+                            condition(
+                                "telemetry.game.paused",
+                                True,
+                                "game.pause",
+                            )
+                        ],
+                        success_conditions=[
+                            condition(
+                                "telemetry.game.paused",
+                                True,
+                                "game.pause",
+                            )
+                        ],
+                        failure_conditions=[],
+                        timeout_seconds=3.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                    )
+                ],
+                entry_step_id="move",
+                max_actions=1,
+                max_wall_seconds=4.0,
+                max_game_seconds=5.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = BlockingMovementEnvironment(clock=plan_clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            MovementPlanner(),
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            pump_clock.advance(0.1)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert environment.movement_cancelled.is_set()
+        assert summary.terminated
+        assert environment.paused is True
+        assert (
+            len([action for action in environment.actions if isinstance(action, SkillAction)]) == 1
+        )
+        assert [
+            action.paused for action in environment.actions if isinstance(action, PauseAction)
+        ] == [True]
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "plan_execution_cancelled" for event in events) == 1
+        assert (
+            sum(
+                event["event_type"] == "world_state_event"
+                and event["payload"]["event_type"] == "command_inconclusive"
+                for event in events
+            )
+            == 1
+        )
+        assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
+        assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 1
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.plan_execution_cancellations == 1
+
+    asyncio.run(scenario())
+
+
+def test_supervisor_reports_failure_when_pause_cannot_be_confirmed(
+    tmp_path: Path,
+) -> None:
+    class UnconfirmablePauseEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.unsafe = False
+
+        def observation(self) -> Observation:
+            current = super().observation()
+            if not self.unsafe or current.telemetry is None:
+                return current
+            return current.model_copy(
+                update={
+                    "telemetry": current.telemetry.model_copy(
+                        update={
+                            "nearby_entities": [
+                                NearbyEntity(
+                                    id="threat",
+                                    name="Hungry Bandit",
+                                    disposition=Disposition.HOSTILE,
+                                    distance=10.0,
+                                    visible=True,
+                                )
+                            ]
+                        }
+                    )
+                }
+            )
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            self.paused = False
+            self.unsafe = True
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            if not isinstance(action, PauseAction):
+                return await super().step(action)
+            self.actions.append(action)
+            self.step_index += 1
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.INTERFACE_ONLY,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=1,
+                    message="fake input without confirmed effect",
+                ),
+                observation=self.observation(),
+            )
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = UnconfirmablePauseEnvironment(clock=plan_clock)
+        planner = BlockedPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await planner.started.wait()
+            pump_clock.advance(0.1)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert planner.cancelled.is_set()
+        assert summary.terminated
+        assert environment.paused is False
+        assert [
+            action.paused for action in environment.actions if isinstance(action, PauseAction)
+        ] == [True]
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 0
+        assert sum(event["event_type"] == "safety_cleanup_failed" for event in events) == 1
+        terminal = [
+            event for event in events if event["event_type"] == "safety_supervisor_terminal"
+        ]
+        assert len(terminal) == 1
+        assert terminal[0]["payload"]["status"] == "cleanup_failed"
+        assert "causally later confirmed paused" in summary.stop_reason
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.safety_cleanups_started == 1
+        assert metrics.safety_cleanups_completed == 0
+        assert metrics.safety_cleanups_failed == 1
+        assert metrics.safety_cleanup_success_percentage == 0.0
 
     asyncio.run(scenario())
 

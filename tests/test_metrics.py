@@ -32,6 +32,26 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
             "payload": {"telemetry_stale": True},
         },
         {
+            "event_type": "safety_supervisor_preempted",
+            "payload": {"cause": "reflex"},
+        },
+        {
+            "event_type": "strategic_planner_cancelled",
+            "payload": {"cause": "reflex"},
+        },
+        {
+            "event_type": "safety_cleanup_started",
+            "payload": {"cause": "reflex"},
+        },
+        {
+            "event_type": "safety_cleanup_completed",
+            "payload": {"cause": "reflex"},
+        },
+        {
+            "event_type": "safety_supervisor_terminal",
+            "payload": {"cause": "reflex", "status": "safe_paused"},
+        },
+        {
             "event_type": "run_finished",
             "payload": {"success": True, "steps_completed": 1, "stop_reason": "done"},
         },
@@ -47,3 +67,11 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.mean_planner_latency_seconds == 2.0
     assert metrics.p50_planner_latency_seconds == 2.0
     assert metrics.p95_planner_latency_seconds == 3.0
+    assert metrics.safety_supervisor_preemptions == 1
+    assert metrics.strategic_planner_cancellations == 1
+    assert metrics.safety_cleanups_started == 1
+    assert metrics.safety_cleanups_completed == 1
+    assert metrics.safety_cleanups_failed == 0
+    assert metrics.safety_supervisor_terminals == 1
+    assert metrics.safety_supervisor_safe_paused == 1
+    assert metrics.safety_cleanup_success_percentage == 100.0

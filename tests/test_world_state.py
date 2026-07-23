@@ -555,6 +555,34 @@ def test_active_plan_and_command_causality_are_executor_owned() -> None:
     assert store.active_plan is None
 
 
+def test_store_update_preserves_authorization_state_at_publish_time() -> None:
+    store = WorldStateStore()
+    first = observation(1)
+    second = observation(2)
+    store.publish(first)
+    store.activate_plan("plan", 1, first.world_revision)
+    store.activate_step("step-a")
+    command = store.begin_command(
+        plan_id="plan",
+        plan_version=1,
+        step_id="step-a",
+        action_kind="pause",
+        start_revision=first.world_revision,
+    )
+
+    update = store.publish(second)
+    store.complete_command(command.command_id, second.world_revision)
+    store.clear_active_plan("completed")
+
+    assert update.active_plan is not None
+    assert update.active_plan.plan_id == "plan"
+    assert update.active_plan.step_id == "step-a"
+    assert update.active_command is not None
+    assert update.active_command.command_id == command.command_id
+    assert store.active_plan is None
+    assert store.active_command is None
+
+
 class ScriptedObservationEnvironment(AgentEnvironment):
     def __init__(self, observations: list[Observation]) -> None:
         self.observations = observations

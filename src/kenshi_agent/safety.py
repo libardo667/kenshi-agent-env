@@ -38,11 +38,7 @@ class ActionGuard:
         self._purchase_count = 0
 
     def validate(self, action: Action, observation: Observation) -> Action:
-        if observation.mode == "live" and observation.control_mode != self.control_mode:
-            raise SafetyViolation(
-                f"Observation control mode {observation.control_mode.value!r} does not match "
-                f"guard control mode {self.control_mode.value!r}."
-            )
+        self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
@@ -119,6 +115,26 @@ class ActionGuard:
             self._purchase_count += 1
         return action
 
+    def validate_safety_pause(
+        self,
+        action: PauseAction,
+        observation: Observation,
+    ) -> PauseAction:
+        """Validate the narrow safe-pause path without consuming rate budget."""
+
+        if action.paused is not True:
+            raise SafetyViolation("Safety override only permits requesting paused=true.")
+        self._validate_control_mode(observation)
+        self._validate_action_constraints(action, observation)
+        return action
+
+    def _validate_control_mode(self, observation: Observation) -> None:
+        if observation.mode == "live" and observation.control_mode != self.control_mode:
+            raise SafetyViolation(
+                f"Observation control mode {observation.control_mode.value!r} does not match "
+                f"guard control mode {self.control_mode.value!r}."
+            )
+
     def _validate_purchase(self, action: SkillAction, observation: Observation) -> None:
         if observation.telemetry_stale or observation.telemetry is None:
             raise SafetyViolation("Purchase blocked because live telemetry is stale or absent.")
@@ -126,8 +142,7 @@ class ActionGuard:
         if telemetry.ui.active_screen != "trade":
             raise SafetyViolation("Purchase blocked because the exact trade screen is not open.")
         if telemetry.active_shop_trader_count != 1 or not any(
-            entity.shop_inventory_owner is True
-            and entity.disposition.value != "hostile"
+            entity.shop_inventory_owner is True and entity.disposition.value != "hostile"
             for entity in telemetry.nearby_entities
         ):
             raise SafetyViolation(
@@ -145,8 +160,7 @@ class ActionGuard:
             raise SafetyViolation("Purchase requires a positive integer expected_price.")
         if expected_price > self.config.max_purchase_price:
             raise SafetyViolation(
-                f"Expected price {expected_price} exceeds maximum "
-                f"{self.config.max_purchase_price}."
+                f"Expected price {expected_price} exceeds maximum {self.config.max_purchase_price}."
             )
         money = telemetry.game.money
         if money is None:

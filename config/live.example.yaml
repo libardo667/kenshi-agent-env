@@ -95,6 +95,9 @@ safety:
   live_actions_enabled: false
   require_cli_execute_flag: true
   emergency_stop_key: f12
+  supervisor_enabled: true
+  supervisor_max_sequence_stalls: 3
+  supervisor_pause_timeout_seconds: 2.0
   max_primitive_actions_per_step: 10
   max_actions_per_minute: 60
   max_wait_seconds: 8.0

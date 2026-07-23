@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Coroutine
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from math import dist
 from time import monotonic
+from typing import Any, TypeVar
 
 from PIL import Image, ImageChops
 
@@ -19,6 +23,7 @@ from .models import (
     ControlMode,
     NearbyEntity,
     Observation,
+    PauseAction,
     PlanEnvelope,
     PlannerDecision,
     PlanningMode,
@@ -35,14 +40,18 @@ from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, v
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .safety import ActionGuard, SafetyViolation
+from .safety_supervisor import SafetyPreemption, SafetySupervisor
 from .session_log import SessionLogger
 from .world_state import (
+    CommandCausalityError,
     ObservationPump,
     StoreUpdate,
     WorldEvent,
     WorldStateError,
     WorldStateStore,
 )
+
+_WorkResult = TypeVar("_WorkResult")
 
 
 @dataclass(frozen=True, slots=True)
@@ -321,6 +330,7 @@ class AgentRuntime:
         observation: Observation | None = None
         consecutive_replans = 0
         observation_pump: ObservationPump | None = None
+        safety_supervisor: SafetySupervisor | None = None
         state_store: WorldStateStore | None = None
 
         try:
@@ -368,6 +378,13 @@ class AgentRuntime:
             initial_update = state_store.publish(observation)
             observation = initial_update.observation
             self._log_world_state_update(initial_update)
+            if self.guard.config.supervisor_enabled:
+                safety_supervisor = SafetySupervisor(
+                    store=state_store,
+                    reflexes=self.reflexes,
+                    max_sequence_stalls=(self.guard.config.supervisor_max_sequence_stalls),
+                )
+                await safety_supervisor.start()
             if self.planning_config.observation_pump_enabled:
                 observation_pump = ObservationPump(
                     self.environment,
@@ -381,6 +398,20 @@ class AgentRuntime:
 
             while steps_completed < max_steps and not terminated:
                 observation = state_store.latest or observation
+                if safety_supervisor is not None and safety_supervisor.preempted:
+                    pending_preemption = await safety_supervisor.wait_for_preemption()
+                    (
+                        observation,
+                        completed,
+                        terminated,
+                        success,
+                        stop_reason,
+                    ) = await self._handle_safety_preemption(
+                        pending_preemption,
+                        state_store,
+                    )
+                    steps_completed += completed
+                    continue
                 reflex = self.reflexes.decide(observation)
                 if reflex is not None:
                     (
@@ -403,7 +434,50 @@ class AgentRuntime:
                     self.reporter.planning_started(observation.step_index)
                 planner_source = "planner"
                 try:
-                    output = await self.planner.decide(observation)
+                    output, preemption = await self._race_with_safety_supervisor(
+                        self.planner.decide(observation),
+                        safety_supervisor,
+                    )
+                    if preemption is not None:
+                        planner_latency_seconds = monotonic() - planning_started
+                        self.logger.write(
+                            "strategic_planner_call",
+                            step_index=observation.step_index,
+                            payload={
+                                "source": "safety_supervisor_cancelled",
+                                "planner_latency_seconds": planner_latency_seconds,
+                                "world_revision": (
+                                    observation.world_revision.model_dump(mode="json")
+                                ),
+                                "control_mode": observation.control_mode.value,
+                                "output_type": "cancelled",
+                            },
+                        )
+                        self.logger.write(
+                            "strategic_planner_cancelled",
+                            step_index=observation.step_index,
+                            payload={
+                                "cause": preemption.cause.value,
+                                "reason": preemption.reason,
+                                "world_revision": (
+                                    preemption.observation.world_revision.model_dump(mode="json")
+                                ),
+                                "control_mode": observation.control_mode.value,
+                            },
+                        )
+                        (
+                            observation,
+                            completed,
+                            terminated,
+                            success,
+                            stop_reason,
+                        ) = await self._handle_safety_preemption(
+                            preemption,
+                            state_store,
+                        )
+                        steps_completed += completed
+                        continue
+                    assert output is not None
                 except Exception as exc:
                     planner_source = "planner_error"
                     output = PlannerDecision(
@@ -530,11 +604,42 @@ class AgentRuntime:
                     state_store=state_store,
                     observe_transition=self._observe_plan_transition,
                 )
-                result = await executor.execute(
-                    plan,
-                    observation,
-                    remaining_run_actions=max_steps - steps_completed,
+                result, preemption = await self._race_with_safety_supervisor(
+                    executor.execute(
+                        plan,
+                        observation,
+                        remaining_run_actions=max_steps - steps_completed,
+                    ),
+                    safety_supervisor,
                 )
+                if preemption is not None:
+                    self.logger.write(
+                        "plan_execution_cancelled",
+                        step_index=observation.step_index,
+                        payload={
+                            "plan_id": plan.plan_id,
+                            "plan_version": plan.plan_version,
+                            "cause": preemption.cause.value,
+                            "reason": preemption.reason,
+                            "world_revision": (
+                                preemption.observation.world_revision.model_dump(mode="json")
+                            ),
+                            "control_mode": observation.control_mode.value,
+                        },
+                    )
+                    (
+                        observation,
+                        completed,
+                        terminated,
+                        success,
+                        stop_reason,
+                    ) = await self._handle_safety_preemption(
+                        preemption,
+                        state_store,
+                    )
+                    steps_completed += completed
+                    continue
+                assert result is not None
                 observation = result.observation
                 steps_completed += result.actions_completed
                 stop_reason = result.reason
@@ -569,6 +674,12 @@ class AgentRuntime:
                 observation=observation,
             )
         finally:
+            if safety_supervisor is not None:
+                await safety_supervisor.stop()
+                self.logger.write(
+                    "safety_supervisor_finished",
+                    payload=asdict(safety_supervisor.metrics),
+                )
             if observation_pump is not None:
                 await observation_pump.stop()
             if state_store is not None:
@@ -579,6 +690,278 @@ class AgentRuntime:
                 )
             self._state_store = None
             await self.environment.close()
+
+    async def _race_with_safety_supervisor(
+        self,
+        work: Coroutine[Any, Any, _WorkResult],
+        supervisor: SafetySupervisor | None,
+    ) -> tuple[_WorkResult | None, SafetyPreemption | None]:
+        if supervisor is None:
+            return await work, None
+        work_task = asyncio.create_task(work)
+        preemption_task = asyncio.create_task(supervisor.wait_for_preemption())
+        try:
+            done, _ = await asyncio.wait(
+                {work_task, preemption_task},
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if work_task in done:
+                return work_task.result(), None
+            if preemption_task in done:
+                preemption = preemption_task.result()
+                if not work_task.done():
+                    work_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await work_task
+                return None, preemption
+            return work_task.result(), None
+        finally:
+            for task in (work_task, preemption_task):
+                if not task.done():
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
+
+    async def _handle_safety_preemption(
+        self,
+        preemption: SafetyPreemption,
+        state_store: WorldStateStore,
+    ) -> tuple[Observation, int, bool, bool | None, str]:
+        observation = state_store.latest or preemption.observation
+        self.logger.write(
+            "safety_supervisor_preempted",
+            step_index=observation.step_index,
+            payload={
+                "cause": preemption.cause.value,
+                "reason": preemption.reason,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "control_mode": observation.control_mode.value,
+                "decision": preemption.decision.model_dump(mode="json"),
+            },
+        )
+        self.logger.write(
+            "decision",
+            step_index=observation.step_index,
+            payload={
+                "source": "safety_supervisor",
+                "planner_latency_seconds": 0.0,
+                "decision": preemption.decision.model_dump(mode="json"),
+            },
+        )
+        if self.reporter is not None:
+            self.reporter.decision(
+                step_index=observation.step_index,
+                source="safety_supervisor",
+                decision=preemption.decision,
+                latency_seconds=0.0,
+            )
+
+        if not isinstance(preemption.decision.action, PauseAction):
+            paused = (
+                observation.telemetry.game.paused if observation.telemetry is not None else None
+            )
+            status = "safe_paused" if paused is True else "stopped_unverified"
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status=status,
+                reason=preemption.reason,
+            )
+            return observation, 0, True, None, preemption.reason
+
+        action = preemption.decision.action
+        try:
+            guarded_action = self.guard.validate_safety_pause(action, observation)
+        except SafetyViolation as exc:
+            reason = f"Safety cleanup guard rejected pause: {exc}"
+            self.logger.write(
+                "safety_cleanup_failed",
+                step_index=observation.step_index,
+                payload={
+                    "cause": preemption.cause.value,
+                    "reason": reason,
+                    "world_revision": observation.world_revision.model_dump(mode="json"),
+                    "control_mode": observation.control_mode.value,
+                },
+            )
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status="cleanup_failed",
+                reason=reason,
+            )
+            return observation, 0, True, None, reason
+
+        if state_store.active_command is not None:
+            state_store.fail_active_command(
+                "Independent safety supervisor preempted an in-flight command."
+            )
+        start_revision = observation.world_revision
+        command = state_store.begin_command(
+            plan_id="safety-supervisor",
+            plan_version=1,
+            step_id=preemption.cause.value,
+            action_kind=guarded_action.kind,
+            start_revision=start_revision,
+        )
+        self.logger.write(
+            "safety_cleanup_started",
+            step_index=observation.step_index,
+            payload={
+                "cause": preemption.cause.value,
+                "command_id": command.command_id,
+                "world_revision": start_revision.model_dump(mode="json"),
+                "control_mode": observation.control_mode.value,
+            },
+        )
+        try:
+            transition = await self.environment.step(guarded_action)
+        except Exception as exc:
+            state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
+            reason = f"Safety pause execution failed: {type(exc).__name__}: {exc}"
+            self.logger.write(
+                "safety_cleanup_failed",
+                step_index=observation.step_index,
+                payload={
+                    "cause": preemption.cause.value,
+                    "command_id": command.command_id,
+                    "reason": reason,
+                    "world_revision": start_revision.model_dump(mode="json"),
+                    "control_mode": observation.control_mode.value,
+                },
+            )
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status="cleanup_failed",
+                reason=reason,
+            )
+            return observation, 1, True, None, reason
+
+        latest = self._record_transition(
+            preemption.decision,
+            observation,
+            transition,
+            command_id=command.command_id,
+            action_start_revision=start_revision,
+        )
+        try:
+            state_store.complete_command(
+                command.command_id,
+                latest.world_revision,
+            )
+        except CommandCausalityError as exc:
+            reason = f"Safety pause command causality failed: {exc}"
+            self.logger.write(
+                "safety_cleanup_failed",
+                step_index=latest.step_index,
+                payload={
+                    "cause": preemption.cause.value,
+                    "command_id": command.command_id,
+                    "reason": reason,
+                    "world_revision": latest.world_revision.model_dump(mode="json"),
+                    "control_mode": latest.control_mode.value,
+                },
+            )
+            self._log_safety_terminal(
+                preemption,
+                latest,
+                status="cleanup_failed",
+                reason=reason,
+            )
+            return latest, 1, True, None, reason
+
+        verified = self._is_causally_paused(latest, start_revision)
+        if not verified:
+            try:
+                latest = await state_store.wait_for(
+                    lambda candidate: (
+                        candidate.telemetry is not None
+                        and candidate.telemetry.game.paused is True
+                        and "game.pause" in candidate.telemetry.capabilities
+                    ),
+                    after_revision=start_revision,
+                    timeout_seconds=(self.guard.config.supervisor_pause_timeout_seconds),
+                )
+            except TimeoutError:
+                pass
+            verified = self._is_causally_paused(latest, start_revision)
+
+        if not verified:
+            reason = (
+                "Safety pause did not reach a causally later confirmed paused "
+                "revision before its timeout."
+            )
+            self.logger.write(
+                "safety_cleanup_failed",
+                step_index=latest.step_index,
+                payload={
+                    "cause": preemption.cause.value,
+                    "command_id": command.command_id,
+                    "reason": reason,
+                    "world_revision": latest.world_revision.model_dump(mode="json"),
+                    "control_mode": latest.control_mode.value,
+                },
+            )
+            self._log_safety_terminal(
+                preemption,
+                latest,
+                status="cleanup_failed",
+                reason=reason,
+            )
+            return latest, 1, True, None, reason
+
+        reason = "Independent safety cleanup reached a causally later confirmed paused revision."
+        self.logger.write(
+            "safety_cleanup_completed",
+            step_index=latest.step_index,
+            payload={
+                "cause": preemption.cause.value,
+                "command_id": command.command_id,
+                "reason": reason,
+                "world_revision": latest.world_revision.model_dump(mode="json"),
+                "control_mode": latest.control_mode.value,
+            },
+        )
+        self._log_safety_terminal(
+            preemption,
+            latest,
+            status="safe_paused",
+            reason=reason,
+        )
+        return latest, 1, True, None, reason
+
+    def _log_safety_terminal(
+        self,
+        preemption: SafetyPreemption,
+        observation: Observation,
+        *,
+        status: str,
+        reason: str,
+    ) -> None:
+        self.logger.write(
+            "safety_supervisor_terminal",
+            step_index=observation.step_index,
+            payload={
+                "cause": preemption.cause.value,
+                "status": status,
+                "reason": reason,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "control_mode": observation.control_mode.value,
+            },
+        )
+
+    @staticmethod
+    def _is_causally_paused(
+        observation: Observation,
+        after_revision: WorldStateRevision,
+    ) -> bool:
+        return bool(
+            observation.world_revision.is_later_than(after_revision)
+            and observation.telemetry is not None
+            and observation.telemetry.game.paused is True
+            and "game.pause" in observation.telemetry.capabilities
+        )
 
     async def _execute_continuous_decision(
         self,
@@ -760,6 +1143,8 @@ class AgentRuntime:
                         sequence_status=update.sequence_status,
                         delta=update.delta,
                         events=update.events,
+                        active_plan=update.active_plan,
+                        active_command=update.active_command,
                     )
                 )
         return latest
