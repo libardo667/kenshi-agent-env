@@ -241,6 +241,42 @@
       "title": "PauseAction",
       "type": "object"
     },
+    "ScrollAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scroll",
+          "default": "scroll",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "notches": {
+          "maximum": 8,
+          "minimum": -8,
+          "title": "Notches",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "notches"
+      ],
+      "title": "ScrollAction",
+      "type": "object"
+    },
     "SetSpeedAction": {
       "additionalProperties": false,
       "properties": {
@@ -418,6 +454,9 @@
         },
         {
           "$ref": "#/$defs/ClickAction"
+        },
+        {
+          "$ref": "#/$defs/ScrollAction"
         },
         {
           "$ref": "#/$defs/SkillAction"
