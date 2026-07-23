@@ -78,10 +78,12 @@ Before enabling a purchase action, the safety layer must enforce all of these:
 - a stop on a surprising money delta, unverified item identity, stale
   telemetry, or an unexpected screen transition.
 
-The current telemetry bridge reports money and a basic food-item count but does
-not yet report inventory grids, dialogue, trade windows, nearby entities, or
-faction disposition. Visual evidence is therefore necessary, but it is never a
-substitute for a narrow click region and numeric spending guards.
+The current telemetry bridge reports money, a basic food-item count, nearby
+characters, faction disposition, dialogue/trade screen state, and normalized
+screen positions for characters Kenshi says are rendered in the viewport. It
+does not yet report inventory grids, item prices, affordable items, or
+click-target occlusion. Visual evidence is therefore necessary, but it is never
+a substitute for a narrow click region and numeric spending guards.
 
 ## Interaction safety
 

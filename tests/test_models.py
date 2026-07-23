@@ -22,6 +22,7 @@ def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
 
     assert entity.visible is None
     assert entity.position is None
+    assert entity.screen_position is None
 
 
 def test_action_discriminator_parses_click() -> None:

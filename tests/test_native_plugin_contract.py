@@ -19,8 +19,13 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "getCharactersWithinSphere" in source
     assert "target->isATrader()" in source
     assert "AppendVector3(json, targetPosition)" in source
+    assert "target->isOnScreen" in source
+    assert "target->getVisible()" in source
+    assert "getViewMatrix()" in source
+    assert "worldToScreenRel" in source
+    assert "screen_position" in source
     assert "nearby.characters" in source
     assert "gui->isAnyInventoryWindowOpen()" in source
     assert "gui->dialogue->isVisible()" in source
     assert '"trade"' in source
-    assert "spatially close, not necessarily visible" in source
+    assert "geometry can still" in source
