@@ -404,6 +404,8 @@ def runtime_for(
     *,
     observation_pump_enabled: bool = False,
     observation_clock: PlanningClock | None = None,
+    automatic_takeover_enabled: bool = False,
+    concurrent_option_planning_enabled: bool = True,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry(
         {
@@ -419,6 +421,10 @@ def runtime_for(
     safety = SafetyConfig(
         allow_action_kinds=["pause", "set_speed", "skill", "stop"],
         max_actions_per_minute=500,
+        automatic_takeover_enabled=automatic_takeover_enabled,
+        human_control_quiet_seconds=0.1,
+        takeover_countdown_seconds=0.3,
+        takeover_poll_seconds=0.1,
     )
     logger = SessionLogger(tmp_path / "events.jsonl", "continuous")
     runtime = AgentRuntime(
@@ -438,6 +444,7 @@ def runtime_for(
             max_plan_wall_seconds=30.0,
             max_plan_game_seconds=12.0,
             observation_pump_enabled=observation_pump_enabled,
+            concurrent_option_planning_enabled=concurrent_option_planning_enabled,
         ),
         planning_clock=clock,
         observation_clock=observation_clock,
@@ -799,6 +806,153 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
         ]
         metrics = evaluate_log(tmp_path / "events.jsonl")
         assert metrics.plan_execution_cancellations == 1
+
+    asyncio.run(scenario())
+
+
+def test_human_handoff_countdown_replans_instead_of_resuming_cancelled_plan(
+    tmp_path: Path,
+) -> None:
+    class OneHumanInterruptionEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.movement_cancelled = asyncio.Event()
+            self.reported_human_input = False
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            events: list[str] = []
+            if not self.reported_human_input:
+                self.reported_human_input = True
+                events.append("human_input_detected")
+            return self.observation().model_copy(update={"events": events})
+
+        async def step(self, action: Action) -> Transition:
+            if isinstance(action, SkillAction):
+                self.actions.append(action)
+                self.paused = False
+                self.sequence += 1
+                self.movement_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.movement_cancelled.set()
+                    raise
+                raise AssertionError("Cancelled movement unexpectedly resumed.")
+            return await super().step(action)
+
+    class ReplanningMovementPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls > 1:
+                return PlannerDecision(
+                    intent="Stop after proving fresh post-handoff replanning.",
+                    rationale="The cancelled movement plan must never resume.",
+                    action=StopAction(reason="Handoff replan proof complete."),
+                    confidence=1.0,
+                )
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id="handoff-cancelled-plan",
+                plan_version=1,
+                objective="Exercise human handoff cancellation.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="move",
+                        action=SkillAction(name="mock_move"),
+                        preconditions=[
+                            condition(
+                                "telemetry.game.paused",
+                                True,
+                                "game.pause",
+                            )
+                        ],
+                        success_conditions=[
+                            condition(
+                                "telemetry.game.paused",
+                                True,
+                                "game.pause",
+                            )
+                        ],
+                        failure_conditions=[],
+                        timeout_seconds=3.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                    )
+                ],
+                entry_step_id="move",
+                max_actions=1,
+                max_wall_seconds=4.0,
+                max_game_seconds=5.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = OneHumanInterruptionEnvironment(clock=plan_clock)
+        planner = ReplanningMovementPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            automatic_takeover_enabled=True,
+            concurrent_option_planning_enabled=False,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            pump_clock.advance(0.1)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert environment.movement_cancelled.is_set()
+        assert planner.calls == 2
+        assert summary.terminated
+        assert environment.paused is True
+        assert (
+            len([action for action in environment.actions if isinstance(action, SkillAction)]) == 1
+        )
+        events = read_events(tmp_path / "events.jsonl")
+        ownership = [
+            event
+            for event in events
+            if event["event_type"]
+            in {
+                "control_ownership_changed",
+                "agent_takeover_countdown",
+                "agent_takeover_ready",
+            }
+        ]
+        assert [
+            event["payload"]["state"]
+            for event in ownership
+            if event["event_type"] == "control_ownership_changed"
+        ] == ["human_control", "takeover_pending", "agent_active"]
+        assert any(
+            event["event_type"] == "agent_takeover_countdown"
+            for event in ownership
+        )
+        assert any(event["event_type"] == "agent_takeover_ready" for event in ownership)
+        assert sum(
+            event["event_type"] == "safety_supervisor_finished"
+            for event in events
+        ) == 2
 
     asyncio.run(scenario())
 

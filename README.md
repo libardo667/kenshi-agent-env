@@ -408,15 +408,24 @@ and provides short commands for the operations used during live iteration:
   --exclusive --native-assisted
 ```
 
-`launch` opens the RE_Kenshi shortcut, advances the video launcher once,
-continues the current save, and returns only after fresh telemetry confirms the
-game is paused. It never retries focus-taking title clicks. New human input
-terminates launcher automation with no further input, and the calibrated live
-profile must match its exact client size before any in-game pointer click.
+`launch` backs up and disables RE_Kenshi's optional startup panel, advances the
+native video dialog once with its default Enter action, selects the configured
+title/save labels from bounded live MyGUI control telemetry, and returns only
+after fresh telemetry confirms the game is paused. It never retries
+focus-taking title clicks. New human input permanently cancels the remaining
+startup sequence. Title startup is resolution-independent; legacy gameplay
+pointer skills still require their exact calibration identity until each has a
+semantic anchor.
 Journey objectives override the YAML profile for one run only. Live input still
 requires the explicit `--execute` gate; native-assisted execution additionally
 requires `--native-assisted`. `--exclusive` keeps Kenshi in the foreground only
-when the human has handed the session to the agent.
+when the human has handed the session to the agent. Executing through the burn-in
+profile also opens a capture-excluded ownership window. Human input cancels the
+active plan and yields control; after the configured quiet interval it shows a
+resettable takeover countdown. Any new input resets that countdown and F12
+disarms automatic takeover for the run. A completed countdown replans only
+after a fresh paused revision passes revalidation. Use
+`--no-ownership-overlay` only when another viewer is following the same events.
 
 ## Native telemetry bridge
 
@@ -433,9 +442,11 @@ currently exports:
 - current world, inventory, dialogue, and trade screen classification;
 - exact open-dialogue target and bounded option captions;
 - the currently visible tooltip text and normalized bounds of its source
-  widget.
+  widget;
+- at most 64 currently visible/enabled MyGUI text or button captions with their
+  current normalized bounds.
 
-Native protocol `0.4.0` retains the `0.2.0` validated-handle identity contract
+Native protocol `0.5.0` retains the `0.2.0` validated-handle identity contract
 for squad, complete selection, nearby, and native targets. Consumers treat IDs
 as opaque: duplicate display names and list order are not identities, and a
 session-generation change invalidates every older ID. It also retains the
@@ -550,14 +561,14 @@ then present the result as general play ability.
 - Stable native character handles are exported for squad, selection, nearby,
   and native-target telemetry. Broader lifecycle transitions and
   safety-critical medical detail remain unvalidated or unexported.
-- UI skills beyond ordinary configurable key macros require calibration and
-  screenshot-grounded confirmation.
+- Legacy UI skills without a current semantic control/tooltip/entity anchor
+  still require exact calibration and screenshot-grounded confirmation.
 - Hosted vision-planner evidence is limited to supervised narrow live slices.
 - Live continuous execution is restricted to `food_procurement_v1`; its
-  deterministic live-shaped proof and native Release build pass, but its
-  protocol `0.4.0` observations, F12/human-input latency, and full conditional
-  chain still await supervised Kenshi validation. There is no broad option
-  conversion or general live policy.
+  deterministic live-shaped proof and native Release build pass, but the new
+  protocol `0.5.0` semantic launcher, ownership countdown, F12/human-input
+  latency, and full conditional chain still await supervised Kenshi
+  validation. There is no broad option conversion or general live policy.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.

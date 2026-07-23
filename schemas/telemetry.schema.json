@@ -1065,6 +1065,22 @@
           ],
           "default": null
         },
+        "visible_controls": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/VisibleUIControl"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible Controls"
+        },
         "context_menu_open": {
           "anyOf": [
             {
@@ -1167,6 +1183,35 @@
         "z"
       ],
       "title": "Vec3",
+      "type": "object"
+    },
+    "VisibleUIControl": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "button",
+            "text"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "bounds": {
+          "$ref": "#/$defs/NormalizedPointerBounds"
+        }
+      },
+      "required": [
+        "label",
+        "role",
+        "bounds"
+      ],
+      "title": "VisibleUIControl",
       "type": "object"
     }
   },

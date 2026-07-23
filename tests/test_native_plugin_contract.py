@@ -63,7 +63,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.4.0"' in source
+    assert 'PROTOCOL_VERSION = "0.5.0"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -83,7 +83,7 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
 def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.4.0"' in source
+    assert 'PROTOCOL_VERSION = "0.5.0"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactConfirmedVendor" in source
@@ -122,6 +122,21 @@ def test_native_plugin_exports_food_chain_authoritative_ui_and_time_sources() ->
 
     project = PLUGIN_PROJECT.read_text(encoding="utf-8")
     assert project.count("MyGUIEngine_x64.lib") == 2
+
+
+def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert "#include <mygui/MyGUI_Gui.h>" in source
+    assert "ui.visible_controls" in source
+    assert "AppendVisibleUIControls" in source
+    assert "MAX_VISIBLE_UI_CONTROLS = 64" in source
+    assert "MAX_VISITED_UI_WIDGETS = 2048" in source
+    assert "MAX_UI_WIDGET_DEPTH = 32" in source
+    assert "getInheritedVisible()" in source
+    assert "getInheritedEnabled()" in source
+    assert "getAbsoluteCoord()" in source
+    assert 'widget->castType<MyGUI::Button>(false)' in source
 
 
 def test_native_sampler_recovers_from_transient_write_and_cpp_failures() -> None:

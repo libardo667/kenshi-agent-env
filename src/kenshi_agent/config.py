@@ -135,6 +135,16 @@ class ControlsConfig(ConfigModel):
     relative_pointer_max_attempts: int = Field(default=500, ge=1, le=2000)
     calibrated_client_width: int | None = Field(default=None, gt=0)
     calibrated_client_height: int | None = Field(default=None, gt=0)
+    startup_continue_control_labels: list[str] = Field(
+        default_factory=lambda: ["Continue"],
+        min_length=1,
+        max_length=8,
+    )
+    startup_save_control_labels: list[str] = Field(
+        default_factory=lambda: ["autosave1"],
+        min_length=1,
+        max_length=8,
+    )
 
     @field_validator("speed_keys")
     @classmethod
@@ -154,6 +164,19 @@ class ControlsConfig(ConfigModel):
             )
         return self
 
+    @field_validator(
+        "startup_continue_control_labels",
+        "startup_save_control_labels",
+    )
+    @classmethod
+    def startup_control_labels_are_nonempty(
+        cls,
+        value: list[str],
+    ) -> list[str]:
+        if any(not label.strip() for label in value):
+            raise ValueError("startup control labels must be non-empty")
+        return value
+
 
 class SafetyConfig(ConfigModel):
     live_actions_enabled: bool = False
@@ -167,6 +190,10 @@ class SafetyConfig(ConfigModel):
         le=30.0,
     )
     supervisor_pause_timeout_seconds: float = Field(default=2.0, gt=0.0, le=30.0)
+    automatic_takeover_enabled: bool = False
+    human_control_quiet_seconds: float = Field(default=3.0, ge=0.0, le=300.0)
+    takeover_countdown_seconds: float = Field(default=5.0, gt=0.0, le=300.0)
+    takeover_poll_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     max_primitive_actions_per_step: int = Field(default=12, ge=1, le=100)
     max_actions_per_minute: int = Field(default=90, ge=1, le=1000)
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)

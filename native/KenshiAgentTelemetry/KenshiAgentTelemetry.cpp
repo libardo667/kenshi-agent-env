@@ -14,6 +14,9 @@
 #include <kenshi/gui/ForgottenGUI.h>
 #include <kenshi/gui/ToolTip.h>
 #include <kenshi/util/UtilityT.h>
+#include <mygui/MyGUI_Button.h>
+#include <mygui/MyGUI_Gui.h>
+#include <mygui/MyGUI_TextBox.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -39,11 +42,14 @@ namespace
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
+    const unsigned int MAX_VISIBLE_UI_CONTROLS = 64;
+    const unsigned int MAX_VISITED_UI_WIDGETS = 2048;
+    const unsigned int MAX_UI_WIDGET_DEPTH = 32;
     const unsigned int MAX_NATIVE_COMMAND_BYTES = 16384;
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.4.0";
+    const char* PROTOCOL_VERSION = "0.5.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
@@ -876,6 +882,126 @@ namespace
         return true;
     }
 
+    void AppendVisibleUIControlTree(
+        std::ostringstream& json,
+        MyGUI::Widget* widget,
+        const MyGUI::IntSize& view,
+        unsigned int depth,
+        unsigned int& visited,
+        unsigned int& appended,
+        bool& first)
+    {
+        if (widget == NULL ||
+            depth > MAX_UI_WIDGET_DEPTH ||
+            visited >= MAX_VISITED_UI_WIDGETS ||
+            appended >= MAX_VISIBLE_UI_CONTROLS)
+        {
+            return;
+        }
+        ++visited;
+
+        if (widget->getInheritedVisible() && widget->getInheritedEnabled())
+        {
+            MyGUI::TextBox* textBox = widget->castType<MyGUI::TextBox>(false);
+            if (textBox != NULL)
+            {
+                const std::string label = textBox->getCaption().asUTF8();
+                const MyGUI::IntCoord bounds = widget->getAbsoluteCoord();
+                if (!label.empty() &&
+                    bounds.width > 0 &&
+                    bounds.height > 0 &&
+                    bounds.left >= 0 &&
+                    bounds.top >= 0 &&
+                    bounds.left + bounds.width <= view.width &&
+                    bounds.top + bounds.height <= view.height)
+                {
+                    if (!first)
+                        json << ",";
+                    first = false;
+                    ++appended;
+                    json << "{";
+                    json << "\"label\":\"" << JsonEscape(label) << "\",";
+                    json << "\"role\":\""
+                         << (widget->castType<MyGUI::Button>(false) != NULL
+                                 ? "button"
+                                 : "text")
+                         << "\",";
+                    json << "\"bounds\":{";
+                    json << "\"min_x\":"
+                         << static_cast<double>(bounds.left) /
+                                static_cast<double>(view.width)
+                         << ",";
+                    json << "\"max_x\":"
+                         << static_cast<double>(bounds.left + bounds.width) /
+                                static_cast<double>(view.width)
+                         << ",";
+                    json << "\"min_y\":"
+                         << static_cast<double>(bounds.top) /
+                                static_cast<double>(view.height)
+                         << ",";
+                    json << "\"max_y\":"
+                         << static_cast<double>(bounds.top + bounds.height) /
+                                static_cast<double>(view.height);
+                    json << "}}";
+                }
+            }
+        }
+
+        for (size_t index = 0;
+             index < widget->getChildCount() &&
+             visited < MAX_VISITED_UI_WIDGETS &&
+             appended < MAX_VISIBLE_UI_CONTROLS;
+             ++index)
+        {
+            AppendVisibleUIControlTree(
+                json,
+                widget->getChildAt(index),
+                view,
+                depth + 1,
+                visited,
+                appended,
+                first);
+        }
+    }
+
+    void AppendVisibleUIControls(std::ostringstream& json)
+    {
+        MyGUI::Gui* myGui = MyGUI::Gui::getInstancePtr();
+        MyGUI::RenderManager* renderManager =
+            MyGUI::RenderManager::getInstancePtr();
+        if (myGui == NULL || renderManager == NULL)
+        {
+            json << "null";
+            return;
+        }
+        const MyGUI::IntSize view = renderManager->getViewSize();
+        if (view.width <= 0 || view.height <= 0)
+        {
+            json << "null";
+            return;
+        }
+
+        json << "[";
+        bool first = true;
+        unsigned int visited = 0;
+        unsigned int appended = 0;
+        MyGUI::EnumeratorWidgetPtr roots = myGui->getEnumerator();
+        while (roots.next() &&
+               visited < MAX_VISITED_UI_WIDGETS &&
+               appended < MAX_VISIBLE_UI_CONTROLS)
+        {
+            AppendVisibleUIControlTree(
+                json,
+                roots.current(),
+                view,
+                0,
+                visited,
+                appended,
+                first);
+        }
+        json << "]";
+    }
+
     void MonitorActiveNativeCommand(PlayerInterface* player)
     {
         if (!g_activeNativeCommand.active)
@@ -1160,7 +1286,7 @@ namespace
              << "\"camera.position\",\"squad.basic\","
              << "\"ui.inventory\",\"ui.dialogue\","
              << "\"ui.dialogue.target\",\"ui.dialogue.options\","
-             << "\"ui.tooltip\","
+             << "\"ui.tooltip\",\"ui.visible_controls\","
              << "\"nearby.characters\",\"nearby.roles\","
              << "\"control.approach_vendor\","
              << "\"identity.stable_handles\"";
@@ -1229,6 +1355,9 @@ namespace
         json << "\"tooltip_source_bounds\":";
         if (!tooltipVisible || !AppendToolTipSourceBounds(json, tooltip))
             json << "null";
+        json << ",";
+        json << "\"visible_controls\":";
+        AppendVisibleUIControls(json);
         json << ",";
         const std::string selectedId = StableEntityId(selected);
         if (!selectedId.empty() &&

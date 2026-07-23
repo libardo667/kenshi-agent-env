@@ -1,4 +1,6 @@
+import json
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -9,9 +11,22 @@ from kenshi_agent.control.base import InputController, PrimitiveInputAction, Win
 from kenshi_agent.live_dev import (
     LaunchInterrupted,
     _click,
+    _click_semantic_control,
+    _disable_re_kenshi_startup_panel,
+    _ensure_interrupted_safe_state,
+    _unique_visible_control,
     _validate_calibrated_client_rect,
 )
-from kenshi_agent.models import ActionReceipt
+from kenshi_agent.models import (
+    ActionReceipt,
+    GameState,
+    KeyAction,
+    NormalizedPointerBounds,
+    TelemetrySnapshot,
+    UIState,
+    VisibleUIControl,
+)
+from kenshi_agent.telemetry import TelemetryRead
 
 
 class LaunchController(InputController):
@@ -26,6 +41,7 @@ class LaunchController(InputController):
         self.human_input = human_input
         self.interrupt_inside_lease = interrupt_inside_lease
         self.actions: list[PrimitiveInputAction] = []
+        self.safety_actions: list[PrimitiveInputAction] = []
         self.lease_entries = 0
 
     @asynccontextmanager
@@ -41,7 +57,21 @@ class LaunchController(InputController):
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         self.actions.append(action)
-        return ActionReceipt(action=action, accepted=True, executed=True)
+        return ActionReceipt(
+            action=action,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+        )
+
+    async def execute_safety(self, action: PrimitiveInputAction) -> ActionReceipt:
+        self.safety_actions.append(action)
+        return ActionReceipt(
+            action=action,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+        )
 
     def emergency_stop_pressed(self, key: str) -> bool:
         del key
@@ -52,6 +82,58 @@ class LaunchController(InputController):
 
     def client_rect(self) -> WindowRect:
         return self.rect
+
+
+class LaunchTelemetry:
+    def __init__(self, *snapshots: TelemetrySnapshot) -> None:
+        self.snapshots = list(snapshots)
+        self.index = 0
+
+    def read(self) -> TelemetryRead:
+        snapshot = self.snapshots[min(self.index, len(self.snapshots) - 1)]
+        self.index += 1
+        return TelemetryRead(
+            snapshot=snapshot,
+            age_seconds=0.0,
+            stale=False,
+            path=Path("telemetry.latest.json"),
+        )
+
+
+def launch_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
+    return TelemetrySnapshot(
+        sequence=sequence,
+        captured_at=datetime.now(UTC),
+        capabilities=["game.pause"],
+        game=GameState(loaded=True, paused=paused),
+    )
+
+
+def semantic_snapshot(
+    sequence: int,
+    *,
+    label: str,
+    bounds: NormalizedPointerBounds | None = None,
+) -> TelemetrySnapshot:
+    return TelemetrySnapshot(
+        sequence=sequence,
+        capabilities=["ui.visible_controls"],
+        ui=UIState(
+            visible_controls=[
+                VisibleUIControl(
+                    label=label,
+                    role="button",
+                    bounds=bounds
+                    or NormalizedPointerBounds(
+                        min_x=0.2,
+                        max_x=0.4,
+                        min_y=0.1,
+                        max_y=0.2,
+                    ),
+                )
+            ]
+        ),
+    )
 
 
 def test_launch_click_aborts_before_lease_when_human_input_is_detected() -> None:
@@ -130,3 +212,152 @@ def test_launcher_controller_forces_polite_restoring_input_session(
     assert captured["restore_foreground_after_input"] is True
     assert captured["restore_cursor_after_input"] is True
     assert captured["alt_tab_after_input"] is False
+
+
+def test_interrupted_loaded_game_gets_one_causally_confirmed_safety_pause() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(human_input=True)
+        reader = LaunchTelemetry(
+            launch_snapshot(10, paused=False),
+            launch_snapshot(11, paused=True),
+        )
+
+        outcome = await _ensure_interrupted_safe_state(
+            controller,
+            reader,  # type: ignore[arg-type]
+            pause_key="space",
+            timeout_seconds=0.2,
+        )
+
+        assert outcome == "confirmed paused at telemetry sequence 11"
+        assert controller.actions == []
+        assert controller.safety_actions == [KeyAction(key="space")]
+        assert controller.lease_entries == 1
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_interrupted_already_paused_game_emits_no_cleanup_input() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(human_input=True)
+        reader = LaunchTelemetry(launch_snapshot(20, paused=True))
+
+        outcome = await _ensure_interrupted_safe_state(
+            controller,
+            reader,  # type: ignore[arg-type]
+            pause_key="space",
+            timeout_seconds=0.2,
+        )
+
+        assert outcome == "already confirmed paused at telemetry sequence 20"
+        assert controller.actions == []
+        assert controller.safety_actions == []
+        assert controller.lease_entries == 0
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_re_kenshi_startup_panel_is_disabled_with_one_backup(tmp_path: Path) -> None:
+    settings = tmp_path / "RE_Kenshi.ini"
+    settings.write_text(
+        json.dumps({"OpenSettingOnStart": True, "CacheShaders": True}),
+        encoding="utf-8",
+    )
+
+    assert _disable_re_kenshi_startup_panel(settings) is True
+    assert _disable_re_kenshi_startup_panel(settings) is False
+    assert json.loads(settings.read_text(encoding="utf-8")) == {
+        "OpenSettingOnStart": False,
+        "CacheShaders": True,
+    }
+    backup = tmp_path / "RE_Kenshi.ini.kenshi-agent.bak"
+    assert json.loads(backup.read_text(encoding="utf-8"))[
+        "OpenSettingOnStart"
+    ] is True
+
+
+def test_semantic_control_matches_normalized_label_and_live_bounds() -> None:
+    snapshot = semantic_snapshot(1, label="  Continue\n")
+
+    control = _unique_visible_control(snapshot, ["continue"])
+
+    assert control is not None
+    assert control.center == pytest.approx((0.3, 0.15))
+
+
+def test_semantic_control_click_rechecks_exact_anchor_inside_input_lease() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        initial = semantic_snapshot(1, label="Continue")
+        changed = semantic_snapshot(
+            2,
+            label="Continue",
+            bounds=NormalizedPointerBounds(
+                min_x=0.6,
+                max_x=0.8,
+                min_y=0.6,
+                max_y=0.8,
+            ),
+        )
+        reader = LaunchTelemetry(initial, changed)
+
+        with pytest.raises(RuntimeError, match="changed inside the input lease"):
+            await _click_semantic_control(
+                controller,
+                reader,  # type: ignore[arg-type]
+                ["Continue"],
+            )
+
+        assert controller.actions == []
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_semantic_control_click_uses_current_center_at_any_client_size() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        snapshot = semantic_snapshot(
+            3,
+            label="Continue",
+            bounds=NormalizedPointerBounds(
+                min_x=0.55,
+                max_x=0.75,
+                min_y=0.25,
+                max_y=0.35,
+            ),
+        )
+        reader = LaunchTelemetry(snapshot, snapshot)
+
+        await _click_semantic_control(
+            controller,
+            reader,  # type: ignore[arg-type]
+            ["Continue"],
+        )
+
+        assert controller.actions == [
+            live_dev.ClickAction(x=0.65, y=0.3)
+        ]
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_duplicate_semantic_label_is_ambiguous_and_emits_no_match() -> None:
+    control = semantic_snapshot(4, label="Continue").ui.visible_controls
+    assert control is not None
+    snapshot = semantic_snapshot(4, label="Continue").model_copy(
+        update={
+            "ui": UIState(
+                visible_controls=[control[0], control[0].model_copy(deep=True)]
+            )
+        }
+    )
+
+    assert _unique_visible_control(snapshot, ["Continue"]) is None

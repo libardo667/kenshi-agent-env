@@ -13,6 +13,11 @@ from PIL import Image, ImageChops
 
 from .config import PlanningConfig
 from .continuous_executor import ContinuousPlanExecutor
+from .control_ownership import (
+    ControlOwnershipEvent,
+    ControlOwnershipMachine,
+    ControlOwnershipState,
+)
 from .env import AgentEnvironment
 from .memory import MemoryStore
 from .models import (
@@ -43,13 +48,14 @@ from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, v
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .safety import ActionGuard, SafetyViolation
-from .safety_supervisor import SafetyPreemption, SafetySupervisor
+from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
 from .session_log import SessionLogger
 from .world_state import (
     CommandCausalityError,
     ObservationPump,
     StoreUpdate,
     WorldEvent,
+    WorldStateClosedError,
     WorldStateError,
     WorldStateStore,
 )
@@ -459,14 +465,7 @@ class AgentRuntime:
             observation = initial_update.observation
             self._log_world_state_update(initial_update)
             if self.guard.config.supervisor_enabled:
-                safety_supervisor = SafetySupervisor(
-                    store=state_store,
-                    reflexes=self.reflexes,
-                    max_sequence_stalls=(self.guard.config.supervisor_max_sequence_stalls),
-                    minimum_live_stall_age_seconds=(
-                        self.guard.config.supervisor_sequence_stall_min_age_seconds
-                    ),
-                )
+                safety_supervisor = self._new_safety_supervisor(state_store)
                 await safety_supervisor.start()
             if self.planning_config.observation_pump_enabled:
                 observation_pump = ObservationPump(
@@ -489,9 +488,12 @@ class AgentRuntime:
                         terminated,
                         success,
                         stop_reason,
-                    ) = await self._handle_safety_preemption(
+                        safety_supervisor,
+                    ) = await self._handle_preemption_and_maybe_handoff(
                         pending_preemption,
                         state_store,
+                        safety_supervisor,
+                        remaining_run_actions=max_steps - steps_completed,
                     )
                     steps_completed += completed
                     continue
@@ -555,9 +557,12 @@ class AgentRuntime:
                             terminated,
                             success,
                             stop_reason,
-                        ) = await self._handle_safety_preemption(
+                            safety_supervisor,
+                        ) = await self._handle_preemption_and_maybe_handoff(
                             preemption,
                             state_store,
+                            safety_supervisor,
+                            remaining_run_actions=max_steps - steps_completed,
                         )
                         steps_completed += completed
                         continue
@@ -808,9 +813,12 @@ class AgentRuntime:
                         terminated,
                         success,
                         stop_reason,
-                    ) = await self._handle_safety_preemption(
+                        safety_supervisor,
+                    ) = await self._handle_preemption_and_maybe_handoff(
                         preemption,
                         state_store,
+                        safety_supervisor,
+                        remaining_run_actions=max_steps - steps_completed,
                     )
                     steps_completed += completed
                     continue
@@ -850,11 +858,7 @@ class AgentRuntime:
             )
         finally:
             if safety_supervisor is not None:
-                await safety_supervisor.stop()
-                self.logger.write(
-                    "safety_supervisor_finished",
-                    payload=asdict(safety_supervisor.metrics),
-                )
+                await self._finish_safety_supervisor(safety_supervisor)
             if observation_pump is not None:
                 await observation_pump.stop()
             if state_store is not None:
@@ -896,6 +900,234 @@ class AgentRuntime:
                     task.cancel()
                     with suppress(asyncio.CancelledError):
                         await task
+
+    def _new_safety_supervisor(
+        self,
+        state_store: WorldStateStore,
+    ) -> SafetySupervisor:
+        return SafetySupervisor(
+            store=state_store,
+            reflexes=self.reflexes,
+            max_sequence_stalls=self.guard.config.supervisor_max_sequence_stalls,
+            minimum_live_stall_age_seconds=(
+                self.guard.config.supervisor_sequence_stall_min_age_seconds
+            ),
+        )
+
+    async def _finish_safety_supervisor(
+        self,
+        supervisor: SafetySupervisor,
+    ) -> None:
+        await supervisor.stop()
+        self.logger.write(
+            "safety_supervisor_finished",
+            payload=asdict(supervisor.metrics),
+        )
+
+    async def _handle_preemption_and_maybe_handoff(
+        self,
+        preemption: SafetyPreemption,
+        state_store: WorldStateStore,
+        supervisor: SafetySupervisor | None,
+        *,
+        remaining_run_actions: int,
+    ) -> tuple[
+        Observation,
+        int,
+        bool,
+        bool | None,
+        str,
+        SafetySupervisor | None,
+    ]:
+        (
+            observation,
+            completed,
+            terminated,
+            success,
+            stop_reason,
+        ) = await self._handle_safety_preemption(preemption, state_store)
+        can_offer_takeover = (
+            preemption.cause is SafetyCause.HUMAN_INPUT
+            and self.guard.config.automatic_takeover_enabled
+            and remaining_run_actions > completed
+            and observation.telemetry is not None
+            and not observation.telemetry_stale
+            and observation.telemetry.game.loaded
+            and observation.telemetry.game.paused is True
+            and "game.pause" in observation.telemetry.capabilities
+        )
+        if not can_offer_takeover:
+            return (
+                observation,
+                completed,
+                terminated,
+                success,
+                stop_reason,
+                supervisor,
+            )
+
+        if supervisor is not None:
+            await self._finish_safety_supervisor(supervisor)
+            supervisor = None
+        resumed, observation, stop_reason = await self._await_control_takeover(
+            state_store,
+            preemption,
+        )
+        if not resumed:
+            return observation, completed, True, None, stop_reason, None
+
+        if self.guard.config.supervisor_enabled:
+            supervisor = self._new_safety_supervisor(state_store)
+            await supervisor.start()
+        return observation, completed, False, None, stop_reason, supervisor
+
+    async def _await_control_takeover(
+        self,
+        state_store: WorldStateStore,
+        preemption: SafetyPreemption,
+    ) -> tuple[bool, Observation, str]:
+        machine = ControlOwnershipMachine(
+            quiet_seconds=self.guard.config.human_control_quiet_seconds,
+            countdown_seconds=self.guard.config.takeover_countdown_seconds,
+        )
+        observation = state_store.latest or preemption.observation
+        self._emit_control_ownership_events(
+            machine.yield_to_human(
+                self.planning_clock.monotonic(),
+                reason=(
+                    "Human input preempted agent work; the game is confirmed "
+                    "paused and all remaining plan work was cancelled."
+                ),
+            ),
+            observation,
+        )
+        subscription = state_store.subscribe()
+        try:
+            while machine.state not in {
+                ControlOwnershipState.AGENT_ACTIVE,
+                ControlOwnershipState.DISARMED,
+            }:
+                update_task = asyncio.create_task(
+                    subscription.get(),
+                    name="kenshi-agent-handoff-observation",
+                )
+                timer_task = asyncio.create_task(
+                    self.planning_clock.sleep(self.guard.config.takeover_poll_seconds),
+                    name="kenshi-agent-handoff-timer",
+                )
+                done, pending = await asyncio.wait(
+                    {update_task, timer_task},
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                human_input = False
+                emergency_stop = False
+                if update_task in done:
+                    update = update_task.result()
+                    observation = update.observation
+                    messages = {
+                        event.payload.get("message")
+                        for event in update.events
+                        if event.event_type == "observation_event"
+                    }
+                    human_input = "human_input_detected" in messages
+                    emergency_stop = "emergency_stop_detected" in messages
+                for task in pending:
+                    task.cancel()
+                    with suppress(asyncio.CancelledError):
+                        await task
+                events = machine.advance(
+                    self.planning_clock.monotonic(),
+                    human_input=human_input,
+                    emergency_stop=emergency_stop,
+                )
+                self._emit_control_ownership_events(events, observation)
+        except WorldStateClosedError:
+            reason = "World-state stream closed during human control."
+            self._emit_control_ownership_events(
+                machine.disarm(reason=reason),
+                observation,
+            )
+            return False, observation, reason
+        finally:
+            subscription.close()
+
+        if machine.state is ControlOwnershipState.DISARMED:
+            return (
+                False,
+                observation,
+                "Automatic takeover was disarmed; human control remains active.",
+            )
+
+        observation = state_store.latest or observation
+        errors = self._takeover_revalidation_errors(
+            observation,
+            preemption,
+            state_store,
+        )
+        if errors:
+            reason = "Agent takeover revalidation failed: " + "; ".join(errors)
+            self._emit_control_ownership_events(
+                machine.disarm(reason=reason),
+                observation,
+            )
+            return False, observation, reason
+        reason = (
+            "Agent takeover completed after a visible countdown and fresh "
+            "paused-state revalidation; strategic work will replan from the "
+            "current revision."
+        )
+        return True, observation, reason
+
+    def _takeover_revalidation_errors(
+        self,
+        observation: Observation,
+        preemption: SafetyPreemption,
+        state_store: WorldStateStore,
+    ) -> list[str]:
+        errors: list[str] = []
+        telemetry = observation.telemetry
+        if observation.control_mode is not self.control_mode:
+            errors.append("control mode changed")
+        if observation.telemetry_stale:
+            errors.append("telemetry is stale")
+        if telemetry is None:
+            errors.append("telemetry is unavailable")
+            return errors
+        if not telemetry.game.loaded:
+            errors.append("game is not loaded")
+        if telemetry.game.paused is not True:
+            errors.append("game is not confirmed paused")
+        if "game.pause" not in telemetry.capabilities:
+            errors.append("game.pause capability is unavailable")
+        if not observation.world_revision.is_later_than(
+            preemption.observation.world_revision
+        ):
+            errors.append("world revision did not advance after human preemption")
+        if state_store.active_command is not None:
+            errors.append("a command is still active")
+        return errors
+
+    def _emit_control_ownership_events(
+        self,
+        events: tuple[ControlOwnershipEvent, ...],
+        observation: Observation,
+    ) -> None:
+        for event in events:
+            self.logger.write(
+                event.event_type.value,
+                step_index=observation.step_index,
+                payload={
+                    "state": event.state.value,
+                    "reason": event.reason,
+                    "seconds_remaining": event.seconds_remaining,
+                    "world_revision": observation.world_revision.model_dump(
+                        mode="json"
+                    ),
+                    "control_mode": observation.control_mode.value,
+                },
+            )
+            if self.reporter is not None:
+                self.reporter.control_ownership(event)
 
     async def _handle_safety_preemption(
         self,

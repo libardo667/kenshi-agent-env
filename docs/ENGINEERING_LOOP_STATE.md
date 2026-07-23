@@ -28,12 +28,13 @@
   continuous mode. One future-only strategic patch may overlap movement, but
   it cannot execute until post-option state and remaining budgets are
   revalidated.
-- Native protocol `0.4.0` retains process/session-scoped opaque entity IDs and
+- Native protocol `0.5.0` retains process/session-scoped opaque entity IDs and
   the exact caller/revision/session/selection/target command envelope with
-  bounded keyed lifecycle acknowledgements. It adds game time, exact dialogue,
-  and current tooltip/source observations.
+  bounded keyed lifecycle acknowledgements. It retains game time, exact
+  dialogue, and current tooltip/source observations and adds bounded visible
+  MyGUI control labels/roles/bounds.
 
-## Active slice: P0 low-memory and launcher-input safety recovery
+## Active slice: P0 semantic launch and explicit control ownership
 
 Problem: the previously mitigated Intel Iris Xe live profile reproduced
 Kenshi's `BAD STUFF` out-of-video-memory crash after roughly forty minutes.
@@ -49,13 +50,23 @@ Scope:
 - Keep the existing Low-texture/reflection/shadow/zone-hopping mitigations,
   and reduce view distance from approximately 4000 to 2500.
 - Relaunch without gameplay input, confirm a fresh loaded paused state and
-  advancing protocol `0.4.0` telemetry, then measure Kenshi private memory,
+  advancing protocol `0.5.0` telemetry, then measure Kenshi private memory,
   GPU-local usage, and host headroom while the client settles.
-- Preserve the calibrated 1920x1080 client. Reject any other client size before
-  calibrated launcher or live pointer input.
+- Remove pixel coordinates from the native video-launcher transition and
+  disable the optional RE_Kenshi startup panel through its durable setting.
+- Export bounded, current MyGUI button labels and bounds so title-menu startup
+  can target a semantic visible control instead of a resolution-specific
+  coordinate. Keep exact client-size rejection only around legacy calibrated
+  gameplay pointer actions until each one has its own semantic anchor.
 - Make the developer launcher yield permanently on new human input, use an
   input lease, restore foreground/cursor, and remove automatic focus-taking
   click retries and the ungrounded post-load click.
+- Replace silent idle-based reacquisition during a live continuous run with an
+  explicit ownership lifecycle: `agent_active`, `human_control`,
+  `takeover_pending`, and terminal `disarmed`. Human input cancels or resets a
+  visible countdown; F12 disarms automatic takeover; a completed countdown
+  still must pass fresh paused telemetry and control-mode checks before a new
+  plan may be requested.
 - If the reduced profile is stable, make the proven profile/checks durable in
   launcher-side Python/configuration rather than adding DirectX hooks to the
   native telemetry plug-in.
@@ -64,6 +75,8 @@ Non-goals:
 
 - No DirectX interception, renderer patch, graphics-driver modification, or
   new native action surface.
+- No direct invocation of MyGUI callbacks; semantic bounds remain read-only
+  telemetry and ordinary keyboard/mouse input remains the action surface.
 - No claim of broad or long-duration stability from one short verification.
 - No dialogue, trade, purchase, or other gameplay input during the stability
   check.
@@ -76,17 +89,27 @@ Acceptance criteria:
   after relaunch.
 - Kenshi reaches a loaded, causally confirmed paused state with fresh advancing
   telemetry and the expected installed DLL/protocol.
-- The launcher and ordinary live environment both emit zero pointer input when
-  the client differs from the calibrated 1920x1080 profile.
+- The launcher emits no fixed pointer input for the video launcher or title
+  menu. Ordinary live pointer skills still emit zero input when their required
+  calibration identity does not match.
 - Human input before or during a launcher input lease terminates launcher
   automation with no further input; startup never retries focus-taking clicks.
+- Live human input produces a visible/logged `human_control` state. Automatic
+  takeover is impossible before a resettable countdown completes, F12 keeps it
+  disarmed, and resumption replans from a newly validated current revision.
 - Settled memory samples show no immediate monotonic rise or device-reset
   symptom, and the evidence records any remaining headroom qualification.
 - The crash incident document and current ledger distinguish proven mitigation,
   short validation, and still-unproven long-duration stability.
 
-Implementation status: offline implementation and focused tests complete;
-fresh Windows/live validation pending. The frozen process and `BAD STUFF`
+Implementation status: semantic launch and explicit ownership are implemented
+offline, with fresh Windows/live validation pending. Protocol `0.5.0` compiled
+under the pinned VS2010 SP1 toolchain as a 185,344-byte DLL with SHA-256
+`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
+It is installed while Kenshi is stopped; the replaced protocol `0.4.0` DLL is
+preserved under
+`runs/p0-semantic-launch-preinstall-20260723T2208Z/installed-plugin-backup/`.
+The frozen process and `BAD STUFF`
 dialog were preserved before shutdown. Pre-restart configuration is retained
 under the associated run directory. A 1280x720 trial reached fresh advancing
 telemetry, but the user observed misaligned startup clicks and could not regain
@@ -655,6 +678,30 @@ Acceptance criteria:
   that gate remains explicitly open rather than being inferred from a build.
 
 ## Current checks
+
+P0 semantic-launch/control-ownership offline verification on 2026-07-23:
+
+- `.venv/bin/python -m pytest -q`: 209 passed.
+- `.venv/bin/ruff check .`: passed.
+- `.venv/bin/mypy src`: passed, 48 source files.
+- `.venv/bin/python -m compileall -q src scripts`: passed.
+- `.venv/bin/kenshi-agent doctor --config config/default.yaml`: passed and
+  reported `interface_only` / `single_step`.
+- A fresh temporary schema export matched `schemas/` byte-for-byte.
+- Mock seeds 7, 11, and 19 survived one in-game day in 25, 13, and 13 actions.
+- Continuous run `p0-semantic-launch-continuous-proof` completed both guarded
+  plan steps with later command revisions and no rejected action. Its third
+  receipt is the heuristic's explicit terminal Stop.
+- Focused tests prove resettable countdown timing, terminal F12 disarm, visible
+  overlay states, fresh post-handoff replanning, semantic-label normalization,
+  duplicate-label rejection, current-bound clicks at arbitrary normalized
+  positions, and an in-lease anchor-change zero-input result.
+- Protocol `0.5.0` built with the pinned VS2010 SP1 Release x64 toolchain. The
+  185,344-byte DLL SHA-256 is
+  `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
+  It is installed while Kenshi is stopped, and `OpenSettingOnStart` is false.
+- No Windows process has loaded this candidate. Multi-resolution semantic
+  startup and visible ownership reset/disarm remain live gates.
 
 P0 launcher/calibration recovery verification on 2026-07-23:
 

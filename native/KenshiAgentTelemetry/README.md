@@ -9,6 +9,7 @@ It exports fields with a relatively clear KenshiLib/MyGUI surface: pause, speed,
 money, elapsed game minutes, camera position, selected character, squad names,
 basic state, position, movement speed, food-item count, modal UI state, exact
 dialogue target/options, current tooltip text/source bounds, and bounded
+visible MyGUI text/button captions with current bounds, and bounded
 nearby-character telemetry. Nearby roles keep anatomy, platoon commerce,
 leadership, dialogue, Kenshi's native talk-task probability, and exact
 `ShopTrader::getTrader()` ownership separate. Exact ownership comes from a
@@ -17,16 +18,18 @@ installed before save load; Kenshi's spatial query does not enumerate these
 wrappers. A `GameWorld::resetGame` hook clears that registry and prior native
 command acknowledgements before Kenshi constructs a new or loaded session, since
 the plugin DLL remains resident across those transitions.
-Protocol `0.4.0` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.5.0` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
 `selected_character_ids` reports the full player-character selection set, while
 the singular ID identifies its active member.
-It retains the `0.3.0` causal command envelope and adds capability-gated
-`game.time`, `ui.dialogue.target`, `ui.dialogue.options`, and `ui.tooltip`.
+It retains the `0.3.0` causal command envelope, the `0.4.0` food-chain
+observations, and adds capability-gated `ui.visible_controls`.
 Dialogue choices remain null when the dialogue cannot be read. Tooltip text and
-source-widget bounds remain null when no tooltip is visible.
+source-widget bounds remain null when no tooltip is visible. Visible controls
+are read only on the existing UI-thread hook and bounded by result count,
+visited widgets, and tree depth; the plugin never invokes their callbacks.
 It also recognizes a private `Ctrl+Shift+F10` bridge for
 `approach_confirmed_vendor`. Before the hotkey, Python atomically publishes a
 strict `native_command.request.json` carrying its UUID command ID, complete
@@ -94,6 +97,8 @@ folder component.
 ## Verification sequence
 
 - Launch to the title screen and confirm `plugin_status.json` says `ready`.
+- At two client resolutions, verify `ui.visible_controls` reports the same
+  unique configured title/save labels with different current bounds.
 - Enter a disposable save and confirm telemetry sequence numbers increase.
 - Pause/unpause and verify the field changes.
 - Select different squad members and verify the singular ID, complete selected
@@ -115,6 +120,6 @@ folder component.
 Do not enable live Python input until these checks pass. The source is based on
 the pinned maintained headers and compiles as a VS2010 SP1 `Release | x64` DLL.
 Protocol `0.3.0` passed its load/two-hertz telemetry smoke test and one
-supervised stale-rejection/exact-target completion proof. The additive `0.4.0`
-build passes offline but still awaits the supervised live checks in the broader
-checklist.
+supervised stale-rejection/exact-target completion proof. The additive `0.5.0`
+semantic-control build passes offline compilation but still awaits the
+supervised multi-resolution checks in the broader checklist.
