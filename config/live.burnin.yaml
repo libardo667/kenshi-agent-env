@@ -7,6 +7,7 @@ control:
 
 planning:
   mode: single_step
+  live_execution_policy: food_procurement_v1
   observation_pump_enabled: true
   stateful_movement_options_enabled: true
   concurrent_option_planning_enabled: true
@@ -96,6 +97,7 @@ safety:
   emergency_stop_key: f12
   supervisor_enabled: true
   supervisor_max_sequence_stalls: 3
+  supervisor_sequence_stall_min_age_seconds: 1.0
   supervisor_pause_timeout_seconds: 2.0
   max_primitive_actions_per_step: 4
   max_actions_per_minute: 40
@@ -373,6 +375,8 @@ macros:
         hold_seconds: 0.08
   choose_show_goods:
     description: Select the first calibrated Barman dialogue option, Show me your goods.
+    arguments:
+      target_id: Exact stable ID of the dialogue-bound vendor; policy validation requires it to match the approach target.
     visual_precondition: The Barman dialogue panel is visibly open and its first option reads Show me your goods.
     normalized_pointer_bounds:
       min_x: 0.43
@@ -389,6 +393,7 @@ macros:
   inspect_shop_item:
     description: Hover one item in the calibrated Barman inventory grid so its tooltip can be read before any purchase.
     arguments:
+      target_id: Exact stable ID of the one active shop owner.
       x: Normalized horizontal coordinate of the candidate item inside the Barman inventory grid.
       y: Normalized vertical coordinate of the candidate item inside the Barman inventory grid.
     visual_precondition: The exact Barman trade window is open and telemetry reports him as shop_inventory_owner.
@@ -405,6 +410,8 @@ macros:
   buy_inspected_shop_item:
     description: Right-click one previously inspected and visibly confirmed affordable food item in the calibrated Barman inventory grid.
     arguments:
+      target_id: Exact stable ID of the one active shop owner.
+      item_name: Exact item name in the currently visible authoritative tooltip.
       x: Normalized horizontal coordinate of the confirmed food item inside the Barman inventory grid.
       y: Normalized vertical coordinate of the confirmed food item inside the Barman inventory grid.
       expected_price: Exact visible tooltip value in cats; the safety guard rejects a mismatch with its spending limits.

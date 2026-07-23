@@ -7,6 +7,7 @@ control:
 
 planning:
   mode: single_step
+  live_execution_policy: disabled
   observation_pump_enabled: true
   stateful_movement_options_enabled: true
   concurrent_option_planning_enabled: true
@@ -93,6 +94,7 @@ safety:
   emergency_stop_key: f12
   supervisor_enabled: true
   supervisor_max_sequence_stalls: 3
+  supervisor_sequence_stall_min_age_seconds: 1.0
   supervisor_pause_timeout_seconds: 2.0
   max_primitive_actions_per_step: 12
   max_actions_per_minute: 90

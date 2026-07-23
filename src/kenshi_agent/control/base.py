@@ -42,6 +42,11 @@ class InputController(ABC):
     def user_input_detected(self) -> bool:
         return False
 
+    def continuous_user_input_detected(self) -> bool:
+        """Report new human input even while no short-lived input lease is active."""
+
+        return False
+
     def input_lease_wait_seconds(self) -> float:
         return 0.0
 

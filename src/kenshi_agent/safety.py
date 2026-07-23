@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import time
 from collections import deque
 
@@ -189,19 +190,52 @@ class ActionGuard:
         if observation.telemetry_stale or observation.telemetry is None:
             raise SafetyViolation("Purchase blocked because live telemetry is stale or absent.")
         telemetry = observation.telemetry
+        required_capabilities = {
+            "game.money",
+            "game.pause",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.shop_owners",
+            "squad.basic",
+            "squad.hunger",
+            "ui.inventory",
+            "ui.tooltip",
+        }
+        missing = required_capabilities - set(telemetry.capabilities)
+        if missing:
+            raise SafetyViolation(
+                "Purchase lacks required authoritative capabilities: "
+                + ", ".join(sorted(missing))
+            )
+        if telemetry.game.paused is not True:
+            raise SafetyViolation("Purchase requires a confirmed paused game.")
+        selected_ids = telemetry.ui.selected_character_ids
+        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+            raise SafetyViolation("Purchase requires one exact primary selected character.")
         if telemetry.ui.active_screen != "trade":
             raise SafetyViolation("Purchase blocked because the exact trade screen is not open.")
-        if telemetry.active_shop_trader_count != 1 or not any(
-            entity.shop_inventory_owner is True and entity.disposition.value != "hostile"
-            for entity in telemetry.nearby_entities
+        arguments = action.argument_map()
+        target_id = arguments.get("target_id")
+        if not isinstance(target_id, str) or not target_id:
+            raise SafetyViolation("Purchase requires an exact target_id.")
+        target = next(
+            (entity for entity in telemetry.nearby_entities if entity.id == target_id),
+            None,
+        )
+        if (
+            telemetry.active_shop_trader_count != 1
+            or target is None
+            or target.shop_inventory_owner is not True
+            or target.disposition.value not in {"friendly", "neutral"}
         ):
             raise SafetyViolation(
-                "Purchase blocked because exactly one non-hostile shop owner is not verified."
+                "Purchase blocked because the exact target is not the one verified "
+                "non-hostile shop owner."
             )
         if self._purchase_count >= self.config.max_purchases_per_run:
             raise SafetyViolation("Per-run purchase limit has already been reached.")
 
-        expected_price = action.argument_map().get("expected_price")
+        expected_price = arguments.get("expected_price")
         if (
             isinstance(expected_price, bool)
             or not isinstance(expected_price, int)
@@ -219,6 +253,41 @@ class ActionGuard:
             raise SafetyViolation(
                 f"Expected purchase would leave {money - expected_price} cats; minimum is "
                 f"{self.config.min_money_after_purchase}."
+            )
+
+        item_name = arguments.get("item_name")
+        if not isinstance(item_name, str) or not item_name.strip():
+            raise SafetyViolation("Purchase requires the exact current tooltip item_name.")
+        tooltip_text = telemetry.ui.tooltip_text
+        tooltip_bounds = telemetry.ui.tooltip_source_bounds
+        if (
+            telemetry.ui.tooltip_visible is not True
+            or not tooltip_text
+            or tooltip_bounds is None
+        ):
+            raise SafetyViolation(
+                "Purchase requires a visible authoritative tooltip and its source bounds."
+            )
+        price_pattern = rf"(?<![A-Za-z0-9])c\.{expected_price}(?![0-9])"
+        if (
+            item_name not in tooltip_text
+            or "[Food]" not in tooltip_text
+            or re.search(price_pattern, tooltip_text) is None
+        ):
+            raise SafetyViolation(
+                "Purchase arguments do not match the current food tooltip."
+            )
+        x = arguments.get("x")
+        y = arguments.get("y")
+        if (
+            isinstance(x, bool)
+            or not isinstance(x, (int, float))
+            or isinstance(y, bool)
+            or not isinstance(y, (int, float))
+            or not tooltip_bounds.contains(float(x), float(y))
+        ):
+            raise SafetyViolation(
+                "Purchase coordinates are outside the current tooltip source."
             )
 
     def _validate_action_constraints(

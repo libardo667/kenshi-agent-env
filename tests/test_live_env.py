@@ -70,6 +70,7 @@ class PulseController(InputController):
         *,
         emergency_after: int | None = None,
         user_input_after: int | None = None,
+        continuous_user_input: bool = False,
     ) -> None:
         self.telemetry = telemetry
         self.actions: list[PrimitiveInputAction] = []
@@ -77,6 +78,7 @@ class PulseController(InputController):
         self.emergency_checks = 0
         self.user_input_after = user_input_after
         self.user_input_checks = 0
+        self.continuous_user_input = continuous_user_input
 
     def focus_window(self) -> None:
         return None
@@ -119,6 +121,9 @@ class PulseController(InputController):
     def user_input_detected(self) -> bool:
         self.user_input_checks += 1
         return self.user_input_after is not None and self.user_input_checks >= self.user_input_after
+
+    def continuous_user_input_detected(self) -> bool:
+        return self.continuous_user_input
 
     def client_rect(self) -> WindowRect:
         return WindowRect(left=0, top=0, right=1920, bottom=1080)
@@ -236,6 +241,31 @@ def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
+def test_live_observation_reports_human_input_and_emergency_stop(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(
+            telemetry,
+            emergency_after=1,
+            continuous_user_input=True,
+        )
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        current = await environment.reset()
+
+        assert "human_input_detected" in current.events
+        assert "emergency_stop_detected" in current.events
+
+    asyncio.run(scenario())
+
+
 def test_movement_pulse_can_use_click_based_pause_skill(tmp_path: Path) -> None:
     async def scenario() -> None:
         telemetry = PulseTelemetry()
@@ -330,7 +360,7 @@ def test_movement_pulse_preserves_unexpected_game_auto_pause(tmp_path: Path) -> 
 def test_emergency_stop_ends_pulse_after_repausing(tmp_path: Path) -> None:
     async def scenario() -> None:
         telemetry = PulseTelemetry()
-        controller = PulseController(telemetry, emergency_after=3)
+        controller = PulseController(telemetry, emergency_after=4)
         environment = live_environment(
             tmp_path,
             telemetry,

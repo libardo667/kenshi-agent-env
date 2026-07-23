@@ -265,6 +265,8 @@ class Win32InputController(InputController):
         self._expected_foreground: int | None = None
         self._expected_cursor: tuple[int, int] | None = None
         self._last_agent_input_tick: int | None = None
+        self._last_agent_input_tick_global: int | None = None
+        self._continuous_last_input_tick = self._last_input_tick()
         self._restore_foreground: int | None = None
         self._restore_cursor: tuple[int, int] | None = None
         self._last_lease_wait_seconds = 0.0
@@ -447,10 +449,20 @@ class Win32InputController(InputController):
             self._capture_interruption()
         return self._lease_interrupted
 
+    def continuous_user_input_detected(self) -> bool:
+        current_tick = self._last_input_tick()
+        if current_tick == self._continuous_last_input_tick:
+            return False
+        self._continuous_last_input_tick = current_tick
+        return current_tick != self._last_agent_input_tick_global
+
     def _mark_agent_input(self) -> None:
+        current_tick = self._last_input_tick()
+        self._last_agent_input_tick_global = current_tick
+        self._continuous_last_input_tick = current_tick
         if not self._lease_active:
             return
-        self._last_agent_input_tick = self._last_input_tick()
+        self._last_agent_input_tick = current_tick
         self._expected_foreground = int(self.user32.GetForegroundWindow() or 0) or None
         self._expected_cursor = self._cursor_position()
 

@@ -39,6 +39,11 @@ class PlanningMode(StrEnum):
     CONTINUOUS = "continuous"
 
 
+class LiveContinuousPolicy(StrEnum):
+    DISABLED = "disabled"
+    FOOD_PROCUREMENT_V1 = "food_procurement_v1"
+
+
 class ConditionKind(StrEnum):
     FIELD = "field"
     CAPABILITY = "capability"
@@ -52,6 +57,7 @@ class ConditionOperator(StrEnum):
     LESS_THAN_OR_EQUAL = "less_than_or_equal"
     GREATER_THAN = "greater_than"
     GREATER_THAN_OR_EQUAL = "greater_than_or_equal"
+    CONTAINS = "contains"
     EXISTS = "exists"
 
 
@@ -189,11 +195,33 @@ class CameraState(StrictModel):
     zoom: float | None = None
 
 
+class NormalizedPointerBounds(StrictModel):
+    min_x: float = Field(ge=0.0, le=1.0)
+    max_x: float = Field(ge=0.0, le=1.0)
+    min_y: float = Field(ge=0.0, le=1.0)
+    max_y: float = Field(ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def validate_order(self) -> NormalizedPointerBounds:
+        if self.min_x > self.max_x:
+            raise ValueError("min_x must not exceed max_x")
+        if self.min_y > self.max_y:
+            raise ValueError("min_y must not exceed max_y")
+        return self
+
+    def contains(self, x: float, y: float) -> bool:
+        return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
+
+
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
     dialogue_open: bool | None = None
-    dialogue_options: list[str] = Field(default_factory=list)
+    dialogue_target_id: str | None = None
+    dialogue_options: list[str] | None = None
+    tooltip_visible: bool | None = None
+    tooltip_text: str | None = None
+    tooltip_source_bounds: NormalizedPointerBounds | None = None
     context_menu_open: bool | None = None
     selected_character_id: str | None = None
     selected_character_ids: list[str] = Field(default_factory=list)
@@ -507,13 +535,6 @@ class ActionOutcome(StrictModel):
     position_after: Vec3 | None = None
 
 
-class NormalizedPointerBounds(StrictModel):
-    min_x: float = Field(ge=0.0, le=1.0)
-    max_x: float = Field(ge=0.0, le=1.0)
-    min_y: float = Field(ge=0.0, le=1.0)
-    max_y: float = Field(ge=0.0, le=1.0)
-
-
 class MemoryWrite(StrictModel):
     kind: MemoryKind
     content: str = Field(min_length=1, max_length=2000)
@@ -631,9 +652,15 @@ _ALLOWED_CONDITION_PATHS = {
     "telemetry.ui.active_screen",
     "telemetry.ui.modal_open",
     "telemetry.ui.dialogue_open",
+    "telemetry.ui.dialogue_target_id",
+    "telemetry.ui.dialogue_option_count",
+    "telemetry.ui.dialogue_option_0",
+    "telemetry.ui.tooltip_visible",
+    "telemetry.ui.tooltip_text",
     "telemetry.ui.context_menu_open",
     "telemetry.ui.selected_character_id",
     "telemetry.ui.selected_character_count",
+    "telemetry.active_shop_trader_count",
     "telemetry.native_control.available",
     "telemetry.native_control.last_command_sequence",
     "telemetry.native_control.last_command",
@@ -693,6 +720,10 @@ class Condition(StrictModel):
                 raise ValueError("exists conditions must omit expected")
         elif self.expected is None:
             raise ValueError(f"{self.operator.value} conditions require expected")
+        if self.operator == ConditionOperator.CONTAINS and not isinstance(
+            self.expected, str
+        ):
+            raise ValueError("contains conditions require a string expected value")
         return self
 
 
@@ -818,6 +849,7 @@ class Observation(StrictModel):
     mode: Literal["mock", "live", "replay"]
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
     planning_mode: PlanningMode = PlanningMode.SINGLE_STEP
+    live_execution_policy: LiveContinuousPolicy = LiveContinuousPolicy.DISABLED
     world_revision: WorldStateRevision = Field(default_factory=WorldStateRevision)
     telemetry: TelemetrySnapshot | None = None
     telemetry_stale: bool = False

@@ -46,6 +46,7 @@ $solution = Join-Path $repo "native\KenshiAgentTelemetry\KenshiAgentTelemetry.sl
     /m `
     /nologo `
     /v:minimal `
+    "/flp:logfile=$BuildRoot\msbuild.log;verbosity=normal" `
     "/p:Configuration=$Configuration" `
     /p:Platform=x64 `
     "/p:IntDir=$intermediate\" `

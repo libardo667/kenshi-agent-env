@@ -24,11 +24,14 @@ def observation(
     paused: bool = True,
     capabilities: list[str] | None = None,
     threatened: bool = False,
+    mode: str = "mock",
+    age_seconds: float = 0.0,
+    events: list[str] | None = None,
 ) -> Observation:
     return Observation(
         run_id="safety-supervisor",
         step_index=sequence,
-        mode="mock",
+        mode=mode,
         world_revision=WorldStateRevision(
             telemetry_sequence=sequence,
             frame_sequence=sequence,
@@ -58,7 +61,8 @@ def observation(
                 else []
             ),
         ),
-        telemetry_age_seconds=0.0,
+        telemetry_age_seconds=age_seconds,
+        events=events or [],
     )
 
 
@@ -166,6 +170,41 @@ def test_sequence_stall_threshold_is_consecutive_and_deterministic() -> None:
     asyncio.run(scenario())
 
 
+def test_live_sequence_stall_waits_for_wall_age_before_counting_duplicates() -> None:
+    async def scenario() -> None:
+        store = WorldStateStore()
+        current = store.publish(
+            observation(1, mode="live", age_seconds=0.1)
+        ).observation
+        supervisor = SafetySupervisor(
+            store=store,
+            reflexes=ReflexEngine(),
+            max_sequence_stalls=2,
+            minimum_live_stall_age_seconds=1.0,
+        )
+        await supervisor.start()
+
+        for _ in range(4):
+            store.publish(current)
+            await asyncio.sleep(0)
+        assert not supervisor.preempted
+
+        aged = current.model_copy(update={"telemetry_age_seconds": 1.1})
+        store.publish(aged)
+        await asyncio.sleep(0)
+        assert not supervisor.preempted
+        store.publish(aged)
+
+        preemption = await asyncio.wait_for(
+            supervisor.wait_for_preemption(),
+            timeout=1.0,
+        )
+        assert preemption.cause is SafetyCause.SEQUENCE_STALLED
+        await supervisor.stop()
+
+    asyncio.run(scenario())
+
+
 def test_reflex_without_pause_capability_stops_instead_of_claiming_cleanup() -> None:
     async def scenario() -> None:
         store = WorldStateStore()
@@ -224,6 +263,36 @@ def test_human_input_event_preempts_an_authorized_active_plan() -> None:
         assert preemption.cause is SafetyCause.HUMAN_INPUT
         assert isinstance(preemption.decision.action, PauseAction)
         assert supervisor.metrics.human_input_preemptions == 1
+        await supervisor.stop()
+
+    asyncio.run(scenario())
+
+
+def test_emergency_stop_event_preempts_an_authorized_active_plan() -> None:
+    async def scenario() -> None:
+        store = WorldStateStore()
+        current = store.publish(observation(1)).observation
+        store.activate_plan("plan", 1, current.world_revision)
+        supervisor = SafetySupervisor(
+            store=store,
+            reflexes=ReflexEngine(),
+            max_sequence_stalls=2,
+        )
+        await supervisor.start()
+
+        store.publish(
+            observation(
+                2,
+                events=["human_input_detected", "emergency_stop_detected"],
+            )
+        )
+
+        preemption = await asyncio.wait_for(
+            supervisor.wait_for_preemption(),
+            timeout=1.0,
+        )
+        assert preemption.cause is SafetyCause.EMERGENCY_STOP
+        assert preemption.decision.action.kind == "stop"
         await supervisor.stop()
 
     asyncio.run(scenario())

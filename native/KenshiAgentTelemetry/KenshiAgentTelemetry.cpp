@@ -12,6 +12,7 @@
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
+#include <kenshi/gui/ToolTip.h>
 #include <kenshi/util/UtilityT.h>
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -41,7 +42,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.3.0";
+    const char* PROTOCOL_VERSION = "0.4.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
@@ -731,6 +732,129 @@ namespace
                SameHandleIdentity(conversationTarget, targetHandle);
     }
 
+    bool TryGetDialogueTargetId(std::string& targetId)
+    {
+        targetId.clear();
+        if (gui == NULL ||
+            gui->dialogue == NULL ||
+            !gui->dialogue->isVisible() ||
+            gui->dialogue->dialogue == NULL)
+        {
+            return false;
+        }
+
+        Dialogue* dialogue = gui->dialogue->dialogue;
+        Character* dialogueOwner = dialogue->getCharacter();
+        targetId = StableEntityId(dialogueOwner);
+        if (!targetId.empty())
+            return true;
+
+        const hand conversationTarget = dialogue->getConversationTarget();
+        targetId = StableEntityId(conversationTarget);
+        return !targetId.empty();
+    }
+
+    void AppendDialogueOptions(std::ostringstream& json)
+    {
+        if (gui == NULL ||
+            gui->dialogue == NULL ||
+            !gui->dialogue->isVisible())
+        {
+            json << "null";
+            return;
+        }
+
+        json << "[";
+        const Ogre::FastArray<MyGUI::EditBox*>& replyTexts =
+            gui->dialogue->replyTexts;
+        for (size_t index = 0; index < replyTexts.size(); ++index)
+        {
+            if (index > 0)
+                json << ",";
+            MyGUI::EditBox* reply = replyTexts[index];
+            const std::string caption =
+                reply != NULL ? reply->getCaption().asUTF8() : std::string();
+            json << "\"" << JsonEscape(caption) << "\"";
+        }
+        json << "]";
+    }
+
+    std::string CurrentToolTipText(ToolTip* tooltip)
+    {
+        std::ostringstream text;
+        if (tooltip == NULL)
+            return text.str();
+
+        bool first = true;
+        for (Ogre::vector<ToolTip::ToolTipLine*>::type::const_iterator it =
+                 tooltip->lines.begin();
+             it != tooltip->lines.end();
+             ++it)
+        {
+            ToolTip::ToolTipLine* line = *it;
+            if (line == NULL)
+                continue;
+            const std::string left =
+                line->leftBox != NULL
+                    ? line->leftBox->getCaption().asUTF8()
+                    : std::string();
+            const std::string right =
+                line->rightBox != NULL
+                    ? line->rightBox->getCaption().asUTF8()
+                    : std::string();
+            if (left.empty() && right.empty())
+                continue;
+            if (!first)
+                text << "\n";
+            first = false;
+            text << left;
+            if (!left.empty() && !right.empty())
+                text << " ";
+            text << right;
+        }
+        return text.str();
+    }
+
+    bool AppendToolTipSourceBounds(
+        std::ostringstream& json,
+        ToolTip* tooltip)
+    {
+        if (tooltip == NULL || tooltip->caller == NULL)
+            return false;
+        const MyGUI::IntCoord bounds =
+            tooltip->caller->getAbsoluteCoord();
+        const MyGUI::IntSize view =
+            MyGUI::RenderManager::getInstance().getViewSize();
+        if (view.width <= 0 ||
+            view.height <= 0 ||
+            bounds.width <= 0 ||
+            bounds.height <= 0)
+        {
+            return false;
+        }
+
+        const double minX =
+            static_cast<double>(bounds.left) / static_cast<double>(view.width);
+        const double maxX =
+            static_cast<double>(bounds.left + bounds.width) /
+            static_cast<double>(view.width);
+        const double minY =
+            static_cast<double>(bounds.top) / static_cast<double>(view.height);
+        const double maxY =
+            static_cast<double>(bounds.top + bounds.height) /
+            static_cast<double>(view.height);
+        if (minX < 0.0 || minY < 0.0 || maxX > 1.0 || maxY > 1.0)
+            return false;
+
+        json << "{";
+        json << "\"min_x\":" << minX << ",";
+        json << "\"max_x\":" << maxX << ",";
+        json << "\"min_y\":" << minY << ",";
+        json << "\"max_y\":" << maxY;
+        json << "}";
+        return true;
+    }
+
     void MonitorActiveNativeCommand(PlayerInterface* player)
     {
         if (!g_activeNativeCommand.active)
@@ -1011,9 +1135,11 @@ namespace
         json << "\"identity_session_id\":\""
              << IdentitySessionId() << "\",";
         json << "\"capabilities\":["
-             << "\"game.pause\",\"game.speed\",\"game.money\","
+             << "\"game.pause\",\"game.speed\",\"game.money\",\"game.time\","
              << "\"camera.position\",\"squad.basic\","
              << "\"ui.inventory\",\"ui.dialogue\","
+             << "\"ui.dialogue.target\",\"ui.dialogue.options\","
+             << "\"ui.tooltip\","
              << "\"nearby.characters\",\"nearby.roles\","
              << "\"control.approach_vendor\","
              << "\"identity.stable_handles\"";
@@ -1026,7 +1152,12 @@ namespace
         json << "\"paused\":" << JsonBool(ou != NULL && ou->isPaused()) << ",";
         json << "\"speed_multiplier\":"
              << (ou != NULL ? ou->getFrameSpeedMultiplier() : 0.0f) << ",";
-        json << "\"money\":" << money;
+        json << "\"money\":" << money << ",";
+        json << "\"elapsed_minutes\":";
+        if (ou != NULL)
+            json << ou->getTimeStamp_inGameHours().getTotalMinutes();
+        else
+            json << "null";
         json << "},";
 
         json << "\"camera\":{";
@@ -1047,6 +1178,9 @@ namespace
             (gui->inventoryWindowTrader.getCharacter() != NULL ||
              gui->tradeA.getCharacter() != NULL ||
              gui->tradeB.getCharacter() != NULL);
+        ToolTip* tooltip = gui != NULL ? gui->getToolTip() : NULL;
+        const bool tooltipVisible =
+            tooltip != NULL && tooltip->getVisible();
 
         json << "\"ui\":{";
         json << "\"active_screen\":\""
@@ -1054,6 +1188,27 @@ namespace
              << "\",";
         json << "\"modal_open\":" << JsonBool(dialogueOpen || inventoryOpen) << ",";
         json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
+        std::string dialogueTargetId;
+        json << "\"dialogue_target_id\":";
+        if (TryGetDialogueTargetId(dialogueTargetId))
+            json << "\"" << JsonEscape(dialogueTargetId) << "\"";
+        else
+            json << "null";
+        json << ",";
+        json << "\"dialogue_options\":";
+        AppendDialogueOptions(json);
+        json << ",";
+        json << "\"tooltip_visible\":" << JsonBool(tooltipVisible) << ",";
+        json << "\"tooltip_text\":";
+        if (tooltipVisible)
+            json << "\"" << JsonEscape(CurrentToolTipText(tooltip)) << "\"";
+        else
+            json << "null";
+        json << ",";
+        json << "\"tooltip_source_bounds\":";
+        if (!tooltipVisible || !AppendToolTipSourceBounds(json, tooltip))
+            json << "null";
+        json << ",";
         const std::string selectedId = StableEntityId(selected);
         if (!selectedId.empty() &&
             IsSelected(player, selected->getHandle()))

@@ -16,6 +16,7 @@ from .models import (
     ConditionOperator,
     ConditionResult,
     ControlMode,
+    LiveContinuousPolicy,
     MoveCursorAction,
     NoopAction,
     Observation,
@@ -71,9 +72,15 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.active_screen": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.modal_open": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.dialogue_open": ("ui.dialogue",),
+    "telemetry.ui.dialogue_target_id": ("ui.dialogue.target",),
+    "telemetry.ui.dialogue_option_count": ("ui.dialogue.options",),
+    "telemetry.ui.dialogue_option_0": ("ui.dialogue.options",),
+    "telemetry.ui.tooltip_visible": ("ui.tooltip",),
+    "telemetry.ui.tooltip_text": ("ui.tooltip",),
     "telemetry.ui.context_menu_open": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.selected_character_id": ("squad.basic",),
     "telemetry.ui.selected_character_count": ("identity.stable_handles",),
+    "telemetry.active_shop_trader_count": ("nearby.shop_owners",),
     "telemetry.native_control.available": ("control.approach_vendor",),
     "telemetry.native_control.last_command_sequence": ("control.approach_vendor",),
     "telemetry.native_control.last_command": ("control.approach_vendor",),
@@ -146,9 +153,23 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.ui.active_screen": telemetry.ui.active_screen,
         "telemetry.ui.modal_open": telemetry.ui.modal_open,
         "telemetry.ui.dialogue_open": telemetry.ui.dialogue_open,
+        "telemetry.ui.dialogue_target_id": telemetry.ui.dialogue_target_id,
+        "telemetry.ui.dialogue_option_count": (
+            len(telemetry.ui.dialogue_options)
+            if telemetry.ui.dialogue_options is not None
+            else None
+        ),
+        "telemetry.ui.dialogue_option_0": (
+            telemetry.ui.dialogue_options[0]
+            if telemetry.ui.dialogue_options
+            else None
+        ),
+        "telemetry.ui.tooltip_visible": telemetry.ui.tooltip_visible,
+        "telemetry.ui.tooltip_text": telemetry.ui.tooltip_text,
         "telemetry.ui.context_menu_open": telemetry.ui.context_menu_open,
         "telemetry.ui.selected_character_id": telemetry.ui.selected_character_id,
         "telemetry.ui.selected_character_count": len(telemetry.ui.selected_character_ids),
+        "telemetry.active_shop_trader_count": telemetry.active_shop_trader_count,
         "telemetry.native_control.available": telemetry.native_control.available,
         "telemetry.native_control.last_command_sequence": (
             telemetry.native_control.last_command_sequence
@@ -339,6 +360,19 @@ def evaluate_condition(
         result = ConditionResult.TRUE if actual == condition.expected else ConditionResult.FALSE
     elif condition.operator == ConditionOperator.NOT_EQUALS:
         result = ConditionResult.TRUE if actual != condition.expected else ConditionResult.FALSE
+    elif condition.operator == ConditionOperator.CONTAINS:
+        if not isinstance(actual, str) or not isinstance(condition.expected, str):
+            return _evaluation(
+                condition,
+                ConditionResult.UNKNOWN,
+                "Contains comparison requires observed and expected string values.",
+                actual=actual,
+            )
+        result = (
+            ConditionResult.TRUE
+            if condition.expected in actual
+            else ConditionResult.FALSE
+        )
     elif (
         isinstance(actual, (int, float))
         and not isinstance(actual, bool)
@@ -418,6 +452,13 @@ def validate_plan(
     macros: MacroRegistry,
 ) -> list[ConditionEvaluation]:
     errors: list[str] = []
+    if observation.mode == "live":
+        if config.live_execution_policy == LiveContinuousPolicy.DISABLED:
+            errors.append("continuous live execution policy is disabled")
+        elif config.live_execution_policy == LiveContinuousPolicy.FOOD_PROCUREMENT_V1:
+            from .food_procurement import food_procurement_policy_errors
+
+            errors.extend(food_procurement_policy_errors(plan, observation))
     if plan.control_mode != observation.control_mode:
         errors.append(
             f"control mode {plan.control_mode.value!r} does not match "

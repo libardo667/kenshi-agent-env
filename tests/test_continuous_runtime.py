@@ -1286,7 +1286,7 @@ def test_continuous_mode_refuses_live_labeled_environment(tmp_path: Path) -> Non
         assert summary.terminated
         assert planner.calls == 0
         assert environment.actions == []
-        assert "restricted to mock" in summary.stop_reason
+        assert "policy is disabled" in summary.stop_reason
 
     asyncio.run(scenario())
 

@@ -22,6 +22,7 @@ from .models import (
     CharacterState,
     CommandDispatchContext,
     ControlMode,
+    LiveContinuousPolicy,
     NearbyEntity,
     Observation,
     PauseAction,
@@ -378,11 +379,18 @@ class AgentRuntime:
                     "seed": seed,
                     "control_mode": self.control_mode.value,
                     "planning_mode": self.planning_config.mode.value,
+                    "live_execution_policy": (
+                        self.planning_config.live_execution_policy.value
+                    ),
                 },
             )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
-            if observation.mode == "live":
+            if (
+                observation.mode == "live"
+                and self.planning_config.live_execution_policy
+                == LiveContinuousPolicy.DISABLED
+            ):
                 self.logger.write(
                     "observation",
                     step_index=observation.step_index,
@@ -394,8 +402,7 @@ class AgentRuntime:
                     terminated=True,
                     success=None,
                     stop_reason=(
-                        "Continuous execution is currently restricted to mock and "
-                        "fake event-driven environments; live validation is deferred."
+                        "Continuous live execution policy is disabled."
                     ),
                     observation=observation,
                 )
@@ -418,6 +425,9 @@ class AgentRuntime:
                     store=state_store,
                     reflexes=self.reflexes,
                     max_sequence_stalls=(self.guard.config.supervisor_max_sequence_stalls),
+                    minimum_live_stall_age_seconds=(
+                        self.guard.config.supervisor_sequence_stall_min_age_seconds
+                    ),
                 )
                 await safety_supervisor.start()
             if self.planning_config.observation_pump_enabled:
@@ -1310,6 +1320,7 @@ class AgentRuntime:
     def _with_memories(self, observation: Observation) -> Observation:
         updates: dict[str, object] = {
             "planning_mode": self.planning_config.mode,
+            "live_execution_policy": self.planning_config.live_execution_policy,
             "recent_action_outcomes": self._action_outcomes[-self.action_outcome_limit :]
             if self.action_outcome_limit > 0
             else [],
