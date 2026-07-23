@@ -12,7 +12,7 @@ runtime:
   observation_memory_limit: 16
   stop_when_terminated: true
   decision_stream: true
-  objective: Locate and approach a clearly non-hostile trader in The Hub so Lekko can buy one affordable food item. Stay paused between actions and stop at any dialogue or trade UI that has not yet been calibrated.
+  objective: Locate and approach a clearly non-hostile trader in The Hub so the selected squad member can buy one affordable food item. Stay paused between actions and stop at any dialogue or trade UI that has not yet been calibrated.
 
 planner:
   kind: openai
@@ -182,7 +182,7 @@ macros:
         key: i
   recenter_camera:
     description: Recenter the fixed-distance follow camera on the currently selected squad member with Kenshi's F binding.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f
@@ -200,8 +200,8 @@ macros:
         key: alt
         hold_seconds: 0.04
   pan_camera_forward:
-    description: Recenter on Lekko with F, then pan the paused fixed-distance camera forward one bounded step with W.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera forward one bounded step with W.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f
@@ -210,8 +210,8 @@ macros:
         key: w
         hold_seconds: 0.08
   pan_camera_backward:
-    description: Recenter on Lekko with F, then pan the paused fixed-distance camera backward one bounded step with S.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera backward one bounded step with S.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f
@@ -220,8 +220,8 @@ macros:
         key: s
         hold_seconds: 0.08
   pan_camera_left:
-    description: Recenter on Lekko with F, then pan the paused fixed-distance camera left one bounded step with A.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera left one bounded step with A.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f
@@ -230,8 +230,8 @@ macros:
         key: a
         hold_seconds: 0.08
   pan_camera_right:
-    description: Recenter on Lekko with F, then pan the paused fixed-distance camera right one bounded step with D.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    description: Recenter on the selected squad member with F, then pan the paused fixed-distance camera right one bounded step with D.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f
@@ -240,8 +240,8 @@ macros:
         key: d
         hold_seconds: 0.08
   orbit_camera_left:
-    description: Recenter on Lekko with F, then orbit the paused fixed-distance camera left about 14 degrees with Q.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    description: Recenter on the selected squad member with F, then orbit the paused fixed-distance camera left about 14 degrees with Q.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f
@@ -250,8 +250,8 @@ macros:
         key: q
         hold_seconds: 0.25
   orbit_camera_right:
-    description: Recenter on Lekko with F, then orbit the paused fixed-distance camera right about 14 degrees with E.
-    visual_precondition: The normal 3D world HUD is visible, Lekko is selected, and no modal overlay is open.
+    description: Recenter on the selected squad member with F, then orbit the paused fixed-distance camera right about 14 degrees with E.
+    visual_precondition: The normal 3D world HUD is visible, exactly one safe squad member is selected, and no modal overlay is open.
     actions:
       - kind: key
         key: f

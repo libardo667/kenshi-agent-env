@@ -8,8 +8,8 @@ item, or price.
 
 ## Intended loop
 
-1. **Recover the camera.** Double-click Lekko's first squad portrait to center
-   the 3D camera on Lekko.
+1. **Recover the camera.** Double-click the first selected squad portrait to
+   center the 3D camera on that character.
 2. **Locate a trader.** Use the native role split to distinguish a real
    humanoid vendor leader from guards, followers, and trader-squad animals.
 3. **Approach and talk.** Ask the bounded native bridge to issue Kenshi's own
@@ -27,7 +27,7 @@ All six stages have now passed one supervised live run. This is a narrow proof
 for the current 1920x1080 HUD, Hub Barman dialogue, and Barman grid—not a claim
 that arbitrary traders or resolutions are calibrated.
 
-The camera anchor double-clicks Lekko's calibrated squad portrait. This removes
+The camera anchor double-clicks the selected character's calibrated squad portrait. This removes
 ambiguity when a building or other world object owns the detail panel, and uses
 Kenshi's documented portrait-centering gesture without depending on keyboard
 focus. Its normalized coordinate still assumes the standard bottom HUD and the
@@ -52,9 +52,9 @@ while the screenshot remained unchanged.
 
 The truthful local camera vocabulary is `recenter_camera` with the live-proven
 F binding, four bounded WASD pan skills, and two bounded Q/E orbit skills. Each
-pan or orbit first recenters on selected Lekko, so the planner cannot accumulate
+pan or orbit first recenters on the selected character, so the planner cannot accumulate
 movement from an unknown camera anchor. Camera actions remain paused and do not
-move Lekko. Every next observation now includes a bounded action-outcome ledger:
+move that character. Every next observation now includes a bounded action-outcome ledger:
 the chosen action, execution receipt, material frame-change score, meaningful
 telemetry deltas, selected-character positions, and an explicit `no_op`
 assessment when nothing tracked changed. This gives otherwise stateless planner
@@ -82,8 +82,10 @@ problem remains deliberately unsolved.
 
 The current telemetry bridge reports money, a basic food-item count, nearby
 characters, faction disposition, dialogue/trade screen state, and normalized
-screen positions for characters Kenshi says are rendered in the viewport. It
-also keeps anatomy separate from trade roles. A safe vendor candidate is a
+screen positions for characters Kenshi says are rendered in the viewport. Its
+bounded 400-world-unit town-local query includes the Hub Barman from the default
+Wanderer spawn without a hard-coded route. It also keeps anatomy separate from
+trade roles. A safe vendor candidate is a
 non-animal character whose platoon has a vendor list and who is both its leader
 and dialogue-capable; `trader_squad` by itself is explicitly insufficient
 because followers, guards, and animals inherit it. Kenshi's native

@@ -61,13 +61,17 @@ selected character. An entity with `visible: true` is rendered inside the
 current camera viewport and has a normalized `screen_position`. It may still be
 hidden by a roof, wall, character, or other geometry, so this is not proof that
 a click at that point will reach the character.
+The current town-local query radius is 400 world units. This includes the Hub
+Barman from a default Wanderer spawn while remaining bounded; role and
+disposition checks, rather than name or coordinates, determine vendor
+eligibility.
 
 `camera_bearing_degrees` remains available for nearby entities that are outside
 the viewport. It is measured around the current camera: zero is straight ahead,
 negative values are left, positive values are right, and values near either
 `-180` or `180` are behind the camera. This grounds a bounded orbit direction;
 it is not evidence that the route to the entity is clear. Because the live
-camera orbits around Lekko while facing inward, a negative target bearing is
+camera orbits around the selected character while facing inward, a negative target bearing is
 brought toward zero with `orbit_camera_right`, and a positive target bearing
 with `orbit_camera_left`. That sign convention was checked against the live
 camera rather than inferred from the skill names.

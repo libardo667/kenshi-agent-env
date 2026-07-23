@@ -13,13 +13,18 @@ leadership, dialogue, Kenshi's native talk-task probability, and exact
 `ShopTrader::getTrader()` ownership separate. Exact ownership comes from a
 bounded registry maintained by `ShopTrader` constructor/destructor hooks
 installed before save load; Kenshi's spatial query does not enumerate these
-wrappers.
+wrappers. A `GameWorld::resetGame` hook clears that registry and prior native
+command acknowledgements before Kenshi constructs a new or loaded session, since
+the plugin DLL remains resident across those transitions.
 It also recognizes a private `Ctrl+Shift+F10` bridge for
 `approach_confirmed_vendor`. Before issuing anything, the plugin re-enumerates
 nearby characters and requires a conscious, non-hostile humanoid who has a
 vendor list, leads that platoon, and has dialogue. It then uses Kenshi's own
 `PLAYER_TALK_TO` player order with the exact handle and indoor destination.
 `native_control` acknowledges the command and selected target.
+The bounded nearby query uses a 400-world-unit town-local radius, which includes
+the Hub Barman from the default Wanderer spawn without encoding his identity or
+coordinates.
 It explicitly warns that hunger, wounds, getting-eaten state, detailed
 inventory, and click-target occlusion remain unimplemented. KenshiLib's raw
 `isGettingEaten` byte is not exported because live validation found it set on a

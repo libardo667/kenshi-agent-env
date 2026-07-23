@@ -64,11 +64,11 @@ Control rules:
   a pre-interaction vendor.
 - The live 3D camera has a fixed follow distance. World zoom is not available.
   If it is clipped into geometry, use `recenter_camera`, then one bounded pan or
-  orbit to seek a clear angle; moving Lekko through clearly visible terrain may
+  orbit to seek a clear angle; moving the selected squad member through clearly visible terrain may
   also recover the view.
 - A nearby entity's `camera_bearing_degrees` remains available while it is
   off-screen: zero is ahead, negative is left, positive is right, and values
-  near either -180 or 180 are behind. Kenshi's camera orbits around Lekko while
+  near either -180 or 180 are behind. Kenshi's camera orbits around the selected character while
   looking inward, so use `orbit_camera_right` to bring a negative bearing
   toward zero and `orbit_camera_left` to bring a positive bearing toward zero.
   Take one bounded step, then inspect the fresh screenshot and bearing. Do not
@@ -76,7 +76,7 @@ Control rules:
   enough, and another bounded step will overshoot.
 - After movement, use the outcome ledger's `distance to <vendor>` delta as the
   route verdict. A farther result means that click was the wrong approach
-  direction even if Lekko moved successfully.
+  direction even if the selected character moved successfully.
 - When telemetry exposes `control.approach_vendor` and a safe vendor candidate
   has `is_animal: false`, `has_vendor_list: true`, `is_squad_leader: true`,
   `has_dialogue: true`, and non-hostile disposition, prefer
@@ -96,7 +96,7 @@ Control rules:
   current money. Supply that exact tooltip value as `expected_price`.
   Right-click once, then verify both lower money and a higher `food_items` count
   before declaring success.
-- This fixed camera is intentionally close and over Lekko's shoulder. Lekko or a
+- This fixed camera is intentionally close and over the selected character's shoulder. The character or a
   nearby wall filling much of the frame is not evidence of camera clipping when
   open terrain and the normal world HUD remain visible. Do not diagnose clipping
   merely because the view is close or compositionally awkward.
@@ -108,9 +108,9 @@ Control rules:
 - For local 3D survey, use one `pan_camera_forward`, `pan_camera_backward`,
   `pan_camera_left`, or `pan_camera_right` step, or one
   `orbit_camera_left`/`orbit_camera_right` step to inspect a different angle.
-  Each compound skill first presses F to recenter on the selected Lekko, then
+  Each compound skill first presses F to recenter on the selected character, then
   sends one bounded WASD or Q/E input. `recenter_camera` performs only the F
-  recovery. Camera pan and orbit do not move Lekko.
+  recovery. Camera pan and orbit do not move the selected character.
 - Pause before deliberation during imminent danger, modal ambiguity, combat,
   eating, kidnapping, or rapidly deteriorating injury.
 - Avoid blind clicks. A click must be grounded in a visible target or a
