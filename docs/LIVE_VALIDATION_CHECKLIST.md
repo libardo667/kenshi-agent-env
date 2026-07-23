@@ -120,6 +120,16 @@ This historical proof used the native vendor command and is classified
   `2227f3d97124149917d1c5736fb69bf29100b4ac1d6af4badcb76455ff478e16`.
   The prior installed plugin was backed up under
   `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T1008-stable-identity`.
+- Later in the same process, Kenshi reported
+  `DXGI_ERROR_DEVICE_REMOVED` with
+  `DXGI_ERROR_DRIVER_INTERNAL_ERROR`. The prior DLL reproduced the identical
+  renderer failure during a controlled ten-minute baseline and normal-exit
+  test, so the crash is not unique to stable identity.
+- After changing texture quality from Medium to Low and water reflections from
+  Everything to Disabled, the identity DLL held fresh telemetry for more than
+  ten minutes and exited normally. See the
+  [live stability incident](LIVE_STABILITY_INCIDENT_20260723.md) for exact
+  hashes, memory ranges, rollback path, and the limits of that conclusion.
 
 ### Evidence from 2026-07-22 live dry-run
 

@@ -454,6 +454,9 @@ Continuous-mode revision ownership and its current identity limits are recorded
 in [ADR: Authoritative world-state stream](docs/ADR_WORLD_STATE_STREAM.md).
 Native handle identity and lifecycle semantics are recorded in
 [ADR: Stable native identity](docs/ADR_STABLE_NATIVE_IDENTITY.md).
+The 2026-07-23 DirectX device-reset diagnosis, prior-DLL reproduction, and
+reversible live-test mitigation are recorded in the
+[live stability incident](docs/LIVE_STABILITY_INCIDENT_20260723.md).
 Independent preemption and the narrow safe-pause exception are recorded in
 [ADR: Independent safety supervision](docs/ADR_SAFETY_SUPERVISOR.md).
 Portable movement lifecycle and future-only patch authority are recorded in
@@ -495,7 +498,9 @@ then present the result as general play ability.
 - Existing native build/load and supervised Kenshi evidence is version-specific
   and predates explicit run-level control-mode labels; it is not a generic
   compatibility claim.
-- Native stable entity handles and medical detail are not yet exported.
+- Stable native character handles are exported for squad, selection, nearby,
+  and native-target telemetry. Broader lifecycle transitions and
+  safety-critical medical detail remain unvalidated or unexported.
 - UI skills beyond ordinary configurable key macros require calibration and
   screenshot-grounded confirmation.
 - Hosted vision-planner evidence is limited to supervised narrow live slices.

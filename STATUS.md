@@ -54,6 +54,13 @@
   had four IDs; and a paused camera orbit changed camera state without changing
   the session, selection, or nearby ID set. Native list reordering was not
   observed in that run and remains an automated/source-level case.
+- Live crash triage: Kenshi's generic out-of-video-memory dialog corresponded
+  to `DXGI_ERROR_DEVICE_REMOVED` with an internal-driver-error reason. The prior
+  plugin DLL reproduced the same renderer reset after a ten-minute baseline,
+  ruling out stable identity as a necessary cause. Low textures and disabled
+  water reflections then passed a more-than-ten-minute identity soak and clean
+  exit under continued memory pressure. Broad live stability remains open; see
+  `docs/LIVE_STABILITY_INCIDENT_20260723.md`.
 - Nearby-character and UI telemetry: names, factions, dispositions, world
   positions, trader capability, current world/inventory/dialogue/trade screen,
   and game-rendered viewport visibility with normalized screen positions. Live
@@ -105,6 +112,8 @@ new interface-only evidence.
 - Repeated click-drift testing across resolutions, window modes, and UI scales.
 - Screen-position validation across camera rotations, zoom levels, interiors,
   and partially occluded characters.
+- Longer renderer-stability soaks on the current Intel integrated-GPU host,
+  including zone transitions and ordinary gameplay rather than a paused save.
 
 ## Deliberately not implemented
 

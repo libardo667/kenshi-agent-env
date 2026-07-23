@@ -62,3 +62,12 @@ Guards. Across later snapshots and a paused camera orbit, camera state changed
 while the identity session, selected set, and complete nearby ID set did not.
 That live query retained its list order, so native reorder behavior is not
 claimed from the live run.
+
+Later in the same process, Kenshi reset its DirectX device with an internal
+graphics-driver-error reason. A controlled run with the prior plugin DLL
+reproduced the identical error during normal exit after a ten-minute baseline.
+With Low textures and water reflections disabled, this identity DLL then held
+fresh telemetry for more than ten minutes and exited cleanly. This rules out
+stable identity as a necessary cause of the observed reset, but it is not a
+broad stability claim. The full incident record is in
+`LIVE_STABILITY_INCIDENT_20260723.md`.
