@@ -578,6 +578,15 @@ class WorldStateRevision(StrictModel):
             and self.capability_epoch == other.capability_epoch
         )
 
+    def same_telemetry_snapshot_as(self, other: WorldStateRevision) -> bool:
+        """Compare the exact native-control basis without requiring a capture."""
+
+        return bool(
+            self.telemetry_sequence is not None
+            and self.telemetry_sequence == other.telemetry_sequence
+            and self.capability_epoch == other.capability_epoch
+        )
+
     def is_later_than(self, other: WorldStateRevision) -> bool:
         telemetry_regressed = (
             self.telemetry_sequence is not None

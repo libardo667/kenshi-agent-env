@@ -636,9 +636,11 @@ class LiveEnvironment(AgentEnvironment):
             raise RuntimeError("Native command requires a current telemetry observation.")
         if observation.telemetry_stale:
             raise RuntimeError("Native command requires fresh telemetry.")
-        if observation.world_revision != command.based_on_revision:
+        if not observation.world_revision.same_telemetry_snapshot_as(
+            command.based_on_revision
+        ):
             raise RuntimeError(
-                "Native command basis does not match the current complete world revision."
+                "Native command basis does not match the current telemetry snapshot."
             )
         telemetry = observation.telemetry
         required_capabilities = {
