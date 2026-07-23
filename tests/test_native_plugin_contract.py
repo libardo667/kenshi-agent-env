@@ -19,6 +19,11 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "getCharactersWithinSphere" in source
     assert "ShopTraderConstructorHook" in source
     assert "ShopTraderDestructorHook" in source
+    assert "GameWorldResetHook" in source
+    assert "GetRealAddress(&GameWorld::resetGame)" in source
+    assert "ResetSessionState();" in source
+    assert "NEARBY_CHARACTER_RADIUS = 400.0f" in source
+    assert source.count("NEARBY_CHARACTER_RADIUS") == 3
     assert "IsTrackedShopOwner(target)" in source
     assert "platoon->getIsTrader()" in source
     assert "platoon->getHasVendorList()" in source

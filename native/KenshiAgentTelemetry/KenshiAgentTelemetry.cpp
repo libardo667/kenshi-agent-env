@@ -30,9 +30,12 @@ namespace
 {
     const DWORD SNAPSHOT_INTERVAL_MS = 500;
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
+    const float NEARBY_CHARACTER_RADIUS = 400.0f;
+    const int MAX_NEARBY_CHARACTERS = 64;
     const char* PROTOCOL_VERSION = "0.1.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
+    typedef void (*GameWorldResetFunction)(GameWorld*);
     typedef ShopTrader* (*ShopTraderConstructorFunction)(ShopTrader*, Character*);
     typedef void (*ShopTraderDestructorFunction)(ShopTrader*);
 
@@ -43,6 +46,7 @@ namespace
     };
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
+    GameWorldResetFunction g_originalGameWorldReset = NULL;
     ShopTraderConstructorFunction g_originalShopTraderConstructor = NULL;
     ShopTraderDestructorFunction g_originalShopTraderDestructor = NULL;
     TrackedShopTrader g_trackedShopTraders[MAX_TRACKED_SHOP_TRADERS];
@@ -58,6 +62,17 @@ namespace
     std::string g_lastNativeCommandResult;
     std::string g_lastNativeCommandTarget;
     std::wstring g_outputDirectory;
+
+    void ResetSessionState()
+    {
+        g_trackedShopTraderCount = 0;
+        g_shopTraderRegistryOverflow = false;
+        g_approachVendorHotkeyWasDown = false;
+        g_nativeCommandSequence = 0;
+        g_lastNativeCommand.clear();
+        g_lastNativeCommandResult.clear();
+        g_lastNativeCommandTarget.clear();
+    }
 
     std::string JsonEscape(const std::string& input)
     {
@@ -220,10 +235,10 @@ namespace
         ou->getCharactersWithinSphere(
             nearbyCharacters,
             selectedPosition,
-            250.0f,
+            NEARBY_CHARACTER_RADIUS,
             0.0f,
             30.0f,
-            40,
+            MAX_NEARBY_CHARACTERS,
             0,
             selected);
 
@@ -336,6 +351,15 @@ namespace
     {
         UnregisterShopTrader(self);
         g_originalShopTraderDestructor(self);
+    }
+
+    void GameWorldResetHook(GameWorld* world)
+    {
+        // Kenshi can retain the same GameWorld and plugin DLL across New Game or
+        // Load Game. Clear pointers and command acknowledgements from the
+        // outgoing session before the original reset constructs the next one.
+        ResetSessionState();
+        g_originalGameWorldReset(world);
     }
 
     std::string BuildSnapshot(PlayerInterface* player)
@@ -480,10 +504,10 @@ namespace
             ou->getCharactersWithinSphere(
                 nearbyCharacters,
                 selectedPosition,
-                250.0f,
+                NEARBY_CHARACTER_RADIUS,
                 0.0f,
                 30.0f,
-                40,
+                MAX_NEARBY_CHARACTERS,
                 0,
                 selected);
 
@@ -669,20 +693,25 @@ __declspec(dllexport) void startPlugin()
         KenshiLib::GetRealAddress(&ShopTrader::_DESTRUCTOR),
         ShopTraderDestructorHook,
         &g_originalShopTraderDestructor);
+    const KenshiLib::HookStatus worldResetStatus = KenshiLib::AddHook(
+        KenshiLib::GetRealAddress(&GameWorld::resetGame),
+        GameWorldResetHook,
+        &g_originalGameWorldReset);
     g_shopTraderRegistryReady =
         constructorStatus == KenshiLib::SUCCESS &&
-        destructorStatus == KenshiLib::SUCCESS;
+        destructorStatus == KenshiLib::SUCCESS &&
+        worldResetStatus == KenshiLib::SUCCESS;
     if (!g_shopTraderRegistryReady)
     {
         ErrorLog(
             "KenshiAgentTelemetry: ShopTrader lifecycle hooks unavailable; "
-            "exact shop-owner telemetry disabled.");
+            "exact session-scoped shop-owner telemetry disabled.");
     }
 
     DebugLog("KenshiAgentTelemetry: telemetry hook installed.");
     WriteStatus(
         "ready",
         g_shopTraderRegistryReady
-            ? "Telemetry and ShopTrader lifecycle hooks installed."
-            : "Telemetry hook installed; exact ShopTrader registry unavailable.");
+            ? "Telemetry and session-scoped ShopTrader lifecycle hooks installed."
+            : "Telemetry hook installed; exact session-scoped ShopTrader registry unavailable.");
 }

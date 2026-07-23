@@ -334,12 +334,14 @@ class AgentRuntime:
                 if movement_distance is not None and movement_distance >= 0.5:
                     return (
                         ActionOutcomeAssessment.CHANGED,
-                        f"Lekko moved {movement_distance:.2f} world units; use the new position "
+                        f"The selected character moved {movement_distance:.2f} world units; "
+                        "use the new position "
                         "and view to judge route progress.",
                     )
                 return (
                     ActionOutcomeAssessment.NO_OP,
-                    "This movement skill did not move Lekko by a measurable amount. Treat the "
+                    "This movement skill did not move the selected character by a measurable "
+                    "amount. Treat the "
                     "destination as failed or blocked and choose a different grounded route.",
                 )
             if name in {"interact_visible_person", "approach_confirmed_vendor"}:
@@ -357,12 +359,14 @@ class AgentRuntime:
                 if movement_distance is not None and movement_distance >= 0.5:
                     return (
                         ActionOutcomeAssessment.CHANGED,
-                        f"The interaction approach moved Lekko {movement_distance:.2f} world "
+                        "The interaction approach moved the selected character "
+                        f"{movement_distance:.2f} world "
                         "units but opened no dialogue or trade yet.",
                     )
                 return (
                     ActionOutcomeAssessment.NO_OP,
-                    "The interaction opened no dialogue or trade and did not move Lekko. The "
+                    "The interaction opened no dialogue or trade and did not move the "
+                    "selected character. The "
                     "click failed to make progress; do not repeat it on the same evidence.",
                 )
             if name == "buy_inspected_shop_item":
