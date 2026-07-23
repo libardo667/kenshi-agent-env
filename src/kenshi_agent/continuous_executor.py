@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .config import PlanningConfig
 from .env import AgentEnvironment
 from .models import (
     ConditionEvaluation,
@@ -14,6 +13,7 @@ from .models import (
     PlannerDecision,
     PlanStep,
     Transition,
+    WorldStateRevision,
 )
 from .planning import (
     PlanBudgetError,
@@ -25,9 +25,17 @@ from .planning import (
 from .reflexes import ReflexEngine
 from .safety import ActionGuard, SafetyViolation
 from .session_log import SessionLogger
+from .world_state import CommandCausalityError, WorldStateStore
 
 TransitionObserver = Callable[
-    [PlanEnvelope, PlanStep, Observation, Transition],
+    [
+        PlanEnvelope,
+        PlanStep,
+        Observation,
+        Transition,
+        str,
+        WorldStateRevision,
+    ],
     Observation,
 ]
 
@@ -63,19 +71,44 @@ class ContinuousPlanExecutor:
         guard: ActionGuard,
         reflexes: ReflexEngine,
         logger: SessionLogger,
-        config: PlanningConfig,
         clock: PlanningClock,
+        state_store: WorldStateStore,
         observe_transition: TransitionObserver,
     ) -> None:
         self.environment = environment
         self.guard = guard
         self.reflexes = reflexes
         self.logger = logger
-        self.config = config
         self.clock = clock
+        self.state_store = state_store
         self.observe_transition = observe_transition
 
     async def execute(
+        self,
+        plan: PlanEnvelope,
+        observation: Observation,
+        *,
+        remaining_run_actions: int,
+    ) -> PlanExecutionResult:
+        self.state_store.activate_plan(
+            plan.plan_id,
+            plan.plan_version,
+            observation.world_revision,
+        )
+        result: PlanExecutionResult | None = None
+        try:
+            result = await self._execute_active(
+                plan,
+                observation,
+                remaining_run_actions=remaining_run_actions,
+            )
+            return result
+        finally:
+            self.state_store.clear_active_plan(
+                result.reason if result is not None else "Executor failed unexpectedly."
+            )
+
+    async def _execute_active(
         self,
         plan: PlanEnvelope,
         observation: Observation,
@@ -98,6 +131,10 @@ class ContinuousPlanExecutor:
 
         while step_id is not None:
             step = by_id[step_id]
+            latest_store_observation = self.state_store.latest
+            if latest_store_observation is not None:
+                observation = latest_store_observation
+            self.state_store.activate_step(step.step_id)
             budget_reason = self._budget_stop_reason(
                 plan,
                 plan_started_at,
@@ -380,6 +417,14 @@ class ContinuousPlanExecutor:
         )
 
         action_start_revision = observation.world_revision
+        command = self.state_store.begin_command(
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            step_id=step.step_id,
+            action_kind=action.kind,
+            start_revision=action_start_revision,
+        )
+        step_deadline = self.clock.monotonic() + step.timeout_seconds
         self._event(
             "plan_step_started",
             plan,
@@ -388,6 +433,7 @@ class ContinuousPlanExecutor:
             reason="Action passed the normal guard and reserved plan budget.",
             evidence={
                 "action_start_revision": action_start_revision.model_dump(mode="json"),
+                "command_id": command.command_id,
                 "remaining_actions_before_commit": budget.remaining_actions,
             },
         )
@@ -398,6 +444,7 @@ class ContinuousPlanExecutor:
             # An environment error leaves command delivery uncertain. Commit the
             # reservation conservatively so an at-most-once action is not duplicated.
             budget.commit()
+            self.state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
             self._event(
                 "plan_budget_committed",
                 plan,
@@ -435,14 +482,33 @@ class ContinuousPlanExecutor:
             reservation_reason = (
                 "The environment accepted or may have executed the dispatched action."
             )
+        try:
+            latest = self.observe_transition(
+                plan,
+                step,
+                observation,
+                transition,
+                command.command_id,
+                action_start_revision,
+            )
+            self.state_store.complete_command(
+                command.command_id,
+                latest.world_revision,
+            )
+        except CommandCausalityError as exc:
+            return _StepResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=1,
+                reason=f"Command causality validation failed: {exc}",
+            )
         self._event(
             budget_event,
             plan,
-            transition.observation,
+            latest,
             step=step,
             reason=reservation_reason,
         )
-        latest = self.observe_transition(plan, step, observation, transition)
         if not transition.receipt.accepted and not transition.receipt.executed:
             return _StepResult(
                 observation=latest,
@@ -455,8 +521,6 @@ class ContinuousPlanExecutor:
                 terminated=transition.terminated,
                 success=transition.success,
             )
-        step_deadline = self.clock.monotonic() + step.timeout_seconds
-
         while True:
             success_evaluations = evaluate_conditions(
                 step.success_conditions,
@@ -555,31 +619,34 @@ class ContinuousPlanExecutor:
                     reason=reason,
                 )
 
-            await self.clock.sleep(self.config.observation_poll_seconds)
             try:
-                observed = await self.environment.observe()
-            except Exception as exc:
+                remaining_step_seconds = step_deadline - self.clock.monotonic()
+                remaining_plan_seconds = plan.max_wall_seconds - (
+                    self.clock.monotonic() - plan_started_at
+                )
+                latest = await self.state_store.wait_for(
+                    lambda _: True,
+                    after_revision=latest.world_revision,
+                    timeout_seconds=min(
+                        remaining_step_seconds,
+                        remaining_plan_seconds,
+                    ),
+                )
+            except TimeoutError:
+                stale_evidence = any(
+                    evaluation.result == ConditionResult.STALE for evaluation in success_evaluations
+                )
                 return _StepResult(
                     observation=latest,
                     succeeded=False,
                     actions_completed=1,
                     reason=(
-                        "Observation failed while awaiting a causal postcondition: "
-                        f"{type(exc).__name__}: {exc}"
+                        "Step timed out without a causally later world revision "
+                        "satisfying postconditions."
+                        if stale_evidence
+                        else "Step timed out before its success conditions became true."
                     ),
                 )
-            latest = observed.model_copy(
-                update={
-                    "planning_mode": observation.planning_mode,
-                    "recent_action_outcomes": latest.recent_action_outcomes,
-                    "memories": latest.memories,
-                }
-            )
-            self.logger.write(
-                "observation",
-                step_index=latest.step_index,
-                payload=latest,
-            )
 
     def _budget_stop_reason(
         self,

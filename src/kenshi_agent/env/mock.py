@@ -73,6 +73,7 @@ class MockEnvironment(AgentEnvironment):
         self._rng = random.Random(config.seed)
         self._step_index = 0
         self._sequence = 0
+        self._frame_sequence = 0
         self._events: list[str] = []
         self.world = self._new_world()
 
@@ -92,14 +93,25 @@ class MockEnvironment(AgentEnvironment):
             self._rng.seed(self.config.seed)
         self._step_index = 0
         self._sequence = 0
+        self._frame_sequence = 0
         self._events = ["Episode reset in the mock world."]
         self.world = self._new_world()
         return await self.observe()
 
     async def observe(self) -> Observation:
+        return await self._observe(capture=True)
+
+    async def observe_without_capture(self) -> Observation:
+        return await self._observe(capture=False)
+
+    async def _observe(self, *, capture: bool) -> Observation:
         self._sequence += 1
-        screenshot = self._render_screenshot()
-        screenshot_hash = hashlib.sha256(screenshot.read_bytes()).hexdigest()
+        screenshot = None
+        screenshot_hash = None
+        if capture:
+            self._frame_sequence += 1
+            screenshot = self._render_screenshot()
+            screenshot_hash = hashlib.sha256(screenshot.read_bytes()).hexdigest()
         nearby: list[NearbyEntity] = []
         if self.world.hostile_nearby:
             nearby.append(
@@ -200,7 +212,7 @@ class MockEnvironment(AgentEnvironment):
             control_mode=self.control_mode,
             world_revision=WorldStateRevision(
                 telemetry_sequence=self._sequence,
-                frame_sequence=self._sequence,
+                frame_sequence=self._frame_sequence if capture else None,
                 capability_epoch=1,
             ),
             telemetry=telemetry,

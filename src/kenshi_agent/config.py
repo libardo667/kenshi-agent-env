@@ -39,6 +39,13 @@ class ControlConfig(ConfigModel):
 
 class PlanningConfig(ConfigModel):
     mode: PlanningMode = PlanningMode.SINGLE_STEP
+    observation_pump_enabled: bool = True
+    observation_pump_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
+    state_history_limit: int = Field(default=128, ge=8, le=4096)
+    state_delta_limit: int = Field(default=128, ge=8, le=4096)
+    event_journal_limit: int = Field(default=256, ge=16, le=8192)
+    subscriber_queue_limit: int = Field(default=32, ge=2, le=1024)
+    max_delta_paths: int = Field(default=128, ge=16, le=2048)
     max_plan_steps: int = Field(default=4, ge=1, le=8)
     max_actions_per_plan: int = Field(default=8, ge=1, le=16)
     max_plan_wall_seconds: float = Field(default=30.0, gt=0.0, le=120.0)
@@ -46,7 +53,6 @@ class PlanningConfig(ConfigModel):
     max_pointer_actions_per_plan: int = Field(default=8, ge=0, le=32)
     max_purchase_actions_per_plan: int = Field(default=1, ge=0, le=8)
     max_native_assisted_actions_per_plan: int = Field(default=0, ge=0, le=8)
-    observation_poll_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     max_consecutive_replans: int = Field(default=3, ge=0, le=20)
 
 

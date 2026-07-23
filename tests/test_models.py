@@ -130,3 +130,4 @@ def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> Non
 
     assert "plan.schema.json" in exported
     assert "plan_patch.schema.json" in exported
+    assert "receipt.schema.json" in exported

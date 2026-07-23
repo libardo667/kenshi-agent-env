@@ -7,6 +7,13 @@ control:
 
 planning:
   mode: single_step
+  observation_pump_enabled: true
+  observation_pump_seconds: 0.1
+  state_history_limit: 128
+  state_delta_limit: 128
+  event_journal_limit: 256
+  subscriber_queue_limit: 32
+  max_delta_paths: 128
   max_plan_steps: 4
   max_actions_per_plan: 8
   max_plan_wall_seconds: 30
@@ -14,7 +21,6 @@ planning:
   max_pointer_actions_per_plan: 8
   max_purchase_actions_per_plan: 1
   max_native_assisted_actions_per_plan: 1
-  observation_poll_seconds: 0.1
   max_consecutive_replans: 3
 
 paths:

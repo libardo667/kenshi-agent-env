@@ -53,6 +53,30 @@ class FakeClock(PlanningClock):
         self.now += seconds
 
 
+class ManualPumpClock(PlanningClock):
+    def __init__(self) -> None:
+        self.now = 1.0
+        self._sleepers: list[tuple[float, asyncio.Future[None]]] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        deadline = self.now + seconds
+        future = asyncio.get_running_loop().create_future()
+        self._sleepers.append((deadline, future))
+        await future
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+        for deadline, future in self._sleepers:
+            if deadline <= self.now and not future.done():
+                future.set_result(None)
+        self._sleepers = [
+            (deadline, future) for deadline, future in self._sleepers if not future.done()
+        ]
+
+
 class RevisionEnvironment(AgentEnvironment):
     def __init__(
         self,
@@ -277,6 +301,9 @@ def runtime_for(
     environment: RevisionEnvironment,
     planner: Planner,
     clock: FakeClock,
+    *,
+    observation_pump_enabled: bool = False,
+    observation_clock: PlanningClock | None = None,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry({"unused": MacroConfig(actions=[{"kind": "key", "key": "u"}])})
     safety = SafetyConfig(
@@ -300,9 +327,10 @@ def runtime_for(
             max_actions_per_plan=8,
             max_plan_wall_seconds=30.0,
             max_plan_game_seconds=12.0,
-            observation_poll_seconds=0.1,
+            observation_pump_enabled=observation_pump_enabled,
         ),
         planning_clock=clock,
+        observation_clock=observation_clock,
     )
     return runtime, logger
 
@@ -337,6 +365,29 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
         assert metrics.plans_completed == 1
         assert metrics.plan_steps_succeeded == 2
         assert metrics.actions_per_strategic_planner_call == 2.0
+        assert metrics.command_receipts == 2
+        assert metrics.command_receipts_with_post_revision == 2
+        assert metrics.receipts_with_post_command_revision_percentage == 100.0
+
+        events = read_events(tmp_path / "events.jsonl")
+        receipts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "action_receipt"
+            and event["payload"]["command_id"] is not None
+        ]
+        assert [receipt["command_id"] for receipt in receipts] == [
+            "cmd-000001",
+            "cmd-000002",
+        ]
+        assert [
+            receipt["started_after_revision"]["telemetry_sequence"] for receipt in receipts
+        ] == [1, 2]
+        assert [receipt["completed_at_revision"]["telemetry_sequence"] for receipt in receipts] == [
+            2,
+            3,
+        ]
+        assert all(receipt["causal_revision_advanced"] is True for receipt in receipts)
 
         replayed = replay_plan_lifecycle(tmp_path / "events.jsonl")
         assert replayed["two-step-proof"].status == "completed"
@@ -398,6 +449,25 @@ def test_old_but_fresh_revision_cannot_confirm_postcondition(
         failed = [event for event in events if event["event_type"] == "plan_step_failed"]
         assert len(failed) == 1
         assert "later world revision" in str(failed[0]["payload"])
+        receipts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "action_receipt"
+            and event["payload"]["command_id"] is not None
+        ]
+        assert len(receipts) == 1
+        assert receipts[0]["command_id"] == "cmd-000001"
+        assert receipts[0]["causal_revision_advanced"] is False
+        assert receipts[0]["completed_at_revision"] == receipts[0]["started_after_revision"]
+        outcomes = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "action_outcome"
+            and event["payload"]["action"]["kind"] == "pause"
+        ]
+        assert len(outcomes) == 1
+        assert outcomes[0]["assessment"] == "unknown"
+        assert "causally later" in outcomes[0]["feedback"]
 
     asyncio.run(scenario())
 
@@ -471,5 +541,59 @@ def test_continuous_mode_refuses_live_labeled_environment(tmp_path: Path) -> Non
         assert planner.calls == 0
         assert environment.actions == []
         assert "restricted to mock" in summary.stop_reason
+
+    asyncio.run(scenario())
+
+
+def test_planner_output_that_becomes_stale_during_call_is_rejected(
+    tmp_path: Path,
+) -> None:
+    class AdvancingObserveEnvironment(RevisionEnvironment):
+        async def observe(self) -> Observation:
+            self.sequence += 1
+            return self.observation()
+
+    class BlockingPlanner(Planner):
+        def __init__(self) -> None:
+            self.started = asyncio.Event()
+            self.release = asyncio.Event()
+            self.basis: WorldStateRevision | None = None
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.basis = current.world_revision
+            self.started.set()
+            await self.release.wait()
+            return two_step_plan(current)
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = AdvancingObserveEnvironment(clock=plan_clock)
+        planner = BlockingPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await planner.started.wait()
+            await asyncio.sleep(0)
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            planner.release.set()
+            summary = await run
+        finally:
+            logger.close()
+
+        assert summary.terminated
+        assert environment.actions == []
+        events = read_events(tmp_path / "events.jsonl")
+        rejected = [event for event in events if event["event_type"] == "plan_rejected"]
+        assert len(rejected) == 1
+        assert "stale" in str(rejected[0]["payload"])
 
     asyncio.run(scenario())
