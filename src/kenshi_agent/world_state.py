@@ -811,12 +811,18 @@ class WorldStateStore:
         )
         if telemetry is not None:
             nearby = telemetry.get("nearby_entities")
+            capabilities = telemetry.get("capabilities")
+            has_stable_source_ids = (
+                isinstance(capabilities, list)
+                and "identity.stable_handles" in capabilities
+            )
             if isinstance(nearby, list):
                 normalized_nearby: list[dict[str, object]] = []
                 for item in nearby:
                     if isinstance(item, dict):
                         normalized = dict(item)
-                        normalized.pop("id", None)
+                        if not has_stable_source_ids:
+                            normalized.pop("id", None)
                         normalized_nearby.append(normalized)
                 telemetry["nearby_entities"] = sorted(
                     normalized_nearby,
@@ -912,19 +918,74 @@ class WorldStateStore:
             return observation, []
         entities = telemetry.nearby_entities
         revision = observation.world_revision
+        has_stable_source_ids = "identity.stable_handles" in telemetry.capabilities
         active_records = [record for record in self._entities.values() if record.active]
         assigned: set[str] = set()
         emitted: list[WorldEvent] = []
         normalized_entities: list[NearbyEntity] = []
 
         for observed in entities:
+            if has_stable_source_ids:
+                record = self._entities.get(observed.id)
+                if record is None:
+                    record = _EntityRecord(
+                        stable_id=observed.id,
+                        name=observed.name,
+                        kind=observed.kind,
+                        faction=observed.faction,
+                        is_animal=observed.is_animal,
+                        source_ids={observed.id},
+                        first_revision=revision.model_copy(deep=True),
+                        last_revision=revision.model_copy(deep=True),
+                        position=self._entity_position(observed),
+                    )
+                    self._entities[observed.id] = record
+                    self.metrics.entity_lifetimes_started += 1
+                    emitted.append(
+                        self.record_event(
+                            "entity_appeared",
+                            revision=revision,
+                            payload={
+                                "stable_id": observed.id,
+                                "source_id": observed.id,
+                                "name": observed.name,
+                                "identity_source": "validated_handle",
+                            },
+                        )
+                    )
+                else:
+                    was_active = record.active
+                    record.active = True
+                    record.ended_revision = None
+                    record.name = observed.name
+                    record.kind = observed.kind
+                    record.faction = observed.faction
+                    record.is_animal = observed.is_animal
+                    record.source_ids.add(observed.id)
+                    record.last_revision = revision.model_copy(deep=True)
+                    record.position = self._entity_position(observed)
+                    if not was_active:
+                        emitted.append(
+                            self.record_event(
+                                "entity_reappeared",
+                                revision=revision,
+                                payload={
+                                    "stable_id": observed.id,
+                                    "name": observed.name,
+                                    "identity_source": "validated_handle",
+                                },
+                            )
+                        )
+                assigned.add(record.stable_id)
+                normalized_entities.append(observed)
+                continue
+
             fingerprint = self._entity_fingerprint(observed)
             candidates = [
                 record
                 for record in active_records
                 if record.stable_id not in assigned and record.fingerprint == fingerprint
             ]
-            record: _EntityRecord
             if candidates:
                 record = min(
                     candidates,

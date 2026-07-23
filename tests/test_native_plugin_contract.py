@@ -49,3 +49,23 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "gui->dialogue->isVisible()" in source
     assert '"trade"' in source
     assert "geometry can still" in source
+
+
+def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert 'PROTOCOL_VERSION = "0.2.0"' in source
+    assert "identity.stable_handles" in source
+    assert "identity_session_id" in source
+    assert "CreateProcessGeneration()" in source
+    assert "++g_sessionGeneration;" in source
+    assert "StableEntityId(const hand& handle)" in source
+    assert "if (!handle.isValid())" in source
+    assert "handle.containerSerial" in source
+    assert "handle.serial" in source
+    assert "SameHandleIdentity(*it, handle)" in source
+    assert "selectedCharacters.find" not in source
+    assert "selected_character_ids" in source
+    assert "last_target_id" in source
+    assert "squad:" not in source
+    assert "nearby:" not in source

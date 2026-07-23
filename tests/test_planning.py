@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.models import (
+    CharacterState,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -27,6 +28,7 @@ from kenshi_agent.models import (
     RiskBudget,
     SetSpeedAction,
     TelemetrySnapshot,
+    UIState,
     WorldStateRevision,
 )
 from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner, SubprocessPlanner
@@ -179,6 +181,11 @@ def observation(
         telemetry=TelemetrySnapshot(
             sequence=sequence,
             captured_at=datetime.now(UTC),
+            identity_session_id=(
+                "session-planning"
+                if capabilities is not None and "identity.stable_handles" in capabilities
+                else None
+            ),
             capabilities=capabilities
             if capabilities is not None
             else ["game.pause", "game.speed", "game.time"],
@@ -229,6 +236,32 @@ def test_condition_evaluator_preserves_false_unknown_unavailable_and_stale() -> 
         evaluate_condition(
             inferred_capability_gate,
             observation(paused=False, capabilities=["game.speed"]),
+        ).result
+        is ConditionResult.UNAVAILABLE
+    )
+
+
+def test_exact_selection_count_requires_stable_identity_capability() -> None:
+    exact_one = field_condition("telemetry.ui.selected_character_count", 1)
+    current = observation(capabilities=["squad.basic", "identity.stable_handles"])
+    assert current.telemetry is not None
+    current.telemetry = current.telemetry.model_copy(
+        update={
+            "ui": UIState(
+                selected_character_id="entity-player",
+                selected_character_ids=["entity-player"],
+            ),
+            "squad": [
+                CharacterState(id="entity-player", name="Wanderer", selected=True)
+            ],
+        }
+    )
+
+    assert evaluate_condition(exact_one, current).result is ConditionResult.TRUE
+    assert (
+        evaluate_condition(
+            exact_one,
+            observation(capabilities=["squad.basic"]),
         ).result
         is ConditionResult.UNAVAILABLE
     )
