@@ -26,10 +26,11 @@
   one strategic advisory can overlap movement, and a matching future-only patch
   is withheld until post-option state, assumptions, and remaining budgets pass
   a second deterministic validation.
-- Protocol `0.2.0` emits session-scoped opaque squad, selection, nearby, and
-  native-target IDs derived from validated Kenshi handles rather than list
-  positions or names. The store preserves these IDs exactly; legacy producers
-  still use the ambiguity-aware fingerprint/position registry.
+- Protocol `0.3.0` retains the `0.2.0` session-scoped opaque handle identities
+  and adds a bounded causal native-command envelope. Caller-owned UUID command
+  IDs, complete world revisions, control mode, identity session, exact
+  selection, and exact target are checked before a player order; keyed
+  acknowledgements report accepted, rejected, completed, or cancelled state.
 - A bounded per-journey action-outcome ledger that feeds each planner call its
   recent validated actions, material frame changes, telemetry/position deltas,
   and explicit no-op feedback.
@@ -54,6 +55,11 @@
   had four IDs; and a paused camera orbit changed camera state without changing
   the session, selection, or nearby ID set. Native list reordering was not
   observed in that run and remains an automated/source-level case.
+- Causal-command live boundary validation: protocol `0.3.0` keyed and rejected
+  one stale revision without movement, accepted one current exact
+  selection/target request, retained its identity while pathing, completed only
+  for exact-target dialogue, cleared active state, remained paused, and closed
+  normally without a new plugin/renderer/Application error.
 - Live crash triage: Kenshi's generic out-of-video-memory dialog corresponded
   to `DXGI_ERROR_DEVICE_REMOVED` with an internal-driver-error reason. The prior
   plugin DLL reproduced the same renderer reset after a ten-minute baseline,
@@ -126,7 +132,3 @@ new interface-only evidence.
   exist only for the portable configured-movement adapter. `single_step`
   remains the default and the continuous path is restricted to mock/fake
   environments.
-- Causal native command envelopes and completion acknowledgement. Stable native
-  identity is implemented, but the current hotkey bridge still lacks a
-  caller-supplied command ID, mode/selection/target/revision fences, explicit
-  accepted/rejected reason, and completion revision.

@@ -192,8 +192,9 @@ option_cancelled
 Budget reservation, commit, and release are logged separately. The evaluator
 reports strategic calls, plan and step outcomes, budget transactions, and
 actions per strategic planner call. It also reports causal command-receipt
-coverage, sequence stalls, transient-event retention/loss, subscriber drops,
-pump errors, revision failures, entity lifetime counts, and command mismatches.
+coverage, native acknowledgement/final-status counts and sequence lag, sequence
+stalls, transient-event retention/loss, subscriber drops, pump errors, revision
+failures, entity lifetime counts, and command mismatches.
 Supervisor preemptions, strategic/executor cancellations, cleanup starts,
 completions/failures, terminal states, and cleanup success percentage are
 reported separately from planner/reflex counts.
@@ -276,7 +277,7 @@ Portable tests and the built-in heuristic prove:
   cancellation release their owned tasks/subscriptions.
 
 The current option conversion is deliberately narrow: only configured
-movement-pulse skills use it, and live continuous mode remains blocked. Next
-work can harden/generalize the option protocol or proceed to native bridge
-acknowledgements and stable identity, without claiming Windows controller
-interruption latency from portable evidence.
+movement-pulse skills use it, and live continuous mode remains blocked. Stable
+native identity and causal bridge acknowledgements now use the same
+caller-owned command/revision semantics, but that does not establish Windows
+controller interruption latency or authorize live continuous execution.

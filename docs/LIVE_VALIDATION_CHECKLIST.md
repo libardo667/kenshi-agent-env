@@ -131,6 +131,60 @@ This historical proof used the native vendor command and is classified
   [live stability incident](LIVE_STABILITY_INCIDENT_20260723.md) for exact
   hashes, memory ranges, rollback path, and the limits of that conclusion.
 
+### Protocol 0.3 causal-command boundary
+
+- [x] Portable strict request/acknowledgement, old-ack isolation, exact
+      rejection, dispatch propagation, replay metrics, and source-contract
+      tests pass.
+- [x] The pinned VS2010 SP1 Release x64 project builds offline.
+- [x] Install the exact built DLL and record its SHA-256 plus rollback copy.
+- [x] Load protocol `0.3.0`, confirm fresh strict telemetry, and keep Kenshi
+      paused before command probes.
+- [x] Send one stale-revision request and record a later keyed
+      `stale_revision` rejection with no movement.
+- [x] Send one current exact-target request and record the request command ID,
+      based-on revision, identity session, exact selected/target IDs, matching
+      acceptance, final terminal status, and confirmed pause.
+- [x] Confirm no new renderer error or plugin error during the bounded run and
+      close Kenshi normally.
+
+Evidence from the supervised 2026-07-23 run:
+
+- Installed DLL SHA-256 was
+  `9bbeea1826216365c5492ee94db4b692848a105fbb36bc794b02723e953a293b`.
+  The prior `0.2.0` DLL was copied to
+  `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T184326Z-p5-causal`.
+- RE_Kenshi loaded `KenshiAgentTelemetry.dll`, the plugin logged
+  `telemetry hook installed`, protocol `0.3.0` parsed strictly, and the loaded
+  world began paused with an empty acknowledgement ring.
+- Identity session
+  `session-c28ef640df456a20-0000000000000002` bound selected Hep ID
+  `entity-c28ef640df456a20-0000000000000002-00000001-00000001-4e74e700-00000001-b1298c00`
+  to Barman target ID
+  `entity-c28ef640df456a20-0000000000000002-00000001-00000009-7994cd00-00000001-53ed9c80`.
+- Stale command `cmd-fc8d78b68bf54babb8d6f360a14f4bbc` used basis
+  sequence 168 while the current snapshot was 169. Telemetry 170 rejected it
+  as `stale_revision`; selected position remained exactly
+  `(-51061.47, 1524.116, 2981.53)`, no command became active, and pause remained
+  true.
+- Current command `cmd-77f7735532484c11b0be9cb46fb29081` used basis 248
+  and received exact-target acceptance at sequence 249. The initial bounded
+  four-second pulse reduced target distance from 329.2628 to 107.3233 and
+  confirmed pause. Two supervised continuation pulses advanced the already
+  issued Kenshi task without another command/hotkey; the second auto-paused as
+  exact Barman dialogue opened.
+- Telemetry 423 completed that same command with
+  `exact_dialogue_target_open`, cleared `active_command_id`, and remained
+  paused. Telemetry 475 retained both exact acknowledgements, the dialogue
+  screen, and the final 25.65993 target distance.
+- The continuation pulses were explicit operator test intervention, not new
+  planner commands. They are recorded so the proof is not misrepresented as
+  one uninterrupted four-second action.
+- Kenshi accepted a normal window-close request and exited. The session's
+  Kenshi/RE_Kenshi logs and recent Windows Application events contained no
+  plugin error, `DXGI_ERROR_DEVICE_REMOVED`, driver-internal error, BAD STUFF
+  message, or crash event.
+
 ### Evidence from 2026-07-22 live dry-run
 
 - The initial title filter `Kenshi` also matched a terminal opened in the

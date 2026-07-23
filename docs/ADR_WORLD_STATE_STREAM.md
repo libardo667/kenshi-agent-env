@@ -48,8 +48,8 @@ Python runtime; it does not claim that the plugin emits native events.
   snapshot changes.
 - Slow consumers lose bounded queued updates visibly through metrics rather
   than growing memory without limit.
-- The portable identity registry improves continuity but cannot prove Kenshi
-  object identity. Native handle generations, duplicate-name guarantees without
-  spatial evidence, and bridge-level acknowledgements remain P5 work.
+- The portable identity registry alone cannot prove Kenshi object identity.
+  Later P5 contracts added stable native handle generations and keyed
+  bridge-level acknowledgements while retaining this portable fallback.
 - `single_step` remains unchanged, and continuous live execution remains
   blocked until independent supervision and cancellable option cleanup exist.

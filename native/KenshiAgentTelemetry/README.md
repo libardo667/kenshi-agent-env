@@ -16,21 +16,24 @@ installed before save load; Kenshi's spatial query does not enumerate these
 wrappers. A `GameWorld::resetGame` hook clears that registry and prior native
 command acknowledgements before Kenshi constructs a new or loaded session, since
 the plugin DLL remains resident across those transitions.
-Protocol `0.2.0` also derives opaque entity IDs from validated Kenshi handles
-plus process/session generations. These IDs survive squad/nearby list
-reordering and distinguish duplicate names without serializing addresses.
+Protocol `0.3.0` retains the `0.2.0` opaque entity IDs derived from validated
+Kenshi handles plus process/session generations. These IDs survive squad/nearby
+list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
 `selected_character_ids` reports the full player-character selection set, while
 the singular ID identifies its active member.
 It also recognizes a private `Ctrl+Shift+F10` bridge for
-`approach_confirmed_vendor`. Before issuing anything, the plugin re-enumerates
-nearby characters and requires a conscious, non-hostile humanoid who has a
-vendor list, leads that platoon, and has dialogue. It then uses Kenshi's own
+`approach_confirmed_vendor`. Before the hotkey, Python atomically publishes a
+strict `native_command.request.json` carrying its UUID command ID, complete
+world revision, `native_assisted` mode, identity session, exactly one selected
+stable ID, and one exact target stable ID. The plugin rechecks all of those plus
+the target's conscious, non-hostile humanoid vendor-leader/dialogue role. It
+never substitutes a nearer target. Only then does it use Kenshi's own
 `PLAYER_TALK_TO` player order with the exact handle and indoor destination.
-`native_control` reports the legacy command sequence/result plus both the target
-display name and stable target ID. It still lacks a caller command ID,
-revision/selection fence, and completion revision, so it is not yet a causal
-command protocol.
+`native_control` exposes a bounded ring of keyed accepted/rejected/completed/
+cancelled acknowledgements. Active work cancels if selection, target lifetime,
+or target role changes and completes only for dialogue bound to the exact
+target. The legacy last-command fields remain diagnostics.
 This makes the DLL a native-assisted control bridge, not a globally read-only
 plugin. The Python runtime exposes this command only in `native_assisted` mode;
 `interface_only` filters the capability/state and rejects the marked skill.
@@ -76,6 +79,7 @@ By default the plugin writes to:
 ```text
 %LOCALAPPDATA%\KenshiAgent\telemetry.latest.json
 %LOCALAPPDATA%\KenshiAgent\plugin_status.json
+%LOCALAPPDATA%\KenshiAgent\native_command.request.json
 ```
 
 Set `KENSHI_AGENT_TELEMETRY_DIR` before launching Kenshi to override the folder.
@@ -93,6 +97,11 @@ folder component.
   remain attached to handles rather than list positions or names.
 - Load a disposable save and verify `identity_session_id` changes without
   retaining old selection, nearby, or native target IDs.
+- Publish a stale-revision request and verify its exact command ID is rejected
+  without movement.
+- Publish one current exact-target request and verify a later keyed acceptance,
+  no substitute target, terminal completion/cancellation semantics, and final
+  pause.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -100,5 +109,7 @@ folder component.
 
 Do not enable live Python input until these checks pass. The source is based on
 the pinned maintained headers, compiles as a VS2010 SP1 `Release | x64` DLL,
-and passed its initial load/two-hertz telemetry smoke test in the user's Kenshi
-installation. The broader checklist remains intentionally incomplete.
+and passed its initial load/two-hertz telemetry smoke test plus one supervised
+protocol `0.3.0` stale-rejection and exact-target completion proof in the
+user's Kenshi installation. The broader checklist remains intentionally
+incomplete.
