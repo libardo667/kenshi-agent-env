@@ -19,7 +19,10 @@ Python runtime
   │                              ├─ entity lifetimes
   │                              ├─ active plan/command
   │                              └─ subscriber queues
-  ├─ reflex layer (pause/stop only by default)
+  │                                      ├─> safety supervisor
+  │                                      │     └─ cancel + guarded safe pause
+  │                                      └─> scheduler/executor
+  ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
   ├─ schema + policy + rate-limit guard
   ├─ skill/macro compiler
@@ -65,6 +68,29 @@ The store:
 This is an authoritative Python state stream over the plugin's existing atomic
 latest-snapshot file. It is not a native event transport, and its entity IDs are
 not validated Kenshi object handles. See `docs/ADR_WORLD_STATE_STREAM.md`.
+
+## Independent safety supervision
+
+Portable continuous mode starts one `SafetySupervisor` subscriber before the
+observation pump. It evaluates deterministic reflexes, telemetry staleness,
+consecutive sequence stalls, pause-capability withdrawal, and unexpected
+unpause from immutable `StoreUpdate` snapshots. Each update carries the active
+plan and command state that existed when it was published, so delayed
+subscriber processing cannot retroactively reclassify an authorized action.
+
+The scheduler races strategic planning and plan execution against the
+supervisor's first latched preemption. A blocked task is canceled once. If
+action delivery was already attempted, the executor spends its reservation and
+records the command as inconclusive rather than risking an automatic duplicate.
+Cleanup uses only `PauseAction(paused=true)`, still passes control-mode and
+allowlist policy, and may bypass only the ordinary rate counter so exhaustion
+cannot prevent an emergency pause. A cleanup terminal is `safe_paused` only
+after a later capable world revision confirms pause; otherwise it is explicitly
+failed or unverified.
+
+This portable implementation does not enable live continuous mode and does not
+measure Windows F12, human-input, or controller cancellation latency. See
+`docs/ADR_SAFETY_SUPERVISOR.md`.
 
 ## Partial observability
 

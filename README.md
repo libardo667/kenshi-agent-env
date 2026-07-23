@@ -30,6 +30,10 @@ and game-integration failures.
   pump feeds validated revisions, state deltas, transient events, entity
   lifetimes, subscribers, and command/plan causality without each consumer
   polling the environment.
+- An independent deterministic safety supervisor for portable continuous runs.
+  It can cancel a blocked strategic call or in-flight action, conservatively
+  close uncertain command state, request one narrowly guarded pause, and report
+  success only after a causally later revision confirms the paused state.
 - A Windows client-area screenshot and SendInput controller.
 - Two independent gates before real keyboard or mouse input is allowed.
 - Typed `interface_only` and `native_assisted` control modes, with an additional
@@ -117,6 +121,12 @@ events, nearby-entity lifetimes, active plan/step/command state, and isolated
 subscriber queues. Command receipts carry their command ID plus start and
 canonical completion revisions; an unchanged revision is logged as
 inconclusive rather than progress.
+
+The safety supervisor consumes that same stream independently of the strategic
+planner. Threat reflexes, stale or stalled telemetry, pause-capability
+withdrawal, and an unpaused state without an authorized plan/command can
+preempt slow work. Supervisor decisions, cancellations, cleanup attempts, and
+terminal results have distinct log events and evaluator metrics.
 
 Continuous mode is intentionally restricted to mock and fake event-driven
 environments in this slice. It is not a claim of live Kenshi continuity.
@@ -422,6 +432,8 @@ The rationale and enforcement points are recorded in
 [ADR: Explicit control modes](docs/ADR_CONTROL_MODES.md).
 Continuous-mode revision ownership and its current identity limits are recorded
 in [ADR: Authoritative world-state stream](docs/ADR_WORLD_STATE_STREAM.md).
+Independent preemption and the narrow safe-pause exception are recorded in
+[ADR: Independent safety supervision](docs/ADR_SAFETY_SUPERVISOR.md).
 
 The Python guard enforces:
 
@@ -463,8 +475,10 @@ then present the result as general play ability.
 - UI skills beyond ordinary configurable key macros require calibration and
   screenshot-grounded confirmation.
 - Hosted vision-planner evidence is limited to supervised narrow live slices.
-- Continuous execution currently has no independent safety supervisor,
-  planner/executor overlap, live movement option, or active patch application.
+- Continuous execution still has no strategic planner/executor overlap,
+  stateful live movement option, active patch application, or live enablement.
+  Portable supervisor tests do not establish F12 or human-input preemption
+  latency against a real Windows controller.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.
