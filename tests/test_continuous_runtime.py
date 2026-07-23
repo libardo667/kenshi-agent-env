@@ -516,6 +516,47 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
     asyncio.run(scenario())
 
 
+def test_long_planner_validation_error_stops_without_masking_original_failure(
+    tmp_path: Path,
+) -> None:
+    class LongFailurePlanner(Planner):
+        async def decide(self, observation: Observation) -> PlannerOutput:
+            del observation
+            raise ValueError("invalid structured output " + ("x" * 20_000))
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            LongFailurePlanner(),
+            clock,
+        )
+        try:
+            summary = await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert summary.terminated is True
+        assert summary.stop_reason == "Planner failure."
+        events = read_events(tmp_path / "events.jsonl")
+        planner_error = next(
+            event for event in events if event["event_type"] == "planner_error"
+        )
+        payload = planner_error["payload"]
+        assert payload["error_type"] == "ValueError"
+        assert payload["message_characters"] > 20_000
+        assert payload["message_truncated"] is True
+        assert len(payload["message"]) == AgentRuntime._PLANNER_ERROR_LOG_MAX_CHARS
+        planner_call = next(
+            event for event in events if event["event_type"] == "strategic_planner_call"
+        )
+        assert planner_call["payload"]["source"] == "planner_error"
+
+    asyncio.run(scenario())
+
+
 def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
     tmp_path: Path,
 ) -> None:

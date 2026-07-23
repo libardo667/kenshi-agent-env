@@ -72,6 +72,8 @@ class RunSummary:
 
 class AgentRuntime:
     _MATERIAL_VISUAL_CHANGE_FRACTION = 0.01
+    _PLANNER_ERROR_LOG_MAX_CHARS = 8_000
+    _PLANNER_ERROR_RATIONALE_MAX_CHARS = 1_500
 
     def __init__(
         self,
@@ -109,6 +111,44 @@ class AgentRuntime:
         self.planning_clock = planning_clock or SystemPlanningClock()
         self.observation_clock = observation_clock or SystemPlanningClock()
         self._state_store: WorldStateStore | None = None
+
+    @staticmethod
+    def _bounded_text(value: str, max_chars: int) -> str:
+        suffix = " ... [truncated]"
+        if len(value) <= max_chars:
+            return value
+        return value[: max_chars - len(suffix)] + suffix
+
+    def _planner_failure_decision(
+        self,
+        exc: Exception,
+        *,
+        step_index: int,
+    ) -> PlannerDecision:
+        message = f"Planner raised {type(exc).__name__}: {exc}"
+        self.logger.write(
+            "planner_error",
+            step_index=step_index,
+            payload={
+                "control_mode": self.control_mode.value,
+                "error_type": type(exc).__name__,
+                "message": self._bounded_text(
+                    message,
+                    self._PLANNER_ERROR_LOG_MAX_CHARS,
+                ),
+                "message_characters": len(message),
+                "message_truncated": len(message) > self._PLANNER_ERROR_LOG_MAX_CHARS,
+            },
+        )
+        return PlannerDecision(
+            intent="Stop after planner failure.",
+            rationale=self._bounded_text(
+                message,
+                self._PLANNER_ERROR_RATIONALE_MAX_CHARS,
+            ),
+            action=StopAction(reason="Planner failure."),
+            confidence=1.0,
+        )
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
         if self.planning_config.mode == PlanningMode.CONTINUOUS:
@@ -171,11 +211,9 @@ class AgentRuntime:
                             )
                             decision_source = "planner_error"
                     except Exception as exc:
-                        decision = PlannerDecision(
-                            intent="Stop after planner failure.",
-                            rationale=f"Planner raised {type(exc).__name__}: {exc}",
-                            action=StopAction(reason="Planner failure."),
-                            confidence=1.0,
+                        decision = self._planner_failure_decision(
+                            exc,
+                            step_index=observation.step_index,
                         )
                         decision_source = "planner_error"
 
@@ -525,11 +563,9 @@ class AgentRuntime:
                     assert output is not None
                 except Exception as exc:
                     planner_source = "planner_error"
-                    output = PlannerDecision(
-                        intent="Stop after planner failure.",
-                        rationale=f"Planner raised {type(exc).__name__}: {exc}",
-                        action=StopAction(reason="Planner failure."),
-                        confidence=1.0,
+                    output = self._planner_failure_decision(
+                        exc,
+                        step_index=observation.step_index,
                     )
                 planner_latency_seconds = monotonic() - planning_started
                 self.logger.write(
