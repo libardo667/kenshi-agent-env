@@ -26,6 +26,14 @@ movement pulse; safety re-pause is the only operation allowed to reclaim Kenshi
 focus before the controller yields it back. After the next quiet interval the
 agent observes and replans rather than replaying an interrupted intent.
 
+The `./dev launch` path also uses a bounded input lease. Any new human input is
+terminal for that launch attempt: it emits no further input and does not retry
+title-screen clicks. Each bounded startup input restores the prior
+foreground/cursor. Before any calibrated in-game pointer click, the launcher
+requires the exact configured client size. Ordinary live pointer-bearing
+actions repeat that exact-size check after the input lease is acquired and
+immediately before dispatch.
+
 Run Kenshi and the controller at the same Windows integrity level. Do not run
 one as administrator and the other normally. Keep the Kenshi window title
 filter narrow. Close applications containing secrets before live tests. Start
@@ -50,8 +58,9 @@ to the exact target. Rejection is definitive and does not start a movement
 pulse; timeout or transport failure remains uncertain and is never retried
 automatically.
 
-Continuous mode is still blocked for live-labeled environments. In portable
-continuous runs, one observation pump feeds an authoritative bounded store.
+General continuous mode remains blocked for live-labeled environments; only
+the explicitly gated `food_procurement_v1` native-assisted policy is eligible.
+In continuous runs, one observation pump feeds an authoritative bounded store.
 State-changing plan actions receive a command ID and start/completion revision;
 unchanged, regressing, or conflicting state cannot certify progress. Missing
 nearby capability does not become evidence that an entity disappeared.

@@ -63,8 +63,10 @@ The baseline and mitigated sample files are retained outside the repository:
 ## Operational decision
 
 Automated live validation now uses Low texture quality and disabled water
-reflections on this machine. These settings were changed through Kenshi's own
-options UI. The prior configuration is recoverable from:
+reflections on this machine. After a later recurrence, view distance was
+reduced from approximately 4000 to 2500. These settings were changed through
+Kenshi's own options/configuration surfaces. The prior configuration is
+recoverable from:
 
 `C:\Program Files (x86)\Steam\steamapps\common\Kenshi\settings.cfg.kenshi-agent-pre-gpu-mitigation-20260723T1048`
 
@@ -72,6 +74,42 @@ If the same reset recurs, preserve the dialog and `kenshi.log`, stop the frozen
 client, and treat the live stability gate as open again. Reduce view distance
 before expanding the native surface further, and evaluate the Intel graphics
 driver separately from plugin code.
+
+## Later recurrence and rejected resolution trial
+
+After roughly forty minutes of later P6 work, the mitigated profile produced
+the same `BAD STUFF` out-of-video-memory dialog. The installed settings had not
+rolled back. The frozen client and complete desktop dialog were preserved at:
+
+`runs/p6-live-continuous-dry-continuation-20260723T2120Z/bad_stuff_desktop.png`
+
+The pre-restart configuration was copied into that run's
+`pre-restart-config/` directory. A clean restart at Low textures, disabled
+water reflections/shadows, disabled fast zone hopping, and view distance 2500
+reported fresh advancing telemetry. At 1280x720, one settled sample showed
+approximately 4246 MiB private memory, 1792 MiB GPU-local usage, and only
+740 MiB free physical memory. This was not enough evidence to close the
+stability gate.
+
+The 1280x720 trial also invalidated the current 1920x1080 UI calibration. The
+user observed incorrect startup clicks, then attempted to interrupt while the
+developer launcher repeatedly reclaimed focus. Inspection found that
+`live_dev` had disabled polite input, called the controller outside an input
+lease, retried the title sequence every four seconds, and made an additional
+post-load click. The game was paused and stopped, and the renderer was restored
+to 1920x1080 while retaining view distance 2500.
+
+The rejected trial establishes two operational rules:
+
+- graphics mitigations must preserve the calibrated client size until a new
+  profile is explicitly calibrated;
+- launcher input must be human-interruptible and non-retrying, and calibrated
+  pointer actions must recheck exact client dimensions inside the acquired
+  input lease.
+
+Portable tests now cover both zero-input failure paths. A fresh supervised
+Windows launch remains required before treating the launcher fix or reduced
+view-distance profile as live-validated.
 
 ## Effect on P5 evidence
 

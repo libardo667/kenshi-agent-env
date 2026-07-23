@@ -94,6 +94,10 @@ controls:
   relative_pointer_tolerance_pixels: 1
   relative_pointer_settle_seconds: 0.006
   relative_pointer_max_attempts: 500
+  # All current HUD, dialogue, trade, and movement pointer envelopes were
+  # measured at this exact client size. A mismatch must emit no pointer input.
+  calibrated_client_width: 1920
+  calibrated_client_height: 1080
 
 safety:
   # This profile permits only the audited skills below. The CLI must still

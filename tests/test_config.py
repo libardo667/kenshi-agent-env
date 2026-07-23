@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.config import load_config
+from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.models import (
     ClickAction,
     ControlMode,
@@ -36,6 +36,11 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.paths.runs_dir == (root / "runs").resolve()
     assert config.paths.prompt_file.exists()
     assert config.telemetry.file == (root / "examples" / "telemetry.latest.json").resolve()
+
+
+def test_calibrated_client_dimensions_must_be_configured_together() -> None:
+    with pytest.raises(ValueError, match="must be set together"):
+        ControlsConfig(calibrated_client_width=1920)
 
 
 def test_live_example_uses_windows_local_app_data(
@@ -121,6 +126,8 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.controls.pointer_mode == "relative"
     assert config.controls.relative_pointer_max_step_pixels == 12
     assert config.controls.relative_pointer_tolerance_pixels == 1
+    assert config.controls.calibrated_client_width == 1920
+    assert config.controls.calibrated_client_height == 1080
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
     assert not config.safety.allow_live_unpause_actions

@@ -37,3 +37,21 @@ class Calibration(CalibrationModel):
                 f"Client area {width}x{height} does not match calibration "
                 f"{self.window.expected_width}x{self.window.expected_height}."
             )
+
+
+def validate_expected_client_size(
+    width: int,
+    height: int,
+    *,
+    expected_width: int | None,
+    expected_height: int | None,
+) -> None:
+    if expected_width is None and expected_height is None:
+        return
+    if expected_width is None or expected_height is None:
+        raise RuntimeError("Calibrated client dimensions are incomplete.")
+    if width != expected_width or height != expected_height:
+        raise RuntimeError(
+            f"Client area {width}x{height} does not match calibrated "
+            f"{expected_width}x{expected_height}; no pointer input was sent."
+        )

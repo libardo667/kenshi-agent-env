@@ -408,12 +408,15 @@ and provides short commands for the operations used during live iteration:
   --exclusive --native-assisted
 ```
 
-`launch` opens the RE_Kenshi shortcut, advances the video launcher, continues
-the current save, and returns with fresh telemetry and the game paused. Journey
-objectives override the YAML profile for one run only. Live input still requires
-the explicit `--execute` gate; native-assisted execution additionally requires
-`--native-assisted`. `--exclusive` keeps Kenshi in the foreground only when the
-human has handed the session to the agent.
+`launch` opens the RE_Kenshi shortcut, advances the video launcher once,
+continues the current save, and returns only after fresh telemetry confirms the
+game is paused. It never retries focus-taking title clicks. New human input
+terminates launcher automation with no further input, and the calibrated live
+profile must match its exact client size before any in-game pointer click.
+Journey objectives override the YAML profile for one run only. Live input still
+requires the explicit `--execute` gate; native-assisted execution additionally
+requires `--native-assisted`. `--exclusive` keeps Kenshi in the foreground only
+when the human has handed the session to the agent.
 
 ## Native telemetry bridge
 

@@ -133,6 +133,8 @@ class ControlsConfig(ConfigModel):
     relative_pointer_tolerance_pixels: int = Field(default=1, ge=0, le=10)
     relative_pointer_settle_seconds: float = Field(default=0.006, ge=0.0, le=0.1)
     relative_pointer_max_attempts: int = Field(default=500, ge=1, le=2000)
+    calibrated_client_width: int | None = Field(default=None, gt=0)
+    calibrated_client_height: int | None = Field(default=None, gt=0)
 
     @field_validator("speed_keys")
     @classmethod
@@ -141,6 +143,16 @@ class ControlsConfig(ConfigModel):
         if missing:
             raise ValueError(f"speed_keys is missing mappings for: {sorted(missing)}")
         return value
+
+    @model_validator(mode="after")
+    def calibrated_client_size_is_complete(self) -> ControlsConfig:
+        if (self.calibrated_client_width is None) != (
+            self.calibrated_client_height is None
+        ):
+            raise ValueError(
+                "calibrated_client_width and calibrated_client_height must be set together"
+            )
+        return self
 
 
 class SafetyConfig(ConfigModel):

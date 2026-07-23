@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ..control.base import InputController, PrimitiveInputAction
+from ..control.calibration import validate_expected_client_size
 from ..control.capture import WindowCapture
 from ..models import (
     Action,
@@ -246,6 +247,7 @@ class LiveEnvironment(AgentEnvironment):
                 receipt = await self._execute_live(action, started, command)
             else:
                 async with self.controller.input_lease(alt_tab_on_restore=True):
+                    self._validate_pointer_calibration(action)
                     receipt = await self._execute_live(action, started, command)
                 lease_wait = self.controller.input_lease_wait_seconds()
                 if lease_wait >= 0.01:
@@ -304,6 +306,26 @@ class LiveEnvironment(AgentEnvironment):
             terminated=terminated,
             success=None,
             events=observation.events,
+        )
+
+    def _validate_pointer_calibration(self, action: Action) -> None:
+        pointer_action = isinstance(
+            action,
+            (ClickAction, MoveCursorAction, ScrollAction),
+        )
+        if isinstance(action, SkillAction) and self.macros.has(action.name):
+            pointer_action = any(
+                isinstance(primitive, (ClickAction, MoveCursorAction, ScrollAction))
+                for primitive in self.macros.expand(action)
+            )
+        if not pointer_action:
+            return
+        rect = self.controller.client_rect()
+        validate_expected_client_size(
+            rect.width,
+            rect.height,
+            expected_width=self.controls_config.calibrated_client_width,
+            expected_height=self.controls_config.calibrated_client_height,
         )
 
     async def _execute_live(
