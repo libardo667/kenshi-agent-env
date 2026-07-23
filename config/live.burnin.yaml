@@ -329,6 +329,7 @@ macros:
         y: "{{y}}"
         space: normalized
         button: right
+        hold_seconds: 0.12
   move_on_map:
     description: Gross movement by right-clicking the open map, closing it, advancing briefly, and returning paused.
     arguments:
@@ -350,6 +351,7 @@ macros:
         y: "{{y}}"
         space: normalized
         button: right
+        hold_seconds: 0.12
       - kind: key
         key: m
   interact_visible_person:
@@ -373,3 +375,4 @@ macros:
         y: "{{y}}"
         space: normalized
         button: right
+        hold_seconds: 0.12

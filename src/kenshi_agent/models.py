@@ -205,6 +205,7 @@ class ClickAction(StrictModel):
     space: CoordinateSpace = CoordinateSpace.NORMALIZED
     button: MouseButton = MouseButton.LEFT
     clicks: int = Field(default=1, ge=1, le=3)
+    hold_seconds: float = Field(default=0.0, ge=0.0, le=0.5)
     interval_seconds: float = Field(default=0.08, ge=0.0, le=1.0)
 
 

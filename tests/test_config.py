@@ -3,6 +3,8 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.config import load_config
+from kenshi_agent.models import ClickAction, SkillAction
+from kenshi_agent.skills import MacroRegistry
 
 
 def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -101,6 +103,20 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.macros["move_on_map"].movement_pulse_min_seconds == 1.0
     assert config.macros["move_on_map"].movement_pulse_max_seconds == 8.0
     assert len(config.macros["move_on_map"].actions) == 2
+    registry = MacroRegistry(config.macros)
+    fine_move = registry.expand(
+        SkillAction(name="move_visible_terrain", args={"x": 0.5, "y": 0.5})  # type: ignore[arg-type]
+    )[0]
+    map_move = registry.expand(
+        SkillAction(name="move_on_map", args={"x": 0.5, "y": 0.5})  # type: ignore[arg-type]
+    )[0]
+    interact = registry.expand(
+        SkillAction(name="interact_visible_person", args={"x": 0.5, "y": 0.5})  # type: ignore[arg-type]
+    )[0]
+    assert isinstance(fine_move, ClickAction)
+    assert isinstance(map_move, ClickAction)
+    assert isinstance(interact, ClickAction)
+    assert fine_move.hold_seconds == map_move.hold_seconds == interact.hold_seconds == 0.12
     focus_actions = config.macros["focus_selected"].parsed_actions()
     assert [action.kind for action in focus_actions] == ["click"]
     assert focus_actions[0].x == 0.349

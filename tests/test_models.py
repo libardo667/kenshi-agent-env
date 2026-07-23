@@ -37,6 +37,13 @@ def test_action_discriminator_parses_click() -> None:
     )
     assert isinstance(action, ClickAction)
     assert action.x == 0.25
+    assert action.hold_seconds == 0.0
+
+
+def test_click_hold_is_bounded() -> None:
+    assert ClickAction(x=0.5, y=0.5, hold_seconds=0.12).hold_seconds == 0.12
+    with pytest.raises(ValidationError):
+        ClickAction(x=0.5, y=0.5, hold_seconds=0.51)
 
 
 def test_action_discriminator_parses_bounded_scroll() -> None:
