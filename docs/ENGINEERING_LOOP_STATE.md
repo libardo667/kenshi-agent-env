@@ -101,16 +101,24 @@ Acceptance criteria:
 Implementation status: offline-complete, installed, read-only-live-validated,
 conditional-action-live-pending. The deterministic live-shaped proof performs
 four actions from two strategic calls and confirms the exact 649-cat debit,
-one-food increase, and pause. All 177 Python tests, lint, source types, compile
+one-food increase, and pause. All 178 Python tests, lint, source types, compile
 checks, schema export, and the pinned VS2010 SP1 Release x64 build pass. The
-installed protocol `0.4.0` DLL is 182,784 bytes with SHA-256
+initial protocol `0.4.0` DLL was 182,784 bytes with SHA-256
 `64a3cf3c22fc4ee04152c6a70a143f16cb59e82ebb8d62e5a2cc885acfb77cfe`.
 The full prior protocol `0.3.0` plug-in is backed up at
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T193734Z-p6-protocol-0.4`.
-Kenshi launched successfully with the new DLL. Fresh protocol `0.4.0`
+After the first long live session froze its atomic snapshot at sequence 3985
+while Kenshi remained foreground, paused, rendering, and responsive, the
+sampler gained exception-safe latch release and four bounded retries for
+transient Windows replace/share failures. The current installed hotfix is
+183,296 bytes with SHA-256
+`0096082215cbc1f842a8947291570328481c78cab9c23b8ae00a4dcdf6e888a3`.
+The full replaced protocol `0.4.0` plug-in is backed up at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T202819Z-p6-stream-hotfix`.
+Kenshi relaunched successfully with the hotfix. Fresh protocol `0.4.0`
 telemetry, stable identities, game time, dialogue/tooltip capabilities, strict
-validation, pause, and zero-command baseline were confirmed live. No
-conditional action has yet been dispatched.
+validation, pause, and zero-command baseline were confirmed live; post-relaunch
+samples advanced 61 -> 69 -> 78. No conditional action has yet been dispatched.
 
 Hosted live preflight on 2026-07-23:
 
@@ -130,6 +138,11 @@ Hosted live preflight on 2026-07-23:
 - Dry run `p6-live-continuous-dry-medium-20260723T201345Z` returned in 31.45
   seconds and stopped safely on the remaining `exists` cross-field shape.
   Money, food, pause, and native command sequence remained unchanged.
+- Dry run `p6-live-continuous-dry-medium-20260723T201759Z` was independently
+  preempted after 18.91 seconds when telemetry stopped at sequence 3985 for
+  three consecutive supervisor checks. Kenshi remained paused, responsive,
+  foreground, and visually intact with no native command. The sampler hotfix
+  and clean relaunch followed before another planner call.
 - Hosted live planning now defaults to `medium` reasoning. Direct OpenAI calls
   receive a deterministic output-token ceiling of 4,096 for one decision,
   growing by 2,048 per bounded plan step to at most 12,288. The runtime
@@ -140,7 +153,7 @@ Hosted live preflight on 2026-07-23:
   removed because its conditional `expected` shape was not represented by the
   strict schema. `food_procurement_v1` success checks also preserve the exact
   one-character selection invariant after every action.
-- Repository verification after these changes: 177 tests passed; Ruff passed;
+- Repository verification after these changes: 178 tests passed; Ruff passed;
   mypy passed for all 47 source files; compileall, schema export, diff check,
   and default doctor passed. The next gate is another zero-action hosted dry
   response before enabling any live input.

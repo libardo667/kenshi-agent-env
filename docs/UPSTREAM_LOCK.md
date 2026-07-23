@@ -79,7 +79,19 @@ The exact artifact was installed, without launching Kenshi, after the full
 protocol `0.3.0` plug-in was copied to
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T193734Z-p6-protocol-0.4`.
 The installed DLL hash was verified against the offline artifact. Supervised
-load and live evidence remain pending.
+initial load and fresh-telemetry evidence are recorded in the live checklist.
+
+During the first long protocol `0.4.0` session, the latest snapshot stopped at
+sequence 3985 while Kenshi remained foreground, responsive, paused, and
+visually intact. A bounded native hotfix makes the sampling latch
+exception-safe and retries transient Windows target-replacement sharing/lock
+failures four times. The pinned Release x64 rebuild is 183,296 bytes with
+SHA-256
+`0096082215cbc1f842a8947291570328481c78cab9c23b8ae00a4dcdf6e888a3`.
+The full replaced plug-in is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260723T202819Z-p6-stream-hotfix`.
+The hotfix retains protocol `0.4.0`; its wire schema and pinned upstream
+dependencies are unchanged.
 
 ## Plugin staging/install layout
 

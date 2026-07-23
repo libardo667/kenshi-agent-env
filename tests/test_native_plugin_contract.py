@@ -4,6 +4,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SOURCE = REPO_ROOT / "native" / "KenshiAgentTelemetry" / "KenshiAgentTelemetry.cpp"
+ATOMIC_WRITER_SOURCE = (
+    REPO_ROOT / "native" / "KenshiAgentTelemetry" / "AtomicJsonWriter.cpp"
+)
 PLUGIN_PROJECT = (
     REPO_ROOT
     / "native"
@@ -119,3 +122,15 @@ def test_native_plugin_exports_food_chain_authoritative_ui_and_time_sources() ->
 
     project = PLUGIN_PROJECT.read_text(encoding="utf-8")
     assert project.count("MyGUIEngine_x64.lib") == 2
+
+
+def test_native_sampler_recovers_from_transient_write_and_cpp_failures() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    writer = ATOMIC_WRITER_SOURCE.read_text(encoding="utf-8")
+
+    assert "SamplingGuard samplingGuard(g_sampling);" in plugin
+    assert "catch (const std::exception& exception)" in plugin
+    assert "catch (...)" in plugin
+    assert "maximumMoveAttempts = 4" in writer
+    assert "ERROR_SHARING_VIOLATION" in writer
+    assert "ERROR_LOCK_VIOLATION" in writer
