@@ -102,6 +102,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "move_on_map",
         "interact_visible_person",
         "approach_confirmed_vendor",
+        "continue_confirmed_vendor_approach",
         "choose_show_goods",
         "inspect_shop_item",
         "buy_inspected_shop_item",
@@ -171,6 +172,10 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert len(approach_vendor) == 1
     assert approach_vendor[0].kind == "hotkey"
     assert approach_vendor[0].keys == ["ctrl", "shift", "f10"]
+    continue_vendor = config.macros["continue_confirmed_vendor_approach"]
+    assert continue_vendor.requires_native_assisted
+    assert continue_vendor.movement_pulse_max_seconds == 8.0
+    assert continue_vendor.parsed_actions() == []
     show_goods = config.macros["choose_show_goods"].parsed_actions()
     assert len(show_goods) == 1
     assert isinstance(show_goods[0], ClickAction)

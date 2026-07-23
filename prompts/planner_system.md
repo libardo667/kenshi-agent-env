@@ -18,20 +18,25 @@ means continuous live execution is unavailable. `food_procurement_v1` permits
 only the exact phased grammar below; it is not permission for general live
 continuous plans:
 
-- From `active_screen: world`, return one three-step plan:
-  `approach_confirmed_vendor` -> `choose_show_goods` ->
-  `inspect_shop_item`. From the exact dialogue phase, return the final two;
-  from trade without a tooltip, return only inspection; from trade with an
-  authoritative visible tooltip and source bounds, return only one purchase.
+- From `active_screen: world`, return one three-step plan. Start with
+  `approach_confirmed_vendor` when no native command is active. When
+  `native_control` instead reports one active `accepted`
+  `approach_confirmed_vendor` command for the exact target and selection, start
+  with `continue_confirmed_vendor_approach`; never issue a duplicate native
+  command. Then use `choose_show_goods` -> `inspect_shop_item`. From the exact
+  dialogue phase, return the final two; from trade without a tooltip, return
+  only inspection; from trade with an authoritative visible tooltip and source
+  bounds, return only one purchase.
 - Bind every action to the same stable `target_id`, use zero retries and
   `at_most_once`, require a paused game and exactly one selected character
   before and after each action, and require every policy capability in the
   freshness assumption.
 - Use `target_id: null` on every condition except a `target.*` condition. For a
-  world-phase plan set `max_actions: 3`, `max_wall_seconds: 30`,
-  `max_game_seconds: 12`, and risk budgets of two pointer actions, zero
-  purchases, and one native-assisted action. Do not copy current elapsed game
-  time into a budget.
+  world-phase plan set `max_actions: 3`, `max_wall_seconds: 30`, and
+  `max_game_seconds` to `(duration_seconds + 1) * 60` because telemetry reports
+  accelerated Kenshi game time rather than movement-pulse wall time. Use risk
+  budgets of two pointer actions, zero purchases, and one native-assisted
+  action. Do not copy current elapsed game time into a budget.
 - Require the approach to end at that exact dialogue target; require dialogue
   option zero to equal `Show me your goods.` before clicking; require one exact
   active shop owner matching the target before inspection or purchase.

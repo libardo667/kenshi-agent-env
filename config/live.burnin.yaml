@@ -20,7 +20,10 @@ planning:
   max_plan_steps: 4
   max_actions_per_plan: 8
   max_plan_wall_seconds: 30
-  max_plan_game_seconds: 12
+  # Kenshi's elapsed_minutes is accelerated game time, not movement-pulse
+  # wall time. This ceiling covers the longest audited eight-second pulse
+  # plus one wall-second at the conservative 60x conversion.
+  max_plan_game_seconds: 540
   max_pointer_actions_per_plan: 8
   max_purchase_actions_per_plan: 1
   max_native_assisted_actions_per_plan: 1
@@ -135,6 +138,7 @@ safety:
     - move_on_map
     - interact_visible_person
     - approach_confirmed_vendor
+    - continue_confirmed_vendor_approach
     - choose_show_goods
     - inspect_shop_item
     - buy_inspected_shop_item
@@ -376,6 +380,17 @@ macros:
           - shift
           - f10
         hold_seconds: 0.08
+  continue_confirmed_vendor_approach:
+    description: Continue one already accepted native PLAYER_TALK_TO order for the exact same selected character and vendor without issuing a duplicate native command.
+    requires_native_assisted: true
+    arguments:
+      target_id: Exact stable vendor ID on the active accepted native command.
+      duration_seconds: Continuation time from 0.5 to 8.0 seconds; use a short pulse and re-check dialogue.
+    visual_precondition: The game is paused on the world screen and telemetry reports one active accepted approach command bound to the exact selected character and vendor.
+    movement_pulse_seconds: 2.0
+    movement_pulse_min_seconds: 0.5
+    movement_pulse_max_seconds: 8.0
+    actions: []
   choose_show_goods:
     description: Select the first calibrated Barman dialogue option, Show me your goods.
     arguments:

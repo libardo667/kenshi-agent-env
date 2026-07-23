@@ -1550,7 +1550,11 @@ class AgentRuntime:
                     "amount. Treat the "
                     "destination as failed or blocked and choose a different grounded route.",
                 )
-            if name in {"interact_visible_person", "approach_confirmed_vendor"}:
+            if name in {
+                "interact_visible_person",
+                "approach_confirmed_vendor",
+                "continue_confirmed_vendor_approach",
+            }:
                 active_screen = after.ui.active_screen if after is not None else None
                 interaction_opened = after is not None and (
                     after.ui.dialogue_open is True or active_screen in {"dialogue", "trade"}
