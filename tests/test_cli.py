@@ -60,6 +60,20 @@ def test_console_safe_escapes_characters_missing_from_stdout_encoding(monkeypatc
     assert cli._console_safe("spinner ⠸") == r"spinner \u2838"
 
 
+def test_run_objective_override_is_ephemeral() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.burnin.yaml")
+    original = config.runtime.objective
+
+    overridden = cli._apply_run_overrides(
+        config,
+        SimpleNamespace(objective="Inspect the bar entrance."),
+    )
+
+    assert overridden.runtime.objective == "Inspect the bar entrance."
+    assert config.runtime.objective == original
+
+
 def test_exclusive_input_session_keeps_kenshi_foreground() -> None:
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "live.burnin.yaml")

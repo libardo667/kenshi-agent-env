@@ -255,6 +255,27 @@ state machine and spending policy are recorded in
 [Food procurement](docs/FOOD_PROCUREMENT.md).
 The installed keymap audit and open-source plugin/API survey are recorded in
 [Kenshi control and plugin research](docs/KENSHI_CONTROL_AND_PLUGIN_RESEARCH.md).
+The live-validated close follow-camera setup is recorded in
+[Camera view for agent runs](docs/CAMERA_VIEW.md).
+
+### Live development console
+
+From WSL, the checked-in `./dev` wrapper locates the isolated Windows runtime
+and provides short commands for the operations used during live iteration:
+
+```bash
+./dev launch
+./dev shot --label bar-entrance
+./dev telemetry
+./dev journey --objective "Locate the visible bar entrance" --steps 8
+./dev journey --objective "Approach the Barman safely" --steps 8 --execute --exclusive
+```
+
+`launch` opens the RE_Kenshi shortcut, advances the video launcher, continues
+the current save, and returns with fresh telemetry and the game paused. Journey
+objectives override the YAML profile for one run only. Live input still requires
+the explicit `--execute` gate; `--exclusive` keeps Kenshi in the foreground only
+when the human has handed the session to the agent.
 
 ## Native telemetry bridge
 

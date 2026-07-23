@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+windows_config="$(wslpath -w "$repo_dir/config/live.burnin.yaml")"
+windows_local_app_data="$(powershell.exe -NoProfile -Command '[Environment]::GetFolderPath("LocalApplicationData")' | tr -d '\r')"
+windows_python="$(wslpath "$windows_local_app_data")/KenshiAgent/venvs/kenshi-agent-env/Scripts/python.exe"
+
+if [[ ! -x "$windows_python" ]]; then
+  echo "Windows live Python was not found at $windows_python" >&2
+  exit 1
+fi
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: ./dev {launch|shot|telemetry|journey} [options]" >&2
+  exit 2
+fi
+
+cd "$repo_dir"
+exec "$windows_python" -m kenshi_agent.live_dev "$1" --config "$windows_config" "${@:2}"

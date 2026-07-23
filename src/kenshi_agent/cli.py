@@ -118,6 +118,16 @@ def _controller_kwargs(config: AppConfig, args: argparse.Namespace) -> _Controll
     }
 
 
+def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConfig:
+    if args.objective is None:
+        return config
+    return config.model_copy(
+        update={
+            "runtime": config.runtime.model_copy(update={"objective": args.objective})
+        }
+    )
+
+
 def _build_environment(
     config: AppConfig,
     args: argparse.Namespace,
@@ -169,7 +179,7 @@ def _build_environment(
 
 
 async def _run_command(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
+    config = _apply_run_overrides(load_config(args.config), args)
     run_id = args.run_id or _new_run_id()
     run_dir = config.paths.runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -357,6 +367,10 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--steps", type=int)
     run.add_argument("--seed", type=int)
     run.add_argument("--run-id")
+    run.add_argument(
+        "--objective",
+        help="Override the configured objective for this run only.",
+    )
     run.add_argument("--script", help="JSONL decisions for scripted planner.")
     run.add_argument("--command", help="External planner command for subprocess planner.")
     run.add_argument("--log", help="Session JSONL for replay mode.")
