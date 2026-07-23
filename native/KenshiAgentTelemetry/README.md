@@ -1,8 +1,8 @@
 # KenshiAgentTelemetry native plugin
 
 This DLL is the telemetry and narrowly bounded control bridge from Kenshi to the
-Python environment. It hooks MyGUI's per-frame `Gui::frameEvent`, calls the
-original function first, samples on that same UI thread at two hertz, and
+Python environment. It subscribes to MyGUI's supported per-frame
+`Gui::eventFrameStart`, samples on that same UI thread at two hertz, and
 atomically replaces `telemetry.latest.json`. This path runs at both the title
 screen and inside a loaded game. A separate `PlayerInterface::update` hook owns
 only loaded-game native-command monitoring.
@@ -30,8 +30,10 @@ It retains the `0.3.0` causal command envelope, the `0.4.0` food-chain
 observations, and adds capability-gated `ui.visible_controls`.
 The first supervised `0.5.0` load found that sampling solely from
 `PlayerInterface::update` cannot publish title controls before a save exists.
-The lifecycle hotfix keeps the `0.5.0` wire schema but moves sampling to the
-MyGUI frame path so semantic startup has no load-before-observe dependency.
+An attempted direct detour of MyGUI's exported frame function crashed during
+startup and is rejected. The lifecycle revision keeps the `0.5.0` wire schema
+but uses MyGUI's ordinary event subscription so semantic startup has no
+load-before-observe dependency and no third-party function prologue is patched.
 Dialogue choices remain null when the dialogue cannot be read. Tooltip text and
 source-widget bounds remain null when no tooltip is visible. Visible controls
 are read only on the existing UI-thread hook and bounded by result count,

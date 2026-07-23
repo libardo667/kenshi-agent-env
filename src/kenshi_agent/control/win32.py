@@ -335,6 +335,15 @@ class Win32InputController(InputController):
         self.user32.EnumWindows(callback_ref, 0)
         return select_unique_window(matches, self.window_title_contains)
 
+    def target_window_title(self) -> str | None:
+        hwnd = self._find_window()
+        length = self.user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return None
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        self.user32.GetWindowTextW(hwnd, buffer, length + 1)
+        return buffer.value
+
     def client_rect(self) -> WindowRect:
         hwnd = self._find_window()
         client = wintypes.RECT()

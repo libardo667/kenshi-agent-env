@@ -128,10 +128,11 @@ def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
     assert "#include <mygui/MyGUI_Gui.h>" in source
-    assert "MyGUIFrameEventHook" in source
-    assert 'GetModuleHandleW(L"MyGUIEngine_x64.dll")' in source
-    assert '"?frameEvent@Gui@MyGUI@@QEAAXM@Z"' in source
-    assert "g_originalMyGUIFrameEvent(myGui, elapsed);" in source
+    assert "MyGUIFrameSample" in source
+    assert "MyGUI::Gui::getInstancePtr()" in source
+    assert "eventFrameStart += MyGUI::newDelegate(MyGUIFrameSample)" in source
+    assert "GetProcAddress" not in source
+    assert "?frameEvent@Gui@MyGUI" not in source
     assert "ou != NULL && ou->initialized ? ou->player : NULL" in source
     assert "ui.visible_controls" in source
     assert "AppendVisibleUIControls" in source

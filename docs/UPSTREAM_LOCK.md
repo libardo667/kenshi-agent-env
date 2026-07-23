@@ -93,6 +93,27 @@ The full replaced plug-in is recoverable at
 The hotfix retains protocol `0.4.0`; its wire schema and pinned upstream
 dependencies are unchanged.
 
+The protocol `0.5.0` semantic-control build uses the same pinned dependencies,
+compiler, and MyGUI import library. The first installed 185,344-byte candidate
+had SHA-256
+`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
+It loaded safely but could not sample title controls because sampling was tied
+to `PlayerInterface::update`. A 186,368-byte direct MyGUI function-detour build
+with SHA-256
+`ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`
+crashed during startup and is rejected. Its exact dump/binary evidence is under
+`runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`, and the complete
+preinstall package is under
+`runs/p0-title-telemetry-hotfix-preinstall-20260723T224713Z/`.
+
+The replacement uses MyGUI's supported `eventFrameStart` subscription rather
+than detouring third-party code. Its pinned Release x64 output is 189,440 bytes
+with SHA-256
+`6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
+The build emitted only the same upstream MyGUI C4091 and Boost C4715 warnings.
+At this checkpoint the original 185,344-byte DLL is restored on disk and the
+event-subscription build remains uninstalled pending a bounded supervised load.
+
 ## Plugin staging/install layout
 
 ```text

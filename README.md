@@ -416,6 +416,8 @@ focus-taking title clicks. New human input permanently cancels the remaining
 startup sequence. Title startup is resolution-independent; legacy gameplay
 pointer skills still require their exact calibration identity until each has a
 semantic anchor.
+Fresh native plug-in error state or an RE_Kenshi Crash Reporter window
+terminates the launcher immediately without further input.
 Journey objectives override the YAML profile for one run only. Live input still
 requires the explicit `--execute` gate; native-assisted execution additionally
 requires `--native-assisted`. `--exclusive` keeps Kenshi in the foreground only

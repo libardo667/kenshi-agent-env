@@ -9,13 +9,16 @@ from kenshi_agent import live_dev
 from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.live_dev import (
+    LaunchFailed,
     LaunchInterrupted,
     _click,
     _click_semantic_control,
     _disable_re_kenshi_startup_panel,
     _ensure_interrupted_safe_state,
+    _plugin_ready,
     _unique_visible_control,
     _validate_calibrated_client_rect,
+    _wait_until,
 )
 from kenshi_agent.models import (
     ActionReceipt,
@@ -36,6 +39,7 @@ class LaunchController(InputController):
         rect: WindowRect | None = None,
         human_input: bool = False,
         interrupt_inside_lease: bool = False,
+        title: str | None = None,
     ) -> None:
         self.rect = rect or WindowRect(0, 0, 1920, 1080)
         self.human_input = human_input
@@ -43,6 +47,7 @@ class LaunchController(InputController):
         self.actions: list[PrimitiveInputAction] = []
         self.safety_actions: list[PrimitiveInputAction] = []
         self.lease_entries = 0
+        self.title = title
 
     @asynccontextmanager
     async def input_lease(self, *, alt_tab_on_restore: bool = False):
@@ -79,6 +84,9 @@ class LaunchController(InputController):
 
     def continuous_user_input_detected(self) -> bool:
         return self.human_input
+
+    def target_window_title(self) -> str | None:
+        return self.title
 
     def client_rect(self) -> WindowRect:
         return self.rect
@@ -164,6 +172,41 @@ def test_launch_click_aborts_inside_lease_without_emitting_input() -> None:
     import asyncio
 
     asyncio.run(scenario())
+
+
+def test_launcher_wait_fails_immediately_on_crash_reporter() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(title="RE_Kenshi Crash Reporter")
+
+        with pytest.raises(LaunchFailed, match="Crash Reporter"):
+            await _wait_until(
+                lambda: False,
+                10.0,
+                "anything",
+                controller=controller,
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_plugin_ready_fails_immediately_on_fresh_native_error(tmp_path: Path) -> None:
+    launched_at = datetime.now(UTC)
+    status = tmp_path / "plugin_status.json"
+    status.write_text(
+        json.dumps(
+            {
+                "state": "error",
+                "message": "MyGUI instance unavailable",
+                "captured_at": launched_at.isoformat(),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LaunchFailed, match="MyGUI instance unavailable"):
+        _plugin_ready(status, launched_at)
 
 
 def test_calibrated_client_rect_rejects_resolution_change() -> None:

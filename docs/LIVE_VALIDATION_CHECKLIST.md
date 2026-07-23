@@ -47,13 +47,24 @@ inspection alone.
       title pointer input. A read-only capture showed the Continue, New Game,
       Load Game, Import Game, Options, Credits, and Exit title controls at
       1920x1080; no gameplay state was loaded or changed.
-- [x] Move two-hertz sampling to MyGUI's title-and-game frame path while
-      retaining native-command monitoring on `PlayerInterface::update`.
-      Focused contract/launcher tests pass. Pinned Release x64 output is
-      186,368 bytes, SHA-256
+- [x] Reject the direct MyGUI exported-function detour. Its pinned Release x64
+      output was 186,368 bytes, SHA-256
       `ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`.
-- [ ] Back up the installed pre-hotfix `0.5.0` package, install the exact
-      lifecycle-hotfix artifact while Kenshi is stopped, and verify its hash.
+      It reported plug-in `ready`, then crashed during startup. The exact dump,
+      matching DLL/PDB, logs, configs, and screenshot are retained under
+      `runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`.
+- [x] Preserve the complete pre-hotfix package under
+      `runs/p0-title-telemetry-hotfix-preinstall-20260723T224713Z/`, close the
+      reporter without submitting it, and restore the installed DLL to
+      `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
+- [x] Build and test the replacement that uses MyGUI's supported
+      `eventFrameStart` subscription, retains native-command monitoring on
+      `PlayerInterface::update`, and fails closed if MyGUI is unavailable.
+      Full offline tests are 211 passing; Ruff, mypy, compile, and doctor pass.
+      Pinned Release x64 output is 189,440 bytes, SHA-256
+      `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
+- [ ] Back up the restored package, install the exact event-subscription
+      candidate while Kenshi is stopped, and verify its hash.
 - [ ] Repeat 1920x1080 startup and prove fresh advancing title telemetry,
       unique semantic Continue/save controls, a loaded squad, and causally
       confirmed pause.

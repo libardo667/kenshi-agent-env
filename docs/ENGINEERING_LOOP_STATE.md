@@ -111,12 +111,21 @@ plug-in reported fresh `ready` state, but telemetry retained the prior session.
 The launcher timed out waiting for a semantic Continue control and emitted zero
 title clicks. This failed closed and exposed a lifecycle dependency:
 `PlayerInterface::update` does not run before a save creates the player.
-The hotfix samples after MyGUI's per-frame title/game update and leaves loaded-
-game native-command monitoring on `PlayerInterface::update`. It compiled under
-the pinned VS2010 SP1 toolchain as a 186,368-byte DLL with SHA-256
-`ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`;
-installation and repeat smoke remain pending at this checkpoint. The replaced
-protocol `0.4.0` DLL is preserved under
+An attempted direct detour of MyGUI's exported frame function compiled as a
+186,368-byte DLL
+(`ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`)
+but crashed during startup and is rejected. The exact dump, DLL/PDB, logs,
+configs, and screenshot are preserved under
+`runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`. The complete
+pre-hotfix package is under
+`runs/p0-title-telemetry-hotfix-preinstall-20260723T224713Z/`, and its
+185,344-byte DLL is restored on disk. The next candidate uses MyGUI's supported
+`eventFrameStart` subscription and leaves loaded-game native-command monitoring
+on `PlayerInterface::update`. The pinned Release x64 build is 189,440 bytes
+with SHA-256
+`6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`;
+it has 211 passing tests plus static/doctor checks but is not installed or
+live-tested at this checkpoint. The replaced protocol `0.4.0` DLL is preserved under
 `runs/p0-semantic-launch-preinstall-20260723T2208Z/installed-plugin-backup/`.
 The frozen process and `BAD STUFF`
 dialog were preserved before shutdown. Pre-restart configuration is retained
@@ -131,9 +140,9 @@ uses input leases, latches new human input as terminal, makes one startup
 sequence without click retries, uses a coordinate-independent pause key, and
 requires a causally confirmed paused result. The live environment rechecks the
 exact calibrated client size inside the acquired input lease before every
-pointer-bearing action. Full portable evidence before the lifecycle hotfix is
-209 passing tests, Ruff, mypy across 48 source files, compile checks, schema
-parity, default doctor,
+pointer-bearing action. Full portable evidence for the event-subscription
+candidate is 211 passing tests, Ruff, mypy across 48 source files, compile
+checks, schema parity, default doctor,
 three fixed single-step seeds, and the continuous mock proof.
 
 ## Pending live milestone: P6 conditional food-procurement chain
@@ -691,7 +700,8 @@ Acceptance criteria:
 
 P0 semantic-launch/control-ownership offline verification on 2026-07-23:
 
-- `.venv/bin/python -m pytest -q`: 209 passed.
+- `.venv/bin/python -m pytest -q`: 211 passed after the event-subscription and
+  launcher crash/error fail-fast revision.
 - `.venv/bin/ruff check .`: passed.
 - `.venv/bin/mypy src`: passed, 48 source files.
 - `.venv/bin/python -m compileall -q src scripts`: passed.
@@ -716,12 +726,25 @@ P0 semantic-launch/control-ownership offline verification on 2026-07-23:
   did not replace the prior loaded-session snapshot because sampling was still
   tied to `PlayerInterface::update`. The semantic launcher timed out with zero
   pointer input and Kenshi closed normally from the title screen.
-- A lifecycle hotfix moves two-hertz sampling to MyGUI's title-and-game
-  `Gui::frameEvent` path and keeps native-command monitoring on
-  `PlayerInterface::update`. Focused contract/launcher tests pass, and the
-  pinned Release x64 build is 186,368 bytes with SHA-256
+- A direct MyGUI `Gui::frameEvent` detour built as a 186,368-byte DLL with
+  SHA-256
   `ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`.
-  Installation and repeat live smoke are the immediate gate.
+  It installed from a complete backup, reported plug-in `ready`, then crashed
+  Kenshi during startup roughly 0.5 seconds after the hook-install log. The
+  exact crash dump, matching DLL/PDB, logs, configs, and reporter screenshot
+  are preserved under
+  `runs/p0-title-telemetry-frame-hook-crash-20260723T224758Z/`.
+- The crash reporter was not submitted externally. Its process required
+  termination after normal close did not exit within ten seconds. The installed
+  DLL was restored byte-for-byte to the pre-hotfix 185,344-byte candidate.
+- The direct detour is removed. The next candidate uses MyGUI's supported
+  `eventFrameStart` subscription, fails closed if the MyGUI instance is not yet
+  available, and makes the launcher stop immediately on a fresh plug-in error
+  or Crash Reporter title. Full tests, Ruff, mypy, compile, and doctor pass.
+  The pinned Release x64 candidate is 189,440 bytes with SHA-256
+  `6bb2af414406cfd708635b74ecb8e742233a556dcb70724ef916e058a5c5da0c`.
+  It is not installed; install provenance and a bounded repeat smoke are the
+  immediate gate.
 - Alternate-resolution semantic startup and visible ownership reset/disarm
   remain live gates.
 

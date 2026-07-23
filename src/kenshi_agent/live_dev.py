@@ -26,6 +26,10 @@ class LaunchInterrupted(RuntimeError):
     pass
 
 
+class LaunchFailed(RuntimeError):
+    pass
+
+
 def _controller(config: AppConfig) -> Win32InputController:
     return Win32InputController(
         config.capture.window_title_contains,
@@ -62,14 +66,36 @@ async def _wait_until(
 ) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        try:
+            title = controller.target_window_title()
+        except (OSError, RuntimeError, ValueError):
+            title = None
+        if title is not None and "crash reporter" in title.casefold():
+            raise LaunchFailed(
+                f"Kenshi startup stopped because the terminal window {title!r} appeared."
+            )
         _abort_if_human_input(controller)
         try:
             if predicate():
                 return
+        except LaunchFailed:
+            raise
         except (OSError, RuntimeError, ValueError):
             pass
         await asyncio.sleep(0.25)
     raise TimeoutError(f"Timed out waiting for {description}.")
+
+
+def _plugin_ready(status_path: Path, launched_at: datetime) -> bool:
+    payload = json.loads(status_path.read_text(encoding="utf-8"))
+    captured = datetime.fromisoformat(payload["captured_at"].replace("Z", "+00:00"))
+    if captured < launched_at:
+        return False
+    state = payload.get("state")
+    if state == "error":
+        message = payload.get("message", "unknown native plug-in error")
+        raise LaunchFailed(f"Telemetry plug-in startup failed: {message}")
+    return bool(state == "ready")
 
 
 def _shortcut() -> Path:
@@ -319,13 +345,8 @@ async def _launch(args: argparse.Namespace) -> int:
 
         status_path = config.telemetry.file.parent / "plugin_status.json"
 
-        def plugin_ready() -> bool:
-            payload = json.loads(status_path.read_text(encoding="utf-8"))
-            captured = datetime.fromisoformat(payload["captured_at"].replace("Z", "+00:00"))
-            return payload.get("state") == "ready" and captured >= launched_at
-
         await _wait_until(
-            plugin_ready,
+            lambda: _plugin_ready(status_path, launched_at),
             args.timeout,
             "fresh telemetry plugin startup",
             controller=controller,
@@ -414,6 +435,9 @@ async def _launch(args: argparse.Namespace) -> int:
                 "causally confirmed paused game",
                 controller=controller,
             )
+    except LaunchFailed as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
     except LaunchInterrupted as exc:
         safe_state = await _ensure_interrupted_safe_state(
             controller,
