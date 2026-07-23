@@ -102,12 +102,21 @@ Acceptance criteria:
 - The crash incident document and current ledger distinguish proven mitigation,
   short validation, and still-unproven long-duration stability.
 
-Implementation status: semantic launch and explicit ownership are implemented
-offline, with fresh Windows/live validation pending. Protocol `0.5.0` compiled
-under the pinned VS2010 SP1 toolchain as a 185,344-byte DLL with SHA-256
-`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
-It is installed while Kenshi is stopped; the replaced protocol `0.4.0` DLL is
-preserved under
+Implementation status: semantic launch and explicit ownership are implemented.
+The first supervised 1920x1080 protocol `0.5.0` smoke loaded the original
+185,344-byte candidate
+(`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`).
+Kenshi reached a responsive title screen with no RE_Kenshi panel, and the
+plug-in reported fresh `ready` state, but telemetry retained the prior session.
+The launcher timed out waiting for a semantic Continue control and emitted zero
+title clicks. This failed closed and exposed a lifecycle dependency:
+`PlayerInterface::update` does not run before a save creates the player.
+The hotfix samples after MyGUI's per-frame title/game update and leaves loaded-
+game native-command monitoring on `PlayerInterface::update`. It compiled under
+the pinned VS2010 SP1 toolchain as a 186,368-byte DLL with SHA-256
+`ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`;
+installation and repeat smoke remain pending at this checkpoint. The replaced
+protocol `0.4.0` DLL is preserved under
 `runs/p0-semantic-launch-preinstall-20260723T2208Z/installed-plugin-backup/`.
 The frozen process and `BAD STUFF`
 dialog were preserved before shutdown. Pre-restart configuration is retained
@@ -122,8 +131,9 @@ uses input leases, latches new human input as terminal, makes one startup
 sequence without click retries, uses a coordinate-independent pause key, and
 requires a causally confirmed paused result. The live environment rechecks the
 exact calibrated client size inside the acquired input lease before every
-pointer-bearing action. Full portable evidence is 194 passing tests, Ruff,
-mypy across 47 source files, compile checks, schema parity, default doctor,
+pointer-bearing action. Full portable evidence before the lifecycle hotfix is
+209 passing tests, Ruff, mypy across 48 source files, compile checks, schema
+parity, default doctor,
 three fixed single-step seeds, and the continuous mock proof.
 
 ## Pending live milestone: P6 conditional food-procurement chain
@@ -699,9 +709,21 @@ P0 semantic-launch/control-ownership offline verification on 2026-07-23:
 - Protocol `0.5.0` built with the pinned VS2010 SP1 Release x64 toolchain. The
   185,344-byte DLL SHA-256 is
   `a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`.
-  It is installed while Kenshi is stopped, and `OpenSettingOnStart` is false.
-- No Windows process has loaded this candidate. Multi-resolution semantic
-  startup and visible ownership reset/disarm remain live gates.
+  It was installed for the first supervised load, and `OpenSettingOnStart`
+  remained false.
+- The 1920x1080 smoke reached a responsive title screen without the optional
+  RE_Kenshi panel. Fresh plug-in status reported `ready`, but title telemetry
+  did not replace the prior loaded-session snapshot because sampling was still
+  tied to `PlayerInterface::update`. The semantic launcher timed out with zero
+  pointer input and Kenshi closed normally from the title screen.
+- A lifecycle hotfix moves two-hertz sampling to MyGUI's title-and-game
+  `Gui::frameEvent` path and keeps native-command monitoring on
+  `PlayerInterface::update`. Focused contract/launcher tests pass, and the
+  pinned Release x64 build is 186,368 bytes with SHA-256
+  `ace964357eaa93c8844d1b564447bf85650dba97434f67f7875cdb03f1de88d5`.
+  Installation and repeat live smoke are the immediate gate.
+- Alternate-resolution semantic startup and visible ownership reset/disarm
+  remain live gates.
 
 P0 launcher/calibration recovery verification on 2026-07-23:
 

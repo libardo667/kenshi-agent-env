@@ -197,7 +197,10 @@ was actually enumerated.
 
 ## Threading
 
-Sample Kenshi objects only on a verified game/UI thread. Serialize a plain copy.
+Sample Kenshi objects only on a verified game/UI thread. Protocol `0.5.0`
+samples after MyGUI's per-frame UI update so title-menu controls are observable
+before a save creates `PlayerInterface`; loaded-game command monitoring remains
+on `PlayerInterface::update`. Serialize a plain copy.
 Do not dereference Kenshi or MyGUI objects from a background writer thread. A
 future worker may write copied bytes, but it must not retain game pointers.
 
