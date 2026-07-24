@@ -5,10 +5,12 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
+from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -20,6 +22,8 @@ from kenshi_agent.models import (
     Disposition,
     GameState,
     IdempotencyPolicy,
+    InputBoundaryDecision,
+    InputBoundaryReport,
     NearbyEntity,
     Observation,
     PauseAction,
@@ -103,6 +107,7 @@ class RevisionEnvironment(AgentEnvironment):
         self.money = 180
         self.actions: list[Action] = []
         self.dispatch_contexts: list[CommandDispatchContext] = []
+        self.dispatch_tokens: list[ExecutionToken | None] = []
 
     def observation(self) -> Observation:
         return Observation(
@@ -184,8 +189,10 @@ class RevisionEnvironment(AgentEnvironment):
         action: Action,
         *,
         command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
     ) -> Transition:
         self.dispatch_contexts.append(command)
+        self.dispatch_tokens.append(token)
         return await self.step(action)
 
     async def close(self) -> None:
@@ -519,6 +526,138 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
             "resume",
             "accelerate",
         ]
+
+    asyncio.run(scenario())
+
+
+class BoundaryRejectingEnvironment(RevisionEnvironment):
+    """Reproduce a live post-lease rejection without a real input lease.
+
+    `LiveEnvironment` emits zero primitives and reports the rejection on the
+    receipt when the state that authorized the action changed while the polite
+    input lease was pending. This fake returns that exact shape so the
+    executor's reservation, event, and metric handling can be asserted
+    deterministically.
+    """
+
+    def __init__(self, *, reject_after: int = 1, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.reject_after = reject_after
+        self.dispatches = 0
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
+    ) -> Transition:
+        self.dispatches += 1
+        self.dispatch_contexts.append(command)
+        self.dispatch_tokens.append(token)
+        if token is None or self.dispatches != self.reject_after:
+            return await self.step(action)
+
+        report = InputBoundaryReport(
+            decision=InputBoundaryDecision.REJECTED,
+            reason="A plan assumption or step precondition is no longer true.",
+            lease_wait_seconds=6.25,
+            plan_id=token.plan_id,
+            plan_version=token.plan_version,
+            step_id=token.step_id,
+            validated_revision=token.validated_revision,
+            boundary_revision=self.observation().world_revision,
+        )
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=ControlMode.INTERFACE_ONLY,
+                accepted=False,
+                executed=False,
+                dry_run=False,
+                primitive_actions=0,
+                message="No input was emitted at the boundary.",
+                error_type="InputBoundaryRejected",
+                input_boundary=report,
+            ),
+            observation=self.observation(),
+        )
+
+
+def test_execution_token_carries_plan_authorization_into_dispatch(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = PlanThenStopPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        tokens = [token for token in environment.dispatch_tokens if token is not None]
+        assert len(tokens) == 2
+        assert [token.step_id for token in tokens] == ["resume", "accelerate"]
+        assert all(token.plan_id == "two-step-proof" for token in tokens)
+        assert all(token.plan_version == 1 for token in tokens)
+        assert all(token.control_mode is ControlMode.INTERFACE_ONLY for token in tokens)
+        # The token must carry the same typed conditions the executor checked,
+        # so the boundary re-uses the plan's authority rather than its own rule.
+        assert all(token.assumptions for token in tokens)
+        assert all(token.preconditions for token in tokens)
+        assert [
+            token.command_id for token in tokens
+        ] == [context.command_id for context in environment.dispatch_contexts]
+        assert [
+            token.validated_revision.telemetry_sequence for token in tokens
+        ] == [1, 2]
+
+    asyncio.run(scenario())
+
+
+def test_post_lease_boundary_rejection_releases_budget_and_is_attributable(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = BoundaryRejectingEnvironment(clock=clock, reject_after=1)
+        planner = PlanThenStopPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        # The rejected dispatch never reached the environment's action path.
+        # Only the planner's later explicit Stop follows.
+        assert [type(action) for action in environment.actions] == [StopAction]
+
+        events = read_events(tmp_path / "events.jsonl")
+        event_types = [event["event_type"] for event in events]
+        assert "input_boundary_rejected" in event_types
+        assert "input_boundary_revalidated" not in event_types
+        rejected = next(
+            event for event in events if event["event_type"] == "input_boundary_rejected"
+        )
+        evidence = rejected["payload"]["evidence"]
+        assert evidence["decision"] == "rejected"
+        assert evidence["lease_wait_seconds"] == 6.25
+        assert evidence["validated_revision"]["telemetry_sequence"] == 1
+        assert rejected["payload"]["step_id"] == "resume"
+
+        # A proven non-dispatch releases its reservation instead of spending it.
+        assert "plan_budget_released" in event_types
+        assert event_types.index("input_boundary_rejected") < event_types.index(
+            "plan_budget_released"
+        )
+
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.input_boundary_rejections == 1
+        assert metrics.input_boundary_revalidations == 0
+        assert metrics.budget_releases == 1
+        assert metrics.plan_steps_succeeded == 0
 
     asyncio.run(scenario())
 

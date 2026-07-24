@@ -15,6 +15,7 @@ from kenshi_agent.food_procurement import (
     canonicalize_food_procurement_plan,
     food_procurement_rebase_errors,
 )
+from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -794,8 +795,9 @@ class FoodChainEnvironment(AgentEnvironment):
         action: Action,
         *,
         command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
     ) -> Transition:
-        del command
+        del command, token
         return await self.step(action)
 
     async def close(self) -> None:

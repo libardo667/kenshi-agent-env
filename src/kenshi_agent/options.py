@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .env import AgentEnvironment
+from .input_boundary import ExecutionToken
 from .models import (
     CommandDispatchContext,
     Observation,
@@ -77,13 +78,15 @@ class StatefulMovementOption:
     def start(
         self,
         command: CommandDispatchContext | None = None,
+        *,
+        token: ExecutionToken | None = None,
     ) -> asyncio.Task[Transition]:
         if self.status is not OptionStatus.PREPARED:
             raise OptionLifecycleError("Movement option must be prepared before start.")
         self.status = OptionStatus.RUNNING
         self.reason = "Movement action is running through the environment."
         work = (
-            self.environment.dispatch(self.action, command=command)
+            self.environment.dispatch(self.action, command=command, token=token)
             if command is not None
             else self.environment.step(self.action)
         )

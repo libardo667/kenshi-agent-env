@@ -123,6 +123,27 @@ leases and carries F12 into the same supervisor stream. Deterministic tests
 cover the preemption semantics; real controller latency still requires
 supervised live validation. See `docs/ADR_SAFETY_SUPERVISOR.md`.
 
+## Final input-boundary revalidation
+
+Executor validation happens before `LiveEnvironment` waits for a quiet input
+turn, and that polite wait is deliberately unbounded. Each continuous step
+therefore carries a bounded `ExecutionToken` (`input_boundary.py`) holding its
+plan/step/command identity, control mode, validated revision, plan assumptions,
+step preconditions, and a deferred accessor to the world-state store.
+
+Inside the acquired lease — after the calibration recheck and immediately before
+the first primitive — the environment re-reads the latest canonical observation
+and re-evaluates that authorization through the same `evaluate_conditions`
+machinery. A missing observation, regressed revision, changed control mode,
+human input, emergency stop, or any non-`true` assumption or precondition emits
+zero primitives and returns an `InputBoundaryRejected` receipt, which releases
+the reservation through the ordinary definitive-rejection path.
+
+Every token-bearing receipt carries an `InputBoundaryReport`, and the executor
+emits `input_boundary_revalidated` or `input_boundary_rejected` with the lease
+wait and both revisions. Native-assisted issue-time DLL fences are unchanged and
+the boundary is additive. See `docs/ADR_INPUT_BOUNDARY_AUTHORITY.md`.
+
 ## Stateful movement options and concurrent patches
 
 In portable continuous mode, a configured movement-pulse `SkillAction` is

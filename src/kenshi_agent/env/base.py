@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 from ..models import Action, CommandDispatchContext, Observation, Transition
+
+if TYPE_CHECKING:
+    from ..input_boundary import ExecutionToken
 
 
 class AgentEnvironment(ABC):
@@ -28,9 +32,16 @@ class AgentEnvironment(ABC):
         action: Action,
         *,
         command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
     ) -> Transition:
-        """Dispatch through the legacy step seam while preserving caller causality."""
+        """Dispatch through the legacy step seam while preserving caller causality.
 
+        Environments without a real input lease have no window between
+        validation and the first primitive, so they carry the token without
+        re-checking it.
+        """
+
+        del token
         transition = await self.step(action)
         if transition.receipt.command_id not in {None, command.command_id}:
             raise RuntimeError(

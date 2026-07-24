@@ -70,6 +70,14 @@ class ConditionResult(StrEnum):
     STALE = "stale"
 
 
+class InputBoundaryDecision(StrEnum):
+    """Outcome of the final revalidation performed inside the acquired input lease."""
+
+    NOT_REQUIRED = "not_required"
+    REVALIDATED = "revalidated"
+    REJECTED = "rejected"
+
+
 class InterruptPolicy(StrEnum):
     CANCEL_ON_REFLEX = "cancel_on_reflex"
 
@@ -956,6 +964,26 @@ class PlannerDecision(StrictModel):
 PlannerOutput: TypeAlias = PlannerDecision | PlanEnvelope | PlanPatch
 
 
+class InputBoundaryReport(StrictModel):
+    """Evidence from the final fence that runs after the input lease is acquired.
+
+    Validation performed before a polite input lease can become obsolete while
+    the lease is pending, so a sensitive action revalidates its typed plan
+    conditions against the latest canonical revision immediately before the
+    first primitive is emitted.
+    """
+
+    decision: InputBoundaryDecision
+    reason: str = Field(min_length=1, max_length=1000)
+    lease_wait_seconds: float = Field(default=0.0, ge=0.0)
+    plan_id: str | None = Field(default=None, max_length=96)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, max_length=64)
+    validated_revision: WorldStateRevision | None = None
+    boundary_revision: WorldStateRevision | None = None
+    evaluations: list[ConditionEvaluation] = Field(default_factory=list, max_length=24)
+
+
 class ActionReceipt(StrictModel):
     action: Action
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
@@ -967,6 +995,7 @@ class ActionReceipt(StrictModel):
     completed_at_revision: WorldStateRevision | None = None
     causal_revision_advanced: bool | None = None
     native_acknowledgement: NativeCommandAcknowledgement | None = None
+    input_boundary: InputBoundaryReport | None = None
     accepted: bool
     executed: bool
     dry_run: bool

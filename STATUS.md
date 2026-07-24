@@ -30,6 +30,14 @@
   pause-capability loss, an exact human-input event, or unauthorized unpause;
   uncertain dispatch is recorded conservatively, and cleanup is successful only
   after a later paused revision.
+- Continuous plan steps carry a bounded `ExecutionToken` into dispatch. Inside
+  the acquired live input lease, after the calibration recheck and immediately
+  before the first primitive, the environment re-reads the latest canonical
+  revision and re-evaluates the step's plan assumptions, typed preconditions,
+  control mode, and human-input/emergency-stop evidence. Any change emits zero
+  input, returns an `InputBoundaryRejected` receipt, releases the reservation,
+  and is counted separately from pre-lease rejections. Portable evidence only;
+  no live run has exercised it against a real lease.
 - The burn-in profile now has an explicit control-ownership lifecycle. Human
   input cancels the active plan and yields a confirmed paused game; a visible
   resettable countdown must finish before fresh revision/control-mode checks

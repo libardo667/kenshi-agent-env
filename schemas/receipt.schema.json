@@ -54,6 +54,241 @@
       "title": "ClickAction",
       "type": "object"
     },
+    "Condition": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ConditionKind"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConditionPath"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operator": {
+          "$ref": "#/$defs/ConditionOperator"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Required Capabilities",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "operator",
+        "max_age_seconds"
+      ],
+      "title": "Condition",
+      "type": "object"
+    },
+    "ConditionEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/Condition"
+        },
+        "result": {
+          "$ref": "#/$defs/ConditionResult"
+        },
+        "actual": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition",
+        "result",
+        "reason"
+      ],
+      "title": "ConditionEvaluation",
+      "type": "object"
+    },
+    "ConditionKind": {
+      "enum": [
+        "field",
+        "capability",
+        "telemetry_fresh"
+      ],
+      "title": "ConditionKind",
+      "type": "string"
+    },
+    "ConditionOperator": {
+      "enum": [
+        "equals",
+        "not_equals",
+        "less_than",
+        "less_than_or_equal",
+        "greater_than",
+        "greater_than_or_equal",
+        "contains"
+      ],
+      "title": "ConditionOperator",
+      "type": "string"
+    },
+    "ConditionPath": {
+      "enum": [
+        "control_mode",
+        "telemetry_stale",
+        "telemetry.game.loaded",
+        "telemetry.game.paused",
+        "telemetry.game.speed_multiplier",
+        "telemetry.game.elapsed_minutes",
+        "telemetry.game.money",
+        "telemetry.game.location_name",
+        "telemetry.game.day",
+        "telemetry.game.hour",
+        "telemetry.game.minute",
+        "telemetry.ui.active_screen",
+        "telemetry.ui.modal_open",
+        "telemetry.ui.dialogue_open",
+        "telemetry.ui.dialogue_target_id",
+        "telemetry.ui.dialogue_option_count",
+        "telemetry.ui.dialogue_option_0",
+        "telemetry.ui.tooltip_visible",
+        "telemetry.ui.tooltip_text",
+        "telemetry.ui.context_menu_open",
+        "telemetry.ui.selected_character_id",
+        "telemetry.ui.selected_character_count",
+        "telemetry.active_shop_trader_count",
+        "telemetry.native_control.available",
+        "telemetry.native_control.last_command_sequence",
+        "telemetry.native_control.last_command",
+        "telemetry.native_control.last_result",
+        "telemetry.native_control.last_target",
+        "telemetry.native_control.last_target_id",
+        "selected.alive",
+        "selected.conscious",
+        "selected.down",
+        "selected.in_combat",
+        "selected.position.x",
+        "selected.position.y",
+        "selected.position.z",
+        "selected.movement_speed",
+        "selected.hunger",
+        "selected.bleeding_rate",
+        "selected.food_items",
+        "selected.first_aid_kits",
+        "selected.current_goal",
+        "target.disposition",
+        "target.distance",
+        "target.visible",
+        "target.conscious",
+        "target.has_vendor_list",
+        "target.is_squad_leader",
+        "target.has_dialogue",
+        "target.shop_inventory_owner",
+        "target.talk_task_available",
+        "game.pause",
+        "game.speed",
+        "game.time",
+        "game.money",
+        "game.location",
+        "camera.position",
+        "squad.basic",
+        "squad.hunger",
+        "squad.health",
+        "squad.inventory",
+        "ui.modal",
+        "ui.inventory",
+        "ui.dialogue",
+        "ui.dialogue.target",
+        "ui.dialogue.options",
+        "ui.tooltip",
+        "nearby.characters",
+        "nearby.visible_entities",
+        "nearby.roles",
+        "nearby.shop_owners",
+        "control.approach_vendor",
+        "identity.stable_handles"
+      ],
+      "title": "ConditionPath",
+      "type": "string"
+    },
+    "ConditionResult": {
+      "enum": [
+        "true",
+        "false",
+        "unknown",
+        "unavailable",
+        "stale"
+      ],
+      "title": "ConditionResult",
+      "type": "string"
+    },
     "ControlMode": {
       "enum": [
         "interface_only",
@@ -101,6 +336,112 @@
         "keys"
       ],
       "title": "HotkeyAction",
+      "type": "object"
+    },
+    "InputBoundaryDecision": {
+      "description": "Outcome of the final revalidation performed inside the acquired input lease.",
+      "enum": [
+        "not_required",
+        "revalidated",
+        "rejected"
+      ],
+      "title": "InputBoundaryDecision",
+      "type": "string"
+    },
+    "InputBoundaryReport": {
+      "additionalProperties": false,
+      "description": "Evidence from the final fence that runs after the input lease is acquired.\n\nValidation performed before a polite input lease can become obsolete while\nthe lease is pending, so a sensitive action revalidates its typed plan\nconditions against the latest canonical revision immediately before the\nfirst primitive is emitted.",
+      "properties": {
+        "decision": {
+          "$ref": "#/$defs/InputBoundaryDecision"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "lease_wait_seconds": {
+          "default": 0.0,
+          "minimum": 0.0,
+          "title": "Lease Wait Seconds",
+          "type": "number"
+        },
+        "plan_id": {
+          "anyOf": [
+            {
+              "maxLength": 96,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Id"
+        },
+        "plan_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Version"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "validated_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "boundary_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evaluations": {
+          "items": {
+            "$ref": "#/$defs/ConditionEvaluation"
+          },
+          "maxItems": 24,
+          "title": "Evaluations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "decision",
+        "reason"
+      ],
+      "title": "InputBoundaryReport",
       "type": "object"
     },
     "KeyAction": {
@@ -613,6 +954,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/NativeCommandAcknowledgement"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "input_boundary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InputBoundaryReport"
         },
         {
           "type": "null"
