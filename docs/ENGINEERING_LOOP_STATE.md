@@ -1326,9 +1326,46 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 - Several declared config fields remain behaviorally unused.
 - There is no CI workflow or Python lockfile.
 
+## Active direction: deterministic vendor selection + P6 navigation
+
+A live watched food run on a fresh Wanderer Hep exposed the real fragility: the
+LLM planner is a coin-flip on the "is this a confirmed vendor" judgment. Same
+Hub scene (valid Barman, all capabilities), it planned the approach in one dry
+preflight and emitted a stop ("no confirmed vendor candidate with the required
+stable id") in the live run. The rejection ("stale food plan lacks one exact
+stable target fence") is a downstream effect of a stop-plan having no target.
+
+Root cause: the model is asked to re-derive a fact the telemetry already
+carries. The deterministic vendor fence existed (`runtime._vendor_candidates`)
+but was wired only to delta-tracking, never surfaced to the planner. Separately,
+the `talk_task_available` telemetry flag (Kenshi's `getPlayerTaskProbability`)
+gates nothing in native/policy/prompt and does not mean "reachable"; the native
+`approach_confirmed_vendor` correctly issues a move-then-talk that handles an
+occluded/indoor vendor.
+
+The real fix (per the operator's standing rule: no cheap retry over a real fix)
+is to make vendor identification deterministic and hand the model a target,
+then build P6 as a monitored approach/travel option toward that target.
+
+Slice 1 (done): `NearbyEntity.is_confirmed_vendor()` and
+`confirmed_vendor_candidates()` are the single deterministic source of truth
+(not-animal ∧ vendor_list ∧ leader ∧ dialogue ∧ non-hostile; visibility and
+talk-availability deliberately excluded). Runtime delta-tracking now uses it.
+Nine tests cover the exact live Hub scene plus edge cases; 283 tests pass.
+
+Slice 2 (next): surface `confirmed_vendors` in the planner observation and
+rewrite the prompt so the model approves/selects a pre-validated target instead
+of judging vendor status. This is the behavior change that kills the coin-flip.
+
+Slice 3 (P6): a monitored approach/travel option that navigates toward the
+deterministic target, exposes progress/distance/visibility predicates, requests
+a future-only replan, and cancels on human input/safety — the "get in view,
+then act" loop, grounded in world positions.
+
 ## Ordered next candidates
 
-1. P4 follow-on (deferred): implement Win32 observation of UI scale, DPI
+1. Slice 2 above: surface `confirmed_vendors` to the planner + prompt rewrite.
+2. P4 follow-on (deferred): implement Win32 observation of UI scale, DPI
    transform, and window mode so those calibration fields can be declared in a
    live profile without fail-closing. The identity framework and enforcement are
    done; only observation is missing.

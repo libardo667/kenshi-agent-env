@@ -246,6 +246,41 @@ class NearbyEntity(StrictModel):
     visible: bool | None = None
     conscious: bool | None = None
 
+    def is_confirmed_vendor(self) -> bool:
+        """Deterministic vendor fence.
+
+        Whether an entity qualifies as an approachable trade vendor is a fact
+        the telemetry already carries, not a judgment for the model to re-derive.
+        Every flag must be explicitly true/false; a missing value is never
+        assumed favorable. `visible`, `distance`, and `talk_task_available` are
+        deliberately excluded: they gate when to act, not whether the entity is
+        a vendor, and the native approach paths to an occluded/indoor vendor.
+        """
+
+        return (
+            self.is_animal is False
+            and self.has_vendor_list is True
+            and self.is_squad_leader is True
+            and self.has_dialogue is True
+            and self.disposition in (Disposition.NEUTRAL, Disposition.FRIENDLY)
+        )
+
+
+def confirmed_vendor_candidates(
+    entities: list[NearbyEntity],
+) -> list[NearbyEntity]:
+    """Deterministically select every confirmed vendor, nearest first.
+
+    This is the single source of truth for "which nearby entities are vendors."
+    The planner receives the result; it does not re-judge vendor status.
+    """
+
+    vendors = [entity for entity in entities if entity.is_confirmed_vendor()]
+    return sorted(
+        vendors,
+        key=lambda entity: entity.distance if entity.distance is not None else float("inf"),
+    )
+
 
 class GameState(StrictModel):
     loaded: bool = False

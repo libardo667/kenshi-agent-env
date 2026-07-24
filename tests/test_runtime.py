@@ -228,6 +228,7 @@ def test_telemetry_changes_report_vendor_route_progress() -> None:
                     "is_squad_leader": True,
                     "has_dialogue": True,
                     "faction": "Trade Ninjas",
+                    "disposition": "neutral",
                     "distance": 96.0,
                     "camera_bearing_degrees": -70.0,
                 }
@@ -246,6 +247,7 @@ def test_telemetry_changes_report_vendor_route_progress() -> None:
                     "is_squad_leader": True,
                     "has_dialogue": True,
                     "faction": "Trade Ninjas",
+                    "disposition": "neutral",
                     "distance": 82.0,
                     "camera_bearing_degrees": -25.0,
                 }
