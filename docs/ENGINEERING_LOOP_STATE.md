@@ -173,6 +173,22 @@ split is 212 passing tests, Ruff, mypy across 48 source files, compile checks,
 schema parity, default doctor,
 three fixed single-step seeds, and the continuous mock proof.
 
+After the authenticated run reproduced the device reset within 33 seconds of
+save load, an offline hardening slice installed the versioned, reversible
+`iris-xe-stability-v2` candidate. It preserves 1920x1080 and Low textures while
+reducing the remaining world/effect settings that were still enabled. The
+launcher now rejects another Kenshi process, a Steam client not explicitly
+`Logged On`, less than 4096 MiB free physical memory, or any profile drift
+before launch. It detects `BAD STUFF` and Steam DLL dialogs outside the
+Kenshi-title filter and delays success until 45 seconds of fresh, advancing,
+loaded, paused telemetry have elapsed. The installed profile and real
+no-launch preflight match; the prior settings are timestamp-backed up.
+Portable evidence is 235 passing tests, Ruff, strict mypy, compile checks,
+schema parity, the default doctor, three successful fixed single-step seeds,
+and the continuous mock proof. This is offline-verified only: the candidate
+still needs one supervised no-gameplay smoke before the fast renderer
+recurrence can be considered mitigated.
+
 ## Pending live milestone: P6 conditional food-procurement chain
 
 Problem: P1-P5 can execute and causally acknowledge bounded continuous work,
@@ -840,6 +856,20 @@ P0 semantic-launch/control-ownership offline verification on 2026-07-23:
   crash dump; observed private memory fell to 4.199 GiB while Kenshi stayed
   responsive. GPU-local accounting was unavailable. The loaded game closed
   normally and Windows free memory recovered to 5.84 GiB.
+- A later supervised launch first encountered an external Steam-session
+  failure: the local client logged `Logged In Elsewhere` and exited. The user
+  moved the mouse to close the Steam DLL alert, so the launcher correctly
+  cancelled with zero startup input. After local Steam reached `Logged On`, a
+  fresh semantic launch loaded and confirmed pause, proving the authentication
+  recovery.
+- That authenticated process then reproduced `BAD STUFF` at 16:55:28, about
+  46 seconds after process start and 33 seconds after the save-load request.
+  `kenshi.log` reported `DXGI_ERROR_DEVICE_REMOVED` with
+  `DXGI_ERROR_DRIVER_INTERNAL_ERROR` while rendering `waterDistant`. The
+  reduced profile and accepted DLL hash had persisted, and no gameplay/native
+  command was issued. Evidence is under
+  `runs/p0-steam-recovery-device-reset-20260723T235528Z/`; the crashed process
+  was terminated. The renderer-stability gate is open again.
 - Alternate-resolution semantic startup, deliberate launcher interruption,
   visible ownership reset/disarm, and a longer stability soak remain live
   gates.

@@ -12,7 +12,7 @@ if [[ ! -x "$windows_python" ]]; then
 fi
 
 if [[ $# -eq 0 ]]; then
-  echo "usage: ./dev {launch|shot|telemetry|journey} [options]" >&2
+  echo "usage: ./dev {launch|graphics|shot|telemetry|journey} [options]" >&2
   exit 2
 fi
 

@@ -15,13 +15,17 @@ from kenshi_agent.live_dev import (
     _click_semantic_control,
     _disable_re_kenshi_startup_panel,
     _ensure_interrupted_safe_state,
+    _observe_loaded_paused_health,
     _plugin_ready,
+    _steam_connection_state,
     _unique_visible_control,
     _validate_calibrated_client_rect,
+    _validate_launch_preconditions,
     _wait_until,
 )
 from kenshi_agent.models import (
     ActionReceipt,
+    CharacterState,
     GameState,
     KeyAction,
     NormalizedPointerBounds,
@@ -40,6 +44,7 @@ class LaunchController(InputController):
         human_input: bool = False,
         interrupt_inside_lease: bool = False,
         title: str | None = None,
+        visible_titles: list[str] | None = None,
     ) -> None:
         self.rect = rect or WindowRect(0, 0, 1920, 1080)
         self.human_input = human_input
@@ -48,6 +53,7 @@ class LaunchController(InputController):
         self.safety_actions: list[PrimitiveInputAction] = []
         self.lease_entries = 0
         self.title = title
+        self.visible_titles = visible_titles
 
     @asynccontextmanager
     async def input_lease(self, *, alt_tab_on_restore: bool = False):
@@ -88,6 +94,11 @@ class LaunchController(InputController):
     def target_window_title(self) -> str | None:
         return self.title
 
+    def visible_window_titles(self) -> list[str]:
+        if self.visible_titles is not None:
+            return self.visible_titles
+        return super().visible_window_titles()
+
     def client_rect(self) -> WindowRect:
         return self.rect
 
@@ -114,6 +125,7 @@ def launch_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
         captured_at=datetime.now(UTC),
         capabilities=["game.pause"],
         game=GameState(loaded=True, paused=paused),
+        squad=[CharacterState(id="entity-hep", name="Hep", selected=True)],
     )
 
 
@@ -196,6 +208,29 @@ def test_launcher_wait_fails_immediately_on_kenshi_has_crashed_window() -> None:
         controller = LaunchController(title="Kenshi has crashed")
 
         with pytest.raises(LaunchFailed, match="Kenshi has crashed"):
+            await _wait_until(
+                lambda: False,
+                10.0,
+                "anything",
+                controller=controller,
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("terminal_title", ["BAD STUFF", "Steam DLL Error"])
+def test_launcher_wait_detects_unfiltered_terminal_dialog(
+    terminal_title: str,
+) -> None:
+    async def scenario() -> None:
+        controller = LaunchController(
+            title="Kenshi 1.0.65 - x64",
+            visible_titles=["Kenshi 1.0.65 - x64", terminal_title],
+        )
+
+        with pytest.raises(LaunchFailed, match=terminal_title):
             await _wait_until(
                 lambda: False,
                 10.0,
@@ -338,6 +373,209 @@ def test_re_kenshi_startup_panel_is_disabled_with_one_backup(tmp_path: Path) -> 
     assert json.loads(backup.read_text(encoding="utf-8"))[
         "OpenSettingOnStart"
     ] is True
+
+
+def test_steam_connection_state_uses_latest_explicit_transition(tmp_path: Path) -> None:
+    log = tmp_path / "connection_log.txt"
+    log.write_text(
+        "[2026-07-23 16:45:00] [Logged On, 4, 7] message\n"
+        "[2026-07-23 16:45:01] unrelated detail\n"
+        "[2026-07-23 16:45:02] [Logged Off, 0, 0] disconnected\n",
+        encoding="utf-8",
+    )
+
+    assert _steam_connection_state(log) == "Logged Off"
+
+
+def test_launch_preflight_accepts_logged_on_exact_profile_and_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+    assert config.launch.graphics_profile_file is not None
+    loaded_profile = live_dev.load_graphics_profile(
+        config.launch.graphics_profile_file
+    )
+    settings = tmp_path / "settings.cfg"
+    settings.write_text(
+        "".join(f"{key}={value}\n" for key, value in loaded_profile.settings.items()),
+        encoding="utf-8",
+    )
+    steam_log = tmp_path / "connection_log.txt"
+    steam_log.write_text(
+        "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
+        encoding="utf-8",
+    )
+
+    _validate_launch_preconditions(
+        config,
+        process_names={"steam.exe"},
+        available_physical_memory_mib=8192,
+        settings_path=settings,
+        steam_connection_log_path=steam_log,
+    )
+
+
+def test_launch_preflight_rejects_steam_process_that_is_not_logged_on(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+    steam_log = tmp_path / "connection_log.txt"
+    steam_log.write_text(
+        "[2026-07-23 16:45:00] [Logged Off, 4, 0] Logged In Elsewhere\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LaunchFailed, match=r"Logged Off.*not 'Logged On'"):
+        _validate_launch_preconditions(
+            config,
+            process_names={"steam.exe"},
+            available_physical_memory_mib=8192,
+            steam_connection_log_path=steam_log,
+        )
+
+
+def test_launch_preflight_rejects_second_kenshi_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+
+    with pytest.raises(LaunchFailed, match="already running"):
+        _validate_launch_preconditions(
+            config,
+            process_names={"steam.exe", "kenshi_x64.exe"},
+            available_physical_memory_mib=8192,
+        )
+
+
+def test_launch_preflight_rejects_low_memory_before_profile_read(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+    steam_log = tmp_path / "connection_log.txt"
+    steam_log.write_text(
+        "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(LaunchFailed, match=r"2048 MiB.*at least 4096 MiB"):
+        _validate_launch_preconditions(
+            config,
+            process_names={"steam.exe"},
+            available_physical_memory_mib=2048,
+            steam_connection_log_path=steam_log,
+        )
+
+
+def test_launch_preflight_rejects_profile_drift_with_recovery_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+    steam_log = tmp_path / "connection_log.txt"
+    steam_log.write_text(
+        "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
+        encoding="utf-8",
+    )
+    settings = tmp_path / "settings.cfg"
+    settings.write_text("view distance=2500\n", encoding="utf-8")
+
+    with pytest.raises(LaunchFailed, match=r"view distance.*graphics apply"):
+        _validate_launch_preconditions(
+            config,
+            process_names={"steam.exe"},
+            available_physical_memory_mib=8192,
+            settings_path=settings,
+            steam_connection_log_path=steam_log,
+        )
+
+
+def test_launch_parser_accepts_non_launching_preflight() -> None:
+    args = live_dev.build_parser().parse_args(
+        [
+            "launch",
+            "--config",
+            "config/live.burnin.yaml",
+            "--preflight-only",
+        ]
+    )
+
+    assert args.preflight_only is True
+
+
+def test_post_load_health_requires_advancing_loaded_paused_telemetry() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(
+            title="Kenshi 1.0.65 - x64",
+            visible_titles=["Kenshi 1.0.65 - x64"],
+        )
+        reader = LaunchTelemetry(
+            launch_snapshot(30, paused=True),
+            launch_snapshot(31, paused=True),
+        )
+
+        await _observe_loaded_paused_health(
+            reader,  # type: ignore[arg-type]
+            controller,
+            duration_seconds=0.01,
+        )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_post_load_health_fails_on_bad_stuff_before_success() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(
+            title="Kenshi 1.0.65 - x64",
+            visible_titles=["Kenshi 1.0.65 - x64", "BAD STUFF"],
+        )
+        reader = LaunchTelemetry(launch_snapshot(40, paused=True))
+
+        with pytest.raises(LaunchFailed, match="BAD STUFF"):
+            await _observe_loaded_paused_health(
+                reader,  # type: ignore[arg-type]
+                controller,
+                duration_seconds=0.01,
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_post_load_health_fails_when_telemetry_does_not_advance() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(
+            title="Kenshi 1.0.65 - x64",
+            visible_titles=["Kenshi 1.0.65 - x64"],
+        )
+        reader = LaunchTelemetry(launch_snapshot(50, paused=True))
+
+        with pytest.raises(LaunchFailed, match="no advancing telemetry"):
+            await _observe_loaded_paused_health(
+                reader,  # type: ignore[arg-type]
+                controller,
+                duration_seconds=0.01,
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
 
 
 def test_semantic_control_matches_normalized_label_and_live_bounds() -> None:

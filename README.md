@@ -406,6 +406,9 @@ From WSL, the checked-in `./dev` wrapper locates the isolated Windows runtime
 and provides short commands for the operations used during live iteration:
 
 ```bash
+./dev graphics verify
+./dev graphics apply
+./dev launch --preflight-only
 ./dev launch
 ./dev shot --label bar-entrance
 ./dev telemetry
@@ -414,17 +417,24 @@ and provides short commands for the operations used during live iteration:
   --exclusive --native-assisted
 ```
 
-`launch` backs up and disables RE_Kenshi's optional startup panel, advances the
-native video dialog once with its default Enter action, selects the configured
-title/save labels from bounded live MyGUI control telemetry, and returns only
-after fresh telemetry confirms the game is paused. It never retries
-focus-taking title clicks. New human input permanently cancels the remaining
-startup sequence. Title startup is resolution-independent; legacy gameplay
-pointer skills still require their exact calibration identity until each has a
-semantic anchor.
-Fresh native plug-in error state, an RE_Kenshi Crash Reporter window, or a
-`Kenshi has crashed` window terminates the launcher immediately without
-further input.
+`graphics verify` compares Kenshi's installed settings with the versioned
+profile. `graphics apply` may run only while Kenshi is stopped; it makes a
+timestamped backup, atomically installs the profile, and verifies the result.
+Launch never silently changes graphics settings. `launch --preflight-only`
+checks the Steam connection state, exact graphics profile, duplicate-client
+guard, and configured physical-memory floor without starting Kenshi.
+
+`launch` then backs up and disables RE_Kenshi's optional startup panel,
+advances the native video dialog once with its default Enter action, and
+selects configured title/save labels from bounded live MyGUI control telemetry.
+It never retries focus-taking title clicks. New human input permanently cancels
+the remaining startup sequence. Title startup is resolution-independent;
+legacy gameplay pointer skills still require their exact calibration identity
+until each has a semantic anchor. Success is delayed until the loaded squad
+remains freshly observable and paused for the configured post-load health
+window. Fresh native plug-in error state, an RE_Kenshi Crash Reporter,
+`Kenshi has crashed`, `BAD STUFF`, or Steam DLL error window terminates the
+launcher immediately without further input.
 Journey objectives override the YAML profile for one run only. Live input still
 requires the explicit `--execute` gate; native-assisted execution additionally
 requires `--native-assisted`. `--exclusive` keeps Kenshi in the foreground only

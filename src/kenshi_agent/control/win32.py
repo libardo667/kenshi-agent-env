@@ -313,8 +313,8 @@ class Win32InputController(InputController):
         self.kernel32.GetCurrentThreadId.restype = wintypes.DWORD
         self.kernel32.GetTickCount.restype = wintypes.DWORD
 
-    def _find_window(self) -> int:
-        matches: list[tuple[int, str]] = []
+    def _visible_windows(self) -> list[tuple[int, str]]:
+        windows: list[tuple[int, str]] = []
         enum_proc_type = getattr(ctypes, "WINFUNCTYPE")(  # noqa: B009 - Windows-only
             wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
         )
@@ -327,13 +327,23 @@ class Win32InputController(InputController):
                 return True
             buffer = ctypes.create_unicode_buffer(length + 1)
             self.user32.GetWindowTextW(hwnd, buffer, length + 1)
-            if self.window_title_contains in buffer.value.casefold():
-                matches.append((int(hwnd), buffer.value))
+            windows.append((int(hwnd), buffer.value))
             return True
 
         callback_ref = enum_proc_type(callback)
         self.user32.EnumWindows(callback_ref, 0)
+        return windows
+
+    def _find_window(self) -> int:
+        matches = [
+            (hwnd, title)
+            for hwnd, title in self._visible_windows()
+            if self.window_title_contains in title.casefold()
+        ]
         return select_unique_window(matches, self.window_title_contains)
+
+    def visible_window_titles(self) -> list[str]:
+        return [title for _, title in self._visible_windows()]
 
     def target_window_title(self) -> str | None:
         hwnd = self._find_window()

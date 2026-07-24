@@ -115,6 +115,22 @@ class CaptureConfig(ConfigModel):
     crop_client_area: bool = True
 
 
+class LaunchConfig(ConfigModel):
+    require_steam_logged_on: bool = False
+    require_graphics_profile: bool = False
+    graphics_profile_file: Path | None = None
+    min_free_physical_memory_mib: int = Field(default=0, ge=0, le=1048576)
+    post_load_health_seconds: float = Field(default=0.0, ge=0.0, le=600.0)
+
+    @model_validator(mode="after")
+    def required_profile_has_a_file(self) -> LaunchConfig:
+        if self.require_graphics_profile and self.graphics_profile_file is None:
+            raise ValueError(
+                "require_graphics_profile needs graphics_profile_file"
+            )
+        return self
+
+
 class ControlsConfig(ConfigModel):
     pause_key: str = "space"
     pause_skill: str | None = Field(default=None, min_length=1, max_length=80)
@@ -272,6 +288,7 @@ class AppConfig(ConfigModel):
     mock: MockConfig = Field(default_factory=MockConfig)
     telemetry: TelemetryConfig
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
+    launch: LaunchConfig = Field(default_factory=LaunchConfig)
     controls: ControlsConfig = Field(default_factory=ControlsConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
@@ -331,6 +348,15 @@ def load_config(path: str | Path) -> AppConfig:
             ),
             "telemetry": config.telemetry.model_copy(
                 update={"file": _resolve_path(config.telemetry.file, base)}
+            ),
+            "launch": config.launch.model_copy(
+                update={
+                    "graphics_profile_file": (
+                        _resolve_path(config.launch.graphics_profile_file, base)
+                        if config.launch.graphics_profile_file is not None
+                        else None
+                    )
+                }
             ),
         }
     )

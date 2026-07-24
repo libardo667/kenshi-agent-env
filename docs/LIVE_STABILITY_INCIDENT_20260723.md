@@ -111,6 +111,88 @@ Portable tests now cover both zero-input failure paths. A fresh supervised
 Windows launch remains required before treating the launcher fix or reduced
 view-distance profile as live-validated.
 
+## Authenticated startup recurrence after Steam session contention
+
+A supervised retry at 16:45 first failed for a separate external reason:
+Steam's `connection_log.txt` recorded `Logged In Elsewhere` at 16:45:00 and
+the local client exited. A Steam DLL alert appeared. The user moved the mouse
+to close it, and the developer launcher correctly treated that real input as a
+permanent cancellation before sending any startup primitive. A second attempt
+while Steam was still absent ended the same way.
+
+After the user logged the local Steam client back in, the Steam connection log
+reached `Logged On` at 16:53:46. A fresh bounded semantic launch then completed:
+
+- the launcher returned `Kenshi launched, loaded, and paused.`;
+- protocol `0.5.0` telemetry selected Hep, reported 1,000 cats and a paused
+  loaded world, and retained native command sequence zero;
+- the accepted 188,416-byte telemetry DLL still matched SHA-256
+  `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`;
+  and
+- Low textures, disabled reflections/shadows, disabled fast zone hopping, view
+  distance 2500, and the disabled RE_Kenshi startup panel had all persisted.
+
+At 16:55:28, about 46 seconds after process start and 33 seconds after the
+save-load request, the loaded paused process presented `BAD STUFF`.
+`kenshi.log` again reported `0x887A0005` (`DXGI_ERROR_DEVICE_REMOVED`) with
+reason `0x887A0020` (`DXGI_ERROR_DRIVER_INTERNAL_ERROR`), this time while
+rendering `waterDistant`. The authenticated Steam recovery therefore fixed the
+Steam DLL startup failure but did not fix the independent renderer reset.
+
+The post-failure snapshot reported:
+
+- 4.25 GiB Kenshi private memory and 3.67 GiB working set;
+- 1.81 GiB free physical memory;
+- 24.17 GiB committed against a 38.84 GiB commit limit; and
+- Intel Iris Xe driver `32.0.101.6737`.
+
+Those values were sampled several minutes after the renderer exception and
+must not be presented as exact failure-instant pressure. Windows Application
+and System queries yielded no matching event, and no fresh crash archive was
+created before the frozen process was terminated. No gameplay or native
+command was issued.
+
+Exact dialog, log, telemetry, configuration, plug-in, and system evidence is
+under:
+
+`runs/p0-steam-recovery-device-reset-20260723T235528Z/`
+
+This recurrence reopens the reduced-profile stability gate. The two earlier
+short clean launches remain valid semantic-lifecycle evidence, but they do not
+establish renderer stability.
+
+## Post-recurrence launcher and profile hardening
+
+The recurrence was followed by an offline-only hardening slice. The checked-in
+`iris-xe-stability-v2` candidate keeps the calibrated 1920x1080 client and Low
+textures while reducing view and high-resolution terrain distances, terrain
+detail, grass, foliage, NPC/object/feature/distant-town ranges, reflection and
+shadow ranges, decal resolution/range, FXAA, and heat haze. The installed
+profile now matches exactly. Its immediate rollback is:
+
+`C:\Program Files (x86)\Steam\steamapps\common\Kenshi\settings.cfg.kenshi-agent-pre-iris-xe-stability-v2-20260724T001403.023324Z.bak`
+
+Profile installation is explicit, atomic, post-write verified, and preserves a
+timestamped backup. Launch itself only verifies the installed profile. It now
+also fails before starting Kenshi when:
+
+- another Kenshi process exists;
+- Steam is absent or the last explicit connection state is not `Logged On`;
+- free physical memory is below 4096 MiB; or
+- any configured graphics value has drifted.
+
+The launcher enumerates all visible top-level windows for `BAD STUFF`, Steam DLL
+errors, the crash reporter, and `Kenshi has crashed`. After load and causal
+pause confirmation, it requires 45 more seconds of fresh, advancing, loaded,
+paused telemetry before reporting success. This would have covered the
+33-second post-load recurrence rather than returning success early.
+
+The installed profile and real host passed the no-launch preflight. The
+portable suite passed 235 tests, Ruff, strict mypy, compile checks, schema
+parity, the default doctor, three fixed single-step seeds, and the continuous
+mock proof. This proves configuration and fail-closed behavior, not renderer
+stability; a bounded live smoke and later soak remain open.
+
 ## Effect on P5 evidence
 
 The earlier identity assertions remain valid: strict protocol parsing, exact
