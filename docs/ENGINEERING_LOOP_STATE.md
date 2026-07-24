@@ -256,13 +256,22 @@ were ~40 minutes, 46 seconds, and ~3.7 minutes, which does not correlate with
 graphics reduction.
 
 The graphics-settings hypothesis is therefore falsified and no further
-settings-tuning slice should be planned on that premise. The adapter driver
-(`32.0.101.6737`, 2025-04-15) has never been changed across any incident,
-Windows TDR values are unset defaults, and no OS-level display-reset event was
-logged. Exact evidence is under
-`runs/p0-iris-xe-v2-smoke-20260724T005717Z/`. Long unattended live runs are now
-treated as gated on a driver-level result or different hardware with a discrete
-GPU, not on further configuration work on this host.
+settings-tuning slice should be planned on that premise. Exact evidence is
+under `runs/p0-iris-xe-v2-smoke-20260724T005717Z/`.
+
+The driver was then updated — the untried highest-value lever — from
+`32.0.101.6737` (2025-04-15, Microsoft OEM `oem94.inf`) to `32.0.101.7088`
+(2026-06-16, Intel generic `oem38.inf`). With the graphics profile unchanged, a
+supervised zero-input soak ran the full **20 minutes** with no device reset,
+flat memory (3.847-3.886 GiB), `paused`/`responding` at all 36 samples, clean
+`kenshi.log`, and a clean close. This morning's identical script aborted at 141
+seconds. Evidence: `runs/p0-driver-7088-soak-20260724T125734Z/`.
+
+The old driver is strongly implicated as the cause. This is **not** yet a broad
+stability claim: the soak was on a bland, paused scene (lightest GPU load) while
+the crashes named `waterDistant`, so a water/effects-heavy soak — ideally
+unpaused — is the decisive remaining gate. Intel's game overlay was installed
+with the new driver and left enabled; disable it first if any crash recurs.
 
 ## Pending live milestone: P6 conditional food-procurement chain
 
@@ -1224,9 +1233,10 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
    strategic latency can overlap useful execution. Portable proof first; the
    live claim stays gated.
 4. P8: add CI and a reproducible Python lockfile as separate bounded slices.
-5. Live gates (deferred, not scheduled): launcher interruption,
+5. Live gates (now unblocked for short bounded runs after the driver fix, but
+   sequence a water/effects-heavy stability soak first): launcher interruption,
    alternate-resolution startup, ownership countdown/reset/disarm, and the P6
-   food chain. These need a host that survives a bounded run. Do not schedule
-   another graphics-settings slice against the renderer fault; the next
-   stability experiment is a driver change or different hardware, and that is
-   an operator decision rather than a repository slice.
+   food chain. Each needs an explicit operator handoff confirming the computer
+   is clear. Do not schedule another graphics-settings slice against the
+   renderer fault; it is falsified. If a crash recurs on driver `…7088`,
+   disable Intel's game overlay before any other change.

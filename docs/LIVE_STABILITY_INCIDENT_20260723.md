@@ -268,6 +268,56 @@ interval while age rose to 23.5 seconds, which is exactly the stalled-stream
 condition the independent safety supervisor latches. The deterministic safety
 layer sees this class of failure without needing the renderer to report it.
 
+## 2026-07-24 driver update: first clean soak, cause implicated
+
+After the settings hypothesis was falsified, the untried highest-value lever —
+the GPU driver — was changed. The Intel Iris Xe driver was updated through the
+Intel Driver & Support Assistant:
+
+| | before | after |
+|---|---|---|
+| version | `32.0.101.6737` | `32.0.101.7088` |
+| date | 2025-04-15 | 2026-06-16 |
+| INF | `oem94.inf` (Microsoft/Surface OEM) | `oem38.inf` (Intel generic) |
+
+With no other change to the graphics profile (still `iris-xe-stability-v2`,
+verified matching before and after), a supervised no-gameplay soak then ran to
+completion:
+
+- Launch returned `Kenshi launched, loaded, and paused.` and cleared the
+  45-second health window.
+- The zero-input sampling soak ran the full **1200 seconds (20 minutes)** and
+  reported `SOAK COMPLETE`. This morning the identical script aborted at 141
+  seconds on the same save.
+- 36 samples: telemetry advanced 242 -> 2601, `paused=true` and
+  `responding=true` at every sample, private memory flat between 3.847 and
+  3.886 GiB, and zero `BAD STUFF`/crash/Steam dialogs.
+- `kenshi.log` recorded no `DXGI`, `DEVICE_REMOVED`, `DRIVER_INTERNAL`, or
+  `BAD STUFF` line for the session. Kenshi then closed cleanly and free
+  physical memory recovered to 5.81 GiB.
+
+Evidence: `runs/p0-driver-7088-soak-20260724T125734Z/` (sampler, console,
+kenshi.log, RE_Kenshi log, settings, baseline telemetry).
+
+This strongly implicates the old `…6737` driver as the cause and is the first
+clean multi-minute run since the recurrences. It is **not yet** a broad
+stability claim, for three reasons:
+
+1. **Scene complexity.** The test save is a bland, paused scene with no water,
+   crowds, or shimmer — the lightest GPU load. The historical crashes named
+   `waterDistant`. A water/effects-heavy soak, ideally unpaused, is still
+   required before claiming general stability. (Raised by the operator
+   2026-07-24.)
+2. **Overlay confound.** The driver install added Intel's game overlay
+   (`IntelGraphicsSoftware.Overlay`), which was left enabled. If crashes recur,
+   disabling the overlay is the next single-variable experiment.
+3. **Duration.** Twenty minutes clears every observed failure point by a wide
+   margin, but a longer unattended soak remains open.
+
+One methodological note preserved from earlier: the failure signature is
+visible in telemetry as a stalled stream (sequence flat, age rising) before the
+dialog is detectable, which the independent safety supervisor already latches.
+
 ## Effect on P5 evidence
 
 The earlier identity assertions remain valid: strict protocol parsing, exact
