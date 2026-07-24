@@ -14,7 +14,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from .control.calibration import calibration_allows_input
 from .models import (
+    CalibrationReport,
     Condition,
     ConditionEvaluation,
     ConditionResult,
@@ -56,8 +58,16 @@ class ExecutionToken:
 
         return tuple(self._reports)
 
-    def revalidate(self, *, lease_wait_seconds: float = 0.0) -> InputBoundaryReport:
-        report = self._decide(lease_wait_seconds=lease_wait_seconds)
+    def revalidate(
+        self,
+        *,
+        lease_wait_seconds: float = 0.0,
+        calibration: CalibrationReport | None = None,
+    ) -> InputBoundaryReport:
+        report = self._decide(
+            lease_wait_seconds=lease_wait_seconds,
+            calibration=calibration,
+        )
         self._reports.append(report)
         return report
 
@@ -98,7 +108,22 @@ class ExecutionToken:
             evaluations=(evaluations or [])[:_MAX_REPORTED_EVALUATIONS],
         )
 
-    def _decide(self, *, lease_wait_seconds: float) -> InputBoundaryReport:
+    def _decide(
+        self,
+        *,
+        lease_wait_seconds: float,
+        calibration: CalibrationReport | None = None,
+    ) -> InputBoundaryReport:
+        # Calibration is resolved inside the lease by the caller. A profile that
+        # drifted during the wait must block here even when every typed
+        # condition still holds, because the coordinates no longer mean anything.
+        if calibration is not None and not calibration_allows_input(calibration):
+            return self._reject(
+                "Calibration identity is no longer usable at the input boundary "
+                f"({calibration.status.value}): {calibration.reason}",
+                lease_wait_seconds=lease_wait_seconds,
+            )
+
         observation = self.latest_observation()
         if observation is None:
             return self._reject(

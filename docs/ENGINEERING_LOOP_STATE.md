@@ -34,7 +34,61 @@
   dialogue, and current tooltip/source observations and adds bounded visible
   MyGUI control labels/roles/bounds.
 
-## Active slice: P3 final post-input-lease execution fence
+## Active slice: P4 versioned calibration identity
+
+Problem: live pointer execution required only the exact client width/height,
+rechecked inside the lease. That is an emergency brake, not a calibration
+identity — a fixed normalized click also depends on window mode, UI scale, DPI
+transform, keymap, and the calibrated macro set, and must not become the
+architecture for genuinely semantic UI anchors.
+
+Scope:
+
+- Add `CalibrationIdentity` (nullable client size, window mode, UI scale, DPI
+  scale, keymap, profile id/version, macro-set hash) plus `PointerActionClass`
+  (coordinate-independent / semantic-current / profile-calibrated / unsupported)
+  and a `CalibrationReport`.
+- Expose expected identity from `ControlsConfig` and observed identity from the
+  controller. Classify each action; require an exact match only for
+  profile-calibrated actions.
+- A declared field the host cannot observe is `unknown` and blocks input; a null
+  is never a match. `unknown` outranks `mismatched`.
+- Attach the report to every pointer receipt and carry it into the P3 boundary
+  so lease-time drift is caught by the same fence.
+- Preserve the tokenless fail-closed raise and the exact client-size message.
+
+Non-goals:
+
+- No Win32 observation of UI scale/DPI/window mode/keymap yet; those fields are
+  modelled and enforced but declaring one the controller cannot read refuses
+  input until observation support lands.
+- No claim of general resolution support; semantic startup at two sizes does not
+  waive calibration for legacy macros.
+- No live Kenshi execution.
+
+Acceptance criteria (all met, portable):
+
+- Matching full identity allows the guarded path; each declared-field mismatch,
+  missing expected identity, missing observed identity, and unobserved declared
+  field blocks input, with `unknown` distinguished from `mismatched`.
+- Semantic-current and coordinate-independent actions never require calibration.
+- A UI-scale mismatch blocks a real pointer dispatch before input; a matching
+  identity executes and the receipt states calibration mode and action class.
+- A calibration change inside the input lease is caught by the P3 boundary
+  (graceful rejection with a token; raise without one).
+- Only declared fields are compared; undeclared host facts neither block nor are
+  required.
+
+Result: complete and offline-verified. `models.py` adds the identity/report/
+class types; `control/calibration.py` owns `evaluate_calibration_identity`;
+`env/live.py` classifies actions and gates dispatch; `input_boundary.py`
+re-checks calibration inside the lease. Evidence: 269 tests (18 new), Ruff,
+mypy across 51 source files, compileall, regenerated schema parity, doctor,
+seeds 7/11/19 at 25/13/13, and the continuous proof unchanged. Automated
+portable evidence only; the gate is exercised beyond client size only in tests,
+never yet in live Kenshi. See `docs/ADR_CALIBRATION_IDENTITY.md`.
+
+## Previous slice: P3 final post-input-lease execution fence
 
 Problem: the continuous executor re-reads the canonical revision and
 re-evaluates plan assumptions and typed step preconditions immediately before
@@ -1222,10 +1276,10 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Ordered next candidates
 
-1. P4: make calibration identity a versioned fingerprint covering UI scale, DPI
-   transform, window mode, keymap, and profile hash, and carry it on the
-   `ExecutionToken` so the P3 fence checks it too. The dependency is now
-   explicit rather than deferred.
+1. P4 follow-on (deferred): implement Win32 observation of UI scale, DPI
+   transform, and window mode so those calibration fields can be declared in a
+   live profile without fail-closing. The identity framework and enforcement are
+   done; only observation is missing.
 2. P5: unify final safe-state behavior across stop, max-step, planner failure,
    environment exception, cancellation, and close into one idempotent
    `ensure_final_safe_state` owner.

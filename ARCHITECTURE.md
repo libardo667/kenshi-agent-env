@@ -144,6 +144,22 @@ emits `input_boundary_revalidated` or `input_boundary_rejected` with the lease
 wait and both revisions. Native-assisted issue-time DLL fences are unchanged and
 the boundary is additive. See `docs/ADR_INPUT_BOUNDARY_AUTHORITY.md`.
 
+## Calibration identity
+
+A profile-calibrated pointer click depends on more than client size, so
+`CalibrationIdentity` models the full set of facts it needs — client size,
+window mode, UI scale, DPI transform, keymap, and profile/macro hashes — each
+nullable. `LiveEnvironment.classify_pointer_action` sorts each action into
+coordinate-independent, semantic-current, profile-calibrated, or unsupported;
+only profile-calibrated actions require a match. `evaluate_calibration_identity`
+compares the fields the profile declares against what the controller observes
+and returns `not_required`, `matched`, `mismatched`, or `unknown` — a declared
+field the host cannot read is `unknown` and blocks input, never a silent match.
+The report rides on every pointer receipt and, via the `ExecutionToken`, is
+re-checked inside the input lease by the P3 boundary. Only client width and
+height are observable today; the other fields are modelled and enforced but
+await controller support. See `docs/ADR_CALIBRATION_IDENTITY.md`.
+
 ## Stateful movement options and concurrent patches
 
 In portable continuous mode, a configured movement-pulse `SkillAction` is

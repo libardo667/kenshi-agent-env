@@ -1,5 +1,208 @@
 {
   "$defs": {
+    "CalibrationIdentity": {
+      "additionalProperties": false,
+      "description": "Every fact a profile-calibrated pointer action depends on.\n\nEach field is nullable and a missing value stays missing. A null is never\ntreated as a match, because an unobserved window mode or UI scale is not\nevidence that it is the expected one.",
+      "properties": {
+        "client_width": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Width"
+        },
+        "client_height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Height"
+        },
+        "window_mode": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window Mode"
+        },
+        "ui_scale": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 8.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ui Scale"
+        },
+        "dpi_scale": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 8.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dpi Scale"
+        },
+        "keymap_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Keymap Id"
+        },
+        "profile_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile Id"
+        },
+        "profile_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile Version"
+        },
+        "macro_set_hash": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Set Hash"
+        }
+      },
+      "title": "CalibrationIdentity",
+      "type": "object"
+    },
+    "CalibrationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CalibrationStatus"
+        },
+        "action_class": {
+          "$ref": "#/$defs/PointerActionClass"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalibrationIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalibrationIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mismatched_fields": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Mismatched Fields",
+          "type": "array"
+        },
+        "unobserved_fields": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Unobserved Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "action_class",
+        "reason"
+      ],
+      "title": "CalibrationReport",
+      "type": "object"
+    },
+    "CalibrationStatus": {
+      "enum": [
+        "not_required",
+        "matched",
+        "mismatched",
+        "unknown"
+      ],
+      "title": "CalibrationStatus",
+      "type": "string"
+    },
     "ClickAction": {
       "additionalProperties": false,
       "properties": {
@@ -644,6 +847,17 @@
       "title": "PauseAction",
       "type": "object"
     },
+    "PointerActionClass": {
+      "description": "How an action's coordinates are derived, which decides what must match.\n\n`coordinate_independent` actions carry no screen position at all.\n`semantic_current` actions resolve their position from live control,\ntooltip, or entity bounds that are re-read inside the input lease, so they\nsurvive a resolution change. `profile_calibrated` actions replay fixed\nnormalized coordinates and are valid only under one exact identity.",
+      "enum": [
+        "coordinate_independent",
+        "semantic_current",
+        "profile_calibrated",
+        "unsupported"
+      ],
+      "title": "PointerActionClass",
+      "type": "string"
+    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -965,6 +1179,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/InputBoundaryReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "calibration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CalibrationReport"
         },
         {
           "type": "null"

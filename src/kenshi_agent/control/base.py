@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from ..models import (
     ActionReceipt,
+    CalibrationIdentity,
     ClickAction,
     HotkeyAction,
     KeyAction,
@@ -65,6 +66,23 @@ class InputController(ABC):
 
         title = self.target_window_title()
         return [title] if title else []
+
+    def observed_calibration_identity(self) -> CalibrationIdentity:
+        """Report only calibration facts this backend can actually read.
+
+        Anything the backend cannot observe stays `None`. Callers treat a null
+        as unknown and refuse calibrated pointer input; they must never read it
+        as agreement with the expected profile.
+        """
+
+        try:
+            rect = self.client_rect()
+        except (OSError, RuntimeError, ValueError):
+            return CalibrationIdentity()
+        return CalibrationIdentity(
+            client_width=rect.width or None,
+            client_height=rect.height or None,
+        )
 
     @abstractmethod
     def focus_window(self) -> None:

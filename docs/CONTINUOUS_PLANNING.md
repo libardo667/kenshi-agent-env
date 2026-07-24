@@ -225,6 +225,27 @@ Portable deterministic tests block inside a fake lease, publish conflicting
 state, and prove zero primitives are emitted. No live Kenshi run has exercised
 this fence against a real input lease.
 
+## Calibration identity for pointer actions
+
+A profile-calibrated click depends on more than client size. Each action is
+classified as coordinate-independent, semantic-current, profile-calibrated, or
+unsupported; only profile-calibrated actions require a match. `CalibrationIdentity`
+models client size, window mode, UI scale, DPI transform, keymap, and the
+profile/macro hashes, each nullable. `evaluate_calibration_identity` compares
+only the fields the profile declares against what the controller observes and
+returns `not_required`, `matched`, `mismatched`, or `unknown`. A declared field
+the host cannot read is `unknown` and blocks input — a null is never treated as
+agreement — and `unknown` outranks `mismatched` so an incomplete identity is
+never reported as a clean block.
+
+The report is attached to every pointer receipt and carried into the boundary
+by the `ExecutionToken`, so a calibration change during the lease wait is
+rejected by the same fence as a changed precondition. With a token present that
+rejection is graceful (zero input, reservation released); on the tokenless path
+a mismatch raises, preserving the exact client-size brake. Only client width and
+height are observable today; the remaining fields are modelled and enforced but
+declaring one the controller cannot read safely refuses input.
+
 ## Stateful movement option and future-only patching
 
 When enabled, a configured movement-pulse skill is adapted into one
