@@ -1263,15 +1263,24 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Known risks and deferred debt
 
-- Broad live stability remains open. The Intel Iris Xe client reproduced the
-  DirectX device reset after roughly forty minutes even with Low textures and
-  reflections disabled. The further-reduced `iris-xe-stability-v2` profile then
-  failed its supervised smoke, reproducing `BAD STUFF` after 141 paused,
-  zero-input seconds with flat memory. Survival across three progressively more
-  aggressive profiles was ~40 min, 46 s, and ~3.7 min, so graphics reduction is
-  not the operative variable. The untried levers are the unchanged Intel driver
-  `32.0.101.6737`, default Windows TDR values, and host headroom; treat long
-  live runs as gated on a driver result or discrete-GPU hardware.
+- Live renderer stability is now effectively resolved on this host by the GPU
+  driver update (`32.0.101.6737` -> `32.0.101.7088`). Two full 20-minute soaks
+  across dissimilar scenes (bland/paused and town/unpaused-with-effects) passed
+  clean, while the old driver crashed the same script at 141 s. Graphics
+  settings were falsified as the cause. Remaining caveats: only ~20-minute
+  soaks (no multi-hour run), no literal large-water scene yet, and Intel's game
+  overlay was installed with the driver and left enabled (disable first if any
+  crash recurs).
+- Launcher control-handback gap (benign, cosmetic): on an early startup
+  interruption — before the launcher acquires its first input lease — Kenshi
+  keeps foreground and its edge-clamped cursor tracks the human's mouse until
+  the human clicks another window. The safety-critical guarantee holds (zero
+  agent input is emitted; verified live in Test A 2026-07-24), but the
+  pre-launch foreground is never restored because `_restore_foreground` is only
+  captured on lease entry (by when Kenshi is already foreground) and the
+  launcher controller sets `alt_tab_after_input=False`. Clean fix: snapshot the
+  human foreground before `os.startfile` and restore it on interrupt/failure.
+  Deferred as its own small slice; no safety impact.
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
