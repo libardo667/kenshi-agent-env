@@ -193,6 +193,81 @@ parity, the default doctor, three fixed single-step seeds, and the continuous
 mock proof. This proves configuration and fail-closed behavior, not renderer
 stability; a bounded live smoke and later soak remain open.
 
+## 2026-07-24 supervised smoke: the graphics-settings hypothesis is falsified
+
+The `iris-xe-stability-v2` candidate received its bounded supervised
+no-gameplay smoke. It reproduced `BAD STUFF`.
+
+Launch succeeded at 00:57:17Z and returned `Kenshi launched, loaded, and
+paused.` in 78 seconds, clearing the new 45-second post-load health window —
+past the 33-second mark of the previous recurrence. A bounded sampling-only
+soak then ran with zero input. It aborted itself on the terminal dialog:
+
+| elapsed | telemetry seq | telemetry age | private | responding | dialog |
+|---------|---------------|---------------|---------|------------|--------|
+| 0 s     | 500           | 0.127 s       | 3.741 GiB | true     | none |
+| 35 s    | 571           | 0.280 s       | 3.741 GiB | true     | none |
+| 70 s    | 642           | 0.482 s       | 3.741 GiB | true     | none |
+| 106 s   | 713           | 0.165 s       | 3.741 GiB | true     | none |
+| 141 s   | 734           | 23.463 s      | 3.742 GiB | true     | `BAD STUFF` |
+
+Exact evidence, including the sampler, its console output, both configs, the
+RE_Kenshi log, the loaded telemetry snapshot, and the Windows event query, is
+under `runs/p0-iris-xe-v2-smoke-20260724T005717Z/`.
+
+### What this falsifies
+
+Three successively more aggressive profiles have now been measured:
+
+| profile | reductions | survived |
+|---------|-----------|----------|
+| original mitigation | Low textures, reflections off, view distance ~4000 | ~40 min |
+| view-distance 2500 | + shadows off, fast zone hopping off | 46 s |
+| `iris-xe-stability-v2` | + VD 1500, terrain/grass/foliage/decal/FXAA/heat-haze cuts | ~3.7 min |
+
+Survival time does not correlate with graphics reduction. Kenshi's private
+memory was flat to three decimal places across every sample, and free physical
+memory held between 1.74 and 1.85 GiB. The failure occurred while the game was
+paused and the agent was emitting no input at all.
+
+Reducing Kenshi's graphics workload is therefore not the operative variable,
+and no further settings-tuning slice should be planned on that premise. The
+earlier "roughly forty minutes" and "33 seconds after save load" figures should
+be read as variance in the same unexplained fault, not as a dose-response
+curve.
+
+### Current state of the untried levers
+
+- Installed adapter is `Intel(R) Iris(R) Xe Graphics`, driver `32.0.101.6737`
+  dated 2025-04-15, reporting 2.00 GiB. The driver has never been changed
+  across any of these incidents, and the original recurrence reported
+  `DXGI_ERROR_DRIVER_INTERNAL_ERROR`, which is the driver reporting its own
+  internal fault. This is the highest-value untried experiment.
+- `TdrDelay`, `TdrDdiDelay`, and `TdrLevel` are all unset Windows defaults.
+- No Windows System-log display-reset or TDR-recovery event was recorded in the
+  thirty minutes around this failure, and no Application error appeared. The
+  fault is visible to the D3D device without a logged OS-level GPU recovery.
+- Host headroom is genuinely tight: 15.83 GiB total with ~1.8 GiB free while
+  Kenshi holds ~3.74 GiB and the integrated adapter carves its framebuffer from
+  the same pool. Running with the host otherwise idle is untested.
+
+### Consequences for the project
+
+The renderer gate is open and is now explicitly **not** believed to be closable
+by configuration work on this host. Long unattended live runs should be treated
+as gated on either a driver-level result or different hardware with a discrete
+GPU.
+
+This does not gate P4, P5, P6, or P7 development, all of which are built and
+proven against deterministic fakes and only require live Kenshi for final
+validation.
+
+One incidental positive result: the failure was visible in telemetry before the
+dialog was detected. Sequence advanced only 713 -> 734 across the final
+interval while age rose to 23.5 seconds, which is exactly the stalled-stream
+condition the independent safety supervisor latches. The deterministic safety
+layer sees this class of failure without needing the renderer to report it.
+
 ## Effect on P5 evidence
 
 The earlier identity assertions remain valid: strict protocol parsing, exact
