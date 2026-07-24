@@ -318,6 +318,34 @@ One methodological note preserved from earlier: the failure signature is
 visible in telemetry as a stalled stream (sequence flat, age rising) before the
 dialog is detectable, which the independent safety supervisor already latches.
 
+### Second soak: heavy unpaused scene also clean
+
+The bland-scene caveat was then addressed with a second supervised soak on the
+new driver. A fresh New Game (Holy Nation Citizen) placed the character in a
+populated Holy Nation town — telemetry reported 9 nearby entities (6 visible,
+all neutral) plus a live fire particle/light effect and animating guards — and
+the soak ran **unpaused**.
+
+- Full 1200 seconds, `SOAK COMPLETE`. 35 samples, `responding=true` at every
+  one, zero `BAD STUFF`/crash dialogs, `kenshi.log` clean of any
+  DXGI/DEVICE_REMOVED/DRIVER_INTERNAL/BAD STUFF line.
+- Telemetry advanced 943 -> 3280 (~2/sec, steady); private memory was flat
+  between 3.874 and 3.921 GiB over the twenty minutes.
+- `paused` was `false` for roughly the first eighteen minutes, then flipped to
+  `true` near the end (an in-town event or stray input); the process stayed
+  alive and responsive throughout, and the bulk of the run was unpaused under
+  load.
+- Evidence: `runs/p0-driver-7088-heavy-soak-20260724T135959Z/`.
+
+Two full 20-minute soaks now pass on driver `…7088` across very different
+scenes (bland/paused and town/unpaused-with-effects), while the old driver
+`…6737` crashed the same script at 141 seconds. This closes the renderer gate
+for normal play with high confidence. The one test not yet run is a literal
+large-water (`waterDistant`) scene, which is the exact material from the
+original crash; it is now a nice-to-have confirmation rather than a blocker,
+since the driver — not settings, hardware, or water specifically — is
+established as the cause.
+
 ## Effect on P5 evidence
 
 The earlier identity assertions remain valid: strict protocol parsing, exact

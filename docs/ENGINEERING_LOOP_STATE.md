@@ -321,11 +321,21 @@ flat memory (3.847-3.886 GiB), `paused`/`responding` at all 36 samples, clean
 `kenshi.log`, and a clean close. This morning's identical script aborted at 141
 seconds. Evidence: `runs/p0-driver-7088-soak-20260724T125734Z/`.
 
-The old driver is strongly implicated as the cause. This is **not** yet a broad
-stability claim: the soak was on a bland, paused scene (lightest GPU load) while
-the crashes named `waterDistant`, so a water/effects-heavy soak — ideally
-unpaused — is the decisive remaining gate. Intel's game overlay was installed
-with the new driver and left enabled; disable it first if any crash recurs.
+A second supervised soak then addressed the bland-scene caveat. A fresh New
+Game (Holy Nation Citizen) placed the character in a populated town — 9 nearby
+entities, a live fire particle/light effect, animating guards — and ran the
+full 20 minutes **unpaused** and clean (35 samples, responding throughout, flat
+memory 3.874-3.921 GiB, zero renderer dialogs, clean `kenshi.log`). Evidence:
+`runs/p0-driver-7088-heavy-soak-20260724T135959Z/`.
+
+Two full 20-minute soaks across dissimilar scenes (bland/paused and
+town/unpaused-with-effects) now pass on driver `…7088`, while the old `…6737`
+crashed the same script at 141 seconds. The renderer gate is effectively closed
+for normal play; the driver — not settings, hardware, or water — is the
+established cause. The only untested scene is literal large-water
+(`waterDistant`), now an optional confirmation rather than a blocker. Intel's
+game overlay was installed with the new driver and left enabled; disable it
+first if any crash ever recurs.
 
 ## Pending live milestone: P6 conditional food-procurement chain
 
