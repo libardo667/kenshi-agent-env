@@ -1385,17 +1385,28 @@ Slice 3 (P6) is in progress:
   wrong-target dialogue, target loss, threat in/out of range, unknown distance,
   and pre-begin misuse. 300 tests pass. This owns no I/O — it is the unit the
   option loop and typed conditions will read.
-- Slice 3b (next): a `StatefulApproachOption` that issues the deterministic-
-  target approach, drives `ApproachMonitor` from the executor's existing
-  `option.poll(update)` loop (which already runs a concurrent planner for
-  overlap), succeeds on dialogue/arrival, and cancels on abort/human-input/
-  safety. The executor loop currently exits on `option_task.done()`; the
-  approach continues after the dispatch ack until arrival, so the loop needs a
-  world-state-terminal condition rather than a task-done one — the one real
-  design point remaining.
-- Slice 3c: expose approach progress as typed conditions and wire the option
-  into a reviewed live policy; then measure overlap (option duration vs planner
-  latency) to prove strategic thinking overlaps useful execution.
+- Slice 3b (done): `StatefulApproachOption` in `options.py`. It issues the
+  deterministic-target approach, then reaches SUCCEEDED only when the
+  `ApproachMonitor` reports arrival (dialogue with the exact target, or inside
+  the arrival radius) — the dispatch ack alone is not success — and FAILED on a
+  rejected order, target loss, or a hostile in threat range. Prepare requires a
+  paused, capable start with the target present; cancel is idempotent. Seven
+  tests cover success-after-arrival-not-ack, arrival-by-radius, target loss,
+  threat, rejected dispatch, prepare guards, and idempotent cancel. 307 tests
+  pass.
+- Slice 3c (next): wire the option into the executor. The proven
+  `_execute_movement_option` loop exits on `option_task.done()`; the approach
+  keeps walking after the ack, so integration needs a world-state-terminal loop
+  (continue consuming updates until the option itself reports terminal, with a
+  step-timeout guard). To protect the proven movement path this is best added
+  as a sibling execution path rather than by mutating the movement loop.
+- Slice 3d: expose approach progress as typed conditions, wire the option into a
+  reviewed live policy, and measure overlap (option duration vs planner latency)
+  to prove strategic thinking overlaps useful execution.
+
+Pending live verification (does not need more building): one supervised run to
+confirm the coin-flip fix — the planner should now reliably approach the Barman
+via the deterministic `dialogue_targets` instead of flip-flopping.
 
 ## Ordered next candidates
 
