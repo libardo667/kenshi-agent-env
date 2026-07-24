@@ -415,7 +415,15 @@ and provides short commands for the operations used during live iteration:
 ./dev journey --objective "Locate the visible bar entrance" --steps 8
 ./dev journey --objective "Approach the Barman safely" --steps 8 --execute \
   --exclusive --native-assisted
+./dev journey --continuous --execute --native-assisted \
+  --acknowledge-continuous-live --steps 4
 ```
+
+`journey` flags are faithful passthroughs of `run` gates; the `run` command
+still enforces each one. `--continuous` selects the continuous scheduler, and an
+enabled continuous-live policy additionally requires
+`--acknowledge-continuous-live` on top of `--execute` and `--native-assisted`.
+`--continuous` alone never grants the acknowledgement.
 
 `graphics verify` compares Kenshi's installed settings with the versioned
 profile. `graphics apply` may run only while Kenshi is stopped; it makes a

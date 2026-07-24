@@ -781,9 +781,15 @@ def _telemetry(args: argparse.Namespace) -> int:
     return 1 if result.stale else 0
 
 
-def _journey(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+def _journey_argv(args: argparse.Namespace, run_id: str) -> list[str]:
+    """Build the `run` argv from journey options.
+
+    Every gate is a faithful passthrough of an existing `run` flag; the `run`
+    command still enforces that live, native-assisted, and continuous-live
+    execution each require their own acknowledgement. Journey never invents or
+    relaxes a gate.
+    """
+
     argv = [
         "run",
         "--config",
@@ -799,12 +805,23 @@ def _journey(args: argparse.Namespace) -> int:
     ]
     if args.objective:
         argv.extend(["--objective", args.objective])
+    if getattr(args, "continuous", False):
+        argv.extend(["--planning-mode", "continuous"])
     if args.execute:
         argv.append("--execute-live-actions")
     if args.native_assisted:
         argv.append("--acknowledge-native-assisted-control")
+    if getattr(args, "acknowledge_continuous_live", False):
+        argv.append("--acknowledge-continuous-live")
     if args.exclusive:
         argv.append("--exclusive-input-session")
+    return argv
+
+
+def _journey(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+    argv = _journey_argv(args, run_id)
 
     overlay: subprocess.Popen[bytes] | None = None
     if (
@@ -869,11 +886,24 @@ def build_parser() -> argparse.ArgumentParser:
     journey.add_argument("--planner", choices=["openai", "openrouter"], default="openai")
     journey.add_argument("--steps", type=int, default=8)
     journey.add_argument("--run-id")
+    journey.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Run the continuous scheduler instead of single-step.",
+    )
     journey.add_argument("--execute", action="store_true")
     journey.add_argument(
         "--native-assisted",
         action="store_true",
         help="Acknowledge execution through configured native-assisted command bridges.",
+    )
+    journey.add_argument(
+        "--acknowledge-continuous-live",
+        action="store_true",
+        help=(
+            "Required in addition to --continuous and the normal live gates before "
+            "an enabled continuous-live policy may execute."
+        ),
     )
     journey.add_argument("--exclusive", action="store_true")
     journey.add_argument(
