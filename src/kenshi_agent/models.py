@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -1062,9 +1063,37 @@ class Observation(StrictModel):
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
 
+    def dialogue_target_digest(self) -> list[dict[str, Any]]:
+        """Deterministic, authoritative interaction affordances for the planner.
+
+        The planner must not re-derive who is talkable from raw entity flags —
+        that judgment flaked live. This is the pre-validated answer: every
+        non-hostile person the agent could approach and talk to, nearest first,
+        with the vendor subset marked. `is_vendor` distinguishes a talk target
+        the agent can also trade with.
+        """
+
+        if self.telemetry is None:
+            return []
+        return [
+            {
+                "id": target.id,
+                "name": target.name,
+                "distance": target.distance,
+                "visible": target.visible,
+                "camera_bearing_degrees": target.camera_bearing_degrees,
+                "is_vendor": target.is_confirmed_vendor(),
+            }
+            for target in dialogue_targets(self.telemetry.nearby_entities)
+        ]
+
     def planner_payload(self, *, max_chars: int = 24000) -> str:
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
-        text = self.__class__.model_validate(payload).model_dump_json(indent=2)
+        # Surface the deterministic talk-target list the planner must trust
+        # rather than re-derive. A top-level non-collection key is preserved
+        # through budgeting.
+        payload["dialogue_targets"] = self.dialogue_target_digest()
+        text = json.dumps(payload, indent=2, ensure_ascii=False)
         return budget_observation_payload(
             payload,
             full_text=text,

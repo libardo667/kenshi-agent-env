@@ -1362,12 +1362,19 @@ broadens what the agent can *see* it could talk to, not what the live policy
 lets it *do*, and it is the foundation for the P7 interaction ladder, not just
 commerce.
 
-Slice 2 (next): surface `dialogue_targets` (with the vendor subset marked) in
-the planner observation and rewrite the prompt so the model approves/selects a
-pre-validated target instead of judging talkability/vendor status. This is the
-behavior change that kills the coin-flip.
+Slice 2 (done): `Observation.planner_payload()` now injects a top-level,
+authoritative `dialogue_targets` digest (id, name, distance, visible, bearing,
+and `is_vendor`), deterministically derived nearest-first from telemetry and
+preserved through budgeting as a non-collection key. The prompt was rewritten so
+the model picks a target from that pre-validated list by exact id and does not
+re-derive talkability/vendor status from raw entities, does not stop on
+ambiguous raw flags, and does not treat an empty list as license to invent a
+target. This is the behavior change intended to kill the coin-flip. It is
+implemented and unit-tested (the Hub scene surfaces the Captain and Barman,
+vendor-marked, hostiles excluded, nearest-first), but not yet live-verified —
+a supervised run is needed to confirm the planner now reliably approaches.
 
-Slice 3 (P6): a monitored approach/travel option that navigates toward the
+Slice 3 (P6, next): a monitored approach/travel option that navigates toward the
 deterministic target, exposes progress/distance/visibility predicates, requests
 a future-only replan, and cancels on human input/safety — the "get in view,
 then act" loop, grounded in world positions.
