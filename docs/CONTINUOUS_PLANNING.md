@@ -174,14 +174,56 @@ Before every action it:
 4. re-evaluates that step's capabilities and preconditions;
 5. validates the action with the ordinary `ActionGuard`;
 6. reserves plan action/risk budget;
-7. dispatches through the ordinary environment path;
-8. commits the reservation when accepted or delivery is uncertain, and releases
+7. builds a bounded `ExecutionToken` carrying that exact authorization;
+8. dispatches through the ordinary environment path;
+9. commits the reservation when accepted or delivery is uncertain, and releases
    it only after a definitive no-execution rejection;
-9. evaluates failure and success predicates only on later relevant revisions;
-10. follows a declared branch, completes, aborts, or requests a bounded replan.
+10. evaluates failure and success predicates only on later relevant revisions;
+11. follows a declared branch, completes, aborts, or requests a bounded replan.
 
 Environment errors after dispatch conservatively consume the reservation so an
 at-most-once action is not duplicated.
+
+## Final input-boundary revalidation
+
+Step 7 above is validated before the environment waits for a polite input turn.
+`LiveEnvironment` then acquires an input lease whose wait is unbounded by
+design, so that evidence can be obsolete when the wait ends.
+
+The `ExecutionToken` closes that window. It carries the plan/step/command
+identity, control mode, validated revision, the plan's assumptions, the step's
+preconditions, and a deferred accessor to the world-state store. Inside the
+acquired lease — after the calibration recheck and immediately before the first
+primitive — the environment re-reads the latest canonical observation and
+rejects the dispatch when:
+
+- no canonical observation is available;
+- the canonical revision regressed;
+- the control mode changed;
+- the observation carries `human_input_detected` or `emergency_stop_detected`;
+- any assumption or precondition is no longer `true`.
+
+The check calls the same `evaluate_conditions` machinery used before dispatch,
+so `unknown`, `unavailable`, and `stale` block input exactly as `false` does. A
+rejection emits zero primitives and returns `accepted=false`, `executed=false`,
+`primitive_actions=0`, and `error_type="InputBoundaryRejected"`, which releases
+the reservation through the ordinary definitive-rejection path.
+
+Every token-bearing dispatch attaches an `InputBoundaryReport` to its receipt
+with the decision, reason, lease wait, plan/step identity, validated and
+boundary revisions, and bounded evaluations. The executor emits
+`input_boundary_revalidated` or `input_boundary_rejected` accordingly.
+
+The proven client width/height recheck still runs first and still fails closed
+by raising, so it is not demoted into a boundary rejection. Native-assisted
+commands keep their stronger issue-time DLL fences unchanged; the boundary is
+additive and does not alter command-ID or acknowledgement semantics. Single-step
+dispatch builds no token, because it has no plan assumptions or typed step
+preconditions to re-check.
+
+Portable deterministic tests block inside a fake lease, publish conflicting
+state, and prove zero primitives are emitted. No live Kenshi run has exercised
+this fence against a real input lease.
 
 ## Stateful movement option and future-only patching
 
@@ -237,6 +279,8 @@ plan_step_progress
 plan_step_succeeded
 plan_step_failed
 plan_step_cancelled
+input_boundary_revalidated
+input_boundary_rejected
 plan_patch_requested
 plan_patch_staged
 plan_patch_rejected
@@ -263,6 +307,10 @@ completions/failures, terminal states, and cleanup success percentage are
 reported separately from planner/reflex counts.
 Future patches, concurrent advisory discards, option lifecycle counts, and
 option success percentage are also separate metrics.
+`input_boundary_revalidations` and `input_boundary_rejections` count the final
+post-lease fence separately from pre-lease policy rejections, so a run can
+distinguish input that was never authorized from input that lost its authority
+while the agent waited for a quiet turn.
 `replay_plan_lifecycle` reconstructs each plan's terminal status and succeeded,
 failed, and cancelled step IDs.
 

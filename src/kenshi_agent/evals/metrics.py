@@ -34,6 +34,8 @@ class _MetricValues(TypedDict):
     budget_reservations: int
     budget_commits: int
     budget_releases: int
+    input_boundary_revalidations: int
+    input_boundary_rejections: int
     sequence_stall_incidents: int
     transient_events_retained: int
     transient_events_lost: int
@@ -101,6 +103,8 @@ class LogMetrics:
     budget_reservations: int = 0
     budget_commits: int = 0
     budget_releases: int = 0
+    input_boundary_revalidations: int = 0
+    input_boundary_rejections: int = 0
     sequence_stall_incidents: int = 0
     transient_events_retained: int = 0
     transient_events_lost: int = 0
@@ -189,6 +193,8 @@ def evaluate_log(path: Path) -> LogMetrics:
         "budget_reservations": 0,
         "budget_commits": 0,
         "budget_releases": 0,
+        "input_boundary_revalidations": 0,
+        "input_boundary_rejections": 0,
         "sequence_stall_incidents": 0,
         "transient_events_retained": 0,
         "transient_events_lost": 0,
@@ -303,6 +309,10 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["budget_commits"] += 1
             elif event_type == "plan_budget_released":
                 values["budget_releases"] += 1
+            elif event_type == "input_boundary_revalidated":
+                values["input_boundary_revalidations"] += 1
+            elif event_type == "input_boundary_rejected":
+                values["input_boundary_rejections"] += 1
             elif event_type == "safety_supervisor_preempted":
                 values["safety_supervisor_preemptions"] += 1
             elif event_type == "strategic_planner_cancelled":

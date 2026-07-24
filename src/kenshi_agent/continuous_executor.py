@@ -8,11 +8,13 @@ from typing import Any
 
 from .config import PlanningConfig
 from .env import AgentEnvironment
+from .input_boundary import ExecutionToken
 from .models import (
     ActivePlanContext,
     CommandDispatchContext,
     ConditionEvaluation,
     ConditionResult,
+    InputBoundaryDecision,
     Observation,
     ObservationPolicy,
     PlanEnvelope,
@@ -575,6 +577,21 @@ class ContinuousPlanExecutor:
             command_id=command.command_id,
             based_on_revision=action_start_revision,
         )
+        # The token re-checks this exact authorization after any polite input
+        # lease is acquired, because the lease wait can outlive the evidence.
+        token = ExecutionToken(
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            step_id=step.step_id,
+            command_id=command.command_id,
+            control_mode=plan.control_mode,
+            validated_revision=action_start_revision,
+            # Deferred: the boundary must read the store when the lease is
+            # acquired, not the snapshot that existed at validation time.
+            latest_observation=lambda: self.state_store.latest,
+            assumptions=tuple(plan.assumptions),
+            preconditions=tuple(step.preconditions),
+        )
         step_deadline = self.clock.monotonic() + step.timeout_seconds
         self._event(
             "plan_step_started",
@@ -601,11 +618,13 @@ class ContinuousPlanExecutor:
                     dispatch_context,
                     remaining_run_actions=remaining_run_actions,
                     protected_step_ids=protected_step_ids,
+                    token=token,
                 )
             else:
                 transition = await self.environment.dispatch(
                     action,
                     command=dispatch_context,
+                    token=token,
                 )
         except asyncio.CancelledError:
             budget.commit()
@@ -664,6 +683,28 @@ class ContinuousPlanExecutor:
                     "Environment failed after command dispatch; the reserved action "
                     f"was conservatively committed: {type(exc).__name__}: {exc}"
                 ),
+            )
+
+        boundary = transition.receipt.input_boundary
+        if boundary is not None:
+            rejected = boundary.decision is InputBoundaryDecision.REJECTED
+            self._event(
+                "input_boundary_rejected" if rejected else "input_boundary_revalidated",
+                plan,
+                observation,
+                step=step,
+                reason=boundary.reason,
+                evidence={
+                    "command_id": command.command_id,
+                    "decision": boundary.decision.value,
+                    "lease_wait_seconds": boundary.lease_wait_seconds,
+                    "validated_revision": action_start_revision.model_dump(mode="json"),
+                    "boundary_revision": (
+                        boundary.boundary_revision.model_dump(mode="json")
+                        if boundary.boundary_revision is not None
+                        else None
+                    ),
+                },
             )
 
         if not transition.receipt.accepted and not transition.receipt.executed:
@@ -864,8 +905,9 @@ class ContinuousPlanExecutor:
         *,
         remaining_run_actions: int,
         protected_step_ids: set[str],
+        token: ExecutionToken | None = None,
     ) -> tuple[Transition, _StagedPatch | None]:
-        option_task = option.start(command)
+        option_task = option.start(command, token=token)
         self._event(
             "option_started",
             plan,

@@ -34,6 +34,18 @@ requires the exact configured client size. Ordinary live pointer-bearing
 actions repeat that exact-size check after the input lease is acquired and
 immediately before dispatch.
 
+Because the lease wait is unbounded by design, a continuous plan step also
+carries a bounded `ExecutionToken` into dispatch. Inside the acquired lease,
+after the calibration recheck and immediately before the first primitive, the
+environment re-reads the latest canonical revision and re-evaluates that step's
+plan assumptions and typed preconditions, its control mode, and current human
+input/emergency-stop evidence. A regressed revision, changed control mode,
+withdrawn capability, human input, emergency stop, or any assumption or
+precondition that is no longer `true` emits zero input and returns an explicit
+`InputBoundaryRejected` receipt. `unknown`, `unavailable`, and `stale` block
+input exactly as `false` does. This window is never closed by shortening the
+lease timeout or disabling polite handoff.
+
 Run Kenshi and the controller at the same Windows integrity level. Do not run
 one as administrator and the other normally. Keep the Kenshi window title
 filter narrow. Close applications containing secrets before live tests. Start

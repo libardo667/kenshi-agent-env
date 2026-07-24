@@ -9,6 +9,7 @@ from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ..control.base import InputController, PrimitiveInputAction
 from ..control.calibration import validate_expected_client_size
 from ..control.capture import WindowCapture
+from ..input_boundary import ExecutionToken
 from ..models import (
     Action,
     ActionReceipt,
@@ -16,6 +17,7 @@ from ..models import (
     CommandDispatchContext,
     ControlMode,
     HotkeyAction,
+    InputBoundaryDecision,
     KeyAction,
     MoveCursorAction,
     NativeCommandAcknowledgement,
@@ -198,14 +200,16 @@ class LiveEnvironment(AgentEnvironment):
         action: Action,
         *,
         command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
     ) -> Transition:
-        return await self._step(action, command=command)
+        return await self._step(action, command=command, token=token)
 
     async def _step(
         self,
         action: Action,
         *,
         command: CommandDispatchContext | None,
+        token: ExecutionToken | None = None,
     ) -> Transition:
         started = datetime.now(UTC)
         terminated = isinstance(action, StopAction)
@@ -247,9 +251,37 @@ class LiveEnvironment(AgentEnvironment):
                 receipt = await self._execute_live(action, started, command)
             else:
                 async with self.controller.input_lease(alt_tab_on_restore=True):
+                    # The lease wait is unbounded, so calibration and the caller's
+                    # typed authorization are both re-checked here, after the wait
+                    # and immediately before the first primitive can be emitted.
                     self._validate_pointer_calibration(action)
-                    receipt = await self._execute_live(action, started, command)
-                lease_wait = self.controller.input_lease_wait_seconds()
+                    lease_wait = self.controller.input_lease_wait_seconds()
+                    boundary = (
+                        token.revalidate(lease_wait_seconds=lease_wait)
+                        if token is not None
+                        else None
+                    )
+                    if boundary is not None and boundary.decision is (
+                        InputBoundaryDecision.REJECTED
+                    ):
+                        receipt = ActionReceipt(
+                            action=action,
+                            accepted=False,
+                            executed=False,
+                            dry_run=False,
+                            started_at=started,
+                            finished_at=datetime.now(UTC),
+                            primitive_actions=0,
+                            message=(
+                                "No input was emitted: the state that authorized this "
+                                f"action changed while the input lease was pending. "
+                                f"{boundary.reason}"
+                            ),
+                            error_type="InputBoundaryRejected",
+                        )
+                    else:
+                        receipt = await self._execute_live(action, started, command)
+                    receipt = receipt.model_copy(update={"input_boundary": boundary})
                 if lease_wait >= 0.01:
                     receipt = receipt.model_copy(
                         update={
