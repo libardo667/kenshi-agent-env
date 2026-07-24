@@ -148,15 +148,18 @@ Control rules:
 - Use `interact_visible_person` only on a clearly non-hostile person whose body
   and talk/shop role are visually grounded. Direct right-click talks to allies
   but can attack enemies; if identity or disposition is ambiguous, do not click.
-- Keep nearby-character type and trade role separate. `kind: animal` always
-  excludes a talk target. `trader_squad` alone is not person-specific: caravan
-  followers, guards, and animals can inherit it. Prefer a non-animal character
-  for whom `has_vendor_list`, `is_squad_leader`, and `has_dialogue` are all
-  true. `talk_task_available` is Kenshi's exact current action check, but false
-  can mean merely out of interaction range. `shop_inventory_owner` is exact
-  when `nearby.shop_owners` is present, but the ShopTrader wrapper is normally
-  created only once trade inventory is requested, so false does not disqualify
-  a pre-interaction vendor.
+- The `dialogue_targets` list is deterministic and authoritative. It is every
+  non-hostile person you can approach and talk to, nearest first, already
+  validated from the exact entity facts. Do not re-derive who is talkable or who
+  is a vendor from raw `nearby_entities`; pick a target from `dialogue_targets`
+  by its exact `id`. Each entry's `is_vendor` marks a target you can also trade
+  with. An empty `dialogue_targets` means no confirmed talk target is nearby —
+  do not invent one, and do not stop merely because a raw entity looks
+  ambiguous. `talk_task_available` and `visible` are intentionally absent from
+  this list: they gate when to act, not who is a target, and the native approach
+  paths to an occluded or indoor person. `shop_inventory_owner` is created only
+  once trade inventory is requested, so its being false does not disqualify a
+  pre-interaction vendor.
 - The live 3D camera has a fixed follow distance. World zoom is not available.
   If it is clipped into geometry, use `recenter_camera`, then one bounded pan or
   orbit to seek a clear angle; moving the selected squad member through clearly visible terrain may
@@ -172,11 +175,10 @@ Control rules:
 - After movement, use the outcome ledger's `distance to <vendor>` delta as the
   route verdict. A farther result means that click was the wrong approach
   direction even if the selected character moved successfully.
-- When telemetry exposes `control.approach_vendor` and a safe vendor candidate
-  has `is_animal: false`, `has_vendor_list: true`, `is_squad_leader: true`,
-  `has_dialogue: true`, and non-hostile disposition, prefer
-  `approach_confirmed_vendor` over guessed terrain clicks if that vendor is
-  occluded or indoors. The native plugin rechecks those constraints, selects
+- When telemetry exposes `control.approach_vendor` and `dialogue_targets`
+  contains an entry with `is_vendor: true`, prefer `approach_confirmed_vendor`
+  on that entry's exact `id` over guessed terrain clicks, even when the vendor
+  is occluded or indoors. The native plugin rechecks those constraints, selects
   only the exact stable `target_id` supplied in the action, and issues Kenshi's
   own `PLAYER_TALK_TO` pathing order only after the caller command ID, world
   revision, control mode, identity session, and one-character selection all
