@@ -154,6 +154,30 @@ on it.
 - The launcher treats both `RE_Kenshi Crash Reporter` and `Kenshi has crashed`
   window titles, plus fresh native plug-in error state, as immediate terminal
   no-input outcomes.
+- A later supervised retry first exposed an external Steam-session failure.
+  Steam's own connection log recorded `Logged In Elsewhere` at 16:45:00 and
+  the local Steam client exited. The resulting Steam DLL alert prompted real
+  human mouse input, and the launcher correctly cancelled both attempts before
+  emitting startup input. After the user logged the local Steam client back in,
+  its connection log reached `Logged On`, and a fresh bounded semantic launch
+  again returned `Kenshi launched, loaded, and paused.` Fresh protocol `0.5.0`
+  telemetry selected Hep, reported 1,000 cats and `paused: true`, and retained
+  native command sequence zero. This separates the Steam-login incident from
+  launcher ownership detection and from the renderer failure below.
+- At 16:55:28 that authenticated run reproduced `BAD STUFF` about 46 seconds
+  after process start and 33 seconds after the save-load request. `kenshi.log`
+  recorded `DXGI_ERROR_DEVICE_REMOVED` with
+  `DXGI_ERROR_DRIVER_INTERNAL_ERROR` while rendering `waterDistant`. Low
+  textures, disabled reflections/shadows, disabled fast zone hopping, view
+  distance 2500, the RE_Kenshi startup-panel setting, and the exact accepted
+  plug-in hash had all persisted. Post-failure sampling saw 4.25 GiB private
+  process memory, 1.81 GiB free physical memory, and 24.17 GiB committed
+  against a 38.84 GiB limit; those delayed samples do not prove the
+  failure-instant pressure. No gameplay action or native command was issued.
+  The dialog, logs, telemetry, configuration, plug-in status/hash, and system
+  snapshot are preserved under
+  `runs/p0-steam-recovery-device-reset-20260723T235528Z/`; the crashed process
+  was then terminated.
 - Semantic startup is proven at 1920x1080. Deliberate interruption,
   alternate-resolution startup, the ownership countdown/reset, F12 disarm, and
   a longer reduced-profile stability soak remain unproven live.
@@ -186,11 +210,19 @@ on it.
     require separate bounded live tests.
 11. Kenshi reproduced a `BAD STUFF` out-of-video-memory/device-reset failure
     under shared-memory pressure. Low textures, disabled reflections/shadows,
-    disabled fast zone hopping, and view distance 2500 are installed, but the
-    reduced profile has now passed two short supervised launches with the split
-    protocol. One informational `RADAR_PRE_LEAK_64` event appeared during world
-    load while memory later fell and the process stayed responsive. A longer
-    stability soak and GPU-local accounting remain open.
+    disabled fast zone hopping, and view distance 2500 are installed. Two short
+    split-protocol launches closed normally, but the later authenticated launch
+    reproduced the same device reset within 46 seconds while rendering
+    `waterDistant`. One earlier informational `RADAR_PRE_LEAK_64` event appeared
+    during world load while memory later fell and the process stayed responsive.
+    The versioned `iris-xe-stability-v2` candidate is now installed and
+    offline-verified with additional world/effect reductions, but has not yet
+    had a live smoke. The launcher now requires Steam `Logged On`, 4096 MiB
+    free physical memory, an exact profile, no existing Kenshi process, and a
+    45-second fresh loaded-paused health window; it also detects unfiltered
+    `BAD STUFF` and Steam DLL dialogs. The stability gate is open; a longer soak
+    alone cannot close it until the fast recurrence has a credible mitigation
+    or falsifying comparison.
 
 The audit’s priority is not automatically the current priority. The ledger, working tree, failing tests, and any active incident take precedence.
 
@@ -479,8 +511,9 @@ Required sequence:
    `33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`,
    its complete preinstall rollback is
    `runs/p0-title-player-split-preinstall-20260723T231348Z/`,
-   `OpenSettingOnStart` is false, and all intended reduced graphics settings
-   persisted.
+   `OpenSettingOnStart` is false, and `./dev graphics verify` plus
+   `./dev launch --preflight-only` confirm the exact intended graphics profile,
+   authenticated Steam session, duplicate-client guard, and memory floor.
 2. Preserve the accepted candidate and its rollback. Never reinstall either
    rejected MyGUI-integrated DLL. Before any future replacement, back up the
    complete currently installed package and verify hashes while Kenshi is
@@ -517,8 +550,8 @@ Acceptance criteria:
 - Duplicate, missing, stale, changed, disabled, or hidden semantic targets
   produce zero pointer input.
 - Fresh native plug-in `error` state, `RE_Kenshi Crash Reporter`, or
-  `Kenshi has crashed` title terminates the launcher immediately with no
-  additional input.
+  `Kenshi has crashed`, `BAD STUFF`, or Steam DLL error title terminates the
+  launcher immediately with no additional input.
 - 1920x1080 and the chosen alternate resolution both reach the expected title/
   save transition from current semantic bounds; this proves the startup path,
   not general resolution support for gameplay macros.
@@ -529,9 +562,10 @@ Acceptance criteria:
   takeover replans current state rather than resuming cancelled work.
 - The loaded game is paused at every terminal boundary where pause is
   authoritative.
-- The reduced graphics profile shows no immediate monotonic memory rise or
-  renderer reset during the bounded smoke. Long-duration stability remains
-  explicitly open.
+- The versioned reduced graphics profile matches before and after the bounded
+  smoke. Launcher success is impossible until fresh, advancing, loaded, paused
+  telemetry survives the configured post-load health window with no renderer
+  terminal dialog. Long-duration stability remains explicitly open.
 
 ### P1 — Complete the supervised P6 live continuous food chain
 

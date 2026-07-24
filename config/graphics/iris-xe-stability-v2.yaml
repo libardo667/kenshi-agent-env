@@ -1,0 +1,31 @@
+format_version: 1
+profile_id: iris-xe-stability-v2
+description: >-
+  Candidate stability profile for the 16 GiB Surface Laptop 5 with integrated
+  Intel Iris Xe graphics. It preserves the calibrated 1920x1080 client while
+  reducing world, effects, water, shadow, foliage, and decal pressure.
+settings:
+  camera zoom: "0"
+  terrain hi-res distance: "300"
+  view distance: "1500"
+  Fast zone hopping: "0"
+  texture resolution gimping: "3"
+  water reflection: "0"
+  shadow mode: "0"
+  terrain detail: "0"
+  terrain distant: "0"
+  grass range: "0"
+  grass density: "0"
+  foliage range: "0"
+  npc range: "2500"
+  objects view range: "2000"
+  feature range: "1"
+  distant town range: "3"
+  generate distant towns: "0"
+  reflection range: "0"
+  shadow quality: "0"
+  Shadow Range: "1000"
+  Decal Resolution: "512"
+  Decal Range: "500"
+  FXAA: "0"
+  HeatHaze: "0"

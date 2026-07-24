@@ -71,6 +71,21 @@ capture:
   jpeg_quality: 90
   crop_client_area: true
 
+launch:
+  # Steam being open is insufficient: fail before launch unless its own
+  # connection log says this local client is actually logged on.
+  require_steam_logged_on: true
+  # Launch never silently mutates graphics settings. `./dev graphics apply`
+  # installs this reversible profile; launch only verifies an exact match.
+  require_graphics_profile: true
+  graphics_profile_file: graphics/iris-xe-stability-v2.yaml
+  # Intel Iris Xe shares system RAM. Refuse a test while host headroom is
+  # already below a conservative four-GiB boundary.
+  min_free_physical_memory_mib: 4096
+  # The authenticated device reset occurred 33 seconds after save load.
+  # Successful startup must remain fresh, loaded, and paused beyond that point.
+  post_load_health_seconds: 45
+
 controls:
   pause_key: space
   pause_skill: pause_game

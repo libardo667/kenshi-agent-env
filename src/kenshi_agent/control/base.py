@@ -60,6 +60,12 @@ class InputController(ABC):
 
         return None
 
+    def visible_window_titles(self) -> list[str]:
+        """Return visible top-level titles when the backend can enumerate them."""
+
+        title = self.target_window_title()
+        return [title] if title else []
+
     @abstractmethod
     def focus_window(self) -> None:
         raise NotImplementedError

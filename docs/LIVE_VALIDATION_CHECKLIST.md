@@ -96,6 +96,32 @@ inspection alone.
       during world load, but memory subsequently fell while the process stayed
       responsive; no Application Error or fresh crash dump appeared. GPU-local
       process accounting was unavailable and remains an evidence gap.
+- [x] Separate the later Steam DLL alert from launcher input classification.
+      Steam logged the local client off as `Logged In Elsewhere`; the user
+      moved the mouse to close the alert, and both launcher attempts correctly
+      cancelled before sending startup input. After local Steam reached
+      `Logged On`, semantic startup again loaded the save and confirmed pause.
+- [x] Preserve the fast authenticated `BAD STUFF` recurrence independently of
+      the Steam incident. At 16:55:28, `kenshi.log` reported
+      `DXGI_ERROR_DEVICE_REMOVED` / `DXGI_ERROR_DRIVER_INTERNAL_ERROR` while
+      rendering `waterDistant`, despite the persisted reduced profile. Exact
+      evidence is under
+      `runs/p0-steam-recovery-device-reset-20260723T235528Z/`. No gameplay or
+      native command was issued, and the crashed process was stopped.
+- [x] Install and exactly verify the reversible `iris-xe-stability-v2`
+      candidate while Kenshi is stopped. Its timestamped pre-profile backup is
+      recorded in the stability incident document. A real no-launch preflight
+      confirmed Steam `Logged On`, at least 4096 MiB free physical memory, and
+      an exact installed profile.
+- [x] Add portable rejection coverage for profile drift, low memory, Steam
+      present-but-not-logged-on, duplicate Kenshi launch, unfiltered
+      `BAD STUFF`/Steam DLL dialogs, and non-advancing post-load telemetry.
+      Launcher success now requires a configured 45-second fresh loaded-paused
+      health window.
+- [ ] Run one supervised no-gameplay smoke with `iris-xe-stability-v2`; preserve
+      the post-load health result, logs, profile verification, memory headroom,
+      and any renderer dialog before deciding whether the fast recurrence is
+      mitigated.
 - [ ] Repeat the semantic startup boundary at one alternate resolution, then
       restore and re-verify the intended 1920x1080 profile.
 

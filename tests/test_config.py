@@ -128,6 +128,13 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.controls.relative_pointer_tolerance_pixels == 1
     assert config.controls.calibrated_client_width == 1920
     assert config.controls.calibrated_client_height == 1080
+    assert config.launch.require_steam_logged_on
+    assert config.launch.require_graphics_profile
+    assert config.launch.graphics_profile_file == (
+        root / "config" / "graphics" / "iris-xe-stability-v2.yaml"
+    ).resolve()
+    assert config.launch.min_free_physical_memory_mib == 4096
+    assert config.launch.post_load_health_seconds == 45
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
     assert not config.safety.allow_live_unpause_actions

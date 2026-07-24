@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
+import ctypes
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +21,13 @@ from .control.base import InputController, PrimitiveInputAction, WindowRect
 from .control.calibration import validate_expected_client_size
 from .control.capture import WindowCapture
 from .control.win32 import Win32InputController
+from .graphics_profile import (
+    GraphicsMismatch,
+    GraphicsProfile,
+    apply_graphics_profile,
+    load_graphics_profile,
+    verify_graphics_profile,
+)
 from .models import ClickAction, KeyAction, TelemetrySnapshot, VisibleUIControl
 from .telemetry import TelemetryReader, TelemetryReadError
 
@@ -28,6 +38,14 @@ class LaunchInterrupted(RuntimeError):
 
 class LaunchFailed(RuntimeError):
     pass
+
+
+_TERMINAL_WINDOW_MARKERS = (
+    "crash reporter",
+    "has crashed",
+    "steam dll error",
+    "steam - error",
+)
 
 
 def _controller(config: AppConfig) -> Win32InputController:
@@ -57,6 +75,16 @@ def _abort_if_human_input(controller: InputController) -> None:
         )
 
 
+def _terminal_window_title(controller: InputController) -> str | None:
+    for title in controller.visible_window_titles():
+        normalized = title.strip().casefold()
+        if normalized == "bad stuff" or any(
+            marker in normalized for marker in _TERMINAL_WINDOW_MARKERS
+        ):
+            return title
+    return None
+
+
 async def _wait_until(
     predicate: Callable[[], bool],
     timeout: float,
@@ -67,13 +95,10 @@ async def _wait_until(
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            title = controller.target_window_title()
+            title = _terminal_window_title(controller)
         except (OSError, RuntimeError, ValueError):
             title = None
-        if title is not None and any(
-            marker in title.casefold()
-            for marker in ("crash reporter", "has crashed")
-        ):
+        if title is not None:
             raise LaunchFailed(
                 f"Kenshi startup stopped because the terminal window {title!r} appeared."
             )
@@ -136,6 +161,161 @@ def _re_kenshi_settings_path() -> Path:
         "RE_Kenshi.ini was not found. Set KENSHI_AGENT_RE_KENSHI_SETTINGS "
         "to its full path."
     )
+
+
+def _kenshi_settings_path() -> Path:
+    override = os.environ.get("KENSHI_AGENT_SETTINGS")
+    candidates = [Path(override)] if override else []
+    program_files_x86 = os.environ.get("ProgramFiles(x86)")
+    if program_files_x86:
+        candidates.append(
+            Path(program_files_x86)
+            / "Steam"
+            / "steamapps"
+            / "common"
+            / "Kenshi"
+            / "settings.cfg"
+        )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "Kenshi settings.cfg was not found. Set KENSHI_AGENT_SETTINGS "
+        "to its full path."
+    )
+
+
+def _steam_connection_log_path() -> Path:
+    override = os.environ.get("KENSHI_AGENT_STEAM_CONNECTION_LOG")
+    candidates = [Path(override)] if override else []
+    program_files_x86 = os.environ.get("ProgramFiles(x86)")
+    if program_files_x86:
+        candidates.append(
+            Path(program_files_x86) / "Steam" / "logs" / "connection_log.txt"
+        )
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "Steam connection_log.txt was not found. Set "
+        "KENSHI_AGENT_STEAM_CONNECTION_LOG to its full path."
+    )
+
+
+def _steam_connection_state(path: Path) -> str | None:
+    state: str | None = None
+    state_pattern = re.compile(r"^\[[^\]]+\] \[([^,\]]+)")
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = state_pattern.match(line)
+        if match is not None:
+            state = match.group(1).strip()
+    return state
+
+
+def _running_process_names() -> set[str]:
+    result = subprocess.run(
+        ["tasklist.exe", "/FO", "CSV", "/NH"],
+        check=True,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=10.0,
+    )
+    names: set[str] = set()
+    for row in csv.reader(result.stdout.splitlines()):
+        if row and row[0].casefold().endswith(".exe"):
+            names.add(row[0].casefold())
+    return names
+
+
+def _available_physical_memory_mib() -> int:
+    class MemoryStatusEx(ctypes.Structure):
+        _fields_ = [
+            ("length", ctypes.c_ulong),
+            ("memory_load", ctypes.c_ulong),
+            ("total_physical", ctypes.c_ulonglong),
+            ("available_physical", ctypes.c_ulonglong),
+            ("total_page_file", ctypes.c_ulonglong),
+            ("available_page_file", ctypes.c_ulonglong),
+            ("total_virtual", ctypes.c_ulonglong),
+            ("available_virtual", ctypes.c_ulonglong),
+            ("available_extended_virtual", ctypes.c_ulonglong),
+        ]
+
+    status = MemoryStatusEx()
+    status.length = ctypes.sizeof(status)
+    kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows-only
+    if not kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+    return int(status.available_physical // (1024 * 1024))
+
+
+def _configured_graphics_profile(config: AppConfig) -> GraphicsProfile:
+    path = config.launch.graphics_profile_file
+    if path is None:
+        raise LaunchFailed("No launch.graphics_profile_file is configured.")
+    return load_graphics_profile(path)
+
+
+def _format_graphics_mismatches(
+    mismatches: tuple[GraphicsMismatch, ...],
+) -> str:
+    details: list[str] = []
+    for mismatch in mismatches:
+        actual_text = "<missing>" if mismatch.actual is None else repr(mismatch.actual)
+        details.append(
+            f"{mismatch.key} expected {mismatch.expected!r}, found {actual_text}"
+        )
+    return "; ".join(details)
+
+
+def _validate_launch_preconditions(
+    config: AppConfig,
+    *,
+    process_names: set[str] | None = None,
+    available_physical_memory_mib: int | None = None,
+    settings_path: Path | None = None,
+    steam_connection_log_path: Path | None = None,
+) -> None:
+    names = process_names if process_names is not None else _running_process_names()
+    if "kenshi_x64.exe" in names:
+        raise LaunchFailed("Kenshi is already running; refusing to start a second client.")
+
+    if config.launch.require_steam_logged_on:
+        if "steam.exe" not in names:
+            raise LaunchFailed("Steam is not running; no launch input was sent.")
+        connection_log = steam_connection_log_path or _steam_connection_log_path()
+        state = _steam_connection_state(connection_log)
+        if state != "Logged On":
+            raise LaunchFailed(
+                "Steam is running but its latest connection state is "
+                f"{state!r}, not 'Logged On'; no launch input was sent."
+            )
+
+    threshold = config.launch.min_free_physical_memory_mib
+    if threshold:
+        available = (
+            available_physical_memory_mib
+            if available_physical_memory_mib is not None
+            else _available_physical_memory_mib()
+        )
+        if available < threshold:
+            raise LaunchFailed(
+                f"Only {available} MiB physical memory is available; this profile "
+                f"requires at least {threshold} MiB before launch."
+            )
+
+    if config.launch.require_graphics_profile:
+        profile = _configured_graphics_profile(config)
+        installed = settings_path or _kenshi_settings_path()
+        verification = verify_graphics_profile(installed, profile)
+        if not verification.matches:
+            details = _format_graphics_mismatches(verification.mismatches)
+            raise LaunchFailed(
+                f"Graphics profile {profile.profile_id!r} is not installed exactly: "
+                f"{details}. Run './dev graphics apply' while Kenshi is stopped."
+            )
 
 
 def _disable_re_kenshi_startup_panel(path: Path) -> bool:
@@ -326,16 +506,76 @@ async def _ensure_interrupted_safe_state(
     return "single safety-pause attempt was not confirmed on a later telemetry sequence"
 
 
+async def _observe_loaded_paused_health(
+    reader: TelemetryReader,
+    controller: InputController,
+    *,
+    duration_seconds: float,
+) -> None:
+    if duration_seconds <= 0:
+        return
+    initial = reader.read()
+    if initial.stale:
+        raise LaunchFailed("Post-load health observation began with stale telemetry.")
+    initial_sequence = initial.snapshot.sequence
+    last_sequence = initial_sequence
+    deadline = time.monotonic() + duration_seconds
+    while time.monotonic() < deadline:
+        try:
+            title = _terminal_window_title(controller)
+        except (OSError, RuntimeError, ValueError):
+            title = None
+        if title is not None:
+            raise LaunchFailed(
+                f"Post-load health observation failed because {title!r} appeared."
+            )
+        _abort_if_human_input(controller)
+        try:
+            result = reader.read()
+        except TelemetryReadError as exc:
+            raise LaunchFailed(
+                f"Post-load health observation lost telemetry: {exc}"
+            ) from exc
+        snapshot = result.snapshot
+        if (
+            result.stale
+            or not snapshot.game.loaded
+            or not snapshot.squad
+            or snapshot.game.paused is not True
+        ):
+            raise LaunchFailed(
+                "Post-load health observation lost a fresh loaded paused squad."
+            )
+        last_sequence = max(last_sequence, snapshot.sequence)
+        await asyncio.sleep(min(0.25, max(0.0, deadline - time.monotonic())))
+    if last_sequence <= initial_sequence:
+        raise LaunchFailed(
+            "Post-load health observation saw no advancing telemetry sequence."
+        )
+
+
 async def _launch(args: argparse.Namespace) -> int:
     if os.name != "nt":
         raise SystemExit("The live developer launcher must run with Windows Python.")
     config = load_config(args.config)
+    try:
+        _validate_launch_preconditions(config)
+    except (FileNotFoundError, LaunchFailed, OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
+    if args.preflight_only:
+        print(
+            "Launch preflight passed: Steam is logged on, the graphics profile "
+            "matches, and physical-memory headroom is sufficient."
+        )
+        return 0
+
     controller = _controller(config)
-    _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
-    launched_at = datetime.now(UTC)
-    os.startfile(_shortcut())  # type: ignore[attr-defined]
 
     try:
+        _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
+        launched_at = datetime.now(UTC)
+        os.startfile(_shortcut())  # type: ignore[attr-defined]
         await _wait_until(
             lambda: controller.client_rect().width > 0,
             args.timeout,
@@ -438,6 +678,11 @@ async def _launch(args: argparse.Namespace) -> int:
                 "causally confirmed paused game",
                 controller=controller,
             )
+            await _observe_loaded_paused_health(
+                reader,
+                controller,
+                duration_seconds=config.launch.post_load_health_seconds,
+            )
     except LaunchFailed as exc:
         print(str(exc), file=sys.stderr)
         return 4
@@ -453,6 +698,46 @@ async def _launch(args: argparse.Namespace) -> int:
 
     print("Kenshi launched" + (", loaded, and paused." if args.continue_game else "."))
     return 0
+
+
+def _graphics(args: argparse.Namespace) -> int:
+    if os.name != "nt":
+        raise SystemExit("The live graphics command must run with Windows Python.")
+    config = load_config(args.config)
+    try:
+        names = _running_process_names()
+        if "kenshi_x64.exe" in names:
+            raise LaunchFailed(
+                "Kenshi is running; graphics settings were not read or changed."
+            )
+        profile = _configured_graphics_profile(config)
+        settings_path = _kenshi_settings_path()
+        if args.graphics_action == "apply":
+            result = apply_graphics_profile(settings_path, profile)
+            verification = result.verification
+            if result.changed:
+                assert result.backup_path is not None
+                print(
+                    f"Installed graphics profile {profile.profile_id!r}; "
+                    f"backup: {result.backup_path}"
+                )
+            else:
+                print(f"Graphics profile {profile.profile_id!r} already matches exactly.")
+            return 0
+
+        verification = verify_graphics_profile(settings_path, profile)
+        if verification.matches:
+            print(f"Graphics profile {profile.profile_id!r} matches exactly.")
+            return 0
+        print(
+            f"Graphics profile {profile.profile_id!r} does not match: "
+            f"{_format_graphics_mismatches(verification.mismatches)}",
+            file=sys.stderr,
+        )
+        return 5
+    except (FileNotFoundError, LaunchFailed, OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 5
 
 
 def _shot(args: argparse.Namespace) -> int:
@@ -557,7 +842,19 @@ def build_parser() -> argparse.ArgumentParser:
     launch.add_argument("--config", required=True)
     launch.add_argument("--timeout", type=float, default=60.0)
     launch.add_argument("--no-continue", dest="continue_game", action="store_false")
+    launch.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Check Steam, memory, and graphics state without launching Kenshi.",
+    )
     launch.set_defaults(continue_game=True)
+
+    graphics = subparsers.add_parser(
+        "graphics",
+        help="Verify or reversibly install the configured Kenshi graphics profile.",
+    )
+    graphics.add_argument("--config", required=True)
+    graphics.add_argument("graphics_action", choices=["verify", "apply"])
 
     shot = subparsers.add_parser("shot", help="Capture the current Kenshi client.")
     shot.add_argument("--config", required=True)
@@ -592,6 +889,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "launch":
         return asyncio.run(_launch(args))
+    if args.command == "graphics":
+        return _graphics(args)
     if args.command == "shot":
         return _shot(args)
     if args.command == "telemetry":
