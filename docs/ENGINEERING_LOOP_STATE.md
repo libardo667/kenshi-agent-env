@@ -1,5 +1,38 @@
 # Engineering loop state
 
+## Supervised live evidence: control brakes (2026-07-24)
+
+The renderer stability fix (driver `…7088`) unblocked the live safety-brake
+gates that had been stuck because the game crashed in under a minute. Two brakes
+are now proven in real Kenshi:
+
+- **Startup interruption brake (Test A).** Deliberate human input during the
+  pre-load startup phase permanently cancelled the launcher (exit 3, "all
+  remaining startup clicks were permanently cancelled"); because the game was
+  not yet loaded the safe-state check sent zero cleanup input. No focus-reclaim,
+  no stray input. (Surfaced a benign handback gap — see Known risks.)
+- **Runtime brake (F12 / human-input / independent supervisor).** Run at commit
+  `486fd6c` via the new `journey --continuous` path against the disposable
+  Slowline Holy Nation save (deliberately not the Barman scenario, so the food
+  policy could not issue a vendor command by construction). A zero-input dry
+  preflight first confirmed the hosted planner responds (~13 s, `gpt-5.6-luna`,
+  medium) and that the deterministic food policy rejects a non-calibrated plan
+  (0 actions). The first live attempt failed closed on the relative-pointer
+  `--exclusive` gate before any input. The successful run: human input during
+  the planner's think window produced `strategic_planner_cancelled` →
+  `safety_supervisor_preempted` → `control_ownership_changed` HUMAN_CONTROL
+  ("game is confirmed paused and all remaining plan work was cancelled") →
+  `control_ownership_changed` DISARMED, then `world_state_finished`. Zero
+  `command_issued`/native-command events; final telemetry `paused: true`,
+  `active_command_id: null`, `last_command_sequence: 0`. Evidence:
+  `runs/p0-brakes-f12b/events.jsonl` and the `p0-runtime-brakes-*` run dir.
+
+Not yet exercised live: the `takeover_pending` countdown, countdown reset by new
+input, and agent re-takeover after a quiet interval (all lower priority than the
+proven stop/disarm path, and they require letting the agent resume). The
+runtime brake was proven in a scenario with no reachable vendor command; a full
+P1 food run on the Hep Barman save remains a separate, later milestone.
+
 ## Current contract
 
 - The portable `single_step` runtime is the regression baseline. It asks one
