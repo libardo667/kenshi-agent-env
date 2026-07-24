@@ -1374,10 +1374,28 @@ implemented and unit-tested (the Hub scene surfaces the Captain and Barman,
 vendor-marked, hostiles excluded, nearest-first), but not yet live-verified —
 a supervised run is needed to confirm the planner now reliably approaches.
 
-Slice 3 (P6, next): a monitored approach/travel option that navigates toward the
-deterministic target, exposes progress/distance/visibility predicates, requests
-a future-only replan, and cancels on human input/safety — the "get in view,
-then act" loop, grounded in world positions.
+Slice 3 (P6) is in progress:
+
+- Slice 3a (done): `approach.py` `ApproachMonitor`/`ApproachStatus` — the
+  deterministic progress core. Given a target id it tracks distance closed,
+  target presence, dialogue-open-with-target (the real success signal, since
+  the native approach ends in dialogue), and a hostile-in-threat-range abort.
+  `is_terminal`/`should_abort` are typed verdicts, not model judgments. Ten
+  tests cover closing without arrival, arrival by distance and by dialogue,
+  wrong-target dialogue, target loss, threat in/out of range, unknown distance,
+  and pre-begin misuse. 300 tests pass. This owns no I/O — it is the unit the
+  option loop and typed conditions will read.
+- Slice 3b (next): a `StatefulApproachOption` that issues the deterministic-
+  target approach, drives `ApproachMonitor` from the executor's existing
+  `option.poll(update)` loop (which already runs a concurrent planner for
+  overlap), succeeds on dialogue/arrival, and cancels on abort/human-input/
+  safety. The executor loop currently exits on `option_task.done()`; the
+  approach continues after the dispatch ack until arrival, so the loop needs a
+  world-state-terminal condition rather than a task-done one — the one real
+  design point remaining.
+- Slice 3c: expose approach progress as typed conditions and wire the option
+  into a reviewed live policy; then measure overlap (option duration vs planner
+  latency) to prove strategic thinking overlaps useful execution.
 
 ## Ordered next candidates
 
