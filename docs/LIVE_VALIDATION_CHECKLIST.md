@@ -129,12 +129,22 @@ inspection alone.
       46 seconds, and ~3.7 minutes under progressively more aggressive
       reduction. Graphics reduction is not the operative variable, so the
       settings hypothesis is falsified and no further tuning slice is planned.
-- [ ] Decide the next stability experiment at the operator level, not as a
-      repository slice: Intel driver `32.0.101.6737` has never been changed,
-      Windows `TdrDelay`/`TdrLevel` are unset defaults, host headroom is
-      untested with the machine otherwise idle, and a discrete-GPU host would
-      bypass the fault entirely. Do not re-open live gameplay gates until one
-      of these produces a host that survives a bounded run.
+- [x] Update the Intel Iris Xe driver from `32.0.101.6737` (2025-04-15,
+      Microsoft OEM `oem94.inf`) to `32.0.101.7088` (2026-06-16, Intel generic
+      `oem38.inf`). With the graphics profile unchanged, a supervised zero-input
+      soak then ran the full 20 minutes with no device reset, flat memory,
+      `paused`/`responding` at all 36 samples, and clean logs. This morning's
+      identical soak aborted at 141 s. Evidence:
+      `runs/p0-driver-7088-soak-20260724T125734Z/`. The old driver is strongly
+      implicated as the cause.
+- [ ] Run a second supervised soak at a **water/effects-heavy location**,
+      ideally unpaused, before claiming broad renderer stability. The clean
+      soak above was on a bland, paused scene — the lightest GPU load — while
+      the historical crashes named `waterDistant`. This is now the decisive
+      remaining stability gate.
+- [ ] If any crash recurs on the new driver, disable Intel's game overlay
+      (`IntelGraphicsSoftware.Overlay`, installed with `…7088`) as the next
+      single-variable experiment before touching settings again.
 - [ ] Repeat the semantic startup boundary at one alternate resolution, then
       restore and re-verify the intended 1920x1080 profile.
 
