@@ -1394,12 +1394,38 @@ Slice 3 (P6) is in progress:
   tests cover success-after-arrival-not-ack, arrival-by-radius, target loss,
   threat, rejected dispatch, prepare guards, and idempotent cancel. 307 tests
   pass.
-- Slice 3c (next): wire the option into the executor. The proven
-  `_execute_movement_option` loop exits on `option_task.done()`; the approach
-  keeps walking after the ack, so integration needs a world-state-terminal loop
-  (continue consuming updates until the option itself reports terminal, with a
-  step-timeout guard). To protect the proven movement path this is best added
-  as a sibling execution path rather than by mutating the movement loop.
+- Slice 3c (next, precisely specced): wire `StatefulApproachOption` into the
+  executor as a SIBLING path so the proven `_execute_movement_option` loop is
+  untouched. Concrete build:
+  1. `MacroConfig`: add `approach_arrival_distance: float | None` (non-null
+     designates an approach-option skill, mirroring how `movement_pulse_seconds`
+     designates movement), `approach_threat_distance: float = 15.0`, and
+     `approach_target_arg: str = "target_id"`.
+  2. `MacroRegistry`: `is_approach_option(action)` (SkillAction whose macro has
+     `approach_arrival_distance`), and `approach_option_params(action)` ->
+     (arrival, threat, target_id) where target_id is read from the action's
+     `approach_target_arg` argument. Reject/ignore when the arg is absent.
+  3. Executor `_execute_step`: after the movement-option branch, add an
+     `elif self.guard.macros.is_approach_option(action)` branch that builds
+     `StatefulApproachOption(target_id=...)`, prepares it (paused/capable/target
+     present), and calls a new `_execute_approach_option`.
+  4. `_execute_approach_option`: model on `_execute_movement_option` but change
+     the terminal condition. The dispatch task acks early, so the loop must
+     continue consuming store updates until `option.poll(update)` reports
+     terminal (SUCCEEDED/FAILED), NOT until `option_task.done()`. Add a
+     step-timeout guard (`step.timeout_seconds` via `self.clock`) so a stalled
+     stream cannot loop forever -> on timeout, cancel the option and FAIL. Keep
+     the same concurrent-planner overlap block (this is where the ~30s planner
+     call overlaps the walk, which is the fix for the stale-plan rebase).
+     Preserve the P3/P4 token + calibration on the dispatch and the P3
+     cancellation-on-safety semantics.
+  5. Tests: a fake store publishes closing-distance updates then dialogue-open
+     while a fake concurrent planner returns a future-only patch; assert the
+     option reaches SUCCEEDED on arrival (not on ack), the patch is staged and
+     applied post-arrival, target-loss/threat/timeout each FAIL and cancel
+     cleanly, and movement-option tests stay green (sibling path unchanged).
+  The reusable pieces (ApproachMonitor, StatefulApproachOption) are done and
+  fully unit-tested; this slice is purely the executor wiring.
 - Slice 3d: expose approach progress as typed conditions, wire the option into a
   reviewed live policy, and measure overlap (option duration vs planner latency)
   to prove strategic thinking overlaps useful execution.
