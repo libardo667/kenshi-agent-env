@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import dataclass
 from typing import Any
 
 from ..config import MacroConfig, NormalizedPointerBoundsConfig
@@ -16,6 +17,13 @@ from ..models import (
 
 class UnknownSkillError(KeyError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class ApproachOptionParams:
+    target_id: str
+    arrival_distance: float
+    threat_distance: float
 
 
 class MacroRegistry:
@@ -101,6 +109,45 @@ class MacroRegistry:
             isinstance(action, SkillAction)
             and self.has(action.name)
             and self.movement_pulse_seconds(action.name) is not None
+        )
+
+    def is_approach_option(self, action: Action) -> bool:
+        return bool(
+            isinstance(action, SkillAction)
+            and self.has(action.name)
+            and self._macros[action.name].approach_arrival_distance is not None
+        )
+
+    def approach_option_params(
+        self, action: SkillAction
+    ) -> ApproachOptionParams | None:
+        """Resolve the approach option's target and thresholds, or None.
+
+        Returns None when the skill is not an approach option or the action does
+        not name a target in its configured target argument, so the executor
+        falls back to ordinary dispatch rather than approaching an unknown id.
+        """
+
+        try:
+            macro = self._macros[action.name]
+        except KeyError as exc:
+            raise UnknownSkillError(action.name) from exc
+        if macro.approach_arrival_distance is None:
+            return None
+        target_id = next(
+            (
+                str(argument.value)
+                for argument in action.args
+                if argument.name == macro.approach_target_arg
+            ),
+            None,
+        )
+        if not target_id:
+            return None
+        return ApproachOptionParams(
+            target_id=target_id,
+            arrival_distance=macro.approach_arrival_distance,
+            threat_distance=macro.approach_threat_distance,
         )
 
     def resolve_movement_pulse_seconds(self, action: SkillAction) -> float | None:
