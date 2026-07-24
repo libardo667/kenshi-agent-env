@@ -1967,10 +1967,7 @@ class AgentRuntime:
         return {
             (entity.name, entity.faction): entity
             for entity in snapshot.nearby_entities
-            if entity.is_animal is False
-            and entity.has_vendor_list is True
-            and entity.is_squad_leader is True
-            and entity.has_dialogue is True
+            if entity.is_confirmed_vendor()
         }
 
     @staticmethod
