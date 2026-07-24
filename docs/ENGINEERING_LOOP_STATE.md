@@ -1404,9 +1404,22 @@ Slice 3 (P6) is in progress:
   reviewed live policy, and measure overlap (option duration vs planner latency)
   to prove strategic thinking overlaps useful execution.
 
-Pending live verification (does not need more building): one supervised run to
-confirm the coin-flip fix — the planner should now reliably approach the Barman
-via the deterministic `dialogue_targets` instead of flip-flopping.
+Coin-flip fix verified (dry, 2026-07-24): on the exact fresh-Wanderer scene that
+flaked (Hep selected, Barman visible at 77.8 units), six zero-input dry
+preflights produced five clean approach plans (`approach_confirmed_vendor` →
+`choose_show_goods` → `inspect_shop_item`) and one unrelated planner schema
+error; zero were the old "no confirmed vendor" stop. Before the deterministic
+`dialogue_targets` surfacing, the same scene was ~a coin toss. Game stayed
+paused with `last_command_sequence: 0` throughout. A full live approach run
+(letting it actually walk to the Barman) is a further step, gated on the lost
+dialogue/trade calibration for the steps after the approach.
+
+Separate follow-up surfaced by the verification: the hosted planner
+occasionally emits a `not_equals` condition without the required `expected`
+value, which fails strict `PlanEnvelope` validation and safely stops the run
+(planner_error, zero input). This is a schema-robustness gap independent of the
+vendor coin-flip; the real fix is to constrain the structured-output schema so a
+`not_equals` condition must carry `expected`, rather than relying on the model.
 
 ## Ordered next candidates
 
