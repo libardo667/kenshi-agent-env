@@ -1414,12 +1414,32 @@ paused with `last_command_sequence: 0` throughout. A full live approach run
 (letting it actually walk to the Barman) is a further step, gated on the lost
 dialogue/trade calibration for the steps after the approach.
 
-Separate follow-up surfaced by the verification: the hosted planner
-occasionally emits a `not_equals` condition without the required `expected`
-value, which fails strict `PlanEnvelope` validation and safely stops the run
-(planner_error, zero input). This is a schema-robustness gap independent of the
-vendor coin-flip; the real fix is to constrain the structured-output schema so a
-`not_equals` condition must carry `expected`, rather than relying on the model.
+Coin-flip fix verified live (2026-07-24, run `p0-coinflip-live-approach`): with
+the same scene, the planner reliably planned and then EXECUTED the approach. Two
+causally-verified actions ran — `approach_confirmed_vendor` (native
+acknowledgement `accepted`, `cmd-007dfe53…`) and
+`continue_confirmed_vendor_approach` — and Hep walked from 77.8 to 16.6 units
+from the Barman with native `last_result: exact_dialogue_target_open` (dialogue
+opened with the exact target). Both receipts had `causal_revision_advanced`; the
+game stayed paused. This is the first fully successful autonomous
+identify-plan-approach-to-dialogue since the deterministic-vendor work, and it
+never reached the calibrated trade clicks, so the lost dialogue/trade
+calibration was not exercised.
+
+The run then stopped at the trade phase (step 02) on the recurring stale-plan
+rebase: during the ~30s planner call the observation advances, so the returned
+food plan is stale relative to the current revision and the policy's sequence-
+only rebase cannot reconcile it. This is now the operative blocker for chain
+progression past the approach, and it is exactly what P6 (planning overlapping a
+long option) plus a less brittle rebase should address. It is separate from the
+coin-flip.
+
+Separate follow-ups surfaced by verification:
+- The hosted planner occasionally emits a `not_equals` condition without the
+  required `expected` value, failing strict `PlanEnvelope` validation and safely
+  stopping (planner_error, zero input). Real fix: constrain the structured-
+  output schema so `not_equals` must carry `expected`, not rely on the model.
+- Stale-plan rebase under real planner latency (above) blocks the trade phase.
 
 ## Ordered next candidates
 
