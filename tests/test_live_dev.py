@@ -15,6 +15,7 @@ from kenshi_agent.live_dev import (
     _click_semantic_control,
     _disable_re_kenshi_startup_panel,
     _ensure_interrupted_safe_state,
+    _journey_argv,
     _observe_loaded_paused_health,
     _plugin_ready,
     _steam_connection_state,
@@ -659,3 +660,52 @@ def test_duplicate_semantic_label_is_ambiguous_and_emits_no_match() -> None:
     )
 
     assert _unique_visible_control(snapshot, ["Continue"]) is None
+
+
+def _journey_args(*extra: str) -> object:
+    return live_dev.build_parser().parse_args(
+        ["journey", "--config", "config/live.burnin.yaml", *extra]
+    )
+
+
+def test_journey_defaults_to_single_step_without_continuous_flags() -> None:
+    argv = _journey_argv(_journey_args(), "run-1")
+    assert "--planning-mode" not in argv
+    assert "--acknowledge-continuous-live" not in argv
+    assert "--execute-live-actions" not in argv
+
+
+def test_journey_continuous_flag_passes_planning_mode() -> None:
+    argv = _journey_argv(_journey_args("--continuous"), "run-2")
+    assert argv[argv.index("--planning-mode") + 1] == "continuous"
+
+
+def test_journey_continuous_does_not_imply_the_acknowledgement() -> None:
+    # --continuous alone must never silently grant the continuous-live ack; the
+    # run command then refuses live-continuous execution, preserving the gate.
+    argv = _journey_argv(_journey_args("--continuous"), "run-3")
+    assert "--acknowledge-continuous-live" not in argv
+
+
+def test_journey_full_continuous_live_invocation_passes_every_gate() -> None:
+    argv = _journey_argv(
+        _journey_args(
+            "--continuous",
+            "--execute",
+            "--native-assisted",
+            "--acknowledge-continuous-live",
+        ),
+        "run-4",
+    )
+    assert argv[argv.index("--planning-mode") + 1] == "continuous"
+    assert "--execute-live-actions" in argv
+    assert "--acknowledge-native-assisted-control" in argv
+    assert "--acknowledge-continuous-live" in argv
+
+
+def test_journey_acknowledgement_without_continuous_is_harmless_passthrough() -> None:
+    # The ack can be present without --continuous; run stays single-step, so the
+    # continuous-live gate is simply not reached.
+    argv = _journey_argv(_journey_args("--acknowledge-continuous-live"), "run-5")
+    assert "--planning-mode" not in argv
+    assert "--acknowledge-continuous-live" in argv
