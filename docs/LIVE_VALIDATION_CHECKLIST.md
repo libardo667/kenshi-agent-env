@@ -137,11 +137,17 @@ inspection alone.
       identical soak aborted at 141 s. Evidence:
       `runs/p0-driver-7088-soak-20260724T125734Z/`. The old driver is strongly
       implicated as the cause.
-- [ ] Run a second supervised soak at a **water/effects-heavy location**,
-      ideally unpaused, before claiming broad renderer stability. The clean
-      soak above was on a bland, paused scene — the lightest GPU load — while
-      the historical crashes named `waterDistant`. This is now the decisive
-      remaining stability gate.
+- [x] Run a second supervised soak at an effects-heavy location, unpaused. A
+      fresh New Game (Holy Nation Citizen) spawned in a populated town — 9
+      nearby entities (6 visible), a live fire particle/light effect, animating
+      guards — and the unpaused soak ran the full 20 minutes clean: 35 samples,
+      responding throughout, flat memory (3.874-3.921 GiB), zero renderer
+      dialogs, clean `kenshi.log`. Evidence:
+      `runs/p0-driver-7088-heavy-soak-20260724T135959Z/`. Two full 20-minute
+      soaks across very different scenes now pass on driver `…7088`.
+- [ ] Optional confirmation only: a literal large-water (`waterDistant`) scene,
+      the exact material from the original crash. No longer a blocker — the
+      driver is established as the cause across two dissimilar scenes.
 - [ ] If any crash recurs on the new driver, disable Intel's game overlay
       (`IntelGraphicsSoftware.Overlay`, installed with `…7088`) as the next
       single-variable experiment before touching settings again.
