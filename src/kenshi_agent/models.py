@@ -246,40 +246,64 @@ class NearbyEntity(StrictModel):
     visible: bool | None = None
     conscious: bool | None = None
 
-    def is_confirmed_vendor(self) -> bool:
-        """Deterministic vendor fence.
+    def is_dialogue_target(self) -> bool:
+        """Deterministic "can the agent approach and talk to this person" fence.
 
-        Whether an entity qualifies as an approachable trade vendor is a fact
-        the telemetry already carries, not a judgment for the model to re-derive.
-        Every flag must be explicitly true/false; a missing value is never
-        assumed favorable. `visible`, `distance`, and `talk_task_available` are
-        deliberately excluded: they gate when to act, not whether the entity is
-        a vendor, and the native approach paths to an occluded/indoor vendor.
+        This is the general interaction primitive, not a vendor check: Kenshi's
+        native talk order works on any non-hostile character with dialogue,
+        vendor or not. Whether someone is talkable is a fact the telemetry
+        already carries, not a judgment for the model to re-derive. Every flag
+        must be explicitly set; a missing value is never assumed favorable.
+        `visible`, `distance`, and `talk_task_available` are deliberately
+        excluded: they gate when to act, not whether the person is a talk
+        target, and the native approach paths to an occluded/indoor target.
         """
 
         return (
             self.is_animal is False
-            and self.has_vendor_list is True
-            and self.is_squad_leader is True
             and self.has_dialogue is True
             and self.disposition in (Disposition.NEUTRAL, Disposition.FRIENDLY)
         )
+
+    def is_confirmed_vendor(self) -> bool:
+        """A dialogue target the agent can also trade with.
+
+        Vendor-ness is a specialization of talkability: a confirmed vendor is a
+        talk target that additionally owns a vendor list and leads its shop
+        squad. Trade is the downstream sub-task; the approach primitive itself
+        is the general `is_dialogue_target`.
+        """
+
+        return (
+            self.is_dialogue_target()
+            and self.has_vendor_list is True
+            and self.is_squad_leader is True
+        )
+
+
+def _nearest_first(entities: list[NearbyEntity]) -> list[NearbyEntity]:
+    return sorted(
+        entities,
+        key=lambda entity: entity.distance if entity.distance is not None else float("inf"),
+    )
+
+
+def dialogue_targets(entities: list[NearbyEntity]) -> list[NearbyEntity]:
+    """Every non-hostile person the agent could approach and talk to, nearest first.
+
+    The general interaction affordance the planner receives; it approves or picks
+    a target rather than re-judging who is talkable.
+    """
+
+    return _nearest_first([entity for entity in entities if entity.is_dialogue_target()])
 
 
 def confirmed_vendor_candidates(
     entities: list[NearbyEntity],
 ) -> list[NearbyEntity]:
-    """Deterministically select every confirmed vendor, nearest first.
+    """Dialogue targets that are also confirmed trade vendors, nearest first."""
 
-    This is the single source of truth for "which nearby entities are vendors."
-    The planner receives the result; it does not re-judge vendor status.
-    """
-
-    vendors = [entity for entity in entities if entity.is_confirmed_vendor()]
-    return sorted(
-        vendors,
-        key=lambda entity: entity.distance if entity.distance is not None else float("inf"),
-    )
+    return _nearest_first([entity for entity in entities if entity.is_confirmed_vendor()])
 
 
 class GameState(StrictModel):

@@ -13,6 +13,7 @@ from kenshi_agent.models import (
     Disposition,
     NearbyEntity,
     confirmed_vendor_candidates,
+    dialogue_targets,
 )
 
 
@@ -38,22 +39,64 @@ def barman(**overrides: object) -> NearbyEntity:
     return entity("Barman", **flags)
 
 
-def test_the_hub_scene_confirms_exactly_the_barman() -> None:
-    scene = [
-        barman(),
+def hub_scene() -> list[NearbyEntity]:
+    return [
+        barman(distance=26.0),
         # Ninja Guards carry a vendor list but are not leaders and have no dialogue.
         entity("Ninja Guard", is_animal=False, has_vendor_list=True,
-               is_squad_leader=False, has_dialogue=False, disposition=Disposition.NEUTRAL),
-        entity("Ninja Guard", is_animal=False, has_vendor_list=True,
-               is_squad_leader=False, has_dialogue=False, disposition=Disposition.NEUTRAL),
-        # Mercenary Captain leads and talks but sells nothing.
+               is_squad_leader=False, has_dialogue=False,
+               disposition=Disposition.NEUTRAL, distance=40.0),
+        # Mercenary Captain leads and talks but sells nothing -- talkable, not a vendor.
         entity("Mercenary Captain", is_animal=False, has_vendor_list=False,
-               is_squad_leader=True, has_dialogue=True, disposition=Disposition.NEUTRAL),
+               is_squad_leader=True, has_dialogue=True,
+               disposition=Disposition.NEUTRAL, distance=15.0),
         entity("Mercenary", is_animal=False, has_vendor_list=False,
-               is_squad_leader=False, has_dialogue=False, disposition=Disposition.NEUTRAL),
+               is_squad_leader=False, has_dialogue=False,
+               disposition=Disposition.NEUTRAL, distance=12.0),
     ]
-    vendors = confirmed_vendor_candidates(scene)
+
+
+def test_the_hub_scene_confirms_exactly_the_barman() -> None:
+    vendors = confirmed_vendor_candidates(hub_scene())
     assert [v.name for v in vendors] == ["Barman"]
+
+
+def test_dialogue_targets_are_broader_than_vendors() -> None:
+    # The general primitive: anyone non-hostile the agent could walk up and talk
+    # to -- the Mercenary Captain counts even though he sells nothing. Nearest
+    # first, so the Captain (15) precedes the Barman (26).
+    talkable = dialogue_targets(hub_scene())
+    assert [t.name for t in talkable] == ["Mercenary Captain", "Barman"]
+
+
+def test_confirmed_vendor_implies_dialogue_target() -> None:
+    b = barman()
+    assert b.is_dialogue_target() is True
+    assert b.is_confirmed_vendor() is True
+
+
+def test_a_talkable_non_vendor_is_a_dialogue_target_but_not_a_vendor() -> None:
+    captain = entity("Mercenary Captain", is_animal=False, has_vendor_list=False,
+                     is_squad_leader=True, has_dialogue=True, disposition=Disposition.NEUTRAL)
+    assert captain.is_dialogue_target() is True
+    assert captain.is_confirmed_vendor() is False
+
+
+def test_no_dialogue_means_not_a_talk_target_even_with_a_vendor_list() -> None:
+    # A guard carrying an inherited vendor list but no dialogue is not talkable.
+    guard = entity("Ninja Guard", is_animal=False, has_vendor_list=True,
+                   is_squad_leader=False, has_dialogue=False, disposition=Disposition.NEUTRAL)
+    assert guard.is_dialogue_target() is False
+    assert guard.is_confirmed_vendor() is False
+
+
+def test_hostile_or_animal_dialogue_holder_is_not_a_talk_target() -> None:
+    hostile = entity("Bandit", is_animal=False, has_dialogue=True,
+                     disposition=Disposition.HOSTILE)
+    beast = entity("Bonedog", is_animal=True, has_dialogue=True,
+                   disposition=Disposition.NEUTRAL)
+    assert hostile.is_dialogue_target() is False
+    assert beast.is_dialogue_target() is False
 
 
 def test_visibility_and_talk_availability_do_not_affect_confirmation() -> None:

@@ -1347,15 +1347,25 @@ The real fix (per the operator's standing rule: no cheap retry over a real fix)
 is to make vendor identification deterministic and hand the model a target,
 then build P6 as a monitored approach/travel option toward that target.
 
-Slice 1 (done): `NearbyEntity.is_confirmed_vendor()` and
-`confirmed_vendor_candidates()` are the single deterministic source of truth
-(not-animal ∧ vendor_list ∧ leader ∧ dialogue ∧ non-hostile; visibility and
-talk-availability deliberately excluded). Runtime delta-tracking now uses it.
-Nine tests cover the exact live Hub scene plus edge cases; 283 tests pass.
+Slice 1 (done): the deterministic judgment is factored as a general
+interaction primitive with vendor as a specialization, because approaching and
+talking to a person is not vendor-specific — Kenshi's native talk order works on
+any non-hostile character with dialogue. `NearbyEntity.is_dialogue_target()` =
+not-animal ∧ has_dialogue ∧ non-hostile; `is_confirmed_vendor()` =
+`is_dialogue_target()` ∧ vendor_list ∧ leader. Module helpers
+`dialogue_targets()` and `confirmed_vendor_candidates()` return nearest-first.
+Visibility and talk-availability are deliberately excluded (they gate when to
+act, not who is talkable). Runtime delta-tracking uses the shared fence. 288
+tests pass, including the Hub scene where the Mercenary Captain is a talk target
+but not a vendor. This generalization is a safe perception/primitive change: it
+broadens what the agent can *see* it could talk to, not what the live policy
+lets it *do*, and it is the foundation for the P7 interaction ladder, not just
+commerce.
 
-Slice 2 (next): surface `confirmed_vendors` in the planner observation and
-rewrite the prompt so the model approves/selects a pre-validated target instead
-of judging vendor status. This is the behavior change that kills the coin-flip.
+Slice 2 (next): surface `dialogue_targets` (with the vendor subset marked) in
+the planner observation and rewrite the prompt so the model approves/selects a
+pre-validated target instead of judging talkability/vendor status. This is the
+behavior change that kills the coin-flip.
 
 Slice 3 (P6): a monitored approach/travel option that navigates toward the
 deterministic target, exposes progress/distance/visibility predicates, requests
