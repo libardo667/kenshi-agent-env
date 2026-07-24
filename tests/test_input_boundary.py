@@ -411,8 +411,34 @@ def test_boundary_report_survives_receipt_serialization(tmp_path: Path) -> None:
     asyncio.run(scenario())
 
 
-def test_calibration_mismatch_still_precedes_the_boundary_check(tmp_path: Path) -> None:
-    """The proven client-size brake must keep failing closed before the fence."""
+def test_tokenless_calibration_mismatch_fails_closed_by_raising(tmp_path: Path) -> None:
+    """Without a token to carry the rejection, the client-size brake still raises."""
+
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(telemetry, client_width=1280, client_height=720)
+        live = environment(tmp_path, telemetry, controller)
+        await live.reset()
+
+        raised = False
+        try:
+            await live.step(movement_action())
+        except RuntimeError as exc:
+            raised = "1280x720" in str(exc)
+
+        assert raised
+        assert controller.actions == []
+
+    asyncio.run(scenario())
+
+
+def test_calibration_mismatch_with_a_token_rejects_gracefully(tmp_path: Path) -> None:
+    """With a plan token, a client-size mismatch is a clean boundary rejection.
+
+    A raise would be treated by the executor as an ambiguous environment error
+    and conservatively spend the reservation. A graceful rejection instead
+    releases it, which is correct because we know zero input was emitted.
+    """
 
     async def scenario() -> None:
         telemetry = PulseTelemetry()
@@ -422,22 +448,26 @@ def test_calibration_mismatch_still_precedes_the_boundary_check(tmp_path: Path) 
 
         latest: list[Observation | None] = [observation()]
         token = token_for(latest)
-        raised = False
-        try:
-            await live.dispatch(
-                movement_action(),
-                command=CommandDispatchContext(
-                    command_id=token.command_id,
-                    based_on_revision=token.validated_revision,
-                ),
-                token=token,
-            )
-        except RuntimeError as exc:
-            raised = "1280x720" in str(exc)
+        transition = await live.dispatch(
+            movement_action(),
+            command=CommandDispatchContext(
+                command_id=token.command_id,
+                based_on_revision=token.validated_revision,
+            ),
+            token=token,
+        )
 
-        assert raised
         assert controller.actions == []
-        assert token.reports == ()
+        receipt = transition.receipt  # type: ignore[attr-defined]
+        assert receipt.accepted is False
+        assert receipt.executed is False
+        assert receipt.error_type == "InputBoundaryRejected"
+        boundary = receipt.input_boundary
+        assert boundary is not None
+        assert boundary.decision is InputBoundaryDecision.REJECTED
+        assert "alibration" in boundary.reason
+        assert receipt.calibration is not None
+        assert receipt.calibration.mismatched_fields  # names the drifted field(s)
 
     asyncio.run(scenario())
 

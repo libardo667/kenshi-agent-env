@@ -38,6 +38,15 @@
   input, returns an `InputBoundaryRejected` receipt, releases the reservation,
   and is counted separately from pre-lease rejections. Portable evidence only;
   no live run has exercised it against a real lease.
+- Pointer actions are classified as coordinate-independent, semantic-current,
+  profile-calibrated, or unsupported. A profile-calibrated action requires a
+  matching `CalibrationIdentity` (client size, and where declared window mode,
+  UI scale, DPI transform, keymap, and profile/macro hashes). A declared field
+  the controller cannot observe is `unknown` and blocks input rather than being
+  assumed to match; the report rides on every pointer receipt and is re-checked
+  inside the lease by the boundary fence. The controller observes only client
+  size today, so only that may be declared live; the rest are modelled and
+  enforced pending observation support.
 - The burn-in profile now has an explicit control-ownership lifecycle. Human
   input cancels the active plan and yields a confirmed paused game; a visible
   resettable countdown must finish before fresh revision/control-mode checks

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from .models import (
     Action,
+    CalibrationIdentity,
     ControlMode,
     LiveContinuousPolicy,
     PlanningMode,
@@ -151,6 +152,31 @@ class ControlsConfig(ConfigModel):
     relative_pointer_max_attempts: int = Field(default=500, ge=1, le=2000)
     calibrated_client_width: int | None = Field(default=None, gt=0)
     calibrated_client_height: int | None = Field(default=None, gt=0)
+    # Additional expected calibration-identity facts. Each stays None until the
+    # profile actually asserts it; a null is never treated as a match.
+    calibrated_window_mode: str | None = Field(default=None, min_length=1, max_length=32)
+    calibrated_ui_scale: float | None = Field(default=None, gt=0.0, le=8.0)
+    calibrated_dpi_scale: float | None = Field(default=None, gt=0.0, le=8.0)
+    calibrated_keymap_id: str | None = Field(default=None, min_length=1, max_length=64)
+    calibration_profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    calibration_profile_version: int | None = Field(default=None, ge=1)
+    calibrated_macro_set_hash: str | None = Field(default=None, min_length=1, max_length=64)
+    # Skills whose pointer coordinates come from live semantic bounds that are
+    # re-read inside the input lease, so they do not need a calibrated profile.
+    semantic_pointer_skills: list[str] = Field(default_factory=list, max_length=64)
+
+    def expected_calibration_identity(self) -> CalibrationIdentity:
+        return CalibrationIdentity(
+            client_width=self.calibrated_client_width,
+            client_height=self.calibrated_client_height,
+            window_mode=self.calibrated_window_mode,
+            ui_scale=self.calibrated_ui_scale,
+            dpi_scale=self.calibrated_dpi_scale,
+            keymap_id=self.calibrated_keymap_id,
+            profile_id=self.calibration_profile_id,
+            profile_version=self.calibration_profile_version,
+            macro_set_hash=self.calibrated_macro_set_hash,
+        )
     startup_continue_control_labels: list[str] = Field(
         default_factory=lambda: ["Continue"],
         min_length=1,

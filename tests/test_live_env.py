@@ -218,6 +218,10 @@ def live_environment(
             post_input_delay_seconds=0.0,
             pause_skill=pause_skill,
             unpause_skill=unpause_skill,
+            # A real live movement config declares its calibrated client size;
+            # the default PulseController renders at this exact size.
+            calibrated_client_width=1920,
+            calibrated_client_height=1080,
         ),
         capture_config=CaptureConfig(enabled=False),
         execute_actions=True,

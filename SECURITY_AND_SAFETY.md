@@ -46,6 +46,18 @@ precondition that is no longer `true` emits zero input and returns an explicit
 input exactly as `false` does. This window is never closed by shortening the
 lease timeout or disabling polite handoff.
 
+A profile-calibrated pointer action additionally requires a matching
+calibration identity. Each action is classified as coordinate-independent,
+semantic-current (its target resolved from live bounds re-read inside the
+lease), profile-calibrated, or unsupported. A profile-calibrated action
+compares every calibration field the profile declares — client size, and where
+declared window mode, UI scale, DPI transform, keymap, and profile/macro hashes
+— against what the controller can observe. A declared field the host cannot
+read is `unknown` and blocks input; it is never assumed to match. A mismatch or
+`unknown` inside the lease is caught by the same boundary fence. The controller
+today observes only client width and height, so only those may be declared in a
+live profile until the remaining fields have real observation support.
+
 Run Kenshi and the controller at the same Windows integrity level. Do not run
 one as administrator and the other normally. Keep the Kenshi window title
 filter narrow. Close applications containing secrets before live tests. Start

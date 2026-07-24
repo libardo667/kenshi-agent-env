@@ -70,6 +70,67 @@ class ConditionResult(StrEnum):
     STALE = "stale"
 
 
+class PointerActionClass(StrEnum):
+    """How an action's coordinates are derived, which decides what must match.
+
+    `coordinate_independent` actions carry no screen position at all.
+    `semantic_current` actions resolve their position from live control,
+    tooltip, or entity bounds that are re-read inside the input lease, so they
+    survive a resolution change. `profile_calibrated` actions replay fixed
+    normalized coordinates and are valid only under one exact identity.
+    """
+
+    COORDINATE_INDEPENDENT = "coordinate_independent"
+    SEMANTIC_CURRENT = "semantic_current"
+    PROFILE_CALIBRATED = "profile_calibrated"
+    UNSUPPORTED = "unsupported"
+
+
+class CalibrationStatus(StrEnum):
+    NOT_REQUIRED = "not_required"
+    MATCHED = "matched"
+    MISMATCHED = "mismatched"
+    UNKNOWN = "unknown"
+
+
+class CalibrationIdentity(StrictModel):
+    """Every fact a profile-calibrated pointer action depends on.
+
+    Each field is nullable and a missing value stays missing. A null is never
+    treated as a match, because an unobserved window mode or UI scale is not
+    evidence that it is the expected one.
+    """
+
+    client_width: int | None = Field(default=None, gt=0)
+    client_height: int | None = Field(default=None, gt=0)
+    window_mode: str | None = Field(default=None, min_length=1, max_length=32)
+    ui_scale: float | None = Field(default=None, gt=0.0, le=8.0)
+    dpi_scale: float | None = Field(default=None, gt=0.0, le=8.0)
+    keymap_id: str | None = Field(default=None, min_length=1, max_length=64)
+    profile_id: str | None = Field(default=None, min_length=1, max_length=80)
+    profile_version: int | None = Field(default=None, ge=1)
+    macro_set_hash: str | None = Field(default=None, min_length=1, max_length=64)
+
+    def declared_fields(self) -> tuple[str, ...]:
+        """Names this identity actually asserts, in stable order."""
+
+        return tuple(
+            name
+            for name in self.__class__.model_fields
+            if getattr(self, name) is not None
+        )
+
+
+class CalibrationReport(StrictModel):
+    status: CalibrationStatus
+    action_class: PointerActionClass
+    reason: str = Field(min_length=1, max_length=1000)
+    expected: CalibrationIdentity | None = None
+    observed: CalibrationIdentity | None = None
+    mismatched_fields: list[str] = Field(default_factory=list, max_length=16)
+    unobserved_fields: list[str] = Field(default_factory=list, max_length=16)
+
+
 class InputBoundaryDecision(StrEnum):
     """Outcome of the final revalidation performed inside the acquired input lease."""
 
@@ -996,6 +1057,7 @@ class ActionReceipt(StrictModel):
     causal_revision_advanced: bool | None = None
     native_acknowledgement: NativeCommandAcknowledgement | None = None
     input_boundary: InputBoundaryReport | None = None
+    calibration: CalibrationReport | None = None
     accepted: bool
     executed: bool
     dry_run: bool

@@ -7,12 +7,17 @@ from pathlib import Path
 
 from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ..control.base import InputController, PrimitiveInputAction
-from ..control.calibration import validate_expected_client_size
+from ..control.calibration import (
+    calibration_allows_input,
+    evaluate_calibration_identity,
+    validate_expected_client_size,
+)
 from ..control.capture import WindowCapture
 from ..input_boundary import ExecutionToken
 from ..models import (
     Action,
     ActionReceipt,
+    CalibrationReport,
     ClickAction,
     CommandDispatchContext,
     ControlMode,
@@ -27,6 +32,7 @@ from ..models import (
     NoopAction,
     Observation,
     PauseAction,
+    PointerActionClass,
     ScrollAction,
     SetSpeedAction,
     SkillAction,
@@ -254,16 +260,21 @@ class LiveEnvironment(AgentEnvironment):
                     # The lease wait is unbounded, so calibration and the caller's
                     # typed authorization are both re-checked here, after the wait
                     # and immediately before the first primitive can be emitted.
-                    self._validate_pointer_calibration(action)
+                    calibration = self.calibration_report(action)
                     lease_wait = self.controller.input_lease_wait_seconds()
                     boundary = (
-                        token.revalidate(lease_wait_seconds=lease_wait)
+                        token.revalidate(
+                            lease_wait_seconds=lease_wait,
+                            calibration=calibration,
+                        )
                         if token is not None
                         else None
                     )
                     if boundary is not None and boundary.decision is (
                         InputBoundaryDecision.REJECTED
                     ):
+                        # A plan step carries the rejection gracefully: zero input,
+                        # and the executor releases the reservation.
                         receipt = ActionReceipt(
                             action=action,
                             accepted=False,
@@ -279,9 +290,15 @@ class LiveEnvironment(AgentEnvironment):
                             ),
                             error_type="InputBoundaryRejected",
                         )
+                    elif not calibration_allows_input(calibration):
+                        # No token to carry the rejection (single-step or bare
+                        # step()): preserve the proven fail-closed raise.
+                        self._raise_for_calibration(calibration)
                     else:
                         receipt = await self._execute_live(action, started, command)
-                    receipt = receipt.model_copy(update={"input_boundary": boundary})
+                    receipt = receipt.model_copy(
+                        update={"input_boundary": boundary, "calibration": calibration}
+                    )
                 if lease_wait >= 0.01:
                     receipt = receipt.model_copy(
                         update={
@@ -340,25 +357,53 @@ class LiveEnvironment(AgentEnvironment):
             events=observation.events,
         )
 
-    def _validate_pointer_calibration(self, action: Action) -> None:
-        pointer_action = isinstance(
-            action,
-            (ClickAction, MoveCursorAction, ScrollAction),
-        )
-        if isinstance(action, SkillAction) and self.macros.has(action.name):
-            pointer_action = any(
+    def classify_pointer_action(self, action: Action) -> PointerActionClass:
+        """Decide what an action's coordinates depend on.
+
+        Configured semantic skills resolve their position from live control,
+        tooltip, or entity bounds re-read inside the input lease, so they are
+        resolution-independent. Everything else that emits a pointer primitive
+        replays profile coordinates and needs an exact calibration identity.
+        """
+
+        if isinstance(action, SkillAction):
+            if action.name in self.controls_config.semantic_pointer_skills:
+                return PointerActionClass.SEMANTIC_CURRENT
+            if not self.macros.has(action.name):
+                return PointerActionClass.UNSUPPORTED
+            pointer = any(
                 isinstance(primitive, (ClickAction, MoveCursorAction, ScrollAction))
                 for primitive in self.macros.expand(action)
             )
-        if not pointer_action:
-            return
-        rect = self.controller.client_rect()
-        validate_expected_client_size(
-            rect.width,
-            rect.height,
-            expected_width=self.controls_config.calibrated_client_width,
-            expected_height=self.controls_config.calibrated_client_height,
+        else:
+            pointer = isinstance(action, (ClickAction, MoveCursorAction, ScrollAction))
+        return (
+            PointerActionClass.PROFILE_CALIBRATED
+            if pointer
+            else PointerActionClass.COORDINATE_INDEPENDENT
         )
+
+    def calibration_report(self, action: Action) -> CalibrationReport:
+        return evaluate_calibration_identity(
+            action_class=self.classify_pointer_action(action),
+            expected=self.controls_config.expected_calibration_identity(),
+            observed=self.controller.observed_calibration_identity(),
+        )
+
+    def _raise_for_calibration(self, report: CalibrationReport) -> None:
+        # Preserve the proven exact-client-size message and fail-closed raise for
+        # the size case, which existing live evidence and tests depend on.
+        if report.observed is not None and (
+            "client_width" in report.mismatched_fields
+            or "client_height" in report.mismatched_fields
+        ):
+            validate_expected_client_size(
+                report.observed.client_width or 0,
+                report.observed.client_height or 0,
+                expected_width=self.controls_config.calibrated_client_width,
+                expected_height=self.controls_config.calibrated_client_height,
+            )
+        raise RuntimeError(f"No pointer input was sent. {report.reason}")
 
     async def _execute_live(
         self,
