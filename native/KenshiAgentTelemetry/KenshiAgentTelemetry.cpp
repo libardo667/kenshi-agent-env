@@ -651,7 +651,13 @@ namespace
         return static_cast<float>(std::sqrt(dx * dx + dy * dy + dz * dz));
     }
 
-    bool IsConfirmedVendor(Character* selected, Character* target)
+    // The authorization fact for an approach order is "this is a valid current
+    // dialogue target", not "this is a vendor". Kenshi's PLAYER_TALK_TO order
+    // works on any non-hostile character with dialogue, so requiring a vendor
+    // list and squad leadership excluded ordinary people for no safety reason.
+    // Vendor status remains a separate, narrower question (IsConfirmedVendor)
+    // for callers that genuinely mean commerce.
+    bool IsValidDialogueTarget(Character* selected, Character* target)
     {
         if (selected == NULL ||
             target == NULL ||
@@ -665,11 +671,18 @@ namespace
             return false;
         }
 
+        return target->hasDialogue();
+    }
+
+    bool IsConfirmedVendor(Character* selected, Character* target)
+    {
+        if (!IsValidDialogueTarget(selected, target))
+            return false;
+
         ActivePlatoon* platoon = target->getPlatoon();
         return platoon != NULL &&
                platoon->getHasVendorList() &&
-               platoon->getSquadLeader() == target &&
-               target->hasDialogue();
+               platoon->getSquadLeader() == target;
     }
 
     bool TryGetExactSelection(
@@ -697,7 +710,7 @@ namespace
         return true;
     }
 
-    Character* FindExactConfirmedVendor(
+    Character* FindExactDialogueTarget(
         PlayerInterface* player,
         const std::string& targetId,
         bool& exactIdentityFound)
@@ -735,7 +748,7 @@ namespace
             if (StableEntityId(candidate) != targetId)
                 continue;
             exactIdentityFound = true;
-            return IsConfirmedVendor(selected, candidate) ? candidate : NULL;
+            return IsValidDialogueTarget(selected, candidate) ? candidate : NULL;
         }
         return NULL;
     }
@@ -1033,7 +1046,7 @@ namespace
             return;
         }
         Character* selected = selectedHandle.getCharacter();
-        if (!IsConfirmedVendor(selected, target))
+        if (!IsValidDialogueTarget(selected, target))
         {
             FinishActiveNativeCommand(
                 "cancelled",
@@ -1144,7 +1157,7 @@ namespace
         }
 
         bool exactIdentityFound = false;
-        Character* target = FindExactConfirmedVendor(
+        Character* target = FindExactDialogueTarget(
             player,
             request.targetId,
             exactIdentityFound);

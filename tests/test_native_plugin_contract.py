@@ -86,7 +86,7 @@ def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     assert 'PROTOCOL_VERSION = "0.5.0"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
-    assert "FindExactConfirmedVendor" in source
+    assert "FindExactDialogueTarget" in source
     assert "FindNearestConfirmedVendor" not in source
     assert "based_on_revision.telemetry_sequence" in source
     assert "identity_session_id" in source
@@ -176,3 +176,40 @@ def test_native_sampler_recovers_from_transient_write_and_cpp_failures() -> None
     assert "maximumMoveAttempts = 4" in writer
     assert "ERROR_SHARING_VIOLATION" in writer
     assert "ERROR_LOCK_VIOLATION" in writer
+
+
+def test_native_approach_authorizes_any_valid_dialogue_target() -> None:
+    """The native fence must ask "can I talk to this person", not "is this a shop".
+
+    Kenshi's PLAYER_TALK_TO order works on any non-hostile character with
+    dialogue. Requiring a vendor list and squad leadership excluded ordinary
+    people for no safety reason, which is exactly the coupling the reusable
+    approach action exists to remove.
+    """
+
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+
+    assert "IsValidDialogueTarget" in source
+    # The approach command and its continued-ownership check both use the
+    # generic fence.
+    assert "return IsValidDialogueTarget(selected, candidate) ? candidate : NULL;" in source
+    assert "if (!IsValidDialogueTarget(selected, target))" in source
+
+    generic = source[
+        source.index("bool IsValidDialogueTarget") : source.index("bool IsConfirmedVendor")
+    ]
+    assert "hasDialogue()" in generic
+    assert "isUnconcious()" in generic
+    assert "isEnemy(" in generic
+    assert "isAnimal()" in generic
+    # The commerce-specific conditions must not gate a generic approach.
+    assert "getHasVendorList" not in generic
+    assert "getSquadLeader" not in generic
+
+    # Vendor status survives as its own narrower predicate for callers that
+    # genuinely mean commerce.
+    vendor = source[source.index("bool IsConfirmedVendor") :]
+    vendor = vendor[: vendor.index("Character* FindExactDialogueTarget")]
+    assert "IsValidDialogueTarget(selected, target)" in vendor
+    assert "getHasVendorList" in vendor
+    assert "getSquadLeader" in vendor
