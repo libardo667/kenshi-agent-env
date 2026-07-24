@@ -26,7 +26,12 @@ from .models import (
     Transition,
     WorldStateRevision,
 )
-from .options import OptionLifecycleError, OptionStatus, StatefulMovementOption
+from .options import (
+    OptionLifecycleError,
+    OptionStatus,
+    StatefulApproachOption,
+    StatefulMovementOption,
+)
 from .planning import (
     PlanBudgetError,
     PlanBudgetLedger,
@@ -565,6 +570,66 @@ class ContinuousPlanExecutor:
                 },
             )
 
+        approach_option: StatefulApproachOption | None = None
+        approach_params = (
+            self.guard.macros.approach_option_params(action)
+            if self.planning_config.stateful_approach_options_enabled
+            and isinstance(action, SkillAction)
+            and self.guard.macros.is_approach_option(action)
+            else None
+        )
+        if approach_params is not None:
+            assert isinstance(action, SkillAction)
+            approach_option = StatefulApproachOption(
+                option_id=f"approach-{plan.plan_id}-{plan.plan_version}-{step.step_id}",
+                action=action,
+                environment=self.environment,
+                target_id=approach_params.target_id,
+                arrival_distance=approach_params.arrival_distance,
+                threat_distance=approach_params.threat_distance,
+            )
+            try:
+                prepared = approach_option.prepare(observation)
+            except OptionLifecycleError as exc:
+                budget.release(reserved_risk)
+                reason = f"Approach option preparation failed: {exc}"
+                self._event(
+                    "plan_budget_released",
+                    plan,
+                    observation,
+                    step=step,
+                    reason="No approach command was dispatched.",
+                )
+                self._event(
+                    "option_failed",
+                    plan,
+                    observation,
+                    step=step,
+                    reason=reason,
+                    evidence={
+                        "option_id": approach_option.option_id,
+                        "option_status": approach_option.status.value,
+                    },
+                )
+                return _StepResult(
+                    observation=observation,
+                    succeeded=False,
+                    actions_completed=0,
+                    reason=reason,
+                )
+            self._event(
+                "option_prepared",
+                plan,
+                observation,
+                step=step,
+                reason=prepared.reason,
+                evidence={
+                    "option_id": prepared.option_id,
+                    "option_status": prepared.status.value,
+                    "start_revision": prepared.revision.model_dump(mode="json"),
+                },
+            )
+
         action_start_revision = observation.world_revision
         command = self.state_store.begin_command(
             plan_id=plan.plan_id,
@@ -619,6 +684,19 @@ class ContinuousPlanExecutor:
                     remaining_run_actions=remaining_run_actions,
                     protected_step_ids=protected_step_ids,
                     token=token,
+                )
+            elif approach_option is not None:
+                transition, staged_patch = await self._execute_approach_option(
+                    approach_option,
+                    plan,
+                    step,
+                    observation,
+                    budget,
+                    dispatch_context,
+                    remaining_run_actions=remaining_run_actions,
+                    protected_step_ids=protected_step_ids,
+                    token=token,
+                    step_deadline=step_deadline,
                 )
             else:
                 transition = await self.environment.dispatch(
@@ -1075,6 +1153,237 @@ class ContinuousPlanExecutor:
                     self.state_store.latest or observation,
                     step=step,
                     reason="Movement ended before the concurrent advisory completed.",
+                    evidence={"option_id": option.option_id},
+                )
+
+    async def _execute_approach_option(
+        self,
+        option: StatefulApproachOption,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        budget: PlanBudgetLedger,
+        command: CommandDispatchContext,
+        *,
+        remaining_run_actions: int,
+        protected_step_ids: set[str],
+        token: ExecutionToken | None = None,
+        step_deadline: float,
+    ) -> tuple[Transition, _StagedPatch | None]:
+        # Sibling of _execute_movement_option. The one difference is the terminal
+        # condition: the approach dispatch is acknowledged quickly while the
+        # character keeps walking, so this loop runs until the option's monitor
+        # reports terminal (arrival or abort) or the step deadline passes, not
+        # until the dispatch task completes. The concurrent-planner overlap is
+        # preserved: the ~30s strategic call runs while the character walks, so
+        # the next plan is not computed from scratch in a post-arrival gap.
+        option_task = option.start(command, token=token)
+        self._event(
+            "option_started",
+            plan,
+            observation,
+            step=step,
+            reason=option.reason,
+            evidence={
+                "option_id": option.option_id,
+                "option_status": option.status.value,
+            },
+        )
+        subscription = self.state_store.subscribe()
+        update_task: asyncio.Task[Any] | None = asyncio.create_task(subscription.get())
+        planner_task: asyncio.Task[PlannerOutput] | None = None
+        planner_observation: Observation | None = None
+        planner_started_at: float | None = None
+        staged_patch: _StagedPatch | None = None
+        timed_out = False
+
+        if (
+            self.planning_config.concurrent_option_planning_enabled
+            and self.concurrent_planner is not None
+        ):
+            planner_observation = observation.model_copy(
+                update={
+                    "active_plan": ActivePlanContext(
+                        plan_id=plan.plan_id,
+                        plan_version=plan.plan_version,
+                        objective=plan.objective,
+                        active_step_id=step.step_id,
+                        completed_step_ids=sorted(protected_step_ids - {step.step_id}),
+                        remaining_actions=budget.remaining_actions,
+                    )
+                },
+                deep=True,
+            )
+            planner_started_at = self.clock.monotonic()
+            planner_task = asyncio.create_task(
+                self.concurrent_planner(planner_observation),
+                name=f"kenshi-agent-advisory-{option.option_id}",
+            )
+
+        try:
+            while option.poll().status is OptionStatus.RUNNING:
+                remaining = step_deadline - self.clock.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                waiting: set[asyncio.Task[Any]] = set()
+                if update_task is not None:
+                    waiting.add(update_task)
+                # The dispatch task may already be done (ack received) while the
+                # option keeps walking; only wait on it while it is pending.
+                if not option_task.done():
+                    waiting.add(option_task)
+                if planner_task is not None:
+                    waiting.add(planner_task)
+                if not waiting:
+                    # No update source is live and the option is still running;
+                    # a further wait cannot make progress, so stop deterministically.
+                    timed_out = True
+                    break
+                done, _ = await asyncio.wait(
+                    waiting,
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if not done:
+                    timed_out = True
+                    break
+
+                if planner_task is not None and planner_task in done:
+                    assert planner_observation is not None
+                    assert planner_started_at is not None
+                    staged_patch = self._consume_concurrent_planner_result(
+                        planner_task,
+                        plan,
+                        step,
+                        planner_observation,
+                        budget,
+                        remaining_run_actions=remaining_run_actions - 1,
+                        protected_step_ids=protected_step_ids,
+                        planner_latency_seconds=(self.clock.monotonic() - planner_started_at),
+                    )
+                    planner_task = None
+
+                if update_task is not None and update_task in done:
+                    update = update_task.result()
+                    progress = option.poll(update)
+                    self._event(
+                        "option_progress",
+                        plan,
+                        update.observation,
+                        step=step,
+                        reason=progress.reason,
+                        evidence={
+                            "option_id": option.option_id,
+                            "option_status": progress.status.value,
+                            "sequence_status": update.sequence_status.value,
+                            "changed_paths": list(update.delta.changed_paths),
+                        },
+                    )
+                    update_task = (
+                        asyncio.create_task(subscription.get())
+                        if progress.status is OptionStatus.RUNNING
+                        else None
+                    )
+                elif option_task in done:
+                    # The dispatch resolved (ack or rejection); fold it into the
+                    # option state so a rejected order fails rather than waiting.
+                    option.poll()
+
+            if timed_out:
+                await option.cancel(
+                    "Approach exceeded its step timeout before reaching the target."
+                )
+
+            terminal = option.poll()
+            latest = self.state_store.latest or observation
+            if terminal.status is OptionStatus.SUCCEEDED:
+                self._event(
+                    "option_succeeded",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=terminal.reason,
+                    evidence={
+                        "option_id": option.option_id,
+                        "option_status": terminal.status.value,
+                    },
+                )
+            else:
+                self._event(
+                    "option_failed",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Approach timed out before arriving."
+                        if timed_out
+                        else terminal.reason
+                    ),
+                    evidence={
+                        "option_id": option.option_id,
+                        "option_status": terminal.status.value,
+                    },
+                )
+            # A dispatched order that failed to arrive still delivered input, so
+            # return its causal receipt and let the step's success conditions
+            # (which will not be true) mark it unsucceeded. Only a dispatch that
+            # never produced a transition raises through option.result().
+            if option.transition is not None:
+                return option.transition.model_copy(deep=True), staged_patch
+            return option.result(), staged_patch
+        except asyncio.CancelledError:
+            cancelled = await option.cancel(
+                "Independent safety supervision cancelled the approach option."
+            )
+            self._event(
+                (
+                    "option_cancelled"
+                    if cancelled.status is OptionStatus.CANCELLED
+                    else "option_failed"
+                ),
+                plan,
+                self.state_store.latest or observation,
+                step=step,
+                reason=cancelled.reason,
+                evidence={
+                    "option_id": option.option_id,
+                    "option_status": cancelled.status.value,
+                },
+            )
+            raise
+        finally:
+            subscription.close()
+            if update_task is not None and not update_task.done():
+                update_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await update_task
+            if planner_task is not None:
+                if not planner_task.done():
+                    planner_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await planner_task
+                self.logger.write(
+                    "strategic_planner_call",
+                    step_index=observation.step_index,
+                    payload={
+                        "source": "concurrent_approach_cancelled",
+                        "planner_latency_seconds": (
+                            self.clock.monotonic() - planner_started_at
+                            if planner_started_at is not None
+                            else 0.0
+                        ),
+                        "world_revision": observation.world_revision.model_dump(mode="json"),
+                        "control_mode": observation.control_mode.value,
+                        "output_type": "cancelled",
+                    },
+                )
+                self._event(
+                    "concurrent_planner_discarded",
+                    plan,
+                    self.state_store.latest or observation,
+                    step=step,
+                    reason="Approach ended before the concurrent advisory completed.",
                     evidence={"option_id": option.option_id},
                 )
 

@@ -36,6 +36,7 @@ from kenshi_agent.models import (
     RiskBudget,
     SetSpeedAction,
     SkillAction,
+    SkillArgument,
     StopAction,
     TelemetrySnapshot,
     Transition,
@@ -413,6 +414,7 @@ def runtime_for(
     observation_clock: PlanningClock | None = None,
     automatic_takeover_enabled: bool = False,
     concurrent_option_planning_enabled: bool = True,
+    stateful_approach_options_enabled: bool = False,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry(
         {
@@ -422,6 +424,11 @@ def runtime_for(
                 movement_pulse_seconds=0.5,
                 movement_pulse_min_seconds=0.1,
                 movement_pulse_max_seconds=1.0,
+            ),
+            "mock_approach": MacroConfig(
+                actions=[],
+                approach_arrival_distance=5.0,
+                approach_threat_distance=15.0,
             ),
         }
     )
@@ -452,6 +459,7 @@ def runtime_for(
             max_plan_game_seconds=12.0,
             observation_pump_enabled=observation_pump_enabled,
             concurrent_option_planning_enabled=concurrent_option_planning_enabled,
+            stateful_approach_options_enabled=stateful_approach_options_enabled,
         ),
         planning_clock=clock,
         observation_clock=observation_clock,
@@ -1250,6 +1258,178 @@ def test_movement_option_overlaps_and_applies_a_valid_future_patch(
         assert replayed["patchable-movement"].succeeded_step_ids == [
             "move",
             "patched-speed",
+        ]
+
+    asyncio.run(scenario())
+
+
+def approach_plan(observation: Observation) -> PlanEnvelope:
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="approach-proof",
+        plan_version=1,
+        objective="Approach the confirmed Barman and open dialogue.",
+        control_mode=observation.control_mode,
+        based_on_revision=observation.world_revision,
+        assumptions=[fresh()],
+        steps=[
+            PlanStep(
+                step_id="approach",
+                action=SkillAction(
+                    name="mock_approach",
+                    args=[SkillArgument(name="target_id", value="entity-barman")],
+                ),
+                preconditions=[condition("telemetry.game.paused", True, "game.pause")],
+                success_conditions=[
+                    condition("telemetry.ui.dialogue_open", True, "ui.dialogue")
+                ],
+                failure_conditions=[],
+                timeout_seconds=5.0,
+                retry_budget=0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            )
+        ],
+        entry_step_id="approach",
+        max_actions=2,
+        max_wall_seconds=10.0,
+        max_game_seconds=10.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=0,
+            max_purchase_actions=0,
+            max_native_assisted_actions=0,
+        ),
+    )
+
+
+class ApproachEnvironment(RevisionEnvironment):
+    """The Barman closes distance across pump updates, then dialogue opens."""
+
+    def __init__(self, *, clock: FakeClock) -> None:
+        super().__init__(clock=clock)
+        self.barman_distance = 40.0
+        self.dispatched = asyncio.Event()
+        self._closes = [18.0, 3.0]
+
+    def observation(self) -> Observation:
+        obs = super().observation()
+        telemetry = obs.telemetry
+        assert telemetry is not None
+        dialogue_open = self.barman_distance <= 5.0
+        barman = NearbyEntity(
+            id="entity-barman",
+            name="Barman",
+            is_animal=False,
+            has_vendor_list=True,
+            is_squad_leader=True,
+            has_dialogue=True,
+            disposition=Disposition.NEUTRAL,
+            distance=self.barman_distance,
+        )
+        new_telemetry = telemetry.model_copy(
+            update={
+                "nearby_entities": [barman],
+                "capabilities": [
+                    *telemetry.capabilities,
+                    "control.approach_vendor",
+                    "nearby.roles",
+                    "ui.dialogue",
+                ],
+                "ui": telemetry.ui.model_copy(
+                    update={
+                        "dialogue_open": dialogue_open,
+                        "dialogue_target_id": ("entity-barman" if dialogue_open else None),
+                    }
+                ),
+            }
+        )
+        return obs.model_copy(update={"telemetry": new_telemetry}, deep=True)
+
+    async def observe_without_capture(self) -> Observation:
+        self.sequence += 1
+        if self.dispatched.is_set() and self._closes:
+            self.barman_distance = self._closes.pop(0)
+        return self.observation()
+
+    async def step(self, action: Action) -> Transition:
+        if isinstance(action, SkillAction) and action.name == "mock_approach":
+            self.actions.append(action)
+            self.dispatched.set()
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.INTERFACE_ONLY,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=0,
+                    message="approach order issued",
+                ),
+                observation=self.observation(),
+            )
+        return await super().step(action)
+
+
+def test_approach_option_reaches_success_by_closing_distance_and_dialogue(
+    tmp_path: Path,
+) -> None:
+    class ApproachPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return approach_plan(current)
+            return PlannerDecision(
+                intent="stop",
+                rationale="Approach reached dialogue; the test is complete.",
+                action=StopAction(reason="approach test complete"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = ApproachEnvironment(clock=clock)
+        planner = ApproachPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_enabled=False,
+            stateful_approach_options_enabled=True,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.dispatched.wait(), timeout=1.0)
+            for _ in range(8):
+                pump_clock.advance(0.1)
+                await asyncio.sleep(0)
+                if any(
+                    event["event_type"] == "option_succeeded"
+                    for event in read_events(tmp_path / "events.jsonl")
+                ):
+                    break
+            await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        events = read_events(tmp_path / "events.jsonl")
+        # It ran as the approach option, not movement or plain dispatch.
+        started = [e for e in events if e["event_type"] == "option_started"]
+        assert len(started) == 1
+        assert "approach-" in started[0]["payload"]["evidence"]["option_id"]
+        assert sum(e["event_type"] == "option_prepared" for e in events) == 1
+        assert sum(e["event_type"] == "option_progress" for e in events) >= 1
+        assert sum(e["event_type"] == "option_succeeded" for e in events) == 1
+        assert sum(e["event_type"] == "option_failed" for e in events) == 0
+        # The approach order was issued exactly once (no duplicate on arrival).
+        assert [a.name for a in environment.actions if isinstance(a, SkillAction)] == [
+            "mock_approach"
         ]
 
     asyncio.run(scenario())

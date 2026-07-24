@@ -1394,9 +1394,21 @@ Slice 3 (P6) is in progress:
   tests cover success-after-arrival-not-ack, arrival-by-radius, target loss,
   threat, rejected dispatch, prepare guards, and idempotent cancel. 307 tests
   pass.
-- Slice 3c (next, precisely specced): wire `StatefulApproachOption` into the
-  executor as a SIBLING path so the proven `_execute_movement_option` loop is
-  untouched. Concrete build:
+- Slice 3c (done): `StatefulApproachOption` is wired into the executor as a
+  sibling path; the proven `_execute_movement_option` loop is untouched.
+  `MacroConfig.approach_arrival_distance` (non-null) designates an approach
+  skill, with `approach_threat_distance` and `approach_target_arg`;
+  `MacroRegistry.is_approach_option`/`approach_option_params` resolve the target
+  from the action's argument (falling back to ordinary dispatch when absent).
+  `PlanningConfig.stateful_approach_options_enabled` (default False) gates it.
+  `_execute_step` routes approach actions to the new `_execute_approach_option`,
+  whose loop runs until `option.poll(update)` reports terminal (arrival/abort)
+  rather than until the dispatch task completes, with a step-timeout guard and
+  the concurrent-planner overlap preserved. An integration test drives a real
+  telemetry stream where the target closes distance across pump updates and
+  dialogue opens: the approach option is selected, emits progress, reaches
+  SUCCEEDED, issues the order once, and does not fail. 308 tests pass; movement
+  path unchanged. Original build spec (for reference):
   1. `MacroConfig`: add `approach_arrival_distance: float | None` (non-null
      designates an approach-option skill, mirroring how `movement_pulse_seconds`
      designates movement), `approach_threat_distance: float = 15.0`, and

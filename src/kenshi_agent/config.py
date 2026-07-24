@@ -49,6 +49,7 @@ class PlanningConfig(ConfigModel):
     live_execution_policy: LiveContinuousPolicy = LiveContinuousPolicy.DISABLED
     observation_pump_enabled: bool = True
     stateful_movement_options_enabled: bool = True
+    stateful_approach_options_enabled: bool = False
     concurrent_option_planning_enabled: bool = True
     observation_pump_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     state_history_limit: int = Field(default=128, ge=8, le=4096)
@@ -281,6 +282,11 @@ class MacroConfig(ConfigModel):
     movement_pulse_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_min_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
     movement_pulse_max_seconds: float | None = Field(default=None, gt=0.0, le=10.0)
+    # A non-null arrival distance designates this skill as a long monitored
+    # approach option (mirroring how movement_pulse_seconds designates movement).
+    approach_arrival_distance: float | None = Field(default=None, gt=0.0, le=100.0)
+    approach_threat_distance: float = Field(default=15.0, gt=0.0, le=500.0)
+    approach_target_arg: str = "target_id"
     requires_native_assisted: bool = False
     actions: list[dict[str, Any]] = Field(default_factory=list)
 
