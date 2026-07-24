@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from kenshi_agent.action_contracts import ACTIVATE_VISIBLE_CONTROL_CONTRACT
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
@@ -14,6 +15,8 @@ from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
+    ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
     CommandDispatchContext,
     Condition,
     ConditionKind,
@@ -25,6 +28,7 @@ from kenshi_agent.models import (
     InputBoundaryDecision,
     InputBoundaryReport,
     NearbyEntity,
+    NormalizedPointerBounds,
     Observation,
     PauseAction,
     PlanEnvelope,
@@ -34,12 +38,14 @@ from kenshi_agent.models import (
     PlanPatch,
     PlanStep,
     RiskBudget,
+    SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
     SkillArgument,
     StopAction,
     TelemetrySnapshot,
     Transition,
+    VisibleUIControl,
     WorldStateRevision,
 )
 from kenshi_agent.planners.base import Planner
@@ -96,11 +102,13 @@ class RevisionEnvironment(AgentEnvironment):
         change_money_after_first_action: bool = False,
         advance_revision: bool = True,
         threat_after_first_action: bool = False,
+        control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     ) -> None:
         self.clock = clock
         self.change_money_after_first_action = change_money_after_first_action
         self.advance_revision = advance_revision
         self.threat_after_first_action = threat_after_first_action
+        self.control_mode = control_mode
         self.sequence = 1
         self.step_index = 0
         self.paused = True
@@ -115,7 +123,7 @@ class RevisionEnvironment(AgentEnvironment):
             run_id="continuous",
             step_index=self.step_index,
             mode="mock",
-            control_mode=ControlMode.INTERFACE_ONLY,
+            control_mode=self.control_mode,
             planning_mode=PlanningMode.CONTINUOUS,
             world_revision=WorldStateRevision(
                 telemetry_sequence=self.sequence,
@@ -415,6 +423,8 @@ def runtime_for(
     automatic_takeover_enabled: bool = False,
     concurrent_option_planning_enabled: bool = True,
     stateful_approach_options_enabled: bool = False,
+    control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+    max_native_assisted_actions_per_plan: int = 0,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry(
         {
@@ -433,7 +443,14 @@ def runtime_for(
         }
     )
     safety = SafetyConfig(
-        allow_action_kinds=["pause", "set_speed", "skill", "stop"],
+        allow_action_kinds=[
+            "pause",
+            "set_speed",
+            "skill",
+            "stop",
+            "approach_dialogue_target",
+            "activate_visible_control",
+        ],
         max_actions_per_minute=500,
         automatic_takeover_enabled=automatic_takeover_enabled,
         human_control_quiet_seconds=0.1,
@@ -445,7 +462,7 @@ def runtime_for(
         run_id="continuous",
         environment=environment,
         planner=planner,
-        guard=ActionGuard(safety, macros),
+        guard=ActionGuard(safety, macros, control_mode=control_mode),
         reflexes=ReflexEngine(),
         logger=logger,
         memory=None,
@@ -460,6 +477,7 @@ def runtime_for(
             observation_pump_enabled=observation_pump_enabled,
             concurrent_option_planning_enabled=concurrent_option_planning_enabled,
             stateful_approach_options_enabled=stateful_approach_options_enabled,
+            max_native_assisted_actions_per_plan=max_native_assisted_actions_per_plan,
         ),
         planning_clock=clock,
         observation_clock=observation_clock,
@@ -1857,3 +1875,374 @@ def test_planner_output_that_becomes_stale_during_call_is_rejected(
         assert "stale" in str(rejected[0]["payload"])
 
     asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Composable semantic-action chain (generic dialogue milestone)
+#
+# The proof this milestone actually owes: one bounded plan composing two
+# reusable typed actions, with no strategic call between them and no macro
+# name, vendor role, or fixed coordinate anywhere in the plan.
+# ---------------------------------------------------------------------------
+
+SEMANTIC_CAPABILITIES = (
+    "control.approach_vendor",
+    "identity.stable_handles",
+    "nearby.characters",
+    "nearby.roles",
+    "ui.dialogue",
+    "ui.dialogue.target",
+    "ui.visible_controls",
+)
+
+
+def semantic_chain_plan(
+    observation: Observation,
+    *,
+    target_id: str,
+    label: str,
+) -> PlanEnvelope:
+    """Approach any valid target, then activate any advertised control."""
+
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="composable-dialogue",
+        plan_version=1,
+        objective="Open dialogue with a valid current target and activate one control.",
+        control_mode=observation.control_mode,
+        based_on_revision=observation.world_revision,
+        assumptions=[fresh()],
+        steps=[
+            PlanStep(
+                step_id="approach",
+                action=ApproachDialogueTargetAction(target_id=target_id),
+                preconditions=[condition("telemetry.game.paused", True, "game.pause")],
+                success_conditions=[
+                    condition("telemetry.ui.dialogue_target_id", target_id, "ui.dialogue.target")
+                ],
+                failure_conditions=[],
+                timeout_seconds=5.0,
+                retry_budget=0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                on_success="activate",
+            ),
+            PlanStep(
+                step_id="activate",
+                action=ActivateVisibleControlAction(exact_label=label, role="button"),
+                preconditions=[
+                    condition("telemetry.ui.dialogue_open", True, "ui.dialogue")
+                ],
+                success_conditions=[
+                    condition("telemetry.ui.active_screen", "trade", "ui.dialogue")
+                ],
+                failure_conditions=[],
+                timeout_seconds=5.0,
+                retry_budget=0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            ),
+        ],
+        entry_step_id="approach",
+        max_actions=3,
+        max_wall_seconds=20.0,
+        max_game_seconds=10.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=1,
+            max_purchase_actions=0,
+            max_native_assisted_actions=1,
+        ),
+    )
+
+
+class SemanticChainEnvironment(RevisionEnvironment):
+    """A target that closes distance, then a dialogue panel with two controls."""
+
+    def __init__(
+        self,
+        *,
+        clock: FakeClock,
+        target_id: str = "entity-wanderer",
+        vendor: bool = False,
+        lose_target: bool = False,
+        hostile_after_dispatch: bool = False,
+    ) -> None:
+        super().__init__(clock=clock, control_mode=ControlMode.NATIVE_ASSISTED)
+        self.target_id = target_id
+        self.vendor = vendor
+        self.lose_target = lose_target
+        self.hostile_after_dispatch = hostile_after_dispatch
+        self.distance = 40.0
+        self.dispatched = asyncio.Event()
+        self.activated: list[Action] = []
+        self._closes = [18.0, 3.0]
+
+    def observation(self) -> Observation:
+        obs = super().observation()
+        telemetry = obs.telemetry
+        assert telemetry is not None
+        target_gone = self.lose_target and self.dispatched.is_set()
+        # Dialogue cannot be open with someone who is no longer there.
+        dialogue_open = self.distance <= 5.0 and not target_gone
+        entities: list[NearbyEntity] = []
+        if not target_gone:
+            entities.append(
+                NearbyEntity(
+                    id=self.target_id,
+                    name="Nomad Wanderer" if not self.vendor else "Barman",
+                    is_animal=False,
+                    has_vendor_list=self.vendor,
+                    is_squad_leader=self.vendor,
+                    has_dialogue=True,
+                    disposition=Disposition.NEUTRAL,
+                    distance=self.distance,
+                    conscious=True,
+                )
+            )
+        if self.hostile_after_dispatch and self.dispatched.is_set():
+            entities.append(
+                NearbyEntity(
+                    id="entity-bandit",
+                    name="Dust Bandit",
+                    is_animal=False,
+                    disposition=Disposition.HOSTILE,
+                    distance=4.0,
+                    conscious=True,
+                )
+            )
+        controls = (
+            [
+                VisibleUIControl(
+                    label="Show me your goods.",
+                    role="button",
+                    bounds=NormalizedPointerBounds(
+                        min_x=0.1, max_x=0.4, min_y=0.5, max_y=0.55
+                    ),
+                ),
+                VisibleUIControl(
+                    label="Goodbye.",
+                    role="button",
+                    bounds=NormalizedPointerBounds(
+                        min_x=0.1, max_x=0.4, min_y=0.6, max_y=0.65
+                    ),
+                ),
+            ]
+            if dialogue_open
+            else None
+        )
+        new_telemetry = telemetry.model_copy(
+            update={
+                "identity_session_id": "session-semantic-chain",
+                "nearby_entities": entities,
+                "capabilities": [*telemetry.capabilities, *SEMANTIC_CAPABILITIES],
+                "ui": telemetry.ui.model_copy(
+                    update={
+                        "active_screen": "trade" if self.activated else "world",
+                        "dialogue_open": dialogue_open,
+                        "dialogue_target_id": (self.target_id if dialogue_open else None),
+                        "visible_controls": controls,
+                    }
+                ),
+            }
+        )
+        return obs.model_copy(update={"telemetry": new_telemetry}, deep=True)
+
+    async def observe_without_capture(self) -> Observation:
+        self.sequence += 1
+        if self.dispatched.is_set() and self._closes:
+            self.distance = self._closes.pop(0)
+        return self.observation()
+
+    async def step(self, action: Action) -> Transition:
+        if isinstance(action, ApproachDialogueTargetAction):
+            self.actions.append(action)
+            self.dispatched.set()
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.NATIVE_ASSISTED,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=0,
+                    message="native approach order issued",
+                    semantic=SemanticActionReceipt(
+                        action_kind=action.kind,
+                        contract_version="1.0",
+                        target_id=action.target_id,
+                        revalidation="Bound to the exact stable dialogue target.",
+                    ),
+                ),
+                observation=self.observation(),
+            )
+        if isinstance(action, ActivateVisibleControlAction):
+            self.actions.append(action)
+            self.activated.append(action)
+            self.sequence += 1
+            binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(action, self.observation())
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.NATIVE_ASSISTED,
+                    accepted=binding.bound,
+                    executed=binding.bound,
+                    dry_run=False,
+                    primitive_actions=1 if binding.bound else 0,
+                    message=binding.reason,
+                    semantic=SemanticActionReceipt(
+                        action_kind=action.kind,
+                        contract_version="1.0",
+                        resolved_label=binding.resolved_label,
+                        resolved_role=binding.resolved_role,
+                        resolved_bounds=binding.resolved_bounds,
+                        revalidation=binding.reason,
+                    ),
+                ),
+                observation=self.observation(),
+            )
+        return await super().step(action)
+
+
+class SemanticChainPlanner(Planner):
+    """One strategic call yields the whole composed chain; the rest just stops."""
+
+    def __init__(self, *, target_id: str, label: str) -> None:
+        self.target_id = target_id
+        self.label = label
+        self.calls = 0
+
+    async def decide(self, current: Observation) -> PlannerOutput:
+        self.calls += 1
+        if self.calls == 1:
+            return semantic_chain_plan(current, target_id=self.target_id, label=self.label)
+        return PlannerDecision(
+            intent="stop",
+            rationale="The composed chain finished.",
+            action=StopAction(reason="semantic chain complete"),
+            confidence=1.0,
+        )
+
+
+def _run_semantic_chain(
+    tmp_path: Path,
+    environment: SemanticChainEnvironment,
+    *,
+    target_id: str,
+    label: str,
+) -> tuple[list[dict[str, object]], SemanticChainPlanner]:
+    async def scenario() -> SemanticChainPlanner:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        planner = SemanticChainPlanner(target_id=target_id, label=label)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_enabled=False,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await asyncio.wait_for(environment.dispatched.wait(), timeout=1.0)
+            for _ in range(16):
+                pump_clock.advance(0.1)
+                await asyncio.sleep(0)
+                if run.done():
+                    break
+            await asyncio.wait_for(run, timeout=2.0)
+        finally:
+            logger.close()
+        return planner
+
+    planner = asyncio.run(scenario())
+    return read_events(tmp_path / "events.jsonl"), planner
+
+
+def test_one_plan_composes_approach_and_control_activation(tmp_path: Path) -> None:
+    """The milestone's core proof: two reusable actions, one strategic call."""
+
+    environment = SemanticChainEnvironment(clock=FakeClock(), target_id="entity-wanderer")
+    events, planner = _run_semantic_chain(
+        tmp_path,
+        environment,
+        target_id="entity-wanderer",
+        label="Show me your goods.",
+    )
+
+    # The approach ran as a monitored option and issued its order exactly once.
+    started = [e for e in events if e["event_type"] == "option_started"]
+    assert len(started) == 1
+    assert "approach-" in started[0]["payload"]["evidence"]["option_id"]
+    assert sum(e["event_type"] == "option_succeeded" for e in events) == 1
+    approaches = [a for a in environment.actions if isinstance(a, ApproachDialogueTargetAction)]
+    assert len(approaches) == 1
+
+    # The control activation followed in the same plan.
+    activations = [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]
+    assert [a.exact_label for a in activations] == ["Show me your goods."]
+
+    # One strategic call produced the whole chain; the second call only stopped.
+    assert sum(e["event_type"] == "strategic_planner_called" for e in events) <= planner.calls
+    assert sum(e["event_type"] == "plan_step_succeeded" for e in events) == 2
+    assert sum(e["event_type"] == "plan_completed" for e in events) == 1
+
+
+def test_the_same_actions_compose_for_a_vendor_target_and_another_label(
+    tmp_path: Path,
+) -> None:
+    """Reuse, not a second implementation: different target, different label."""
+
+    environment = SemanticChainEnvironment(
+        clock=FakeClock(), target_id="entity-barman", vendor=True
+    )
+    events, _ = _run_semantic_chain(
+        tmp_path,
+        environment,
+        target_id="entity-barman",
+        label="Goodbye.",
+    )
+
+    approaches = [a for a in environment.actions if isinstance(a, ApproachDialogueTargetAction)]
+    activations = [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]
+    assert [a.target_id for a in approaches] == ["entity-barman"]
+    assert [a.exact_label for a in activations] == ["Goodbye."]
+    assert sum(e["event_type"] == "plan_completed" for e in events) == 1
+
+
+def test_target_loss_fails_the_approach_option(tmp_path: Path) -> None:
+    environment = SemanticChainEnvironment(
+        clock=FakeClock(), target_id="entity-wanderer", lose_target=True
+    )
+    events, _ = _run_semantic_chain(
+        tmp_path,
+        environment,
+        target_id="entity-wanderer",
+        label="Show me your goods.",
+    )
+
+    assert sum(e["event_type"] == "option_failed" for e in events) == 1
+    assert sum(e["event_type"] == "option_succeeded" for e in events) == 0
+    # No control was activated after the approach failed.
+    assert not [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]
+
+
+def test_hostile_in_threat_range_fails_the_approach_option(tmp_path: Path) -> None:
+    environment = SemanticChainEnvironment(
+        clock=FakeClock(),
+        target_id="entity-wanderer",
+        hostile_after_dispatch=True,
+    )
+    events, _ = _run_semantic_chain(
+        tmp_path,
+        environment,
+        target_id="entity-wanderer",
+        label="Show me your goods.",
+    )
+
+    failed = [e for e in events if e["event_type"] == "option_failed"]
+    assert len(failed) == 1
+    assert "hostile" in str(failed[0]["payload"]).lower()
+    assert not [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]

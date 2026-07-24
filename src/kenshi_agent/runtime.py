@@ -11,6 +11,7 @@ from typing import Any, TypeVar
 
 from PIL import Image, ImageChops
 
+from .action_contracts import translate_legacy_plan_actions
 from .config import PlanningConfig
 from .continuous_executor import ContinuousPlanExecutor
 from .control_ownership import (
@@ -737,6 +738,23 @@ class AgentRuntime:
                                     for step in plan.steps
                                 ]
                             },
+                        )
+                if (
+                    self.planning_config.live_execution_policy
+                    == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
+                ):
+                    plan, translated = translate_legacy_plan_actions(plan)
+                    if translated:
+                        self._plan_event(
+                            "plan_legacy_actions_translated",
+                            plan_id=plan.plan_id,
+                            plan_version=plan.plan_version,
+                            observation=observation,
+                            reason=(
+                                "Calibrated legacy macros entered through the single "
+                                "compatibility adapter as reusable semantic actions."
+                            ),
+                            evidence={"translations": translated},
                         )
                 try:
                     assumption_evidence = validate_plan(

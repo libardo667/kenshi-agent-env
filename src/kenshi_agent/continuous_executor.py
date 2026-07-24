@@ -6,10 +6,12 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
+from .action_contracts import ActionExecution, contract_for
 from .config import PlanningConfig
 from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
 from .models import (
+    Action,
     ActivePlanContext,
     CommandDispatchContext,
     ConditionEvaluation,
@@ -28,6 +30,7 @@ from .models import (
 )
 from .options import (
     OptionLifecycleError,
+    OptionPoll,
     OptionStatus,
     StatefulApproachOption,
     StatefulMovementOption,
@@ -44,6 +47,7 @@ from .planning import (
 from .reflexes import ReflexEngine
 from .safety import ActionGuard, SafetyViolation
 from .session_log import SessionLogger
+from .skills import ApproachOptionParams
 from .world_state import CommandCausalityError, WorldStateStore
 
 TransitionObserver = Callable[
@@ -451,6 +455,35 @@ class ContinuousPlanExecutor:
             reason="Plan completed.",
         )
 
+    def _resolve_approach_params(self, action: Action) -> ApproachOptionParams | None:
+        """Decide whether this action is owned by a monitored approach option.
+
+        A contracted semantic approach always is — the option is how the action
+        is defined, not an optional optimization, because the native order is
+        acknowledged long before the character stops walking. The legacy macro
+        path keeps its existing feature flag.
+        """
+
+        contract = contract_for(action)
+        if contract is not None:
+            if contract.execution is not ActionExecution.MONITORED_OPTION:
+                return None
+            target_id = getattr(action, "target_id", None)
+            if not isinstance(target_id, str) or not target_id:
+                return None
+            return ApproachOptionParams(
+                target_id=target_id,
+                arrival_distance=self.planning_config.semantic_approach_arrival_distance,
+                threat_distance=self.planning_config.semantic_approach_threat_distance,
+            )
+        if (
+            self.planning_config.stateful_approach_options_enabled
+            and isinstance(action, SkillAction)
+            and self.guard.macros.is_approach_option(action)
+        ):
+            return self.guard.macros.approach_option_params(action)
+        return None
+
     async def _execute_step(
         self,
         plan: PlanEnvelope,
@@ -571,15 +604,8 @@ class ContinuousPlanExecutor:
             )
 
         approach_option: StatefulApproachOption | None = None
-        approach_params = (
-            self.guard.macros.approach_option_params(action)
-            if self.planning_config.stateful_approach_options_enabled
-            and isinstance(action, SkillAction)
-            and self.guard.macros.is_approach_option(action)
-            else None
-        )
+        approach_params = self._resolve_approach_params(action)
         if approach_params is not None:
-            assert isinstance(action, SkillAction)
             approach_option = StatefulApproachOption(
                 option_id=f"approach-{plan.plan_id}-{plan.plan_version}-{step.step_id}",
                 action=action,
@@ -672,6 +698,7 @@ class ContinuousPlanExecutor:
         )
 
         staged_patch: _StagedPatch | None = None
+        approach_outcome: OptionPoll | None = None
         try:
             if movement_option is not None:
                 transition, staged_patch = await self._execute_movement_option(
@@ -686,7 +713,7 @@ class ContinuousPlanExecutor:
                     token=token,
                 )
             elif approach_option is not None:
-                transition, staged_patch = await self._execute_approach_option(
+                transition, staged_patch, approach_outcome = await self._execute_approach_option(
                     approach_option,
                     plan,
                     step,
@@ -840,6 +867,22 @@ class ContinuousPlanExecutor:
                 reason=(
                     "The environment rejected the action without execution: "
                     f"{transition.receipt.message}"
+                ),
+                terminated=transition.terminated,
+                success=transition.success,
+            )
+        if approach_outcome is not None and approach_outcome.status is not OptionStatus.SUCCEEDED:
+            # The monitored option is this action's authority on arrival. A lost
+            # target or a hostile inside threat range is a terminal verdict, not
+            # a hint to be overridden by a postcondition that happens to read
+            # true on unrelated evidence.
+            return _StepResult(
+                observation=latest,
+                succeeded=False,
+                actions_completed=1,
+                reason=(
+                    "The monitored approach did not reach its target, so the step "
+                    f"cannot succeed: {approach_outcome.reason}"
                 ),
                 terminated=transition.terminated,
                 success=transition.success,
@@ -1169,7 +1212,7 @@ class ContinuousPlanExecutor:
         protected_step_ids: set[str],
         token: ExecutionToken | None = None,
         step_deadline: float,
-    ) -> tuple[Transition, _StagedPatch | None]:
+    ) -> tuple[Transition, _StagedPatch | None, OptionPoll]:
         # Sibling of _execute_movement_option. The one difference is the terminal
         # condition: the approach dispatch is acknowledged quickly while the
         # character keeps walking, so this loop runs until the option's monitor
@@ -1326,12 +1369,14 @@ class ContinuousPlanExecutor:
                     },
                 )
             # A dispatched order that failed to arrive still delivered input, so
-            # return its causal receipt and let the step's success conditions
-            # (which will not be true) mark it unsucceeded. Only a dispatch that
-            # never produced a transition raises through option.result().
+            # return its causal receipt rather than raising. The terminal verdict
+            # travels with it: for this action the option *is* the outcome, so a
+            # lost target or a hostile in threat range must fail the step even if
+            # some postcondition happens to read true. Only a dispatch that never
+            # produced a transition raises through option.result().
             if option.transition is not None:
-                return option.transition.model_copy(deep=True), staged_patch
-            return option.result(), staged_patch
+                return option.transition.model_copy(deep=True), staged_patch, terminal
+            return option.result(), staged_patch, terminal
         except asyncio.CancelledError:
             cancelled = await option.cancel(
                 "Independent safety supervision cancelled the approach option."

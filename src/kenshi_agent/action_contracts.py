@@ -1,0 +1,498 @@
+"""Authoritative contracts for reusable semantic actions.
+
+Before this catalog, an action's meaning was scattered: risk lived in
+`planning`, control-mode rules in `safety`, routing in the executor, pointer
+classification in the live environment, and the actual affordance in a
+scenario-named macro string. Adding one reusable intention therefore meant
+editing every one of those exact-name branches.
+
+A contract states, in one place, everything the rest of the runtime needs to
+route one typed action safely: who may author it, what capabilities it needs,
+what its arguments must bind to in current observation, what it costs against
+risk budgets, how it executes, and what evidence its receipt must carry. The
+registry is deliberately a small typed Python mapping rather than a plugin
+framework — it is meant to be read, and expanded, in one sitting.
+
+The one rule that outranks convenience: an action may bind only to references
+the current observation actually advertises, and a duplicate or ambiguous
+reference fails closed.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from enum import StrEnum
+from typing import Literal
+
+from pydantic import BaseModel
+
+from .models import (
+    Action,
+    ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    ConditionPath,
+    ControlMode,
+    IdempotencyPolicy,
+    NormalizedPointerBounds,
+    Observation,
+    PlanEnvelope,
+    PointerActionClass,
+    SkillAction,
+    WorldStateRevision,
+    dialogue_targets,
+    normalize_control_label,
+)
+
+# The installed plug-in still names this capability and wire command after the
+# vendor specialization it was first built for, but the fact it authorizes is
+# "the caller may issue a pathing order to a valid dialogue target". The generic
+# names are the contract vocabulary; the legacy names remain accepted aliases so
+# the proven DLL keeps working without a rebuild.
+NATIVE_APPROACH_CAPABILITY = "control.approach_dialogue_target"
+LEGACY_NATIVE_APPROACH_CAPABILITY = "control.approach_vendor"
+NATIVE_APPROACH_CAPABILITY_ALIASES: frozenset[str] = frozenset(
+    {NATIVE_APPROACH_CAPABILITY, LEGACY_NATIVE_APPROACH_CAPABILITY}
+)
+NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = "approach_confirmed_vendor"
+
+VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
+
+
+class ActionExecution(StrEnum):
+    """How the executor must run an action, not what the action means."""
+
+    ATOMIC_HANDLER = "atomic_handler"
+    MONITORED_OPTION = "monitored_option"
+
+
+@dataclass(frozen=True, slots=True)
+class ActionRiskCost:
+    """What one attempt of this action spends from a plan's risk budgets."""
+
+    pointer_actions: int = 0
+    purchase_actions: int = 0
+    native_assisted_actions: int = 0
+
+    def as_tuple(self) -> tuple[int, int, int]:
+        return (
+            self.pointer_actions,
+            self.purchase_actions,
+            self.native_assisted_actions,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceBinding:
+    """The result of resolving an action's arguments against current state."""
+
+    bound: bool
+    reason: str
+    target_id: str | None = None
+    resolved_label: str | None = None
+    resolved_role: str | None = None
+    resolved_bounds: NormalizedPointerBounds | None = None
+    source_revision: WorldStateRevision | None = None
+
+
+def _unbound(reason: str) -> ReferenceBinding:
+    return ReferenceBinding(bound=False, reason=reason)
+
+
+def _capability_condition(path: ConditionPath, *, max_age_seconds: float) -> Condition:
+    return Condition(
+        kind=ConditionKind.CAPABILITY,
+        path=path,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=max_age_seconds,
+    )
+
+
+def bind_approach_dialogue_target(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind an approach to one exact current dialogue target.
+
+    Deliberately target-generic: the only question asked is whether the exact
+    stable id is, right now, one of the people telemetry already says the agent
+    could talk to. Vendor status is not consulted, so a shopkeeper and a
+    wandering civilian bind identically.
+    """
+
+    if not isinstance(action, ApproachDialogueTargetAction):
+        return _unbound("Action is not an approach_dialogue_target action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the approach target.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the target cannot be bound.")
+    matches = [
+        target
+        for target in dialogue_targets(telemetry.nearby_entities)
+        if target.id == action.target_id
+    ]
+    if not matches:
+        return _unbound(
+            f"Target {action.target_id!r} is not a current valid dialogue target."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Target {action.target_id!r} matches {len(matches)} current entities; "
+            "an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to current dialogue target {target.name!r} ({target.id}) at "
+            f"distance {target.distance if target.distance is not None else 'unknown'}."
+        ),
+        target_id=target.id,
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_visible_control(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a control activation to exactly one currently advertised control.
+
+    Bounds are read from telemetry, never authored. Any duplicate of the same
+    label and role fails closed rather than picking the first, because "the
+    button that says X" is not a reference when two of them say X.
+    """
+
+    if not isinstance(action, ActivateVisibleControlAction):
+        return _unbound("Action is not an activate_visible_control action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the visible control.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the control cannot be bound.")
+    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
+        return _unbound(
+            f"Capability {VISIBLE_CONTROLS_CAPABILITY!r} is unavailable, so visible "
+            "controls are unknown rather than absent."
+        )
+    controls = telemetry.ui.visible_controls
+    if controls is None:
+        return _unbound("The interface reports no current visible-control set.")
+    wanted = normalize_control_label(action.exact_label)
+    matches = [
+        control
+        for control in controls
+        if normalize_control_label(control.label) == wanted and control.role == action.role
+    ]
+    if not matches:
+        return _unbound(
+            f"No current {action.role} control matches label {action.exact_label!r}."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"{len(matches)} current {action.role} controls match label "
+            f"{action.exact_label!r}; an ambiguous reference fails closed."
+        )
+    control = matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to exactly one current {control.role} control "
+            f"{control.label!r} at its observed bounds."
+        ),
+        resolved_label=control.label,
+        resolved_role=control.role,
+        resolved_bounds=control.bounds.model_copy(deep=True),
+        source_revision=observation.world_revision,
+    )
+
+
+def _approach_authorization_conditions(
+    action: Action,
+    *,
+    max_age_seconds: float,
+) -> list[Condition]:
+    if not isinstance(action, ApproachDialogueTargetAction):
+        return []
+    return [
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TARGET_HAS_DIALOGUE,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            target_id=action.target_id,
+            max_age_seconds=max_age_seconds,
+        ),
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TARGET_DISPOSITION,
+            operator=ConditionOperator.NOT_EQUALS,
+            expected="hostile",
+            target_id=action.target_id,
+            max_age_seconds=max_age_seconds,
+        ),
+    ]
+
+
+def _visible_control_authorization_conditions(
+    action: Action,
+    *,
+    max_age_seconds: float,
+) -> list[Condition]:
+    if not isinstance(action, ActivateVisibleControlAction):
+        return []
+    return [
+        _capability_condition(
+            ConditionPath.UI_VISIBLE_CONTROLS_CAPABILITY,
+            max_age_seconds=max_age_seconds,
+        ),
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_UI_VISIBLE_CONTROL_COUNT,
+            operator=ConditionOperator.GREATER_THAN_OR_EQUAL,
+            expected=1,
+            max_age_seconds=max_age_seconds,
+        ),
+    ]
+
+
+@dataclass(frozen=True, slots=True)
+class ActionContract:
+    """Everything the runtime must know to route one typed action safely."""
+
+    kind: str
+    version: str
+    model: type[BaseModel]
+    summary: str
+    argument_source: str
+    planner_visible: bool
+    allowed_control_modes: frozenset[ControlMode]
+    required_capabilities: frozenset[str]
+    capability_aliases: frozenset[str]
+    pointer_class: PointerActionClass
+    native_assisted: bool
+    risk: ActionRiskCost
+    max_primitive_actions: int
+    reference_fields: tuple[str, ...]
+    idempotency: IdempotencyPolicy
+    execution: ActionExecution
+    receipt_kind: str
+    bind: Callable[[Action, Observation], ReferenceBinding]
+    authorization_conditions: Callable[..., list[Condition]]
+
+    def missing_capabilities(self, capabilities: set[str] | frozenset[str]) -> list[str]:
+        """Required capabilities absent from an observation, alias-aware.
+
+        A capability with accepted aliases is satisfied by any one of them, so a
+        plug-in that still emits the legacy name is not treated as incapable.
+        """
+
+        missing: list[str] = []
+        for required in sorted(self.required_capabilities):
+            if required in capabilities:
+                continue
+            if required in self.capability_aliases and (
+                self.capability_aliases & set(capabilities)
+            ):
+                continue
+            missing.append(required)
+        return missing
+
+    def allows_control_mode(self, control_mode: ControlMode) -> bool:
+        return control_mode in self.allowed_control_modes
+
+
+APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
+    kind="approach_dialogue_target",
+    version="1.0",
+    model=ApproachDialogueTargetAction,
+    summary=(
+        "Walk to one exact current dialogue target and open dialogue with it. "
+        "One monitored option owns the whole approach; it needs no follow-up "
+        "continuation action."
+    ),
+    argument_source="target_id must be an exact id from the observation's dialogue_targets.",
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_APPROACH_CAPABILITY,
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.roles",
+        }
+    ),
+    capability_aliases=NATIVE_APPROACH_CAPABILITY_ALIASES,
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=("target_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_approach",
+    bind=bind_approach_dialogue_target,
+    authorization_conditions=_approach_authorization_conditions,
+)
+
+ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
+    kind="activate_visible_control",
+    version="1.0",
+    model=ActivateVisibleControlAction,
+    summary=(
+        "Activate exactly one control the interface currently advertises, using "
+        "its observed bounds re-resolved inside the input lease."
+    ),
+    argument_source=(
+        "exact_label and role must match exactly one non-ambiguous entry of the "
+        "observation's visible_controls."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY}),
+    capability_aliases=frozenset(),
+    # Bounds come from current telemetry and are re-read inside the lease, so
+    # this action survives a resolution change and needs no calibrated profile.
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("exact_label", "role"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_control",
+    bind=bind_visible_control,
+    authorization_conditions=_visible_control_authorization_conditions,
+)
+
+ACTION_CONTRACTS: dict[str, ActionContract] = {
+    contract.kind: contract
+    for contract in (
+        APPROACH_DIALOGUE_TARGET_CONTRACT,
+        ACTIVATE_VISIBLE_CONTROL_CONTRACT,
+    )
+}
+
+
+def contract_for(action: Action) -> ActionContract | None:
+    """The contract governing an action, or None for uncontracted actions."""
+
+    return ACTION_CONTRACTS.get(action.kind)
+
+
+def planner_visible_contracts(
+    *,
+    control_mode: ControlMode,
+    capabilities: set[str] | frozenset[str],
+) -> list[ActionContract]:
+    """Contracts a planner may currently author, in stable order.
+
+    Availability is truthful: a contract whose capabilities are missing is not
+    advertised, so the planner never authors an action the runtime would have to
+    refuse.
+    """
+
+    return [
+        contract
+        for contract in sorted(ACTION_CONTRACTS.values(), key=lambda item: item.kind)
+        if contract.planner_visible
+        and contract.allows_control_mode(control_mode)
+        and not contract.missing_capabilities(capabilities)
+    ]
+
+
+@dataclass(slots=True)
+class LegacyCompatibilityLedger:
+    """Counts legacy macro translations so the old path can be retired on evidence.
+
+    The old and new paths coexist deliberately during migration. Counting is how
+    that stays a decision rather than a habit.
+    """
+
+    translations: dict[str, int] = field(default_factory=dict)
+
+    def record(self, skill_name: str) -> None:
+        self.translations[skill_name] = self.translations.get(skill_name, 0) + 1
+
+    @property
+    def total(self) -> int:
+        return sum(self.translations.values())
+
+    def summary(self) -> dict[str, int]:
+        return dict(sorted(self.translations.items()))
+
+
+LEGACY_COMPATIBILITY = LegacyCompatibilityLedger()
+
+# The single explicit compatibility seam. Each entry translates one calibrated
+# scenario macro into the reusable action that supersedes it. The semantic
+# actions themselves know nothing about these names.
+_LEGACY_APPROACH_SKILLS = frozenset(
+    {"approach_confirmed_vendor", "continue_confirmed_vendor_approach"}
+)
+_LEGACY_CONTROL_LABELS: dict[str, tuple[str, Literal["button", "text"]]] = {
+    "choose_show_goods": ("Show me your goods.", "button"),
+}
+
+
+def translate_legacy_plan_actions(
+    plan: PlanEnvelope,
+    *,
+    ledger: LegacyCompatibilityLedger | None = None,
+) -> tuple[PlanEnvelope, dict[str, int]]:
+    """Admit a legacy-macro plan through the one compatibility seam.
+
+    Returns the plan with translatable macro steps replaced by their reusable
+    semantic equivalents, plus a count of what was translated. Untranslatable
+    steps are left exactly as they were, so this widens what the new path
+    accepts without silently reinterpreting anything it does not understand.
+    """
+
+    recorder = ledger if ledger is not None else LEGACY_COMPATIBILITY
+    counts: dict[str, int] = {}
+    steps = []
+    changed = False
+    for step in plan.steps:
+        action = step.action
+        if isinstance(action, SkillAction):
+            replacement = translate_legacy_skill(action, ledger=recorder)
+            if replacement is not None:
+                counts[action.name] = counts.get(action.name, 0) + 1
+                steps.append(step.model_copy(update={"action": replacement}, deep=True))
+                changed = True
+                continue
+        steps.append(step)
+    if not changed:
+        return plan, {}
+    return plan.model_copy(update={"steps": steps}, deep=True), counts
+
+
+def translate_legacy_skill(
+    action: SkillAction,
+    *,
+    ledger: LegacyCompatibilityLedger | None = None,
+) -> Action | None:
+    """Translate one calibrated legacy macro into its reusable semantic action.
+
+    Returns None when no translation exists, leaving the legacy macro path
+    untouched. Translation is recorded so compatibility use stays measurable.
+    """
+
+    recorder = ledger if ledger is not None else LEGACY_COMPATIBILITY
+    if action.name in _LEGACY_APPROACH_SKILLS:
+        target_id = action.argument_map().get("target_id")
+        if not isinstance(target_id, str) or not target_id:
+            return None
+        recorder.record(action.name)
+        return ApproachDialogueTargetAction(target_id=target_id)
+    label_role = _LEGACY_CONTROL_LABELS.get(action.name)
+    if label_role is not None:
+        label, role = label_role
+        recorder.record(action.name)
+        return ActivateVisibleControlAction(exact_label=label, role=role)
+    return None

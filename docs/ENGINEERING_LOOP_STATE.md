@@ -1,5 +1,149 @@
 # Engineering loop state
 
+## Active milestone: reusable composable semantic actions (2026-07-24)
+
+The action surface is no longer the coupling point. Two reusable typed actions
+are planner-visible behind an authoritative contract catalog, and one bounded
+plan composes them without a strategic call between steps.
+
+**What a planner can now compose.** `approach_dialogue_target(target_id)` and
+`activate_visible_control(exact_label, role)`. Both bind only to references the
+current observation advertises: a target must appear in the deterministic
+`dialogue_targets` digest, and a control must match exactly one non-ambiguous
+entry of the new `visible_controls` digest. Duplicate or absent references fail
+closed. Neither action knows about the Barman, vendor status, "Show me your
+goods.", or any coordinate.
+
+**Now planner-visible:**
+
+- `src/kenshi_agent/action_contracts.py` — the authoritative catalog. One
+  `ActionContract` per kind carries version, typed model, planner visibility,
+  allowed control modes, required capabilities (alias-aware), pointer class,
+  native-assisted flag, risk cost, max primitives, reference fields,
+  authorization conditions, idempotency, execution kind, receipt kind, and the
+  binding function. Risk, control-mode, pointer classification, and executor
+  routing now read the contract instead of switching on an exact skill name.
+- `Observation.semantic_action_digest()` advertises exactly the actions
+  authorable under the current control mode and capabilities, each with its
+  bounded `argument_source`. `visible_control_digest()` (bounded to 32) marks
+  ambiguous labels rather than silently resolving them.
+- `dialogue_interaction_v1` (`src/kenshi_agent/dialogue_interaction.py`) — the
+  generic live policy. It validates contracts, references, capabilities,
+  control mode, risk budgets, idempotency, and causal postconditions. It
+  prescribes **no** step sequence and injects no steps; approach-then-activate,
+  the reverse order, and single-action plans are all accepted. Raw
+  click/key/hotkey/move_cursor/scroll are rejected outright.
+- Explicit planner/controller boundary in `models.py`: `ControllerPrimitive`,
+  `PlannerControlAction`, `SemanticAction`, `PlannerAction`.
+- `SemanticActionReceipt` on every receipt: action kind, contract version,
+  target, resolved label/role/bounds, source revision, option id, and the final
+  revalidation result.
+
+**The approach is one monitored option.** `ApproachDialogueTargetAction` always
+routes to `StatefulApproachOption` — the contract declares
+`MONITORED_OPTION`, so it is the definition of the action rather than a feature
+flag. It issues at most one native order per lifecycle, owns continuation
+internally (no planner-visible "continue approach"), and succeeds only on
+exact-target dialogue or the arrival radius. **Fix made here:** a non-success
+terminal (target lost, hostile in threat range, timeout) now fails the plan step
+directly; previously the step could still succeed if a postcondition happened to
+read true on unrelated evidence.
+
+**Native vocabulary generalized.** `IsConfirmedVendor` split into
+`IsValidDialogueTarget` (valid, not self/player/animal, conscious, non-hostile,
+`hasDialogue()`) and a narrower `IsConfirmedVendor` layered on it. The approach
+command and its continued-ownership check use the generic fence, so the plug-in
+authorizes the fact it actually needs. `FindExactConfirmedVendor` is now
+`FindExactDialogueTarget`. The wire command name (`approach_confirmed_vendor`)
+and capability (`control.approach_vendor`) are retained as **temporary aliases**
+so the proven installed DLL keeps working; `control.approach_dialogue_target` is
+the contract vocabulary and either name satisfies the contract.
+
+**Legacy compatibility.** One explicit adapter
+(`translate_legacy_plan_actions` / `translate_legacy_skill`) converts
+`approach_confirmed_vendor`, `continue_confirmed_vendor_approach`, and
+`choose_show_goods` into their reusable equivalents, counted in
+`LegacyCompatibilityLedger` and logged as `plan_legacy_actions_translated`. It
+runs only under the generic policy. Untranslatable macros are left untouched.
+
+**Exact-name branches removed:** risk accounting, pointer classification,
+executor option routing, and guard control-mode/capability checks no longer
+switch on skill names for contracted actions. `env/live.py`'s
+`_native_vendor_request` became `_native_approach_request(require_vendor_role=)`.
+
+**Exact-name branches that remain (deliberate):** `food_procurement_v1` still
+owns the full Barman recipe and its `choose_show_goods`/`inspect_shop_item`/
+`buy_inspected_shop_item` grammar; `safety.py` retains
+`buy_inspected_shop_item` purchase validation and the legacy vendor-macro
+fences; `runtime.py` retains skill-name outcome assessment. None are on the
+generic path.
+
+### Portable evidence (2026-07-24)
+
+- `pytest`: **360 passed** (from 308). New: 23 contract tests, 17 generic-policy
+  tests, 4 composed-chain executor tests, 5 live visible-control tests, 1
+  input-boundary test, 1 live-profile config test, 1 native-contract test.
+- Proof obligations met: the *same* approach action binds a vendor and a
+  non-vendor; the *same* activation action drives two distinct labels
+  ("Show me your goods.", "Goodbye."); one `PlanEnvelope` runs approach then
+  activation with one strategic call; a control that disappears or becomes
+  ambiguous **inside the input lease** emits zero clicks; a plan precondition
+  that changes during the lease rejects the control action with zero input;
+  target loss and a hostile in threat range each fail the approach option and
+  prevent the following activation; raw click/key/hotkey are rejected by the
+  generic policy.
+- `ruff check .`, `mypy src` (54 files), `compileall` — all pass.
+- Schema export regenerated and byte-exact on re-export (action, decision,
+  observation, plan, plan_patch, receipt gained the new kinds and
+  `SemanticActionReceipt`).
+- `doctor` passes on `config/default.yaml` and the new
+  `config/live.dialogue.yaml`.
+- Mock seeds 7/11/19 retain the accepted one-day result at **25/13/13** actions.
+- Continuous proof `p6b-continuous-proof`: 1 plan proposed/accepted/completed,
+  2 later-revision steps, 100% post-command revisions, 0 boundary rejections.
+- Pinned VS2010 SP1 Release x64 native build **passes** with only the two known
+  upstream warnings (MyGUI C4091, Boost C4715). Candidate DLL is 188,416 bytes,
+  SHA-256 `23916a7e8fb62f11d5bfa1796160dc32d09c15dea0515daccb2d67c77d926674`.
+
+### Live status
+
+**Not yet live-proven.** All evidence above is portable. The generalized DLL is
+**built but not installed**; the installed plug-in remains the proven
+`33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`
+(188,416 bytes), which still enforces the vendor role natively. Consequences:
+
+- A live approach to a **vendor** works today on the installed DLL through the
+  new generic Python path.
+- A live approach to a **non-vendor** would be rejected natively
+  (`target_role_invalid`) until the rebuilt DLL is installed. The generic claim
+  is therefore portable-only for now.
+
+`config/live.dialogue.yaml` is the runnable profile: `native_assisted` +
+`continuous` + `dialogue_interaction_v1`, both live gates still required, the
+two semantic kinds allowlisted, raw primitives never allowlisted, and only the
+transport plus native-approach macros retained.
+
+### Known limitations
+
+- No live proof of the composed chain yet; no live proof of the generalized
+  native fence.
+- The stale-plan rebase under real hosted-planner latency (recorded below) is
+  untouched and remains the likely first obstacle to a live continuous chain;
+  `dialogue_interaction_v1` has no rebase path of its own.
+- The `visible_controls` digest is bounded to 32 entries (fail-closed
+  truncation).
+- Purchase, inventory topology, and the task framework are unchanged and still
+  scenario-specific.
+
+### Next vertical milestone
+
+Install and live-verify the generalized DLL, then prove the composed chain live
+against one vendor and one non-vendor target. After that, the second reusable
+chain: bounded profile-region inspection bound to the current tooltip
+fingerprint, then a generic at-most-once purchase evaluated against a
+food-acquisition task — reusing this contract/policy machinery rather than
+extending the Barman recipe.
+
 ## Supervised live evidence: control brakes (2026-07-24)
 
 The renderer stability fix (driver `…7088`) unblocked the live safety-brake

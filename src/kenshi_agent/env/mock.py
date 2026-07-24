@@ -9,10 +9,13 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
+from ..action_contracts import contract_for
 from ..config import MockConfig
 from ..models import (
     Action,
     ActionReceipt,
+    ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
     CameraState,
     CharacterState,
     ControlMode,
@@ -22,6 +25,7 @@ from ..models import (
     NearbyEntity,
     Observation,
     PauseAction,
+    SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
     StopAction,
@@ -75,6 +79,7 @@ class MockEnvironment(AgentEnvironment):
         self._sequence = 0
         self._frame_sequence = 0
         self._events: list[str] = []
+        self._last_observation: Observation | None = None
         self.world = self._new_world()
 
     def _new_world(self) -> MockWorld:
@@ -205,7 +210,7 @@ class MockEnvironment(AgentEnvironment):
         )
         events = list(self._events)
         self._events.clear()
-        return Observation(
+        observation = Observation(
             run_id=self.run_id,
             step_index=self._step_index,
             mode="mock",
@@ -230,6 +235,8 @@ class MockEnvironment(AgentEnvironment):
                 "travel_toward_squin",
             ],
         )
+        self._last_observation = observation
+        return observation
 
     async def step(self, action: Action) -> Transition:
         started = datetime.now(UTC)
@@ -237,6 +244,7 @@ class MockEnvironment(AgentEnvironment):
         success: bool | None = None
         message = ""
         primitive_actions = 1
+        semantic: SemanticActionReceipt | None = None
 
         if isinstance(action, StopAction):
             terminated = True
@@ -254,6 +262,8 @@ class MockEnvironment(AgentEnvironment):
             message = f"Advanced mock time by {action.seconds:.2f} minutes."
         elif isinstance(action, SkillAction):
             message = self._apply_skill(action)
+        elif isinstance(action, (ApproachDialogueTargetAction, ActivateVisibleControlAction)):
+            message, semantic = self._apply_semantic_action(action)
         else:
             message = f"Recorded UI primitive {action.kind}; mock world state did not change."
 
@@ -279,6 +289,7 @@ class MockEnvironment(AgentEnvironment):
             finished_at=finished,
             primitive_actions=primitive_actions,
             message=message,
+            semantic=semantic,
         )
         return Transition(
             receipt=receipt,
@@ -286,6 +297,45 @@ class MockEnvironment(AgentEnvironment):
             terminated=terminated,
             success=success,
             events=observation.events,
+        )
+
+    def _apply_semantic_action(
+        self,
+        action: ApproachDialogueTargetAction | ActivateVisibleControlAction,
+    ) -> tuple[str, SemanticActionReceipt | None]:
+        """Bind a semantic action against mock state and record what it resolved to.
+
+        The mock world has no dialogue partners of its own, so this exists to
+        keep the contract path honest off-game: the same binding that gates live
+        execution decides the outcome here, and an unbindable reference is a
+        recorded no-op rather than a silent success.
+        """
+
+        contract = contract_for(action)
+        if contract is None:
+            return (f"Unknown semantic action {action.kind}.", None)
+        observation = self._last_observation
+        if observation is None:
+            return (f"Mock {action.kind} had no current observation to bind against.", None)
+        binding = contract.bind(action, observation)
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=contract.version,
+            target_id=binding.target_id,
+            resolved_label=binding.resolved_label,
+            resolved_role=binding.resolved_role,
+            resolved_bounds=binding.resolved_bounds,
+            source_revision=binding.source_revision,
+            revalidation=binding.reason,
+        )
+        if not binding.bound:
+            return (
+                f"Mock {action.kind} bound to nothing and changed no state: {binding.reason}",
+                semantic,
+            )
+        return (
+            f"Mock {action.kind} resolved its reference: {binding.reason}",
+            semantic,
         )
 
     def _apply_skill(self, action: SkillAction) -> str:

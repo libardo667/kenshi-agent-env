@@ -1,5 +1,60 @@
 {
   "$defs": {
+    "ActivateVisibleControlAction": {
+      "additionalProperties": false,
+      "description": "Activate exactly one control the interface currently advertises.\n\nThe arguments are an exact current label and role, not coordinates: the\nbounds come from telemetry and are re-resolved inside the input lease. The\naction knows nothing about which screen, which conversation, or which option\nindex it is activating.",
+      "properties": {
+        "kind": {
+          "const": "activate_visible_control",
+          "default": "activate_visible_control",
+          "title": "Kind",
+          "type": "string"
+        },
+        "exact_label": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Exact Label",
+          "type": "string"
+        },
+        "role": {
+          "default": "button",
+          "enum": [
+            "button",
+            "text"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "exact_label"
+      ],
+      "title": "ActivateVisibleControlAction",
+      "type": "object"
+    },
+    "ApproachDialogueTargetAction": {
+      "additionalProperties": false,
+      "description": "Walk to one exact currently observed dialogue target and open dialogue.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nOne monitored option owns the whole walk, so there is no planner-visible\n\"continue approaching\" command.",
+      "properties": {
+        "kind": {
+          "const": "approach_dialogue_target",
+          "default": "approach_dialogue_target",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ApproachDialogueTargetAction",
+      "type": "object"
+    },
     "CalibrationIdentity": {
       "additionalProperties": false,
       "description": "Every fact a profile-calibrated pointer action depends on.\n\nEach field is nullable and a missing value stays missing. A null is never\ntreated as a match, because an unobserved window mode or UI scale is not\nevidence that it is the expected one.",
@@ -421,6 +476,7 @@
         "telemetry.ui.dialogue_target_id",
         "telemetry.ui.dialogue_option_count",
         "telemetry.ui.dialogue_option_0",
+        "telemetry.ui.visible_control_count",
         "telemetry.ui.tooltip_visible",
         "telemetry.ui.tooltip_text",
         "telemetry.ui.context_menu_open",
@@ -470,12 +526,14 @@
         "ui.dialogue",
         "ui.dialogue.target",
         "ui.dialogue.options",
+        "ui.visible_controls",
         "ui.tooltip",
         "nearby.characters",
         "nearby.visible_entities",
         "nearby.roles",
         "nearby.shop_owners",
         "control.approach_vendor",
+        "control.approach_dialogue_target",
         "identity.stable_handles"
       ],
       "title": "ConditionPath",
@@ -829,6 +887,43 @@
       "title": "NoopAction",
       "type": "object"
     },
+    "NormalizedPointerBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "min_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min X",
+          "type": "number"
+        },
+        "max_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max X",
+          "type": "number"
+        },
+        "min_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Y",
+          "type": "number"
+        },
+        "max_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min_x",
+        "max_x",
+        "min_y",
+        "max_y"
+      ],
+      "title": "NormalizedPointerBounds",
+      "type": "object"
+    },
     "PauseAction": {
       "additionalProperties": false,
       "properties": {
@@ -892,6 +987,116 @@
         "notches"
       ],
       "title": "ScrollAction",
+      "type": "object"
+    },
+    "SemanticActionReceipt": {
+      "additionalProperties": false,
+      "description": "Causal evidence for one reusable semantic action.\n\nRecords what the action's arguments actually resolved to against observed\nstate, so a receipt proves which real reference was acted on rather than\nonly which arguments were requested.",
+      "properties": {
+        "action_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Action Kind",
+          "type": "string"
+        },
+        "contract_version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Contract Version",
+          "type": "string"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "resolved_label": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Label"
+        },
+        "resolved_role": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Role"
+        },
+        "resolved_bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedPointerBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "option_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Option Id"
+        },
+        "revalidation": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Revalidation",
+          "type": "string"
+        },
+        "legacy_compatibility": {
+          "default": false,
+          "title": "Legacy Compatibility",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "action_kind",
+        "contract_version",
+        "revalidation"
+      ],
+      "title": "SemanticActionReceipt",
       "type": "object"
     },
     "SetSpeedAction": {
@@ -1109,6 +1314,12 @@
         },
         {
           "$ref": "#/$defs/SkillAction"
+        },
+        {
+          "$ref": "#/$defs/ApproachDialogueTargetAction"
+        },
+        {
+          "$ref": "#/$defs/ActivateVisibleControlAction"
         }
       ],
       "title": "Action"
@@ -1190,6 +1401,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/CalibrationReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "semantic": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SemanticActionReceipt"
         },
         {
           "type": "null"

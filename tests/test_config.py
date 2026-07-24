@@ -239,3 +239,40 @@ def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
     assert ".env" in ignored_names
     assert ".env.example" not in ignored_names
     assert (root / ".env.example").is_file()
+
+
+def test_live_dialogue_profile_authorizes_semantic_actions_not_raw_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The generic profile grants composition, not a wider input surface."""
+
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    config = load_config(root / "config" / "live.dialogue.yaml")
+
+    assert config.control.mode == ControlMode.NATIVE_ASSISTED
+    assert config.planning.mode is PlanningMode.CONTINUOUS
+    assert (
+        config.planning.live_execution_policy
+        is LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
+    )
+    # Both live gates are still required before any input is emitted.
+    assert config.safety.live_actions_enabled
+    assert config.safety.require_cli_execute_flag
+    assert config.safety.emergency_stop_key == "f12"
+
+    kinds = set(config.safety.allow_action_kinds)
+    assert {"approach_dialogue_target", "activate_visible_control"} <= kinds
+    # Raw controller primitives are never live-allowlisted on this profile.
+    assert not kinds & {"click", "key", "hotkey", "move_cursor", "scroll"}
+
+    # The approach macro survives only to supply the audited native primitives.
+    assert config.controls.native_approach_skill == "approach_confirmed_vendor"
+    assert "approach_confirmed_vendor" in config.safety.allow_skills
+    # The calibrated Barman recipe macros are not authorized here.
+    assert not {
+        "choose_show_goods",
+        "inspect_shop_item",
+        "buy_inspected_shop_item",
+    } & set(config.safety.allow_skills)

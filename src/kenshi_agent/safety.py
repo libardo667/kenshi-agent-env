@@ -4,6 +4,7 @@ import re
 import time
 from collections import deque
 
+from .action_contracts import ActionContract, contract_for
 from .config import SafetyConfig
 from .models import (
     Action,
@@ -42,6 +43,11 @@ class ActionGuard:
     def validate(self, action: Action, observation: Observation) -> Action:
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
+        contract = contract_for(action)
+        if contract is not None:
+            self._validate_contracted_action(action, contract, observation)
+            self._consume_rate_budget(contract.max_primitive_actions)
+            return action
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
             if (
@@ -120,6 +126,66 @@ class ActionGuard:
         ):
             self._purchase_count += 1
         return action
+
+    def _validate_contracted_action(
+        self,
+        action: Action,
+        contract: ActionContract,
+        observation: Observation,
+    ) -> None:
+        """Enforce one semantic action's contract instead of its exact name.
+
+        Every check here reads from the contract, so adding a reusable action
+        does not add a branch: the same code gates approach, control activation,
+        and whatever lands next.
+        """
+
+        if not contract.allows_control_mode(self.control_mode):
+            raise SafetyViolation(
+                f"Action {contract.kind!r} is not permitted in control mode "
+                f"{self.control_mode.value!r}."
+            )
+        if contract.native_assisted and self.control_mode != ControlMode.NATIVE_ASSISTED:
+            raise SafetyViolation(
+                f"Action {contract.kind!r} requires native_assisted control mode."
+            )
+        if contract.max_primitive_actions > self.config.max_primitive_actions_per_step:
+            raise SafetyViolation(
+                f"Action {contract.kind!r} may emit {contract.max_primitive_actions} "
+                f"primitives; maximum is {self.config.max_primitive_actions_per_step}."
+            )
+        if observation.mode != "live":
+            return
+
+        if observation.telemetry_stale or observation.telemetry is None:
+            raise SafetyViolation(
+                f"Action {contract.kind!r} requires fresh authoritative telemetry."
+            )
+        missing = contract.missing_capabilities(set(observation.telemetry.capabilities))
+        if missing:
+            raise SafetyViolation(
+                f"Action {contract.kind!r} lacks required capabilities: "
+                + ", ".join(missing)
+            )
+        # The reference must resolve against the state observed right now.
+        # Absent, duplicated, or ambiguous references fail closed.
+        binding = contract.bind(action, observation)
+        if not binding.bound:
+            raise SafetyViolation(
+                f"Action {contract.kind!r} does not bind to current state: {binding.reason}"
+            )
+        if contract.native_assisted:
+            self._validate_exact_selection(contract.kind, observation)
+
+    @staticmethod
+    def _validate_exact_selection(kind: str, observation: Observation) -> None:
+        assert observation.telemetry is not None
+        telemetry = observation.telemetry
+        selected_ids = telemetry.ui.selected_character_ids
+        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+            raise SafetyViolation(
+                f"Action {kind!r} requires one exact primary selected character."
+            )
 
     @staticmethod
     def _validate_native_vendor_target(

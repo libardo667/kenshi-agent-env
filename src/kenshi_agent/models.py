@@ -45,6 +45,9 @@ class PlanningMode(StrEnum):
 class LiveContinuousPolicy(StrEnum):
     DISABLED = "disabled"
     FOOD_PROCUREMENT_V1 = "food_procurement_v1"
+    # Generic: validates contracts, references, and budgets rather than an exact
+    # scenario recipe. It does not prescribe a step sequence.
+    DIALOGUE_INTERACTION_V1 = "dialogue_interaction_v1"
 
 
 class ConditionKind(StrEnum):
@@ -343,6 +346,19 @@ class NormalizedPointerBounds(StrictModel):
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
 
+MAX_DIGESTED_VISIBLE_CONTROLS = 32
+
+
+def normalize_control_label(value: str) -> str:
+    """Collapse whitespace and case so an exact label survives UI formatting.
+
+    Used for both matching and duplicate detection, so "resolves to exactly one
+    control" means the same thing everywhere.
+    """
+
+    return " ".join(value.split()).casefold()
+
+
 class VisibleUIControl(StrictModel):
     label: str = Field(min_length=1, max_length=500)
     role: Literal["button", "text"]
@@ -612,6 +628,34 @@ class ScrollAction(StrictModel):
         return value
 
 
+class ApproachDialogueTargetAction(StrictModel):
+    """Walk to one exact currently observed dialogue target and open dialogue.
+
+    Reusable and target-generic: the target is any current non-hostile person
+    the telemetry already reports as talkable, vendor or not. The action names
+    only a stable observed identity, never a role, a scenario, or a coordinate.
+    One monitored option owns the whole walk, so there is no planner-visible
+    "continue approaching" command.
+    """
+
+    kind: Literal["approach_dialogue_target"] = "approach_dialogue_target"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
+class ActivateVisibleControlAction(StrictModel):
+    """Activate exactly one control the interface currently advertises.
+
+    The arguments are an exact current label and role, not coordinates: the
+    bounds come from telemetry and are re-resolved inside the input lease. The
+    action knows nothing about which screen, which conversation, or which option
+    index it is activating.
+    """
+
+    kind: Literal["activate_visible_control"] = "activate_visible_control"
+    exact_label: str = Field(min_length=1, max_length=500)
+    role: Literal["button", "text"] = "button"
+
+
 SkillArgumentValue: TypeAlias = str | int | float | bool | None
 
 
@@ -636,6 +680,27 @@ class SkillAction(StrictModel):
         return {argument.name: argument.value for argument in self.args}
 
 
+ControllerPrimitive: TypeAlias = (
+    KeyAction | HotkeyAction | MoveCursorAction | ClickAction | ScrollAction
+)
+"""Deterministic executor/controller implementation details.
+
+These remain the only way input actually reaches Windows, but they are not an
+intention a planner may author: a raw coordinate carries no evidence about what
+it would activate. The generic live planner surface never advertises them.
+"""
+
+PlannerControlAction: TypeAlias = (
+    NoopAction | StopAction | PauseAction | SetSpeedAction | WaitAction
+)
+"""Run-control intentions that touch no game object and bind to no reference."""
+
+SemanticAction: TypeAlias = ApproachDialogueTargetAction | ActivateVisibleControlAction
+"""Reusable typed game/UI intentions bound to currently observed references."""
+
+PlannerAction: TypeAlias = PlannerControlAction | SemanticAction | SkillAction
+"""What a planner may author. `SkillAction` is temporary legacy compatibility."""
+
 Action: TypeAlias = (
     NoopAction
     | StopAction
@@ -648,8 +713,25 @@ Action: TypeAlias = (
     | ClickAction
     | ScrollAction
     | SkillAction
+    | ApproachDialogueTargetAction
+    | ActivateVisibleControlAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
+
+SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
+    {"approach_dialogue_target", "activate_visible_control"}
+)
+CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
+    {"key", "hotkey", "move_cursor", "click", "scroll"}
+)
+
+
+def is_controller_primitive(action: Action) -> bool:
+    return action.kind in CONTROLLER_PRIMITIVE_KINDS
+
+
+def is_semantic_action(action: Action) -> bool:
+    return action.kind in SEMANTIC_ACTION_KINDS
 
 
 def new_command_id() -> str:
@@ -812,6 +894,7 @@ class ConditionPath(StrEnum):
     TELEMETRY_UI_DIALOGUE_TARGET_ID = "telemetry.ui.dialogue_target_id"
     TELEMETRY_UI_DIALOGUE_OPTION_COUNT = "telemetry.ui.dialogue_option_count"
     TELEMETRY_UI_DIALOGUE_OPTION_0 = "telemetry.ui.dialogue_option_0"
+    TELEMETRY_UI_VISIBLE_CONTROL_COUNT = "telemetry.ui.visible_control_count"
     TELEMETRY_UI_TOOLTIP_VISIBLE = "telemetry.ui.tooltip_visible"
     TELEMETRY_UI_TOOLTIP_TEXT = "telemetry.ui.tooltip_text"
     TELEMETRY_UI_CONTEXT_MENU_OPEN = "telemetry.ui.context_menu_open"
@@ -863,12 +946,17 @@ class ConditionPath(StrEnum):
     UI_DIALOGUE_CAPABILITY = "ui.dialogue"
     UI_DIALOGUE_TARGET_CAPABILITY = "ui.dialogue.target"
     UI_DIALOGUE_OPTIONS_CAPABILITY = "ui.dialogue.options"
+    UI_VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
     UI_TOOLTIP_CAPABILITY = "ui.tooltip"
     NEARBY_CHARACTERS_CAPABILITY = "nearby.characters"
     NEARBY_VISIBLE_ENTITIES_CAPABILITY = "nearby.visible_entities"
     NEARBY_ROLES_CAPABILITY = "nearby.roles"
     NEARBY_SHOP_OWNERS_CAPABILITY = "nearby.shop_owners"
+    # The authorization fact is "this is a valid current dialogue target", not
+    # "this is a vendor". The legacy name remains the wire capability the
+    # installed plug-in emits; the generic name is the contract vocabulary.
     CONTROL_APPROACH_VENDOR_CAPABILITY = "control.approach_vendor"
+    CONTROL_APPROACH_DIALOGUE_TARGET_CAPABILITY = "control.approach_dialogue_target"
     IDENTITY_STABLE_HANDLES_CAPABILITY = "identity.stable_handles"
 
 
@@ -1087,12 +1175,75 @@ class Observation(StrictModel):
             for target in dialogue_targets(self.telemetry.nearby_entities)
         ]
 
+    def visible_control_digest(self) -> list[dict[str, Any]]:
+        """Exact controls the interface currently advertises, unambiguous only.
+
+        The bounded argument source for `activate_visible_control`. A label that
+        currently appears more than once is marked ambiguous rather than
+        silently resolved, because a duplicate reference must fail closed rather
+        than pick one. Bounds stay in telemetry; the planner names a label and
+        role, never a coordinate.
+        """
+
+        telemetry = self.telemetry
+        if telemetry is None or telemetry.ui.visible_controls is None:
+            return []
+        if "ui.visible_controls" not in telemetry.capabilities:
+            return []
+        controls = telemetry.ui.visible_controls
+        counts: dict[tuple[str, str], int] = {}
+        for control in controls:
+            key = (normalize_control_label(control.label), control.role)
+            counts[key] = counts.get(key, 0) + 1
+        # Bounded so this digest cannot overflow the irreducible planner
+        # envelope. Truncation is fail-closed: an unlisted control is one the
+        # planner will not author, never one it may author blindly.
+        return [
+            {
+                "exact_label": control.label,
+                "role": control.role,
+                "ambiguous": counts[(normalize_control_label(control.label), control.role)] > 1,
+            }
+            for control in controls[:MAX_DIGESTED_VISIBLE_CONTROLS]
+        ]
+
+    def semantic_action_digest(self) -> list[dict[str, Any]]:
+        """Exactly the reusable actions that are authorable right now.
+
+        Availability is computed from contracts against this observation's
+        control mode and capabilities, so the planner is never shown an action
+        the runtime would refuse. Each entry names where its arguments must come
+        from, which is what makes composition possible without a recipe.
+        """
+
+        # Imported here because the contract catalog is defined in terms of
+        # these models; the dependency only exists at call time.
+        from .action_contracts import planner_visible_contracts
+
+        capabilities = set(self.telemetry.capabilities if self.telemetry is not None else [])
+        return [
+            {
+                "kind": contract.kind,
+                "version": contract.version,
+                "summary": contract.summary,
+                "argument_source": contract.argument_source,
+                "idempotency": contract.idempotency.value,
+                "native_assisted": contract.native_assisted,
+            }
+            for contract in planner_visible_contracts(
+                control_mode=self.control_mode,
+                capabilities=capabilities,
+            )
+        ]
+
     def planner_payload(self, *, max_chars: int = 24000) -> str:
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         # Surface the deterministic talk-target list the planner must trust
         # rather than re-derive. A top-level non-collection key is preserved
         # through budgeting.
         payload["dialogue_targets"] = self.dialogue_target_digest()
+        payload["visible_controls"] = self.visible_control_digest()
+        payload["semantic_actions"] = self.semantic_action_digest()
         text = json.dumps(payload, indent=2, ensure_ascii=False)
         return budget_observation_payload(
             payload,
@@ -1133,6 +1284,26 @@ class InputBoundaryReport(StrictModel):
     evaluations: list[ConditionEvaluation] = Field(default_factory=list, max_length=24)
 
 
+class SemanticActionReceipt(StrictModel):
+    """Causal evidence for one reusable semantic action.
+
+    Records what the action's arguments actually resolved to against observed
+    state, so a receipt proves which real reference was acted on rather than
+    only which arguments were requested.
+    """
+
+    action_kind: str = Field(min_length=1, max_length=80)
+    contract_version: str = Field(min_length=1, max_length=32)
+    target_id: str | None = Field(default=None, max_length=200)
+    resolved_label: str | None = Field(default=None, max_length=500)
+    resolved_role: str | None = Field(default=None, max_length=32)
+    resolved_bounds: NormalizedPointerBounds | None = None
+    source_revision: WorldStateRevision | None = None
+    option_id: str | None = Field(default=None, max_length=128)
+    revalidation: str = Field(min_length=1, max_length=1000)
+    legacy_compatibility: bool = False
+
+
 class ActionReceipt(StrictModel):
     action: Action
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
@@ -1146,6 +1317,7 @@ class ActionReceipt(StrictModel):
     native_acknowledgement: NativeCommandAcknowledgement | None = None
     input_boundary: InputBoundaryReport | None = None
     calibration: CalibrationReport | None = None
+    semantic: SemanticActionReceipt | None = None
     accepted: bool
     executed: bool
     dry_run: bool

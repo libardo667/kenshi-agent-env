@@ -25,6 +25,7 @@ from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.models import (
+    ActivateVisibleControlAction,
     CharacterState,
     CommandDispatchContext,
     Condition,
@@ -176,6 +177,7 @@ async def dispatch_with_blocking_lease(
     validated: WorldStateRevision | None = None,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     preconditions: tuple[Condition, ...] = (),
+    action: object | None = None,
 ) -> tuple[BlockingLeaseController, object]:
     """Start a dispatch, swap canonical state while the lease waits, release it."""
 
@@ -194,7 +196,7 @@ async def dispatch_with_blocking_lease(
 
     task = asyncio.create_task(
         live.dispatch(
-            movement_action(),
+            action if action is not None else movement_action(),  # type: ignore[arg-type]
             command=CommandDispatchContext(
                 command_id=token.command_id,
                 based_on_revision=token.validated_revision,
@@ -482,5 +484,38 @@ def test_movement_action_is_the_pointer_bearing_case(tmp_path: Path) -> None:
         await live.reset()
         await live.step(SkillAction.model_validate(movement_action().model_dump()))
         assert controller.actions
+
+    asyncio.run(scenario())
+
+
+def test_semantic_control_action_is_rejected_at_the_boundary(tmp_path: Path) -> None:
+    """The generic fence covers the new actions, not only calibrated macros.
+
+    A control activation resolves its bounds from telemetry, so the interesting
+    failure is not a stale coordinate but a plan precondition that stopped being
+    true during the polite wait. No click may be emitted in that case.
+    """
+
+    async def scenario() -> None:
+        controller, transition = await dispatch_with_blocking_lease(
+            tmp_path,
+            conflict=observation(sequence=11, selected_id="char-2"),
+            action=ActivateVisibleControlAction(
+                exact_label="Show me your goods.", role="button"
+            ),
+        )
+
+        assert controller.actions == []
+        receipt = transition.receipt  # type: ignore[attr-defined]
+        assert receipt.accepted is False
+        assert receipt.executed is False
+        assert receipt.primitive_actions == 0
+        assert receipt.error_type == "InputBoundaryRejected"
+        boundary = receipt.input_boundary
+        assert boundary is not None
+        assert boundary.decision is InputBoundaryDecision.REJECTED
+        # Semantic-current bounds mean calibration is never the blocker here.
+        assert receipt.calibration is not None
+        assert receipt.calibration.action_class.value == "semantic_current"
 
     asyncio.run(scenario())

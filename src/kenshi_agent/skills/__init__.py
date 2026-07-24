@@ -1,3 +1,3 @@
-from .registry import MacroRegistry, UnknownSkillError
+from .registry import ApproachOptionParams, MacroRegistry, UnknownSkillError
 
-__all__ = ["MacroRegistry", "UnknownSkillError"]
+__all__ = ["ApproachOptionParams", "MacroRegistry", "UnknownSkillError"]

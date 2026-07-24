@@ -48,6 +48,12 @@
             },
             {
               "$ref": "#/$defs/SkillAction"
+            },
+            {
+              "$ref": "#/$defs/ApproachDialogueTargetAction"
+            },
+            {
+              "$ref": "#/$defs/ActivateVisibleControlAction"
             }
           ],
           "title": "Action"
@@ -150,6 +156,38 @@
       "title": "ActionOutcomeAssessment",
       "type": "string"
     },
+    "ActivateVisibleControlAction": {
+      "additionalProperties": false,
+      "description": "Activate exactly one control the interface currently advertises.\n\nThe arguments are an exact current label and role, not coordinates: the\nbounds come from telemetry and are re-resolved inside the input lease. The\naction knows nothing about which screen, which conversation, or which option\nindex it is activating.",
+      "properties": {
+        "kind": {
+          "const": "activate_visible_control",
+          "default": "activate_visible_control",
+          "title": "Kind",
+          "type": "string"
+        },
+        "exact_label": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Exact Label",
+          "type": "string"
+        },
+        "role": {
+          "default": "button",
+          "enum": [
+            "button",
+            "text"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "exact_label"
+      ],
+      "title": "ActivateVisibleControlAction",
+      "type": "object"
+    },
     "ActivePlanContext": {
       "additionalProperties": false,
       "properties": {
@@ -197,6 +235,29 @@
         "remaining_actions"
       ],
       "title": "ActivePlanContext",
+      "type": "object"
+    },
+    "ApproachDialogueTargetAction": {
+      "additionalProperties": false,
+      "description": "Walk to one exact currently observed dialogue target and open dialogue.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nOne monitored option owns the whole walk, so there is no planner-visible\n\"continue approaching\" command.",
+      "properties": {
+        "kind": {
+          "const": "approach_dialogue_target",
+          "default": "approach_dialogue_target",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ApproachDialogueTargetAction",
       "type": "object"
     },
     "BodyPartState": {
@@ -869,7 +930,8 @@
     "LiveContinuousPolicy": {
       "enum": [
         "disabled",
-        "food_procurement_v1"
+        "food_procurement_v1",
+        "dialogue_interaction_v1"
       ],
       "title": "LiveContinuousPolicy",
       "type": "string"

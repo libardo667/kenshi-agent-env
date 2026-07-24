@@ -1,0 +1,441 @@
+"""The generic interaction policy: properties, not a recipe.
+
+These tests deliberately assert that several *different* plans are acceptable.
+A policy that only admits one blessed sequence would pass a "does the Barman
+chain work" test and still have failed this milestone.
+"""
+
+from __future__ import annotations
+
+from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
+from kenshi_agent.models import (
+    Action,
+    ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
+    ClickAction,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    ConditionPath,
+    ControlMode,
+    Disposition,
+    GameState,
+    IdempotencyPolicy,
+    NearbyEntity,
+    NormalizedPointerBounds,
+    Observation,
+    PlanEnvelope,
+    PlanStep,
+    RiskBudget,
+    SkillAction,
+    TelemetrySnapshot,
+    UIState,
+    VisibleUIControl,
+    WorldStateRevision,
+)
+
+VENDOR_ID = "entity-barman"
+CIVILIAN_ID = "entity-wanderer"
+CAPABILITIES = [
+    "control.approach_vendor",
+    "game.time",
+    "identity.stable_handles",
+    "nearby.characters",
+    "nearby.roles",
+    "ui.dialogue",
+    "ui.dialogue.target",
+    "ui.visible_controls",
+]
+
+REVISION = WorldStateRevision(telemetry_sequence=42, capability_epoch=3)
+
+
+def bounds(y: float) -> NormalizedPointerBounds:
+    return NormalizedPointerBounds(min_x=0.1, max_x=0.4, min_y=y, max_y=y + 0.05)
+
+
+def person(entity_id: str, name: str, *, vendor: bool) -> NearbyEntity:
+    return NearbyEntity(
+        id=entity_id,
+        name=name,
+        is_animal=False,
+        has_dialogue=True,
+        has_vendor_list=vendor,
+        is_squad_leader=vendor,
+        disposition=Disposition.NEUTRAL,
+        distance=25.0,
+        conscious=True,
+    )
+
+
+def observation(
+    *,
+    controls: list[VisibleUIControl] | None = None,
+    capabilities: list[str] | None = None,
+    control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
+) -> Observation:
+    return Observation(
+        run_id="policy-test",
+        step_index=1,
+        mode="live",
+        control_mode=control_mode,
+        world_revision=REVISION,
+        telemetry=TelemetrySnapshot(
+            sequence=42,
+            identity_session_id="session-policy-test",
+            capabilities=capabilities if capabilities is not None else CAPABILITIES,
+            game=GameState(loaded=True, paused=True, elapsed_minutes=120.0),
+            ui=UIState(visible_controls=controls),
+            nearby_entities=[
+                person(VENDOR_ID, "Barman", vendor=True),
+                person(CIVILIAN_ID, "Nomad Wanderer", vendor=False),
+            ],
+        ),
+        telemetry_stale=False,
+        telemetry_age_seconds=0.1,
+    )
+
+
+def freshness() -> Condition:
+    return Condition(
+        kind=ConditionKind.TELEMETRY_FRESH,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=3.0,
+    )
+
+
+def dialogue_open_with(target_id: str) -> Condition:
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=ConditionPath.TELEMETRY_UI_DIALOGUE_TARGET_ID,
+        operator=ConditionOperator.EQUALS,
+        expected=target_id,
+        max_age_seconds=3.0,
+    )
+
+
+def screen_is(name: str) -> Condition:
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=ConditionPath.TELEMETRY_UI_ACTIVE_SCREEN,
+        operator=ConditionOperator.EQUALS,
+        expected=name,
+        max_age_seconds=3.0,
+    )
+
+
+def step(
+    step_id: str,
+    action: Action,
+    *,
+    success: list[Condition] | None = None,
+    on_success: str | None = None,
+    idempotency: IdempotencyPolicy = IdempotencyPolicy.AT_MOST_ONCE,
+    retry_budget: int = 0,
+) -> PlanStep:
+    return PlanStep(
+        step_id=step_id,
+        action=action,
+        preconditions=[freshness()],
+        success_conditions=success or [dialogue_open_with(VENDOR_ID)],
+        timeout_seconds=30.0,
+        idempotency=idempotency,
+        retry_budget=retry_budget,
+        on_success=on_success,
+    )
+
+
+def plan(
+    steps: list[PlanStep],
+    *,
+    entry: str | None = None,
+    pointer: int = 1,
+    native: int = 1,
+    control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
+) -> PlanEnvelope:
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="generic-interaction",
+        objective="Open dialogue with a valid current target and activate one control.",
+        control_mode=control_mode,
+        based_on_revision=REVISION,
+        assumptions=[freshness()],
+        steps=steps,
+        entry_step_id=entry or steps[0].step_id,
+        max_actions=len(steps) + 1,
+        max_wall_seconds=60.0,
+        max_game_seconds=120.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=pointer,
+            max_purchase_actions=0,
+            max_native_assisted_actions=native,
+        ),
+    )
+
+
+TRADE_CONTROLS = [
+    VisibleUIControl(label="Show me your goods.", role="button", bounds=bounds(0.5)),
+    VisibleUIControl(label="Goodbye.", role="button", bounds=bounds(0.6)),
+]
+
+
+class TestGenericComposition:
+    def test_approach_then_activate_is_accepted(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "approach",
+                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    on_success="activate",
+                ),
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.", role="button"
+                    ),
+                    success=[screen_is("trade")],
+                ),
+            ]
+        )
+        assert dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        ) == []
+
+    def test_a_different_order_is_equally_acceptable(self) -> None:
+        """The policy prescribes no sequence."""
+
+        composed = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(exact_label="Goodbye.", role="button"),
+                    success=[screen_is("world")],
+                    on_success="approach",
+                ),
+                step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID)),
+            ]
+        )
+        assert dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        ) == []
+
+    def test_a_single_action_plan_is_acceptable(self) -> None:
+        composed = plan(
+            [step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID))],
+            pointer=0,
+        )
+        assert dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        ) == []
+
+    def test_the_same_approach_action_accepts_a_non_vendor(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "approach",
+                    ApproachDialogueTargetAction(target_id=CIVILIAN_ID),
+                    success=[dialogue_open_with(CIVILIAN_ID)],
+                )
+            ],
+            pointer=0,
+        )
+        assert dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        ) == []
+
+
+class TestGenericPolicyRejections:
+    def test_raw_click_is_rejected(self) -> None:
+        composed = plan(
+            [step("click", ClickAction(x=0.5, y=0.5), success=[screen_is("trade")])],
+            native=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("raw controller primitive" in error for error in errors)
+
+    def test_raw_key_and_hotkey_are_rejected(self) -> None:
+        from kenshi_agent.models import HotkeyAction, KeyAction
+
+        for action in (KeyAction(key="space"), HotkeyAction(keys=["ctrl", "s"])):
+            composed = plan(
+                [step("raw", action, success=[screen_is("trade")])],
+                native=0,
+                pointer=0,
+            )
+            errors = dialogue_interaction_policy_errors(
+                composed, observation(controls=TRADE_CONTROLS)
+            )
+            assert any("raw controller primitive" in error for error in errors)
+
+    def test_legacy_skill_action_has_no_contract(self) -> None:
+        composed = plan(
+            [step("legacy", SkillAction(name="choose_show_goods"), success=[screen_is("trade")])],
+            native=0,
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("no authoritative action contract" in error for error in errors)
+
+    def test_unbound_control_label_is_rejected(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(exact_label="Buy everything", role="button"),
+                    success=[screen_is("trade")],
+                )
+            ],
+            native=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("does not bind to current state" in error for error in errors)
+
+    def test_ambiguous_control_label_is_rejected(self) -> None:
+        duplicated = [
+            VisibleUIControl(label="Trade", role="button", bounds=bounds(0.5)),
+            VisibleUIControl(label="Trade", role="button", bounds=bounds(0.7)),
+        ]
+        composed = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(exact_label="Trade", role="button"),
+                    success=[screen_is("trade")],
+                )
+            ],
+            native=0,
+        )
+        errors = dialogue_interaction_policy_errors(composed, observation(controls=duplicated))
+        assert any("ambiguous" in error for error in errors)
+
+    def test_unknown_target_is_rejected(self) -> None:
+        composed = plan(
+            [step("approach", ApproachDialogueTargetAction(target_id="entity-ghost"))],
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("does not bind to current state" in error for error in errors)
+
+    def test_native_action_is_rejected_in_interface_only(self) -> None:
+        composed = plan(
+            [step("approach", ApproachDialogueTargetAction(target_id=VENDOR_ID))],
+            pointer=0,
+            control_mode=ControlMode.INTERFACE_ONLY,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed,
+            observation(controls=TRADE_CONTROLS, control_mode=ControlMode.INTERFACE_ONLY),
+        )
+        assert any("not permitted in control mode" in error for error in errors)
+
+    def test_missing_capability_is_rejected(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.", role="button"
+                    ),
+                    success=[screen_is("trade")],
+                )
+            ],
+            native=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed,
+            observation(controls=TRADE_CONTROLS, capabilities=["game.time", "ui.dialogue"]),
+        )
+        assert any("unavailable capabilities" in error for error in errors)
+
+    def test_underdeclared_native_budget_is_rejected(self) -> None:
+        composed = plan(
+            [step("approach", ApproachDialogueTargetAction(target_id=VENDOR_ID))],
+            native=0,
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("native-assisted cost" in error for error in errors)
+
+    def test_underdeclared_pointer_budget_is_rejected(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.", role="button"
+                    ),
+                    success=[screen_is("trade")],
+                )
+            ],
+            native=0,
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("pointer cost" in error for error in errors)
+
+    def test_retrying_an_at_most_once_action_is_rejected(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.", role="button"
+                    ),
+                    success=[screen_is("trade")],
+                    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+                    retry_budget=1,
+                )
+            ],
+            native=0,
+            pointer=2,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("retries an at-most-once action" in error for error in errors)
+
+    def test_non_causal_success_condition_is_rejected(self) -> None:
+        control_mode_only = Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.CONTROL_MODE,
+            operator=ConditionOperator.EQUALS,
+            expected="native_assisted",
+            max_age_seconds=3.0,
+        )
+        composed = plan(
+            [
+                step(
+                    "approach",
+                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    success=[control_mode_only],
+                )
+            ],
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("no causal success condition" in error for error in errors)
+
+    def test_stale_telemetry_is_rejected(self) -> None:
+        state = observation(controls=TRADE_CONTROLS)
+        stale = state.model_copy(update={"telemetry_stale": True}, deep=True)
+        composed = plan(
+            [step("approach", ApproachDialogueTargetAction(target_id=VENDOR_ID))],
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(composed, stale)
+        assert any("fresh telemetry" in error for error in errors)

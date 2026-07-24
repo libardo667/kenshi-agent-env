@@ -10,6 +10,8 @@ from kenshi_agent.control.base import InputController, PrimitiveInputAction, Win
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.models import (
     ActionReceipt,
+    ActivateVisibleControlAction,
+    CalibrationStatus,
     CharacterState,
     ClickAction,
     CommandDispatchContext,
@@ -24,10 +26,13 @@ from kenshi_agent.models import (
     NativeCommandStatus,
     NativeControlState,
     NearbyEntity,
+    NormalizedPointerBounds,
     PauseAction,
+    PointerActionClass,
     SkillAction,
     TelemetrySnapshot,
     UIState,
+    VisibleUIControl,
 )
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
@@ -915,5 +920,186 @@ def test_native_target_must_still_match_current_stable_observation(
 
         assert controller.actions == []
         assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+# ---------------------------------------------------------------------------
+# Generic visible-control activation
+#
+# Bounds come from telemetry and are re-resolved inside the acquired lease.
+# These tests exercise the drift cases that must emit zero input.
+# ---------------------------------------------------------------------------
+
+
+class ControlTelemetry(PulseTelemetry):
+    """Telemetry whose advertised controls can change between reads."""
+
+    def __init__(self, controls: list[VisibleUIControl] | None) -> None:
+        super().__init__()
+        self.capabilities = ["game.pause", "ui.visible_controls"]
+        self.controls = controls
+        self.controls_after_first_read: list[VisibleUIControl] | None = None
+        self._reads = 0
+
+    def read(self) -> TelemetryRead:
+        self._reads += 1
+        if self._reads > 1 and self.controls_after_first_read is not None:
+            self.controls = self.controls_after_first_read
+        self.sequence += 1
+        return TelemetryRead(
+            snapshot=TelemetrySnapshot(
+                sequence=self.sequence,
+                captured_at=datetime.now(UTC),
+                capabilities=self.capabilities,
+                game=GameState(loaded=True, paused=self.paused),
+                ui=UIState(visible_controls=self.controls),
+                native_control=self.native_control,
+            ),
+            age_seconds=0.0,
+            stale=False,
+            path=Path("telemetry.json"),
+        )
+
+
+def control(label: str, y: float, role: str = "button") -> VisibleUIControl:
+    return VisibleUIControl(
+        label=label,
+        role=role,  # type: ignore[arg-type]
+        bounds=NormalizedPointerBounds(min_x=0.2, max_x=0.6, min_y=y, max_y=y + 0.04),
+    )
+
+
+def control_environment(tmp_path: Path, telemetry: ControlTelemetry) -> tuple[
+    LiveEnvironment, PulseController
+]:
+    controller = PulseController(telemetry)  # type: ignore[arg-type]
+    environment = live_environment(
+        tmp_path,
+        telemetry,  # type: ignore[arg-type]
+        controller,
+        movement_registry(),
+    )
+    return environment, controller
+
+
+def test_visible_control_clicks_the_observed_bounds_center(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = ControlTelemetry([control("Show me your goods.", 0.50)])
+        environment, controller = control_environment(tmp_path, telemetry)
+        await environment.observe()
+
+        transition = await environment.step(
+            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
+        )
+
+        clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
+        assert len(clicks) == 1
+        # Center of the telemetry-reported bounds, never a model-authored point.
+        assert clicks[0].x == pytest.approx(0.4)
+        assert clicks[0].y == pytest.approx(0.52)
+        assert transition.receipt.executed
+        semantic = transition.receipt.semantic
+        assert semantic is not None
+        assert semantic.resolved_label == "Show me your goods."
+        assert semantic.resolved_role == "button"
+        assert semantic.resolved_bounds is not None
+        assert semantic.source_revision is not None
+        assert "Re-resolved" in semantic.revalidation
+
+    asyncio.run(scenario())
+
+
+def test_two_different_labels_use_the_same_action(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = ControlTelemetry(
+            [control("Show me your goods.", 0.50), control("Goodbye.", 0.70)]
+        )
+        environment, controller = control_environment(tmp_path, telemetry)
+        await environment.observe()
+
+        await environment.step(
+            ActivateVisibleControlAction(exact_label="Goodbye.", role="button")
+        )
+        clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
+        assert clicks[-1].y == pytest.approx(0.72)
+
+        await environment.step(
+            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
+        )
+        clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
+        assert clicks[-1].y == pytest.approx(0.52)
+
+    asyncio.run(scenario())
+
+
+def test_control_that_disappears_inside_the_lease_emits_zero_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = ControlTelemetry([control("Show me your goods.", 0.50)])
+        telemetry.controls_after_first_read = [control("Goodbye.", 0.70)]
+        environment, controller = control_environment(tmp_path, telemetry)
+        await environment.observe()
+
+        with pytest.raises(RuntimeError, match="No input was sent"):
+            await environment.step(
+                ActivateVisibleControlAction(
+                    exact_label="Show me your goods.", role="button"
+                )
+            )
+
+        assert not [a for a in controller.actions if isinstance(a, ClickAction)]
+
+    asyncio.run(scenario())
+
+
+def test_control_that_becomes_ambiguous_inside_the_lease_emits_zero_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = ControlTelemetry([control("Trade", 0.50)])
+        telemetry.controls_after_first_read = [control("Trade", 0.50), control("Trade", 0.80)]
+        environment, controller = control_environment(tmp_path, telemetry)
+        await environment.observe()
+
+        with pytest.raises(RuntimeError, match="ambiguous"):
+            await environment.step(
+                ActivateVisibleControlAction(exact_label="Trade", role="button")
+            )
+
+        assert not [a for a in controller.actions if isinstance(a, ClickAction)]
+
+    asyncio.run(scenario())
+
+
+def test_visible_control_is_semantic_current_not_profile_calibrated(
+    tmp_path: Path,
+) -> None:
+    """A resolution change must not block an action whose bounds are re-read."""
+
+    async def scenario() -> None:
+        telemetry = ControlTelemetry([control("Show me your goods.", 0.50)])
+        controller = ResizeInsideLeaseController(telemetry)  # type: ignore[arg-type]
+        environment = live_environment(
+            tmp_path,
+            telemetry,  # type: ignore[arg-type]
+            controller,
+            movement_registry(),
+        )
+        await environment.observe()
+
+        action = ActivateVisibleControlAction(
+            exact_label="Show me your goods.", role="button"
+        )
+        assert (
+            environment.classify_pointer_action(action)
+            is PointerActionClass.SEMANTIC_CURRENT
+        )
+
+        transition = await environment.step(action)
+        assert transition.receipt.executed
+        assert transition.receipt.calibration is not None
+        assert transition.receipt.calibration.status is CalibrationStatus.NOT_REQUIRED
 
     asyncio.run(scenario())

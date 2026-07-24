@@ -5,6 +5,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+from .action_contracts import contract_for
 from .config import PlanningConfig
 from .models import (
     Action,
@@ -59,6 +60,11 @@ class SystemPlanningClock(PlanningClock):
         await asyncio.sleep(seconds)
 
 
+_NATIVE_APPROACH_CAPABILITIES = (
+    "control.approach_dialogue_target",
+    "control.approach_vendor",
+)
+
 _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.game.loaded": ("game.pause",),
     "telemetry.game.paused": ("game.pause",),
@@ -75,18 +81,21 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.dialogue_target_id": ("ui.dialogue.target",),
     "telemetry.ui.dialogue_option_count": ("ui.dialogue.options",),
     "telemetry.ui.dialogue_option_0": ("ui.dialogue.options",),
+    "telemetry.ui.visible_control_count": ("ui.visible_controls",),
     "telemetry.ui.tooltip_visible": ("ui.tooltip",),
     "telemetry.ui.tooltip_text": ("ui.tooltip",),
     "telemetry.ui.context_menu_open": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.selected_character_id": ("squad.basic",),
     "telemetry.ui.selected_character_count": ("identity.stable_handles",),
     "telemetry.active_shop_trader_count": ("nearby.shop_owners",),
-    "telemetry.native_control.available": ("control.approach_vendor",),
-    "telemetry.native_control.last_command_sequence": ("control.approach_vendor",),
-    "telemetry.native_control.last_command": ("control.approach_vendor",),
-    "telemetry.native_control.last_result": ("control.approach_vendor",),
-    "telemetry.native_control.last_target": ("control.approach_vendor",),
-    "telemetry.native_control.last_target_id": ("control.approach_vendor",),
+    # Either the generic dialogue-approach capability or the legacy vendor-named
+    # alias the installed plug-in still emits authorizes these native fields.
+    "telemetry.native_control.available": _NATIVE_APPROACH_CAPABILITIES,
+    "telemetry.native_control.last_command_sequence": _NATIVE_APPROACH_CAPABILITIES,
+    "telemetry.native_control.last_command": _NATIVE_APPROACH_CAPABILITIES,
+    "telemetry.native_control.last_result": _NATIVE_APPROACH_CAPABILITIES,
+    "telemetry.native_control.last_target": _NATIVE_APPROACH_CAPABILITIES,
+    "telemetry.native_control.last_target_id": _NATIVE_APPROACH_CAPABILITIES,
     "selected.alive": ("squad.basic",),
     "selected.conscious": ("squad.basic",),
     "selected.down": ("squad.basic",),
@@ -162,6 +171,11 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.ui.dialogue_option_0": (
             telemetry.ui.dialogue_options[0]
             if telemetry.ui.dialogue_options
+            else None
+        ),
+        "telemetry.ui.visible_control_count": (
+            len(telemetry.ui.visible_controls)
+            if telemetry.ui.visible_controls is not None
             else None
         ),
         "telemetry.ui.tooltip_visible": telemetry.ui.tooltip_visible,
@@ -428,6 +442,11 @@ def _action_risk(
     action: Action,
     macros: MacroRegistry,
 ) -> tuple[int, int, int]:
+    # A contracted action declares its own cost, so risk accounting no longer
+    # depends on expanding a macro or recognizing an exact skill name.
+    contract = contract_for(action)
+    if contract is not None:
+        return contract.risk.as_tuple()
     actions = [action]
     native = 0
     if isinstance(action, SkillAction):
@@ -457,6 +476,10 @@ def validate_plan(
             from .food_procurement import food_procurement_policy_errors
 
             errors.extend(food_procurement_policy_errors(plan, observation))
+        elif config.live_execution_policy == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
+            from .dialogue_interaction import dialogue_interaction_policy_errors
+
+            errors.extend(dialogue_interaction_policy_errors(plan, observation))
     if plan.control_mode != observation.control_mode:
         errors.append(
             f"control mode {plan.control_mode.value!r} does not match "

@@ -5,6 +5,14 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..action_contracts import (
+    ACTIVATE_VISIBLE_CONTROL_CONTRACT,
+    APPROACH_DIALOGUE_TARGET_CONTRACT,
+    NATIVE_APPROACH_CAPABILITY,
+    NATIVE_APPROACH_CAPABILITY_ALIASES,
+    NATIVE_APPROACH_WIRE_COMMAND,
+    contract_for,
+)
 from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ..control.base import InputController, PrimitiveInputAction
 from ..control.calibration import (
@@ -17,6 +25,8 @@ from ..input_boundary import ExecutionToken
 from ..models import (
     Action,
     ActionReceipt,
+    ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
     CalibrationReport,
     ClickAction,
     CommandDispatchContext,
@@ -34,9 +44,12 @@ from ..models import (
     PauseAction,
     PointerActionClass,
     ScrollAction,
+    SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
+    SkillArgument,
     StopAction,
+    TelemetrySnapshot,
     Transition,
     WaitAction,
     WorldStateRevision,
@@ -126,18 +139,7 @@ class LiveEnvironment(AgentEnvironment):
         telemetry_age = None
         try:
             result = self.telemetry_reader.read()
-            telemetry_snapshot = result.snapshot
-            if self.control_mode == ControlMode.INTERFACE_ONLY:
-                telemetry_snapshot = telemetry_snapshot.model_copy(
-                    update={
-                        "capabilities": [
-                            capability
-                            for capability in telemetry_snapshot.capabilities
-                            if not capability.startswith("control.")
-                        ],
-                        "native_control": NativeControlState(),
-                    }
-                )
+            telemetry_snapshot = self._apply_control_mode(result.snapshot)
             telemetry_stale = result.stale
             telemetry_age = result.age_seconds
             if result.stale:
@@ -197,6 +199,47 @@ class LiveEnvironment(AgentEnvironment):
         )
         self._last_observation = observation
         return observation
+
+    def _apply_control_mode(self, snapshot: TelemetrySnapshot) -> TelemetrySnapshot:
+        """Withhold native-control evidence that `interface_only` may not use."""
+
+        if self.control_mode != ControlMode.INTERFACE_ONLY:
+            return snapshot
+        return snapshot.model_copy(
+            update={
+                "capabilities": [
+                    capability
+                    for capability in snapshot.capabilities
+                    if not capability.startswith("control.")
+                ],
+                "native_control": NativeControlState(),
+            }
+        )
+
+    def _observation_from_snapshot(self, snapshot: TelemetrySnapshot) -> Observation:
+        """A minimal current observation for in-lease reference re-resolution.
+
+        Deliberately not a full `observe()`: no capture, no event collection, no
+        `_last_observation` mutation. It exists so an action can re-bind its
+        reference against fresh telemetry at the moment of input without
+        disturbing the canonical stream the executor and supervisor share.
+        """
+
+        telemetry = self._apply_control_mode(snapshot)
+        return Observation(
+            run_id=self.run_id,
+            step_index=self._step_index,
+            mode="live",
+            control_mode=self.control_mode,
+            world_revision=WorldStateRevision(
+                telemetry_sequence=telemetry.sequence,
+                capability_epoch=self._capability_epoch,
+                observed_at_monotonic=time.monotonic(),
+            ),
+            telemetry=telemetry,
+            telemetry_stale=False,
+            telemetry_age_seconds=0.0,
+        )
 
     async def step(self, action: Action) -> Transition:
         return await self._step(action, command=None)
@@ -366,6 +409,12 @@ class LiveEnvironment(AgentEnvironment):
         replays profile coordinates and needs an exact calibration identity.
         """
 
+        # A contracted action declares its own pointer class, so a semantic
+        # action never inherits a calibrated profile requirement from the macro
+        # whose primitives it happens to reuse.
+        contract = contract_for(action)
+        if contract is not None:
+            return contract.pointer_class
         if isinstance(action, SkillAction):
             if action.name in self.controls_config.semantic_pointer_skills:
                 return PointerActionClass.SEMANTIC_CURRENT
@@ -482,6 +531,14 @@ class LiveEnvironment(AgentEnvironment):
                     ),
                 }
             )
+        if isinstance(action, ApproachDialogueTargetAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_semantic_approach(action, started, command)
+        if isinstance(action, ActivateVisibleControlAction):
+            return await self._execute_visible_control(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -493,11 +550,19 @@ class LiveEnvironment(AgentEnvironment):
                         raise RuntimeError(
                             "Native command execution requires caller-owned command context."
                         )
-                    return await self._execute_native_vendor_approach(
+                    target_id = action.argument_map().get("target_id")
+                    if not isinstance(target_id, str) or not target_id:
+                        raise RuntimeError(
+                            "Native vendor approach requires an exact target_id."
+                        )
+                    return await self._execute_native_approach(
                         action,
                         started,
                         command,
+                        target_id=target_id,
                         pulse_seconds=pulse_seconds,
+                        primitive_skill=action,
+                        require_vendor_role=True,
                     )
                 return await self._execute_movement_pulse(
                     action, started, pulse_seconds=pulse_seconds
@@ -664,18 +729,129 @@ class LiveEnvironment(AgentEnvironment):
             message=(f"Executed skill {action.name!r}. {outcome} " + " ".join(messages)),
         )
 
-    async def _execute_native_vendor_approach(
+    async def _execute_semantic_approach(
         self,
-        action: SkillAction,
+        action: ApproachDialogueTargetAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Issue one generic dialogue-target approach through the native bridge.
+
+        The underlying primitives and pulse timing still come from the
+        configured native approach macro — that hotkey and its calibrated pulse
+        are proven — but the authorization is the generic dialogue-target fence,
+        so a non-vendor target is equally valid here.
+        """
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Semantic approach requires a configured native approach skill to "
+                "supply its bounded primitives."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value=action.target_id)],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native approach skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=APPROACH_DIALOGUE_TARGET_CONTRACT.version,
+            target_id=action.target_id,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Bound to the exact stable dialogue target and issued at most one "
+                "native pathing order for this option lifecycle."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+        )
+
+    async def _execute_visible_control(
+        self,
+        action: ActivateVisibleControlAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Click exactly one currently advertised control, re-resolved in-lease.
+
+        This runs inside the acquired input lease, after the generic input
+        boundary already revalidated the plan's typed authority. What is checked
+        here is the part only this action knows: that the exact label, role,
+        uniqueness, and bounds it bound to are still what the interface reports.
+        Any drift emits zero input.
+        """
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(action, observation)
+        if not binding.bound or binding.resolved_bounds is None:
+            raise RuntimeError(
+                f"No input was sent: {binding.reason}"
+            )
+        bounds = binding.resolved_bounds
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        primitive_receipt = await self.controller.execute(ClickAction(x=x, y=y))
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=ACTIVATE_VISIBLE_CONTROL_CONTRACT.version,
+            resolved_label=binding.resolved_label,
+            resolved_role=binding.resolved_role,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-resolved to exactly one current control inside the input lease "
+                f"before the click. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Activated the current {binding.resolved_role} control "
+                    f"{binding.resolved_label!r} at its observed bounds. "
+                    "A later observation must confirm the resulting transition."
+                ),
+            }
+        )
+
+    async def _execute_native_approach(
+        self,
+        action: Action,
         started: datetime,
         command: CommandDispatchContext,
         *,
+        target_id: str,
         pulse_seconds: float,
+        primitive_skill: SkillAction,
+        require_vendor_role: bool,
+        semantic: SemanticActionReceipt | None = None,
     ) -> ActionReceipt:
-        request = self._native_vendor_request(action, command)
+        request = self._native_approach_request(
+            target_id,
+            command,
+            require_vendor_role=require_vendor_role,
+        )
         request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
         write_native_command_request_atomic(request_path, request)
-        primitive_count, messages = await self._execute_skill_primitives(action)
+        primitive_count, messages = await self._execute_skill_primitives(primitive_skill)
         acknowledgement = await self._wait_for_native_acknowledgement(request)
         acknowledgement_message = (
             f"Native acknowledgement {acknowledgement.status.value!r} "
@@ -697,6 +873,7 @@ class LiveEnvironment(AgentEnvironment):
                 message=" ".join(messages),
                 error_type="NativeCommandRejected",
                 native_acknowledgement=acknowledgement,
+                semantic=semantic,
             )
         if acknowledgement.status in {
             NativeCommandStatus.CANCELLED,
@@ -719,20 +896,38 @@ class LiveEnvironment(AgentEnvironment):
                     else None
                 ),
                 native_acknowledgement=acknowledgement,
+                semantic=semantic,
             )
         receipt = await self._execute_movement_pulse(
-            action,
+            primitive_skill,
             started,
             pulse_seconds=pulse_seconds,
             prepared_primitives=(primitive_count, messages),
         )
-        return receipt.model_copy(update={"native_acknowledgement": acknowledgement})
+        return receipt.model_copy(
+            update={
+                "action": action,
+                "native_acknowledgement": acknowledgement,
+                "semantic": semantic,
+            }
+        )
 
-    def _native_vendor_request(
+    def _native_approach_request(
         self,
-        action: SkillAction,
+        target_id: str,
         command: CommandDispatchContext,
+        *,
+        require_vendor_role: bool,
     ) -> NativeCommandRequest:
+        """Build the native pathing request for one exact stable target.
+
+        `require_vendor_role` is what separates the legacy vendor macro from the
+        generic dialogue-target action. The generic action asks only for the
+        authorization fact it actually needs — a conscious, non-hostile,
+        non-animal person with dialogue — because approaching and talking is not
+        a commerce affordance.
+        """
+
         observation = self._last_observation
         if observation is None or observation.telemetry is None:
             raise RuntimeError("Native command requires a current telemetry observation.")
@@ -746,12 +941,13 @@ class LiveEnvironment(AgentEnvironment):
             )
         telemetry = observation.telemetry
         required_capabilities = {
-            "control.approach_vendor",
             "identity.stable_handles",
             "nearby.characters",
             "nearby.roles",
         }
         missing = required_capabilities - set(telemetry.capabilities)
+        if not NATIVE_APPROACH_CAPABILITY_ALIASES & set(telemetry.capabilities):
+            missing.add(NATIVE_APPROACH_CAPABILITY)
         if missing:
             raise RuntimeError(
                 "Native command lacks required capabilities: " + ", ".join(sorted(missing))
@@ -761,28 +957,27 @@ class LiveEnvironment(AgentEnvironment):
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
             raise RuntimeError("Native command requires one exact primary selection.")
-        target_id = action.argument_map().get("target_id")
-        if not isinstance(target_id, str) or not target_id:
-            raise RuntimeError("Native vendor approach requires an exact target_id.")
+        if not target_id:
+            raise RuntimeError("Native approach requires an exact target_id.")
         target = next(
             (entity for entity in telemetry.nearby_entities if entity.id == target_id),
             None,
         )
         if target is None:
             raise RuntimeError("Native command target is absent from current nearby telemetry.")
-        if (
-            target.is_animal is not False
-            or target.has_vendor_list is not True
-            or target.is_squad_leader is not True
-            or target.has_dialogue is not True
-            or target.conscious is not True
-            or target.disposition.value not in {"friendly", "neutral"}
-        ):
+        if not target.is_dialogue_target() or target.conscious is not True:
+            raise RuntimeError(
+                "Native command target lacks exact current conscious non-hostile "
+                "dialogue evidence."
+            )
+        if require_vendor_role and not target.is_confirmed_vendor():
             raise RuntimeError("Native command target lacks exact safe current vendor evidence.")
         return NativeCommandRequest(
             schema_version="1.0",
             command_id=command.command_id,
-            command="approach_confirmed_vendor",
+            # The wire name is a legacy alias retained so the proven installed
+            # plug-in keeps parsing this request without a rebuild.
+            command=NATIVE_APPROACH_WIRE_COMMAND,
             control_mode=ControlMode.NATIVE_ASSISTED,
             identity_session_id=telemetry.identity_session_id,
             based_on_revision=command.based_on_revision,

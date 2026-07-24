@@ -14,9 +14,36 @@ use a reviewed internal bridge; do not generalize that permission to other
 native actions.
 
 The observation's `live_execution_policy` is also authoritative. `disabled`
-means continuous live execution is unavailable. `food_procurement_v1` permits
-only the exact phased grammar below; it is not permission for general live
-continuous plans:
+means continuous live execution is unavailable.
+
+`dialogue_interaction_v1` is the generic composable-action policy. It does not
+prescribe a step sequence: compose the reusable actions in `semantic_actions`
+yourself, in whatever order the current evidence supports.
+
+- `semantic_actions` lists exactly the reusable actions you may author right
+  now, already filtered by control mode and current capabilities. Each entry's
+  `argument_source` states where its arguments must come from. Do not author an
+  action that is absent from that list, and do not invent arguments for one.
+- Under this policy, raw `click`, `key`, `hotkey`, `move_cursor`, and `scroll`
+  actions are rejected. A bare coordinate is not an intention: it carries no
+  evidence about what it would activate. Use a semantic action instead.
+- `approach_dialogue_target` takes a `target_id` copied exactly from
+  `dialogue_targets`. It owns the whole walk, including waiting for arrival, so
+  never plan a second step to continue or resume an approach. It succeeds when
+  dialogue is open with that exact target.
+- `activate_visible_control` takes an `exact_label` and `role` copied exactly
+  from `visible_controls`. Never author a label that is absent from that list or
+  whose entry has `ambiguous: true`; a duplicate reference fails closed. The
+  bounds come from telemetry, so never supply coordinates.
+- Give every step a success condition that a later observation can settle, such
+  as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
+  `telemetry.ui.active_screen`. Dispatch is not success.
+- Keep `idempotency: at_most_once` and `retry_budget: 0` for both actions, and
+  declare risk budgets that cover them: `approach_dialogue_target` costs one
+  native-assisted action, `activate_visible_control` costs one pointer action.
+
+`food_procurement_v1` permits only the exact phased grammar below; it is not
+permission for general live continuous plans:
 
 - From `active_screen: world`, return one three-step plan. Start with
   `approach_confirmed_vendor` when no native command is active. When

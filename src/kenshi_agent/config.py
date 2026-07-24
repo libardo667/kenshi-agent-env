@@ -50,6 +50,11 @@ class PlanningConfig(ConfigModel):
     observation_pump_enabled: bool = True
     stateful_movement_options_enabled: bool = True
     stateful_approach_options_enabled: bool = False
+    # Arrival/threat radii for the contracted semantic approach. The monitored
+    # option is not optional for that action, so these are thresholds, not a
+    # feature flag.
+    semantic_approach_arrival_distance: float = Field(default=5.0, gt=0.0, le=100.0)
+    semantic_approach_threat_distance: float = Field(default=15.0, gt=0.0, le=500.0)
     concurrent_option_planning_enabled: bool = True
     observation_pump_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     state_history_limit: int = Field(default=128, ge=8, le=4096)
@@ -165,6 +170,10 @@ class ControlsConfig(ConfigModel):
     # Skills whose pointer coordinates come from live semantic bounds that are
     # re-read inside the input lease, so they do not need a calibrated profile.
     semantic_pointer_skills: list[str] = Field(default_factory=list, max_length=64)
+    # The bounded macro supplying the native approach hotkey and its calibrated
+    # movement pulse. The semantic approach action reuses those proven
+    # primitives; it does not inherit the macro's vendor-specific authorization.
+    native_approach_skill: str | None = Field(default=None, min_length=1, max_length=80)
 
     def expected_calibration_identity(self) -> CalibrationIdentity:
         return CalibrationIdentity(

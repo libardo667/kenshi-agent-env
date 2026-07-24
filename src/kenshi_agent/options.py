@@ -8,6 +8,7 @@ from .approach import ApproachMonitor, ApproachStatus
 from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
 from .models import (
+    Action,
     CommandDispatchContext,
     Observation,
     SkillAction,
@@ -181,7 +182,7 @@ class StatefulApproachOption:
         self,
         *,
         option_id: str,
-        action: SkillAction,
+        action: Action,
         environment: AgentEnvironment,
         target_id: str,
         arrival_distance: float = 5.0,
