@@ -245,9 +245,24 @@ loaded, paused telemetry have elapsed. The installed profile and real
 no-launch preflight match; the prior settings are timestamp-backed up.
 Portable evidence is 235 passing tests, Ruff, strict mypy, compile checks,
 schema parity, the default doctor, three successful fixed single-step seeds,
-and the continuous mock proof. This is offline-verified only: the candidate
-still needs one supervised no-gameplay smoke before the fast renderer
-recurrence can be considered mitigated.
+and the continuous mock proof.
+
+That candidate then received its supervised smoke on 2026-07-24 and **failed**.
+Launch cleared the new 45-second health window, but a zero-input sampling soak
+reproduced `BAD STUFF` at 141 seconds with Kenshi paused. Private memory was
+flat at 3.741 GiB across every sample and free physical memory held near
+1.8 GiB. Across three successively more aggressive profiles, survival times
+were ~40 minutes, 46 seconds, and ~3.7 minutes, which does not correlate with
+graphics reduction.
+
+The graphics-settings hypothesis is therefore falsified and no further
+settings-tuning slice should be planned on that premise. The adapter driver
+(`32.0.101.6737`, 2025-04-15) has never been changed across any incident,
+Windows TDR values are unset defaults, and no OS-level display-reset event was
+logged. Exact evidence is under
+`runs/p0-iris-xe-v2-smoke-20260724T005717Z/`. Long unattended live runs are now
+treated as gated on a driver-level result or different hardware with a discrete
+GPU, not on further configuration work on this host.
 
 ## Pending live milestone: P6 conditional food-procurement chain
 
@@ -1177,9 +1192,13 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 - Broad live stability remains open. The Intel Iris Xe client reproduced the
   DirectX device reset after roughly forty minutes even with Low textures and
-  reflections disabled. View distance is now 2500 and the reduced profile
-  passed two short supervised launches, but it has not completed a longer
-  stability soak.
+  reflections disabled. The further-reduced `iris-xe-stability-v2` profile then
+  failed its supervised smoke, reproducing `BAD STUFF` after 141 paused,
+  zero-input seconds with flat memory. Survival across three progressively more
+  aggressive profiles was ~40 min, 46 s, and ~3.7 min, so graphics reduction is
+  not the operative variable. The untried levers are the unchanged Intel driver
+  `32.0.101.6737`, default Windows TDR values, and host headroom; treat long
+  live runs as gated on a driver result or discrete-GPU hardware.
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
@@ -1194,17 +1213,20 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 
 ## Ordered next candidates
 
-1. P0: supervised bounded `iris-xe-stability-v2` smoke plus 1920x1080 launcher
-   interruption, after a fresh user handoff confirming the computer is clear.
-   The stability gate cannot close on a soak alone until the fast renderer
-   recurrence has a credible mitigation or falsifying comparison.
-2. P4: make calibration identity a versioned fingerprint covering UI scale, DPI
+1. P4: make calibration identity a versioned fingerprint covering UI scale, DPI
    transform, window mode, keymap, and profile hash, and carry it on the
    `ExecutionToken` so the P3 fence checks it too. The dependency is now
    explicit rather than deferred.
-3. P5: unify final safe-state behavior across stop, max-step, planner failure,
+2. P5: unify final safe-state behavior across stop, max-step, planner failure,
    environment exception, cancellation, and close into one idempotent
    `ensure_final_safe_state` owner.
-4. P6: resume the exact conditional live food-procurement chain only after the
-   P0 launch/stability gate closes and explicit live authorization is current.
-5. P8: add CI and a reproducible Python lockfile as separate bounded slices.
+3. P6: build one bounded travel/approach option long enough that hosted
+   strategic latency can overlap useful execution. Portable proof first; the
+   live claim stays gated.
+4. P8: add CI and a reproducible Python lockfile as separate bounded slices.
+5. Live gates (deferred, not scheduled): launcher interruption,
+   alternate-resolution startup, ownership countdown/reset/disarm, and the P6
+   food chain. These need a host that survives a bounded run. Do not schedule
+   another graphics-settings slice against the renderer fault; the next
+   stability experiment is a driver change or different hardware, and that is
+   an operator decision rather than a repository slice.

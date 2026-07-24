@@ -118,10 +118,23 @@ inspection alone.
       `BAD STUFF`/Steam DLL dialogs, and non-advancing post-load telemetry.
       Launcher success now requires a configured 45-second fresh loaded-paused
       health window.
-- [ ] Run one supervised no-gameplay smoke with `iris-xe-stability-v2`; preserve
-      the post-load health result, logs, profile verification, memory headroom,
-      and any renderer dialog before deciding whether the fast recurrence is
-      mitigated.
+- [x] Run one supervised no-gameplay smoke with `iris-xe-stability-v2`. It
+      **failed**. Launch cleared the 45-second post-load health window, but a
+      zero-input sampling soak reproduced `BAD STUFF` at 141 seconds while the
+      game was paused. Private memory was flat at 3.741 GiB across every
+      sample and free physical memory held near 1.8 GiB. Evidence is under
+      `runs/p0-iris-xe-v2-smoke-20260724T005717Z/`; the profile was verified
+      still installed after the failure and the crashed process was stopped.
+- [x] Compare survival across the three measured profiles: ~40 minutes,
+      46 seconds, and ~3.7 minutes under progressively more aggressive
+      reduction. Graphics reduction is not the operative variable, so the
+      settings hypothesis is falsified and no further tuning slice is planned.
+- [ ] Decide the next stability experiment at the operator level, not as a
+      repository slice: Intel driver `32.0.101.6737` has never been changed,
+      Windows `TdrDelay`/`TdrLevel` are unset defaults, host headroom is
+      untested with the machine otherwise idle, and a discrete-GPU host would
+      bypass the fault entirely. Do not re-open live gameplay gates until one
+      of these produces a host that survives a bounded run.
 - [ ] Repeat the semantic startup boundary at one alternate resolution, then
       restore and re-verify the intended 1920x1080 profile.
 
