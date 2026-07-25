@@ -56,7 +56,10 @@ class OpenAIPlanner(Planner):
                 "text": (
                     request
                     + f"Return the {output_model.__name__} schema only.\n\n"
-                    + observation.planner_payload(max_chars=self.config.max_observation_chars)
+                    + observation.planner_payload(
+                        max_chars=self.config.max_observation_chars,
+                        max_context_chars=self.config.max_context_chars,
+                    )
                 ),
             }
         ]

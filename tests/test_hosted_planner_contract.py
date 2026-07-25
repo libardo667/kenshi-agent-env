@@ -393,52 +393,53 @@ def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
     assert not _is_schema_refusal(rate_limited)
 
 
-def test_the_control_list_grows_with_the_room_available() -> None:
-    """How many controls the planner sees must follow the budget, not a constant.
+def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
+    """A control the planner was not shown is one it cannot press.
 
-    A hand-picked cap is wrong on both sides: it starves a crowded trade screen
-    and leaves room unused on a sparse one. Raising the constant only moves the
-    cliff, so what is pinned here is that the count actually tracks the budget.
+    Truncating the control list does not buy a smaller observation, it buys an
+    agent that cannot press a button it is looking at and has no way to learn
+    the button exists. `max_observation_chars` is a spending preference, so the
+    action surface is rendered whole even when it costs more than that; only
+    the model's real context ceiling may cut it, and that says so out loud.
     """
-    from kenshi_agent.models import VisibleUIControl, NormalizedPointerBounds
+    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
 
-    def cell(index: int, role: str) -> VisibleUIControl:
-        return VisibleUIControl(
+    controls = [
+        VisibleUIControl(
             label=f"{role}-{index}",
             role=role,  # type: ignore[arg-type]
             window="SHOP",
-            bounds=NormalizedPointerBounds(
-                min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2
-            ),
+            bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
         )
-
-    controls = [
-        cell(i, role)
-        for i in range(60)
+        for index in range(60)
         for role in ("button", "item", "text")
     ]
     crowded = observation().model_copy(
         update={
             "telemetry": TelemetrySnapshot(
-                ui=UIState(
-                    active_screen="trade",
-                    visible_controls=controls,
-                ),
+                ui=UIState(active_screen="trade", visible_controls=controls),
                 capabilities=["ui.visible_controls"],
             )
         }
     )
 
-    def shown(max_chars: int) -> list[dict[str, Any]]:
-        return json.loads(crowded.planner_payload(max_chars=max_chars)).get(
-            "visible_controls", []
-        )
+    def shown(max_chars: int, **kwargs: Any) -> dict[str, Any]:
+        return json.loads(crowded.planner_payload(max_chars=max_chars, **kwargs))
 
-    tight, roomy = shown(12000), shown(60000)
-    assert len(tight) < len(roomy), "a bigger budget must surface more controls"
-    assert len(roomy) == len(controls), "a budget with room to spare must surface all"
+    # A budget far below what the controls cost does not cost the agent one.
+    tight = shown(12000)
+    assert len(tight["visible_controls"]) == len(controls)
+    assert "visible_controls_truncated" not in tight
+    assert len(shown(60000)["visible_controls"]) == len(controls)
 
-    # Every size stays role-balanced, so a crowded screen cannot starve one role.
-    roles = collections.Counter(entry["role"] for entry in tight)
+    # The model's real ceiling does cut it - and never silently.
+    squeezed = shown(12000, max_context_chars=9000)
+    listed = squeezed["visible_controls"]
+    assert 0 < len(listed) < len(controls)
+    notice = squeezed["visible_controls_truncated"]
+    assert notice["shown"] == len(listed) and notice["total"] == len(controls)
+
+    # Even cut, no role is starved entirely.
+    roles = collections.Counter(entry["role"] for entry in listed)
     assert len(roles) == 3, f"a role was starved entirely: {roles}"
     assert max(roles.values()) - min(roles.values()) <= 1, roles

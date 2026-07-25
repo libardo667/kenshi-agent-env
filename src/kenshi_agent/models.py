@@ -363,6 +363,15 @@ class NormalizedPointerBounds(StrictModel):
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
 
+# The ceiling on a rendered observation, in characters. This is a property of
+# the model, not a preference, so it belongs with the planner config that knows
+# which model is being used - `PlannerConfig.max_context_chars` overrides it.
+# The default is deliberately far below any current model (the smallest context
+# we run against holds roughly a hundred times this) because exceeding it is a
+# hard failure, while sitting under it costs nothing: what an observation
+# actually spends is governed by `max_observation_chars`.
+MAX_PLANNER_CONTEXT_CHARS = 400_000
+
 # Only a backstop against a pathological control list, not the working limit:
 # how many controls the planner actually sees is decided by how many fit in the
 # payload's character budget. A hand-picked count is wrong on both sides - it
@@ -1897,19 +1906,68 @@ class Observation(StrictModel):
                 low = middle
         return fitted
 
-    def planner_payload(self, *, max_chars: int = 24000) -> str:
+    def planner_payload(
+        self,
+        *,
+        max_chars: int = 24000,
+        max_context_chars: int = MAX_PLANNER_CONTEXT_CHARS,
+    ) -> str:
+        """Render this observation for the planner within a character budget.
+
+        `max_chars` bounds what the observation *costs*, which is a spending
+        decision, not a limit of the model - the configured 30k is under one
+        percent of a current context window. It therefore governs the optional
+        content only. The control list is not optional: the planner may act
+        only on a control it was shown, so truncating it does not produce a
+        smaller observation, it produces an agent that cannot press a button it
+        is looking at and has no way to know the button exists. When the full
+        action surface costs more than the budget, the budget gives way.
+
+        `max_context_chars` is the genuine ceiling, being a property of the
+        model rather than a preference. Crossing it is a real failure and says
+        so, rather than quietly dropping controls.
+        """
+
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         # Surface the deterministic talk-target list the planner must trust
         # rather than re-derive. A top-level non-collection key is preserved
         # through budgeting.
         payload["dialogue_targets"] = self.dialogue_target_digest()
         payload["semantic_actions"] = self.semantic_action_digest()
-        payload["visible_controls"] = self._fitted_visible_controls(payload, max_chars)
+
+        controls = self.visible_control_digest()
+        floor = irreducible_payload(payload)
+        floor["visible_controls"] = []
+        # A budget too small for the envelope even before any control is listed
+        # is a configuration mistake, and stays the hard error it has always
+        # been. Only the control list may push past the budget, because that is
+        # a property of the screen the agent happens to be looking at.
+        base_required = len(json.dumps(floor, indent=2, ensure_ascii=False))
+        floor["visible_controls"] = controls
+        required = len(json.dumps(floor, indent=2, ensure_ascii=False))
+        if max_chars < base_required:
+            required = max_chars
+        if required > max_context_chars:
+            # Only here is dropping a control the lesser evil. Say so in the
+            # payload: an agent that knows its view is incomplete can ask for a
+            # simpler screen, where one that is silently blinded cannot.
+            shown = self._fitted_visible_controls(payload, max_context_chars)
+            payload["visible_controls_truncated"] = {
+                "shown": len(shown),
+                "total": len(controls),
+                "consequence": (
+                    "The controls not listed cannot be acted on. Close a window "
+                    "to reduce the screen before relying on this list."
+                ),
+            }
+            controls = shown
+
+        payload["visible_controls"] = controls
         text = json.dumps(payload, indent=2, ensure_ascii=False)
         return budget_observation_payload(
             payload,
             full_text=text,
-            max_chars=max_chars,
+            max_chars=min(max(max_chars, required), max_context_chars),
         )
 
 
