@@ -13,7 +13,7 @@ from ..models import (
     PlannerOutput,
     PlanPatch,
 )
-from .base import Planner, output_token_budget, structured_output_model
+from .base import Planner, instructions_for_policy, output_token_budget, structured_output_model
 
 
 class OpenAIPlanner(Planner):
@@ -75,7 +75,10 @@ class OpenAIPlanner(Planner):
         async with asyncio.timeout(self.config.timeout_seconds):
             response = await self.client.responses.parse(
                 model=self.config.model,
-                instructions=self.instructions,
+                instructions=instructions_for_policy(
+                    self.instructions,
+                    observation.live_execution_policy,
+                ),
                 input=[{"role": "user", "content": content}],
                 text_format=output_model,
                 reasoning={"effort": self.config.reasoning_effort},

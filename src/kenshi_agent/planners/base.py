@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 
 from ..config import PlannerConfig
@@ -14,6 +15,27 @@ from ..models import (
 )
 
 PlannerOutputModel = type[PlannerDecision] | type[PlanEnvelope] | type[PlanPatch]
+
+_POLICY_SECTION = re.compile(
+    r"<!-- policy:(?P<policy>[a-z0-9_,]+) -->\n(?P<body>.*?)<!-- /policy -->\n",
+    re.DOTALL,
+)
+
+
+def instructions_for_policy(instructions: str, policy: LiveContinuousPolicy) -> str:
+    """Keep only the prompt sections that apply to the active live policy.
+
+    Every policy's rules used to be sent on every call, so a generic run also
+    received the Barman recipe - wasted tokens, and a standing invitation to
+    anchor on a scenario the run is not in. Sections are marked in the prompt
+    file rather than split across files so the whole document stays readable.
+    """
+
+    def keep(match: re.Match[str]) -> str:
+        wanted = {name.strip() for name in match.group("policy").split(",")}
+        return match.group("body") if policy.value in wanted else ""
+
+    return _POLICY_SECTION.sub(keep, instructions).replace("\n\n\n", "\n\n")
 
 
 def structured_output_model(observation: Observation) -> PlannerOutputModel:

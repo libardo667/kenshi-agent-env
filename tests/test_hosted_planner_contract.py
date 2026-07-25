@@ -192,3 +192,52 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     parsed_payload = json.loads(planner_payload)
     assert len(planner_payload) <= 2000
     assert parsed_payload["observation_budget"]["truncated"] is True
+
+
+def test_only_the_active_policy_section_reaches_the_model() -> None:
+    """A generic run must not be shipped the Barman recipe.
+
+    Every policy's rules used to go out on every call: wasted tokens, and an
+    invitation to anchor on a scenario the run is not in.
+    """
+
+    from pathlib import Path
+
+    from kenshi_agent.models import LiveContinuousPolicy
+    from kenshi_agent.planners.base import instructions_for_policy
+
+    root = Path(__file__).resolve().parents[1]
+    instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
+
+    generic = instructions_for_policy(
+        instructions, LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
+    )
+    food = instructions_for_policy(instructions, LiveContinuousPolicy.FOOD_PROCUREMENT_V1)
+    disabled = instructions_for_policy(instructions, LiveContinuousPolicy.DISABLED)
+
+    # The generic run sees its own rules and none of the recipe.
+    assert "approach_dialogue_target" in generic
+    assert "Show me your goods." not in generic
+    assert "choose_show_goods" not in generic
+
+    # The generic run is also spared the legacy macro guidance, since that
+    # policy rejects SkillAction outright.
+    assert "move_visible_terrain" not in generic
+
+    # The calibrated run still sees its recipe and not the generic rules.
+    assert "choose_show_goods" in food
+    assert "semantic_actions" not in food
+
+    # `disabled` means no *continuous* live policy, but single-step live runs
+    # still author macros, so legacy skill guidance belongs there.
+    assert "move_visible_terrain" in disabled
+    assert "approach_dialogue_target" not in disabled
+
+    # Shared guidance survives in all three, and no markers leak to the model.
+    for rendered in (generic, food, disabled):
+        assert "Your priorities, in order:" in rendered
+        assert "<!-- policy:" not in rendered
+        assert "<!-- /policy -->" not in rendered
+
+    # The generic surface is the leanest: no recipe, no macro guidance.
+    assert len(generic) < len(disabled) < len(instructions)

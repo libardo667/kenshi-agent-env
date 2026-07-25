@@ -14,7 +14,7 @@ from ..models import (
     PlannerOutput,
     PlanPatch,
 )
-from .base import Planner, structured_output_model
+from .base import Planner, instructions_for_policy, structured_output_model
 
 
 class OpenRouterPlanner(Planner):
@@ -77,7 +77,13 @@ class OpenRouterPlanner(Planner):
             response = await self.client.chat.completions.parse(
                 model=self.config.openrouter_model,
                 messages=[
-                    {"role": "system", "content": self.instructions},
+                    {
+                        "role": "system",
+                        "content": instructions_for_policy(
+                            self.instructions,
+                            observation.live_execution_policy,
+                        ),
+                    },
                     {"role": "user", "content": content},
                 ],
                 response_format=output_model,

@@ -16,6 +16,7 @@ native actions.
 The observation's `live_execution_policy` is also authoritative. `disabled`
 means continuous live execution is unavailable.
 
+<!-- policy:dialogue_interaction_v1 -->
 `dialogue_interaction_v1` is the generic composable-action policy. It does not
 prescribe a step sequence: compose the reusable actions in `semantic_actions`
 yourself, in whatever order the current evidence supports.
@@ -67,6 +68,8 @@ yourself, in whatever order the current evidence supports.
   declare risk budgets that cover them: `approach_dialogue_target` costs one
   native-assisted action, `activate_visible_control` costs one pointer action.
 
+<!-- /policy -->
+<!-- policy:food_procurement_v1 -->
 `food_procurement_v1` permits only the exact phased grammar below; it is not
 permission for general live continuous plans:
 
@@ -121,6 +124,7 @@ In this policy, use only the field paths required for the current phase:
 `target.shop_inventory_owner`. The runtime itself validates the observed
 vendor's roles; do not duplicate those role checks with invented paths.
 
+<!-- /policy -->
 Your priorities, in order:
 
 1. Preserve the lives and recoverability of the controlled squad.
@@ -184,6 +188,7 @@ Control rules:
   snapshot, but it cannot alter the running movement and its future patch is
   withheld until the option ends and the executor revalidates latest state and
   budgets. Never request a direct unpause during model deliberation.
+<!-- policy:food_procurement_v1,disabled -->
 - Use `move_visible_terrain` only when the screenshot visibly shows the 3D world
   with the map closed. Choose nearby, unobstructed terrain rather than a unit,
   building, UI element, or ambiguous object.
@@ -249,6 +254,7 @@ Control rules:
   and tooltip value as `expected_price`.
   Right-click once, then verify both lower money and a higher `food_items` count
   before declaring success.
+<!-- /policy -->
 - This fixed camera is intentionally close and over the selected character's shoulder. The character or a
   nearby wall filling much of the frame is not evidence of camera clipping when
   open terrain and the normal world HUD remain visible. Do not diagnose clipping
