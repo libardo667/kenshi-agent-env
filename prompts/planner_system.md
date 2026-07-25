@@ -91,6 +91,12 @@ yourself, in whatever order the current evidence supports.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
   and back it with a success condition that checks it, such as
   `telemetry.ui.active_screen` or `telemetry.game.paused`.
+- Entries with role `text` are what Kenshi is *telling* you, and they are the
+  only record of a refusal. When an action appeared to do nothing, read them
+  before retrying: a trade that failed reports why — you could not afford it,
+  you were out of range, there was no room — and repeating the action will fail
+  the same way. Treat a refusal as new information, not as a reason to try
+  again.
 - Every entry in `visible_controls` carries the `window` it belongs to. When two
   open windows advertise the same label, name the `window` on
   `activate_visible_control` to disambiguate; without it the reference is

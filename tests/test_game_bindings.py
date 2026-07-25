@@ -122,3 +122,53 @@ def test_toggles_are_marked_and_non_toggles_are_not() -> None:
     assert GameBinding.PAUSE in TOGGLE_GAME_BINDINGS
     assert GameBinding.CAMERA_LEFT not in TOGGLE_GAME_BINDINGS
     assert GameBinding.SPEED_2 not in TOGGLE_GAME_BINDINGS
+
+
+def _control(role: str, index: int) -> object:
+    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+
+    return VisibleUIControl(
+        label=f"{role}_{index}",
+        role=role,
+        window="w",
+        bounds=NormalizedPointerBounds(min_x=0.0, min_y=0.0, max_x=0.1, max_y=0.1),
+    )
+
+
+def test_the_control_budget_never_starves_a_role() -> None:
+    """A trade screen exports 206 controls with text emitted last.
+
+    A flat prefix therefore dropped every text widget, which is where Kenshi
+    puts its refusals: the agent could be told "you can't afford that" and see a
+    screen identical to the one before it acted.
+    """
+
+    from collections import Counter
+
+    from kenshi_agent.models import budgeted_visible_controls
+
+    controls = (
+        [_control("button", i) for i in range(60)]
+        + [_control("item", i) for i in range(120)]
+        + [_control("text", i) for i in range(26)]
+    )
+
+    prefix_roles = Counter(c.role for c in controls[:120])
+    assert prefix_roles["text"] == 0, "precondition: the old prefix dropped all text"
+
+    budgeted = budgeted_visible_controls(controls, 120)
+    assert len(budgeted) == 120
+    roles = Counter(c.role for c in budgeted)
+    assert roles["text"] == 26, "every text widget fits and must survive"
+    assert roles["button"] > 0 and roles["item"] > 0
+
+    # Document order is preserved, so positional reasoning still holds.
+    positions = [controls.index(c) for c in budgeted]
+    assert positions == sorted(positions)
+
+
+def test_a_short_control_list_is_returned_untouched() -> None:
+    from kenshi_agent.models import budgeted_visible_controls
+
+    controls = [_control("button", i) for i in range(5)]
+    assert budgeted_visible_controls(controls, 120) == controls

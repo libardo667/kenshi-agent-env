@@ -321,14 +321,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.MESSAGE_BOX,
         Operation.INTERACT,
         "Read why Kenshi refused an action.",
-        Mechanism.NONE,
-        "",
+        Mechanism.CONTROL,
+        "visible_controls role 'text'",
         native_entry_point="InventoryGUI::TradeResult::showMessage @ 0x70E570",
-        gap=(
-            "A refused trade reports CANT_AFFORD, OUT_OF_RANGE, NO_ROOM or "
-            "THIEF_DETECTED into a box the agent never reads, so every refusal "
-            "looks identical to it: nothing happened."
-        ),
     ),
     Affordance(
         Interface.MESSAGE_BOX,

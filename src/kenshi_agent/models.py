@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -365,6 +366,54 @@ class NormalizedPointerBounds(StrictModel):
 # Large enough that a dialogue's options are never truncated away by leading
 # HUD buttons; the planner payload budget reduces the observation if needed.
 MAX_DIGESTED_VISIBLE_CONTROLS = 120
+
+
+def budgeted_visible_controls(
+    controls: Sequence[VisibleUIControl],
+    limit: int = MAX_DIGESTED_VISIBLE_CONTROLS,
+) -> list[VisibleUIControl]:
+    """Trim the control list to a budget without starving any one role.
+
+    The plug-in emits buttons first, then item cells, then text. Taking a flat
+    prefix therefore drops text first and drops it entirely: a trade screen
+    exports over two hundred controls, so every text widget fell outside a
+    hundred-and-twenty entry window. Text is where Kenshi puts its refusals -
+    "you can't afford that" - so the agent could act, be refused, and see a
+    screen identical to the one before it acted.
+
+    Round-robin across roles instead, so each role is represented before any
+    role takes a second share, then restore document order so positional
+    reasoning still holds. Truncation stays fail-closed: an unlisted control is
+    one the planner will not author, never one it may author blindly.
+    """
+
+    if limit <= 0:
+        return []
+    if len(controls) <= limit:
+        return list(controls)
+
+    by_role: dict[str, list[VisibleUIControl]] = {}
+    for control in controls:
+        by_role.setdefault(control.role, []).append(control)
+
+    chosen: list[VisibleUIControl] = []
+    cursors = dict.fromkeys(by_role, 0)
+    while len(chosen) < limit:
+        progressed = False
+        for role, bucket in by_role.items():
+            if len(chosen) >= limit:
+                break
+            index = cursors[role]
+            if index < len(bucket):
+                chosen.append(bucket[index])
+                cursors[role] = index + 1
+                progressed = True
+        if not progressed:
+            break
+
+    positions = {id(control): order for order, control in enumerate(controls)}
+    chosen.sort(key=lambda control: positions[id(control)])
+    return chosen
 
 
 # Where a MyGUI window's close box sits relative to the window's own rect,
@@ -1482,7 +1531,7 @@ class Observation(StrictModel):
                     > 1
                 ),
             }
-            for control in controls[:MAX_DIGESTED_VISIBLE_CONTROLS]
+            for control in budgeted_visible_controls(controls)
         ]
 
     def semantic_action_digest(self) -> list[dict[str, Any]]:
