@@ -1,11 +1,29 @@
 [CmdletBinding()]
 param(
-    [string]$Config = "config\live.burnin.yaml",
-    [int]$Steps = 30,
+    [string]$Config = "config\live.longform.yaml",
+    [int]$Steps = 80,
     [ValidateSet("openai", "openrouter")]
-    [string]$Planner = "openai",
+    [string]$Planner = "openrouter",
+
+    # Planner model overrides. These set the environment variables the live
+    # configs interpolate, so a model swap never needs a config edit.
+    [string]$Model,
+    [ValidateSet("none", "low", "medium", "high")]
+    [string]$ReasoningEffort,
+
+    # A refused launch still creates runs\<id>\, so a retry after any failure
+    # needs a fresh id. Left unset, the timestamp guarantees one.
+    [string]$RunId,
+
     [switch]$ExecuteLiveActions,
     [switch]$AcknowledgeNativeAssistedControl,
+    [switch]$AcknowledgeContinuousLive,
+
+    # controls.pointer_mode=relative requires an exclusive input session, and
+    # both live configs use it, so this is on by default. Opt out only for a
+    # config that sets pointer_mode=absolute.
+    [switch]$NoExclusiveInputSession,
+
     [ValidateRange(0.25, 1.0)]
     [double]$Opacity = 0.82,
     [ValidateRange(0, 3600)]
@@ -29,20 +47,36 @@ if (-not $Python) {
     }
 }
 
+# The overlay is a GUI; launching it with python.exe opens a stray console
+# window behind it.
+$Pythonw = $Python -replace "python\.exe$", "pythonw.exe"
+if (-not (Test-Path $Pythonw)) {
+    $Pythonw = $Python
+}
+
+if ($Model) {
+    if ($Planner -eq "openrouter") {
+        $env:KENSHI_AGENT_OPENROUTER_MODEL = $Model
+    } else {
+        $env:KENSHI_AGENT_MODEL = $Model
+    }
+}
+if ($ReasoningEffort) {
+    $env:KENSHI_AGENT_REASONING_EFFORT = $ReasoningEffort
+}
+
+if (-not $RunId) {
+    $RunId = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmss.ffffffZ")
+}
+$runDir = Join-Path $repo "runs\$RunId"
+if (Test-Path $runDir) {
+    throw "runs\$RunId already exists. Every run needs an unused id -- even a refused launch creates the directory."
+}
+
 & $Python -m kenshi_agent doctor --config $Config --mode live --planner $Planner
 if ($LASTEXITCODE -ne 0) {
     throw "Live doctor checks failed. No agent run was started."
 }
-
-$runId = [DateTime]::UtcNow.ToString("yyyyMMddTHHmmss.ffffffZ")
-$eventLog = Join-Path $repo "runs\$runId\events.jsonl"
-$overlayArgs = @(
-    "-m", "kenshi_agent", "overlay",
-    "--log", $eventLog,
-    "--opacity", $Opacity,
-    "--auto-close-seconds", $AutoCloseSeconds
-)
-$overlay = Start-Process -FilePath $Python -ArgumentList $overlayArgs -PassThru
 
 $runArgs = @(
     "-m", "kenshi_agent", "run",
@@ -50,10 +84,13 @@ $runArgs = @(
     "--mode", "live",
     "--planner", $Planner,
     "--steps", $Steps,
-    "--run-id", $runId
+    "--run-id", $RunId
 )
 if ($ExecuteLiveActions) {
     $runArgs += "--execute-live-actions"
+    if (-not $NoExclusiveInputSession) {
+        $runArgs += "--exclusive-input-session"
+    }
 }
 if ($AcknowledgeNativeAssistedControl) {
     if (-not $ExecuteLiveActions) {
@@ -61,15 +98,34 @@ if ($AcknowledgeNativeAssistedControl) {
     }
     $runArgs += "--acknowledge-native-assisted-control"
 }
+if ($AcknowledgeContinuousLive) {
+    if (-not $ExecuteLiveActions) {
+        throw "-AcknowledgeContinuousLive requires -ExecuteLiveActions."
+    }
+    $runArgs += "--acknowledge-continuous-live"
+}
+
+$eventLog = Join-Path $runDir "events.jsonl"
+$overlayArgs = @(
+    "-m", "kenshi_agent", "overlay",
+    "--log", $eventLog,
+    "--opacity", $Opacity,
+    "--auto-close-seconds", $AutoCloseSeconds
+)
+$overlay = Start-Process -FilePath $Pythonw -ArgumentList $overlayArgs -PassThru
 
 try {
     & $Python @runArgs
     if ($LASTEXITCODE -ne 0) {
         throw "The live agent run exited with code $LASTEXITCODE."
     }
-} catch {
+} finally {
+    # Give the overlay its auto-close grace so the final state stays readable,
+    # then make sure it never outlives the run.
     if (-not $overlay.HasExited) {
-        Stop-Process -Id $overlay.Id
+        $null = $overlay.WaitForExit($AutoCloseSeconds * 1000)
     }
-    throw
+    if (-not $overlay.HasExited) {
+        Stop-Process -Id $overlay.Id -Force -ErrorAction SilentlyContinue
+    }
 }
