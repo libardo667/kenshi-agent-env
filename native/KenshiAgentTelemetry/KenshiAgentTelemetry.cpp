@@ -41,6 +41,7 @@
 #include "AtomicJsonWriter.h"
 #include "NativeCommandProtocol.h"
 #include "NativeCommandTiming.h"
+#include "NativeMovementSemantics.h"
 
 namespace
 {
@@ -94,13 +95,11 @@ namespace
         // One uninterrupted pause may mean an abandoned movement order, but
         // short paused gaps are how the stop-motion controller safely pulses.
         KenshiAgentTelemetry::NativeMovementPauseWindow pauseWindow;
+        float originX;
+        float originZ;
         float destinationX;
         float destinationZ;
     };
-
-    // How close counts as arrived. Kenshi stops a walk short of the exact point
-    // whenever anything is in the way, so an exact match would never fire.
-    const float WALK_ARRIVAL_TOLERANCE = 12.0f;
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
     TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
@@ -170,6 +169,8 @@ namespace
         // approach being judged by arrival instead of by dialogue.
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.originX = 0.0f;
+        g_activeNativeCommand.originZ = 0.0f;
         g_activeNativeCommand.destinationX = 0.0f;
         g_activeNativeCommand.destinationZ = 0.0f;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
@@ -408,6 +409,8 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.originX = 0.0f;
+        g_activeNativeCommand.originZ = 0.0f;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
     }
@@ -1182,10 +1185,27 @@ namespace
                 destinationZ = followPosition.z;
             }
             const Ogre::Vector3 here = walker->getPosition();
-            const float dx = here.x - destinationX;
-            const float dz = here.z - destinationZ;
-            if (dx * dx + dz * dz <=
-                WALK_ARRIVAL_TOLERANCE * WALK_ARRIVAL_TOLERANCE)
+            bool arrived = false;
+            if (g_activeNativeCommand.hasFixedDestination)
+            {
+                arrived =
+                    KenshiAgentTelemetry::HasReachedFixedDirectionDestination(
+                        g_activeNativeCommand.originX,
+                        g_activeNativeCommand.originZ,
+                        destinationX,
+                        destinationZ,
+                        here.x,
+                        here.z);
+            }
+            else
+            {
+                const float dx = here.x - destinationX;
+                const float dz = here.z - destinationZ;
+                arrived = dx * dx + dz * dz <=
+                    KenshiAgentTelemetry::WALK_DESTINATION_TOLERANCE *
+                        KenshiAgentTelemetry::WALK_DESTINATION_TOLERANCE;
+            }
+            if (arrived)
             {
                 FinishActiveNativeCommand("completed", "walk_destination_reached");
             }
@@ -1354,7 +1374,8 @@ namespace
             // Copied and offset rather than constructed: Ogre's three-float
             // Vector3 constructor is dllimport and is not in the libraries this
             // plug-in links against.
-            Ogre::Vector3 destination = walker->getPosition();
+            const Ogre::Vector3 origin = walker->getPosition();
+            Ogre::Vector3 destination = origin;
             destination.x += static_cast<float>(sin(radians) * request.distanceUnits);
             destination.z += static_cast<float>(cos(radians) * request.distanceUnits);
             // No target handle and no destination building: this is a walk to a
@@ -1376,6 +1397,8 @@ namespace
             g_activeNativeCommand.hasFixedDestination = true;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
+            g_activeNativeCommand.originX = origin.x;
+            g_activeNativeCommand.originZ = origin.z;
             g_activeNativeCommand.destinationX = destination.x;
             g_activeNativeCommand.destinationZ = destination.z;
             g_lastNativeCommandResult = "issued";
@@ -1430,6 +1453,8 @@ namespace
         g_activeNativeCommand.hasFixedDestination = false;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
+        g_activeNativeCommand.originX = 0.0f;
+        g_activeNativeCommand.originZ = 0.0f;
         g_lastNativeCommandResult = "issued";
         g_lastNativeCommandTarget = target->getName();
         g_lastNativeCommandTargetId = request.targetId;

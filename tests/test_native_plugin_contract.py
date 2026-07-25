@@ -289,3 +289,19 @@ def test_native_movement_pause_timing_uses_the_shared_conformance_module() -> No
     assert '#include "NativeCommandTiming.cpp"' in tests
     assert "movement cancelled before its accepted snapshot" in tests
     assert "movement cancelled during a bounded pulse gap" in tests
+
+
+def test_native_direction_completion_uses_the_shared_conformance_module() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    tests = (
+        PLUGIN_SOURCE.parent / "NativeCommandProtocolTests.cpp"
+    ).read_text(encoding="utf-8")
+    project = PLUGIN_PROJECT.read_text(encoding="utf-8")
+
+    assert '#include "NativeMovementSemantics.h"' in plugin
+    assert "NativeMovementSemantics.cpp" in project
+    assert "HasReachedFixedDirectionDestination" in plugin
+    assert '#include "NativeMovementSemantics.cpp"' in tests
+    assert "purely sideways movement completed a direction" in tests
+    assert "short movement outside tolerance completed a direction" in tests
+    assert "crossing the destination plane did not complete" in tests

@@ -12,6 +12,7 @@
 // conformance executable on the same parser and serializer the DLL uses.
 #include "NativeCommandProtocol.cpp"
 #include "NativeCommandTiming.cpp"
+#include "NativeMovementSemantics.cpp"
 
 namespace
 {
@@ -109,6 +110,65 @@ namespace
 
         return 0;
     }
+
+    int TestNativeDirectionCompletion()
+    {
+        using KenshiAgentTelemetry::HasReachedFixedDirectionDestination;
+
+        if (!HasReachedFixedDirectionDestination(
+                0.0f,
+                0.0f,
+                17.8447f,
+                24.1157f,
+                16.15f,
+                39.099f))
+        {
+            return Fail(
+                "live-calibrated forward overshoot did not reach its plane");
+        }
+        if (HasReachedFixedDirectionDestination(
+                0.0f,
+                0.0f,
+                0.0f,
+                30.0f,
+                30.0f,
+                0.0f))
+        {
+            return Fail("purely sideways movement completed a direction");
+        }
+        if (HasReachedFixedDirectionDestination(
+                0.0f,
+                0.0f,
+                0.0f,
+                30.0f,
+                0.0f,
+                17.9f))
+        {
+            return Fail("short movement outside tolerance completed a direction");
+        }
+        if (!HasReachedFixedDirectionDestination(
+                0.0f,
+                0.0f,
+                0.0f,
+                30.0f,
+                0.0f,
+                18.0f))
+        {
+            return Fail("ordinary destination tolerance was not preserved");
+        }
+        if (!HasReachedFixedDirectionDestination(
+                0.0f,
+                0.0f,
+                0.0f,
+                30.0f,
+                20.0f,
+                30.0f))
+        {
+            return Fail("crossing the destination plane did not complete");
+        }
+
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
@@ -118,6 +178,9 @@ int main(int argc, char** argv)
     const int timingResult = TestNativeMovementPauseTiming();
     if (timingResult != 0)
         return timingResult;
+    const int completionResult = TestNativeDirectionCompletion();
+    if (completionResult != 0)
+        return completionResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =
@@ -241,7 +304,7 @@ int main(int argc, char** argv)
     }
 
     std::cout
-        << "Native command protocol fixtures and movement timing passed."
+        << "Native command protocol fixtures and movement semantics passed."
         << std::endl;
     return 0;
 }

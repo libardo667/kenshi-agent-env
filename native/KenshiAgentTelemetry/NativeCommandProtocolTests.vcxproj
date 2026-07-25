@@ -87,6 +87,7 @@
   <ItemGroup>
     <ClInclude Include="NativeCommandProtocol.h" />
     <ClInclude Include="NativeCommandTiming.h" />
+    <ClInclude Include="NativeMovementSemantics.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
