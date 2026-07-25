@@ -144,3 +144,53 @@ def test_movement_option_surfaces_cancellation_cleanup_failure() -> None:
         assert task.done()
 
     asyncio.run(scenario())
+
+
+def test_approach_can_start_from_a_running_world() -> None:
+    """A paused start is a stop-motion assumption, not a safety property.
+
+    An agent meant to play continuously begins its walk from a world that is
+    already running. Demanding a paused start there meant the approach could
+    never begin at all, and the operator had to pause the game by hand.
+    """
+
+    from kenshi_agent.models import Disposition, NearbyEntity
+    from kenshi_agent.options import OptionLifecycleError, StatefulApproachOption
+
+    target = NearbyEntity(
+        id="entity-target",
+        name="Barman",
+        is_animal=False,
+        has_dialogue=True,
+        disposition=Disposition.NEUTRAL,
+        distance=20.0,
+        conscious=True,
+    )
+    running = observation(1, paused=False)
+    telemetry = running.telemetry
+    assert telemetry is not None
+    running = running.model_copy(
+        update={"telemetry": telemetry.model_copy(update={"nearby_entities": [target]})},
+        deep=True,
+    )
+
+    strict = StatefulApproachOption(
+        option_id="strict",
+        action=SkillAction(name="mock_approach"),
+        environment=BlockingEnvironment(),
+        target_id="entity-target",
+    )
+    try:
+        strict.prepare(running)
+        raise AssertionError("expected a paused start to be required")
+    except OptionLifecycleError as exc:
+        assert "paused" in str(exc)
+
+    relaxed = StatefulApproachOption(
+        option_id="relaxed",
+        action=SkillAction(name="mock_approach"),
+        environment=BlockingEnvironment(),
+        target_id="entity-target",
+        require_paused_start=False,
+    )
+    assert relaxed.prepare(running).status is OptionStatus.PREPARED

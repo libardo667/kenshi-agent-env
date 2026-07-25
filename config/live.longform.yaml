@@ -52,6 +52,9 @@ planning:
   max_purchase_actions_per_plan: 1
   max_native_assisted_actions_per_plan: 4
   max_consecutive_replans: 20
+  # The world runs while the agent thinks, so per-plan game-time budgets
+  # would measure deliberation rather than action.
+  require_paused_between_actions: false
 
 paths:
   runs_dir: ../runs
@@ -149,6 +152,8 @@ controls:
   # One pathing order, then up to this much bounded walking, re-pausing after
   # every pulse so the operator always has a stopping point.
   native_approach_max_seconds: 40.0
+  # The world runs; the character just walks.
+  require_paused_between_actions: false
 
 safety:
   # This profile permits only the audited skills below. The CLI must still

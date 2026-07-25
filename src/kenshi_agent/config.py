@@ -59,6 +59,10 @@ class PlanningConfig(ConfigModel):
     # feature flag.
     semantic_approach_arrival_distance: float = Field(default=5.0, gt=0.0, le=100.0)
     semantic_approach_threat_distance: float = Field(default=15.0, gt=0.0, le=500.0)
+    # Mirrors safety.require_paused_between_actions for the executor: with the
+    # game running continuously, a per-plan game-time budget measures thinking
+    # rather than acting.
+    require_paused_between_actions: bool = True
     concurrent_option_planning_enabled: bool = True
     observation_pump_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     state_history_limit: int = Field(default=128, ge=8, le=4096)
@@ -191,6 +195,10 @@ class ControlsConfig(ConfigModel):
     # before giving up. The pathing order is issued once; this budgets how long
     # the option is allowed to keep walking toward it.
     native_approach_max_seconds: float = Field(default=30.0, gt=0.0, le=120.0)
+    # Mirrors safety.require_paused_between_actions for the live environment.
+    # With the world already running, a movement "pulse" - unpause, wait,
+    # re-pause - is neither possible nor wanted: the character simply walks.
+    require_paused_between_actions: bool = True
     # Kenshi's MyGUI ignores a zero-duration press: an instantaneous down/up
     # moves the cursor but activates nothing. The calibrated dialogue macros
     # used 0.12s, so semantic control activation inherits that proven hold

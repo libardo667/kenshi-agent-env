@@ -187,10 +187,14 @@ class StatefulApproachOption:
         target_id: str,
         arrival_distance: float = 5.0,
         threat_distance: float = 15.0,
+        require_paused_start: bool = True,
     ) -> None:
         self.option_id = option_id
         self.action = action.model_copy(deep=True)
         self.environment = environment
+        # An agent playing continuously starts its walk from a running world;
+        # demanding a paused start there means the approach can never begin.
+        self.require_paused_start = require_paused_start
         self.monitor = ApproachMonitor(
             target_id=target_id,
             arrival_distance=arrival_distance,
@@ -208,11 +212,11 @@ class StatefulApproachOption:
         if self.status is not OptionStatus.CREATED:
             raise OptionLifecycleError("Approach option can only be prepared once.")
         telemetry = observation.telemetry
-        if (
-            telemetry is None
-            or "game.pause" not in telemetry.capabilities
-            or telemetry.game.paused is not True
-        ):
+        if telemetry is None or "game.pause" not in telemetry.capabilities:
+            raise OptionLifecycleError(
+                "Approach option requires a capable start state."
+            )
+        if self.require_paused_start and telemetry.game.paused is not True:
             raise OptionLifecycleError(
                 "Approach option requires a capable, confirmed paused start state."
             )

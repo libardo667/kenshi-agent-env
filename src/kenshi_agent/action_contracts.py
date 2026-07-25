@@ -101,6 +101,9 @@ class ReferenceBinding:
     resolved_role: str | None = None
     resolved_bounds: NormalizedPointerBounds | None = None
     source_revision: WorldStateRevision | None = None
+    # For item cells: what the game itself says the cell holds and is worth.
+    item_name: str | None = None
+    item_value: int | None = None
 
 
 def _unbound(reason: str) -> ReferenceBinding:
@@ -260,6 +263,8 @@ def _bind_item_cell(cell_label: str, observation: Observation) -> ReferenceBindi
         resolved_role=cell.role,
         resolved_bounds=cell.bounds.model_copy(deep=True),
         source_revision=observation.world_revision,
+        item_name=cell.item_name,
+        item_value=cell.item_value,
     )
 
 
@@ -293,35 +298,53 @@ def bind_purchase_item(
     telemetry = observation.telemetry
     assert telemetry is not None
 
-    tooltip_text = telemetry.ui.tooltip_text
-    tooltip_bounds = telemetry.ui.tooltip_source_bounds
-    if telemetry.ui.tooltip_visible is not True or not tooltip_text or tooltip_bounds is None:
-        return _unbound(
-            "Purchase requires a visible tooltip and its source bounds; hover the "
-            "cell first so the interface says what it holds."
-        )
-
-    # The tooltip must describe *this* cell, not whatever was hovered last.
-    assert cell.resolved_bounds is not None
-    centre_x = (cell.resolved_bounds.min_x + cell.resolved_bounds.max_x) / 2.0
-    centre_y = (cell.resolved_bounds.min_y + cell.resolved_bounds.max_y) / 2.0
-    if not tooltip_bounds.contains(centre_x, centre_y):
-        return _unbound(
-            f"The visible tooltip does not belong to cell {action.cell_label!r}; "
-            "it describes a different widget."
-        )
-
-    if action.item_name not in tooltip_text:
-        return _unbound(
-            f"The tooltip does not name {action.item_name!r}, so the item being "
-            "bought is not the item described."
-        )
-    price_pattern = rf"(?<![A-Za-z0-9])c\.{action.expected_price}(?![0-9])"
-    if re.search(price_pattern, tooltip_text) is None:
-        return _unbound(
-            f"The tooltip does not show price c.{action.expected_price}; the "
-            "expected price disagrees with the interface."
-        )
+    # The cell itself now carries the game's own name and price, which is
+    # stronger evidence than text scraped from a tooltip - and requiring a
+    # tooltip forced a hover, a replan, and a second model call before every
+    # purchase. Prefer the cell's facts; fall back to the tooltip only when a
+    # plug-in too old to export them is installed.
+    cell_name = cell.item_name
+    cell_value = cell.item_value
+    if cell_name is not None and cell_value is not None:
+        if action.item_name != cell_name:
+            return _unbound(
+                f"The cell holds {cell_name!r}, not {action.item_name!r}."
+            )
+        if action.expected_price != cell_value:
+            return _unbound(
+                f"The cell's price is c.{cell_value}, not c.{action.expected_price}."
+            )
+    else:
+        tooltip_text = telemetry.ui.tooltip_text
+        tooltip_bounds = telemetry.ui.tooltip_source_bounds
+        if (
+            telemetry.ui.tooltip_visible is not True
+            or not tooltip_text
+            or tooltip_bounds is None
+        ):
+            return _unbound(
+                "This plug-in does not name item cells, so a purchase needs a "
+                "visible tooltip; hover the cell first."
+            )
+        assert cell.resolved_bounds is not None
+        centre_x = (cell.resolved_bounds.min_x + cell.resolved_bounds.max_x) / 2.0
+        centre_y = (cell.resolved_bounds.min_y + cell.resolved_bounds.max_y) / 2.0
+        if not tooltip_bounds.contains(centre_x, centre_y):
+            return _unbound(
+                f"The visible tooltip does not belong to cell {action.cell_label!r}; "
+                "it describes a different widget."
+            )
+        if action.item_name not in tooltip_text:
+            return _unbound(
+                f"The tooltip does not name {action.item_name!r}, so the item being "
+                "bought is not the item described."
+            )
+        price_pattern = rf"(?<![A-Za-z0-9])c\.{action.expected_price}(?![0-9])"
+        if re.search(price_pattern, tooltip_text) is None:
+            return _unbound(
+                f"The tooltip does not show price c.{action.expected_price}; the "
+                "expected price disagrees with the interface."
+            )
 
     seller = next(
         (entity for entity in telemetry.nearby_entities if entity.id == action.seller_id),

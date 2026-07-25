@@ -613,6 +613,9 @@ class ContinuousPlanExecutor:
                 target_id=approach_params.target_id,
                 arrival_distance=approach_params.arrival_distance,
                 threat_distance=approach_params.threat_distance,
+                require_paused_start=(
+                    self.planning_config.require_paused_between_actions
+                ),
             )
             try:
                 prepared = approach_option.prepare(observation)
@@ -1547,11 +1550,19 @@ class ContinuousPlanExecutor:
         wall_elapsed = self.clock.monotonic() - plan_started_at
         if wall_elapsed >= plan.max_wall_seconds:
             return "Plan wall-clock budget is exhausted."
-        game_elapsed = game_elapsed_seconds(plan_started_observation, current)
-        if game_elapsed is None:
-            return "Plan game-time budget cannot be observed safely."
-        if game_elapsed >= plan.max_game_seconds:
-            return "Plan game-time budget is exhausted."
+        # A game-time budget bounds how much *game* a plan may consume, which is
+        # meaningful only while the game is paused between actions: then time
+        # passes solely during the plan's own movement. When the agent plays
+        # continuously the world runs while it thinks, so a twenty-second model
+        # call spends the budget without the plan doing anything at all - plans
+        # were aborting on it repeatedly having executed a single hover. Wall
+        # clock and the action budget still bound the plan in that mode.
+        if self.planning_config.require_paused_between_actions:
+            game_elapsed = game_elapsed_seconds(plan_started_observation, current)
+            if game_elapsed is None:
+                return "Plan game-time budget cannot be observed safely."
+            if game_elapsed >= plan.max_game_seconds:
+                return "Plan game-time budget is exhausted."
         return None
 
     def _abort(

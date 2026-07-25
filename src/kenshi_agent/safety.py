@@ -75,8 +75,13 @@ class ActionGuard:
                     raise SafetyViolation(
                         f"Live skill {action.name!r} could not be expanded safely: {exc}"
                     ) from exc
-                if pulse_seconds is not None and (
-                    observation.telemetry is None or observation.telemetry.game.paused is not True
+                if (
+                    pulse_seconds is not None
+                    and self.config.require_paused_between_actions
+                    and (
+                        observation.telemetry is None
+                        or observation.telemetry.game.paused is not True
+                    )
                 ):
                     raise SafetyViolation(
                         f"Movement pulse {action.name!r} requires confirmed paused live state."

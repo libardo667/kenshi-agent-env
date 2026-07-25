@@ -675,7 +675,7 @@ class LiveEnvironment(AgentEnvironment):
             if self._last_observation is not None and self._last_observation.telemetry is not None
             else None
         )
-        if paused is not True:
+        if self.controls_config.require_paused_between_actions and paused is not True:
             raise RuntimeError(
                 f"Movement pulse {action.name!r} requires confirmed paused live state."
             )
@@ -1110,6 +1110,28 @@ class LiveEnvironment(AgentEnvironment):
                     "NativeCommandCancelled"
                     if acknowledgement.status == NativeCommandStatus.CANCELLED
                     else None
+                ),
+                native_acknowledgement=acknowledgement,
+                semantic=semantic,
+            )
+        if not self.controls_config.require_paused_between_actions:
+            # The world is already running: the pathing order is enough, and the
+            # monitored option watches the character walk. Pulsing here would
+            # mean unpausing an unpaused game and then pausing a game the
+            # operator wants running.
+            return ActionReceipt(
+                action=action,
+                command_id=command.command_id,
+                started_after_revision=command.based_on_revision,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=primitive_count,
+                message=(
+                    "Issued the pathing order; the character walks while the world "
+                    "runs. " + " ".join(messages)
                 ),
                 native_acknowledgement=acknowledgement,
                 semantic=semantic,

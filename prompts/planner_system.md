@@ -51,16 +51,19 @@ yourself, in whatever order the current evidence supports.
   about what a cell holds. Read `telemetry.ui.tooltip_text` after hovering a
   cell to learn what it actually is, and never assume an ordinal refers to the
   same item across observations.
-- `inspect_item_cell` hovers one cell so its tooltip appears. It commits
-  nothing and may be repeated. **A cell ordinal is a position, not an item** —
-  the only way to learn what a cell holds is to hover it and then read
-  `telemetry.ui.tooltip_text` on a later observation.
-- `purchase_item` buys the item in one cell. Hover the cell first, then copy
-  `item_name` and `expected_price` verbatim from that cell's own tooltip, and
-  give the `seller_id` of the one active shop owner. It is refused unless the
-  visible tooltip belongs to that exact cell and names that item at that price,
-  so never guess a price or reuse one from an earlier observation. It is
-  at-most-once: never retry it because confirmation is slow.
+- **Item cells name themselves.** A `role: "item"` entry in `visible_controls`
+  carries `item_name`, `item_value` and `item_quantity` straight from the game.
+  Read them and decide. Do **not** hover a cell to find out what it is.
+- `purchase_item` buys the item in one cell: copy `cell_label`, `item_name` and
+  `expected_price` from that cell's own entry, and give the `seller_id` of the
+  one active shop owner. It is refused if any of them disagree with the cell, so
+  copy rather than guess. It is at-most-once: never retry it because
+  confirmation is slow.
+- Buying something you can already see is **one step**, not two. Plan the
+  purchase directly.
+- `inspect_item_cell` exists only for cells that arrive without a name, and for
+  reading detail the cell does not carry. If the cell already names itself, do
+  not hover it.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
   current `telemetry.ui.active_screen`. It refuses if the screen you named is
   not the one open, so read the current screen rather than assuming what a

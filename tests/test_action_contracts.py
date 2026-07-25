@@ -740,3 +740,89 @@ class TestWindowAttribution:
         assert {entry["window"] for entry in digest} == {"HEP", "BARMAN"}
         # Same label, different windows: neither is ambiguous within its own.
         assert not any(entry["ambiguous"] for entry in digest)
+
+
+class TestPurchaseUsesExportedCellFacts:
+    """Buying something visible must be one step, not hover-then-replan.
+
+    Requiring a tooltip made sense while cells were opaque ordinals. Once the
+    cell carries the game's own name and price, demanding a tooltip forced a
+    hover, a replan and a second model call before every purchase — the agent
+    spent whole runs inspecting instead of buying.
+    """
+
+    def _trade_state(self) -> Observation:
+        cell = VisibleUIControl(
+            label="Bread",
+            role="item",
+            bounds=_bounds(0.5),
+            item_name="Bread",
+            item_value=52,
+            item_quantity=3,
+        )
+        seller = NearbyEntity(
+            id="entity-barman",
+            name="Barman",
+            is_animal=False,
+            has_dialogue=True,
+            shop_inventory_owner=True,
+            disposition=Disposition.NEUTRAL,
+            distance=3.0,
+            conscious=True,
+        )
+        state = observation(
+            entities=[seller],
+            controls=[cell],
+            capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
+        )
+        telemetry = state.telemetry
+        assert telemetry is not None
+        return state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={
+                        "active_shop_trader_count": 1,
+                        "ui": telemetry.ui.model_copy(update={"active_screen": "trade"}),
+                    }
+                )
+            },
+            deep=True,
+        )
+
+    def test_a_named_cell_needs_no_tooltip(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            PurchaseItemAction(
+                cell_label="Bread",
+                item_name="Bread",
+                expected_price=52,
+                seller_id="entity-barman",
+            ),
+            self._trade_state(),
+        )
+        assert binding.bound, binding.reason
+
+    def test_a_price_that_disagrees_with_the_cell_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            PurchaseItemAction(
+                cell_label="Bread",
+                item_name="Bread",
+                expected_price=5,
+                seller_id="entity-barman",
+            ),
+            self._trade_state(),
+        )
+        assert not binding.bound
+        assert "price is c.52" in binding.reason
+
+    def test_a_name_that_disagrees_with_the_cell_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            PurchaseItemAction(
+                cell_label="Bread",
+                item_name="Ancient Katana",
+                expected_price=52,
+                seller_id="entity-barman",
+            ),
+            self._trade_state(),
+        )
+        assert not binding.bound
+        assert "holds 'Bread'" in binding.reason
