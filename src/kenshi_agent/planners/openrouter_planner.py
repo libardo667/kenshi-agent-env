@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import mimetypes
 import os
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel
 
 from ..config import PlannerConfig
 from ..models import (
@@ -16,6 +19,25 @@ from ..models import (
 )
 from .base import Planner, instructions_for_policy, structured_output_model
 from .schema_dialect import portable_response_format
+
+# Phrases providers use when the request was fine but the schema was not. They
+# are worth matching narrowly: a 400 for any other reason is a real failure and
+# must not be retried as if it were this one.
+_SCHEMA_REFUSAL_PHRASES = (
+    "compiled grammar",
+    "response_json_schema",
+    "output_config.format",
+    "response_format",
+    "json_schema",
+    "schema",
+)
+
+
+def _is_schema_refusal(exc: Exception) -> bool:
+    if getattr(exc, "status_code", None) != 400:
+        return False
+    text = str(exc).lower()
+    return any(phrase in text for phrase in _SCHEMA_REFUSAL_PHRASES)
 
 
 def _json_body(content: str) -> str:
@@ -37,6 +59,10 @@ def _json_body(content: str) -> str:
 
 class OpenRouterPlanner(Planner):
     """Vision planner using OpenRouter's OpenAI-compatible Chat API."""
+
+    # Flipped for the rest of the run the first time a provider refuses to
+    # compile the schema, so the cost of discovering it is paid once.
+    _schema_in_prompt: bool = False
 
     def __init__(self, config: PlannerConfig, prompt_file: Path) -> None:
         try:
@@ -98,37 +124,85 @@ class OpenRouterPlanner(Planner):
         if self.config.reasoning_effort != "none":
             extra["reasoning_effort"] = self.config.reasoning_effort
 
+        messages: list[dict[str, Any]] = [
+            {
+                "role": "system",
+                "content": instructions_for_policy(
+                    self.instructions,
+                    observation.live_execution_policy,
+                ),
+            },
+            {"role": "user", "content": content},
+        ]
+
         async with asyncio.timeout(self.config.timeout_seconds):
-            response = await self.client.chat.completions.create(
-                model=self.config.openrouter_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": instructions_for_policy(
-                            self.instructions,
-                            observation.live_execution_policy,
-                        ),
-                    },
-                    {"role": "user", "content": content},
-                ],
-                # Sending the model class instead would let the SDK build a
-                # schema only OpenAI accepts; every other provider 400s on it.
-                response_format=portable_response_format(output_model),
-                extra_body={
-                    "provider": {
-                        "sort": self.config.openrouter_provider_sort,
-                        "require_parameters": (
-                            self.config.openrouter_require_parameters
-                        ),
-                    }
-                },
-                **extra,
-            )
+            if self._schema_in_prompt:
+                response = await self._request(messages, output_model, extra)
+            else:
+                try:
+                    response = await self._request(
+                        messages, output_model, extra, constrained=True
+                    )
+                except Exception as exc:
+                    if not _is_schema_refusal(exc):
+                        raise
+                    # Some providers cap how large a schema they will compile
+                    # into a decoding grammar, and this catalog is over the cap.
+                    # Asking in the prompt still gets a conforming answer, and
+                    # the reply is validated against the model either way.
+                    self._schema_in_prompt = True
+                    response = await self._request(messages, output_model, extra)
 
         message = response.choices[0].message
         if not message.content:
             raise RuntimeError("OpenRouter response contained no text.")
         return output_model.model_validate_json(_json_body(message.content))
+
+    async def _request(
+        self,
+        messages: list[dict[str, Any]],
+        output_model: type[BaseModel],
+        extra: dict[str, Any],
+        *,
+        constrained: bool = False,
+    ) -> Any:
+        """Ask for `output_model`, constraining decoding only if asked to."""
+        response_format = portable_response_format(output_model)
+        kwargs: dict[str, Any] = {}
+        if constrained:
+            # Sending the model class instead would let the SDK build a schema
+            # only OpenAI accepts; every other provider 400s on it.
+            kwargs["response_format"] = response_format
+        else:
+            schema = json.dumps(response_format["json_schema"]["schema"])
+            messages = [
+                *messages[:-1],
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Reply with JSON only, no prose, conforming exactly to "
+                                f"this {output_model.__name__} JSON Schema:\n\n{schema}"
+                            ),
+                        },
+                        *messages[-1]["content"],
+                    ],
+                },
+            ]
+        return await self.client.chat.completions.create(
+            model=self.config.openrouter_model,
+            messages=messages,
+            extra_body={
+                "provider": {
+                    "sort": self.config.openrouter_provider_sort,
+                    "require_parameters": self.config.openrouter_require_parameters,
+                }
+            },
+            **kwargs,
+            **extra,
+        )
 
     @staticmethod
     def _data_url(path: Path) -> str:

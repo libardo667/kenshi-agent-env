@@ -318,3 +318,75 @@ def test_a_fenced_reply_is_still_read_as_json() -> None:
     assert json.loads(_json_body('```json\n{"a": 1}\n```')) == {"a": 1}
     assert json.loads(_json_body('{"a": 1}')) == {"a": 1}
     assert json.loads(_json_body('Here you go:\n{"a": 1}')) == {"a": 1}
+
+
+def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() -> None:
+    """Anthropic caps the grammar it will compile, and this catalog is over it.
+
+    The request itself is fine, so the planner asks again with the schema in
+    the prompt instead of losing the run. It only pays to discover this once.
+    """
+
+    class Refuses:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            self.calls.append(kwargs)
+            if "response_format" in kwargs:
+                error = Exception(
+                    "Error code: 400 - The compiled grammar is too large, which "
+                    "would cause performance issues."
+                )
+                error.status_code = 400  # type: ignore[attr-defined]
+                raise error
+            decision = PlannerDecision(
+                intent="Stop safely.",
+                rationale="Answered without a compiled grammar.",
+                action=StopAction(reason="Test complete."),
+                confidence=1.0,
+            )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=decision.model_dump_json())
+                    )
+                ]
+            )
+
+    completions = Refuses()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(include_screenshot=False, max_observation_chars=4000)
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    single_step = observation(planning_mode=PlanningMode.SINGLE_STEP)
+    assert isinstance(asyncio.run(planner.decide(single_step)), PlannerDecision)
+
+    # Constrained first, then the same ask with the schema in the prompt.
+    assert len(completions.calls) == 2
+    assert "response_format" in completions.calls[0]
+    assert "response_format" not in completions.calls[1]
+    prompted = completions.calls[1]["messages"][-1]["content"][0]["text"]
+    assert "JSON Schema" in prompted and '"properties"' in prompted
+
+    # The lesson sticks: the second decision does not retry the refused form.
+    assert isinstance(asyncio.run(planner.decide(single_step)), PlannerDecision)
+    assert len(completions.calls) == 3
+    assert "response_format" not in completions.calls[2]
+
+
+def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
+    from kenshi_agent.planners.openrouter_planner import _is_schema_refusal
+
+    grammar = Exception("Error code: 400 - The compiled grammar is too large")
+    grammar.status_code = 400  # type: ignore[attr-defined]
+    assert _is_schema_refusal(grammar)
+
+    credit = Exception("Error code: 400 - Insufficient credits for this request")
+    credit.status_code = 400  # type: ignore[attr-defined]
+    assert not _is_schema_refusal(credit)
+
+    rate_limited = Exception("Error code: 429 - schema")
+    rate_limited.status_code = 429  # type: ignore[attr-defined]
+    assert not _is_schema_refusal(rate_limited)
