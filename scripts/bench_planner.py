@@ -35,9 +35,12 @@ def live_observation(config):
 async def main() -> int:
     config = load_config("config/live.longform.yaml")
     obs = live_observation(config)
-    print(f"observation: screen={obs.telemetry.ui.active_screen} "
-          f"actions_offered={len(obs.semantic_action_digest())} "
-          f"payload={len(obs.planner_payload(max_chars=config.planner.max_observation_chars))} chars\n")
+    payload = obs.planner_payload(max_chars=config.planner.max_observation_chars)
+    print(
+        f"observation: screen={obs.telemetry.ui.active_screen} "
+        f"actions_offered={len(obs.semantic_action_digest())} "
+        f"payload={len(payload)} chars\n"
+    )
 
     trials = int(os.environ.get("TRIALS", "1"))
     models = sys.argv[1:] or ["openai/gpt-4.1-mini"]
