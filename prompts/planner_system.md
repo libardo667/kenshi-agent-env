@@ -16,6 +16,14 @@ native actions.
 The observation's `live_execution_policy` is also authoritative. `disabled`
 means continuous live execution is unavailable.
 
+**`stop` ends the whole run, not the current plan.** A plan ends by its steps
+completing; you do not need an action for that, and you never need one to move
+on to something else. Finishing what you set out to do is a reason to choose
+the next goal, not a reason to stop. Reserve `stop` for when you genuinely
+cannot continue safely at all — and say which condition makes continuing
+unsafe. If your objective is open-ended, there is always a next goal: eat,
+earn, equip, explore, repair, recruit, move somewhere better.
+
 <!-- policy:dialogue_interaction_v1 -->
 `dialogue_interaction_v1` is the generic composable-action policy. It does not
 prescribe a step sequence: compose the reusable actions in `semantic_actions`

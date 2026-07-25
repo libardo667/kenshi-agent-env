@@ -740,6 +740,15 @@ class NoopAction(StrictModel):
 
 
 class StopAction(StrictModel):
+    """End the whole run, not the current plan.
+
+    The distinction is not obvious from the name and was undocumented, so a
+    planner that had finished what it set out to do used this to say "that
+    objective is complete" and ended an eighty-step run on step eleven, with a
+    reason that read "resuming free play to pursue next objective". A plan ends
+    by its steps completing; this ends the agent.
+    """
+
     kind: Literal["stop"] = "stop"
     reason: str
 

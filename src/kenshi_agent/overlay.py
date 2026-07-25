@@ -229,13 +229,6 @@ def show_overlay(
             "Windows could not exclude the decision overlay from screenshots; "
             "the viewer was closed so it cannot contaminate model input."
         )
-    if not _make_click_through(root.winfo_id()):
-        root.destroy()
-        raise RuntimeError(
-            "Windows could not make the decision overlay click-through; the "
-            "viewer was closed so it cannot swallow input meant for Kenshi."
-        )
-
     width = 620
     height = 520
     x = max(0, root.winfo_screenwidth() - width - 24)
@@ -313,6 +306,18 @@ def show_overlay(
                         root.after(int(auto_close_seconds * 1000), root.destroy)
         root.after(150, poll)
 
+    # Applied last, once the window is fully built, positioned and mapped.
+    # Applying it before Tk finishes arranging the toplevel left the bit set on
+    # a window Tk then re-framed, so the style read back correctly while the
+    # overlay carried on swallowing clicks.
+    root.update_idletasks()
+    if not _make_click_through(root.winfo_id()):
+        root.destroy()
+        raise RuntimeError(
+            "Windows could not make the decision overlay click-through; the "
+            "viewer was closed so it cannot swallow input meant for Kenshi."
+        )
+
     root.after(50, poll)
     root.mainloop()
 
@@ -354,15 +359,44 @@ def _make_click_through(window_id: int) -> bool:
     ws_ex_transparent = 0x00000020
     ws_ex_noactivate = 0x08000000
 
+    ctypes.set_last_error(0)
     style = get_long(window, gwl_exstyle)
-    if not style:
+    # 0 is a legitimate style, so it is only a failure if the call said so.
+    if style == 0 and ctypes.get_last_error():
         return False
     wanted = style | ws_ex_layered | ws_ex_transparent | ws_ex_noactivate
-    if wanted == style:
-        return True
     ctypes.set_last_error(0)
     if not set_long(window, gwl_exstyle, wanted) and ctypes.get_last_error():
         return False
+
+    # Setting the bit is not enough: Windows caches the frame and keeps
+    # hit-testing the window until it is told the frame changed. Without this
+    # the style reads back correctly and the overlay still eats every click,
+    # which is exactly how this looked the first time it was "fixed".
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+    ]
+    user32.SetWindowPos.restype = wintypes.BOOL
+    swp_nomove = 0x0002
+    swp_nosize = 0x0001
+    swp_nozorder = 0x0004
+    swp_noactivate = 0x0010
+    swp_framechanged = 0x0020
+    user32.SetWindowPos(
+        window,
+        wintypes.HWND(0),
+        0,
+        0,
+        0,
+        0,
+        swp_nomove | swp_nosize | swp_nozorder | swp_noactivate | swp_framechanged,
+    )
     return bool(get_long(window, gwl_exstyle) & ws_ex_transparent)
 
 
