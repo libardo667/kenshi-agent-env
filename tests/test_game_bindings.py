@@ -356,3 +356,56 @@ def test_selling_refuses_when_the_cell_holds_something_else() -> None:
     binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
     assert not binding.bound
     assert "holds 'Iron Club'" in binding.reason
+
+
+def test_equipping_refuses_while_a_trade_is_open() -> None:
+    """The same right-click sells instead, and the item is gone irreversibly."""
+
+    from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
+    from kenshi_agent.models import EquipItemAction
+
+    action = EquipItemAction(cell_label="item_0", item_name="Iron Club", window="HEP")
+    # _trade_observation has active_shop_trader_count == 1.
+    binding = EQUIP_ITEM_CONTRACT.bind(action, _trade_observation())
+    assert not binding.bound
+    assert "sells the item instead" in binding.reason
+
+
+def test_equipping_binds_with_no_trade_open() -> None:
+    from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
+    from kenshi_agent.models import EquipItemAction
+
+    base = _trade_observation()
+    telemetry = base.telemetry
+    assert telemetry is not None
+    no_trade = base.model_copy(
+        update={
+            "telemetry": telemetry.model_copy(
+                update={"active_shop_trader_count": 0, "nearby_entities": []}
+            )
+        }
+    )
+
+    action = EquipItemAction(cell_label="item_0", item_name="Iron Club", window="HEP")
+    binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
+    assert binding.bound
+    assert "no trade open" in binding.reason
+
+
+def test_equipping_refuses_another_owners_window() -> None:
+    from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
+    from kenshi_agent.models import EquipItemAction
+
+    base = _trade_observation()
+    telemetry = base.telemetry
+    assert telemetry is not None
+    no_trade = base.model_copy(
+        update={
+            "telemetry": telemetry.model_copy(update={"active_shop_trader_count": 0})
+        }
+    )
+
+    action = EquipItemAction(cell_label="item_1", item_name="Foodcube", window="BARMAN")
+    binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
+    assert not binding.bound
+    assert "own inventory" in binding.reason

@@ -40,6 +40,7 @@ from .models import (
     ControlMode,
     DismissScreenAction,
     Disposition,
+    EquipItemAction,
     IdempotencyPolicy,
     InspectItemCellAction,
     NormalizedPointerBounds,
@@ -459,6 +460,68 @@ def bind_sell_item(
             f"inventory, holding {action.item_name!r}, sold to {action.buyer_id}."
         ),
         target_id=action.buyer_id,
+        resolved_label=cell.resolved_label,
+        resolved_role=cell.resolved_role,
+        resolved_bounds=cell.resolved_bounds,
+        source_revision=observation.world_revision,
+    )
+
+
+
+def bind_equip_item(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind an equip to our own cell, and only while no trade is open.
+
+    Right-click means "equip this" in an inventory and "sell this" in a trade,
+    and Kenshi decides which by whether a trade partner is registered - not by
+    anything in the gesture. An equip issued with a shop window up is therefore
+    a sale that no postcondition can undo. Refusing whenever a trader is active
+    is the only safe reading of an ambiguous gesture.
+    """
+
+    if not isinstance(action, EquipItemAction):
+        return _unbound("Action is not an equip_item action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the equip.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the equip cannot be bound.")
+
+    if telemetry.active_shop_trader_count:
+        return _unbound(
+            "A trade is open, where this same right-click sells the item instead "
+            "of equipping it. Close the trade window first."
+        )
+
+    selected = next(
+        (character for character in telemetry.squad if character.selected),
+        None,
+    )
+    if selected is None or not selected.name:
+        return _unbound(
+            "No single selected character is named, so ownership of the cell "
+            "cannot be established."
+        )
+    if action.window != selected.name:
+        return _unbound(
+            f"Window {action.window!r} is not the selected character's own "
+            f"inventory ({selected.name!r})."
+        )
+
+    cell = _bind_item_cell(action.cell_label, observation, window=action.window)
+    if not cell.bound:
+        return cell
+    if cell.item_name is not None and action.item_name != cell.item_name:
+        return _unbound(f"The cell holds {cell.item_name!r}, not {action.item_name!r}.")
+
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to cell {cell.resolved_label!r} holding {action.item_name!r} in "
+            f"{selected.name!r}'s own inventory, with no trade open."
+        ),
         resolved_label=cell.resolved_label,
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
@@ -1025,6 +1088,39 @@ SELL_ITEM_CONTRACT = ActionContract(
     authorization_conditions=_visible_control_authorization_conditions,
 )
 
+
+EQUIP_ITEM_CONTRACT = ActionContract(
+    kind="equip_item",
+    version="1.0",
+    model=EquipItemAction,
+    summary=(
+        "Equip the item in one cell of the selected character's own inventory. "
+        "Refused while any trade is open, because there the same right-click "
+        "sells the item instead."
+    ),
+    argument_source=(
+        "cell_label from a visible_controls entry with role 'item'; window must "
+        "be the selected character's own name; item_name copied from that "
+        "cell's own entry."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {VISIBLE_CONTROLS_CAPABILITY, "ui.inventory", "squad.inventory"}
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("cell_label", "window"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_equip",
+    bind=bind_equip_item,
+    authorization_conditions=_visible_control_authorization_conditions,
+)
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
@@ -1036,6 +1132,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         USE_GAME_BINDING_CONTRACT,
         SCROLL_SCREEN_CONTRACT,
         SELL_ITEM_CONTRACT,
+        EQUIP_ITEM_CONTRACT,
     )
 }
 

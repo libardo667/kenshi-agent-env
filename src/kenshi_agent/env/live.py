@@ -9,6 +9,7 @@ from ..action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
+    EQUIP_ITEM_CONTRACT,
     INSPECT_ITEM_CELL_CONTRACT,
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_APPROACH_CAPABILITY_ALIASES,
@@ -41,6 +42,7 @@ from ..models import (
     CommandDispatchContext,
     ControlMode,
     DismissScreenAction,
+    EquipItemAction,
     HotkeyAction,
     InputBoundaryDecision,
     InspectItemCellAction,
@@ -568,6 +570,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_scroll_screen(action, started)
         if isinstance(action, SellItemAction):
             return await self._execute_sell_item(action, started)
+        if isinstance(action, EquipItemAction):
+            return await self._execute_equip_item(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -1108,6 +1112,55 @@ class LiveEnvironment(AgentEnvironment):
                     f"Sold {action.item_name!r} from {action.window!r} to "
                     f"{action.buyer_id}. A later observation must confirm the "
                     "money and inventory change."
+                ),
+            }
+        )
+
+    async def _execute_equip_item(
+        self,
+        action: EquipItemAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Right-click one of our own cells to equip it, with no trade open.
+
+        The in-lease re-bind matters more here than anywhere else: the contract
+        refuses while a trade is open because the identical gesture sells
+        instead, and a trade window that opened during the polite wait would
+        turn this equip into a sale.
+        """
+
+        binding, observation = self._rebind_in_lease(EQUIP_ITEM_CONTRACT, action)
+        bounds = binding.resolved_bounds
+        assert bounds is not None
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        primitive_receipt = await self.controller.execute(
+            ClickAction(
+                x=x,
+                y=y,
+                button=MouseButton.RIGHT,
+                hold_seconds=self.controls_config.control_activation_hold_seconds,
+            )
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=EQUIP_ITEM_CONTRACT.version,
+            resolved_label=binding.resolved_label,
+            resolved_role=binding.resolved_role,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-proved no trade was open inside the input lease, so this "
+                f"right-click equips rather than sells. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Equipped {action.item_name!r} from {action.window!r}. A later "
+                    "observation must confirm the equipped gear change."
                 ),
             }
         )

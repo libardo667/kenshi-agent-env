@@ -838,6 +838,23 @@ class SkillAction(StrictModel):
         return {argument.name: argument.value for argument in self.args}
 
 
+class EquipItemAction(StrictModel):
+    """Equip the item in one cell of the selected character's own inventory.
+
+    Kenshi equips on right-click (`rightClickAutoEquipping`) - the *same*
+    gesture that sells an item when a trade is open. That collision is the whole
+    hazard: an equip attempted with a shop window up is a sale, and the item is
+    gone before any postcondition could notice. So this action refuses outright
+    unless no trade is active.
+    """
+
+    kind: Literal["equip_item"] = "equip_item"
+    cell_label: str = Field(min_length=1, max_length=80)
+    item_name: str = Field(min_length=1, max_length=200)
+    # Must be the selected character's own inventory window.
+    window: str = Field(min_length=1, max_length=200)
+
+
 class SellItemAction(StrictModel):
     """Sell the item in one exact cell of the agent's own inventory.
 
@@ -1017,6 +1034,7 @@ SemanticAction: TypeAlias = (
     | UseGameBindingAction
     | ScrollScreenAction
     | SellItemAction
+    | EquipItemAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
 
@@ -1043,6 +1061,7 @@ Action: TypeAlias = (
     | UseGameBindingAction
     | ScrollScreenAction
     | SellItemAction
+    | EquipItemAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
@@ -1056,6 +1075,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "use_game_binding",
         "scroll_screen",
         "sell_item",
+        "equip_item",
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(

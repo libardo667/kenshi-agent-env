@@ -91,6 +91,9 @@ yourself, in whatever order the current evidence supports.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
   and back it with a success condition that checks it, such as
   `telemetry.ui.active_screen` or `telemetry.game.paused`.
+- `equip_item` equips one item from the selected character's own inventory.
+  It is **refused while any trade is open**, because there the identical
+  right-click sells the item instead — close the trade window first.
 - `sell_item` is the mirror of `purchase_item` and the only way to *earn*
   money. Give the `cell_label`, the `item_name` copied from that cell, the
   `window` — which must be the selected character's own name, never the

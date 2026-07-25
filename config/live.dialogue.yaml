@@ -179,6 +179,7 @@ safety:
     - use_game_binding
     - scroll_screen
     - sell_item
+    - equip_item
   # The generic chain authors semantic actions, not macros. Only the transport
   # and native-approach macros remain allowlisted, because the semantic approach
   # reuses the latter's primitives.
