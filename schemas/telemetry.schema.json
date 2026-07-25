@@ -286,6 +286,18 @@
           "default": null,
           "title": "Hunger"
         },
+        "blood": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blood"
+        },
         "bleeding_rate": {
           "anyOf": [
             {
@@ -483,6 +495,7 @@
       "additionalProperties": false,
       "properties": {
         "name": {
+          "default": "",
           "title": "Name",
           "type": "string"
         },
@@ -527,11 +540,76 @@
           ],
           "default": null,
           "title": "Stolen"
+        },
+        "item_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Name"
+        },
+        "item_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Value"
+        },
+        "item_quantity": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Quantity"
+        },
+        "item_type": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Type"
+        },
+        "section": {
+          "default": "",
+          "maxLength": 80,
+          "title": "Section",
+          "type": "string"
+        },
+        "equipped": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Equipped"
         }
       },
-      "required": [
-        "name"
-      ],
       "title": "InventoryItem",
       "type": "object"
     },
@@ -544,7 +622,11 @@
           "type": "string"
         },
         "command": {
-          "const": "approach_confirmed_vendor",
+          "enum": [
+            "approach_confirmed_vendor",
+            "move_to_character",
+            "move_in_direction"
+          ],
           "title": "Command",
           "type": "string"
         },
@@ -1248,6 +1330,62 @@
           "default": "",
           "maxLength": 200,
           "title": "Window",
+          "type": "string"
+        },
+        "item_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Name"
+        },
+        "item_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Value"
+        },
+        "item_quantity": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Quantity"
+        },
+        "item_type": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Type"
+        },
+        "section": {
+          "default": "",
+          "maxLength": 80,
+          "title": "Section",
           "type": "string"
         },
         "role": {

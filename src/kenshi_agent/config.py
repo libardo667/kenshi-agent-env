@@ -34,6 +34,7 @@ class RuntimeConfig(ConfigModel):
     max_steps: int = Field(default=32, ge=1, le=100000)
     settle_seconds: float = Field(default=0.25, ge=0.0, le=60.0)
     observation_memory_limit: int = Field(default=12, ge=0, le=100)
+    # Compatibility field: current runtime termination behavior does not read it.
     stop_when_terminated: bool = True
     objective: str | None = Field(default=None, max_length=1000)
     decision_stream: bool = False
@@ -84,6 +85,7 @@ class PlannerConfig(ConfigModel):
     kind: Literal["heuristic", "scripted", "subprocess", "openai", "openrouter"] = "heuristic"
     model: str = "gpt-5.6-luna"
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "low"
+    # Parsed and validated, but current hosted adapters do not send it.
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
     max_output_tokens_base: int = Field(default=4096, ge=512, le=100000)
@@ -141,6 +143,7 @@ class CaptureConfig(ConfigModel):
     window_title_contains: str = "Kenshi"
     image_format: Literal["png", "jpeg"] = "png"
     jpeg_quality: int = Field(default=90, ge=20, le=100)
+    # Compatibility field: current capture path always captures the client area.
     crop_client_area: bool = True
 
 
@@ -286,6 +289,7 @@ class ControlsConfig(ConfigModel):
 
 class SafetyConfig(ConfigModel):
     live_actions_enabled: bool = False
+    # Compatibility field: the CLI execution flag is currently unconditional.
     require_cli_execute_flag: bool = True
     emergency_stop_key: str = "f12"
     supervisor_enabled: bool = True

@@ -1,7 +1,7 @@
 # ADR: Versioned calibration identity as a hard pointer-action gate
 
-Status: accepted for portable/live code; observation of fields beyond client
-size is not yet implemented and not yet exercised in live Kenshi
+Status: accepted; client-size and semantic-current paths exercised in live
+Kenshi. Observation of identity fields beyond client size is not implemented.
 
 ## Context
 
@@ -69,9 +69,11 @@ and the profile/macro hashes are modelled, comparable, and enforced, but
 observing them from Windows is a separate slice; until then, declaring them
 would (safely) refuse input rather than guess.
 
-This does not claim general resolution support. Two client sizes proven for
-semantic startup do not waive calibration for legacy dialogue/trade/map macros,
-which remain profile-calibrated.
+This does not claim general resolution support. Semantic startup and generic
+current-control actions derive live bounds and do not need a profile match;
+legacy fixed-coordinate macros remain profile-calibrated.
 
-Automated portable evidence only. No live Kenshi run has exercised the identity
-gate beyond the client-size field.
+Portable tests cover all status combinations and a size change inside a blocked
+lease. Supervised live runs exercised matching client-size reports and
+semantic-current rebinding. No live run has exercised an identity field beyond
+client size because the controller cannot yet observe one.

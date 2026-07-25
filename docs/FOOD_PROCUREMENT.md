@@ -1,5 +1,12 @@
 # Food procurement
 
+> Historical proof document. The fixed `food_procurement_v1` policy described
+> here was retired on 2026-07-25. Current live planning uses the generic
+> `dialogue_interaction_v1` contract catalog; buying is `purchase_item`,
+> movement and dialogue are separate reusable actions, and the planner is not
+> given this Barman recipe. Preserve this file as evidence for the original
+> guarded purchase path, not as current operating instructions.
+
 The first autonomous survival task is intentionally narrow: while paused in The
 Hub, help the selected squad member buy one ordinary food item from a clearly
 non-hostile trader, then return control with the game paused. The controller

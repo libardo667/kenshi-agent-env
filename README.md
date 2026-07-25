@@ -1,62 +1,63 @@
 # Kenshi Agent Environment
 
-A safety-first scaffold for turning Kenshi into an agentic environment with a
-versioned observation protocol, screenshots, persistent memory, structured
-planning, bounded skills, replayable logs, and explicitly labeled control
-modes. The default `interface_only` mode uses ordinary Windows input. The
-optional `native_assisted` mode may also use narrowly reviewed internal command
+A safety-first agent environment for Kenshi with versioned native telemetry,
+screenshots, persistent memory, structured continuous planning, semantic action
+contracts, analyzable lifecycle logs, optional full-observation replay, and
+explicitly labelled control modes. The default
+`interface_only` mode uses ordinary Windows input. The optional
+`native_assisted` mode also permits three narrowly reviewed movement command
 bridges and is never merged silently into interface-only evidence.
 
-This is not a claim that an LLM can already play Kenshi well. It is the machinery
-needed to run that experiment without confusing perception, planning, input,
-and game-integration failures.
+The project now supports a supervised open-ended live loop over a bounded,
+town-local, single-selected-character surface, not just a scaffold or a fixed
+food-procurement demo. That is still not a claim of broad Kenshi competence:
+the machinery is designed to keep perception, planning, input, native
+integration, and safety failures attributable.
+
+Documentation has explicit roles: [STATUS.md](STATUS.md) is current state,
+[ARCHITECTURE.md](ARCHITECTURE.md) and ADRs hold enduring boundaries,
+[the live checklist](docs/LIVE_VALIDATION_CHECKLIST.md) holds dated Windows and
+in-game evidence, and
+[the engineering ledger](docs/ENGINEERING_LOOP_STATE.md) is historical. Apply
+[the documentation truth policy](docs/DOCUMENTATION_TRUTH.md) whenever a change
+crosses code, native protocol, schemas, configuration, prompts, tests, mock
+behavior, or public claims.
 
 ## What is runnable now
 
-- A deterministic Kenshi-like mock environment with the same `reset`, `observe`,
-  `step`, and `close` interface used by live mode.
-- Strict action, telemetry, observation, single-step decision, bounded plan,
-  plan-patch, receipt, native-command request, and memory schemas.
-- A heuristic baseline that can complete the bundled one-day survival mock
-  benchmark.
-- Scripted and subprocess planner adapters.
-- An optional OpenAI vision planner using screenshot plus structured telemetry.
-- SQLite autobiographical memory and append-only JSONL run logs.
-- Replay summaries and JSON Schema export.
-- Feature-flagged continuous planning: one strategic
-  call can authorize a bounded, revision-checked multi-action plan while the
-  executor owns branches, retries, budgets, cancellation, and verification.
-  Live use remains disabled by default and is confined to the versioned
-  native-assisted `food_procurement_v1` policy plus a separate CLI
-  acknowledgement.
-- A bounded in-process world-state stream for continuous mode: one observation
-  pump feeds validated revisions, state deltas, transient events, entity
-  lifetimes, subscribers, and command/plan causality without each consumer
-  polling the environment.
-- An independent deterministic safety supervisor for portable continuous runs.
-  It can cancel a blocked strategic call or in-flight action, conservatively
-  close uncertain command state, request one narrowly guarded pause, and report
-  success only after a causally later revision confirms the paused state.
-- A stateful movement-option adapter in portable continuous mode. Configured
-  movement pulses expose prepare/start/progress/cancel/terminal lifecycle, may
-  overlap one strategic future-plan advisory, and apply a patch only after
-  latest-state and remaining-budget revalidation.
-- A Windows client-area screenshot and SendInput controller.
-- Two independent gates before real keyboard or mouse input is allowed.
-- Typed `interface_only` and `native_assisted` control modes, with an additional
-  acknowledgement before native-assisted live execution.
-- Native KenshiLib plugin source that emits partial telemetry through an atomic
-  JSON file and, only when explicitly enabled by the Python control mode, exposes
-  one bounded vendor-approach command bridge with exact caller/revision/
-  session/selection/target fences and keyed lifecycle acknowledgements.
-- Automated tests for the platform-independent path.
+- A deterministic Kenshi-like mock environment and a 468-test portable
+  regression suite.
+- Strict schemas for telemetry, observations, decisions, bounded plans,
+  future-only patches, actions, receipts, native requests, and memories.
+- Heuristic, scripted, subprocess, OpenAI Responses, and OpenRouter planners.
+- Single-step and bounded continuous schedulers. Continuous mode owns causal
+  revisions, branches, retries, budgets, cancellation, postconditions, and
+  concurrent future-plan advice.
+- One authoritative observation pump, bounded world-state store, semantic
+  old/new deltas, persistent plan memory, JSONL lifecycle logs, compact
+  transcripts, lifecycle replay summaries, and evaluation metrics. The default
+  compact observation digests are not accepted by `ReplayEnvironment`; set
+  `runtime.log_full_observations: true` when full environment replay is needed.
+- An independent deterministic safety supervisor and a final in-input-lease
+  authorization fence.
+- Ten declared reusable action contracts covering dialogue approach, local
+  movement, visible controls, screen dismissal, buying, selling, equipping,
+  game bindings, and scrolling. Nine are currently usable on their intended
+  path; targetless `move_in_direction` is still advertised but fails across the
+  Python/C++ request and monitored-option boundary.
+- A Windows client-area capture and SendInput controller with polite handoff,
+  explicit control ownership, F12, semantic current bounds, and calibration
+  identity.
+- Native protocol `0.5.0`, which emits stable identities, squad state and
+  inventory, dialogue/trade/management UI, named item cells, combat state,
+  camera facts, and a keyed acknowledgement ring for reviewed movement
+  commands.
 
 The native plugin compiles as a VS2010 SP1 `Release | x64` DLL against the
-pinned maintained KenshiLib dependency bundle. Its initial in-game smoke test
-now passes with RE_Kenshi 0.3.4/KenshiLib 0.4.0: the hook reaches `ready`, emits
-schema-valid snapshots at two hertz, and tracks one-character selection,
-position, movement, pause, speed, and money. Broader field and input validation
-is still incomplete. See `STATUS.md` and `docs/LIVE_VALIDATION_CHECKLIST.md`.
+pinned KenshiLib bundle and has been exercised in supervised Kenshi 1.0.68
+runs. See [current status](STATUS.md) for the exact supported surface and
+[the live checklist](docs/LIVE_VALIDATION_CHECKLIST.md) for dated evidence and
+remaining validation.
 
 ## Repository map
 
@@ -102,8 +103,8 @@ kenshi-agent summarize runs\<RUN_ID>\events.jsonl
 
 ### Continuous mock proof
 
-`single_step` remains the default regression path. To exercise the first
-continuous-planning slice without changing YAML:
+`single_step` remains the default regression path. Exercise the bounded
+continuous scheduler without changing YAML:
 
 ```powershell
 kenshi-agent run `
@@ -114,56 +115,23 @@ kenshi-agent run `
   --steps 2
 ```
 
-The heuristic returns one two-step `PlanEnvelope` (`pause=false`, then
-`speed=3`). Before each action, deterministic code rechecks the plan assumptions,
-capabilities, typed preconditions, control mode, and remaining budgets, then
-uses the same `ActionGuard` and environment path as `single_step`. A
-postcondition counts only on a later telemetry revision. Changed, unknown,
-unavailable, or stale preconditions cancel the future action instead of being
-treated as false or silently repaired.
+The heuristic returns one two-step `PlanEnvelope`. Before each action,
+deterministic code rechecks the plan assumptions, capabilities, typed
+preconditions, control mode, and remaining budgets, then uses the same guard and
+environment path as `single_step`. A postcondition counts only on a causally
+later observation.
 
-One independently owned observation pump supplies telemetry-only updates unless
-a consumer explicitly requests a new visual frame. Its bounded store preserves
-the latest validated snapshot, the last valid visual frame, deltas, transient
-events, nearby-entity lifetimes, active plan/step/command state, and isolated
-subscriber queues. Command receipts carry their command ID plus start and
-canonical completion revisions; an unchanged revision is logged as
-inconclusive rather than progress.
+One observation pump feeds the bounded world-state store. The safety supervisor
+subscribes independently, stateful options may overlap one future-only
+`PlanPatch`, and every live step is revalidated after acquiring the input lease.
+Changed, false, unknown, unavailable, or stale authority emits no input.
 
-The safety supervisor consumes that same stream independently of the strategic
-planner. Threat reflexes, stale or stalled telemetry, pause-capability
-withdrawal, an exact human-input stream event, and an unpaused state without an
-authorized plan/command can preempt slow work. Supervisor decisions,
-cancellations, cleanup attempts, and terminal results have distinct log events
-and evaluator metrics.
-
-Configured movement-pulse skills use a stateful option lifecycle in portable
-continuous mode. While the movement is active, one strategic call may propose a
-future-only `PlanPatch` from an immutable `active_plan` snapshot. The runtime
-stages only an exact plan/version/revision match, never changes the running
-step, and revalidates the patch after movement before any replacement step can
-execute. Stale, mismatched, unsafe, or late output is discarded normally.
-
-Continuous mode remains unrestricted only in mock and fake event-driven
-environments. Live observations require an explicitly enabled versioned policy;
-the sole current policy accepts only the exact Hub food-procurement phases,
-same-target actions, authoritative dialogue/trade/tooltip evidence, and exact
-money/food/pause postconditions. It remains disabled in default and
-live-example configuration. Ordinary stale planner output still executes
-nothing. This one live policy may rebase a returned plan from its immutable
-planner revision to a later telemetry sequence only when the complete
-phase-critical fence—identity session, capabilities, game state,
-policy-authoritative UI state, native command state, selected character, and
-exact vendor—remains equivalent. Transient client capture dimensions are not a
-gameplay fence. Every action is then checked again against the latest
-observation. Once the proposed action sequence and exact target are
-structurally valid, trusted policy code compiles the canonical conditions,
-linear graph, timeouts, and risk budgets around those actions; safety does not
-depend on the hosted model remembering duplicated scaffolding.
-The burn-in disables concurrent option advisories because the measured hosted
-latency is longer than the short movement pulse and the accepted phase plan
-already contains its bounded future steps.
-The complete executor and condition contract is recorded in
+General continuous execution is available to mock/fake environments.
+Live-continuous execution additionally requires an implemented policy and an
+explicit CLI acknowledgement. The current generic policy is
+`dialogue_interaction_v1`; despite its historical name, it validates every
+planner-visible action through the same authoritative contract catalog and does
+not prescribe a Barman or food sequence. See
 [Continuous planning](docs/CONTINUOUS_PLANNING.md).
 
 ## Planner options
@@ -195,9 +163,10 @@ kenshi-agent run `
 ### External subprocess
 
 The runtime writes one `Observation` JSON line to the child process's stdin. The
-child must write one `PlannerDecision` JSON object in `single_step`, one
-`PlanEnvelope` in ordinary `continuous` planning, or a `PlanPatch` when the
-continuous observation includes `active_plan`, then exit zero. This is the
+child must write one `PlannerDecision` JSON object in `single_step` or one
+`PlanEnvelope` in `continuous` planning, then exit zero. This adapter does not
+currently request `PlanPatch` during an active movement option; use a hosted
+adapter for concurrent future-plan advice. The subprocess path remains the
 cleanest connector for a coding-agent harness, local model, or custom
 orchestrator.
 
@@ -230,50 +199,44 @@ Copy-Item .env.example .env
 The CLI loads only `.env` in its current working directory. Existing process
 environment variables take precedence, and key values are never printed by the
 doctor. The PowerShell entrypoints set the working directory to the repo root.
-The ordinary profiles default to `gpt-5.6-luna` with low reasoning effort; the
-supervised live burn-in uses medium effort after live measurements showed
-`xhigh` could exceed its 90-second deadline on the constrained three-step food
-plan. Luna keeps image input and structured decisions while targeting lower
-latency and cost than Terra. Set `KENSHI_AGENT_MODEL` in `.env` to override it.
-Set `KENSHI_AGENT_REASONING_EFFORT` to compare `none`, `low`, or a higher
-model-supported effort without editing the profile.
+The ordinary OpenAI profiles default to `gpt-5.6-luna`; the long-form profile
+defaults to OpenRouter with `openai/gpt-4.1` and omits reasoning effort after a
+five-run planner benchmark produced five valid plans at a 7.6-second median.
+These are profile defaults, not compatibility requirements. Use
+`KENSHI_AGENT_PLANNER`, `KENSHI_AGENT_MODEL`,
+`KENSHI_AGENT_OPENROUTER_MODEL`, and `KENSHI_AGENT_REASONING_EFFORT` to run a
+controlled comparison without editing YAML.
 
-OpenAI Responses calls also receive a mode-aware output ceiling. The base
-single-decision allowance is 4,096 tokens; continuous responses add 2,048 per
-expected plan/patch step, capped at 12,288. The live food phases therefore
-request 10,240 tokens from world, 8,192 from dialogue, and 6,144 from trade.
-This limit includes the model's hidden reasoning tokens as well as visible
-structured output. The condition path itself is a schema enum, so unsupported
-abbreviations are rejected by structured generation rather than only by a
-later executor validator. Non-target telemetry conditions canonicalize a
-redundant model-supplied `target_id` to null; only `target.*` conditions retain
-an exact stable target fence.
+OpenAI Responses calls receive a mode-aware output ceiling. The configured base
+allowance grows per expected plan/patch step and is capped independently of the
+planner timeout. The condition path is a schema enum, so unsupported
+abbreviations are rejected by structured generation rather than only by a later
+executor validator.
 
-OpenRouter is also supported through its OpenAI-compatible Chat API. Add
+OpenRouter is supported through its OpenAI-compatible Chat API. Add
 `OPENROUTER_API_KEY` to `.env`, select `--planner openrouter`, and optionally set
-`KENSHI_AGENT_OPENROUTER_MODEL`. The default is `openai/gpt-5.6-luna`; provider
-routing is sorted by latency and requires structured-output support. Override
-the sort with `KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`.
+`KENSHI_AGENT_OPENROUTER_MODEL`. Provider routing is sorted by latency and
+requires structured-output support; override the sort with
+`KENSHI_AGENT_OPENROUTER_SORT=throughput` or `price`. If a provider refuses the
+compiled JSON Schema dialect, the adapter requests the same JSON shape in the
+prompt and validates it locally rather than ending the run.
 
-The planner receives a bounded JSON observation, including planning mode,
-control mode, exact world revision, and only the skills legal in that mode,
-plus a base64 image when enabled. Oversized observations are reduced
-semantically: the exact safety/revision/active-plan/command/latest-outcome and
-referenced-entity envelope survives, while whole lower-priority fields and
-collection elements are admitted deterministically as room permits.
-`observation_budget` reports truthful original/retained counts and omitted
-fields; a budget too small for the irreducible envelope fails explicitly.
-Available skills and their machine-enforced specs are retained together. The
-planner returns a validated `PlannerDecision` in `single_step`, a bounded
-`PlanEnvelope` in ordinary `continuous` work, or a future-only `PlanPatch` when
-`active_plan` is present; it does not call input APIs itself.
+The planner receives a JSON observation with planning/control mode, world
+revision, deltas, memories, deterministic dialogue/travel targets, current
+semantic actions, window-grouped controls, and a base64 image when enabled.
+Optional telemetry is reduced semantically to the configured spending budget.
+The action/control envelope is preserved even when it exceeds that preference;
+only the model's real context ceiling may truncate it, and truncation is stated
+explicitly in the payload. The planner returns a validated `PlannerDecision`,
+`PlanEnvelope`, or future-only `PlanPatch`; it never calls input APIs itself.
 
 ### Live decision overlay
 
-The active profile prints a human-readable stream for every turn: control mode,
-planning latency, intent, concise rationale, action, confidence, and execution result.
-It also records planner latency in `events.jsonl`, and `kenshi-agent summarize`
-reports mean, median, and p95 latency for new runs.
+The active profile prints a human-readable stream for decisions and continuous
+plan lifecycle events: objective, steps, rejections, failures, safety
+preemptions, planner latency, and execution results. The same transcript is
+kept at `runs/<run-id>/transcript.log`, while `events.jsonl` retains the typed
+machine-readable record used by summaries and evaluation metrics.
 
 On Windows, the overlay launcher puts the same feed in a translucent,
 always-on-top window over the game:
@@ -283,15 +246,15 @@ always-on-top window over the game:
   -Planner openai `
   -Steps 30 `
   -ExecuteLiveActions `
-  -AcknowledgeNativeAssistedControl
+  -AcknowledgeNativeAssistedControl `
+  -AcknowledgeContinuousLive
 ```
 
 Use `-Planner openrouter` after adding `OPENROUTER_API_KEY`. The viewer is an
 external read-only process that follows the append-only run log; it never calls
-Kenshi UI code or input APIs. Windows capture exclusion keeps the viewer out of
-the screenshots sent to the model; if that OS call fails, the viewer closes
-itself rather than contaminate model input. It stays open for 30 seconds after a
-run by default, and can be closed normally at any time.
+Kenshi UI code or input APIs. Windows capture exclusion keeps it out of model
+screenshots and the window is click-through after it is mapped, so input reaches
+the game. Use `transcript.log` when text must be selected, copied, or searched.
 
 ## Moving toward live Kenshi
 
@@ -322,44 +285,45 @@ Add `-WithOpenAI` to the bootstrap command only when preparing to test the
 vision planner. The dry-run command deliberately omits the second live-action
 gate, so proposed actions are logged but not sent to Kenshi.
 
-For the active burn-in, use the dedicated profile. It enables live input but
-allows only pause, wait, map, calibrated map zoom, inventory, close-overlay,
-focus-selected, bounded movement/person-interaction, and the one guarded
-purchase flow. Raw keys and clicks, combat, unbounded purchasing, and save
-operations remain blocked:
+For an open-ended supervised run, use the long-form profile. It runs the
+continuous scheduler against the generic contracted action surface, leaves the
+world running between actions, and preserves goals/commitments in SQLite
+memory:
 
 ```powershell
 kenshi-agent run `
-  --config config/live.burnin.yaml `
-  --planner openai `
+  --config config/live.longform.yaml `
+  --planner openrouter `
   --execute-live-actions `
-  --acknowledge-native-assisted-control
+  --acknowledge-native-assisted-control `
+  --acknowledge-continuous-live `
+  --exclusive-input-session
 ```
 
-The burn-in profile is explicitly `native_assisted` because
-`approach_confirmed_vendor` asks the plugin to issue Kenshi's internal
-`PLAYER_TALK_TO` order. The dedicated CLI acknowledgement is required in
-addition to the normal live-input gates. Use `config/live.example.yaml` for the
-default `interface_only` experiment; that mode omits native control capabilities
-and skills from observations and rejects a native-assisted skill even if it is
-submitted manually.
+The profile is explicitly `native_assisted` because semantic approach and
+movement use reviewed native pathing commands. It can approach and talk to any
+current non-hostile dialogue target, move toward another nearby character,
+operate visible controls, enter screens through Kenshi's own default bindings,
+buy, sell, equip, scroll, and close windows. The declared bounded
+`move_in_direction` action is not currently usable end to end: Python sends its
+intended empty `target_id`, while the C++ parser and acknowledgement model still
+require a nonempty target and the monitored-option adapter rejects targetless
+movement. Raw controller primitives, save/load/editor bindings, arbitrary
+native tasks, and direct game-state mutation remain unavailable.
 
-The active profile defaults to 30 planner decisions and the lower-latency Luna
-planner. Fine and coarse movement run as executor-controlled pulses: while
-paused, the model chooses both a destination and a bounded duration. Fine pulses
-may be 0.35–3.0 seconds and coarse map pulses 1.0–8.0 seconds. Fresh telemetry
-must confirm re-pause before another model call, and direct model-selected
-unpause is blocked.
+`config/live.dialogue.yaml` is a shorter stop-motion continuous proof profile.
+`config/live.burnin.yaml` is retained for legacy single-step calibrated runs;
+its former food-specific continuous policy is retired and explicitly disabled.
+Use `config/live.example.yaml` for the default `interface_only` experiment,
+which strips native capabilities and acknowledgements and rejects
+native-assisted actions even if submitted manually.
 
-Live capture and action execution also use a polite input lease. The controller
-waits for 1.25 seconds without keyboard or mouse activity, remembers the current
-foreground window and cursor, and briefly focuses Kenshi. After an action it
-Alt+Tabs back to the previous context before restoring the cursor, preventing
-Kenshi edge-scroll from reacting to off-screen or secondary-monitor coordinates.
-If human input resumes during movement, the executor
-ends the pulse, guarantees re-pause, yields control, and later makes a fresh
-plan rather than retrying the stale intent. These timings and restoration
-behaviors are configurable under `controls`.
+Live capture and execution use a polite input lease. Human input cancels the
+active plan and hands control over; the long-form profile pauses for handback,
+then restores a world that was running only after the quiet interval and
+visible takeover countdown complete. Any new input resets that countdown and
+F12 disarms automatic takeover. Every step is rebound and revalidated inside
+the acquired lease against the newest canonical observation.
 
 `config/live.example.yaml` derives telemetry and SQLite paths from Windows
 `%LOCALAPPDATA%`; copy it only when you need machine-specific overrides. Live
@@ -388,11 +352,11 @@ and `--acknowledge-native-assisted-control`.
 
 F12 is the default emergency-stop key and is checked before each primitive input.
 The Kenshi process and controller should run at the same Windows integrity level.
-Fine world movement and coarse map travel use separate right-click skills with
-different calibrated envelopes; see [Movement skills](docs/MOVEMENT_SKILLS.md).
-The next supervised vertical slice is a guarded one-item purchase; its staged
-state machine and spending policy are recorded in
-[Food procurement](docs/FOOD_PROCUREMENT.md).
+The retired calibrated movement and food flows remain documented as historical
+evidence in [Movement skills](docs/MOVEMENT_SKILLS.md) and
+[Food procurement](docs/FOOD_PROCUREMENT.md). The current action and telemetry
+surface is summarized in [current status](STATUS.md) and measured in
+[UI affordance coverage](docs/UI_AFFORDANCE_COVERAGE.md).
 The installed keymap audit and open-source plugin/API survey are recorded in
 [Kenshi control and plugin research](docs/KENSHI_CONTROL_AND_PLUGIN_RESEARCH.md).
 The live-validated close follow-camera setup is recorded in
@@ -413,10 +377,8 @@ and provides short commands for the operations used during live iteration:
 ./dev shot --label bar-entrance
 ./dev telemetry
 ./dev journey --objective "Locate the visible bar entrance" --steps 8
-./dev journey --objective "Approach the Barman safely" --steps 8 --execute \
-  --exclusive --native-assisted
-./dev journey --continuous --execute --native-assisted \
-  --acknowledge-continuous-live --steps 4
+./dev journey --config config/live.longform.yaml --continuous --execute \
+  --native-assisted --acknowledge-continuous-live --exclusive --steps 30
 ```
 
 `journey` flags are faithful passthroughs of `run` gates; the `run` command
@@ -424,6 +386,10 @@ still enforces each one. `--continuous` selects the continuous scheduler, and an
 enabled continuous-live policy additionally requires
 `--acknowledge-continuous-live` on top of `--execute` and `--native-assisted`.
 `--continuous` alone never grants the acknowledgement.
+
+The wrapper defaults to `config/live.burnin.yaml` for launch/graphics compatibility.
+Pass `--config config/live.longform.yaml` on `journey` to select the current
+open-ended policy; the later argument overrides the wrapper default.
 
 `graphics verify` compares Kenshi's installed settings with the versioned
 profile. `graphics apply` may run only while Kenshi is stopped; it makes a
@@ -446,50 +412,45 @@ launcher immediately without further input.
 Journey objectives override the YAML profile for one run only. Live input still
 requires the explicit `--execute` gate; native-assisted execution additionally
 requires `--native-assisted`. `--exclusive` keeps Kenshi in the foreground only
-when the human has handed the session to the agent. Executing through the burn-in
-profile also opens a capture-excluded ownership window. Human input cancels the
-active plan and yields control; after the configured quiet interval it shows a
-resettable takeover countdown. Any new input resets that countdown and F12
-disarms automatic takeover for the run. A completed countdown replans only
-after a fresh paused revision passes revalidation. Use
+when the human has handed the session to the agent. A profile with automatic
+takeover enabled also opens a capture-excluded ownership window. Human input
+cancels the active plan and yields control; after the configured quiet interval
+it shows a resettable takeover countdown. Any new input resets that countdown
+and F12 disarms automatic takeover for the run. A completed countdown creates a
+fresh observation and plan rather than resuming cancelled work. Use
 `--no-ownership-overlay` only when another viewer is following the same events.
 
 ## Native telemetry bridge
 
-The plugin hooks `PlayerInterface::update`, calls the original update first, and
-samples the game/UI thread at two hertz. Its telemetry path is observational. It
-currently exports:
+The plugin hooks Kenshi's title and loaded-game update points, calls the
+original methods first, and samples on the game/UI thread at about two hertz.
+Its telemetry path is observational. Protocol `0.5.0` currently exports:
 
 - loaded, paused, speed, money, and elapsed in-game minutes;
-- camera position and center;
-- basic squad identity, selection, life/consciousness state, position, movement
-  speed, and food-item count;
+- camera position/center and nearby-character camera bearings;
+- stable squad identity and complete selection, life/conscious/down/crippled/
+  combat state, position, movement, nutrition reserve, blood, and bounded named
+  inventory/equipment facts;
 - bounded nearby-character identity, role flags, faction/disposition evidence,
   world positions, viewport visibility, and normalized screen positions;
-- current world, inventory, dialogue, and trade screen classification;
+- world, inventory, dialogue, trade, stats, and management-window state;
 - exact open-dialogue target and bounded option captions;
-- the currently visible tooltip text and normalized bounds of its source
-  widget;
-- at most 64 currently visible/enabled MyGUI text or button captions with their
-  current normalized bounds.
+- current tooltip text/source bounds and up to 224 current buttons, named item
+  cells, and text controls with window ownership and normalized bounds.
 
-Native protocol `0.5.0` retains the `0.2.0` validated-handle identity contract
-for squad, complete selection, nearby, and native targets. Consumers treat IDs
-as opaque: duplicate display names and list order are not identities, and a
-session-generation change invalidates every older ID. It also retains the
-`0.3.0` strict atomic command request and bounded keyed acknowledgement ring.
+The current protocol retains validated session-scoped opaque IDs and a strict
+atomic request plus bounded keyed acknowledgement ring. The same DLL contains
+separately labelled native-assisted commands for approaching a valid dialogue
+target, walking to an exact nearby character, and walking a bounded
+bearing/distance. Python removes their capabilities and acknowledgement state
+in `interface_only`; both the guard and environment reject them again. In
+`native_assisted`, every request must match its command ID, current revision,
+identity session, complete one-character selection, and exact target or bounded
+direction fields. Old or different acknowledgements cannot certify execution.
 
-It intentionally does not pretend to export fields that have not been validated:
-hunger, wound detail, getting-eaten state, generic inventory grids, context
-menus, current tasks, and broader faction interpretation remain work items.
-
-The same DLL also contains a separately labeled native-assisted vendor-approach
-bridge. Python removes its capability and acknowledgement state in
-`interface_only`; `ActionGuard` and `LiveEnvironment` independently reject its
-skill in that mode. In `native_assisted`, the bridge issues only the exact
-stable target named by the caller after the command ID, complete world
-revision, identity session, and one-character selection match. Old or different
-acknowledgements cannot satisfy the request.
+Body-part wounds, bleeding rate, getting-eaten state, location name, current
+tasks, geometry occlusion, distant world state, and broad faction mechanics
+remain unavailable or unvalidated.
 
 Build instructions and the manual verification sequence are in
 [the native plugin README](native/KenshiAgentTelemetry/README.md). Contributors
@@ -579,25 +540,38 @@ then present the result as general play ability.
 
 ## Known limitations
 
-- Existing native build/load and supervised Kenshi evidence is version-specific
-  and predates explicit run-level control-mode labels; it is not a generic
-  compatibility claim.
-- Protocol `0.3.0` passed portable tests, the pinned DLL build, and one
-  supervised stale-rejection plus exact-target acceptance/completion proof. It
-  remains a narrow version-specific result, not broad native compatibility.
-- Stable native character handles are exported for squad, selection, nearby,
-  and native-target telemetry. Broader lifecycle transitions and
-  safety-critical medical detail remain unvalidated or unexported.
-- Legacy UI skills without a current semantic control/tooltip/entity anchor
-  still require exact calibration and screenshot-grounded confirmation.
-- Hosted vision-planner evidence is limited to supervised narrow live slices.
-- Live continuous execution is restricted to `food_procurement_v1`; its
-  deterministic live-shaped proof and native Release build pass. Protocol
-  `0.5.0` semantic startup passed at 1920x1080, but alternate-resolution
-  startup, deliberate interruption, ownership countdown/reset, F12 disarm,
-  longer stability, and the full conditional chain still await separate
-  supervised Kenshi validation. There is no broad option conversion or general
-  live policy.
+- Native build/load and supervised evidence is specific to the pinned
+  Kenshi/RE_Kenshi/KenshiLib versions and the current Windows host.
+- `move_in_direction` is declared and bounded to 2,000 world units, but its
+  targetless request is currently blocked by cross-language and option-ownership
+  assumptions that require a target ID. `move_to_character` remains the usable
+  local movement action. Selecting and executing a remote map destination is
+  also absent.
+- Management screens can be entered, exited, and identified, but their domain
+  contents and operations are not comprehensively modelled.
+- The 224-entry native UI export and planner context are bounded. A busy screen
+  can still require scrolling or closing a window.
+- Item cells expose base value, not an authoritative final shop charge.
+  Optional pre-purchase spending gates use that estimate; the actual debit is
+  confirmed only after the at-most-once purchase from later money telemetry.
+- A causally later observation prevents stale pre-action state from satisfying a
+  postcondition, but generic success conditions are still planner-authored.
+  Most actions do not yet have controller-owned effect predicates, so later
+  correlated state can be mistaken for the intended effect.
+- `use_game_binding(pause)` can toggle an unpaused game even when
+  `allow_live_unpause_actions=false`, because that guard currently applies only
+  to direct `PauseAction`. Game bindings use a hard-coded default key map rather
+  than parsing the active `controls.cfg`.
+- Safety preemption owns a verified pause cleanup, but ordinary stop, budget,
+  failure, cancellation, and exception exits do not share a unified final-state
+  owner; `LiveEnvironment.close()` does not manipulate Kenshi.
+- Body-part wounds, bleeding rate, getting-eaten, imprisonment/enslavement,
+  location name, current tasks, trader money, geometry occlusion, and distant
+  world state remain unavailable or unvalidated.
+- Broader native identity and safety behavior still needs repeated validation
+  across recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
+- Alternate-resolution startup, repeated focus/input trials, multi-hour
+  stability, and broad unsupervised strategy competence remain open.
 - SendInput can fail when Windows integrity levels differ or foreground focus is
   denied.
 - The mock world tests orchestration, not Kenshi strategy competence.

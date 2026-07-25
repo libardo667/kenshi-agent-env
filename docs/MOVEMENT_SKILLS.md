@@ -1,5 +1,12 @@
 # Movement skills
 
+> Historical calibrated-skill document. These profile macros remain for legacy
+> single-step compatibility, but the current generic live planner uses
+> `move_to_character`, `move_in_direction`, `approach_dialogue_target`, and
+> `use_game_binding` contracts. `move_in_direction` is currently declared but
+> blocked at its targetless native/parser and option boundary. Remote
+> map-position travel is separately missing; see `STATUS.md`.
+
 Live movement is intentionally split into two skills because Kenshi exposes two
 different navigation scales through the same right mouse button.
 

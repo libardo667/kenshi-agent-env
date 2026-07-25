@@ -844,11 +844,11 @@ class ApproachDialogueTargetAction(StrictModel):
 class MoveInDirectionAction(StrictModel):
     """Walk a bearing and a distance from wherever the character is standing.
 
-    The destination is a point, not a person, which is what makes this the one
-    movement that is always available. Destinations drawn from a character list
-    run out: walk somewhere empty and there is nobody to walk to, and an agent
-    whose only way to move is toward people can strand itself somewhere with
-    none. A bearing always exists.
+    The intended destination is a point, not a person, so this action models
+    movement even when no nearby character can serve as a destination. The
+    current targetless request is not accepted end to end: the native parser,
+    acknowledgement model, and monitored-option adapter still assume a nonempty
+    target ID.
 
     `bearing_degrees` is clockwise from north, as read on the map: 0 north,
     90 east, 180 south, 270 west.
@@ -880,13 +880,14 @@ class MoveToCharacterAction(StrictModel):
 
 
 class PurchaseItemAction(StrictModel):
-    """Buy the item in one exact cell, at a price read from its own tooltip.
+    """Buy the item in one exact seller-owned cell.
 
-    Every argument must agree with what the interface is showing right now: the
-    cell must exist, the tooltip must belong to that cell, and it must name this
-    item at this price. The action carries no coordinates - the calibrated
-    predecessor took model-authored ones - so the only way to buy the wrong
-    thing is for telemetry itself to be wrong.
+    Current producers name the cell and item directly. `expected_price` carries
+    the best current value estimate for optional spending gates, but the
+    exported `item_value` is base worth rather than an authoritative final shop
+    charge. The action carries no coordinates; exact item, seller, and owner
+    binding prevents the wrong cell from being selected, and a later money
+    change proves the effect.
     """
 
     kind: Literal["purchase_item"] = "purchase_item"
@@ -901,21 +902,22 @@ class PurchaseItemAction(StrictModel):
 
 
 class DismissScreenAction(StrictModel):
-    """Close the screen that is currently open, back toward the world view.
+    """Close one bound inventory or trade window toward the world view.
 
-    Exiting is as much a part of using an interface as entering it, and it was
-    the one step with no reusable action: the calibrated path pressed Escape,
-    a raw key the generic surface rejects for good reason. Naming the screen the
-    planner believes is open makes the action bind to observed state instead of
-    blindly pressing a key and hoping.
+    Exiting is as much a part of using an interface as entering it. Naming the
+    screen and, where applicable, the owner window makes the action bind to
+    observed state instead of blindly pressing a key and hoping. It deliberately
+    does not end an active conversation: Kenshi's Escape opens the ESC menu, so
+    dialogue must choose an exact visible closing reply.
     """
 
     kind: Literal["dismiss_screen"] = "dismiss_screen"
     expected_screen: Literal["dialogue", "trade", "inventory"]
     # Caption of the window to close. Inventory and trade windows are closed by
     # their own close box, whose position is derived from the window's observed
-    # rect rather than a calibrated screen coordinate. Leave empty for dialogue,
-    # which has no window and is dismissed with a key.
+    # rect rather than a calibrated screen coordinate. An empty window uses the
+    # configured dismiss key only when the current state can safely bind it; an
+    # active dialogue target makes that route fail closed.
     window: str = Field(default="", max_length=200)
 
 
@@ -1027,10 +1029,10 @@ class ScrollScreenAction(StrictModel):
 
 
 class GameBinding(StrEnum):
-    """Kenshi's own named controls, as the game itself defines them.
+    """Kenshi's named control intentions under the shipped default keymap.
 
-    Read from the shipped `controls.cfg`, so these are the bindings Kenshi is
-    actually listening for rather than keys we hope do something. Only the
+    The current physical mapping is a hard-coded copy of the shipped
+    `controls.cfg`; it is not read from the user's active keymap. Only the
     reversible ones are here: `quicksave`, `quickload`, `editor_toggle`,
     `rebuild_navmesh` and `reload_biomes` all exist in that file and are all
     deliberately absent from this enum, because an agent running unattended on a
@@ -1094,7 +1096,7 @@ GAME_BINDING_KEYS: dict[GameBinding, str] = {
     GameBinding.CHARACTER_PREV: "[",
     GameBinding.STOP_MOVEMENT: "r",
 }
-"""The key Kenshi listens for, per binding. Mirrors the shipped controls.cfg."""
+"""Default Kenshi key per binding; hard-coded, not parsed from active controls.cfg."""
 
 # Bindings that flip state rather than setting it, so a "retry" undoes the
 # first press instead of repeating it. These may never be retried.
@@ -1113,14 +1115,15 @@ TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 
 
 class UseGameBindingAction(StrictModel):
-    """Press one of Kenshi's own named controls.
+    """Press one named Kenshi control through the shipped-default keymap.
 
     The agent kept trying to reach screens by hunting for a widget to click -
     clicking the time-speed buttons to unpause, clicking around the world hoping
     an inventory would appear - because nothing in the catalog could simply open
     a screen. Kenshi already binds all of this: `I` opens the inventory, `M` the
-    map, `C` the stats window, `Space` pauses. Naming the *binding* rather than
-    the key keeps the intention readable and keeps the mapping in one place.
+    map, `C` the stats window, `Space` pauses under the shipped defaults. Naming
+    the *binding* rather than the key keeps the intention readable and the
+    current default mapping in one place; customized keymaps are not yet read.
     """
 
     kind: Literal["use_game_binding"] = "use_game_binding"

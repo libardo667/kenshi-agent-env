@@ -1,5 +1,10 @@
 # Loopable Engineering Prompt — Kenshi Agent Environment, Phase 2
 
+> **Superseded historical prompt.** This Phase 2 brief predates the generic
+> live policy, ten-action contract catalog, long-form unpaused profile, and the
+> retirement of `food_procurement_v1`. Do not use its "current" boundary or
+> ordered work list as present state. Start from `STATUS.md` and current tests.
+
 Copy this entire document into a capable coding agent whose working directory is the repository root. Reuse the same prompt for successive iterations. The agent must inspect the current checkout and the persistent engineering ledger before choosing work; this document is a high-confidence starting map, not permission to assume that the repository has not changed.
 
 ---

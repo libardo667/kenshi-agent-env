@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "kenshi-agent-env"
 version = "0.1.0"
-description = "A safety-first, agentic environment scaffold for controlling Kenshi through telemetry, vision, and ordinary Windows input."
+description = "A bounded live-agent platform for controlling Kenshi through telemetry, vision, semantic actions, and ordinary Windows input."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later" }

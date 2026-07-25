@@ -1,6 +1,7 @@
 # ADR: Independent safety supervision
 
-Status: accepted for portable continuous mode
+Status: accepted; human-input handback exercised in supervised live continuous
+mode on 2026-07-24
 
 ## Context
 
@@ -50,7 +51,9 @@ deterministic safety rules. Logs conservatively preserve ambiguity across the
 dispatch boundary, and downstream evaluation can distinguish requested,
 confirmed, failed, and unverified cleanup.
 
-This decision does not enable live continuous mode, add a stateful option
-protocol, overlap useful strategic planning with active execution, or establish
-real Windows F12/human-input/controller latency. Those require later
-platform-specific and P4 work.
+At this decision point live continuous mode and stateful overlap were not yet
+enabled. They were added later behind the generic live policy and explicit
+acknowledgement. Supervised evidence now covers human input cancelling work,
+visible ownership handback, and confirmed pause. The full quiet-period
+countdown reset/disarm/takeover cycle and broad repeated F12/controller-latency
+trials remain open.

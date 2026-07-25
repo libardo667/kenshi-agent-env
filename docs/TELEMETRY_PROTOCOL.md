@@ -21,12 +21,18 @@ useful compatibility and debugging surface.
 The Python reader rejects a different major version. It accepts additive fields
 only after the Pydantic schema is updated; strict validation is deliberate.
 
+Current compatibility:
+
+| Python package | Reader gate | Current matched producer | Evidence boundary |
+| --- | --- | --- | --- |
+| `0.1.0` | protocol major must be `0` | `0.5.0` | Portable parsing plus the pinned installed `0.5.0` DLL; an arbitrary future `0.x` producer may still fail strict model validation until Python is updated |
+
 ## Freshness
 
 `captured_at` is UTC. `sequence` must increase for every emitted snapshot. A
-reader marks telemetry stale based on wall-clock age. Later work should also
-track a non-increasing sequence, which catches a frozen plugin even when another
-process touches the file.
+reader marks telemetry stale based on wall-clock age. Continuous mode also
+tracks duplicate sequences and preempts after the configured stall age/count,
+which catches a frozen producer even if another process touches the file.
 
 ## Capabilities
 
@@ -55,17 +61,18 @@ nearby.characters
 nearby.roles
 nearby.shop_owners
 control.approach_vendor
+control.move_to_character
+control.move_in_direction
 ```
 
 Capabilities describe what the plugin can currently observe, not what exists in
 the world.
 
-Protocol `0.4.0` adds the observations needed by the narrow conditional
-food-procurement policy. `game.time` makes `game.elapsed_minutes` authoritative.
-When dialogue is open, `ui.dialogue.target` exposes the stable ID of its exact
-bound character and `ui.dialogue.options` exposes the bounded on-screen reply
-captions in order. A closed or unreadable dialogue serializes these fields as
-null, not an invented empty choice list.
+Protocol `0.4.0` added `game.time`, exact dialogue target/options, and tooltip
+evidence for the now-retired conditional food policy. Those fields remain part
+of current `0.5.0` because the generic contracts use them. A closed or
+unreadable dialogue serializes target/options as null, not an invented empty
+choice list.
 
 `ui.tooltip` exposes whether the shared MyGUI tooltip is visible, the joined
 left/right line captions, and normalized bounds of the widget that caused that
@@ -73,14 +80,28 @@ tooltip. Those bounds bind a prospective click to the item currently supplying
 the evidence; they do not describe or enumerate the rest of the inventory.
 Text and bounds are null when no tooltip is visible.
 
-Protocol `0.5.0` adds `ui.visible_controls`: a bounded list of at most 64
-currently visible and enabled MyGUI text/button widgets, each with its rendered
-caption, role, and normalized current bounds. Traversal is additionally capped
-at 2,048 widgets and depth 32. This is a semantic pointer anchor, not a direct
-MyGUI action surface: Python may select only an exact configured label, must
-re-read the same unique label and bounds inside its input lease, and still acts
-through ordinary mouse input. Missing, duplicate, changed, disabled, or hidden
-matches emit no click.
+Protocol `0.5.0` adds `ui.visible_controls`: a bounded list of at most 224
+currently visible and enabled MyGUI controls. Buttons and text carry rendered
+labels; inventory/shop item cells carry item name, value, quantity, type,
+section, owner-window caption, and current bounds. Every entry includes a role,
+window, and normalized current bounds. Traversal is additionally capped at
+2,048 widgets and depth 32, and squad inventory enumeration at 64 items.
+`item_value` is the item's base worth; it is not an authoritative shop asking
+price or sale offer.
+
+This is a semantic pointer anchor, not a direct MyGUI action surface. Python
+selects an exact current label/role/window, must re-read the same binding inside
+its input lease, and still acts through ordinary mouse input. Missing,
+meaningfully ambiguous, changed, disabled, hidden, or wrong-owner matches emit
+no click. The planner digest is sized from the observation/context budget and
+groups controls by window; it does not silently apply a second fixed 64/120
+entry cap.
+
+The same revision exposes `stats_window_open`,
+`management_screen_open`/`management_tab`, `open_inventory_windows`, named
+squad inventory/equipment, nutrition reserve, blood, and combat state. The
+legacy `active_screen` field still resolves only the title/world/inventory/
+dialogue/trade hierarchy; management and stats use their dedicated fields.
 
 `nearby.characters` is limited to the plugin's bounded spatial query around the
 selected character. An entity with `visible: true` is rendered inside the
@@ -119,30 +140,45 @@ against nearby characters. `active_shop_trader_count` reports the registry
 size. Both values are null and the capability is absent if either lifecycle
 hook fails.
 
-`control.approach_vendor` is a narrowly constrained native control capability.
-The plugin may emit it, but `LiveEnvironment` removes it and resets
-`native_control` before constructing an `interface_only` observation. It is
+`control.approach_vendor` is the legacy capability name for the generalized
+dialogue-approach bridge; `control.approach_dialogue_target` is accepted as an
+alias by Python. Protocol `0.5.0` also advertises
+`control.move_to_character` and `control.move_in_direction`.
+`LiveEnvironment` removes all native command capabilities and resets
+`native_control` before constructing an `interface_only` observation. They are
 planner-visible only in an explicitly configured `native_assisted` run.
-Python atomically replaces `native_command.request.json` before sending the
-private `Ctrl+Shift+F10` bridge hotkey. The strict request contains a globally
-unique caller command ID, complete based-on world revision, control mode,
-identity session, exactly one selected stable ID, and one exact target stable
-ID. The plugin reads it only on the game/UI thread and rejects a malformed,
-duplicate, stale, wrong-mode/session/selection, unavailable, replaced, or
-role-invalid request without choosing a substitute.
+Capability advertisement states producer intent and availability of the native
+entry point; it is not by itself cross-language execution proof.
 
-After every fence passes, the plugin calls
-`PlayerInterface::newPlayerTaskSelectedCharacters(PLAYER_TALK_TO, ...)` with
-the character's handle, indoor building, and world position. Kenshi therefore
-owns the pathfinding through doors and interior floors. `native_control` keeps
-at most 16 acknowledgements keyed by command ID. Each includes the request
-basis, acknowledgement sequence, exact target/selection, status, and reason.
-Accepted commands also record their acceptance sequence. The active command is
-cancelled if selection, target lifetime, or vendor-role evidence changes, and
-is completed only when the open dialogue is bound to that exact target. Python
-waits for the matching acknowledgement on a later telemetry sequence; an old
-or different command cannot certify execution. Legacy last-command fields
-remain diagnostic compatibility fields, not the causal authority.
+Python atomically replaces `native_command.request.json` before sending the
+private `Ctrl+Shift+F10` bridge hotkey. Every strict request contains a globally
+unique caller command ID, complete based-on world revision, control mode,
+identity session, and exactly one selected stable ID. Targeted commands carry
+one exact target stable ID; directional movement carries a bearing and a
+distance capped at 2,000 units. The plugin reads requests only on the game/UI
+thread and rejects malformed, duplicate, stale, wrong-mode/session/selection,
+unavailable, replaced, role-invalid, or out-of-range work without choosing a
+substitute.
+
+Current exception: Python intentionally serializes an empty `target_id` for
+`move_in_direction`, but the shared C++ parser rejects every empty target before
+it branches on command. A malformed targetless request also fails the guarded
+rejection-ack path, and Python's acknowledgement model requires a nonempty
+target. The directional handler described below exists in source but is not
+reachable through the current end-to-end protocol.
+
+For requests that pass every fence, the plugin uses Kenshi's own player-order API:
+`PLAYER_TALK_TO` for approach and `MOVE_CUS_ORDERED` for character/directional
+walking. Kenshi therefore owns pathfinding through doors and interior floors.
+`native_control` keeps at most 16 acknowledgements keyed by command ID. Each
+includes the request basis, acknowledgement/acceptance/terminal sequences,
+exact target/selection where applicable, status, and reason. Active work
+cancels on selection mismatch, pause, target lifetime loss, or dialogue-role
+loss. Approach completes only for dialogue bound to the exact target; walking
+completes inside the bounded arrival tolerance. Python waits for the matching
+acknowledgement on a later telemetry sequence; an old or different command
+cannot certify execution. Legacy last-command fields remain diagnostics, not
+causal authority.
 
 ## Identity
 
@@ -194,6 +230,13 @@ Optional values are omitted or null when unavailable. Do not serialize unknown
 health as zero, an unknown faction as neutral, or an unavailable inventory as an
 empty inventory. Empty lists are only valid when the capability says the list
 was actually enumerated.
+
+Despite its field name, `squad[].hunger` is a nutrition reserve: `3.0` is full
+and `0.0` is starving, matching Kenshi's UI value divided by 100. The native
+`food_items` scalar has disagreed with observed carried items and must not
+override the named `inventory` list. `squad.health` currently makes
+life/down/conscious/crippled/combat, nutrition, and blood authoritative; it
+does not make `bleeding_rate` or body-part wounds authoritative.
 
 ## Threading
 

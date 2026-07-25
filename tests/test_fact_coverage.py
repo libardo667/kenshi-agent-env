@@ -45,7 +45,7 @@ def test_a_fact_the_snapshot_carries_is_exported() -> None:
 
 
 def test_a_fact_reachable_only_by_acting_is_discoverable() -> None:
-    """Hunger takes a screen to open; that is a model round-trip, not free."""
+    """Without the native capability, hunger needs an exploratory UI action."""
 
     assert _state(snapshot(), "self.hunger") is FactState.DISCOVERABLE
     # Judged by advertised capability, not by whether a value happens to be set:

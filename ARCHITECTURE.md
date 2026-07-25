@@ -15,14 +15,15 @@ Python runtime
   ├─ SQLite memory ────────────┘          │
   │                                      v
   │                            bounded world-state store
-  │                              ├─ latest + deltas/events
+  │                              ├─ latest + valued deltas/events
   │                              ├─ entity lifetimes
   │                              ├─ active plan/command
   │                              └─ subscriber queues
   │                                      ├─> safety supervisor
   │                                      │     └─ cancel + guarded safe pause
   │                                      └─> scheduler/executor
-  │                                             └─ stateful movement option
+  │                                             ├─ semantic action contracts
+  │                                             └─ monitored movement options
   │                                                   ↕ future-only advisory
   ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
@@ -32,8 +33,13 @@ Python runtime
        ├─ interface_only ──> Windows SendInput ──> ordinary Kenshi UI
        └─ native_assisted ──> marked bounded bridge skills + Windows input
 
-Every boundary ──> JSONL session log ──> replay and evaluation
+Every boundary ──> JSONL session log ──> lifecycle analysis and evaluation
 ```
+
+Full environment replay is a separate logging level. Default compact
+observation digests keep long live logs bounded and support lifecycle analysis,
+but `ReplayEnvironment` requires
+`runtime.log_full_observations: true`.
 
 ## Environment contract
 
@@ -44,7 +50,10 @@ frame. `dispatch(action, command=...)` is the causal execution seam: the runtime
 supplies one globally unique command ID and complete based-on revision, and the
 receipt binds the result to the later observation. `step(action)` remains the
 legacy primitive beneath that seam. `close()` releases resources without
-manipulating the game.
+manipulating the game. Consequently, the safety supervisor's verified pause
+cleanup does not currently extend to normal stop, budget exhaustion,
+cancellation, exception, or objective-completion exits; a unified final-state
+owner remains open work.
 
 ## Continuous world-state stream
 
@@ -71,30 +80,24 @@ The store:
 - owns active plan, step, command ID, and causal start/completion revisions;
 - provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
 
-This is an authoritative Python state stream over the plugin's existing atomic
-latest-snapshot file. It is not a native event transport. Native protocol
-`0.4.0` supplies session-scoped validated-handle identity, bounded keyed
-command acknowledgements, game time, exact dialogue target/options, and current
-tooltip/source bounds; older producers still use the portable
-ambiguity-aware registry. See
+This is an authoritative Python state stream over the plugin's atomic
+latest-snapshot file, not a native event transport. Native protocol `0.5.0`
+supplies session-scoped validated-handle identity, bounded keyed command
+acknowledgements, squad/inventory facts, game time, dialogue and management UI,
+tooltip/source bounds, named item cells, and visible controls. Older producers
+still use the portable ambiguity-aware registry. See
 `docs/ADR_WORLD_STATE_STREAM.md` and
 `docs/ADR_STABLE_NATIVE_IDENTITY.md`.
 
-Generic strategic output must still match the current exact revision. The sole
-live `food_procurement_v1` exception may advance a plan basis across
-sequence-only updates after comparing an exact phase fence from the immutable
-planner observation to latest state. Any identity, capability, game,
-policy-authoritative UI, native command, selection, or exact-target change
-rejects the plan; transient capture dimensions are excluded. A successful
-rebase is a distinct lifecycle event and does not skip ordinary policy,
-precondition, or guard validation.
-
-For this policy, the hosted response chooses only the structurally constrained
-phase actions, target, and arguments. After that structure matches the current
-phase, trusted code compiles the canonical conditions, linear branches,
-timeouts, and risk budgets. This removes duplicated safety boilerplate from
-model discretion while retaining the typed plan executor and all immediate
-checks.
+Portable generic strategic output must match the current exact revision. The
+live `dialogue_interaction_v1` policy may rebase a plan that aged during a
+hosted call only while the immutable planner observation and latest
+observation still authorize every contracted reference, assumption, control
+mode, and capability. A successful rebase changes only the plan basis; each
+step still binds when reached, passes policy and budget validation, and is
+rebound inside the input lease. The policy name is historical: it now
+validates the generic semantic action catalog and prescribes no dialogue,
+vendor, or food sequence.
 
 ## Independent safety supervision
 
@@ -120,8 +123,9 @@ failed or unverified.
 
 The Windows controller now reports human input even between its short input
 leases and carries F12 into the same supervisor stream. Deterministic tests
-cover the preemption semantics; real controller latency still requires
-supervised live validation. See `docs/ADR_SAFETY_SUPERVISOR.md`.
+cover the preemption semantics, and supervised live runs have exercised human
+handback and confirmed pause. Repeated F12/focus/controller-latency trials
+remain open. See `docs/ADR_SAFETY_SUPERVISOR.md`.
 
 ## Final input-boundary revalidation
 
@@ -162,12 +166,19 @@ await controller support. See `docs/ADR_CALIBRATION_IDENTITY.md`.
 
 ## Stateful movement options and concurrent patches
 
-In portable continuous mode, a configured movement-pulse `SkillAction` is
-adapted into `StatefulMovementOption` instead of remaining an opaque executor
-await. The existing macro/environment code still performs the action; the
-adapter adds explicit prepared, running, progress, succeeded, failed, and
-cancelled state. It polls the shared store, owns one task, and makes repeated
-cancellation idempotent.
+Configured movement-pulse skills can be adapted into a
+`StatefulMovementOption` instead of remaining opaque executor awaits. Contracted
+`approach_dialogue_target` always routes through `StatefulApproachOption`, which
+owns one native order, progress monitoring, adoption of an already-active exact
+order, arrival/dialogue success, target/threat/timeout failure, and idempotent
+cancellation. In an unpaused continuous profile it monitors ordinary world
+progress; in stop-motion profiles it owns bounded unpause/re-pause pulses.
+
+`move_in_direction` is declared with the same `MONITORED_OPTION` execution
+kind, but the current adapter extracts a nonempty `target_id` before creating
+an option. The targetless action therefore does not receive the ownership this
+architecture intends. It must not be described as a working generalized option
+until that mismatch and the native wire mismatch are fixed end to end.
 
 While that option is active, the executor may give the strategic planner an
 immutable observation containing `ActivePlanContext`. Only a `PlanPatch`
@@ -179,11 +190,10 @@ budgets. The ordinary guard and precondition checks still run before every
 replacement action. Any stale, mismatched, wrong-type, invalid, or late advisory
 is logged and discarded.
 
-The active live food profile disables concurrent advisories. Its short
-movement pulse completes well before the measured hosted response, while its
-accepted phase plan already carries the bounded future dialogue/inspection
-steps. Portable/mock profiles retain the concurrency path and its regression
-coverage.
+The long-form live profile enables concurrent option planning so useful
+movement can overlap one strategic future-plan advisory. Staging never changes
+the running option, and a patch still cannot execute until the option terminates
+and latest-state/budget validation passes.
 
 Both hosted planners select their structured output type mechanically:
 `PlannerDecision` for `single_step`, `PlanEnvelope` for an idle continuous
@@ -193,10 +203,11 @@ budget, capped independently of the strategic timeout. Condition paths are a
 closed schema enum; semantic shape, capabilities, revision binding, topology,
 and action policy remain application-validated after structured decoding.
 
-This is intentionally an adapter around the proven movement macro, not a
-rewrite of live movement control or a general option framework. Live continuous
-mode is disabled by default; `food_procurement_v1` is the only policy that may
-cross that boundary. See `docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md`.
+This remains a bounded adapter rather than a general option framework.
+Live-continuous execution is disabled in the default profiles and requires an
+implemented policy plus its separate acknowledgement. The current implemented
+live policy is `dialogue_interaction_v1`. See
+`docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md`.
 
 ## Partial observability
 
@@ -207,11 +218,32 @@ could reasonably observe them.
 
 ## Action hierarchy
 
-Primitives are pause, speed, wait, key, hotkey, cursor move, and click. Skills
-expand into bounded primitive sequences. In `single_step` the LLM chooses one
-action; in `continuous` it may propose a bounded typed plan. It never
-micromanages primitive input timing. Reflexes may pause or stop, but broad
-autonomy stays with the planner.
+Raw keys, hotkeys, cursor moves, clicks, and scrolls are controller primitives;
+the generic live planner cannot author them. Run control is separately typed as
+noop, wait, pause/speed, and whole-run stop. Reusable semantic actions bind
+current telemetry references through one catalog:
+
+- approach a dialogue target;
+- move to a nearby character; a bounded bearing/distance action is declared but
+  currently blocked at its targetless wire/option boundary;
+- activate a visible control or dismiss the current screen;
+- buy, sell, equip, or scroll one current window;
+- press one allowlisted reversible Kenshi game binding.
+
+Each `ActionContract` owns planner visibility, capability/control-mode
+requirements, pointer class, native requirement, risk cost, idempotency,
+reference binding, execution route, receipt kind, and required verification
+paths. The planner may compose these actions in a bounded continuous plan; it
+never micromanages primitive timing or coordinates. Legacy skills still expand
+into bounded primitives for compatibility and calibrated transport.
+
+This is the intended single source of action truth, not yet complete executable
+truth. In particular, most contracts name no controller-owned effect predicate:
+the generic policy requires a model-authored condition and evaluates it only on
+a causally later revision. That proves temporal ordering, not necessarily that
+the dispatched action caused the intended transition. The world-state store's
+before/after deltas and native acknowledgements are the substrate for the
+missing effect engine.
 
 Every run has a typed control mode. `interface_only` is the default and filters
 native command capabilities and marked skills before planning; the guard and
@@ -227,16 +259,36 @@ partial snapshot at a low fixed frequency. It hooks a known main/UI-thread
 update point, calls the original function, samples only validated fields, and
 writes an atomic file. The Python process never loads Kenshi memory directly.
 
-The plugin also contains one reviewed `PLAYER_TALK_TO` command bridge used by
-`approach_confirmed_vendor`. This is not described as read-only or UI-only. It
-is marked `requires_native_assisted` in the macro schema and unavailable in the
-default mode. Python atomically writes one strict request before the bridge
-hotkey. The plugin accepts only the exact caller command ID, world-revision
-sequence, native mode, identity session, one-character selection, and stable
-vendor target. A bounded acknowledgement ring reports rejection reasons,
-acceptance, exact-dialogue completion, and selection/target cancellation.
+The plugin also contains three reviewed native-assisted commands behind one
+strict request bridge:
+
+- `approach_confirmed_vendor`, a legacy wire name that now accepts any exact
+  valid dialogue target and completes only on exact-target dialogue;
+- `move_to_character`, which follows one exact nearby character and completes
+  on arrival without opening dialogue;
+- `move_in_direction`, whose intended native handler walks a bounded
+  bearing/distance from the selected character. The current Python producer
+  sends the targetless shape the model permits, while the C++ parser and Python
+  acknowledgement model still require a nonempty target ID; the executor's
+  option adapter has the same target assumption. It is therefore not currently
+  accepted end to end.
+
+Python atomically writes one request before the private bridge hotkey. The
+plugin accepts only the exact caller command ID, current world-revision
+sequence, native mode, identity session, one-character selection, and exact
+target fields. Bounded direction fields are parsed and handled later in the
+native path, but the shared parser's earlier nonempty-target check currently
+prevents a targetless directional request from reaching that branch. A bounded
+acknowledgement ring reports
+rejection, acceptance, completion/cancellation, and terminal sequences. These
+commands are unavailable in `interface_only`; the DLL is not described as
+globally read-only.
 See `docs/ADR_CONTROL_MODES.md` and
 `docs/ADR_CAUSAL_NATIVE_COMMANDS.md`.
+
+Documentation follows [the truth policy](docs/DOCUMENTATION_TRUTH.md): current
+state, enduring design, generated contracts, dated live evidence, and historical
+ledger entries have separate roles.
 
 ## Failure attribution
 

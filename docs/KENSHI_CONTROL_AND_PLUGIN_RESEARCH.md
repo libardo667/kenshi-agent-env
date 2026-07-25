@@ -1,5 +1,16 @@
 # Kenshi control and plugin research
 
+This is a dated research record. Suggestions such as adding native
+selection/focus commands are not the current roadmap: the generic planner now
+uses allowlisted Kenshi game bindings for those operations, and the only
+reviewed native commands are dialogue approach plus two movement forms. Check
+`STATUS.md` before promoting a reference pattern into work.
+
+Current exception: the targetless directional form has a native handler but
+does not pass the shared request parser, acknowledgement model, or monitored
+option adapter. It is a design/implementation seam under review, not a working
+command.
+
 This note records the control references and open-source plugin patterns most
 useful to the live agent. The shallow reference clones live outside this repo at
 `/home/levib/projects/personal-projects/kenshi-reference-plugins/`; they are
@@ -15,7 +26,8 @@ It currently binds pause to Space, character slots to `1` through `0`, normal
 through maximum game speeds to `F2` through `F4`, camera movement to WASD,
 camera rotation to Q/E, character focus to F, world zoom to Home/End, map to M,
 and inventory to I. The agent configuration should follow this file instead of
-assuming Kenshi defaults, because all bindings are user-remappable.
+assuming Kenshi defaults, because all bindings are user-remappable. Current
+`GAME_BINDING_KEYS` does not yet do that: it hard-codes the shipped defaults.
 
 The community [Kenshi controls reference](https://kenshi.wiki/index.php?title=Controls)
 also documents portrait selection and centering, number-key character selection,

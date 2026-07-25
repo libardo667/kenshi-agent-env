@@ -18,12 +18,18 @@ updated its `continue` and `autosaveindex` entries normally. Making the whole
 file read-only would also prevent legitimate preference and save-selection
 updates, so it is not the default recommendation.
 
-The lock freezes zoom input; 3D zoom skills must therefore not be offered in
-the live profile. The truthful agent controls are `recenter_camera` (the
-live-proven F binding), bounded WASD pans that recenter first, and bounded Q/E
-orbits that recenter first. Rotation remains available, and moving Lekko can
-also change a clipped follow view. To recalibrate distance, exit, restore
-`camera zoom=125`, relaunch, choose a new distance, then repeat the lock step.
+The lock freezes 3D zoom input. Legacy zoom macros should therefore not be
+offered by a profile using it. The generic `use_game_binding` catalog still
+contains Kenshi's zoom bindings because they remain meaningful on the map and
+on profiles without the lock. Current plan conditions cannot author a camera
+coordinate delta: `camera.position` is a capability name, and a field condition
+using it is silently normalized to "the capability still exists." A later tick
+can therefore satisfy that condition without camera motion. Receipts and
+`recent_action_outcomes` may expose before/after camera facts, but a camera
+binding must not be described as semantically proven until a real coordinate
+condition or controller-owned effect predicate exists. To recalibrate distance,
+exit, restore `camera zoom=125`, relaunch, choose a new distance, then repeat
+the lock step.
 
 Community references:
 

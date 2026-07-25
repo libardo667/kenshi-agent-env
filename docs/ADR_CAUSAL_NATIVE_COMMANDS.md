@@ -6,6 +6,21 @@ Accepted for P5. Portable tests, the pinned VS2010 SP1 Release x64 build, and
 the supervised in-game protocol `0.3.0` rejection/acceptance/completion proof
 pass.
 
+Extended in protocol `0.5.0` on 2026-07-25. The command-ID, issue-time revision,
+mode/session/selection, keyed acknowledgement, and no-implicit-retry decisions
+remain authoritative. The bridge now admits three reviewed commands rather than
+one: generic exact-target dialogue approach (under the legacy
+`approach_confirmed_vendor` wire name), exact-character walking, and bounded
+directional walking. Command-specific completion is exact dialogue or bounded
+arrival.
+
+Current implementation exception: the directional handler was added, but the
+shared C++ parser still rejects its intended empty `target_id`; the Python
+acknowledgement model and monitored-option adapter also require a target. The
+accepted decision therefore describes the intended causal shape, not a current
+end-to-end directional proof. See `STATUS.md` and
+`docs/TELEMETRY_PROTOCOL.md` for current behavior.
+
 ## Problem
 
 The first vendor bridge responded to a hotkey, chose the nearest matching role,
@@ -60,9 +75,10 @@ automatically.
 - Exact revision equality can reject a request if telemetry advances between
   planning and the hotkey. That is intentional: a fresh plan gets a fresh
   command ID; stale intent is not silently rebased.
-- The bridge remains one narrowly reviewed `PLAYER_TALK_TO` operation. This ADR
-  does not authorize a generic native dispatcher, arbitrary game methods, live
-  continuous mode, or automatic retry.
+- At this decision point the bridge remained one narrowly reviewed
+  `PLAYER_TALK_TO` operation. The later `0.5.0` amendment added only the two
+  reviewed `MOVE_CUS_ORDERED` forms above; it still does not authorize a generic
+  native dispatcher, arbitrary game methods, or automatic retry.
 - Protocol `0.3.0` is additive at the telemetry level, but strict Python
   consumers must use the refreshed schemas.
 

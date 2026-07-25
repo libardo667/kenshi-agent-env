@@ -1,6 +1,7 @@
 # ADR: Authoritative continuous world-state stream
 
-Status: accepted
+Status: accepted; continuous live execution enabled after the later supervisor,
+option-cleanup, and explicit-acknowledgement gates were completed
 
 Date: 2026-07-23
 
@@ -51,5 +52,7 @@ Python runtime; it does not claim that the plugin emits native events.
 - The portable identity registry alone cannot prove Kenshi object identity.
   Later P5 contracts added stable native handle generations and keyed
   bridge-level acknowledgements while retaining this portable fallback.
-- `single_step` remains unchanged, and continuous live execution remains
-  blocked until independent supervision and cancellable option cleanup exist.
+- `single_step` remains available and unchanged by this decision. At the time
+  of this ADR, continuous live execution remained blocked pending independent
+  supervision and cancellable option cleanup. Those prerequisites were added
+  later; the current generic live profiles now run through this same stream.

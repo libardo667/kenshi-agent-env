@@ -1,11 +1,10 @@
-# Live profile for the generic composable dialogue chain.
+# Short stop-motion profile for the generic semantic action surface.
 #
 # It differs from live.burnin.yaml in what it *authorizes*, not in how it is
-# calibrated: the planner composes reusable semantic actions under the generic
-# `dialogue_interaction_v1` policy instead of replaying the Barman recipe. The
-# approach macro is retained only to supply the proven native hotkey and its
-# calibrated movement pulse; the semantic action does not inherit its
-# vendor-specific authorization.
+# calibrated: the planner composes reusable actions under
+# `dialogue_interaction_v1` instead of replaying the retired Barman recipe.
+# The policy name is historical and now covers every contracted semantic kind.
+# The approach macro remains only as the proven native hotkey transport.
 version: 1
 mode: live
 
@@ -22,8 +21,7 @@ planning:
   # are its arrival/threat radii, not a feature flag.
   semantic_approach_arrival_distance: 5.0
   semantic_approach_threat_distance: 15.0
-  # The strategic call overlaps the walk, which is the whole point of a long
-  # monitored option.
+  # Permit one future-plan advisory to overlap the monitored approach.
   concurrent_option_planning_enabled: true
   observation_pump_seconds: 0.1
   state_history_limit: 128
@@ -52,9 +50,14 @@ runtime:
   max_steps: 30
   settle_seconds: 0.75
   observation_memory_limit: 16
+  # Compatibility field; current runtime termination does not read it.
   stop_when_terminated: true
   decision_stream: true
-  objective: Locate and approach a clearly non-hostile trader in The Hub so the selected squad member can buy one affordable food item. Stay paused between actions and stop at any dialogue or trade UI that has not yet been calibrated.
+  objective: >-
+    Locate and approach a clearly non-hostile trader, open trade through an
+    exact current dialogue control, buy one affordable food item only when its
+    named cell and seller bind, close the trade window, and stop. Stay paused
+    between actions.
 
 planner:
   kind: openai
@@ -62,6 +65,7 @@ planner:
   reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-medium}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
   openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
+  # Parsed but not sent by the current hosted planner adapters.
   temperature: 0.1
   timeout_seconds: 90
   max_output_tokens_base: 4096
@@ -83,6 +87,7 @@ capture:
   window_title_contains: Kenshi 1.0.
   image_format: png
   jpeg_quality: 90
+  # Compatibility field; current capture already always uses the client area.
   crop_client_area: true
 
 launch:
@@ -141,9 +146,11 @@ controls:
   native_approach_max_seconds: 40.0
 
 safety:
-  # This profile permits only the audited skills below. The CLI must still
-  # receive --execute-live-actions before any input is sent.
+  # This profile permits only the audited surface below. The CLI must still
+  # receive --execute-live-actions plus the native-assisted and continuous-live
+  # acknowledgements before any input is sent.
   live_actions_enabled: true
+  # Compatibility field; the CLI execution flag is currently unconditional.
   require_cli_execute_flag: true
   emergency_stop_key: f12
   supervisor_enabled: true

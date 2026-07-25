@@ -58,7 +58,11 @@
       "type": "string"
     },
     "command": {
-      "const": "approach_confirmed_vendor",
+      "enum": [
+        "approach_confirmed_vendor",
+        "move_to_character",
+        "move_in_direction"
+      ],
       "title": "Command",
       "type": "string"
     },
@@ -86,10 +90,24 @@
       "type": "array"
     },
     "target_id": {
+      "default": "",
       "maxLength": 200,
-      "minLength": 1,
       "title": "Target Id",
       "type": "string"
+    },
+    "bearing_degrees": {
+      "default": 0.0,
+      "exclusiveMaximum": 360.0,
+      "minimum": 0.0,
+      "title": "Bearing Degrees",
+      "type": "number"
+    },
+    "distance_units": {
+      "default": 0.0,
+      "maximum": 2000.0,
+      "minimum": 0.0,
+      "title": "Distance Units",
+      "type": "number"
     }
   },
   "required": [
@@ -99,8 +117,7 @@
     "control_mode",
     "identity_session_id",
     "based_on_revision",
-    "selected_character_ids",
-    "target_id"
+    "selected_character_ids"
   ],
   "title": "NativeCommandRequest",
   "type": "object"

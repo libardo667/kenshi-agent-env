@@ -19,20 +19,24 @@ both `ActionGuard` and `LiveEnvironment`.
 live-action gates. Logs, receipts, overlays, and summaries carry the mode.
 
 The Windows controller uses a polite input lease by default. It waits for a
-configurable idle interval before capture or input, records foreground/cursor
-state, and Alt+Tabs away from Kenshi before restoring the cursor after actions.
-Resumed human input interrupts a
-movement pulse; safety re-pause is the only operation allowed to reclaim Kenshi
-focus before the controller yields it back. After the next quiet interval the
-agent observes and replans rather than replaying an interrupted intent.
+configurable idle interval before capture or input and records the foreground
+and cursor state. In ordinary absolute-pointer mode it can Alt+Tab away before
+restoring the cursor. In Kenshi's relative-pointer mode the OS and game cursors
+must be synchronized from a known corner and the final cursor is deliberately
+left in place; an absolute restore would desynchronize them and turn the next
+small human movement into an edge jump. Resumed human input cancels the active
+plan and yields control. After the next authorized quiet interval the agent
+observes and replans rather than replaying interrupted intent.
 
 The `./dev launch` path also uses a bounded input lease. Any new human input is
 terminal for that launch attempt: it emits no further input and does not retry
-title-screen clicks. Each bounded startup input restores the prior
-foreground/cursor. Before any calibrated in-game pointer click, the launcher
-requires the exact configured client size. Ordinary live pointer-bearing
-actions repeat that exact-size check after the input lease is acquired and
-immediately before dispatch.
+title-screen clicks. Startup selects exact live labels and current bounds, so it
+does not inherit gameplay coordinates. Each bounded startup input restores or
+hands back foreground/cursor state according to the active pointer mode.
+Profile-calibrated in-game pointer actions require the exact configured client
+size; semantic-current actions instead rebind current UI bounds. Both repeat
+their relevant checks after the input lease is acquired and immediately before
+dispatch.
 
 Because the lease wait is unbounded by design, a continuous plan step also
 carries a bounded `ExecutionToken` into dispatch. Inside the acquired lease,
@@ -64,30 +68,43 @@ filter narrow. Close applications containing secrets before live tests. Start
 with a disposable save and a fixed resolution/UI scale.
 
 The plugin's telemetry path is observational, but the DLL is not globally
-read-only: in native-assisted mode its bounded vendor bridge may issue a
-`PLAYER_TALK_TO` player order. No mode permits health, position, money, faction,
-save/load, or arbitrary task mutation. Interface-only actions remain visible
-keyboard/mouse operations through the ordinary UI.
+read-only. In native-assisted mode its bounded bridge may issue one of three
+declared player orders: talk to an exact valid dialogue target, walk to an exact
+nearby character, or intend a bounded bearing/distance walk. The third path is
+currently blocked by the targetless contract mismatch described below. No mode permits direct
+health, position, money, faction, save/load, editor, or arbitrary task mutation.
+Interface-only actions remain visible keyboard/mouse operations through the
+ordinary UI.
 
 Stable native entity IDs contain no process pointer and are scoped to an
 explicit process/session generation. Display names remain descriptive only.
-Any session change or target omission invalidates target-bound work. The native
-vendor bridge additionally requires a globally unique caller command ID, exact
-based-on telemetry revision, `native_assisted` mode, current identity session,
-one exact selected character, and one exact role-confirmed target. Python waits
-only for that command's acknowledgement on a later snapshot. The plugin retains
-at most 16 keyed acknowledgements, never reissues a duplicate ID, cancels on
-selection or target-lifetime/role change, and completes only for dialogue bound
-to the exact target. Rejection is definitive and does not start a movement
-pulse; timeout or transport failure remains uncertain and is never retried
-automatically.
+Any session change or target omission invalidates target-bound work. Every
+native request additionally requires a globally unique caller command ID, exact
+issue-time telemetry revision, `native_assisted` mode, current identity session,
+and exactly one selected character. Targeted requests bind one exact current
+stable ID; the directional model instead binds bounded numeric fields and an
+empty target. The current shared C++ parser rejects that empty target before
+command-specific validation, the Python acknowledgement requires a nonempty
+target, and the executor's monitored-option adapter also assumes one. Directional
+movement is therefore a known unavailable path, not a reviewed live guarantee.
+For working targeted commands, Python waits only for that command's
+acknowledgement on a later snapshot. The plugin retains at most 16 keyed
+acknowledgements, never reissues a duplicate ID, cancels on selection, pause,
+or target-lifetime/role change, and uses command-specific completion: exact
+dialogue for approach, bounded arrival for walking.
+Rejection is definitive; timeout or transport failure remains uncertain and is
+never retried automatically.
 
-General continuous mode remains blocked for live-labeled environments; only
-the explicitly gated `food_procurement_v1` native-assisted policy is eligible.
-In continuous runs, one observation pump feeds an authoritative bounded store.
-State-changing plan actions receive a command ID and start/completion revision;
-unchanged, regressing, or conflicting state cannot certify progress. Missing
-nearby capability does not become evidence that an entity disappeared.
+Live continuous mode remains unavailable unless
+`planning.live_execution_policy` names an implemented policy and the CLI
+receives `--acknowledge-continuous-live`. The implemented generic policy is
+`dialogue_interaction_v1`; its historical name does not restrict it to
+dialogue. It accepts only planner-visible contracted actions and run control,
+never raw controller primitives. In continuous runs, one observation pump feeds
+an authoritative bounded store. State-changing plan actions receive a command
+ID and start/completion revision; unchanged, regressing, or conflicting state
+cannot certify progress. Missing nearby capability does not become evidence
+that an entity disappeared.
 
 An independent portable supervisor subscribes to that stream and can cancel a
 blocked planner or plan action without waiting for the strategic loop. It
@@ -101,17 +118,35 @@ configured action allowlist and matching control mode, and it never permits an
 unpause; it bypasses only the per-minute rate counter so prior activity cannot
 lock out the safest local action. Cleanup is not reported successful until a
 causally later revision with `game.pause` capability confirms `paused=true`.
-Failure, missing capability, or timeout remains explicit. This has portable
-fake-environment evidence only: live continuous mode is blocked, so there is no
-claim yet about concurrent F12, human-input, or Windows-controller latency.
+Failure, missing capability, or timeout remains explicit. Portable tests cover
+the complete cancellation/cleanup matrix; supervised live runs additionally
+proved human-input handback and confirmed pause. Broader repeated F12,
+focus-loss, and controller-latency trials remain part of the live checklist.
 
-Portable configured movement pulses expose an executor-owned option lifecycle.
-A concurrent planner sees an immutable active-plan snapshot and has advisory
-authority over future steps only. Its output cannot alter the running movement,
-restart an active/completed step, or execute until it matches the original
-plan/version/revision and passes a second post-movement validation against
-latest state and remaining budgets. This does not replace the live movement
-pulse's own re-pause guarantee, and live continuous mode remains blocked.
+Two current policy gaps must remain explicit:
+
+- `allow_live_unpause_actions=false` is enforced only for direct
+  `PauseAction(paused=false)`. The allowlisted
+  `UseGameBindingAction(binding=pause)` can still toggle an unpaused game.
+- The verified cleanup above belongs to supervisor preemption. Normal stop,
+  budget/replan exhaustion, cancellation, exception, and objective-completion
+  exits do not run one shared final-state policy; `LiveEnvironment.close()` is
+  intentionally a no-op.
+
+Likewise, requiring a success condition on a causally later revision does not
+make that condition an authoritative action effect. Many current conditions are
+planner-authored and contracts generally do not derive an operator, expected
+value, and baseline from the bound pre-action state. Later correlated state can
+still produce a false semantic success.
+
+Configured movement and semantic approach expose executor-owned option
+lifecycles. A concurrent planner sees an immutable active-plan snapshot and has
+advisory authority over future steps only. Its output cannot alter running
+movement, restart an active/completed step, or execute until it matches the
+original plan/version/revision and passes a second post-movement validation
+against latest state and remaining budgets. Stop-motion profiles retain bounded
+re-pause behavior; the long-form profile instead monitors ordinary movement in
+an intentionally running world.
 
 Do not read Kenshi or MyGUI object state from a worker thread. Sample game state
 on a known game/UI thread, copy it into plain data, and only then hand it to

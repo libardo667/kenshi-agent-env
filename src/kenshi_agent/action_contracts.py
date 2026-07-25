@@ -228,11 +228,11 @@ def bind_move_in_direction(
 ) -> ReferenceBinding:
     """Bind a directional walk to the character actually doing the walking.
 
-    There is no external reference to resolve - the destination is derived from
-    where the character already is - so what must be proved is only that the
-    game is running and somebody is selected to receive the order. That is what
-    makes this the movement of last resort: it binds in an empty desert where a
-    destination list has nothing in it.
+    There is no external reference to resolve - the intended destination is
+    derived from where the character already is - so this binder proves only
+    that the game is running and somebody is selected to receive the order.
+    The current downstream native and option paths still require a target ID,
+    so successful binding is not end-to-end executability.
     """
 
     if not isinstance(action, MoveInDirectionAction):
@@ -355,9 +355,9 @@ def _bind_item_cell(
     label alone is not a reference to anything in particular.
 
     `item_value` narrows further, because a label is not unique either: the live
-    Barman stocks five cells all labelled "Tooth Pick", two worth c.809 and
-    three worth c.390 - different weapon grades wearing the same name. Price is
-    what separates them, and the planner already states the price it means.
+    Barman stocks five cells all labelled "Tooth Pick", two with base value 809
+    and three with base value 390 - different weapon grades wearing the same
+    name. Base value separates them; it is not the final shop price.
     """
 
     telemetry = observation.telemetry
@@ -383,7 +383,7 @@ def _bind_item_cell(
         return _unbound(f"No current item cell matches {cell_label!r}{where}.")
 
     if len(matches) > 1 and item_value is not None:
-        # Price is only ever a tie-breaker between cells that share a name - the
+        # Base value is only ever a tie-breaker between cells that share a name - the
         # Barman stocks five "Tooth Pick" at two grades. It is deliberately not
         # an assertion about the sale: a shop charges its own multiplier on an
         # item's value and that asking price is never exported, so requiring
@@ -396,7 +396,7 @@ def _bind_item_cell(
     if len(matches) > 1:
         # Ambiguity only matters when the candidates differ in a way that could
         # change the outcome. A shop holding five identical Tooth Picks at the
-        # same price in the same window offers five interchangeable cells, and
+        # same base value in the same window offers five interchangeable cells, and
         # refusing all of them makes stacked stock unbuyable - which is what the
         # live Barman's shelf actually did. Distinguishable duplicates still
         # fail closed.
@@ -426,13 +426,14 @@ def bind_purchase_item(
     action: Action,
     observation: Observation,
 ) -> ReferenceBinding:
-    """Bind a purchase to a cell whose *own* tooltip names this item and price.
+    """Bind a purchase to one exact named seller-owned cell.
 
-    The calibrated predecessor took model-authored coordinates and merely checked
-    they landed inside the tooltip's source. Here the cell is the reference and
-    the tooltip must belong to it, so "buy what I am looking at" is checked
-    rather than asserted. Deliberately says nothing about *what kind* of item is
-    worth buying: that is task intent, not purchase safety.
+    Current producers export the cell's item facts directly. Older producers
+    fall back to a tooltip bound to the same cell. The exported `item_value` is
+    base worth rather than an authoritative shop charge, so it may disambiguate
+    stock but cannot prove the final debit. Deliberately says nothing about
+    *what kind* of item is worth buying: that is task intent, not purchase
+    safety.
     """
 
     if not isinstance(action, PurchaseItemAction):
@@ -448,7 +449,7 @@ def bind_purchase_item(
     telemetry = observation.telemetry
     assert telemetry is not None
 
-    # The cell itself now carries the game's own name and price, which is
+    # The cell itself now carries the game's own name and base value, which is
     # stronger evidence than text scraped from a tooltip - and requiring a
     # tooltip forced a hover, a replan, and a second model call before every
     # purchase. Prefer the cell's facts; fall back to the tooltip only when a
@@ -524,9 +525,9 @@ def bind_purchase_item(
     return ReferenceBinding(
         bound=True,
         reason=(
-            f"Bound to cell {cell.resolved_label!r}, whose own tooltip names "
-            f"{action.item_name!r} at c.{action.expected_price} from seller "
-            f"{action.seller_id}."
+            f"Bound {action.item_name!r} to seller-owned cell "
+            f"{cell.resolved_label!r} for seller {action.seller_id}; declared "
+            f"value estimate c.{action.expected_price}."
         ),
         target_id=action.seller_id,
         resolved_label=cell.resolved_label,
@@ -785,8 +786,8 @@ def bind_use_game_binding(
     return ReferenceBinding(
         bound=True,
         reason=(
-            f"Bound {action.binding.value!r} to Kenshi's own {key!r} key on a "
-            "loaded game."
+            f"Bound {action.binding.value!r} to the current hard-coded default "
+            f"Kenshi key {key!r} on a loaded game."
         ),
         resolved_label=action.binding.value,
         source_revision=observation.world_revision,
@@ -934,8 +935,9 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     model=MoveInDirectionAction,
     summary=(
         "Walk a bearing and distance from where the character stands, ordering "
-        "a walk to a bare point rather than toward anyone. Always available, "
-        "which is what makes it the way out of somewhere with nobody in it."
+        "a walk to a bare point rather than toward anyone. This is the intended "
+        "targetless local-movement contract; current native/parser and "
+        "monitored-option target assumptions block end-to-end execution."
     ),
     argument_source=(
         "bearing_degrees is clockwise from north (0 N, 90 E, 180 S, 270 W); "
@@ -1026,12 +1028,12 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     version="1.0",
     model=DismissScreenAction,
     summary=(
-        "Close the screen that is currently open, returning toward the world "
-        "view. Names the screen it expects so it cannot dismiss the wrong one."
+        "Close one currently bound trade or inventory window toward the world "
+        "view. Active dialogue instead ends through an exact visible reply."
     ),
     argument_source=(
-        "expected_screen must equal the observation's current "
-        "telemetry.ui.active_screen."
+        "expected_screen must equal telemetry.ui.active_screen; inventory/trade "
+        "also name the exact current owner window. Do not use for active dialogue."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
@@ -1054,13 +1056,14 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     version="1.0",
     model=PurchaseItemAction,
     summary=(
-        "Buy the item in one exact cell at the price its own tooltip shows. "
-        "Hover the cell first; the tooltip is the evidence."
+        "Buy the item in one exact named seller-owned cell. Current cell facts "
+        "bind identity; the final shop charge is confirmed only by later money."
     ),
     argument_source=(
-        "cell_label from visible_controls (role 'item'); item_name and "
-        "expected_price copied from that cell's current tooltip; seller_id the "
-        "exact stable id of the one active shop owner."
+        "cell_label, item_name, expected_price (from item_value), and window "
+        "from one visible_controls item entry; seller_id is the exact stable id "
+        "of that vendor group. item_value is base worth, not a guaranteed final "
+        "shop charge."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
@@ -1096,10 +1099,11 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     version="1.0",
     model=UseGameBindingAction,
     summary=(
-        "Press one of Kenshi's own named controls: open the inventory, map or "
-        "stats window, pause or set game speed, move the camera, or change the "
-        "selected character. This is how screens are entered - do not hunt for "
-        "a widget to click when a binding exists."
+        "Press one named Kenshi control through the hard-coded shipped-default "
+        "keymap: open inventory, map or stats, pause or set speed, move the "
+        "camera, or change selection. This is how screens are entered - do not "
+        "hunt for a widget when a binding exists. Customized keymaps are not "
+        "currently read."
     ),
     argument_source=(
         "binding must be one of the catalogued GameBinding names; "

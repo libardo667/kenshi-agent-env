@@ -811,13 +811,13 @@ class TestFutureStepsMayReferenceFutureState:
     """The point of composing: later steps describe state that does not exist yet.
 
     Requiring every step to bind against the *current* observation quietly made
-    real multi-step plans impossible — "dismiss the dialogue" cannot bind before
-    an approach has opened one. Only the entry step must bind now; the rest are
-    bound when reached and again inside the input lease.
+    real multi-step plans impossible — a closing reply cannot bind before an
+    approach has opened dialogue. Only the entry step must bind now; the rest
+    are bound when reached and again inside the input lease.
     """
 
-    def _approach_then_dismiss(self) -> PlanEnvelope:
-        from kenshi_agent.models import DismissScreenAction
+    def _approach_then_reply(self) -> PlanEnvelope:
+        from kenshi_agent.models import ActivateVisibleControlAction
 
         return plan(
             [
@@ -829,11 +829,14 @@ class TestFutureStepsMayReferenceFutureState:
                 step(
                     "leave",
                     # Nothing is open yet; this refers to what the approach creates.
-                    DismissScreenAction(expected_screen="dialogue"),
+                    ActivateVisibleControlAction(
+                        exact_label="Goodbye.",
+                        role="button",
+                    ),
                     success=[screen_is("world")],
                 ),
             ],
-            pointer=0,
+            pointer=1,
         )
 
     def test_a_plan_whose_later_step_needs_future_state_is_accepted(self) -> None:
@@ -848,7 +851,7 @@ class TestFutureStepsMayReferenceFutureState:
             },
             deep=True,
         )
-        assert dialogue_interaction_policy_errors(self._approach_then_dismiss(), in_world) == []
+        assert dialogue_interaction_policy_errors(self._approach_then_reply(), in_world) == []
 
     def test_the_same_plan_rebases_across_planner_latency(self) -> None:
         state = observation(controls=TRADE_CONTROLS)
@@ -863,7 +866,7 @@ class TestFutureStepsMayReferenceFutureState:
             deep=True,
         )
         assert dialogue_interaction_rebase_errors(
-            self._approach_then_dismiss(), in_world, later(in_world)
+            self._approach_then_reply(), in_world, later(in_world)
         ) == []
 
     def test_an_unbindable_entry_step_is_still_refused(self) -> None:
@@ -1007,13 +1010,13 @@ class TestDerivedRiskBudget:
         assert errors, "an unbindable purchase must still be refused"
 
 
-def test_a_camera_move_can_prove_itself() -> None:
-    """The camera is what anyone watching a stream actually sees.
+def test_camera_capability_path_is_counted_as_causal_by_current_policy() -> None:
+    """Record the current policy behavior without calling it effect proof.
 
-    `camera.position` records where it is, but it was absent from the causal
-    prefixes, so a camera step could not be proven however it was written and
-    was rejected for having no causal success condition. The only field that
-    records the effect did not count as evidence of it.
+    `camera.position` is a capability path. Condition normalization converts a
+    field condition using it into capability presence, so a later tick can pass
+    without a coordinate delta. This assertion preserves that known limitation
+    until the condition/effect model is fixed.
     """
     from kenshi_agent.dialogue_interaction import _is_causal_condition
     from kenshi_agent.models import ConditionKind, ConditionPath

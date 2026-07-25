@@ -2127,10 +2127,13 @@ namespace
         }
         json << "],";
         json << "\"warnings\":["
-             << "\"Partial telemetry only: hunger, wounds, getting-eaten state, inventory "
-             << "detail, and click-target occlusion are not yet exported. A visible nearby "
-             << "entity is rendered inside the current viewport, but geometry can still "
-             << "occlude it or intercept a click.\"";
+             << "\"Partial telemetry only: body-part wounds, bleeding rate, "
+             << "getting-eaten state, imprisonment/enslavement, current tasks, "
+             << "location name, distant world state, and click-target occlusion "
+             << "are not exported or validated. "
+             << "The food_items scalar is not authoritative over the named inventory list. "
+             << "A visible nearby entity is rendered inside the current viewport, but "
+             << "geometry can still occlude it or intercept a click.\"";
         if (g_shopTraderRegistryOverflow)
         {
             json << ",\"The live ShopTrader registry exceeded its bounded capacity; "

@@ -1,5 +1,9 @@
 # Scaffold build report
 
+> Historical 2026-07-22 scaffold report. Its 20/27-test counts and "not loaded"
+> boundaries are preserved as the initial baseline, not current status. See
+> `STATUS.md` for the current 468-test and supervised-live state.
+
 Generated and checked on 2026-07-22 in a Linux Python 3.13.5 container. This
 report distinguishes automated checks from work that requires Windows and a real
 Kenshi installation.

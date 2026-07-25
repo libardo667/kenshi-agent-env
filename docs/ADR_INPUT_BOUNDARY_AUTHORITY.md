@@ -1,6 +1,10 @@
 # ADR: Revalidate plan authority at the real input boundary
 
-Status: accepted for portable continuous mode; not yet exercised in live Kenshi
+Status: accepted; successful reports exercised in supervised live Kenshi
+
+Portable conflict tests remain the strongest proof that a changed fact inside a
+blocked lease emits zero primitives. Supervised generic live runs have also
+carried successful `InputBoundaryReport` evidence through real Windows leases.
 
 ## Context
 
@@ -68,18 +72,21 @@ The native-assisted path keeps its stronger issue-time DLL fences unchanged.
 The boundary runs before them and is purely additive; command IDs, request
 atomicity, and keyed acknowledgement semantics are untouched.
 
-The calibration recheck deliberately still runs *first* and still raises, so the
-existing fail-closed client-size brake is unchanged and is not silently demoted
-into a boundary rejection.
+The calibration report is computed first inside the lease. With an
+`ExecutionToken`, it is passed into the same boundary decision and a mismatch
+becomes a graceful zero-input rejection, allowing the executor to release the
+reservation. The tokenless single-step/bare-`step()` path still raises and
+preserves the proven client-size error message.
 
-This does not deliver P4. The fence re-checks the client-size gate that exists
-today; a versioned calibration identity covering UI scale, DPI transform, window
-mode, keymap, and profile hash is still missing, and the token is the intended
-place to carry it when P4 lands.
+P4 later added versioned calibration identity covering client size and modelled
+window mode, UI scale, DPI transform, keymap, profile, and macro hashes. The
+controller currently observes only client width/height; declaring an
+unobservable field produces `unknown` and refuses input. Semantic-current
+actions instead rebind their current telemetry reference inside this fence.
 
 Single-step dispatch does not build a token, because it has no plan assumptions
 or typed step preconditions to re-check. Its receipts carry no boundary report,
 which is why the report is nullable rather than defaulted.
 
-This is automated portable evidence only. No live Kenshi run has exercised the
-fence against a real input lease.
+Deliberately changing an authorization fact during a real live lease remains
+unrun; that destructive conflict case is covered portably.

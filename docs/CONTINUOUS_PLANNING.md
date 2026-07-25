@@ -12,30 +12,58 @@
 Mock and fake event-driven environments may use the general bounded contract.
 Live observations terminate before a strategic call unless
 `planning.live_execution_policy` names an implemented policy. The default and
-live-example profiles use `disabled`; the calibrated profile names
-`food_procurement_v1`, and live input still requires the ordinary execution
-gate, native-assisted acknowledgement, and the separate
-`--acknowledge-continuous-live` flag.
+live-example and legacy burn-in profiles use `disabled`. The short dialogue and
+long-form profiles name `dialogue_interaction_v1`, and live input still requires
+the ordinary execution gate, native-assisted acknowledgement where applicable,
+and the separate `--acknowledge-continuous-live` flag.
 
-## Conditional live policy
+## Generic live policy
 
-`food_procurement_v1` is a deterministic action grammar, not general live
-planning permission. It accepts only:
+`dialogue_interaction_v1` is the historical name of the current generic live
+policy. It prescribes no Barman, vendor, dialogue, food, or step sequence. It
+accepts planner control actions plus actions from the authoritative contract
+catalog when the current observation and control mode advertise them:
 
-- world: approach the exact confirmed vendor, choose exact option zero, inspect
-  one item;
-- exact dialogue: choose option zero, then inspect;
-- trade without authoritative tooltip: inspect once;
-- trade with visible tooltip and source bounds: buy that one item once.
+- approach an exact current dialogue target;
+- move to an exact nearby character;
+- author the declared bounded bearing/distance action, although its current
+  targetless request is blocked by nonempty-target assumptions in the native
+  parser, acknowledgement model, and monitored-option adapter;
+- activate one unique visible control or dismiss the current screen;
+- purchase, sell, equip, or scroll one exact current window/cell;
+- use one allowlisted reversible Kenshi binding.
 
-Every action binds the same stable target ID, is at-most-once with no retry,
-and rechecks pause, one exact selection, phase-specific screen/dialogue/owner
-evidence, and the full capability set. A purchase additionally copies exact
-item name and price from the current tooltip. Its click must fall inside the
-tooltip's current source-widget bounds; this is stronger and less
-history-dependent than trusting a claimed earlier cursor coordinate. Success
-requires the exact later money debit, one additional selected-character food
-item, and `paused=true`.
+Raw key, hotkey, cursor, click, and scroll primitives are rejected because a
+bare input carries no evidence about what it would activate. Each semantic
+contract owns its required capabilities, control modes, pointer class,
+native-assisted flag, risk, idempotency, reference fields, execution route, and
+verification paths.
+
+Only the step about to execute must bind immediately. Later steps may refer to
+state created by earlier steps—for example, activating a closing reply in a
+dialogue that an approach has not opened yet—but each binds when reached and is
+rebound inside the input lease. At-most-once actions cannot be retried. Every
+semantic step must include a success condition on causally later world state;
+purchases and sales specifically require a money condition so an ineffective
+gesture cannot report success.
+
+This is a temporal and schema-validity fence, not a general effect engine. A
+later revision proves that pre-action state was not reused, but the planner
+still chooses most condition paths, operators, and expected values. Contracts
+do not yet derive effect predicates from the bound action and its pre-action
+baseline. A correlated later change can therefore be mistaken for the intended
+effect; purchase/sale money checks are narrower, but even they do not prove the
+full inventory-side transition.
+
+The concrete camera case illustrates the gap: `camera.position` is a capability
+name in the condition vocabulary, not camera X/Y/Z. A field condition using
+that path is normalized to capability presence and can pass on a later
+telemetry tick even when the camera did not move.
+
+The former `food_procurement_v1` policy is retired. Its useful guarantees now
+live in the generic contracts: exact cell/owner binding, current item identity
+and value, optional task markers, operator spending preferences, at-most-once
+delivery, and causal money verification.
 
 ## Plan authority
 
@@ -61,9 +89,10 @@ requesting a plan envelope: `single_step` requests `PlannerDecision`, idle
 continuous mode requests `PlanEnvelope`, and an observation with
 `ActivePlanContext` requests `PlanPatch`. The OpenAI request's
 `max_output_tokens` is computed from that expected response complexity using a
-configured base, per-step increment, and ceiling. The current live profile uses
-medium reasoning effort and budgets 10,240/8,192/6,144 tokens for the
-world/dialogue/trade food phases respectively.
+configured base, per-step increment, and ceiling. The long-form profile
+defaults to a non-reasoning OpenRouter model selected by a five-run
+schema-validity/latency benchmark; other profiles retain configurable OpenAI
+reasoning effort.
 
 `Condition.path` is a closed schema enum containing the field and capability
 vocabulary the evaluator implements. This makes unsupported shorthand visible
@@ -73,29 +102,33 @@ exact stable target ID. Every supported operator compares against an explicit
 expected value; the unused and structurally ambiguous `exists` operator is not
 part of the contract.
 
+Both hosted adapters send a schema every provider can consume. When an
+OpenRouter provider refuses the compiled dialect, the adapter asks for the same
+JSON shape in the prompt and validates it locally. A malformed answer, wrong
+response type, or unmatched patch counts toward `max_consecutive_replans`
+instead of ending an otherwise safe continuous session immediately.
+
 ## World revisions and causal confirmation
 
 `WorldStateRevision` carries telemetry sequence, frame sequence, capability
 epoch, and local monotonic observation time. A plan basis must match the
 observation used for acceptance.
 
-Generic output that becomes stale during a strategic call is rejected. The
-sole live `food_procurement_v1` policy has a narrower sequence-only rebase:
-the returned basis must match its immutable planner snapshot, the latest
-revision must be causally later, and identity session, capabilities, complete
-game state, policy-authoritative UI state, native-command state, selected
-character, and exact vendor must remain equal. Transient client capture
-dimensions are excluded. Any fence change rejects the plan. A successful
-`plan_rebased` event moves only the basis to latest state; policy, assumptions,
-first-step preconditions, and the ordinary guard still validate afterward.
+Portable generic output that becomes stale during a strategic call is rejected.
+The live `dialogue_interaction_v1` policy may rebase when:
 
-When the live food response has the exact phase action sequence, one stable
-target, and typed arguments, `plan_canonicalized` records a trusted compilation
-step. Policy code replaces model-authored safety boilerplate with canonical
-freshness assumptions, per-action pre/postconditions, a linear graph, bounded
-timeouts, and exact risk budgets. The model cannot relax these fields, and a
-structurally wrong action proposal remains unchanged so deterministic policy
-rejects it.
+- the returned basis matches its immutable planner snapshot;
+- the latest revision is causally later;
+- control mode and advertised capabilities are unchanged;
+- plan assumptions still evaluate to `true`;
+- the first action still binds to the same current semantic reference;
+- no human-input or emergency-stop evidence appeared.
+
+Later steps need not bind before their predecessors create their state, but they
+must bind when reached. A successful `plan_rebased` event moves only the basis;
+policy, topology, budgets, conditions, ordinary guard validation, and final
+in-lease rebinding still run. No policy code rewrites a model's step sequence or
+injects a scenario recipe.
 
 Continuous mode publishes observations through one bounded
 `WorldStateStore`. The store rejects revision regression and state changes
@@ -184,6 +217,12 @@ Before every action it:
 Environment errors after dispatch conservatively consume the reservation so an
 at-most-once action is not duplicated.
 
+The generic policy recognizes that scrolling is intrinsically safe to retry
+and that non-toggle camera/speed bindings can be repeated. The shared plan
+validator is currently narrower and accepts retry budgets only on run-control
+actions, however, so hosted plans should express another semantic scroll or
+binding as an explicit later step rather than setting `retry_budget`.
+
 ## Final input-boundary revalidation
 
 Step 7 above is validated before the environment waits for a polite input turn.
@@ -222,8 +261,10 @@ dispatch builds no token, because it has no plan assumptions or typed step
 preconditions to re-check.
 
 Portable deterministic tests block inside a fake lease, publish conflicting
-state, and prove zero primitives are emitted. No live Kenshi run has exercised
-this fence against a real input lease.
+state, and prove zero primitives are emitted. Supervised generic live runs carry
+successful `InputBoundaryReport` evidence from real leases; deliberately
+changing an authorization fact during a real lease remains an unrun destructive
+test case.
 
 ## Calibration identity for pointer actions
 
@@ -248,12 +289,15 @@ declaring one the controller cannot read safely refuses input.
 
 ## Stateful movement option and future-only patching
 
-When enabled, a configured movement-pulse skill is adapted into one
-`StatefulMovementOption`. The macro and environment still own the proven
-movement mechanics; the adapter adds explicit prepare, start, state-stream
-progress, success, failure, and idempotent cancel states. Preparation requires a
-capable confirmed-paused start. The option owns one named action task and one
-bounded store subscription, both released on every terminal path.
+When enabled, a configured movement-pulse skill is adapted into a
+`StatefulMovementOption`. Contracted `approach_dialogue_target` always uses a
+`StatefulApproachOption`; it issues or adopts one exact native order and
+monitors progress until exact dialogue, arrival, target/threat failure,
+cancellation, or timeout. Stop-motion movement requires a capable
+confirmed-paused start and owns bounded unpause/re-pause pulses. The long-form
+profile instead monitors ordinary movement in an intentionally unpaused world.
+Every option owns its task/subscription and releases both on every terminal
+path.
 
 While the option runs, one concurrent strategic call receives an immutable
 observation with `ActivePlanContext`: plan ID/version, active and completed step
@@ -275,10 +319,9 @@ future entry become eligible. Each replacement action still passes ordinary
 precondition and guard checks. Wrong-type, failed, late, stale, mismatched, or
 invalid advisory output is logged and discarded; the original branch remains.
 
-The active live food profile disables this advisory because its measured
-hosted latency is longer than the short movement option and the accepted
-phase plan already contains its finite future steps. Portable profiles retain
-the feature.
+The long-form and short dialogue profiles enable this advisory so strategic
+work can overlap monitored movement. The legacy single-step burn-in profile
+keeps it disabled. No advisory may mutate the running option.
 
 Cancellation keeps the existing P3 contract: dispatched movement remains spent
 and inconclusive, the option reaches cancelled/failed once, and the independent
@@ -360,7 +403,7 @@ execution error, policy rejection, command mismatch, or lost capability emits
 and observation pump are stopped before the store shuts down, and repeated
 preemption/stop calls are idempotent.
 
-## Proven P1-P4 cases
+## Proven cases
 
 Portable tests and the built-in heuristic prove:
 
@@ -384,9 +427,9 @@ Portable tests and the built-in heuristic prove:
   distinct positions;
 - a planner response made stale while the observation pump advances is rejected
   before execution;
-- the narrow live food policy rebases sequence-only planner latency when its
-  complete phase fence is unchanged, and rejects the same response after any
-  fenced value changes;
+- the generic live policy rebases planner latency only while current contracts,
+  assumptions, control mode, capabilities, and input ownership remain valid,
+  and rejects the same response after an authorizing fact changes;
 - command receipts distinguish later causal evidence from an unchanged,
   inconclusive revision.
 - an unsafe update cancels a deliberately blocked planner and produces one
@@ -410,10 +453,21 @@ Portable tests and the built-in heuristic prove:
   inconclusive, and reaches one confirmed supervisor pause;
 - option success, failure, cleanup failure, cancellation, and repeated
   cancellation release their owned tasks/subscriptions.
+- generic action contracts reject missing/ambiguous references, unsafe retries,
+  raw controller primitives, and action claims without causal verification;
+- exact dialogue approach and current-control activation compose in one live
+  plan; supervised runs also cover purchases, screen dismissal, game bindings,
+  inventory/trade navigation, and exact-character local movement. Sale/equip
+  binding and money checks have portable coverage grounded in the observed
+  live UI semantics, but are not claimed as completed live sale/equip proofs.
+  Targetless directional movement is neither a portable end-to-end
+  cross-language proof nor a live proof.
 
-The current option conversion remains deliberately narrow: only configured
-movement-pulse skills use it. Live continuous work is disabled by default and
-restricted to `food_procurement_v1`. Stable native identity and causal bridge
-acknowledgements use the same caller-owned command/revision semantics; the
-deterministic live-shaped proof does not replace supervised Windows/Kenshi
-latency and end-to-end validation.
+Option conversion remains bounded to configured movement skills and contracted
+exact-target approach. The directional contract declares monitored-option
+execution but currently fails the adapter's nonempty-target requirement, so it
+does not demonstrate a generalized option framework. Live continuous work remains
+disabled in default profiles and requires an implemented policy plus explicit
+acknowledgement. Stable native identity and causal bridge acknowledgements use
+the same caller-owned command/revision semantics; supervised results remain
+version- and host-specific.

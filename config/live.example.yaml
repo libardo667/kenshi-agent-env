@@ -37,6 +37,7 @@ runtime:
   max_steps: 200
   settle_seconds: 0.75
   observation_memory_limit: 16
+  # Compatibility field; current runtime termination does not read it.
   stop_when_terminated: true
 
 planner:
@@ -45,6 +46,7 @@ planner:
   reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-low}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-5.6-luna}
   openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
+  # Parsed but not sent by the current hosted planner adapters.
   temperature: 0.1
   timeout_seconds: 90
   max_output_tokens_base: 4096
@@ -77,6 +79,7 @@ capture:
   window_title_contains: Kenshi 1.0.
   image_format: png
   jpeg_quality: 90
+  # Compatibility field; current capture already always uses the client area.
   crop_client_area: true
 
 controls:
@@ -103,6 +106,7 @@ safety:
   # is necessary but not sufficient: the CLI also requires
   # --execute-live-actions.
   live_actions_enabled: false
+  # Compatibility field; the CLI execution flag is currently unconditional.
   require_cli_execute_flag: true
   emergency_stop_key: f12
   supervisor_enabled: true

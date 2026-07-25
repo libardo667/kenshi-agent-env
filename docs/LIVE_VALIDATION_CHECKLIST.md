@@ -1,5 +1,10 @@
 # Live validation checklist
 
+This is a cumulative evidence checklist. Historical protocol/food sections are
+preserved because they identify exact artifacts and runs; they are not current
+operating instructions. The current product boundary is in `STATUS.md`, and the
+fixed `food_procurement_v1` policy described below has been retired.
+
 When the human explicitly hands the whole desktop to the agent, pass
 `--exclusive-input-session` together with `--execute-live-actions`. That mode
 keeps Kenshi foreground and leaves the guest cursor in place so the run is
@@ -7,7 +12,8 @@ observable on a single display. Omit it during normal shared-computer use; the
 polite input lease then waits for idle input and restores the previous context.
 For a `native_assisted` profile, also pass
 `--acknowledge-native-assisted-control`; do not use that acknowledgement for an
-interface-only evidence run.
+interface-only evidence run. A live continuous profile additionally requires
+`--acknowledge-continuous-live`; none of these acknowledgements implies another.
 
 Record evidence for every item. Do not mark an item complete based on code
 inspection alone.
@@ -212,6 +218,40 @@ inspection alone.
 - [ ] Duplicate failed procedures are detected.
 - [ ] Stale telemetry triggers pause or stop.
 - [ ] Every episode produces a complete JSONL log and final summary.
+
+### Generic continuous live evidence from 2026-07-24–25
+
+- [x] `dialogue_interaction_v1` composed an exact generic
+      `approach_dialogue_target` followed by `activate_visible_control` and
+      opened the Hub trade window from one accepted plan.
+- [x] Every live semantic control was re-resolved from current label/role/window
+      bounds inside the acquired input lease; disappearing or ambiguous
+      controls have portable zero-input conflict tests.
+- [x] Inventory, trade, dialogue, map, stats, research, and squad-management
+      windows were entered and exited through current controls/bindings, with
+      management window/tab and inventory counts observable.
+- [x] Named shop and squad inventory cells exported item identity, value,
+      quantity, section, and owner window. The measured Hub decision surface's
+      exploration cost fell from ten actions to zero.
+- [x] One long-form run purchased Greenfruit for 22 cats and a first-aid kit
+      for 60 cats; both effects were confirmed from causally later money
+      changes rather than action receipts alone.
+- [ ] Complete one supervised generic sale and one generic equip action, with
+      causally later money/equipment evidence. Their bindings and refusal paths
+      are portable-tested, but completed live effects are not yet claimed.
+- [x] Continuous plan/patch memory writes and automatic objective fallback were
+      verified through the real SQLite store at the long-form profile's
+      salience threshold.
+- [x] Human input during a continuous run cancelled active work, handed control
+      over visibly, and reached confirmed pause. A later fix restores an
+      originally running world only after fresh handback authorization.
+- [x] `in_combat` is now emitted and selected-character blood is retained in the
+      compact observation log. Repeated live combat/bleeding response remains
+      unvalidated.
+- [ ] Prove the full quiet-period countdown reset/disarm/takeover cycle in one
+      supervised run.
+- [ ] Repeat the current generic long-form surface at an alternate resolution
+      and across at least one materially different town/save.
 
 ### Evidence from 2026-07-23 food-procurement proof
 

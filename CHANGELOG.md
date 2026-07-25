@@ -2,18 +2,42 @@
 
 ## Unreleased
 
-- Added protocol `0.3.0` causal native vendor commands with caller-owned UUID
-  IDs, exact revision/session/selection/target fences, bounded keyed lifecycle
-  acknowledgements, replay metrics, and no implicit retry.
-- Added lower-latency GPT-5.6 Luna defaults with configurable reasoning effort.
-- Added an OpenRouter vision planner with structured outputs, image input, and
-  latency/throughput/price provider routing.
-- Added planner latency metrics, a flushed terminal decision stream, and a
-  translucent always-on-top Windows decision viewer excluded from model captures.
-- Added model-selected bounded movement duration and polite Windows input leases
-  with idle waiting, user-interruption detection, and foreground/cursor handback.
-- Changed action handoff to Alt+Tab away from Kenshi before restoring the cursor,
-  preventing infinite edge-scroll when the saved pointer is on another monitor.
+- Added bounded continuous planning: typed plans and future-only patches,
+  causal revisions, valued state deltas, option lifecycle, persistent plan
+  memory, an independent safety supervisor, and final input-lease
+  revalidation.
+- Added the generic `dialogue_interaction_v1` live policy and ten reusable
+  semantic action contracts for dialogue approach, local movement, visible
+  controls, screen dismissal, buying, selling, equipping, game bindings, and
+  scrolling. Retired the fixed `food_procurement_v1` policy after lifting its
+  useful reference and purchase guarantees into the generic catalog.
+- Added an open-ended supervised long-form profile that can leave the world
+  running, overlap strategic planning with movement, hand control to the human,
+  and resume from a fresh plan after a visible resettable takeover countdown.
+- Expanded native protocol `0.5.0` with split title/loaded lifecycles, stable
+  identities, management and inventory UI, named item cells, window ownership,
+  squad nutrition/blood/inventory/combat facts, camera bearings, and up to 224
+  current UI controls.
+- Generalized the native-assisted bridge to exact dialogue approach and
+  exact-character walking, and added the intended bounded directional command
+  shape and native handler. Directional walking is not yet usable end to end:
+  its targetless Python request conflicts with nonempty target assumptions in
+  the C++ parser, Python acknowledgement model, and option adapter.
+- Added OpenRouter structured planning with provider routing and a local-schema
+  fallback, mode-aware OpenAI output budgets, dynamic observation/control
+  budgeting, and a fast non-reasoning long-form planner default.
+- Added semantic launcher controls, reversible graphics-profile verification,
+  duplicate-client/Steam/memory/renderer checks, relative-pointer
+  synchronization, window-scoped controls, and exact close-box derivation.
+- Added compact observation logs, a click-through capture-excluded lifecycle
+  overlay, a persistent readable `transcript.log`, fact/affordance audits, and
+  planner-visible purchase/camera/movement outcome conditions. These later-state
+  conditions are not yet a controller-owned general effect-verification engine.
+- Regenerated every checked-in JSON Schema from the current models, adding the
+  expanded action catalog, movement request fields, inventory/combat/UI facts,
+  and current plan/receipt structures while removing the retired inspect action.
+- Added `uv.lock`. The current portable baseline is 468 passing tests with
+  clean Ruff and strict mypy over 56 source files.
 
 ## 0.1.0 — scaffold
 

@@ -8,27 +8,38 @@ method returns on the same game/UI thread, and atomically replaces
 title/control-only snapshot. The player hook emits loaded-game telemetry and
 owns native-command monitoring.
 
-It exports fields with a relatively clear KenshiLib/MyGUI surface: pause, speed,
-money, elapsed game minutes, camera position, selected character, squad names,
-basic state, position, movement speed, food-item count, modal UI state, exact
-dialogue target/options, current tooltip text/source bounds, and bounded
-visible MyGUI text/button captions with current bounds, and bounded
-nearby-character telemetry. Nearby roles keep anatomy, platoon commerce,
-leadership, dialogue, Kenshi's native talk-task probability, and exact
-`ShopTrader::getTrader()` ownership separate. Exact ownership comes from a
-bounded registry maintained by `ShopTrader` constructor/destructor hooks
-installed before save load; Kenshi's spatial query does not enumerate these
-wrappers. A `GameWorld::resetGame` hook clears that registry and prior native
-command acknowledgements before Kenshi constructs a new or loaded session, since
-the plugin DLL remains resident across those transitions.
+It exports fields with a relatively clear KenshiLib/MyGUI surface: pause,
+speed, money, elapsed game minutes, camera state, complete selection, squad
+life/conscious/down/crippled/combat state, nutrition reserve, blood,
+inventory/equipment, modal and management UI state, exact dialogue
+target/options, tooltip evidence, and bounded visible buttons/text plus named
+item cells with owner windows and current bounds. Nearby telemetry carries
+stable identity, roles, disposition, distance, position, viewport state, and
+camera-relative bearing.
+
+An item cell's `item_value` is base worth, not the shop's authoritative asking
+price or sale offer. Transaction effect must be established from later money
+telemetry.
+
+Nearby roles keep anatomy, platoon commerce, leadership, dialogue, Kenshi's
+native talk-task probability, and exact `ShopTrader::getTrader()` ownership
+separate. Exact ownership comes from a bounded registry maintained by
+`ShopTrader` constructor/destructor hooks installed before save load; Kenshi's
+spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
+clears that registry and prior native command acknowledgements before Kenshi
+constructs a new or loaded session, since the plugin DLL remains resident
+across those transitions.
 Protocol `0.5.0` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
 `selected_character_ids` reports the full player-character selection set, while
 the singular ID identifies its active member.
-It retains the `0.3.0` causal command envelope, the `0.4.0` food-chain
-observations, and adds capability-gated `ui.visible_controls`.
+It retains the `0.3.0` causal command envelope and `0.4.0` dialogue/tooltip
+observations, and adds capability-gated visible controls, management state,
+named inventory cells, squad inventory/vitals, and additional movement
+commands. The former food-specific policy is retired; these observations now
+serve generic semantic contracts.
 The first supervised `0.5.0` load found that sampling solely from
 `PlayerInterface::update` cannot publish title controls before a save exists.
 Both a direct detour of MyGUI's exported frame function and a MyGUI
@@ -40,31 +51,46 @@ minimal title snapshot from the loaded-game snapshot. No third-party MyGUI
 function or delegate list is modified.
 Dialogue choices remain null when the dialogue cannot be read. Tooltip text and
 source-widget bounds remain null when no tooltip is visible. Visible controls
-are read only after the relevant Kenshi UI-thread update and bounded by result
-count, visited widgets, and tree depth; the plugin never invokes their
-callbacks.
-It also recognizes a private `Ctrl+Shift+F10` bridge for
-`approach_confirmed_vendor`. Before the hotkey, Python atomically publishes a
-strict `native_command.request.json` carrying its UUID command ID, complete
-world revision, `native_assisted` mode, identity session, exactly one selected
-stable ID, and one exact target stable ID. The plugin rechecks all of those plus
-the target's conscious, non-hostile humanoid vendor-leader/dialogue role. It
-never substitutes a nearer target. Only then does it use Kenshi's own
-`PLAYER_TALK_TO` player order with the exact handle and indoor destination.
-`native_control` exposes a bounded ring of keyed accepted/rejected/completed/
-cancelled acknowledgements. Active work cancels if selection, target lifetime,
-or target role changes and completes only for dialogue bound to the exact
-target. The legacy last-command fields remain diagnostics.
+are read only after the relevant Kenshi UI-thread update and bounded to 224
+results, 2,048 visited widgets per pass, and depth 32; the plugin never invokes
+their callbacks.
+
+It also recognizes a private `Ctrl+Shift+F10` request bridge. Before the
+hotkey, Python atomically publishes a strict `native_command.request.json`
+carrying its UUID command ID, complete world revision, `native_assisted` mode,
+identity session, exactly one selected stable ID, and command-specific
+arguments:
+
+- `approach_confirmed_vendor` is the legacy wire name for approaching any exact
+  conscious, non-hostile humanoid dialogue target. It uses `PLAYER_TALK_TO` and
+  completes only when dialogue opens with that exact target.
+- `move_to_character` walks to one exact current nearby character through
+  `MOVE_CUS_ORDERED` without opening dialogue and completes on arrival.
+- `move_in_direction` has an intended handler that walks a bearing/distance from
+  the selected character, capped at 2,000 units, and completes on arrival.
+  It is currently unreachable through the public request path: Python sends an
+  empty target for this targetless command, while the shared C++ parser rejects
+  empty targets before command-specific validation.
+
+The plugin rechecks all shared and command-specific facts and never substitutes
+a nearer target. `native_control` exposes a bounded ring of keyed
+accepted/rejected/completed/cancelled acknowledgements. Active work cancels if
+selection, pause, target lifetime, or required target role changes. The legacy
+last-command fields remain diagnostics.
 This makes the DLL a native-assisted control bridge, not a globally read-only
-plugin. The Python runtime exposes this command only in `native_assisted` mode;
-`interface_only` filters the capability/state and rejects the marked skill.
-The bounded nearby query uses a 400-world-unit town-local radius, which includes
-the Hub Barman from the default Wanderer spawn without encoding his identity or
-coordinates.
-It explicitly warns that hunger, wounds, getting-eaten state, detailed
-inventory enumeration, and geometry occlusion remain unimplemented. KenshiLib's raw
+plugin. The Python runtime exposes these commands only in `native_assisted`
+mode; `interface_only` filters their capabilities/state and rejects the marked
+actions. The bounded nearby query uses a 400-world-unit town-local radius,
+which covers most of the Hub from the default Wanderer spawn without encoding
+a person or coordinate.
+
+It explicitly leaves body-part wounds, bleeding rate, getting-eaten state,
+imprisonment/enslavement, current tasks, location name, distant world state,
+and geometry occlusion unavailable or unvalidated. KenshiLib's raw
 `isGettingEaten` byte is not exported because live validation found it set on a
-healthy new character.
+healthy new character. The `food_items` scalar remains for compatibility but
+has disagreed with named inventory in live evidence; consumers must prefer the
+inventory list.
 
 ## Build
 
@@ -116,6 +142,11 @@ folder component.
 - Pause/unpause and verify the field changes.
 - Select different squad members and verify the singular ID, complete selected
   ID set, and squad `selected` flags agree.
+- Compare nutrition reserve, blood, combat state, and named inventory/equipment
+  against the selected character's visible UI.
+- Open inventory, trade, stats, map, tech, and squad management. Verify window
+  ownership, named item cells, dedicated window/tab fields, and current control
+  bounds.
 - Reorder a squad and change the camera/nearby presentation; verify entity IDs
   remain attached to handles rather than list positions or names.
 - Load a disposable save and verify `identity_session_id` changes without
@@ -125,6 +156,11 @@ folder component.
 - Publish one current exact-target request and verify a later keyed acceptance,
   no substitute target, terminal completion/cancellation semantics, and final
   pause.
+- Repeat for `move_to_character`, verifying bounded arrival without opening
+  dialogue and explicit cancellation when the world is paused.
+- After the targetless request/parser/acknowledgement contract is fixed and
+  cross-language fixtures pass, perform the same live check for
+  `move_in_direction`; no current live completion is claimed.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -134,7 +170,8 @@ Do not enable live Python input until these checks pass. The source is based on
 the pinned maintained headers and compiles as a VS2010 SP1 `Release | x64` DLL.
 Protocol `0.3.0` passed its load/two-hertz telemetry smoke test and one
 supervised stale-rejection/exact-target completion proof. The additive `0.5.0`
-split-lifecycle semantic-control build passed a supervised 1920x1080 title
-canary and full semantic load-to-pause test. Alternate-resolution,
-interruption/ownership, and longer stability checks remain open in the broader
-checklist.
+split-lifecycle build passed a supervised 1920x1080 title canary, semantic
+load-to-pause, generic dialogue/trade chain, UI surveys, and later long-form
+runs with inventory/trading/movement telemetry. Alternate-resolution, broader
+identity transitions, repeated interruption/ownership trials, and multi-hour
+stability remain open in the broader checklist.

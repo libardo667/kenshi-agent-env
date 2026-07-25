@@ -165,9 +165,9 @@ FACTS: tuple[Fact, ...] = (
     ),
     Fact(
         "shop.item_price",
-        "Affordability, per item.",
+        "Base value for an affordability estimate; the exact shop charge is not exported.",
         1,
-        "hover the cell and parse the tooltip",
+        "hover the cell and read its displayed value",
         lambda s: any(cell.item_value is not None for cell in _item_cells(s)),
         _trading,
     ),

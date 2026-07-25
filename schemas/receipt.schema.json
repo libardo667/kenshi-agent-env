@@ -580,7 +580,7 @@
     },
     "DismissScreenAction": {
       "additionalProperties": false,
-      "description": "Close the screen that is currently open, back toward the world view.\n\nExiting is as much a part of using an interface as entering it, and it was\nthe one step with no reusable action: the calibrated path pressed Escape,\na raw key the generic surface rejects for good reason. Naming the screen the\nplanner believes is open makes the action bind to observed state instead of\nblindly pressing a key and hoping.",
+      "description": "Close one bound inventory or trade window toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. It deliberately\ndoes not end an active conversation: Kenshi's Escape opens the ESC menu, so\ndialogue must choose an exact visible closing reply.",
       "properties": {
         "kind": {
           "const": "dismiss_screen",
@@ -609,6 +609,74 @@
       ],
       "title": "DismissScreenAction",
       "type": "object"
+    },
+    "EquipItemAction": {
+      "additionalProperties": false,
+      "description": "Equip the item in one cell of the selected character's own inventory.\n\nKenshi equips on right-click (`rightClickAutoEquipping`) - the *same*\ngesture that sells an item when a trade is open. That collision is the whole\nhazard: an equip attempted with a shop window up is a sale, and the item is\ngone before any postcondition could notice. So this action refuses outright\nunless no trade is active.",
+      "properties": {
+        "kind": {
+          "const": "equip_item",
+          "default": "equip_item",
+          "title": "Kind",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cell_label",
+        "item_name",
+        "window"
+      ],
+      "title": "EquipItemAction",
+      "type": "object"
+    },
+    "GameBinding": {
+      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Only the\nreversible ones are here: `quicksave`, `quickload`, `editor_toggle`,\n`rebuild_navmesh` and `reload_biomes` all exist in that file and are all\ndeliberately absent from this enum, because an agent running unattended on a\nstream must not be one keystroke away from overwriting a save.",
+      "enum": [
+        "toggle_inventory",
+        "toggle_map",
+        "toggle_stats",
+        "toggle_help",
+        "toggle_crafting",
+        "toggle_research",
+        "pause",
+        "speed_1",
+        "speed_2",
+        "speed_3",
+        "camera_forward",
+        "camera_back",
+        "camera_left",
+        "camera_right",
+        "camera_rotate_left",
+        "camera_rotate_right",
+        "camera_zoom_in",
+        "camera_zoom_out",
+        "focus_char",
+        "select_all",
+        "change_squad",
+        "character_next",
+        "character_prev",
+        "stop_movement"
+      ],
+      "title": "GameBinding",
+      "type": "string"
     },
     "HotkeyAction": {
       "additionalProperties": false,
@@ -748,29 +816,6 @@
       "title": "InputBoundaryReport",
       "type": "object"
     },
-    "InspectItemCellAction": {
-      "additionalProperties": false,
-      "description": "Hover one inventory or shop cell so Kenshi renders its tooltip.\n\nThe deliberately non-destructive half of trading: it moves the pointer and\nemits no click, which is how the agent learns what a cell actually holds.\nCell ordinals name a position, never an item, so this is the only way to\nturn a position into evidence.",
-      "properties": {
-        "kind": {
-          "const": "inspect_item_cell",
-          "default": "inspect_item_cell",
-          "title": "Kind",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        }
-      },
-      "required": [
-        "cell_label"
-      ],
-      "title": "InspectItemCellAction",
-      "type": "object"
-    },
     "KeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -838,6 +883,66 @@
       "title": "MoveCursorAction",
       "type": "object"
     },
+    "MoveInDirectionAction": {
+      "additionalProperties": false,
+      "description": "Walk a bearing and a distance from wherever the character is standing.\n\nThe intended destination is a point, not a person, so this action models\nmovement even when no nearby character can serve as a destination. The\ncurrent targetless request is not accepted end to end: the native parser,\nacknowledgement model, and monitored-option adapter still assume a nonempty\ntarget ID.\n\n`bearing_degrees` is clockwise from north, as read on the map: 0 north,\n90 east, 180 south, 270 west.",
+      "properties": {
+        "kind": {
+          "const": "move_in_direction",
+          "default": "move_in_direction",
+          "title": "Kind",
+          "type": "string"
+        },
+        "bearing_degrees": {
+          "exclusiveMaximum": 360.0,
+          "minimum": 0.0,
+          "title": "Bearing Degrees",
+          "type": "number"
+        },
+        "distance_units": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 2000.0,
+          "title": "Distance Units",
+          "type": "number"
+        },
+        "expected_effect": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Expected Effect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bearing_degrees",
+        "distance_units",
+        "expected_effect"
+      ],
+      "title": "MoveInDirectionAction",
+      "type": "object"
+    },
+    "MoveToCharacterAction": {
+      "additionalProperties": false,
+      "description": "Walk to any exact observed nearby character without talking to them.\n\nMovement used to be possible only toward someone the agent could hold a\nconversation with, so inside a building holding two people that was the\nwhole reachable world: it sold what it could, asked both for work, recorded\nthat it was repeating itself, and had no action that could take it\nanywhere. Nearby characters are reported within four hundred units, which\nacross a town is most of it, so walking to a person is how the agent gets\nto a place - the destination is a stable observed identity, never a\ncoordinate.",
+      "properties": {
+        "kind": {
+          "const": "move_to_character",
+          "default": "move_to_character",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "MoveToCharacterAction",
+      "type": "object"
+    },
     "NativeCommandAcknowledgement": {
       "additionalProperties": false,
       "properties": {
@@ -847,7 +952,11 @@
           "type": "string"
         },
         "command": {
-          "const": "approach_confirmed_vendor",
+          "enum": [
+            "approach_confirmed_vendor",
+            "move_to_character",
+            "move_in_direction"
+          ],
           "title": "Command",
           "type": "string"
         },
@@ -1021,7 +1130,7 @@
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
-      "description": "Buy the item in one exact cell, at a price read from its own tooltip.\n\nEvery argument must agree with what the interface is showing right now: the\ncell must exist, the tooltip must belong to that cell, and it must name this\nitem at this price. The action carries no coordinates - the calibrated\npredecessor took model-authored ones - so the only way to buy the wrong\nthing is for telemetry itself to be wrong.",
+      "description": "Buy the item in one exact seller-owned cell.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The action carries no coordinates; exact item, seller, and owner\nbinding prevents the wrong cell from being selected, and a later money\nchange proves the effect.",
       "properties": {
         "kind": {
           "const": "purchase_item",
@@ -1046,6 +1155,12 @@
           "title": "Expected Price",
           "type": "integer"
         },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
         "seller_id": {
           "maxLength": 200,
           "minLength": 1,
@@ -1057,6 +1172,7 @@
         "cell_label",
         "item_name",
         "expected_price",
+        "window",
         "seller_id"
       ],
       "title": "PurchaseItemAction",
@@ -1096,6 +1212,80 @@
         "notches"
       ],
       "title": "ScrollAction",
+      "type": "object"
+    },
+    "ScrollScreenAction": {
+      "additionalProperties": false,
+      "description": "Scroll inside one open window so more of its contents become visible.\n\nShops and inventories hold more than fits on screen, and the export only\never describes what is currently rendered. Without this, stock past the\nfirst screenful is not merely hard to reach - it does not exist as far as\nthe agent is concerned, and no amount of replanning reveals it.\n\nNames a window rather than a coordinate: the scroll lands at the centre of\nthat window's own observed bounds, so it follows the window and survives a\nresolution change.",
+      "properties": {
+        "kind": {
+          "const": "scroll_screen",
+          "default": "scroll_screen",
+          "title": "Kind",
+          "type": "string"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "notches": {
+          "maximum": 8,
+          "minimum": -8,
+          "title": "Notches",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "window",
+        "notches"
+      ],
+      "title": "ScrollScreenAction",
+      "type": "object"
+    },
+    "SellItemAction": {
+      "additionalProperties": false,
+      "description": "Sell the item in one exact cell of the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
+      "properties": {
+        "kind": {
+          "const": "sell_item",
+          "default": "sell_item",
+          "title": "Kind",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "buyer_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Buyer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cell_label",
+        "item_name",
+        "window",
+        "buyer_id"
+      ],
+      "title": "SellItemAction",
       "type": "object"
     },
     "SemanticActionReceipt": {
@@ -1302,6 +1492,7 @@
     },
     "StopAction": {
       "additionalProperties": false,
+      "description": "End the whole run, not the current plan.\n\nThe distinction is not obvious from the name and was undocumented, so a\nplanner that had finished what it set out to do used this to say \"that\nobjective is complete\" and ended an eighty-step run on step eleven, with a\nreason that read \"resuming free play to pursue next objective\". A plan ends\nby its steps completing; this ends the agent.",
       "properties": {
         "kind": {
           "const": "stop",
@@ -1318,6 +1509,33 @@
         "reason"
       ],
       "title": "StopAction",
+      "type": "object"
+    },
+    "UseGameBindingAction": {
+      "additionalProperties": false,
+      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap, `C` the stats window, `Space` pauses under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.",
+      "properties": {
+        "kind": {
+          "const": "use_game_binding",
+          "default": "use_game_binding",
+          "title": "Kind",
+          "type": "string"
+        },
+        "binding": {
+          "$ref": "#/$defs/GameBinding"
+        },
+        "expected_effect": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Expected Effect",
+          "type": "string"
+        }
+      },
+      "required": [
+        "binding",
+        "expected_effect"
+      ],
+      "title": "UseGameBindingAction",
       "type": "object"
     },
     "WaitAction": {
@@ -1428,16 +1646,31 @@
           "$ref": "#/$defs/ApproachDialogueTargetAction"
         },
         {
+          "$ref": "#/$defs/MoveToCharacterAction"
+        },
+        {
+          "$ref": "#/$defs/MoveInDirectionAction"
+        },
+        {
           "$ref": "#/$defs/ActivateVisibleControlAction"
         },
         {
           "$ref": "#/$defs/DismissScreenAction"
         },
         {
-          "$ref": "#/$defs/InspectItemCellAction"
+          "$ref": "#/$defs/PurchaseItemAction"
         },
         {
-          "$ref": "#/$defs/PurchaseItemAction"
+          "$ref": "#/$defs/UseGameBindingAction"
+        },
+        {
+          "$ref": "#/$defs/ScrollScreenAction"
+        },
+        {
+          "$ref": "#/$defs/SellItemAction"
+        },
+        {
+          "$ref": "#/$defs/EquipItemAction"
         }
       ],
       "title": "Action"

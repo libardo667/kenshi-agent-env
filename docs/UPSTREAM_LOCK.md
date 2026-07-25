@@ -129,8 +129,29 @@ The build emitted only the same upstream warnings. The complete original
 `runs/p0-title-player-split-preinstall-20260723T231348Z/`; the split-lifecycle
 DLL was installed byte-for-byte and passed both a no-Continue 1920x1080 title
 canary and a full semantic load-to-pause test. It remains the installed DLL
-while Kenshi is stopped. This live result changes validation status only; the
+at that historical checkpoint. This live result changes validation status only; the
 pinned upstream dependency and toolchain boundary is unchanged.
+
+## Current installed development artifact
+
+Verified directly from the Windows install on 2026-07-25 after the combat
+telemetry rebuild:
+
+```text
+path: C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll
+size: 199168 bytes
+sha256: aaaa111e7d6828332e90242171138b99de9401ab43ba9d46f4e4703c038498e2
+mtime: 2026-07-25 11:19:14 -07:00
+```
+
+This is the current installed development DLL for protocol `0.5.0`. The
+checked-in `staging/KenshiAgentTelemetry/KenshiAgentTelemetry.dll` is an older
+185,344-byte semantic-title candidate with SHA-256
+`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`;
+do not mistake the staging copy for the installed build. The source warning
+text was corrected during the 2026-07-25 documentation reconciliation, so a
+fresh rebuild from the current tree is expected to have a different hash from
+the installed artifact even though the wire behavior is unchanged.
 
 ## Plugin staging/install layout
 
@@ -141,5 +162,6 @@ KenshiAgentTelemetry/
   RE_Kenshi.json
 ```
 
-The verified package is staged under `staging\KenshiAgentTelemetry` and was
-copied to `<Kenshi>\mods\KenshiAgentTelemetry` for live validation.
+The package layout is staged under `staging\KenshiAgentTelemetry`. The current
+staged DLL is historical as noted above; rebuild and run the staging script
+before using that directory for a new install.

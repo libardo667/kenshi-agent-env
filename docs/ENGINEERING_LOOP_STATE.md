@@ -1,5 +1,33 @@
 # Engineering loop state
 
+This is a dated engineering ledger, not the current product summary. Words such
+as "active", "current", "next", and "known limitation" inside an older section
+describe that checkpoint and may be superseded by a newer entry. Use
+`STATUS.md` for current behavior and this file for the evidence trail.
+
+## Current audit input: deep systems review (2026-07-25)
+
+The externally supplied
+`kenshi_agent_env_deep_systems_review_2026-07-25.md` reviewed a ZIP snapshot
+without Git history. It is now a standing audit lens for documentation work,
+not a replacement current-state source. Recheck every finding against the live
+checkout before applying it.
+
+Its durable direction is captured in `docs/DOCUMENTATION_TRUTH.md`: treat the
+action contract as executable truth only when Python, C++, generated schemas,
+configuration, prompts, mock behavior, tests, and user-facing docs agree; keep
+declared, advertised, serialized, portable-tested, native-built, installed, and
+live-proven evidence levels separate; and never equate a merely later revision
+with proof of the intended effect.
+
+This reconciliation confirmed that several ZIP findings had already moved
+(test count, schemas after regeneration, retired policy naming), but also found
+the directional native mismatch still current. Python emits the intended empty
+target for `move_in_direction`; the C++ parser and Python acknowledgement model
+require a nonempty target, and the executor will not create a monitored option
+without one. Current docs and planner guidance now call that path unavailable
+instead of inheriting the intended design as an implementation claim.
+
 ## Retired: the calibrated food path (2026-07-25)
 
 `food_procurement_v1` is gone: the policy module, its enum value, its five
@@ -7,14 +35,15 @@ branch points across `runtime`, `planning` and `planners.base`, its prompt
 section, and its 954-line test module. `live.burnin.yaml` now names `disabled`,
 which is what `single_step` always effectively used.
 
-What was worth keeping was lifted first, not deleted. `inspect_item_cell` and
-`purchase_item` carry the purchase fence forward and strengthen it: the
-calibrated version took model-authored x/y and only checked they landed inside
-the tooltip's source, whereas the contract binds to an exact item cell and
-requires the visible tooltip to belong to *that* cell and to name that item at
-that price, with the price matched on a word boundary. Purchase safety and
-food-task intent are now separate — the contract is indifferent to what an item
-is, and a food run expresses that with
+What was worth keeping was lifted first. `purchase_item` carries the purchase
+fence forward and strengthens it: the calibrated version took model-authored
+x/y and checked a tooltip source, whereas the current contract binds to an
+exact named item cell, owner window, item identity/value, and exact active
+seller. Older producers may still fall back to tooltip evidence.
+`inspect_item_cell` was later deleted because hovering alone had no observable
+completion signal and could only time out; named item-cell facts made it
+unnecessary. Purchase safety and food-task intent are separate — the contract
+is indifferent to what an item is, and a food run may express that with
 `safety.required_purchase_tooltip_markers: ["[Food]"]`.
 
 Spending limits became opt-in and default to unlimited. How freely an agent
@@ -30,11 +59,12 @@ The legacy macros themselves (`approach_confirmed_vendor`, `choose_show_goods`,
 remain, because `live.burnin.yaml` still allowlists them for single-step runs.
 Retiring those is a separate, later cleanup.
 
-## Active milestone: reusable composable semantic actions (2026-07-24)
+## Completed milestone: reusable composable semantic actions (2026-07-24)
 
-The action surface is no longer the coupling point. Two reusable typed actions
-are planner-visible behind an authoritative contract catalog, and one bounded
-plan composes them without a strategic call between steps.
+The action surface stopped being the coupling point here. This milestone began
+with two reusable typed actions behind an authoritative contract catalog, and
+one bounded plan composed them without a strategic call between steps. The
+catalog subsequently grew to ten actions; see `STATUS.md` for the current list.
 
 **What a planner can now compose.** `approach_dialogue_target(target_id)` and
 `activate_visible_control(exact_label, role)`. Both bind only to references the
@@ -55,8 +85,9 @@ goods.", or any coordinate.
   routing now read the contract instead of switching on an exact skill name.
 - `Observation.semantic_action_digest()` advertises exactly the actions
   authorable under the current control mode and capabilities, each with its
-  bounded `argument_source`. `visible_control_digest()` (bounded to 32) marks
-  ambiguous labels rather than silently resolving them.
+  bounded `argument_source`. At this checkpoint `visible_control_digest()` was
+  bounded to 32; current code sizes it from payload/context room with a 4,096
+  entry pathological backstop.
 - `dialogue_interaction_v1` (`src/kenshi_agent/dialogue_interaction.py`) — the
   generic live policy. It validates contracts, references, capabilities,
   control mode, risk budgets, idempotency, and causal postconditions. It
@@ -101,12 +132,11 @@ executor option routing, and guard control-mode/capability checks no longer
 switch on skill names for contracted actions. `env/live.py`'s
 `_native_vendor_request` became `_native_approach_request(require_vendor_role=)`.
 
-**Exact-name branches that remain (deliberate):** `food_procurement_v1` still
-owns the full Barman recipe and its `choose_show_goods`/`inspect_shop_item`/
-`buy_inspected_shop_item` grammar; `safety.py` retains
-`buy_inspected_shop_item` purchase validation and the legacy vendor-macro
-fences; `runtime.py` retains skill-name outcome assessment. None are on the
-generic path.
+**Exact-name branches that remained at this checkpoint:**
+`food_procurement_v1` still owned the full Barman recipe and its legacy
+grammar. The policy was retired the following day after its useful guarantees
+were lifted into generic contracts. Legacy macros remain only for
+compatibility.
 
 ### Portable evidence (2026-07-24)
 
@@ -218,25 +248,21 @@ approached one.
 two semantic kinds allowlisted, raw primitives never allowlisted, and only the
 transport plus native-approach macros retained.
 
-### Known limitations
+### Pre-live checkpoint limitations (superseded)
 
-- No live proof of the composed chain yet; no live proof of the generalized
-  native fence.
-- The stale-plan rebase under real hosted-planner latency (recorded below) is
-  untouched and remains the likely first obstacle to a live continuous chain;
-  `dialogue_interaction_v1` has no rebase path of its own.
-- The `visible_controls` digest is bounded to 32 entries (fail-closed
-  truncation).
-- Purchase, inventory topology, and the task framework are unchanged and still
-  scenario-specific.
+Before the live runs recorded immediately above, this checkpoint still lacked a
+composed-chain proof, a generic latency rebase, a wider control digest, and a
+generic purchase. Those gaps were subsequently closed: the live chain and
+generic rebase are recorded above; current controls are sized from payload
+room; and purchase/sale/equip now use generic contracts. The remaining current
+boundaries are tracked in `STATUS.md`.
 
-### Next vertical milestone
+### Historical next vertical milestone
 
-Run the same composed chain live against a non-vendor target, and fix the
-untrustworthy unpause-confirmation message. Then the second reusable chain: bounded profile-region inspection bound to the current tooltip
-fingerprint, then a generic at-most-once purchase evaluated against a
-food-acquisition task — reusing this contract/policy machinery rather than
-extending the Barman recipe.
+The proposed tooltip-bound generic purchase was superseded by named item facts
+exported directly from the inventory structure, then delivered as the generic
+`purchase_item` contract. Non-vendor approach remains portable/native-authorized
+but is not the current critical path.
 
 ## Supervised live evidence: control brakes (2026-07-24)
 
@@ -271,7 +297,7 @@ proven stop/disarm path, and they require letting the agent resume). The
 runtime brake was proven in a scenario with no reachable vendor command; a full
 P1 food run on the Hep Barman save remains a separate, later milestone.
 
-## Current contract
+## P0 checkpoint contract (historical)
 
 - The portable `single_step` runtime is the regression baseline. It asks one
   planner for one action, passes that action through `ActionGuard`, executes it
@@ -305,7 +331,7 @@ P1 food run on the Hep Barman save remains a separate, later milestone.
   dialogue, and current tooltip/source observations and adds bounded visible
   MyGUI control labels/roles/bounds.
 
-## Active slice: P4 versioned calibration identity
+## P4 versioned calibration-identity slice (historical)
 
 Problem: live pointer execution required only the exact client width/height,
 rechecked inside the lease. That is an emergency brake, not a calibration
@@ -608,7 +634,7 @@ established cause. The only untested scene is literal large-water
 game overlay was installed with the new driver and left enabled; disable it
 first if any crash ever recurs.
 
-## Pending live milestone: P6 conditional food-procurement chain
+## P6 conditional food-procurement milestone (historical)
 
 Problem: P1-P5 can execute and causally acknowledge bounded continuous work,
 but live-labeled continuous mode is still hard-blocked. Removing that block
@@ -1159,7 +1185,7 @@ Acceptance criteria:
   and any operator intervention. If live validation is unsafe or unavailable,
   that gate remains explicitly open rather than being inferred from a build.
 
-## Current checks
+## Checkpoint verification record
 
 P3 input-boundary fence verification on 2026-07-23:
 
@@ -1532,7 +1558,11 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 - Windows PowerShell launchers, Windows input, native build/load, and live
   Kenshi behavior were not tested in this slice.
 
-## Known risks and deferred debt
+## P6-checkpoint risks and deferred debt (historical)
+
+This list predates the generic live policy and the 2026-07-25 action-surface
+expansion. Items are preserved as checkpoint evidence; current open work is in
+`STATUS.md`.
 
 - Live renderer stability is now effectively resolved on this host by the GPU
   driver update (`32.0.101.6737` -> `32.0.101.7088`). Two full 20-minute soaks
@@ -1555,16 +1585,19 @@ Baseline at `ebfe9248f2adabe1cb6ebf264ecb9ad67fec3c68` on 2026-07-23:
 - The plugin transport remains an atomically replaced latest snapshot. One
   Python pump now ingests it into an event stream, but this is not native event
   transport.
-- Strategic overlap and active patch application are intentionally limited to
-  the portable configured-movement option adapter.
-- General continuous live execution and stateful live movement options remain
-  blocked; only `food_procurement_v1` is eligible behind all dedicated gates.
+- Strategic overlap and active patch application were then limited to the
+  portable configured-movement option adapter. The current long-form live
+  profile enables overlap for monitored movement.
+- General continuous live execution was then limited to
+  `food_procurement_v1`. That policy is retired; `dialogue_interaction_v1` is
+  the current generic live policy.
 - Legacy telemetry producers may still expose ordinal IDs; only snapshots with
   `identity.stable_handles` receive native identity trust.
 - Several declared config fields remain behaviorally unused.
-- There is no CI workflow or Python lockfile.
+- There was no CI workflow or Python lockfile at this checkpoint. `uv.lock` now
+  exists; CI remains absent.
 
-## Active direction: deterministic vendor selection + P6 navigation
+## Historical direction: deterministic vendor selection + P6 navigation
 
 A live watched food run on a fresh Wanderer Hep exposed the real fragility: the
 LLM planner is a coin-flip on the "is this a confirmed vendor" judgment. Same
@@ -1717,7 +1750,11 @@ Separate follow-ups surfaced by verification:
   output schema so `not_equals` must carry `expected`, not rely on the model.
 - Stale-plan rebase under real planner latency (above) blocks the trade phase.
 
-## Ordered next candidates
+## Historical ordered next candidates
+
+This queue belongs to the P6 checkpoint. Vendor surfacing, monitored approach,
+generic rebase, and the lockfile were completed or superseded; do not use this
+list as the current roadmap.
 
 1. Slice 2 above: surface `confirmed_vendors` to the planner + prompt rewrite.
 2. P4 follow-on (deferred): implement Win32 observation of UI scale, DPI

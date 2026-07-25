@@ -1,5 +1,10 @@
 # Fast-Track Engineering Loop — Kenshi Agent Environment, Phase 3B: Reusable Semantic Actions
 
+> **Completed historical prompt.** The two-action proof described here was
+> delivered and the catalog subsequently expanded to ten actions. The fixed
+> food policy was retired. Do not reuse this milestone as a current task list;
+> start from `STATUS.md`, current code/tests, and the dated engineering ledger.
+
 Copy this entire document into a capable coding agent whose working directory is the repository root. Reuse it for successive invocations, but treat the current checkout and `docs/ENGINEERING_LOOP_STATE.md` as the source of truth.
 
 ---

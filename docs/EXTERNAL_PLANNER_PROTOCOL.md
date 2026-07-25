@@ -42,24 +42,27 @@ preconditions and postconditions, and carries action, wall-clock, game-time, and
 risk budgets. The executor—not the child process—owns active state, retries,
 branches, budget accounting, condition evaluation, cancellation, and
 postcondition polling. A snapshot at or before the action-start revision cannot
-confirm success.
+confirm success. A later snapshot satisfies only the temporal fence; most
+postconditions are still planner-authored and are not controller-owned proof
+that the intended action caused the observed change.
 
-For an ordinary continuous observation, return a full `PlanEnvelope`. When the
-observation contains `active_plan`, a configured movement option is already
-running and the subprocess may return a future-only `PlanPatch` matching that
-context's plan ID/version and the observation's exact revision. Wrong-type,
-late, stale, mismatched, or unsafe patches are logged and discarded; a staged
-patch is revalidated again after the option before any future step executes.
+The subprocess adapter currently always parses continuous output as a
+`PlanEnvelope`. It does not select `PlanPatch` when `active_plan` is present, so
+do not use it for concurrent option advice. The OpenAI/OpenRouter adapters
+implement that mode-aware output selection.
 
 ## Errors
 
 A timeout, non-zero exit code, empty stdout, or schema violation becomes a
-planner error. The runtime records it and selects a stop decision rather than
-attempting to repair arbitrary output silently.
+planner error. The runtime records it. Single-step mode produces a stop
+decision; continuous mode requests a fresh plan until
+`max_consecutive_replans` is exhausted. It never repairs arbitrary output
+silently.
 
 ## Persistent service upgrade
 
 When process startup becomes material, add a separate planner implementation
 using localhost HTTP, a named pipe, or stdio JSON-RPC. Preserve the same
-`Observation`, `PlannerDecision`, and `PlanEnvelope` schemas so evaluation
-remains comparable.
+`Observation`, `PlannerDecision`, `PlanEnvelope`, and `PlanPatch` schemas so
+evaluation remains comparable, and select the continuous response type from
+`active_plan` just as the hosted adapters do.

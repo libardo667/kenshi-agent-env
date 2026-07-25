@@ -3,6 +3,10 @@
 Status: accepted  
 Date: 2026-07-23
 
+Amended 2026-07-25: `native_assisted` now covers the three reviewed movement
+commands documented in `ADR_CAUSAL_NATIVE_COMMANDS.md`, not only the original
+vendor approach. The mode gates and evidence-separation decision are unchanged.
+
 ## Context
 
 Most Kenshi actions in this project use ordinary Windows input. The existing
@@ -29,12 +33,11 @@ reported separately by mode.
 
 ## Consequences
 
-- Existing vendor-approach functionality remains available without being
-  mislabeled as interface-only.
+- Reviewed native approach/movement functionality remains available without
+  being mislabeled as interface-only.
 - Future continuous plans can bind assumptions and lifecycle evidence to a
   control mode and reject stale cross-mode work.
 - Adding another native bridge requires an explicit macro marker, safety review,
   and mode-specific evidence.
 - The telemetry sampling path remains observational, but documentation no
   longer calls the entire DLL read-only.
-

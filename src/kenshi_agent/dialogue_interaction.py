@@ -111,7 +111,7 @@ def _step_action_errors(
         )
 
     # Only the step about to run must bind right now. A later step legitimately
-    # refers to state its predecessors will create - "dismiss the dialogue"
+    # refers to state its predecessors will create - a closing dialogue reply
     # cannot bind before the approach has opened one - and demanding otherwise
     # would reject every genuinely composed plan. Each step is still bound and
     # revalidated when it is actually reached, and again inside the input lease.

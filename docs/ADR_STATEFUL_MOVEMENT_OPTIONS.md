@@ -1,6 +1,20 @@
 # ADR: Adapt movement macros into stateful options
 
-Status: accepted for portable continuous mode
+Status: accepted; extended to contracted live approach and long-form movement
+on 2026-07-24
+
+The original decision below describes the portable movement adapter. The
+current executor also routes `approach_dialogue_target` through
+`StatefulApproachOption`, and the long-form live profile enables concurrent
+future-plan advice while movement is active. Stop-motion profiles retain the
+confirmed-pause pulse contract; the long-form profile monitors movement in an
+intentionally unpaused world. The model still has no authority over the running
+option.
+
+The `move_in_direction` contract also declares `MONITORED_OPTION`, but the
+current adapter refuses any contracted option without a nonempty `target_id`.
+That targetless action therefore does not yet implement this decision and must
+not be used as evidence of generalized option ownership.
 
 ## Context
 
@@ -46,6 +60,9 @@ future patch can save a post-movement strategic round trip, while two distinct
 revision checks and a final budget/policy check prevent stale output from
 becoming executable.
 
-The adapter is not evidence that live continuous control is safe. It does not
-replace the live movement pulse, generalize every macro into an option, add
-native command acknowledgement, or measure Windows F12/human-input latency.
+At this decision point the adapter was not live evidence. Later supervised
+generic runs exercised exact-target approach, native acknowledgements,
+continuous option progress, human handback, and long-form movement. The option
+surface remains deliberately bounded rather than generalized to every macro,
+and broad repeated Windows F12/human-input latency remains an open validation
+area.

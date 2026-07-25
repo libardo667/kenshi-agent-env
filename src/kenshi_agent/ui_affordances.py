@@ -172,7 +172,11 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Operation.EXIT,
         "Leave the conversation.",
         Mechanism.CONTROL,
-        "dismiss_screen",
+        "activate_visible_control",
+        gap=(
+            "Choose the exact visible closing reply. Escape is deliberately not "
+            "used because it opens the ESC menu without ending dialogue."
+        ),
     ),
     # --- inventory --------------------------------------------------------
     Affordance(
@@ -210,11 +214,14 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.INVENTORY,
         Operation.INTERACT,
-        "Equip, unequip, move, or drop an item.",
+        "Equip an item from the selected character's own inventory.",
         Mechanism.CONTROL,
         "equip_item",
         native_entry_point="InventoryGUI::rightClickAutoEquipping @ 0x7137B0",
-        gap="Equipping works; moving between sections and dropping still need drag-and-drop.",
+        gap=(
+            "The equip route is contracted and portable-tested from observed live "
+            "semantics; moving between sections and dropping still need drag-and-drop."
+        ),
     ),
     Affordance(
         Interface.INVENTORY,
@@ -308,16 +315,16 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.MAP,
         Operation.INTERACT,
-        "Order travel to a chosen place.",
+        "Travel locally toward an observed character; bounded bearing is declared.",
         Mechanism.NATIVE,
         "move_to_character",
         native_entry_point="PlayerInterface::newPlayerTaskSelectedCharacters MOVE_CUS_ORDERED",
         gap=(
-            "Local travel only. move_in_direction walks a bearing and distance "
-            "from where the character stands, and move_to_character walks to "
-            "anyone within 400 units, so no place is a dead end. Crossing the "
-            "map still needs a travel order to a chosen location, which is a "
-            "right-click on the map screen and has no action yet."
+            "Local exact-character travel only. move_in_direction is declared "
+            "but its targetless request is blocked by current parser, "
+            "acknowledgement, and option assumptions. Crossing the map still "
+            "needs a travel order to a chosen location, which is a right-click "
+            "on the map screen and has no action yet."
         ),
     ),
     Affordance(
@@ -370,8 +377,11 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Operation.EXIT,
         "Get back out of the menu without quitting.",
         Mechanism.CONTROL,
-        "dismiss_screen",
-        gap="Not yet measured live; the ESC menu's active_screen value is unconfirmed.",
+        "activate_visible_control",
+        gap=(
+            "Use the exact current Resume control. The route is catalogued but "
+            "has not yet been measured live."
+        ),
     ),
 )
 

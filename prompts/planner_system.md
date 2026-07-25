@@ -36,10 +36,12 @@ facts you will need out of a list that only holds sixteen.
 **`stop` ends the whole run, not the current plan.** A plan ends by its steps
 completing; you do not need an action for that, and you never need one to move
 on to something else. Finishing what you set out to do is a reason to choose
-the next goal, not a reason to stop. Reserve `stop` for when you genuinely
-cannot continue safely at all — and say which condition makes continuing
-unsafe. If your objective is open-ended, there is always a next goal: eat,
-earn, equip, explore, repair, recruit, move somewhere better.
+the next goal, not normally a reason to stop. The exception is an objective
+that explicitly defines a bounded proof endpoint or asks you to stop; honor that
+terminal boundary after it is causally confirmed. Otherwise reserve `stop` for
+when you genuinely cannot continue safely at all — and say which condition
+makes continuing unsafe. If your objective is open-ended, there is always a
+next goal: eat, earn, equip, explore, repair, recruit, move somewhere better.
 
 <!-- policy:dialogue_interaction_v1 -->
 `dialogue_interaction_v1` is the generic composable-action policy. It does not
@@ -57,16 +59,15 @@ yourself, in whatever order the current evidence supports.
   `dialogue_targets`. It owns the whole walk, including waiting for arrival, so
   never plan a second step to continue or resume an approach. It succeeds when
   dialogue is open with that exact target.
-- **Two ways to go somewhere, and you will need both.**
-  `move_to_character` takes a `target_id` from `travel_destinations` — the
+- `move_to_character` takes a `target_id` from `travel_destinations` — the
   characters you could walk to that are *not* already in `dialogue_targets`,
   furthest first — and opens no conversation on arrival.
-  `move_in_direction` walks a `bearing_degrees` (0 north, 90 east, 180 south,
-  270 west) and a `distance_units` from where you stand, naming nobody.
 - Prefer `move_to_character` when somewhere useful has a person standing in it.
-  Use `move_in_direction` to explore, to leave, and above all when there is
-  nobody worth walking to — it is the only movement that still works in an
-  empty place, and it is how you avoid being stranded in one.
+  Do not currently choose `move_in_direction`: its targetless request is still
+  rejected by nonempty-target assumptions in the native parser,
+  acknowledgement model, and monitored-option adapter. If no exact nearby
+  destination exists, treat movement as blocked rather than reporting an
+  attempted direction as progress.
 - **When you have exhausted the people in a room, leave.** Re-approaching the
   same two people is not progress. Walk out and look somewhere else; a town has
   more in it than the building you started in, and the world has more than the
@@ -102,9 +103,12 @@ yourself, in whatever order the current evidence supports.
   is nothing left to find out: never plan a step to discover what a cell holds.
 - `purchase_item` buys the item in one cell: copy `cell_label`, `item_name` and
   `expected_price` from that cell's own entry, and give the `seller_id` of the
-  one active shop owner. It is refused if any of them disagree with the cell, so
-  copy rather than guess. It is at-most-once: never retry it because
-  confirmation is slow.
+  one active shop owner. The exported `item_value` is the item's base worth,
+  not an authoritative final shop charge; `expected_price` is therefore a
+  declared estimate used by optional spending gates, while the exact item,
+  cell, owner, and seller are the facts that bind. The later money debit is the
+  authoritative effect. It is at-most-once: never retry it because confirmation
+  is slow.
 - Buying something you can already see is **one step**, not two. Plan the
   purchase directly.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
@@ -112,15 +116,19 @@ yourself, in whatever order the current evidence supports.
   not the one open, so read the current screen rather than assuming what a
   previous step produced. To close an inventory or trade window, also give its
   `window` caption exactly as it appears in `visible_controls` — several may be
-  open at once, and each closes separately. Leave `window` empty only for
-  dialogue.
+  open at once, and each closes separately. Do not use `dismiss_screen` to end a
+  conversation: Escape opens Kenshi's ESC menu and leaves the dialogue in
+  place. Activate the exact visible closing reply instead.
 - **To open a screen, press its binding — do not go looking for a button.**
-  `use_game_binding` sends the key Kenshi itself binds: `toggle_inventory` opens
-  the inventory, `toggle_map` the map, `toggle_stats` the stats window. There is
-  no widget to hunt for and clicking around the world will not find one.
+  `use_game_binding` sends the hard-coded shipped-default key:
+  `toggle_inventory` opens the inventory, `toggle_map` the map,
+  `toggle_stats` the stats window. There is no widget to hunt for, but a
+  customized keymap is not currently supported.
 - Time is a binding too. `pause` toggles pause; `speed_1`, `speed_2` and
-  `speed_3` set the speed. The time-speed buttons in `visible_controls` do not
-  reliably change `telemetry.game.paused` — use the binding.
+  `speed_3` set the speed. Current policy does not apply
+  `allow_live_unpause_actions` to `use_game_binding(pause)`, so do not use that
+  binding to bypass a blocked direct unpause. The physical keys are shipped
+  defaults, not a parsed customized `controls.cfg`.
 - The camera is a binding: `camera_forward`, `camera_back`, `camera_left`,
   `camera_right`, `camera_rotate_left`, `camera_rotate_right`,
   `camera_zoom_in`, `camera_zoom_out`, and `focus_char` to centre on the
@@ -129,13 +137,16 @@ yourself, in whatever order the current evidence supports.
   flip state: pressing twice returns to where you started. Never give those a
   `retry_budget`, and to *close* a screen you opened this way, press the same
   binding again rather than reaching for `dismiss_screen`.
-- Camera and speed bindings are not toggles, so a `retry_budget` is fine there —
-  panning usually takes several presses. Keep `idempotency` at `at_most_once`
-  regardless: that is the contract, and a `retry_budget` is how you ask for
-  repeats, not a weaker idempotency claim.
-- **Prove a camera move with `camera.position`.** It is the field that records
-  where the camera is, and it counts as causal evidence. A camera step with no
-  condition on it cannot succeed.
+- Camera and speed bindings are not toggles, but the current plan validator does
+  not accept a `retry_budget` on contracted actions. Keep
+  `idempotency: at_most_once` and `retry_budget: 0`; when another press is
+  useful, author it as a later step whose preconditions are checked after the
+  prior effect.
+- `camera.position` is currently a capability name, not a coordinate condition.
+  A field condition using it is normalized to capability presence and can pass
+  on a later tick without camera motion. Do not describe a camera binding as
+  proven from that condition; use it only when the task can tolerate an
+  explicitly uncertain effect.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
   and back it with a success condition that checks it, such as
   `telemetry.ui.active_screen` or `telemetry.game.paused`.
@@ -216,11 +227,16 @@ yourself, in whatever order the current evidence supports.
   spelled correctly. Copy the names from this observation's exact
   `telemetry.capabilities` list rather than from memory, and require only the
   ones a step genuinely depends on. Anything not in that list is rejected.
-- Keep `idempotency: at_most_once` and `retry_budget: 0` for both actions, and
-  declare risk budgets that cover them: `approach_dialogue_target` costs one
-  native-assisted action, `activate_visible_control` costs one pointer action,
-  `purchase_item` costs one pointer and one purchase action, and
-  `dismiss_screen` costs neither.
+- Keep every contracted step at `retry_budget: 0`. Approach, both movement
+  actions, control activation, dismissal, purchase, sale, equip, and game
+  bindings are `at_most_once`; do not repeat them merely because confirmation
+  is slow. The `scroll_screen` contract is intrinsically retry-safe, but the
+  current general plan validator still requires another explicit step rather
+  than a retry budget. Declare risk budgets that cover the plan: approach and
+  movement each cost one native-assisted action; activate/equip each cost one
+  pointer action; purchase and sale each cost one pointer plus one
+  purchase-budget action; dismissal, bindings, and scrolling add no
+  risk-budget unit.
 
 <!-- /policy -->
 Your priorities, in order:
@@ -361,8 +377,9 @@ Control rules:
   the item, explicitly marks it `[Food]`, and shows a value no greater than
   current money. Supply its exact owner `target_id`, item name as `item_name`,
   and tooltip value as `expected_price`.
-  Right-click once, then verify both lower money and a higher `food_items` count
-  before declaring success.
+  Right-click once, then verify lower money and the named inventory contents
+  before declaring success. `food_items` is non-authoritative and may disagree
+  with carried items.
 <!-- /policy -->
 - This fixed camera is intentionally close and over the selected character's shoulder. The character or a
   nearby wall filling much of the frame is not evidence of camera clipping when
