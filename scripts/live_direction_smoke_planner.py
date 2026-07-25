@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
 from kenshi_agent.models import (
     Condition,
     ConditionKind,
@@ -83,7 +84,7 @@ def main() -> None:
                         kind=ConditionKind.FIELD,
                         path=ConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_RESULT,
                         operator=ConditionOperator.EQUALS,
-                        expected="arrived",
+                        expected=NATIVE_WALK_DESTINATION_REACHED_RESULT,
                         max_age_seconds=3.0,
                         required_capabilities=["control.move_in_direction"],
                     )

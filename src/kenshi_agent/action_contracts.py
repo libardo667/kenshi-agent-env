@@ -74,6 +74,7 @@ NATIVE_MOVE_CAPABILITY = "control.move_to_character"
 NATIVE_DIRECTION_CAPABILITY = "control.move_in_direction"
 NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
 NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
+NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
 
@@ -936,7 +937,8 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     summary=(
         "Walk a bearing and distance from where the character stands, ordering "
         "a walk to a bare point rather than toward anyone. One monitored option "
-        "owns the targetless native order through its exact command vector."
+        "owns the targetless native order through its exact command vector. "
+        "Native completion is reported as walk_destination_reached."
     ),
     argument_source=(
         "bearing_degrees is clockwise from north (0 N, 90 E, 180 S, 270 W); "

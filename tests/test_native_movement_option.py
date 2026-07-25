@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
@@ -48,7 +49,7 @@ def acknowledgement(
         status=status,
         reason={
             NativeCommandStatus.ACCEPTED: "issued",
-            NativeCommandStatus.COMPLETED: "arrived",
+            NativeCommandStatus.COMPLETED: NATIVE_WALK_DESTINATION_REACHED_RESULT,
             NativeCommandStatus.REJECTED: "selection_mismatch",
             NativeCommandStatus.CANCELLED: "movement_interrupted",
         }[status],

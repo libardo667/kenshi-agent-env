@@ -8,7 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from kenshi_agent.action_contracts import ACTIVATE_VISIBLE_CONTROL_CONTRACT
+from kenshi_agent.action_contracts import (
+    ACTIVATE_VISIBLE_CONTROL_CONTRACT,
+    NATIVE_WALK_DESTINATION_REACHED_RESULT,
+)
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
@@ -1483,7 +1486,11 @@ class NativeDirectionEnvironment(RevisionEnvironment):
             command_id=self.command.command_id,
             command="move_in_direction",
             status=status,
-            reason="arrived" if terminal else "issued",
+            reason=(
+                NATIVE_WALK_DESTINATION_REACHED_RESULT
+                if terminal
+                else "issued"
+            ),
             target_id="",
             bearing_degrees=90.0,
             distance_units=250.0,
@@ -1523,7 +1530,7 @@ class NativeDirectionEnvironment(RevisionEnvironment):
                 "move_in_direction" if acknowledgement is not None else None
             ),
             last_result=(
-                "arrived"
+                NATIVE_WALK_DESTINATION_REACHED_RESULT
                 if self.completed
                 else ("issued" if acknowledgement is not None else None)
             ),
@@ -1634,7 +1641,7 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
                             success_conditions=[
                                 condition(
                                     "telemetry.native_control.last_result",
-                                    "arrived",
+                                    NATIVE_WALK_DESTINATION_REACHED_RESULT,
                                     "control.move_in_direction",
                                 )
                             ],

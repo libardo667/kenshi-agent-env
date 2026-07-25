@@ -68,7 +68,10 @@ yourself, in whatever order the current evidence supports.
   observable effect. Bearing is clockwise from map north (0 north, 90 east,
   180 south, 270 west). One monitored option owns the targetless order until
   its exact native acknowledgement is terminal; never add a continuation step.
-  This is bounded local movement, not a remote map-travel action.
+  This is bounded local movement, not a remote map-travel action. Its native
+  success result is exactly `walk_destination_reached`, so a success condition
+  on `telemetry.native_control.last_result` must use that exact value, not a
+  synonym such as "arrived".
 - **When you have exhausted the people in a room, leave.** Re-approaching the
   same two people is not progress. Walk out and look somewhere else; a town has
   more in it than the building you started in, and the world has more than the

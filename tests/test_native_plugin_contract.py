@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SOURCE = REPO_ROOT / "native" / "KenshiAgentTelemetry" / "KenshiAgentTelemetry.cpp"
 PROTOCOL_SOURCE = (
@@ -305,3 +307,4 @@ def test_native_direction_completion_uses_the_shared_conformance_module() -> Non
     assert "purely sideways movement completed a direction" in tests
     assert "short movement outside tolerance completed a direction" in tests
     assert "crossing the destination plane did not complete" in tests
+    assert f'"{NATIVE_WALK_DESTINATION_REACHED_RESULT}"' in plugin
