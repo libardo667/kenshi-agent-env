@@ -233,6 +233,9 @@ class Win32InputController(InputController):
         alt_tab_after_input: bool = True,
         pointer_mode: str = "absolute",
         relative_pointer_max_step_pixels: int = 12,
+        relative_pointer_warp_enabled: bool = True,
+        relative_pointer_warp_threshold_pixels: int = 24,
+        relative_pointer_warp_offset_pixels: int = 6,
         relative_pointer_tolerance_pixels: int = 1,
         relative_pointer_settle_seconds: float = 0.006,
         relative_pointer_max_attempts: int = 500,
@@ -252,6 +255,9 @@ class Win32InputController(InputController):
             raise ValueError(f"Unsupported pointer mode: {pointer_mode!r}")
         self.pointer_mode = pointer_mode
         self.relative_pointer_max_step_pixels = relative_pointer_max_step_pixels
+        self.relative_pointer_warp_enabled = relative_pointer_warp_enabled
+        self.relative_pointer_warp_threshold_pixels = relative_pointer_warp_threshold_pixels
+        self.relative_pointer_warp_offset_pixels = relative_pointer_warp_offset_pixels
         self.relative_pointer_tolerance_pixels = relative_pointer_tolerance_pixels
         self.relative_pointer_settle_seconds = relative_pointer_settle_seconds
         self.relative_pointer_max_attempts = relative_pointer_max_attempts
@@ -686,6 +692,28 @@ class Win32InputController(InputController):
             return
 
         target = (screen_x, screen_y)
+        # Relative stepping exists because Kenshi's drawn cursor ignores an
+        # absolute teleport. But stepping the whole way drags the pointer across
+        # the 3D view, and Kenshi reads that traversal as camera input: a survey
+        # that only meant to click HUD buttons panned the camera instead.
+        # So warp almost all of the distance instantly, then let the relative
+        # loop below cover only the last few pixels, which is enough to resync
+        # Kenshi's cursor without dragging through the world.
+        if self.relative_pointer_warp_enabled:
+            current = self._cursor_position()
+            if current is not None:
+                distance = max(abs(current[0] - screen_x), abs(current[1] - screen_y))
+                if distance > self.relative_pointer_warp_threshold_pixels:
+                    approach = self.relative_pointer_warp_offset_pixels
+                    # Land just short of the target so the resync nudge still
+                    # moves in the same direction the pointer was heading.
+                    warp_x = screen_x - approach if current[0] < screen_x else screen_x + approach
+                    warp_y = screen_y - approach if current[1] < screen_y else screen_y + approach
+                    if self.user32.SetCursorPos(int(warp_x), int(warp_y)):
+                        self._mark_agent_input()
+                        if self.relative_pointer_settle_seconds:
+                            await asyncio.sleep(self.relative_pointer_settle_seconds)
+
         for _ in range(self.relative_pointer_max_attempts):
             actual = self._cursor_position()
             delta_x, delta_y = relative_pointer_delta(

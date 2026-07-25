@@ -1093,6 +1093,31 @@
           "default": null,
           "title": "Context Menu Open"
         },
+        "stats_window_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stats Window Open"
+        },
+        "open_inventory_windows": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Open Inventory Windows"
+        },
         "selected_character_id": {
           "anyOf": [
             {

@@ -898,6 +898,16 @@ namespace
         return true;
     }
 
+    // Which widgets a pass is allowed to emit. The export is capped, and a
+    // saturated cap spent on static HUD text hides the very affordances a
+    // caller needs, so buttons are collected before labels rather than
+    // whichever the widget tree happens to reach first.
+    enum UIControlPass
+    {
+        UI_PASS_BUTTONS_ONLY,
+        UI_PASS_TEXT_ONLY
+    };
+
     void AppendVisibleUIControlTree(
         std::ostringstream& json,
         MyGUI::Widget* widget,
@@ -905,7 +915,8 @@ namespace
         unsigned int depth,
         unsigned int& visited,
         unsigned int& appended,
-        bool& first)
+        bool& first,
+        UIControlPass pass)
     {
         if (widget == NULL ||
             depth > MAX_UI_WIDGET_DEPTH ||
@@ -919,7 +930,11 @@ namespace
         if (widget->getInheritedVisible() && widget->getInheritedEnabled())
         {
             MyGUI::TextBox* textBox = widget->castType<MyGUI::TextBox>(false);
-            if (textBox != NULL)
+            const bool isButton =
+                widget->castType<MyGUI::Button>(false) != NULL;
+            const bool wantedThisPass =
+                (pass == UI_PASS_BUTTONS_ONLY) ? isButton : !isButton;
+            if (textBox != NULL && wantedThisPass)
             {
                 const std::string label = textBox->getCaption().asUTF8();
                 const MyGUI::IntCoord bounds = widget->getAbsoluteCoord();
@@ -937,10 +952,7 @@ namespace
                     ++appended;
                     json << "{";
                     json << "\"label\":\"" << JsonEscape(label) << "\",";
-                    json << "\"role\":\""
-                         << (widget->castType<MyGUI::Button>(false) != NULL
-                                 ? "button"
-                                 : "text")
+                    json << "\"role\":\"" << (isButton ? "button" : "text")
                          << "\",";
                     json << "\"bounds\":{";
                     json << "\"min_x\":"
@@ -976,7 +988,8 @@ namespace
                 depth + 1,
                 visited,
                 appended,
-                first);
+                first,
+                pass);
         }
     }
 
@@ -999,21 +1012,28 @@ namespace
 
         json << "[";
         bool first = true;
-        unsigned int visited = 0;
         unsigned int appended = 0;
-        MyGUI::EnumeratorWidgetPtr roots = myGui->getEnumerator();
-        while (roots.next() &&
-               visited < MAX_VISITED_UI_WIDGETS &&
-               appended < MAX_VISIBLE_UI_CONTROLS)
+        const UIControlPass passes[2] = {UI_PASS_BUTTONS_ONLY, UI_PASS_TEXT_ONLY};
+        for (unsigned int index = 0; index < 2; ++index)
         {
-            AppendVisibleUIControlTree(
-                json,
-                roots.current(),
-                view,
-                0,
-                visited,
-                appended,
-                first);
+            // Each pass re-walks the tree with its own visit budget so a wide
+            // text-heavy HUD cannot exhaust the walk before buttons are seen.
+            unsigned int visited = 0;
+            MyGUI::EnumeratorWidgetPtr roots = myGui->getEnumerator();
+            while (roots.next() &&
+                   visited < MAX_VISITED_UI_WIDGETS &&
+                   appended < MAX_VISIBLE_UI_CONTROLS)
+            {
+                AppendVisibleUIControlTree(
+                    json,
+                    roots.current(),
+                    view,
+                    0,
+                    visited,
+                    appended,
+                    first,
+                    passes[index]);
+            }
         }
         json << "]";
     }
@@ -1336,11 +1356,19 @@ namespace
         const bool dialogueOpen =
             gui != NULL && gui->dialogue != NULL && gui->dialogue->isVisible();
         const bool inventoryOpen = gui != NULL && gui->isAnyInventoryWindowOpen();
+        // The trade handles are not cleared when the window closes, so testing
+        // them alone reported `trade` indefinitely after a single trade - the
+        // agent could never observe leaving the shop. Trade is a trading
+        // *window* being open, so require an actually open inventory window too.
         const bool tradeOpen =
             gui != NULL &&
+            inventoryOpen &&
             (gui->inventoryWindowTrader.getCharacter() != NULL ||
              gui->tradeA.getCharacter() != NULL ||
              gui->tradeB.getCharacter() != NULL);
+        const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
+        const int openInventoryWindows =
+            gui != NULL ? gui->getNumOpenInventoryWindows() : 0;
         ToolTip* tooltip = gui != NULL ? gui->getToolTip() : NULL;
         const bool tooltipVisible =
             tooltip != NULL && tooltip->getVisible();
@@ -1350,6 +1378,8 @@ namespace
              << (dialogueOpen ? "dialogue" : (tradeOpen ? "trade" : (inventoryOpen ? "inventory" : "world")))
              << "\",";
         json << "\"modal_open\":" << JsonBool(dialogueOpen || inventoryOpen) << ",";
+        json << "\"stats_window_open\":" << JsonBool(statsWindowOpen) << ",";
+        json << "\"open_inventory_windows\":" << openInventoryWindows << ",";
         json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
         std::string dialogueTargetId;
         json << "\"dialogue_target_id\":";

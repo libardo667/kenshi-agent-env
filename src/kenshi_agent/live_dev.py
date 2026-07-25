@@ -64,6 +64,13 @@ def _controller(config: AppConfig) -> Win32InputController:
         relative_pointer_tolerance_pixels=config.controls.relative_pointer_tolerance_pixels,
         relative_pointer_settle_seconds=config.controls.relative_pointer_settle_seconds,
         relative_pointer_max_attempts=config.controls.relative_pointer_max_attempts,
+        relative_pointer_warp_enabled=config.controls.relative_pointer_warp_enabled,
+        relative_pointer_warp_threshold_pixels=(
+            config.controls.relative_pointer_warp_threshold_pixels
+        ),
+        relative_pointer_warp_offset_pixels=(
+            config.controls.relative_pointer_warp_offset_pixels
+        ),
     )
 
 

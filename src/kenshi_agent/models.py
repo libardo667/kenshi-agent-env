@@ -386,6 +386,11 @@ class UIState(StrictModel):
         max_length=64,
     )
     context_menu_open: bool | None = None
+    # Additional screen signals. `active_screen` collapses everything to
+    # dialogue/trade/inventory/world, which cannot express "the stats window is
+    # up" or "two inventory windows are open".
+    stats_window_open: bool | None = None
+    open_inventory_windows: int | None = Field(default=None, ge=0)
     selected_character_id: str | None = None
     selected_character_ids: list[str] = Field(default_factory=list)
     client_width: int | None = Field(default=None, gt=0)
