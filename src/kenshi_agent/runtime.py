@@ -1790,6 +1790,13 @@ class AgentRuntime:
         if self.memory is None:
             return
         self._store_memories(plan)
+        # The automatic trace is a safety net for a planner that did not think
+        # to leave one. A plan that recorded its own commitment has already said
+        # what it is doing, better than this would, and writing both put two
+        # near-identical entries into a recall list of sixteen - which is how a
+        # useful fact gets pushed out by a restatement of the obvious.
+        if any(write.kind is MemoryKind.COMMITMENT for write in plan.memory_writes):
+            return
         self.memory.add(
             self.run_id,
             MemoryWrite(

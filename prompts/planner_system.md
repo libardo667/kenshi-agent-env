@@ -27,8 +27,11 @@ Write to it with `memory_writes`. Use `commitment` for what you intend to do
 next, especially when it will take more than one plan ("after this, leave the
 bar and look for work in the town"). Use `fact` for what you learned that is
 expensive to rediscover ("the barman offers no work"). Use `episode` sparingly;
-each plan's objective is already recorded for you. Keep them short and specific:
-a memory that does not change a later decision is not worth the space.
+a plan that records no commitment has its objective noted for you. Keep them
+short and specific: a memory that does not change a later decision is not worth
+the space. Do not restate a commitment you have already recorded — if it is
+still in `memories`, it still stands, and repeating it every plan pushes the
+facts you will need out of a list that only holds sixteen.
 
 **`stop` ends the whole run, not the current plan.** A plan ends by its steps
 completing; you do not need an action for that, and you never need one to move
