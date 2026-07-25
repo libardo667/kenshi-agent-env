@@ -846,7 +846,16 @@ class TestPurchaseUsesExportedCellFacts:
         )
         assert binding.bound, binding.reason
 
-    def test_a_price_that_disagrees_with_the_cell_is_refused(self) -> None:
+    def test_a_price_that_disagrees_with_the_cell_does_not_refuse(self) -> None:
+        """`item_value` is the item's worth, not what this shop charges.
+
+        A trader applies its own multiplier and the asking price is never
+        exported, so an `expected_price` that disagrees means the planner was
+        wrong about something it was never given - not that the wrong item is
+        about to be bought. Live, this refused every attempt at a c.38 Dried
+        Meat and reported that the cell had vanished.
+        """
+
         binding = PURCHASE_ITEM_CONTRACT.bind(
             PurchaseItemAction(
                 cell_label="Bread",
@@ -857,11 +866,8 @@ class TestPurchaseUsesExportedCellFacts:
             ),
             self._trade_state(),
         )
-        assert not binding.bound
-        # Price is part of the reference, not a check applied after resolving
-        # one: the live Barman stocks five cells labelled "Tooth Pick" at two
-        # different prices, so the name alone does not identify a cell.
-        assert "at c.5" in binding.reason
+        assert binding.bound, binding.reason
+        assert binding.resolved_label == "Bread"
 
     def test_a_name_that_disagrees_with_the_cell_is_refused(self) -> None:
         binding = PURCHASE_ITEM_CONTRACT.bind(

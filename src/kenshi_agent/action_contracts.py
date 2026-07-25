@@ -284,18 +284,22 @@ def _bind_item_cell(
         if control.role == ITEM_ROLE
         and normalize_control_label(control.label) == wanted
         and (window is None or control.window == window)
-        # Only narrow among cells that actually declare a value; a cell from a
-        # plug-in too old to export one still reaches the tooltip check.
-        and (
-            item_value is None
-            or control.item_value is None
-            or control.item_value == item_value
-        )
     ]
     if not matches:
         where = f" in window {window!r}" if window is not None else ""
-        price = f" at c.{item_value}" if item_value is not None else ""
-        return _unbound(f"No current item cell matches {cell_label!r}{price}{where}.")
+        return _unbound(f"No current item cell matches {cell_label!r}{where}.")
+
+    if len(matches) > 1 and item_value is not None:
+        # Price is only ever a tie-breaker between cells that share a name - the
+        # Barman stocks five "Tooth Pick" at two grades. It is deliberately not
+        # an assertion about the sale: a shop charges its own multiplier on an
+        # item's value and that asking price is never exported, so requiring
+        # equality refused every real purchase while reporting that the cell had
+        # vanished. Narrow when it helps; never refuse.
+        narrowed = [control for control in matches if control.item_value == item_value]
+        if narrowed:
+            matches = narrowed
+
     if len(matches) > 1:
         # Ambiguity only matters when the candidates differ in a way that could
         # change the outcome. A shop holding five identical Tooth Picks at the
@@ -372,10 +376,13 @@ def bind_purchase_item(
             return _unbound(
                 f"The cell holds {cell_name!r}, not {action.item_name!r}."
             )
-        if action.expected_price != cell_value:
-            return _unbound(
-                f"The cell's price is c.{cell_value}, not c.{action.expected_price}."
-            )
+        # Deliberately not checked. `item_value` is the item's worth, not what
+        # this shop charges - a trader applies its own multiplier and the asking
+        # price is never exported - so an `expected_price` that disagrees is the
+        # planner being wrong about something it was never given, not evidence
+        # that the wrong item is about to be bought. What the cell *is* remains
+        # checked above, which is the part that protects against buying the
+        # wrong thing. Money is bounded by the purse and by nothing else here.
     else:
         tooltip_text = telemetry.ui.tooltip_text
         tooltip_bounds = telemetry.ui.tooltip_source_bounds
