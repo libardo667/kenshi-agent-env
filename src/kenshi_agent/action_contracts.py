@@ -47,6 +47,7 @@ from .models import (
     PlanEnvelope,
     PointerActionClass,
     PurchaseItemAction,
+    ScrollScreenAction,
     SkillAction,
     UseGameBindingAction,
     WorldStateRevision,
@@ -513,6 +514,59 @@ def _game_binding_authorization_conditions(
     ]
 
 
+
+def bind_scroll_screen(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a scroll to the observed bounds of one currently open window.
+
+    The reference is the window, not a coordinate: the scroll lands at the
+    centre of the rectangle its own controls occupy. A window with nothing
+    exported in it fails closed rather than scrolling the world behind it,
+    which is what a bare coordinate would have done.
+    """
+
+    if not isinstance(action, ScrollScreenAction):
+        return _unbound("Action is not a scroll_screen action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the window.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the window cannot be bound.")
+    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
+        return _unbound(
+            f"Capability {VISIBLE_CONTROLS_CAPABILITY!r} is unavailable, so open "
+            "windows are unknown rather than absent."
+        )
+    controls = telemetry.ui.visible_controls
+    if not controls:
+        return _unbound("The interface reports no current visible-control set.")
+    members = [control for control in controls if control.window == action.window]
+    if not members:
+        return _unbound(
+            f"No control currently belongs to a window named {action.window!r}, "
+            "so there is nothing to scroll."
+        )
+    bounds = NormalizedPointerBounds(
+        min_x=min(control.bounds.min_x for control in members),
+        min_y=min(control.bounds.min_y for control in members),
+        max_x=max(control.bounds.max_x for control in members),
+        max_y=max(control.bounds.max_y for control in members),
+    )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to window {action.window!r}, whose {len(members)} exported "
+            "controls span the region to scroll."
+        ),
+        resolved_label=action.window,
+        resolved_role="window",
+        resolved_bounds=bounds,
+        source_revision=observation.world_revision,
+    )
+
+
 def _approach_authorization_conditions(
     action: Action,
     *,
@@ -809,6 +863,38 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
 
 
 
+
+SCROLL_SCREEN_CONTRACT = ActionContract(
+    kind="scroll_screen",
+    version="1.0",
+    model=ScrollScreenAction,
+    summary=(
+        "Scroll inside one open window to reveal contents past the first "
+        "screenful. Shop stock and inventory that are not currently rendered "
+        "are not exported at all, so scrolling is the only way to find them."
+    ),
+    argument_source=(
+        "window must exactly match the `window` of at least one current "
+        "visible_controls entry; notches is negative to scroll further down "
+        "the list and positive to scroll back up."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY}),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    # A scroll commits nothing: it changes what is rendered, not the world.
+    risk=ActionRiskCost(),
+    max_primitive_actions=1,
+    reference_fields=("window",),
+    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_scroll",
+    bind=bind_scroll_screen,
+    authorization_conditions=_visible_control_authorization_conditions,
+)
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
@@ -818,6 +904,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         INSPECT_ITEM_CELL_CONTRACT,
         PURCHASE_ITEM_CONTRACT,
         USE_GAME_BINDING_CONTRACT,
+        SCROLL_SCREEN_CONTRACT,
     )
 }
 

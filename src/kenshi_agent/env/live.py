@@ -14,6 +14,7 @@ from ..action_contracts import (
     NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
     PURCHASE_ITEM_CONTRACT,
+    SCROLL_SCREEN_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
     ActionContract,
     ReferenceBinding,
@@ -55,6 +56,7 @@ from ..models import (
     PointerActionClass,
     PurchaseItemAction,
     ScrollAction,
+    ScrollScreenAction,
     SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
@@ -560,6 +562,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_purchase_item(action, started)
         if isinstance(action, UseGameBindingAction):
             return await self._execute_game_binding(action, started)
+        if isinstance(action, ScrollScreenAction):
+            return await self._execute_scroll_screen(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -1006,6 +1010,49 @@ class LiveEnvironment(AgentEnvironment):
                     f"Pressed Kenshi's {action.binding.value!r} binding ({key!r}), "
                     f"expecting: {action.expected_effect}. A later observation "
                     "must confirm the transition."
+                ),
+            }
+        )
+
+    async def _execute_scroll_screen(
+        self,
+        action: ScrollScreenAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Scroll at the centre of one window's own observed bounds.
+
+        Re-resolves the window inside the lease, because a window that closed
+        during the polite wait would otherwise have its scroll delivered to
+        whatever is behind it.
+        """
+
+        binding, observation = self._rebind_in_lease(SCROLL_SCREEN_CONTRACT, action)
+        bounds = binding.resolved_bounds
+        assert bounds is not None
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        primitive_receipt = await self.controller.execute(
+            ScrollAction(x=x, y=y, notches=action.notches)
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=SCROLL_SCREEN_CONTRACT.version,
+            resolved_label=binding.resolved_label,
+            resolved_role=binding.resolved_role,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                f"Re-resolved window {action.window!r} inside the input lease. "
+                f"{binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Scrolled {action.notches:+d} notches inside {action.window!r}. "
+                    "A later observation must report the newly visible controls."
                 ),
             }
         )

@@ -172,3 +172,74 @@ def test_a_short_control_list_is_returned_untouched() -> None:
 
     controls = [_control("button", i) for i in range(5)]
     assert budgeted_visible_controls(controls, 120) == controls
+
+
+def _windowed(window: str, role: str, index: int, y: float) -> object:
+    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+
+    return VisibleUIControl(
+        label=f"{window}_{role}_{index}",
+        role=role,
+        window=window,
+        bounds=NormalizedPointerBounds(min_x=0.2, min_y=y, max_x=0.6, max_y=y + 0.05),
+    )
+
+
+def _observation_with(controls: list[object]) -> Observation:
+    base = observation()
+    telemetry = base.telemetry
+    assert telemetry is not None
+    return base.model_copy(
+        update={
+            "telemetry": telemetry.model_copy(
+                update={
+                    "capabilities": [*telemetry.capabilities, "ui.visible_controls"],
+                    "ui": telemetry.ui.model_copy(update={"visible_controls": controls}),
+                }
+            )
+        }
+    )
+
+
+def test_a_scroll_binds_to_the_named_window_bounds() -> None:
+    """Shop stock past the first screenful is not exported at all."""
+
+    from kenshi_agent.action_contracts import SCROLL_SCREEN_CONTRACT
+    from kenshi_agent.models import ScrollScreenAction
+
+    controls = [
+        _windowed("BARMAN", "item", 0, 0.10),
+        _windowed("BARMAN", "item", 1, 0.30),
+        _windowed("HEP", "item", 0, 0.70),
+    ]
+    action = ScrollScreenAction(window="BARMAN", notches=-3)
+    binding = SCROLL_SCREEN_CONTRACT.bind(action, _observation_with(controls))
+
+    assert binding.bound
+    assert binding.resolved_bounds is not None
+    # Spans only the named window, never the one behind it.
+    assert binding.resolved_bounds.min_y == 0.10
+    assert binding.resolved_bounds.max_y == 0.35
+
+
+def test_a_scroll_refuses_a_window_that_is_not_open() -> None:
+    """Otherwise the notches land on whatever is behind it."""
+
+    from kenshi_agent.action_contracts import SCROLL_SCREEN_CONTRACT
+    from kenshi_agent.models import ScrollScreenAction
+
+    action = ScrollScreenAction(window="TRADER", notches=2)
+    binding = SCROLL_SCREEN_CONTRACT.bind(
+        action, _observation_with([_windowed("HEP", "item", 0, 0.5)])
+    )
+    assert not binding.bound
+    assert "nothing to scroll" in binding.reason
+
+
+def test_a_scroll_must_actually_move() -> None:
+    import pydantic
+
+    from kenshi_agent.models import ScrollScreenAction
+
+    with pytest.raises(pydantic.ValidationError):
+        ScrollScreenAction(window="BARMAN", notches=0)

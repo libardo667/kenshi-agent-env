@@ -91,6 +91,11 @@ yourself, in whatever order the current evidence supports.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
   and back it with a success condition that checks it, such as
   `telemetry.ui.active_screen` or `telemetry.game.paused`.
+- `scroll_screen` names an open `window` and a number of `notches` (negative
+  goes further down the list). Contents that are not currently rendered are not
+  exported at all, so if a shop or inventory seems not to hold what you expect,
+  scroll before concluding it is absent. It commits nothing and is safe to
+  retry.
 - Entries with role `text` are what Kenshi is *telling* you, and they are the
   only record of a refusal. When an action appeared to do nothing, read them
   before retrying: a trade that failed reports why — you could not afford it,

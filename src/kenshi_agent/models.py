@@ -838,6 +838,33 @@ class SkillAction(StrictModel):
         return {argument.name: argument.value for argument in self.args}
 
 
+class ScrollScreenAction(StrictModel):
+    """Scroll inside one open window so more of its contents become visible.
+
+    Shops and inventories hold more than fits on screen, and the export only
+    ever describes what is currently rendered. Without this, stock past the
+    first screenful is not merely hard to reach - it does not exist as far as
+    the agent is concerned, and no amount of replanning reveals it.
+
+    Names a window rather than a coordinate: the scroll lands at the centre of
+    that window's own observed bounds, so it follows the window and survives a
+    resolution change.
+    """
+
+    kind: Literal["scroll_screen"] = "scroll_screen"
+    # Caption of the window to scroll, exactly as `visible_controls` reports it.
+    window: str = Field(min_length=1, max_length=200)
+    # Negative scrolls down (further into the list), positive scrolls up.
+    notches: int = Field(ge=-8, le=8)
+
+    @field_validator("notches")
+    @classmethod
+    def notches_must_move(cls, value: int) -> int:
+        if value == 0:
+            raise ValueError("notches must not be zero")
+        return value
+
+
 class GameBinding(StrEnum):
     """Kenshi's own named controls, as the game itself defines them.
 
@@ -965,6 +992,7 @@ SemanticAction: TypeAlias = (
     | InspectItemCellAction
     | PurchaseItemAction
     | UseGameBindingAction
+    | ScrollScreenAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
 
@@ -989,6 +1017,7 @@ Action: TypeAlias = (
     | InspectItemCellAction
     | PurchaseItemAction
     | UseGameBindingAction
+    | ScrollScreenAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
@@ -1000,6 +1029,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "inspect_item_cell",
         "purchase_item",
         "use_game_binding",
+        "scroll_screen",
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
