@@ -334,7 +334,7 @@ def evaluate_condition(
             return _evaluation(
                 condition,
                 ConditionResult.UNAVAILABLE,
-                f"Required capabilities are unavailable: {missing}.",
+                f"Kenshi is not currently reporting these capabilities: {missing}.",
             )
         alternatives = (
             _PATH_CAPABILITY_ALTERNATIVES.get(condition.path)
@@ -488,7 +488,13 @@ def validate_plan(
         elif config.live_execution_policy == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
             from .dialogue_interaction import dialogue_interaction_policy_errors
 
-            errors.extend(dialogue_interaction_policy_errors(plan, observation))
+            errors.extend(
+                dialogue_interaction_policy_errors(
+                    plan,
+                    observation,
+                    max_steps=config.max_plan_steps,
+                )
+            )
     if plan.control_mode != observation.control_mode:
         errors.append(
             f"control mode {plan.control_mode.value!r} does not match "

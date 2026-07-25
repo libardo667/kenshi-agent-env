@@ -31,6 +31,8 @@ from .models import (
 )
 from .planning import evaluate_conditions
 
+# Default only. The caller passes the configured `max_plan_steps` so a
+# long-form run can be given a longer leash without editing this module.
 DIALOGUE_INTERACTION_MAX_STEPS = 4
 
 # Conditions that can only be settled by a later world revision. A plan whose
@@ -193,7 +195,8 @@ def dialogue_interaction_rebase_errors(
         current = contract.bind(step.action, current_observation)
         if not current.bound:
             errors.append(
-                f"step {step.step_id!r} no longer binds after planning: {current.reason}"
+                f"step {step.step_id!r} pointed at something that changed while the "
+                f"planner was thinking: {current.reason}"
             )
 
     assumptions = evaluate_conditions(plan.assumptions, current_observation)
@@ -204,7 +207,8 @@ def dialogue_interaction_rebase_errors(
     ]
     if blocked:
         errors.append(
-            "plan assumptions no longer hold after planning: "
+            "the plan's own assumptions stopped being true while the planner was "
+            "thinking: "
             + "; ".join(f"{item.result.value}: {item.reason}" for item in blocked)
         )
     return errors
@@ -213,6 +217,8 @@ def dialogue_interaction_rebase_errors(
 def dialogue_interaction_policy_errors(
     plan: PlanEnvelope,
     observation: Observation,
+    *,
+    max_steps: int = DIALOGUE_INTERACTION_MAX_STEPS,
 ) -> list[str]:
     """Every reason this plan may not run under the generic interaction policy.
 
@@ -228,10 +234,10 @@ def dialogue_interaction_policy_errors(
     if observation.telemetry_stale:
         errors.append("generic interaction policy requires fresh telemetry")
 
-    if len(plan.steps) > DIALOGUE_INTERACTION_MAX_STEPS:
+    if len(plan.steps) > max_steps:
         errors.append(
             f"plan has {len(plan.steps)} steps; the generic interaction policy allows at "
-            f"most {DIALOGUE_INTERACTION_MAX_STEPS}"
+            f"most {max_steps}"
         )
 
     if not any(

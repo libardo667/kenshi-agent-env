@@ -516,7 +516,7 @@ class TestRebaseAcrossPlannerLatency:
             deep=True,
         )
         errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
-        assert any("no longer binds" in error for error in errors)
+        assert any("changed while the planner was thinking" in error for error in errors)
 
     def test_a_control_that_became_ambiguous_refuses(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
@@ -551,7 +551,7 @@ class TestRebaseAcrossPlannerLatency:
             deep=True,
         )
         errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
-        assert any("no longer binds" in error for error in errors)
+        assert any("changed while the planner was thinking" in error for error in errors)
 
     def test_withdrawn_capability_refuses(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)

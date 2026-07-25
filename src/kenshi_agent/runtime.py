@@ -624,7 +624,10 @@ class AgentRuntime:
                     continue
 
                 if isinstance(output, PlanPatch):
-                    stop_reason = "A PlanPatch cannot be applied without an active matching plan."
+                    stop_reason = (
+                        "Stopped: the planner sent a plan revision, but no matching plan "
+                        "was still running to revise."
+                    )
                     self._plan_event(
                         "plan_rejected",
                         plan_id=output.plan_id,
@@ -1115,7 +1118,7 @@ class AgentRuntime:
                 )
                 self._emit_control_ownership_events(events, observation)
         except WorldStateClosedError:
-            reason = "World-state stream closed during human control."
+            reason = "Stopped: the telemetry stream closed while you had control."
             self._emit_control_ownership_events(
                 machine.disarm(reason=reason),
                 observation,
@@ -1138,7 +1141,10 @@ class AgentRuntime:
             state_store,
         )
         if errors:
-            reason = "Agent takeover revalidation failed: " + "; ".join(errors)
+            reason = (
+                "The agent did not resume after the handback countdown because the "
+                "current state no longer checks out: " + "; ".join(errors)
+            )
             self._emit_control_ownership_events(
                 machine.disarm(reason=reason),
                 observation,
@@ -1397,7 +1403,10 @@ class AgentRuntime:
             )
             return latest, 1, True, None, reason
 
-        reason = "Independent safety cleanup reached a causally later confirmed paused revision."
+        reason = (
+            "Safety supervisor stopped the run and Kenshi is confirmed paused "
+            "(verified on a fresh telemetry reading, not a stale one)."
+        )
         self.logger.write(
             "safety_cleanup_completed",
             step_index=latest.step_index,

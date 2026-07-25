@@ -45,7 +45,11 @@ namespace
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
-    const unsigned int MAX_VISIBLE_UI_CONTROLS = 64;
+    // Raised from 64 after button-priority passes pushed dialogue options -
+    // which are TextBox widgets, walked last - out of the export entirely.
+    // Prioritizing one role only helps if the cap is not the binding
+    // constraint, so give the whole set room rather than trading roles off.
+    const unsigned int MAX_VISIBLE_UI_CONTROLS = 224;
     const unsigned int MAX_VISITED_UI_WIDGETS = 2048;
     const unsigned int MAX_UI_WIDGET_DEPTH = 32;
     const unsigned int MAX_NATIVE_COMMAND_BYTES = 16384;
@@ -1060,8 +1064,11 @@ namespace
             UI_PASS_BUTTONS_ONLY,
             UI_PASS_ITEMS_ONLY,
             UI_PASS_TEXT_ONLY};
-        const unsigned int passCount = includeItemCells ? 3 : 2;
-        for (unsigned int index = 0; index < passCount; ++index)
+        // Always walk every pass; only the item pass is conditional. Sizing the
+        // loop by a count instead of skipping by role previously dropped the
+        // text pass entirely whenever no inventory was open, which silently
+        // removed dialogue options from the export.
+        for (unsigned int index = 0; index < 3; ++index)
         {
             if (!includeItemCells && passes[index] == UI_PASS_ITEMS_ONLY)
                 continue;

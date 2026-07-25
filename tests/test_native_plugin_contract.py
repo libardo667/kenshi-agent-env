@@ -157,7 +157,20 @@ def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
     assert "Sample(player, false);" in source
     assert "ui.visible_controls" in source
     assert "AppendVisibleUIControls" in source
-    assert "MAX_VISIBLE_UI_CONTROLS = 64" in source
+    # The plug-in's export cap must never exceed the model's bound, or a rich
+    # screen fails validation outright instead of arriving truncated.
+    import re
+
+    from kenshi_agent.models import UIState
+
+    match = re.search(r"MAX_VISIBLE_UI_CONTROLS = (\d+)", source)
+    assert match is not None
+    native_cap = int(match.group(1))
+    model_bound = UIState.model_fields["visible_controls"].metadata[0].max_length
+    assert native_cap <= model_bound, (
+        f"plug-in exports up to {native_cap} controls but the model accepts "
+        f"at most {model_bound}"
+    )
     assert "MAX_VISITED_UI_WIDGETS = 2048" in source
     assert "MAX_UI_WIDGET_DEPTH = 32" in source
     assert "getInheritedVisible()" in source

@@ -1071,7 +1071,7 @@
               "items": {
                 "$ref": "#/$defs/VisibleUIControl"
               },
-              "maxItems": 64,
+              "maxItems": 224,
               "type": "array"
             },
             {

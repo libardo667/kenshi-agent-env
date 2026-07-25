@@ -346,7 +346,9 @@ class NormalizedPointerBounds(StrictModel):
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
 
-MAX_DIGESTED_VISIBLE_CONTROLS = 32
+# Large enough that a dialogue's options are never truncated away by leading
+# HUD buttons; the planner payload budget reduces the observation if needed.
+MAX_DIGESTED_VISIBLE_CONTROLS = 120
 
 
 def normalize_control_label(value: str) -> str:
@@ -386,7 +388,9 @@ class UIState(StrictModel):
     tooltip_source_bounds: NormalizedPointerBounds | None = None
     visible_controls: list[VisibleUIControl] | None = Field(
         default=None,
-        max_length=64,
+        # Must not be tighter than the plug-in's own export cap, or a rich
+        # screen fails validation outright instead of arriving truncated.
+        max_length=224,
     )
     context_menu_open: bool | None = None
     # Additional screen signals. `active_screen` collapses everything to
@@ -1013,6 +1017,11 @@ _ALLOWED_CONDITION_PATHS = {
 _ALLOWED_CAPABILITY_PATHS = {
     path.value for path in ConditionPath if path.value not in _ALLOWED_CONDITION_PATHS
 }
+# Capability names a condition may require. `required_capabilities` used to be
+# free-form, so a planner could put a *field path* like "ui.active_screen" there
+# and only find out much later, as an opaque "capabilities are unavailable".
+# Checking here turns that into an immediate, nameable mistake.
+KNOWN_CAPABILITIES: frozenset[str] = frozenset(_ALLOWED_CAPABILITY_PATHS)
 
 
 class Condition(StrictModel):
@@ -1049,6 +1058,14 @@ class Condition(StrictModel):
                 raise ValueError("Capability conditions do not accept target_id")
         elif self.path is not None or self.target_id is not None:
             raise ValueError("telemetry_fresh conditions do not accept path or target_id")
+        unknown = sorted(set(self.required_capabilities) - KNOWN_CAPABILITIES)
+        if unknown:
+            raise ValueError(
+                f"Unknown capability names in required_capabilities: {unknown}. "
+                "These must be capability names the telemetry advertises, not "
+                "condition field paths. Valid names: "
+                + ", ".join(sorted(KNOWN_CAPABILITIES))
+            )
         if self.expected is None:
             raise ValueError(f"{self.operator.value} conditions require expected")
         if self.operator == ConditionOperator.CONTAINS and not isinstance(
