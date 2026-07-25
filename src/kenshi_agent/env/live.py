@@ -926,6 +926,9 @@ class LiveEnvironment(AgentEnvironment):
         assert bounds is not None
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
+        await self.controller.execute(MoveCursorAction(x=x, y=y))
+        if self.controls_config.item_cell_hover_seconds:
+            await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
         primitive_receipt = await self.controller.execute(
             ClickAction(
                 x=x,
@@ -1084,6 +1087,9 @@ class LiveEnvironment(AgentEnvironment):
         assert bounds is not None
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
+        await self.controller.execute(MoveCursorAction(x=x, y=y))
+        if self.controls_config.item_cell_hover_seconds:
+            await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
         primitive_receipt = await self.controller.execute(
             ClickAction(
                 x=x,
@@ -1135,6 +1141,9 @@ class LiveEnvironment(AgentEnvironment):
         assert bounds is not None
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
+        await self.controller.execute(MoveCursorAction(x=x, y=y))
+        if self.controls_config.item_cell_hover_seconds:
+            await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
         primitive_receipt = await self.controller.execute(
             ClickAction(
                 x=x,

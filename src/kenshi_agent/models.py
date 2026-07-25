@@ -442,6 +442,23 @@ def normalize_control_label(value: str) -> str:
 
 class VisibleUIControl(StrictModel):
     label: str = Field(min_length=1, max_length=500)
+
+    @field_validator("label", mode="before")
+    @classmethod
+    def truncate_long_label(cls, value: object) -> object:
+        """Clip an over-long caption rather than rejecting the whole snapshot.
+
+        Telemetry is evidence we receive, not a document we author, so a widget
+        Kenshi chose to fill with prose must not be able to invalidate it. One
+        long story message - a bar rumour running past 500 characters - made an
+        entire live observation unparseable, which blinds the agent completely:
+        no cells, no money, no screen, from one caption. Keeping the first 500
+        characters preserves what the label was for.
+        """
+
+        if isinstance(value, str) and len(value) > 500:
+            return value[:497] + "..."
+        return value
     # Caption of the MyGUI window this control belongs to, when it has one.
     # Several open windows otherwise arrive as one flat list in which every
     # close button looks identical, so "close the shop" cannot be expressed.

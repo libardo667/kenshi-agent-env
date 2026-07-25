@@ -667,3 +667,27 @@ def test_the_observation_can_carry_planner_feedback() -> None:
     # correction the planner cannot see is a correction that does not happen.
     tight = with_feedback.planner_payload(max_chars=4200)
     assert "capability needs a path" in tight
+
+
+def test_a_long_caption_does_not_blind_the_agent() -> None:
+    """One over-long widget caption must not invalidate the whole snapshot.
+
+    Live, a bar rumour running past 500 characters made an entire observation
+    unparseable - no cells, no money, no screen - from one label. Telemetry is
+    evidence we receive, not a document we author.
+    """
+
+    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+
+    rumour = "#140806Hoo boy, did I get a story for you. " + ("blah " * 200)
+    assert len(rumour) > 500
+
+    control = VisibleUIControl(
+        label=rumour,
+        role="text",
+        window="",
+        bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
+    )
+    assert len(control.label) == 500
+    assert control.label.startswith("#140806Hoo boy")
+    assert control.label.endswith("...")

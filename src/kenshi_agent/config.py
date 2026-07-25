@@ -210,6 +210,13 @@ class ControlsConfig(ConfigModel):
     # used 0.12s, so semantic control activation inherits that proven hold
     # rather than rediscovering it.
     control_activation_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
+    # An inventory or shop cell resolves what it holds from the hovered widget,
+    # so the pointer has to land and be seen there before the button goes down.
+    # A ClickAction moves and presses with only `relative_pointer_settle_seconds`
+    # between them - six milliseconds - and six live purchases in a row did
+    # nothing at all while the same click with a third of a second in front of
+    # it transferred the item every time.
+    item_cell_hover_seconds: float = Field(default=0.35, ge=0.0, le=2.0)
     # Key that backs out of an open screen. Coordinate-independent, so it works
     # regardless of resolution or calibration.
     dismiss_screen_key: str = Field(default="escape", min_length=1, max_length=32)
