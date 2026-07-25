@@ -1675,8 +1675,9 @@ class Observation(StrictModel):
         # Bounded so this digest cannot overflow the irreducible planner
         # envelope. Truncation is fail-closed: an unlisted control is one the
         # planner will not author, never one it may author blindly.
-        return [
-            {
+        digest = []
+        for control in budgeted_visible_controls(controls):
+            entry = {
                 "exact_label": control.label,
                 "role": control.role,
                 "window": control.window,
@@ -1687,8 +1688,19 @@ class Observation(StrictModel):
                     > 1
                 ),
             }
-            for control in budgeted_visible_controls(controls)
-        ]
+            # An item cell's label is a bare ordinal from the export walk, so
+            # without these the planner sees "cell 37" and has to hover to learn
+            # what it is - a round trip per cell, to recover facts the telemetry
+            # already carries. The plugin walks the inventory structure
+            # precisely so nobody has to hover; dropping them here threw that
+            # away and left the agent unable to read a price it was looking at.
+            if control.role == "item":
+                entry["item_name"] = control.item_name
+                entry["item_value"] = control.item_value
+                entry["item_quantity"] = control.item_quantity
+                entry["section"] = control.section
+            digest.append(entry)
+        return digest
 
     def semantic_action_digest(self) -> list[dict[str, Any]]:
         """Exactly the reusable actions that are authorable right now.
