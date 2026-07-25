@@ -182,6 +182,11 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Mechanism.CONTROL,
         "use_game_binding",
         native_entry_point="controls.cfg toggle_inventory=I",
+        gap=(
+            "Verified live. Note active_screen reports 'trade' for a solo "
+            "inventory and never 'inventory'; open_inventory_windows is the "
+            "field that actually moves."
+        ),
     ),
     Affordance(
         Interface.INVENTORY,
@@ -278,6 +283,10 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Mechanism.CONTROL,
         "use_game_binding",
         native_entry_point="controls.cfg toggle_map=M",
+        gap=(
+            "Verified live. The map is a ManagementScreen tab and leaves "
+            "active_screen on 'world'; management_screen_open is the signal."
+        ),
     ),
     Affordance(
         Interface.MAP,

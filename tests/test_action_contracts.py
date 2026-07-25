@@ -563,7 +563,23 @@ class TestPurchaseSafety:
         traders: int = 1,
         shop_owner: bool = True,
     ) -> Observation:
-        cell = VisibleUIControl(label="item_3", role="item", bounds=_bounds(0.5))
+        # A real trade screen shows both inventories, and the cell ordinals run
+        # across both, so the window is the only thing saying whose item it is.
+        cell = VisibleUIControl(
+            label="item_3", role="item", window="BARMAN", bounds=_bounds(0.5)
+        )
+        # Ordinals come from one counter spanning every window, so they are
+        # unique across both inventories.
+        # Carries its own facts, so binding reaches the ownership check rather
+        # than stopping at the tooltip.
+        our_cell = VisibleUIControl(
+            label="item_7",
+            role="item",
+            window="HEP",
+            bounds=_bounds(0.2),
+            item_name="Dried Meat",
+            item_value=52,
+        )
         # The tooltip's source is the cell itself unless told otherwise.
         source = _bounds(0.5) if tooltip_over_cell else _bounds(0.8)
         seller = NearbyEntity(
@@ -580,7 +596,7 @@ class TestPurchaseSafety:
         )
         state = observation(
             entities=[seller],
-            controls=[cell],
+            controls=[cell, our_cell],
             capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
         )
         telemetry = state.telemetry
@@ -609,6 +625,7 @@ class TestPurchaseSafety:
             "cell_label": "item_3",
             "item_name": "Dried Meat",
             "expected_price": 52,
+            "window": "BARMAN",
             "seller_id": self.SELLER,
         }
         fields.update(overrides)
@@ -660,9 +677,31 @@ class TestPurchaseSafety:
         assert not binding.bound
         assert "verified non-hostile shop owner" in binding.reason
 
-    def test_more_than_one_active_trader_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state(traders=2))
+    def test_a_cell_outside_the_sellers_window_is_refused(self) -> None:
+        """Ownership is the cell's window, not a count of traders in the world.
+
+        `active_shop_trader_count` is a registry of shop traders loaded in the
+        world - it reads 5 in a bar with nothing open - so gating on it being
+        exactly 1 made this action unbindable everywhere, which is why the agent
+        could open a shop and never buy. What proves the item is the shop's is
+        that the cell sits in the shop's own inventory window.
+        """
+
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(cell_label="item_7", window="HEP"), self._state()
+        )
         assert not binding.bound
+        assert "not the seller's own inventory" in binding.reason
+
+    def test_many_traders_in_the_world_do_not_block_a_purchase(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state(traders=5))
+        assert binding.bound, binding.reason
+
+    def test_the_window_caption_matches_the_seller_case_insensitively(self) -> None:
+        """Kenshi captions the window "BARMAN" while the character is "Barman"."""
+
+        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state())
+        assert binding.bound, binding.reason
 
     def test_an_absent_cell_is_refused(self) -> None:
         binding = PURCHASE_ITEM_CONTRACT.bind(
@@ -759,6 +798,7 @@ class TestPurchaseUsesExportedCellFacts:
         cell = VisibleUIControl(
             label="Bread",
             role="item",
+            window="BARMAN",
             bounds=_bounds(0.5),
             item_name="Bread",
             item_value=52,
@@ -799,7 +839,8 @@ class TestPurchaseUsesExportedCellFacts:
                 cell_label="Bread",
                 item_name="Bread",
                 expected_price=52,
-                seller_id="entity-barman",
+                window="BARMAN",
+            seller_id="entity-barman",
             ),
             self._trade_state(),
         )
@@ -811,7 +852,8 @@ class TestPurchaseUsesExportedCellFacts:
                 cell_label="Bread",
                 item_name="Bread",
                 expected_price=5,
-                seller_id="entity-barman",
+                window="BARMAN",
+            seller_id="entity-barman",
             ),
             self._trade_state(),
         )
@@ -824,7 +866,8 @@ class TestPurchaseUsesExportedCellFacts:
                 cell_label="Bread",
                 item_name="Ancient Katana",
                 expected_price=52,
-                seller_id="entity-barman",
+                window="BARMAN",
+            seller_id="entity-barman",
             ),
             self._trade_state(),
         )

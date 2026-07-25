@@ -776,6 +776,10 @@ class PurchaseItemAction(StrictModel):
     cell_label: str = Field(min_length=1, max_length=80)
     item_name: str = Field(min_length=1, max_length=200)
     expected_price: int = Field(gt=0)
+    # Caption of the seller's own inventory window. A trade screen shows two
+    # inventories whose cell ordinals run across both, so this is what says the
+    # item being bought is the shop's rather than ours.
+    window: str = Field(min_length=1, max_length=200)
     seller_id: str = Field(min_length=1, max_length=200)
 
 

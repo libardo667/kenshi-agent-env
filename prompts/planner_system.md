@@ -94,6 +94,16 @@ yourself, in whatever order the current evidence supports.
 - `equip_item` equips one item from the selected character's own inventory.
   It is **refused while any trade is open**, because there the identical
   right-click sells the item instead — close the trade window first.
+- **`telemetry.ui.active_screen` does not name every screen.** Measured live:
+  opening your own inventory reports `trade`, never `inventory`; the map and the
+  stats window leave it on `world`. So check the field that actually moves:
+  `telemetry.ui.open_inventory_windows` for inventories,
+  `telemetry.ui.management_screen_open` for the map, and
+  `telemetry.ui.stats_window_open` for stats. A success condition on
+  `active_screen == 'inventory'` can never become true.
+- `purchase_item` also takes the `window` of the **seller's** inventory, copied
+  from that cell's own entry. A trade shows two inventories at once, so the
+  window is what says the item is the shop's stock and not yours.
 - `sell_item` is the mirror of `purchase_item` and the only way to *earn*
   money. Give the `cell_label`, the `item_name` copied from that cell, the
   `window` — which must be the selected character's own name, never the

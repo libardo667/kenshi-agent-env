@@ -364,9 +364,23 @@ def test_equipping_refuses_while_a_trade_is_open() -> None:
     from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
     from kenshi_agent.models import EquipItemAction
 
+    base = _trade_observation()
+    telemetry = base.telemetry
+    assert telemetry is not None
+    trading = base.model_copy(
+        update={
+            "telemetry": telemetry.model_copy(
+                update={
+                    "ui": telemetry.ui.model_copy(
+                        update={"open_inventory_windows": 2}
+                    )
+                }
+            )
+        }
+    )
+
     action = EquipItemAction(cell_label="item_0", item_name="Iron Club", window="HEP")
-    # _trade_observation has active_shop_trader_count == 1.
-    binding = EQUIP_ITEM_CONTRACT.bind(action, _trade_observation())
+    binding = EQUIP_ITEM_CONTRACT.bind(action, trading)
     assert not binding.bound
     assert "sells the item instead" in binding.reason
 
@@ -381,7 +395,12 @@ def test_equipping_binds_with_no_trade_open() -> None:
     no_trade = base.model_copy(
         update={
             "telemetry": telemetry.model_copy(
-                update={"active_shop_trader_count": 0, "nearby_entities": []}
+                update={
+                    "nearby_entities": [],
+                    "ui": telemetry.ui.model_copy(
+                        update={"open_inventory_windows": 1}
+                    ),
+                }
             )
         }
     )
@@ -401,7 +420,13 @@ def test_equipping_refuses_another_owners_window() -> None:
     assert telemetry is not None
     no_trade = base.model_copy(
         update={
-            "telemetry": telemetry.model_copy(update={"active_shop_trader_count": 0})
+            "telemetry": telemetry.model_copy(
+                update={
+                    "ui": telemetry.ui.model_copy(
+                        update={"open_inventory_windows": 1}
+                    )
+                }
+            )
         }
     )
 

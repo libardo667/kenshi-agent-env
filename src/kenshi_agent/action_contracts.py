@@ -234,6 +234,20 @@ def bind_visible_control(
 ITEM_ROLE = "item"
 
 
+def _window_belongs_to(window: str, owner_name: str | None) -> bool:
+    """Whether an inventory window caption names this character.
+
+    Kenshi captions inventory windows in upper case ("HEP") while the character
+    is named "Hep", so this has to be case-insensitive; comparing exactly would
+    reject every real window.
+    """
+
+    if not owner_name:
+        return False
+    return normalize_control_label(window) == normalize_control_label(owner_name)
+
+
+
 def _bind_item_cell(
     cell_label: str,
     observation: Observation,
@@ -310,7 +324,7 @@ def bind_purchase_item(
 
     if not isinstance(action, PurchaseItemAction):
         return _unbound("Action is not a purchase_item action.")
-    cell = _bind_item_cell(action.cell_label, observation)
+    cell = _bind_item_cell(action.cell_label, observation, window=action.window)
     if not cell.bound:
         return cell
     telemetry = observation.telemetry
@@ -369,14 +383,21 @@ def bind_purchase_item(
         None,
     )
     if (
-        telemetry.active_shop_trader_count != 1
-        or seller is None
+        seller is None
         or seller.shop_inventory_owner is not True
         or seller.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
     ):
         return _unbound(
-            "The seller is not the single verified non-hostile shop owner currently "
-            "trading."
+            "The seller is not a verified non-hostile shop owner."
+        )
+    # Ownership is proved by the cell sitting in the seller's own inventory
+    # window, not by a count of shop traders in the world. `active_shop_trader_count`
+    # is that registry - it read 5 in a bar with no trade open at all - so gating
+    # on it being exactly 1 made this action unbindable everywhere.
+    if not _window_belongs_to(action.window, seller.name):
+        return _unbound(
+            f"Window {action.window!r} is not the seller's own inventory "
+            f"({seller.name!r}); the cell is not the shop's stock."
         )
 
     return ReferenceBinding(
@@ -425,7 +446,7 @@ def bind_sell_item(
             "No single selected character is named, so ownership of the cell "
             "cannot be established."
         )
-    if action.window != selected.name:
+    if not _window_belongs_to(action.window, selected.name):
         return _unbound(
             f"Window {action.window!r} is not the selected character's own "
             f"inventory ({selected.name!r}); selling from another owner's window "
@@ -489,10 +510,16 @@ def bind_equip_item(
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the equip cannot be bound.")
 
-    if telemetry.active_shop_trader_count:
+    # `active_shop_trader_count` counts shop traders loaded in the world - it
+    # reads 5 in a bar with nothing open - so it says nothing about whether a
+    # trade is in progress. What does: a trade shows the shop's inventory
+    # alongside ours, so exactly one open inventory window means the only one
+    # open is our own, and this right-click equips rather than sells.
+    if telemetry.ui.open_inventory_windows != 1:
         return _unbound(
-            "A trade is open, where this same right-click sells the item instead "
-            "of equipping it. Close the trade window first."
+            f"{telemetry.ui.open_inventory_windows} inventory windows are open; "
+            "equipping requires exactly one, our own. With a shop's inventory "
+            "also open this same right-click sells the item instead."
         )
 
     selected = next(
@@ -504,7 +531,7 @@ def bind_equip_item(
             "No single selected character is named, so ownership of the cell "
             "cannot be established."
         )
-    if action.window != selected.name:
+    if not _window_belongs_to(action.window, selected.name):
         return _unbound(
             f"Window {action.window!r} is not the selected character's own "
             f"inventory ({selected.name!r})."
