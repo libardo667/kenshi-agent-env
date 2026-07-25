@@ -2,6 +2,8 @@
 #include <core/Functions.h>
 #include <kenshi/Character.h>
 #include <kenshi/Item.h>
+#include <kenshi/Inventory.h>
+#include <kenshi/MedicalSystem.h>
 #include <kenshi/CameraClass.h>
 #include <kenshi/Dialogue.h>
 #include <kenshi/Faction.h>
@@ -53,6 +55,7 @@ namespace
     // Prioritizing one role only helps if the cap is not the binding
     // constraint, so give the whole set room rather than trading roles off.
     const unsigned int MAX_VISIBLE_UI_CONTROLS = 224;
+    const unsigned int MAX_INVENTORY_ITEMS = 64;
     const unsigned int MAX_VISITED_UI_WIDGETS = 2048;
     const unsigned int MAX_UI_WIDGET_DEPTH = 32;
     const unsigned int MAX_NATIVE_COMMAND_BYTES = 16384;
@@ -948,6 +951,17 @@ namespace
         return std::string();
     }
 
+    // One item, described well enough to decide about without touching it.
+    // Name alone still forces "is this food? can I afford it?" through a hover
+    // and a tooltip parse, which is a model round-trip per cell.
+    void AppendItemFacts(std::ostringstream& json, Item* item)
+    {
+        json << "\"item_name\":\"" << JsonEscape(item->getName()) << "\",";
+        json << "\"item_value\":" << item->getValueSingle(true) << ",";
+        json << "\"item_quantity\":" << item->quantity << ",";
+        json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
+    }
+
     // Inventory and shop cells, named. Walking the MyGUI tree can only report
     // that *a* cell exists at some bounds, which left the agent hovering cells
     // one at a time to discover what each held - a model call per cell, while a
@@ -1008,6 +1022,7 @@ namespace
                     json << "{";
                     json << "\"label\":\"" << JsonEscape(name) << "\",";
                     json << "\"role\":\"item\",";
+                    AppendItemFacts(json, icon->item);
                     json << "\"window\":\""
                          << JsonEscape(OwningWindowCaption(icon->image)) << "\",";
                     json << "\"section\":\"" << JsonEscape(sectionIt->first) << "\",";
@@ -1503,6 +1518,9 @@ namespace
         json << "\"capabilities\":["
              << "\"game.pause\",\"game.speed\",\"game.money\",\"game.time\","
              << "\"camera.position\",\"squad.basic\","
+             // Now genuinely emitted, so advertise them: a capability the
+             // agent cannot rely on is worse than one it knows is absent.
+             << "\"squad.hunger\",\"squad.health\",\"squad.inventory\","
              << "\"ui.inventory\",\"ui.dialogue\","
              << "\"ui.dialogue.target\",\"ui.dialogue.options\","
              << "\"ui.tooltip\",\"ui.visible_controls\","
@@ -1733,7 +1751,59 @@ namespace
                 json << "\"position\":";
                 AppendVector3(json, position);
                 json << ",\"movement_speed\":" << character->getMovementSpeed() << ",";
-                json << "\"food_items\":" << character->getNumFoodItems();
+                json << "\"food_items\":" << character->getNumFoodItems() << ",";
+                // The agent set itself the goal of feeding this character while
+                // unable to read whether it was hungry. Hunger and blood are
+                // the two numbers the survival loop actually turns on.
+                MedicalSystem* medical = character->getMedical();
+                if (medical != NULL)
+                {
+                    json << "\"hunger\":" << medical->hunger << ",";
+                    json << "\"blood\":" << medical->blood << ",";
+                }
+                // What it already carries, so it does not go shopping for what
+                // is in its own pack.
+                json << "\"inventory\":[";
+                Inventory* inventory = character->getInventory();
+                if (inventory != NULL)
+                {
+                    // Walk sections rather than the flat item list: equipped
+                    // gear lives in its own slots, so a flat walk reported a
+                    // character wearing trousers and holding a stick as
+                    // carrying nothing. The section name *is* the answer to
+                    // "what is it wearing and wielding".
+                    unsigned int emitted = 0;
+                    lektor<InventorySection*>::iterator sectionIt =
+                        inventory->sectionsInSearchOrder.begin();
+                    for (; sectionIt != inventory->sectionsInSearchOrder.end() &&
+                           emitted < MAX_INVENTORY_ITEMS;
+                         ++sectionIt)
+                    {
+                        InventorySection* section = *sectionIt;
+                        if (section == NULL)
+                            continue;
+                        const Ogre::vector<InventorySection::SectionItem>::type& items =
+                            section->getItems();
+                        for (size_t i = 0;
+                             i < items.size() && emitted < MAX_INVENTORY_ITEMS;
+                             ++i)
+                        {
+                            Item* carried = items[i].item;
+                            if (carried == NULL || !carried->isValid())
+                                continue;
+                            if (emitted > 0)
+                                json << ",";
+                            ++emitted;
+                            json << "{";
+                            AppendItemFacts(json, carried);
+                            json << "\"section\":\"" << JsonEscape(section->name)
+                                 << "\",";
+                            json << "\"equipped\":"
+                                 << JsonBool(section->isAnEquippedItemSection) << "}";
+                        }
+                    }
+                }
+                json << "]";
                 json << "}";
             }
         }

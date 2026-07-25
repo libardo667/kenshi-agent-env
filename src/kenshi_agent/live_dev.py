@@ -369,7 +369,14 @@ async def _execute_primitive(
 
 
 async def _click(controller: InputController, x: float, y: float) -> None:
-    await _execute_primitive(controller, ClickAction(x=x, y=y))
+    await _execute_primitive(
+        controller, ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
+    )
+
+
+# Kenshi's MyGUI needs a measurable press; an instantaneous down/up moves the
+# cursor and activates nothing. Matches controls.control_activation_hold_seconds.
+MYGUI_CLICK_HOLD_SECONDS = 0.12
 
 
 def _normalize_control_label(value: str) -> str:
@@ -421,7 +428,13 @@ async def _click_semantic_control(
                 "pointer input was sent."
             )
         x, y = current_control.center
-        receipt = await controller.execute(ClickAction(x=x, y=y))
+        # Kenshi's MyGUI ignores an instantaneous press. This used to squeak
+        # through only because relative stepping walked the cursor to the target
+        # slowly; once the pointer began warping, a zero-duration click stopped
+        # registering and startup silently stalled on the title screen.
+        receipt = await controller.execute(
+            ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
+        )
     if not receipt.executed:
         raise RuntimeError(receipt.message)
 

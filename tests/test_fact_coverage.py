@@ -15,6 +15,7 @@ from kenshi_agent.models import (
 
 def snapshot(
     *,
+    capabilities: list[str] | None = None,
     screen: str | None = "world",
     dialogue_open: bool = False,
     controls: list[VisibleUIControl] | None = None,
@@ -23,7 +24,7 @@ def snapshot(
 ) -> TelemetrySnapshot:
     return TelemetrySnapshot(
         sequence=1,
-        capabilities=["game.pause"],
+        capabilities=capabilities if capabilities is not None else ["game.pause"],
         game=GameState(loaded=True, paused=True, money=1000, location_name=location),
         ui=UIState(
             active_screen=screen,
@@ -47,7 +48,12 @@ def test_a_fact_reachable_only_by_acting_is_discoverable() -> None:
     """Hunger takes a screen to open; that is a model round-trip, not free."""
 
     assert _state(snapshot(), "self.hunger") is FactState.DISCOVERABLE
-    assert _state(snapshot(hunger=42.0), "self.hunger") is FactState.EXPORTED
+    # Judged by advertised capability, not by whether a value happens to be set:
+    # an empty inventory is information, and a null hunger is absence.
+    assert (
+        _state(snapshot(capabilities=["squad.hunger"]), "self.hunger")
+        is FactState.EXPORTED
+    )
 
 
 def test_a_fact_with_no_route_at_all_is_dark() -> None:

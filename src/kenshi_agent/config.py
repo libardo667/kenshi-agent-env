@@ -160,10 +160,13 @@ class ControlsConfig(ConfigModel):
     relative_pointer_tolerance_pixels: int = Field(default=1, ge=0, le=10)
     relative_pointer_settle_seconds: float = Field(default=0.006, ge=0.0, le=0.1)
     relative_pointer_max_attempts: int = Field(default=500, ge=1, le=2000)
-    # Stepping the pointer the whole way drags it across the 3D view, and Kenshi
-    # reads that traversal as camera input. Warp almost all of the distance, then
-    # resync with a few relative pixels.
-    relative_pointer_warp_enabled: bool = True
+    # Off by default, and kept only for absolute-mode experiments. Warping the
+    # OS cursor is invisible to Kenshi, which tracks its drawn cursor from
+    # relative motion, so in relative mode a warp desynchronizes the two and the
+    # correction loop then believes it has arrived while Kenshi's cursor sits
+    # elsewhere. Cursor traversal is instead kept short by not restoring the
+    # cursor between actions.
+    relative_pointer_warp_enabled: bool = False
     relative_pointer_warp_threshold_pixels: int = Field(default=24, ge=1, le=500)
     relative_pointer_warp_offset_pixels: int = Field(default=6, ge=1, le=100)
     calibrated_client_width: int | None = Field(default=None, gt=0)

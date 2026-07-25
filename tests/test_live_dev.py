@@ -9,6 +9,7 @@ from kenshi_agent import live_dev
 from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.live_dev import (
+    MYGUI_CLICK_HOLD_SECONDS,
     LaunchFailed,
     LaunchInterrupted,
     _click,
@@ -640,7 +641,7 @@ def test_semantic_control_click_uses_current_center_at_any_client_size() -> None
         )
 
         assert controller.actions == [
-            live_dev.ClickAction(x=0.65, y=0.3)
+            live_dev.ClickAction(x=0.65, y=0.3, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
         ]
 
     import asyncio
@@ -709,3 +710,20 @@ def test_journey_acknowledgement_without_continuous_is_harmless_passthrough() ->
     argv = _journey_argv(_journey_args("--acknowledge-continuous-live"), "run-5")
     assert "--planning-mode" not in argv
     assert "--acknowledge-continuous-live" in argv
+
+
+def test_startup_clicks_hold_long_enough_for_mygui() -> None:
+    """Kenshi ignores an instantaneous press.
+
+    The launcher's startup click used the zero-duration default. That squeaked
+    through only while relative stepping walked the cursor to its target slowly;
+    once the pointer began warping, the click arrived instantly and stopped
+    registering, and startup stalled silently on the title screen with the
+    Continue button plainly visible.
+    """
+
+    assert MYGUI_CLICK_HOLD_SECONDS > 0.0
+    # Matches the value the semantic control action uses in live gameplay.
+    from kenshi_agent.config import ControlsConfig
+
+    assert MYGUI_CLICK_HOLD_SECONDS == ControlsConfig().control_activation_hold_seconds

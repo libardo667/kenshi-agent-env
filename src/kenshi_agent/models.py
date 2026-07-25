@@ -197,11 +197,27 @@ class BodyPartState(StrictModel):
 
 
 class InventoryItem(StrictModel):
-    name: str
+    name: str = ""
     quantity: int = Field(default=1, ge=0)
     category: str | None = None
     charges: float | None = None
     stolen: bool | None = None
+    # Emitted by the plug-in's own item description, shared with shop cells.
+    item_name: str | None = Field(default=None, max_length=200)
+    item_value: int | None = None
+    item_quantity: int | None = Field(default=None, ge=0)
+    item_type: int | None = None
+    # Which inventory section holds it, and whether that section is worn or
+    # wielded rather than carried. A flat item list reported a character in
+    # trousers holding a stick as carrying nothing.
+    section: str = Field(default="", max_length=80)
+    equipped: bool | None = None
+
+    @model_validator(mode="after")
+    def name_falls_back_to_item_name(self) -> InventoryItem:
+        if not self.name and self.item_name:
+            object.__setattr__(self, "name", self.item_name)
+        return self
 
 
 class CharacterState(StrictModel):
@@ -220,6 +236,7 @@ class CharacterState(StrictModel):
     position: Vec3 | None = None
     movement_speed: float | None = None
     hunger: float | None = None
+    blood: float | None = None
     bleeding_rate: float | None = None
     food_items: int | None = None
     first_aid_kits: int | None = None
@@ -380,6 +397,14 @@ class VisibleUIControl(StrictModel):
     # Several open windows otherwise arrive as one flat list in which every
     # close button looks identical, so "close the shop" cannot be expressed.
     window: str = Field(default="", max_length=200)
+    # For `item` cells: what the cell actually holds. Without these the agent
+    # can only learn a cell's contents by hovering it, one model round-trip at
+    # a time, while a human simply reads the shop.
+    item_name: str | None = Field(default=None, max_length=200)
+    item_value: int | None = None
+    item_quantity: int | None = Field(default=None, ge=0)
+    item_type: int | None = None
+    section: str = Field(default="", max_length=80)
     # `item` is an inventory or shop grid cell. It carries no caption of its
     # own, so its label is an ordinal from the deterministic export walk and
     # what it actually holds must be read from the tooltip after hovering it.

@@ -93,3 +93,23 @@ def test_window_target_must_be_unique() -> None:
     assert select_unique_window([(42, "Kenshi 1.0.68")], "kenshi") == 42
     with pytest.raises(AmbiguousWindowError, match="narrower window title"):
         select_unique_window([(42, "Kenshi 1.0.68"), (84, "Kenshi crash reporter")], "kenshi")
+
+
+def test_relative_correction_needs_a_synchronised_starting_point() -> None:
+    """Kenshi's drawn cursor is only knowable while it moves with the OS cursor.
+
+    An absolute warp is invisible to Kenshi, so the two desynchronise and the
+    correction loop reads "already at target" while Kenshi's cursor sits
+    elsewhere entirely — the launcher clicked CONTINUE with the OS cursor
+    exactly on it, and Kenshi never saw the click.
+    """
+
+    from kenshi_agent.config import ControlsConfig
+
+    # The warp must not be on by default in relative mode.
+    assert ControlsConfig().relative_pointer_warp_enabled is False
+
+    # A zero delta is what the loop sends once it believes it has arrived, which
+    # is precisely why a desynchronised start is unrecoverable without a resync.
+    assert relative_pointer_delta((651, 185), (651, 185), max_step_pixels=12,
+                                  tolerance_pixels=1) == (0, 0)

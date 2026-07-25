@@ -233,7 +233,7 @@ class Win32InputController(InputController):
         alt_tab_after_input: bool = True,
         pointer_mode: str = "absolute",
         relative_pointer_max_step_pixels: int = 12,
-        relative_pointer_warp_enabled: bool = True,
+        relative_pointer_warp_enabled: bool = False,
         relative_pointer_warp_threshold_pixels: int = 24,
         relative_pointer_warp_offset_pixels: int = 6,
         relative_pointer_tolerance_pixels: int = 1,
@@ -277,6 +277,9 @@ class Win32InputController(InputController):
         self._continuous_last_input_tick = self._last_input_tick()
         self._restore_foreground: int | None = None
         self._restore_cursor: tuple[int, int] | None = None
+        # Kenshi's drawn cursor and the OS cursor must be driven into agreement
+        # before the first relative correction of a session can be trusted.
+        self._needs_relative_resync = pointer_mode == "relative"
         self._last_lease_wait_seconds = 0.0
         self._lease_alt_tab_on_restore = False
         self._lease_kenshi_foreground: int | None = None
@@ -454,6 +457,8 @@ class Win32InputController(InputController):
         self._lease_interrupted = True
         self._restore_foreground = int(self.user32.GetForegroundWindow() or 0) or None
         self._restore_cursor = self._cursor_position()
+        if self.pointer_mode == "relative":
+            self._needs_relative_resync = True
 
     def user_input_detected(self) -> bool:
         if not self._lease_active:
@@ -582,6 +587,8 @@ class Win32InputController(InputController):
         self._lease_interrupted = False
         self._restore_foreground = int(self.user32.GetForegroundWindow() or 0) or None
         self._restore_cursor = self._cursor_position()
+        if self.pointer_mode == "relative":
+            self._needs_relative_resync = True
         self._expected_foreground = self._restore_foreground
         self._expected_cursor = self._restore_cursor
         self._last_agent_input_tick = self._last_input_tick()
@@ -699,27 +706,27 @@ class Win32InputController(InputController):
             return
 
         target = (screen_x, screen_y)
-        # Relative stepping exists because Kenshi's drawn cursor ignores an
-        # absolute teleport. But stepping the whole way drags the pointer across
-        # the 3D view, and Kenshi reads that traversal as camera input: a survey
-        # that only meant to click HUD buttons panned the camera instead.
-        # So warp almost all of the distance instantly, then let the relative
-        # loop below cover only the last few pixels, which is enough to resync
-        # Kenshi's cursor without dragging through the world.
-        if self.relative_pointer_warp_enabled:
-            current = self._cursor_position()
-            if current is not None:
-                distance = max(abs(current[0] - screen_x), abs(current[1] - screen_y))
-                if distance > self.relative_pointer_warp_threshold_pixels:
-                    approach = self.relative_pointer_warp_offset_pixels
-                    # Land just short of the target so the resync nudge still
-                    # moves in the same direction the pointer was heading.
-                    warp_x = screen_x - approach if current[0] < screen_x else screen_x + approach
-                    warp_y = screen_y - approach if current[1] < screen_y else screen_y + approach
-                    if self.user32.SetCursorPos(int(warp_x), int(warp_y)):
-                        self._mark_agent_input()
-                        if self.relative_pointer_settle_seconds:
-                            await asyncio.sleep(self.relative_pointer_settle_seconds)
+        # Kenshi draws its own cursor and tracks it from relative motion, so the
+        # OS cursor is only a proxy for it while the two stay in step. An
+        # absolute warp breaks that: the OS cursor jumps, Kenshi's does not, and
+        # the correction loop then reads "already at target" and sends nothing
+        # while Kenshi's cursor sits somewhere else entirely - clicks land on
+        # whatever it thinks is under it, or on nothing.
+        #
+        # There is no way to read Kenshi's cursor, so resync by driving both
+        # into a corner: a large negative delta clamps each at the same
+        # boundary regardless of where they started. From there the ordinary
+        # correction loop keeps them together.
+        if self._needs_relative_resync:
+            rect = self.client_rect()
+            sweep = -(max(rect.width, rect.height) + 512)
+            self._send([self._mouse_input(sweep, sweep, self.MOUSEEVENTF_MOVE)])
+            if self.relative_pointer_settle_seconds:
+                await asyncio.sleep(self.relative_pointer_settle_seconds)
+            if not self.user32.SetCursorPos(rect.left, rect.top):
+                raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
+            self._mark_agent_input()
+            self._needs_relative_resync = False
 
         for _ in range(self.relative_pointer_max_attempts):
             actual = self._cursor_position()
