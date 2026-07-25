@@ -135,7 +135,9 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     planner = object.__new__(OpenAIPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        max_observation_chars=2000,
+        # Above the irreducible safety envelope, which grows as actions are
+        # added to the catalog; real profiles budget 24k-30k.
+        max_observation_chars=4000,
     )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(responses=responses)
@@ -152,7 +154,7 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     input_text = responses.kwargs["input"][0]["content"][0]["text"]
     planner_payload = input_text.split("\n\n", maxsplit=1)[1]
     parsed_payload = json.loads(planner_payload)
-    assert len(planner_payload) <= 2000
+    assert len(planner_payload) <= 4000
     assert parsed_payload["observation_budget"]["truncated"] is True
 
 
@@ -183,7 +185,9 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     planner = object.__new__(OpenRouterPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        max_observation_chars=2000,
+        # Above the irreducible safety envelope, which grows as actions are
+        # added to the catalog; real profiles budget 24k-30k.
+        max_observation_chars=4000,
     )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(
@@ -199,7 +203,7 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     input_text = completions.kwargs["messages"][1]["content"][0]["text"]
     planner_payload = input_text.split("\n\n", maxsplit=1)[1]
     parsed_payload = json.loads(planner_payload)
-    assert len(planner_payload) <= 2000
+    assert len(planner_payload) <= 4000
     assert parsed_payload["observation_budget"]["truncated"] is True
 
 

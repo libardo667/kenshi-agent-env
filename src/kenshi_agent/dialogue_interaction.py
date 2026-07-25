@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from .action_contracts import ActionContract, contract_for
 from .models import (
+    TOGGLE_GAME_BINDINGS,
     Action,
     ConditionKind,
     ConditionResult,
@@ -26,6 +27,7 @@ from .models import (
     Observation,
     PlanEnvelope,
     PlanStep,
+    UseGameBindingAction,
     is_controller_primitive,
     is_planner_control_action,
 )
@@ -124,7 +126,17 @@ def _step_action_errors(
             f"{label} declares idempotency {step.idempotency.value!r}, but "
             f"{action.kind!r} is {contract.idempotency.value!r} and may not be retried"
         )
-    if step.retry_budget and contract.idempotency is IdempotencyPolicy.AT_MOST_ONCE:
+    if step.retry_budget and isinstance(action, UseGameBindingAction):
+        # Retryability here is a property of the individual binding, not the
+        # action kind. Panning the camera means pressing the same key several
+        # times and is exactly what a retry is for; pressing `toggle_inventory`
+        # twice closes the window the first press opened.
+        if action.binding in TOGGLE_GAME_BINDINGS:
+            errors.append(
+                f"{label} retries {action.binding.value!r}, which toggles: a second "
+                "press undoes the first rather than repeating it"
+            )
+    elif step.retry_budget and contract.idempotency is IdempotencyPolicy.AT_MOST_ONCE:
         errors.append(
             f"{label} retries an at-most-once action; a delayed confirmation is not "
             "permission to act twice"

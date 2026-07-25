@@ -14,6 +14,7 @@ from ..action_contracts import (
     NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
     PURCHASE_ITEM_CONTRACT,
+    USE_GAME_BINDING_CONTRACT,
     ActionContract,
     ReferenceBinding,
     contract_for,
@@ -28,6 +29,7 @@ from ..control.calibration import (
 from ..control.capture import WindowCapture
 from ..input_boundary import ExecutionToken
 from ..models import (
+    GAME_BINDING_KEYS,
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -60,6 +62,7 @@ from ..models import (
     StopAction,
     TelemetrySnapshot,
     Transition,
+    UseGameBindingAction,
     WaitAction,
     WorldStateRevision,
     window_close_point,
@@ -555,6 +558,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_inspect_item_cell(action, started)
         if isinstance(action, PurchaseItemAction):
             return await self._execute_purchase_item(action, started)
+        if isinstance(action, UseGameBindingAction):
+            return await self._execute_game_binding(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -959,6 +964,51 @@ class LiveEnvironment(AgentEnvironment):
         if not binding.bound or binding.resolved_bounds is None:
             raise RuntimeError(f"No input was sent: {binding.reason}")
         return binding, observation
+
+    async def _execute_game_binding(
+        self,
+        action: UseGameBindingAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Send the key Kenshi itself binds to this control.
+
+        Re-checks inside the lease that a game is still loaded, because a key
+        pressed at a loading screen is swallowed with no evidence either way -
+        the silent failure this action exists to replace.
+        """
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = USE_GAME_BINDING_CONTRACT.bind(action, observation)
+        if not binding.bound:
+            raise RuntimeError(f"No input was sent: {binding.reason}")
+        key = GAME_BINDING_KEYS[action.binding]
+        primitive_receipt = await self.controller.execute(KeyAction(key=key))
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=USE_GAME_BINDING_CONTRACT.version,
+            resolved_label=action.binding.value,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-confirmed a game was loaded inside the input lease before "
+                f"pressing the key. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Pressed Kenshi's {action.binding.value!r} binding ({key!r}), "
+                    f"expecting: {action.expected_effect}. A later observation "
+                    "must confirm the transition."
+                ),
+            }
+        )
 
     async def _execute_dismiss_screen(
         self,

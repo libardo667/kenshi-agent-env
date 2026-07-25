@@ -29,6 +29,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from .models import (
+    GAME_BINDING_KEYS,
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
@@ -47,6 +48,7 @@ from .models import (
     PointerActionClass,
     PurchaseItemAction,
     SkillAction,
+    UseGameBindingAction,
     WorldStateRevision,
     dialogue_targets,
     normalize_control_label,
@@ -457,6 +459,60 @@ def _dismiss_authorization_conditions(
     ]
 
 
+def bind_use_game_binding(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a keypress to the game actually being in a state to receive it.
+
+    There is no widget to resolve here - the reference is the game itself. What
+    still has to be proved is that Kenshi is loaded and listening, because a
+    keystroke sent at a loading screen or a dead telemetry stream vanishes with
+    no evidence either way, which is exactly the silent failure this action
+    exists to replace.
+    """
+
+    if not isinstance(action, UseGameBindingAction):
+        return _unbound("Action is not a use_game_binding action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available, so the game cannot be bound.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the game cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("Kenshi has no loaded game to receive a binding.")
+    key = GAME_BINDING_KEYS.get(action.binding)
+    if key is None:
+        return _unbound(f"No key is mapped for binding {action.binding.value!r}.")
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound {action.binding.value!r} to Kenshi's own {key!r} key on a "
+            "loaded game."
+        ),
+        resolved_label=action.binding.value,
+        source_revision=observation.world_revision,
+    )
+
+
+def _game_binding_authorization_conditions(
+    action: Action,
+    *,
+    max_age_seconds: float,
+) -> list[Condition]:
+    if not isinstance(action, UseGameBindingAction):
+        return []
+    return [
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_GAME_LOADED,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            max_age_seconds=max_age_seconds,
+        )
+    ]
+
+
 def _approach_authorization_conditions(
     action: Action,
     *,
@@ -714,6 +770,45 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     authorization_conditions=_visible_control_authorization_conditions,
 )
 
+
+USE_GAME_BINDING_CONTRACT = ActionContract(
+    kind="use_game_binding",
+    version="1.0",
+    model=UseGameBindingAction,
+    summary=(
+        "Press one of Kenshi's own named controls: open the inventory, map or "
+        "stats window, pause or set game speed, move the camera, or change the "
+        "selected character. This is how screens are entered - do not hunt for "
+        "a widget to click when a binding exists."
+    ),
+    argument_source=(
+        "binding must be one of the catalogued GameBinding names; "
+        "expected_effect states in one phrase what the press should change, "
+        "and the step's success conditions must check it."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    # A keypress needs the game loaded and nothing else; requiring more would
+    # withhold the one action that recovers from a screen we cannot identify.
+    required_capabilities=frozenset(),
+    capability_aliases=frozenset(),
+    # A key carries no screen position at all.
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=False,
+    risk=ActionRiskCost(),
+    max_primitive_actions=1,
+    reference_fields=("binding",),
+    # Set at construction below: toggles may not be retried, because a retry
+    # undoes the first press instead of repeating it.
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_binding",
+    bind=bind_use_game_binding,
+    authorization_conditions=_game_binding_authorization_conditions,
+)
+
+
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
@@ -722,6 +817,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         DISMISS_SCREEN_CONTRACT,
         INSPECT_ITEM_CELL_CONTRACT,
         PURCHASE_ITEM_CONTRACT,
+        USE_GAME_BINDING_CONTRACT,
     )
 }
 

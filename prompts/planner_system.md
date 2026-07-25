@@ -71,6 +71,26 @@ yourself, in whatever order the current evidence supports.
   `window` caption exactly as it appears in `visible_controls` — several may be
   open at once, and each closes separately. Leave `window` empty only for
   dialogue.
+- **To open a screen, press its binding — do not go looking for a button.**
+  `use_game_binding` sends the key Kenshi itself binds: `toggle_inventory` opens
+  the inventory, `toggle_map` the map, `toggle_stats` the stats window. There is
+  no widget to hunt for and clicking around the world will not find one.
+- Time is a binding too. `pause` toggles pause; `speed_1`, `speed_2` and
+  `speed_3` set the speed. The time-speed buttons in `visible_controls` do not
+  reliably change `telemetry.game.paused` — use the binding.
+- The camera is a binding: `camera_forward`, `camera_back`, `camera_left`,
+  `camera_right`, `camera_rotate_left`, `camera_rotate_right`,
+  `camera_zoom_in`, `camera_zoom_out`, and `focus_char` to centre on the
+  selected character. These are the only way to look somewhere else.
+- Bindings whose name starts with `toggle_`, plus `pause` and `change_squad`,
+  flip state: pressing twice returns to where you started. Never give those a
+  `retry_budget`, and to *close* a screen you opened this way, press the same
+  binding again rather than reaching for `dismiss_screen`.
+- Camera and speed bindings are not toggles, so a `retry_budget` is fine there —
+  panning usually takes several presses.
+- Set `expected_effect` on every binding to the change you expect in one phrase,
+  and back it with a success condition that checks it, such as
+  `telemetry.ui.active_screen` or `telemetry.game.paused`.
 - Every entry in `visible_controls` carries the `window` it belongs to. When two
   open windows advertise the same label, name the `window` on
   `activate_visible_control` to disambiguate; without it the reference is

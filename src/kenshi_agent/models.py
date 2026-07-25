@@ -789,6 +789,111 @@ class SkillAction(StrictModel):
         return {argument.name: argument.value for argument in self.args}
 
 
+class GameBinding(StrEnum):
+    """Kenshi's own named controls, as the game itself defines them.
+
+    Read from the shipped `controls.cfg`, so these are the bindings Kenshi is
+    actually listening for rather than keys we hope do something. Only the
+    reversible ones are here: `quicksave`, `quickload`, `editor_toggle`,
+    `rebuild_navmesh` and `reload_biomes` all exist in that file and are all
+    deliberately absent from this enum, because an agent running unattended on a
+    stream must not be one keystroke away from overwriting a save.
+    """
+
+    # Screens. Each is a toggle, so pressing twice returns to where it started.
+    TOGGLE_INVENTORY = "toggle_inventory"
+    TOGGLE_MAP = "toggle_map"
+    TOGGLE_STATS = "toggle_stats"
+    TOGGLE_HELP = "toggle_help"
+    TOGGLE_CRAFTING = "toggle_crafting"
+    TOGGLE_RESEARCH = "toggle_research"
+    # Time.
+    PAUSE = "pause"
+    SPEED_1 = "speed_1"
+    SPEED_2 = "speed_2"
+    SPEED_3 = "speed_3"
+    # Camera.
+    CAMERA_FORWARD = "camera_forward"
+    CAMERA_BACK = "camera_back"
+    CAMERA_LEFT = "camera_left"
+    CAMERA_RIGHT = "camera_right"
+    CAMERA_ROTATE_LEFT = "camera_rotate_left"
+    CAMERA_ROTATE_RIGHT = "camera_rotate_right"
+    CAMERA_ZOOM_IN = "camera_zoom_in"
+    CAMERA_ZOOM_OUT = "camera_zoom_out"
+    FOCUS_CHAR = "focus_char"
+    # Selection.
+    SELECT_ALL = "select_all"
+    CHANGE_SQUAD = "change_squad"
+    CHARACTER_NEXT = "character_next"
+    CHARACTER_PREV = "character_prev"
+    # Orders.
+    STOP_MOVEMENT = "stop_movement"
+
+
+GAME_BINDING_KEYS: dict[GameBinding, str] = {
+    GameBinding.TOGGLE_INVENTORY: "i",
+    GameBinding.TOGGLE_MAP: "m",
+    GameBinding.TOGGLE_STATS: "c",
+    GameBinding.TOGGLE_HELP: "f1",
+    GameBinding.TOGGLE_CRAFTING: "y",
+    GameBinding.TOGGLE_RESEARCH: "t",
+    GameBinding.PAUSE: "space",
+    GameBinding.SPEED_1: "f2",
+    GameBinding.SPEED_2: "f3",
+    GameBinding.SPEED_3: "f4",
+    GameBinding.CAMERA_FORWARD: "w",
+    GameBinding.CAMERA_BACK: "s",
+    GameBinding.CAMERA_LEFT: "a",
+    GameBinding.CAMERA_RIGHT: "d",
+    GameBinding.CAMERA_ROTATE_LEFT: "q",
+    GameBinding.CAMERA_ROTATE_RIGHT: "e",
+    GameBinding.CAMERA_ZOOM_IN: "home",
+    GameBinding.CAMERA_ZOOM_OUT: "end",
+    GameBinding.FOCUS_CHAR: "f",
+    GameBinding.SELECT_ALL: "grave",
+    GameBinding.CHANGE_SQUAD: "tab",
+    GameBinding.CHARACTER_NEXT: "]",
+    GameBinding.CHARACTER_PREV: "[",
+    GameBinding.STOP_MOVEMENT: "r",
+}
+"""The key Kenshi listens for, per binding. Mirrors the shipped controls.cfg."""
+
+# Bindings that flip state rather than setting it, so a "retry" undoes the
+# first press instead of repeating it. These may never be retried.
+TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
+    {
+        GameBinding.TOGGLE_INVENTORY,
+        GameBinding.TOGGLE_MAP,
+        GameBinding.TOGGLE_STATS,
+        GameBinding.TOGGLE_HELP,
+        GameBinding.TOGGLE_CRAFTING,
+        GameBinding.TOGGLE_RESEARCH,
+        GameBinding.PAUSE,
+        GameBinding.CHANGE_SQUAD,
+    }
+)
+
+
+class UseGameBindingAction(StrictModel):
+    """Press one of Kenshi's own named controls.
+
+    The agent kept trying to reach screens by hunting for a widget to click -
+    clicking the time-speed buttons to unpause, clicking around the world hoping
+    an inventory would appear - because nothing in the catalog could simply open
+    a screen. Kenshi already binds all of this: `I` opens the inventory, `M` the
+    map, `C` the stats window, `Space` pauses. Naming the *binding* rather than
+    the key keeps the intention readable and keeps the mapping in one place.
+    """
+
+    kind: Literal["use_game_binding"] = "use_game_binding"
+    binding: GameBinding
+    # What the planner expects this to change, so the step can be verified
+    # rather than assumed. Free text: the typed check lives in the step's
+    # success conditions.
+    expected_effect: str = Field(min_length=1, max_length=200)
+
+
 ControllerPrimitive: TypeAlias = (
     KeyAction | HotkeyAction | MoveCursorAction | ClickAction | ScrollAction
 )
@@ -810,6 +915,7 @@ SemanticAction: TypeAlias = (
     | DismissScreenAction
     | InspectItemCellAction
     | PurchaseItemAction
+    | UseGameBindingAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
 
@@ -833,6 +939,7 @@ Action: TypeAlias = (
     | DismissScreenAction
     | InspectItemCellAction
     | PurchaseItemAction
+    | UseGameBindingAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
@@ -843,6 +950,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "dismiss_screen",
         "inspect_item_cell",
         "purchase_item",
+        "use_game_binding",
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(

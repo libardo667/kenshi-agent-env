@@ -176,6 +176,7 @@ safety:
     - dismiss_screen
     - inspect_item_cell
     - purchase_item
+    - use_game_binding
   # The generic chain authors semantic actions, not macros. Only the transport
   # and native-approach macros remain allowlisted, because the semantic approach
   # reuses the latter's primitives.
