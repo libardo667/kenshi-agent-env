@@ -1118,6 +1118,31 @@
           "default": null,
           "title": "Open Inventory Windows"
         },
+        "management_screen_open": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Management Screen Open"
+        },
+        "management_tab": {
+          "anyOf": [
+            {
+              "minimum": -1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Management Tab"
+        },
         "selected_character_id": {
           "anyOf": [
             {

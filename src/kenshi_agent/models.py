@@ -391,6 +391,10 @@ class UIState(StrictModel):
     # up" or "two inventory windows are open".
     stats_window_open: bool | None = None
     open_inventory_windows: int | None = Field(default=None, ge=0)
+    # Map, squad, research and factions are tabs of one management window, not
+    # separate screens, so `active_screen` cannot express them.
+    management_screen_open: bool | None = None
+    management_tab: int | None = Field(default=None, ge=-1)
     selected_character_id: str | None = None
     selected_character_ids: list[str] = Field(default_factory=list)
     client_width: int | None = Field(default=None, gt=0)
@@ -928,6 +932,10 @@ class ConditionPath(StrEnum):
     TELEMETRY_UI_DIALOGUE_OPTION_COUNT = "telemetry.ui.dialogue_option_count"
     TELEMETRY_UI_DIALOGUE_OPTION_0 = "telemetry.ui.dialogue_option_0"
     TELEMETRY_UI_VISIBLE_CONTROL_COUNT = "telemetry.ui.visible_control_count"
+    TELEMETRY_UI_STATS_WINDOW_OPEN = "telemetry.ui.stats_window_open"
+    TELEMETRY_UI_OPEN_INVENTORY_WINDOWS = "telemetry.ui.open_inventory_windows"
+    TELEMETRY_UI_MANAGEMENT_SCREEN_OPEN = "telemetry.ui.management_screen_open"
+    TELEMETRY_UI_MANAGEMENT_TAB = "telemetry.ui.management_tab"
     TELEMETRY_UI_TOOLTIP_VISIBLE = "telemetry.ui.tooltip_visible"
     TELEMETRY_UI_TOOLTIP_TEXT = "telemetry.ui.tooltip_text"
     TELEMETRY_UI_CONTEXT_MENU_OPEN = "telemetry.ui.context_menu_open"

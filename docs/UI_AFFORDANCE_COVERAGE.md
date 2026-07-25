@@ -10,8 +10,8 @@ an empirical document. Regenerate its evidence with:
 python -m scripts.survey_ui_affordances --config <live config> --out runs/<dir>
 ```
 
-Last surveyed: **2026-07-25** (`runs/p7-ui-survey-4`), protocol `0.5.0`,
-Hub save, 1920x1080, with the two-pass control export installed.
+Last surveyed: **2026-07-25** (`runs/p7-ui-survey-6`), protocol `0.5.0`,
+Hub save, 1920x1080, with the management-screen export installed.
 
 ## Summary
 
@@ -19,16 +19,25 @@ Every screen below was **opened and closed successfully** by clicking its own
 advertised HUD button — entering and exiting work. The differences are in what
 the agent can *observe* once inside.
 
-| Interface | Enter | Screen state | Contents observable | Interact | Verdict |
-|---|---|---|---|---|---|
-| Dialogue | ✅ via approach | ✅ `dialogue` | ✅ options are controls | ✅ proven live | **usable** |
-| Inventory | ✅ `INV` toggles | ✅ `inventory` + `open_inventory_windows: 1` | ⚠️ only `ARRANGE`; item cells absent | ❌ no item actions | **observable, not interactive** |
-| Stats | ✅ `STA` toggles | ✅ `stats_window_open: true` | ❌ no new controls | ❌ none | **observable only** |
-| Shopping / trade | ✅ via dialogue option | ✅ `trade` (staleness fixed) | ❌ item grid absent | ❌ no generic purchase | **blocked on contents** |
-| Map | ✅ `MAP` toggles | ❌ still reports `world` | ⚠️ only `+` / `-` zoom | ❌ no map actions | **blind** |
-| Squad | ✅ `SQD` toggles | ❌ still reports `world` | ⚠️ `ADD SQUAD`, `DELETE` | ❌ none | **blind** |
-| Tech | ✅ `TEC` toggles | ❌ still reports `world` | ✅ 8 category buttons | ❌ none | **blind to state** |
-| World / camera | ✅ default | ✅ `world` | ✅ entities + HUD | ✅ approach only | **partial** |
+| Interface | Enter | Exit | Screen state | Contents | Interact | Verdict |
+|---|---|---|---|---|---|---|
+| Dialogue | ✅ via approach | ✅ `dismiss_screen` | ✅ `dialogue` | ✅ options are controls | ✅ proven live | **usable** |
+| Inventory | ✅ `INV` toggles | ✅ toggle / `dismiss_screen` | ✅ `inventory`, `open_inventory_windows: 1` | ⚠️ `ARRANGE` only | ❌ item cells absent | **navigable, not interactive** |
+| Map | ✅ `MAP` toggles | ✅ toggle | ✅ `management_screen_open`, `tab: 0` | ⚠️ `+` / `-` zoom | ❌ no map actions | **navigable** |
+| Tech | ✅ `TEC` toggles | ✅ toggle | ✅ `management_screen_open`, `tab: 2` | ✅ 8 category buttons | ⚠️ buttons only | **navigable** |
+| Squad | ✅ `SQD` toggles | ✅ toggle | ✅ `management_screen_open`, `tab: 4` | ⚠️ `ADD SQUAD`, `DELETE` | ⚠️ buttons only | **navigable** |
+| Stats | ✅ `STA` toggles | ✅ toggle | ✅ `stats_window_open: true` | ❌ no new controls | ❌ none | **navigable** |
+| Shopping / trade | ✅ via dialogue option | ✅ `dismiss_screen` | ✅ `trade` (staleness fixed) | ❌ item grid absent | ❌ no generic purchase | **blocked on item cells** |
+| World / camera | ✅ default | n/a | ✅ `world` | ✅ entities + HUD | ✅ approach only | **partial** |
+
+**Management tabs are one window, not separate screens.** `MAP`, `TEC`, and
+`SQD` all open `ManagementScreen`; `management_tab` distinguishes them.
+Empirically: **0 = map, 2 = tech/research, 4 = squad**. This is why they all
+reported `world` before — `active_screen` structurally could not express them.
+
+Assertable from a plan via the condition paths
+`telemetry.ui.management_screen_open`, `telemetry.ui.management_tab`,
+`telemetry.ui.open_inventory_windows`, `telemetry.ui.stats_window_open`.
 
 Baseline world HUD advertises 21 buttons: `INV STA MAP TEC SQD HLP`,
 `BLOCK HOLD PASSIVE JOBS RANGED TAUNT SNEAK`, `MEDIC RESCUE PROSPECT`, `X`, and
@@ -73,7 +82,14 @@ menus **were** visibly opening. Two independent causes, both now fixed:
 
 Also added: `ui.stats_window_open` and `ui.open_inventory_windows`.
 
-### 1. `active_screen` still distinguishes only four states
+### 1. RESOLVED 2026-07-25: management screens are now observable
+
+`ManagementScreen::getSingleton()` exposes `getVisible()` and `getCurrentTab()`.
+Map, squad, research and factions are **tabs of that one window**, which is why
+no amount of `active_screen` values could have described them. Now exported as
+`management_screen_open` + `management_tab`.
+
+### 1b. `active_screen` still distinguishes only four states
 
 `KenshiAgentTelemetry.cpp` derives it as:
 
@@ -151,22 +167,17 @@ way `activate_visible_control` binds to a control.
 
 ## Reaching the long-form menu test
 
-Ordered by what unblocks the most:
+**Done:** entering, navigating between, observing, and exiting map, inventory,
+dialogue, tech, squad and stats — all verified live, all assertable from a plan.
 
-1. **Native: per-screen state.** Report map/squad/stats/tech so entering and
-   exiting are observable and assertable. Without this, four of the five target
-   interfaces cannot be verified at all.
-2. **Native: scope and prioritize the control export.** Emit the active window's
-   own widgets instead of letting HUD text consume all 64 slots.
-3. **Action: `dismiss_screen`.** Exiting is currently Escape, a raw key the
-   generic policy rejects. Needs to be a semantic action with a screen-state
-   postcondition (which depends on 1).
-4. **Native + action: item-cell references.** Unblocks inventory interaction and
-   generic purchase — the second reusable chain.
-5. **Live re-verification** with the rebuilt plug-in installed. The clicks and
-   the pointer fix are confirmed working by direct observation; what remains is
-   confirming telemetry now *reports* the screens that open.
+**One gap remains: item cells.** Inventory and shop items are `MyGUI::ImageBox`
+icons (`InventoryIcon`, holding `Item* item`, an `ImageBox`, and a quantity
+`TextBox`), while the control export only emits `TextBox`-derived widgets — so
+the grid is structurally invisible. Exporting them needs care: the icon's
+*name* lives on the `Item`, not the widget, so it means walking
+`InventoryGUI`/`InventorySectionGUI` rather than the MyGUI tree. That is the
+next slice, and it unblocks both inventory interaction and generic purchase
+(the second reusable chain).
 
-Until map/squad/tech state exists, only dialogue is verifiable end to end —
-though inventory and trade are now at least observable via
-`open_inventory_windows` and a non-stale `active_screen`.
+Until it lands, a long-form test can enter, navigate, and exit every interface,
+and interact fully with dialogue — but shopping remains look-don't-touch.

@@ -82,6 +82,11 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.dialogue_option_count": ("ui.dialogue.options",),
     "telemetry.ui.dialogue_option_0": ("ui.dialogue.options",),
     "telemetry.ui.visible_control_count": ("ui.visible_controls",),
+    # Screen-state signals ride with the inventory/UI capability that reports them.
+    "telemetry.ui.stats_window_open": ("ui.inventory", "ui.dialogue"),
+    "telemetry.ui.open_inventory_windows": ("ui.inventory", "ui.dialogue"),
+    "telemetry.ui.management_screen_open": ("ui.inventory", "ui.dialogue"),
+    "telemetry.ui.management_tab": ("ui.inventory", "ui.dialogue"),
     "telemetry.ui.tooltip_visible": ("ui.tooltip",),
     "telemetry.ui.tooltip_text": ("ui.tooltip",),
     "telemetry.ui.context_menu_open": ("ui.inventory", "ui.dialogue"),
@@ -178,6 +183,10 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
             if telemetry.ui.visible_controls is not None
             else None
         ),
+        "telemetry.ui.stats_window_open": telemetry.ui.stats_window_open,
+        "telemetry.ui.open_inventory_windows": telemetry.ui.open_inventory_windows,
+        "telemetry.ui.management_screen_open": telemetry.ui.management_screen_open,
+        "telemetry.ui.management_tab": telemetry.ui.management_tab,
         "telemetry.ui.tooltip_visible": telemetry.ui.tooltip_visible,
         "telemetry.ui.tooltip_text": telemetry.ui.tooltip_text,
         "telemetry.ui.context_menu_open": telemetry.ui.context_menu_open,

@@ -12,6 +12,7 @@
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
+#include <kenshi/gui/ManagementScreen.h>
 #include <kenshi/gui/TitleScreen.h>
 #include <kenshi/gui/ToolTip.h>
 #include <kenshi/util/UtilityT.h>
@@ -1367,6 +1368,14 @@ namespace
              gui->tradeA.getCharacter() != NULL ||
              gui->tradeB.getCharacter() != NULL);
         const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
+        // Map, squad, research and factions are not separate screens: they are
+        // tabs of one ManagementScreen. Reporting only `active_screen` left all
+        // four indistinguishable from the plain world view, so the agent could
+        // not tell it had opened the map. Report the window and its current tab
+        // and let the caller name the tabs.
+        ManagementScreen* management = ManagementScreen::getSingleton();
+        const bool managementOpen = management != NULL && management->getVisible();
+        const int managementTab = managementOpen ? management->getCurrentTab() : -1;
         const int openInventoryWindows =
             gui != NULL ? gui->getNumOpenInventoryWindows() : 0;
         ToolTip* tooltip = gui != NULL ? gui->getToolTip() : NULL;
@@ -1379,6 +1388,8 @@ namespace
              << "\",";
         json << "\"modal_open\":" << JsonBool(dialogueOpen || inventoryOpen) << ",";
         json << "\"stats_window_open\":" << JsonBool(statsWindowOpen) << ",";
+        json << "\"management_screen_open\":" << JsonBool(managementOpen) << ",";
+        json << "\"management_tab\":" << managementTab << ",";
         json << "\"open_inventory_windows\":" << openInventoryWindows << ",";
         json << "\"dialogue_open\":" << JsonBool(dialogueOpen) << ",";
         std::string dialogueTargetId;

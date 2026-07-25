@@ -75,6 +75,8 @@ def describe(snapshot: Any) -> dict[str, Any]:
         "active_shop_trader_count": snapshot.active_shop_trader_count,
         "stats_window_open": ui.stats_window_open,
         "open_inventory_windows": ui.open_inventory_windows,
+        "management_screen_open": ui.management_screen_open,
+        "management_tab": ui.management_tab,
         "esc_menu_open": all(
             any(control.label == marker for control in controls)
             for marker in ESC_MENU_MARKERS
