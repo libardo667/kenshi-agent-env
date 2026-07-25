@@ -1167,6 +1167,19 @@ def parse_action(value: Any) -> Action:
     return ACTION_ADAPTER.validate_python(value)
 
 
+class StateChange(StrictModel):
+    """One field of the world that moved since the previous observation.
+
+    Deliberately carries the values and not just the path. "money changed" does
+    not tell an agent whether its purchase went through; "money 118 -> 96" does,
+    and that is the difference between noticing a failed action and repeating it.
+    """
+
+    path: str = Field(min_length=1, max_length=200)
+    before: str | None = Field(default=None, max_length=200)
+    after: str | None = Field(default=None, max_length=200)
+
+
 class ActionOutcomeAssessment(StrEnum):
     CHANGED = "changed"
     NO_OP = "no_op"
@@ -1648,6 +1661,13 @@ class Observation(StrictModel):
     # ended after 21 identical validation failures, each replanned from an
     # observation that said nothing about the previous twenty.
     planner_feedback: str | None = Field(default=None, max_length=1200)
+    # What actually moved since the previous observation, as path/before/after.
+    # The agent's hardest question is whether the thing it just did had any
+    # effect, and a full snapshot answers it only by comparison against a
+    # snapshot it no longer has. Both stalled live runs failed here: steps that
+    # "completed" while changing nothing, replanned from observations that
+    # looked identical to the ones before them.
+    recent_changes: list[StateChange] = Field(default_factory=list, max_length=40)
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)

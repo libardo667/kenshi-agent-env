@@ -11,7 +11,7 @@ from math import dist
 from typing import TypeAlias
 
 from .env import AgentEnvironment
-from .models import NearbyEntity, Observation, WorldStateRevision, new_command_id
+from .models import NearbyEntity, Observation, StateChange, WorldStateRevision, new_command_id
 from .planning import PlanningClock, SystemPlanningClock
 
 
@@ -48,6 +48,74 @@ class StateDelta:
     after_revision: WorldStateRevision
     changed_paths: tuple[str, ...]
     truncated: bool = False
+    # The same changes with the values that moved. A path name alone says the
+    # world is not what it was; only the values say whether what the agent just
+    # did had the effect it intended, which is the question it fails at most.
+    changes: tuple[tuple[str, object, object], ...] = ()
+
+
+def _rendered(value: object) -> str | None:
+    """One changed value, short enough to sit in an observation."""
+    if value is None:
+        return None
+    text = value if isinstance(value, str) else str(value)
+    return text if len(text) <= 200 else text[:197] + "..."
+
+
+def _state_changes(delta: StateDelta) -> list[StateChange]:
+    """The delta as the planner should read it, values included.
+
+    Bounded to the most useful few: a screen transition can move dozens of
+    paths at once, and a list long enough to bury `telemetry.game.money` is no
+    better than no list. Ordering puts the facts an agent acts on first.
+    """
+
+    def rank(path: str) -> tuple[int, str]:
+        for index, prefix in enumerate(_CHANGE_PRIORITY):
+            if path.startswith(prefix):
+                return (index, path)
+        return (len(_CHANGE_PRIORITY), path)
+
+    world = [
+        change for change in delta.changes if change[0] not in _AGENT_BOOKKEEPING_PATHS
+    ]
+    ordered = sorted(world, key=lambda change: rank(change[0]))
+    return [
+        StateChange(path=path, before=_rendered(before), after=_rendered(after))
+        for path, before, after in ordered[:40]
+    ]
+
+
+# The agent's own bookkeeping, which moves on every single observation and is
+# not news about the world. Left in, "step_index 0 -> 1" would head the list
+# every time and push the fact that money moved further down it.
+_AGENT_BOOKKEEPING_PATHS = frozenset(
+    {
+        "step_index",
+        "run_id",
+        "mode",
+        "objective",
+        "planner_feedback",
+        "telemetry_age_seconds",
+        "telemetry.identity_session_id",
+    }
+)
+
+
+# What an agent is usually asking about when it asks what changed: did the
+# purchase land, did the screen open, did the conversation start, am I still
+# hungry. Everything else keeps its alphabetical order behind these.
+_CHANGE_PRIORITY = (
+    "telemetry.game.money",
+    "telemetry.game.paused",
+    "telemetry.ui.active_screen",
+    "telemetry.ui.dialogue_open",
+    "telemetry.ui.dialogue_target_id",
+    "telemetry.ui.open_inventory_windows",
+    "telemetry.squad",
+    "telemetry.ui",
+    "telemetry.game",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -382,6 +450,11 @@ class WorldStateStore:
         canonical, entity_events = self._update_entity_registry(canonical)
         emitted.extend(entity_events)
         delta = self._build_delta(previous, canonical)
+        # Carried on the observation itself, so every consumer of a published
+        # update sees what moved without having to keep the previous one to
+        # compare against. Stored after the delta is built, and excluded from
+        # the semantic payload, so it can never feed back into the next delta.
+        canonical = canonical.model_copy(update={"recent_changes": _state_changes(delta)})
 
         self._latest = canonical
         self._history.append(canonical.model_copy(deep=True))
@@ -853,13 +926,15 @@ class WorldStateStore:
             path for path in set(before) | set(after) if before.get(path) != after.get(path)
         )
         truncated = len(changed) > self.max_delta_paths
+        kept = changed[: self.max_delta_paths]
         return StateDelta(
             before_revision=(
                 previous.world_revision.model_copy(deep=True) if previous is not None else None
             ),
             after_revision=current.world_revision.model_copy(deep=True),
-            changed_paths=tuple(changed[: self.max_delta_paths]),
+            changed_paths=tuple(kept),
             truncated=truncated,
+            changes=tuple((path, before.get(path), after.get(path)) for path in kept),
         )
 
     @classmethod
@@ -878,6 +953,10 @@ class WorldStateStore:
                 "memories",
                 "recent_action_outcomes",
                 "screenshot_path",
+                # Excluded or the delta would feed on itself: last tick's
+                # changes differ from this tick's, so every observation would
+                # register a change and nothing would ever look settled.
+                "recent_changes",
             },
         )
         telemetry = payload.get("telemetry")

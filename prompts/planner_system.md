@@ -146,6 +146,12 @@ yourself, in whatever order the current evidence supports.
 - Give every step a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
+- **`recent_changes` is what actually moved since the last observation**, as
+  `path`, `before`, `after`. Read it first: it is the only direct evidence that
+  your previous step did anything. An empty list after an action that should
+  have changed something means the action had no effect — do not repeat it
+  unchanged, work out why. `telemetry.game.money` moving is what settles a
+  purchase; `telemetry.ui.active_screen` is what settles a screen transition.
 - `required_capabilities` takes **capability names, not field paths**. A field
   path such as `telemetry.ui.active_screen` is never a capability name, and a
   name Kenshi is not currently reporting makes the plan unusable even when it is

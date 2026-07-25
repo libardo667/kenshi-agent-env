@@ -182,7 +182,15 @@ def test_causal_wait_cannot_succeed_from_starting_revision_and_uses_fake_clock()
 
         later = observation(2, paused=False)
         store.publish(later)
-        assert await wait == later
+        # The store hands back what was published, annotated with what moved:
+        # here the pause it was waiting on. Everything else is unchanged.
+        awaited = await wait
+        assert awaited.model_dump(exclude={"recent_changes"}) == later.model_dump(
+            exclude={"recent_changes"}
+        )
+        assert ("telemetry.game.paused", "True", "False") in [
+            (change.path, change.before, change.after) for change in awaited.recent_changes
+        ]
 
         timeout = asyncio.create_task(
             store.wait_for(
@@ -760,3 +768,78 @@ def test_observation_pump_capture_trigger_and_shutdown_are_deterministic() -> No
         assert pump.task is None
 
     asyncio.run(scenario())
+
+
+def test_recent_changes_carry_values_and_lead_with_what_matters() -> None:
+    """The agent's hardest question is whether its last action did anything.
+
+    A path name alone cannot answer it - "money changed" does not say whether
+    the purchase landed. The values do, so they travel with the path, and the
+    facts an agent acts on lead the list rather than sorting alphabetically
+    behind whatever else the same tick happened to move.
+    """
+    store = WorldStateStore()
+    before = observation(1, paused=False)
+    store.publish(before)
+
+    telemetry = before.telemetry
+    assert telemetry is not None
+    after = before.model_copy(
+        update={
+            "step_index": before.step_index + 1,
+            "world_revision": before.world_revision.model_copy(
+                update={"telemetry_sequence": 2}
+            ),
+            "telemetry": telemetry.model_copy(
+                update={
+                    "sequence": 2,
+                    "game": telemetry.game.model_copy(update={"money": 96}),
+                    "ui": telemetry.ui.model_copy(update={"active_screen": "trade"}),
+                }
+            ),
+        },
+        deep=True,
+    )
+    changes = store.publish(after).observation.recent_changes
+    seen = {change.path: (change.before, change.after) for change in changes}
+
+    assert seen["telemetry.game.money"][1] == "96"
+    assert seen["telemetry.ui.active_screen"] == (None, "trade")
+    # Money leads: it is what settles whether a purchase happened.
+    assert changes[0].path == "telemetry.game.money"
+    # The agent's own counter is not news about the world.
+    assert "step_index" not in seen
+
+
+def test_a_change_list_cannot_feed_on_itself() -> None:
+    """Two identical worlds must compare equal, however annotated.
+
+    recent_changes differs from tick to tick by construction, so counting it as
+    world state would make every observation look changed and nothing would
+    ever settle - the exact signal this is meant to provide, destroyed by
+    providing it.
+    """
+    store = WorldStateStore()
+    store.publish(observation(1, paused=True))
+
+    moved = observation(2, paused=False)
+    assert any(
+        change.path == "telemetry.game.paused"
+        for change in store.publish(moved).observation.recent_changes
+    )
+
+    # The same world again under a later sequence: the tick advanced, nothing
+    # about the world did, and the previous tick's annotation must not register
+    # as this tick's news.
+    telemetry = moved.telemetry
+    assert telemetry is not None
+    settled = moved.model_copy(
+        update={
+            "world_revision": moved.world_revision.model_copy(
+                update={"telemetry_sequence": 3, "frame_sequence": 3}
+            ),
+            "telemetry": telemetry.model_copy(update={"sequence": 3}),
+        },
+        deep=True,
+    )
+    assert store.publish(settled).observation.recent_changes == []
