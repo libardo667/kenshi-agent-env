@@ -2366,3 +2366,78 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     assert any("Leave the bar and look for paying work" in item for item in recalled), (
         "the objective must be recorded without the planner having to think to write it"
     )
+
+
+def test_a_handback_sets_a_stopped_world_running_again() -> None:
+    """The takeover pauses for the human; handing back should undo that.
+
+    Otherwise the agent resumes into a world it never stopped, and every walk
+    it orders sits there going nowhere: one run spent 1412 of its 1443
+    observations paused and moved eighty units in total.
+    """
+    from kenshi_agent.models import GameState, PauseAction
+    from kenshi_agent.runtime import AgentRuntime
+
+    dispatched: list[object] = []
+
+    class FakeEnvironment:
+        async def dispatch(self, action, *, command):  # type: ignore[no-untyped-def]
+            dispatched.append(action)
+            resumed = Observation(
+                run_id="handback",
+                step_index=1,
+                mode="mock",
+                world_revision=WorldStateRevision(telemetry_sequence=2),
+                telemetry=TelemetrySnapshot(
+                    sequence=2, game=GameState(loaded=True, paused=False)
+                ),
+            )
+            return SimpleNamespace(observation=resumed)
+
+    class FakeStore:
+        def begin_command(self, **kwargs):  # type: ignore[no-untyped-def]
+            return SimpleNamespace(command_id="cmd-" + "0" * 32)
+
+        def complete_command(self, command_id, revision):  # type: ignore[no-untyped-def]
+            self.completed = command_id
+
+    runtime = object.__new__(AgentRuntime)
+    runtime.environment = FakeEnvironment()
+    runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
+    store = FakeStore()
+
+    stopped = Observation(
+        run_id="handback",
+        step_index=1,
+        mode="mock",
+        world_revision=WorldStateRevision(telemetry_sequence=1),
+        telemetry=TelemetrySnapshot(sequence=1, game=GameState(loaded=True, paused=True)),
+    )
+    resumed = asyncio.run(runtime._restore_running_world(store, stopped))
+
+    assert dispatched == [PauseAction(paused=False)], "the world must be set running"
+    assert resumed.telemetry is not None and resumed.telemetry.game.paused is False
+    assert store.completed.startswith("cmd-"), "the command must not be left open"
+
+
+def test_a_handback_does_not_disturb_a_world_already_running() -> None:
+    """Nothing to restore, so nothing should be sent."""
+    from kenshi_agent.models import GameState
+    from kenshi_agent.runtime import AgentRuntime
+
+    class Unused:
+        async def dispatch(self, action, *, command):  # type: ignore[no-untyped-def]
+            raise AssertionError("a running world needs no resume")
+
+    runtime = object.__new__(AgentRuntime)
+    runtime.environment = Unused()
+    runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
+
+    already = Observation(
+        run_id="handback",
+        step_index=1,
+        mode="mock",
+        world_revision=WorldStateRevision(telemetry_sequence=1),
+        telemetry=TelemetrySnapshot(sequence=1, game=GameState(loaded=True, paused=False)),
+    )
+    assert asyncio.run(runtime._restore_running_world(None, already)) is already

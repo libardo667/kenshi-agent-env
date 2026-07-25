@@ -121,6 +121,8 @@ namespace
         // the way an approach is. It finishes by arriving.
         bool isWalk;
         bool hasFixedDestination;
+        // Ticks observed with the world paused while this command was active.
+        unsigned int pausedTicks;
         float destinationX;
         float destinationZ;
     };
@@ -128,6 +130,12 @@ namespace
     // How close counts as arrived. Kenshi stops a walk short of the exact point
     // whenever anything is in the way, so an exact match would never fire.
     const float WALK_ARRIVAL_TOLERANCE = 12.0f;
+
+    // A paused world cannot move anybody, so a movement command issued into one
+    // can never finish. Left alone it produces a silent wait and then "timed out
+    // without a causally later matching native acknowledgement", which tells the
+    // agent nothing it can act on. Say what is actually wrong instead.
+    const unsigned int MAX_PAUSED_TICKS_WHILE_MOVING = 12;
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
     TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
@@ -199,6 +207,7 @@ namespace
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.destinationX = 0.0f;
         g_activeNativeCommand.destinationZ = 0.0f;
+        g_activeNativeCommand.pausedTicks = 0;
     }
 
     std::string JsonEscape(const std::string& input)
@@ -606,6 +615,7 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.pausedTicks = 0;
     }
 
     std::string UtcNowIso8601()
@@ -1326,6 +1336,14 @@ namespace
     {
         if (!g_activeNativeCommand.active)
             return;
+
+        if (ou != NULL && ou->isPaused())
+        {
+            if (++g_activeNativeCommand.pausedTicks >= MAX_PAUSED_TICKS_WHILE_MOVING)
+                FinishActiveNativeCommand("cancelled", "world_paused");
+            return;
+        }
+        g_activeNativeCommand.pausedTicks = 0;
 
         std::string selectedId;
         hand selectedHandle;

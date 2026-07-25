@@ -1078,6 +1078,13 @@ class AgentRuntime:
             countdown_seconds=self.guard.config.takeover_countdown_seconds,
         )
         observation = state_store.latest or preemption.observation
+        # The takeover pauses the game for the human's benefit, so handing
+        # control back should leave the world as it was found. Otherwise the
+        # agent resumes into a stopped world it never stopped, and every
+        # movement it orders sits there going nowhere.
+        was_running = (
+            observation.telemetry is not None and observation.telemetry.game.paused is False
+        )
         self._emit_control_ownership_events(
             machine.yield_to_human(
                 self.planning_clock.monotonic(),
@@ -1161,12 +1168,66 @@ class AgentRuntime:
                 observation,
             )
             return False, observation, reason
+        if was_running:
+            observation = await self._restore_running_world(state_store, observation)
         reason = (
             "Agent takeover completed after a visible countdown and fresh "
             "paused-state revalidation; strategic work will replan from the "
             "current revision."
         )
         return True, observation, reason
+
+    async def _restore_running_world(
+        self,
+        state_store: WorldStateStore,
+        observation: Observation,
+    ) -> Observation:
+        """Unpause after a handback, if the human interrupted a running world.
+
+        Failure here is not fatal: the agent can pause and unpause for itself,
+        and a takeover that ends with the world stopped is recoverable. It is
+        just slow and confusing, which is what this avoids.
+        """
+
+        telemetry = observation.telemetry
+        if telemetry is None or telemetry.game.paused is not True:
+            return observation
+        command = state_store.begin_command(
+            plan_id="control-handback",
+            plan_version=1,
+            step_id="restore_running_world",
+            action_kind="pause",
+            start_revision=observation.world_revision,
+        )
+        try:
+            transition = await self.environment.dispatch(
+                PauseAction(paused=False),
+                command=CommandDispatchContext(
+                    command_id=command.command_id,
+                    based_on_revision=observation.world_revision,
+                ),
+            )
+        except Exception as exc:
+            state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
+            self.logger.write(
+                "control_handback_resume_failed",
+                step_index=observation.step_index,
+                payload={"reason": f"{type(exc).__name__}: {exc}"},
+            )
+            return observation
+        resumed = transition.observation or observation
+        state_store.complete_command(command.command_id, resumed.world_revision)
+        self.logger.write(
+            "control_handback_resumed",
+            step_index=observation.step_index,
+            payload={
+                "reason": (
+                    "The human interrupted a running world, so the world was set "
+                    "running again when they handed control back."
+                )
+            },
+        )
+        return resumed
 
     def _takeover_revalidation_errors(
         self,
