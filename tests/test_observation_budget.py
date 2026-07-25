@@ -376,8 +376,11 @@ def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
         assert len(payload) <= budget
         _assert_critical_envelope(document)
 
-    for budget in (12000, 18000, 24000, 30000):
-        document = json.loads(observation.planner_payload(max_chars=budget))
+    # Relative to the envelope rather than absolute: the irreducible payload
+    # grows whenever a new preserved digest is added, and a hardcoded floor here
+    # rots into a failure about a number rather than about behaviour.
+    for headroom in (0, 6000, 12000, 18000):
+        document = json.loads(observation.planner_payload(max_chars=minimum + headroom))
         available = set(document["available_skills"])
         specified = {item["name"] for item in document["skill_specs"]}
         assert available == specified

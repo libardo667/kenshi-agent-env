@@ -58,8 +58,9 @@ yourself, in whatever order the current evidence supports.
   never plan a second step to continue or resume an approach. It succeeds when
   dialogue is open with that exact target.
 - **Two ways to go somewhere, and you will need both.**
-  `move_to_character` walks to any character in `telemetry.nearby_entities`,
-  talkable or not, and opens no conversation on arrival.
+  `move_to_character` takes a `target_id` from `travel_destinations` — the
+  characters you could walk to that are *not* already in `dialogue_targets`,
+  furthest first — and opens no conversation on arrival.
   `move_in_direction` walks a `bearing_degrees` (0 north, 90 east, 180 south,
   270 west) and a `distance_units` from where you stand, naming nobody.
 - Prefer `move_to_character` when somewhere useful has a person standing in it.

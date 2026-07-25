@@ -1759,6 +1759,44 @@ class Observation(StrictModel):
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
 
+    def travel_destination_digest(self) -> list[dict[str, Any]]:
+        """Somewhere to walk that is not already somewhere to talk.
+
+        `dialogue_targets` already carries the talkable people and survives
+        budgeting whole. Movement destinations lived only in
+        `telemetry.nearby_entities`, a budgeted collection trimmed before
+        anything else: eighteen nearby characters became one in the payload, and
+        that one was in the room the agent was already standing in. It was given
+        a way to leave and shown nowhere to go.
+
+        Only the characters absent from `dialogue_targets` are listed, because
+        the rest would be a second copy, and furthest first, because the near
+        ones are the ones already covered. Kept short for the same reason: this
+        is preserved through budgeting, so every entry is charged against the
+        envelope that must always fit.
+        """
+
+        if self.telemetry is None:
+            return []
+        talkable = {target["id"] for target in self.dialogue_target_digest()}
+        elsewhere = [
+            entity
+            for entity in self.telemetry.nearby_entities
+            if entity.id and entity.name and entity.id not in talkable
+        ]
+        elsewhere.sort(
+            key=lambda entity: entity.distance if entity.distance is not None else 0.0,
+            reverse=True,
+        )
+        return [
+            {
+                "id": entity.id,
+                "name": entity.name,
+                "distance": entity.distance,
+            }
+            for entity in elsewhere[:8]
+        ]
+
     def dialogue_target_digest(self) -> list[dict[str, Any]]:
         """Deterministic, authoritative interaction affordances for the planner.
 
@@ -2115,6 +2153,7 @@ class Observation(StrictModel):
         # rather than re-derive. A top-level non-collection key is preserved
         # through budgeting.
         payload["dialogue_targets"] = self.dialogue_target_digest()
+        payload["travel_destinations"] = self.travel_destination_digest()
         payload["semantic_actions"] = self.semantic_action_digest()
 
         controls = self.visible_control_digest()

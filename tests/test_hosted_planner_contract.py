@@ -523,3 +523,41 @@ def test_two_open_inventories_stay_distinguishable() -> None:
     assert [entry["item_name"] for entry in by_window["HEP"]] == ["Hep's Shirt"]
     # Prices travel with the cell, so affording a thing needs no extra step.
     assert [entry["item_value"] for entry in by_window["BARMAN"]] == [30, 12]
+
+
+def test_somewhere_to_go_survives_the_payload_budget() -> None:
+    """Being able to travel is useless while every destination is trimmed away.
+
+    Talkable people arrive as a curated top-level digest that survives budgeting
+    whole. Movement destinations lived only in `telemetry.nearby_entities`, a
+    budgeted collection trimmed before anything else, so eighteen nearby
+    characters became one in the payload - and that one was in the room the
+    agent was already standing in.
+    """
+    from kenshi_agent.models import NearbyEntity
+
+    crowd = [
+        NearbyEntity(
+            id=f"entity-{index}",
+            name=f"Wanderer {index}",
+            kind="character",
+            distance=float(index * 20),
+            has_dialogue=index < 3,
+            disposition="neutral",
+        )
+        for index in range(1, 19)
+    ]
+    busy = observation().model_copy(
+        update={"telemetry": TelemetrySnapshot(nearby_entities=crowd)}
+    )
+    payload = json.loads(busy.planner_payload(max_chars=30000))
+    destinations = payload["travel_destinations"]
+
+    assert destinations, "the agent must be shown somewhere it could walk to"
+    distances = [entry["distance"] for entry in destinations]
+    assert distances == sorted(distances, reverse=True), "furthest first"
+
+    # No entry duplicates dialogue_targets: a second copy of the people it can
+    # already talk to is not somewhere new to go.
+    talkable = {target["id"] for target in payload["dialogue_targets"]}
+    assert not talkable & {entry["id"] for entry in destinations}
