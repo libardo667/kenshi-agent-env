@@ -860,6 +860,12 @@ class ActionContract:
     receipt_kind: str
     bind: Callable[[Action, Observation], ReferenceBinding]
     authorization_conditions: Callable[..., list[Condition]]
+    # Fields a step's own success conditions must check for this action. An
+    # action whose effect is invisible in its receipt needs the plan to verify
+    # it against the world, or a no-op reports success: three consecutive live
+    # purchases moved no money, each reported DONE, and the agent looped because
+    # nothing it could see said otherwise.
+    verification_paths: frozenset[str] = frozenset()
 
     def missing_capabilities(self, capabilities: set[str] | frozenset[str]) -> list[str]:
         """Required capabilities absent from an observation, alias-aware.
@@ -1041,6 +1047,7 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_purchase",
+    verification_paths=frozenset({"telemetry.game.money"}),
     bind=bind_purchase_item,
     authorization_conditions=_visible_control_authorization_conditions,
 )
@@ -1155,6 +1162,7 @@ SELL_ITEM_CONTRACT = ActionContract(
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_sell",
+    verification_paths=frozenset({"telemetry.game.money"}),
     bind=bind_sell_item,
     authorization_conditions=_visible_control_authorization_conditions,
 )

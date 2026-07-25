@@ -779,3 +779,64 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     strict = ActionGuard(SafetyConfig(require_paused_between_actions=True, allow_action_kinds=["purchase_item"]), macros)
     with pytest.raises(SafetyViolation, match="require_paused_between_actions"):
         strict.validate(action, running)
+
+
+def test_a_purchase_step_must_verify_that_money_moved() -> None:
+    """A no-op purchase reported DONE three times running.
+
+    `purchase_item`'s receipt cannot see whether anything transferred, so if the
+    plan's own success conditions never look at money, a click that did nothing
+    is indistinguishable from a completed sale - and the agent walked back to
+    the same shelf because nothing it could see said otherwise.
+    """
+
+    from kenshi_agent.action_contracts import PURCHASE_ITEM_CONTRACT
+    from kenshi_agent.dialogue_interaction import _step_action_errors
+    from kenshi_agent.models import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+        ControlMode,
+        IdempotencyPolicy,
+        PlanStep,
+        PurchaseItemAction,
+    )
+
+    assert PURCHASE_ITEM_CONTRACT.verification_paths == {"telemetry.game.money"}
+
+    action = PurchaseItemAction(
+        cell_label="Dried Meat", item_name="Dried Meat", expected_price=38,
+        window="BARMAN", seller_id="e-barman",
+    )
+
+    screen_only = Condition(
+        kind=ConditionKind.FIELD, path="telemetry.ui.active_screen",
+        operator=ConditionOperator.EQUALS, expected="trade", max_age_seconds=2.0,
+    )
+    money_moved = Condition(
+        kind=ConditionKind.FIELD, path="telemetry.game.money",
+        operator=ConditionOperator.LESS_THAN, expected=1000, max_age_seconds=2.0,
+    )
+
+    def step_with(*conditions: Condition) -> PlanStep:
+        return PlanStep(
+            step_id="buy",
+            action=action,
+            preconditions=[screen_only],
+            success_conditions=list(conditions),
+            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            retry_budget=0,
+            timeout_seconds=10.0,
+        )
+
+    unverified = _step_action_errors(
+        step_with(screen_only), observation(),
+        control_mode=ControlMode.NATIVE_ASSISTED, require_binding=False,
+    )
+    assert any("must verify its own effect" in e for e in unverified), unverified
+
+    verified = _step_action_errors(
+        step_with(screen_only, money_moved), observation(),
+        control_mode=ControlMode.NATIVE_ASSISTED, require_binding=False,
+    )
+    assert not any("must verify its own effect" in e for e in verified), verified

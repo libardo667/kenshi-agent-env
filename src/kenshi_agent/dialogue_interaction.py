@@ -150,6 +150,20 @@ def _step_action_errors(
             f"{label} has no causal success condition; success must be observable in a "
             "later world revision rather than assumed from dispatch"
         )
+
+    # Some actions leave no usable trace in their own receipt, so a plan that
+    # does not check the world cannot tell a completed one from a no-op. Three
+    # live purchases in a row moved no money, each reported success because the
+    # plan's own conditions never looked at money, and the agent went back to
+    # the same shelf because nothing it could see said otherwise.
+    missing_verification = contract.verification_paths - {
+        condition.path for condition in step.success_conditions if condition.path
+    }
+    if missing_verification:
+        errors.append(
+            f"{label} action {action.kind!r} must verify its own effect: add a "
+            "success condition on " + ", ".join(sorted(missing_verification))
+        )
     return errors
 
 
