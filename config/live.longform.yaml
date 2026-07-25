@@ -67,7 +67,13 @@ runtime:
   observation_memory_limit: 16
   stop_when_terminated: true
   decision_stream: true
-  objective: Locate and approach a clearly non-hostile trader in The Hub so the selected squad member can buy one affordable food item. Stay paused between actions and stop at any dialogue or trade UI that has not yet been calibrated.
+  objective: >-
+    You're playing Kenshi. Decide a goal for yourself and work your way
+    towards completing it. You have the run of the interface. Open the
+    inventory, map and stats windows with their bindings, move the camera,
+    control game speed, walk to people and talk to them, buy and sell.
+    Prefer acting on what you can currently see over gathering more
+    information.
 
 planner:
   kind: ${KENSHI_AGENT_PLANNER:-openrouter}

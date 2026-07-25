@@ -618,16 +618,33 @@ def test_a_capability_condition_reads_its_subject_from_required_capabilities() -
     assert condition.path == "ui.inventory"
 
 
-def test_two_named_capabilities_are_genuinely_ambiguous() -> None:
-    import pydantic
+def test_several_named_capabilities_are_all_enforced() -> None:
+    """`path` names one, but evaluation enforces every entry, so nothing is lost."""
 
     from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
 
-    with pytest.raises(pydantic.ValidationError):
-        Condition(
-            kind=ConditionKind.CAPABILITY,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            max_age_seconds=2.0,
-            required_capabilities=["ui.inventory", "ui.dialogue"],
-        )
+    condition = Condition(
+        kind=ConditionKind.CAPABILITY,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=2.0,
+        required_capabilities=["ui.inventory", "ui.dialogue"],
+    )
+    assert condition.path == "ui.inventory"
+    assert condition.required_capabilities == ["ui.inventory", "ui.dialogue"]
+
+
+def test_a_capability_name_used_as_a_field_path_is_read_as_a_capability() -> None:
+    """One flat enum offers both vocabularies with no way to tell them apart."""
+
+    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+
+    condition = Condition(
+        kind=ConditionKind.FIELD,
+        path="squad.inventory",
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=2.0,
+    )
+    assert condition.kind is ConditionKind.CAPABILITY
+    assert condition.path == "squad.inventory"

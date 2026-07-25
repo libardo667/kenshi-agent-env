@@ -1363,6 +1363,15 @@ class Condition(StrictModel):
 
     @model_validator(mode="after")
     def validate_shape(self) -> Condition:
+        if self.kind == ConditionKind.FIELD and self.path in _ALLOWED_CAPABILITY_PATHS:
+            # `ConditionPath` is one flat enum of 80 values, 24 of which are only
+            # ever legal as capability names and 56 only as field paths, with
+            # nothing in the schema saying which is which. A model reading it
+            # picks `squad.inventory` as a field path - entirely reasonable - and
+            # is refused. The intent is unambiguous, so read it as the capability
+            # condition it can only have meant.
+            object.__setattr__(self, "kind", ConditionKind.CAPABILITY)
+
         if self.kind == ConditionKind.FIELD:
             if self.path not in _ALLOWED_CONDITION_PATHS:
                 raise ValueError(f"Unsupported condition path: {self.path!r}")
@@ -1390,7 +1399,11 @@ class Condition(StrictModel):
                     for name in self.required_capabilities
                     if name in _ALLOWED_CAPABILITY_PATHS
                 ]
-                if len(candidates) == 1:
+                if candidates:
+                    # Every name here is enforced at evaluation regardless of
+                    # which one `path` names - a missing one withholds the
+                    # verdict - so taking the first loses nothing and asserts
+                    # exactly what was meant.
                     object.__setattr__(self, "path", candidates[0])
             if self.path is None:
                 raise ValueError(
