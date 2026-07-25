@@ -459,8 +459,9 @@ Portable tests and the built-in heuristic prove:
   inventory/trade navigation, and exact-character local movement. Sale/equip
   binding and money checks have portable coverage grounded in the observed
   live UI semantics, but are not claimed as completed live sale/equip proofs.
-  Targetless directional movement now has a portable end-to-end
-  cross-language proof and pinned native build, but not a live Kenshi proof.
+  Targetless directional movement now has a portable end-to-end cross-language
+  proof, pinned native build, and one exact live Kenshi acceptance/completion
+  proof. Other routes are not inferred from that single smoke.
 
 Option conversion remains bounded to configured movement skills, contracted
 exact-target approach, and targetless native direction. The latter uses a

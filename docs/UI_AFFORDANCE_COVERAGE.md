@@ -14,8 +14,9 @@ missing exits**, and **1 pixel-fragile path** (the ESC menu is reached only as a
 side effect). This is a presence audit, not complete affordance coverage. It
 does not grade effect proof, mock parity, live verification, completeness of
 suboperations, or cross-language executability. `move_in_direction` now passes
-the cross-language and native-build gates but remains a concrete example of an
-advertised mechanism whose live game proof is still pending.
+the cross-language and native-build gates plus one exact live completion smoke;
+that single route is not evidence for every bearing, distance, or obstacle
+layout.
 
 The latest live UI survey was `runs/p7-ui-survey-6` on 2026-07-25, protocol
 `0.5.0`, Hub save, 1920x1080. Later supervised runs added named item facts,
@@ -25,11 +26,11 @@ purchase/sale/equip actions, game bindings, and local movement after that survey
 
 | Interface | Enter / exit | Observe | Interact | Current boundary |
 | --- | --- | --- | --- | --- |
-| World / camera | Base state | Nearby entities, camera, HUD | Pan/rotate/zoom, time, selection, dialogue approach, exact-character and bounded-direction movement | Direction awaits live proof; no remote map-position order |
+| World / camera | Base state | Nearby entities, camera, HUD | Pan/rotate/zoom, time, selection, dialogue approach, exact-character and bounded-direction movement | One direction smoke passed; no remote map-position order |
 | Dialogue | Approach / exact closing reply | Exact target and replies | Activate exact current reply | Escape does not end conversation |
 | Inventory | `use_game_binding` / own close box | Owner window and named item cells | Scroll and equip | Drag/drop/move/drop is not modelled |
 | Trade | Dialogue control / own close box | Seller/owner windows and named stock | Scroll, buy, sell | Trader money and exact sale offer are not exported |
-| Map | Binding toggle | Management window, tab 0, controls | Pan/zoom; exact-character or bounded-direction movement after closing | Direction awaits live proof; no chosen remote map destination |
+| Map | Binding toggle | Management window, tab 0, controls | Pan/zoom; exact-character or bounded-direction movement after closing | No chosen remote map destination |
 | Research/tech | Binding toggle | Management window, tab 2, buttons/text | Activate current controls | Domain semantics are not catalogued |
 | Squad management | Current management controls | Management window, tab 4, buttons/text | Activate current controls | Recruit/reorder/dismiss workflows are not proven |
 | Stats | Binding toggle | Dedicated open flag plus visible text | Read current export | Body-part wound model is incomplete |
@@ -61,8 +62,9 @@ capabilities support them:
 
 Advertisement is not live proof. `move_in_direction` now agrees across the
 contract, Python/native request and acknowledgement models, executor ownership,
-schemas, and shared fixtures, but the installed build has not yet produced a
-live Kenshi terminal acknowledgement.
+schemas, and shared fixtures. The installed `0.6.1` build produced one exact
+live Kenshi `walk_destination_reached` acknowledgement with plausible movement
+and a resulting frame.
 
 Run control (`noop`, `wait`, `pause`, `set_speed`, whole-run `stop`) is separate.
 Raw keys, hotkeys, cursor moves, clicks, and scroll primitives are controller
@@ -106,7 +108,7 @@ The generic local movement path has two implemented forms:
 - `move_in_direction` is intended to walk clockwise-from-north bearing plus
   distance, capped at 2,000 units, without naming any target. The Python/native
   protocol and keyed option path pass shared fixtures and the pinned build; the
-  installed 0.6.0 artifact still awaits a live command smoke.
+  installed `0.6.1` artifact passed one exact live 36.5-degree, 30-unit smoke.
 
 Working native movement uses Kenshi's own `MOVE_CUS_ORDERED` pathing and
 finishes on bounded arrival. Long-distance map travel is a separate gap:

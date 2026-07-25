@@ -8,8 +8,9 @@ reviewed native commands are dialogue approach plus two movement forms. Check
 
 The targetless directional form now passes the shared request parser,
 acknowledgement model, monitored option, and pinned native conformance build.
-The installed 0.6.0 artifact still needs a live Kenshi command smoke before it
-is promoted from built/installed to live-proven.
+The installed protocol `0.6.1` artifact also passed one exact live Kenshi
+acceptance/completion smoke with a changed position, resulting frame, and safe
+final pause.
 
 This note records the control references and open-source plugin patterns most
 useful to the live agent. The shallow reference clones live outside this repo at

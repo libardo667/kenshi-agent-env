@@ -63,7 +63,8 @@ becoming executable.
 
 At this decision point the adapter was not live evidence. Later supervised
 generic runs exercised exact-target approach, native acknowledgements,
-continuous option progress, human handback, and long-form movement. The option
-surface remains deliberately bounded rather than generalized to every macro,
-and broad repeated Windows F12/human-input latency remains an open validation
-area.
+continuous option progress, human handback, and long-form movement. Protocol
+`0.6.1` additionally completed one exact targetless 36.5-degree, 30-unit
+direction through this option in live Kenshi. The option surface remains
+deliberately bounded rather than generalized to every macro, and broad repeated
+Windows F12/human-input latency remains an open validation area.

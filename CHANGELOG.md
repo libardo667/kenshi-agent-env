@@ -22,8 +22,10 @@
   exact-character walking. Protocol `0.6.0` completes the targetless bounded
   directional path: command-specific request/acknowledgement identity, keyed
   option ownership, exact active-order adoption, and shared Python/C++ golden
-  fixtures enforced by the native build. The corrected DLL is installed but
-  still awaits a live Kenshi acceptance/completion smoke.
+  fixtures enforced by the native build. Protocol `0.6.1` corrects the
+  paused-start handoff and destination-crossing completion semantics; the
+  installed DLL passed an exact live acceptance/completion smoke with plausible
+  movement, a resulting frame, and safe final pause.
 - Added OpenRouter structured planning with provider routing and a local-schema
   fallback, mode-aware OpenAI output budgets, dynamic observation/control
   budgeting, and a fast non-reasoning long-form planner default.
@@ -37,7 +39,7 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 480 passing tests with
+- Added `uv.lock`. The current portable baseline is 482 passing tests with
   clean Ruff and strict mypy over 56 source files.
 
 ## 0.1.0 — scaffold

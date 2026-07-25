@@ -16,7 +16,9 @@ useful compatibility and debugging surface.
 
 - MAJOR changes break existing readers or change field meaning.
 - MINOR changes add optional fields or capabilities.
-- PATCH changes fix serialization without semantic change.
+- PATCH changes fix producer/runtime behavior without changing the accepted wire
+  shape or capability meaning. Exact terminal reason strings remain part of the
+  contract even when a patch fixes when they are emitted.
 
 The Python reader rejects a different major version. It accepts additive fields
 only after the Pydantic schema is updated; strict validation is deliberate.
@@ -25,7 +27,7 @@ Current compatibility:
 
 | Python package | Reader gate | Current matched producer | Evidence boundary |
 | --- | --- | --- | --- |
-| `0.1.0` | protocol major must be `0` | `0.6.0` | Portable parsing, shared Python/C++ fixtures, and the pinned installed `0.6.0` DLL; live Kenshi load/command evidence remains at `0.5.0`, and an arbitrary future `0.x` producer may still fail strict model validation until Python is updated |
+| `0.1.0` | protocol major must be `0` | `0.6.1` | Portable parsing, shared Python/C++ timing and movement conformance, the pinned installed `0.6.1` DLL, and one exact live targetless-direction acceptance/completion run; an arbitrary future `0.x` producer may still fail strict model validation until Python is updated |
 
 ## Freshness
 
@@ -70,7 +72,7 @@ the world.
 
 Protocol `0.4.0` added `game.time`, exact dialogue target/options, and tooltip
 evidence for the now-retired conditional food policy. Those fields remain part
-of current `0.6.0` because the generic contracts use them. A closed or
+of current `0.6.1` because the generic contracts use them. A closed or
 unreadable dialogue serializes target/options as null, not an invented empty
 choice list.
 
@@ -167,15 +169,27 @@ stable target and zero direction fields. The production C++ parser and
 acknowledgement serializer run against the same golden documents as the Python
 models during every native build.
 
+Protocol `0.6.1` corrects two runtime semantics without widening the command
+surface. A newly accepted walk may remain paused across the next 500 ms
+telemetry publication so Python can observe the keyed acceptance before its
+bounded unpause pulse; only five seconds of uninterrupted later pause cancels
+the command, and any unpaused update resets that window. Targeted walking still
+uses the fixed arrival tolerance. Directional walking completes with
+`walk_destination_reached` either inside that tolerance or after the selected
+character crosses the destination plane along the intended vector. Sideways or
+short blocked movement does not satisfy that crossing test.
+
 For requests that pass every fence, the plugin uses Kenshi's own player-order API:
 `PLAYER_TALK_TO` for approach and `MOVE_CUS_ORDERED` for character/directional
 walking. Kenshi therefore owns pathfinding through doors and interior floors.
 `native_control` keeps at most 16 acknowledgements keyed by command ID. Each
 includes the request basis, acknowledgement/acceptance/terminal sequences,
-exact target or direction vector, exact selection, status, and reason. Active work
-cancels on selection mismatch, pause, target lifetime loss, or dialogue-role
-loss. Approach completes only for dialogue bound to the exact target; walking
-completes inside the bounded arrival tolerance. Python waits for the matching
+exact target or direction vector, exact selection, status, and reason. Active
+work cancels on selection mismatch, uninterrupted pause beyond the bounded
+handoff window, target lifetime loss, or dialogue-role loss. Approach completes
+only for dialogue bound to the exact target; targeted walking completes inside
+the bounded arrival tolerance, while directional walking also accepts intended
+destination-plane crossing. Python waits for the matching
 acknowledgement on a later telemetry sequence; an old or different command
 cannot certify execution. Legacy last-command fields remain diagnostics, not
 causal authority.
@@ -183,7 +197,7 @@ causal authority.
 ## Identity
 
 Protocol `0.2.0` introduced `identity.stable_handles`, retained by current
-protocol `0.6.0`. When that capability is
+protocol `0.6.1`. When that capability is
 present, `identity_session_id` is non-null and every squad, selection, nearby,
 and native target ID comes from a validated Kenshi `hand`, its lifetime serials,
 and the current process/session generations. The string layout is an internal
@@ -240,7 +254,7 @@ does not make `bleeding_rate` or body-part wounds authoritative.
 
 ## Threading
 
-Sample Kenshi objects only on a verified game/UI thread. Protocol `0.6.0`
+Sample Kenshi objects only on a verified game/UI thread. Protocol `0.6.1`
 uses separate Kenshi-owned `TitleScreen::update` and
 `PlayerInterface::update` hooks. The former emits only title state and bounded
 visible controls; it must not dereference `GameWorld`, player, camera, entity,

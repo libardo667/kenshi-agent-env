@@ -6,7 +6,8 @@ Accepted for P5. Portable tests, the pinned VS2010 SP1 Release x64 build, and
 the supervised in-game protocol `0.3.0` rejection/acceptance/completion proof
 pass.
 
-Extended in protocol `0.5.0` and corrected in `0.6.0` on 2026-07-25. The
+Extended in protocol `0.5.0` and corrected in `0.6.0` and `0.6.1` on
+2026-07-25. The
 command-ID, issue-time revision,
 mode/session/selection, keyed acknowledgement, and no-implicit-retry decisions
 remain authoritative. The bridge now admits three reviewed commands rather than
@@ -19,8 +20,12 @@ Protocol `0.6.0` closes the directional exception: targetless requests and
 acknowledgements bind to command ID, exact selection, bearing, and distance,
 and a dedicated monitored option owns the order until its keyed terminal
 acknowledgement. Shared Python/C++ fixtures prove the wire contract during the
-native build. Live Kenshi acceptance/completion remains a separate evidence
-level; see `STATUS.md` and `docs/TELEMETRY_PROTOCOL.md`.
+native build. Protocol `0.6.1` makes the stop-motion paused-start handoff
+publication-safe and completes a directional order when it reaches tolerance or
+crosses the intended destination plane. Run
+`20260725T2223-direction-smoke-061-green` supplies one exact live
+acceptance/completion proof; broader movement cases remain a separate evidence
+level.
 
 ## Problem
 

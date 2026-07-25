@@ -86,16 +86,19 @@ planner-authorable on the generic live path.
   coverage grounded in the observed right-click semantics. One recorded
   long-form run bought Greenfruit and a first-aid kit with both debits confirmed.
 - Native walking supports exact-character destinations and a targetless bounded
-  direction/distance order. Both complete on arrival rather than waiting for
-  dialogue; pausing an active walk produces an explicit cancellation. Protocol
-  0.6.0 now has live load, fresh-telemetry, exact request identity, and explicit
-  cancellation proof. Its first bounded direction probe did not move: the
-  paused native monitor cancelled before the stop-motion environment could
-  begin its unpause pulse. Arrival remains unproven.
+  direction/distance order. The former completes inside its arrival tolerance;
+  the latter also completes after crossing its intended destination plane.
+  Neither waits for dialogue, and abandoning an active walk in a continuously
+  paused world produces an explicit cancellation. Protocol
+  0.6.1 now has live load, fresh-telemetry, exact request identity, explicit
+  cancellation proof, and one bounded completion proof. Run
+  `20260725T2223-direction-smoke-061-green` moved Hep about 30.4 world units,
+  completed the exact keyed order with `walk_destination_reached`, captured a
+  changed resulting frame, and left Kenshi paused with no active command.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps a selectable, searchable `transcript.log`.
 
-## Native protocol 0.6.0
+## Native protocol 0.6.1
 
 The native plugin hooks Kenshi-owned title and loaded-game update points and
 atomically replaces a complete snapshot at roughly two hertz.
@@ -144,9 +147,9 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 ## Verified portable baseline
 
-At implementation commits `87102c1` and `69b4322`:
+At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
 
-- `pytest -q`: **480 passed**.
+- `pytest -q`: **482 passed**.
 - `ruff check .`: passed.
 - `mypy src/kenshi_agent`: passed across **56 source files**.
 - pinned VS2010 SP1 `Release | x64` native build: passed, including the shared
@@ -160,11 +163,10 @@ At implementation commits `87102c1` and `69b4322`:
 
 ## Open work
 
-- Targetless local directional movement needs its paused-start handshake
-  corrected and a live arrival smoke. Run `20260725T2157-direction-smoke`
-  proved the exact command reached protocol 0.6.0, then exposed a deterministic
-  12-paused-update-tick cancellation before the environment's bounded unpause
-  pulse. Chosen remote map travel has no semantic action at all;
+- Targetless local directional movement has one exact live proof at a
+  36.5-degree bearing and 30-unit distance. Broader bearings, distances,
+  obstacle layouts, and scenes remain unproven rather than inferred from that
+  run. Chosen remote map travel has no semantic action at all;
   `move_to_character` remains bounded to the nearby-character query.
 - Management screens are observable and navigable, but their domain contents
   and operations are not comprehensively modelled.

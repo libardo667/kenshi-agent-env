@@ -134,26 +134,33 @@ pinned upstream dependency and toolchain boundary is unchanged.
 
 ## Current installed development artifact
 
-Verified directly from the Windows install on 2026-07-25 after the targetless
-direction protocol rebuild:
+Verified directly from the Windows install on 2026-07-25 after the paused-start
+and destination-crossing corrections:
 
 ```text
 path: C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll
 size: 202240 bytes
-sha256: 221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb
-mtime: 2026-07-25 14:33:52 -07:00
+sha256: 0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb
+mtime: 2026-07-25 15:16:52.166443500 -07:00
 ```
 
-This is the current installed development DLL for protocol `0.6.0`, built from
-implementation commit `87102c1`. The ignored local
+This is the current installed development DLL for protocol `0.6.1`, built from
+implementation commits `309f100` and `b3543ec`. The ignored local
 `staging/KenshiAgentTelemetry/KenshiAgentTelemetry.dll` and installed DLL were
-verified byte-identical. The prior 199,168-byte protocol `0.5.0` artifact with
-SHA-256
-`aaaa111e7d6828332e90242171138b99de9401ab43ba9d46f4e4703c038498e2`
+verified byte-identical before the supervised launch. The original protocol
+`0.6.0` DLL, SHA-256
+`221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb`,
 is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221022Z-pre-pause-handshake-0.6.1`.
+The superseded timing-only protocol `0.6.1` DLL, SHA-256
+`734e201a4ee1461e8dc2fd7013eb3f88cf46bcf9181a64d39009d9b4f6a12540`,
+is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221724Z-pre-destination-crossing-0.6.1`.
+The prior 199,168-byte protocol `0.5.0` artifact remains recoverable at
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T213500Z-direction-protocol-0.6.0`.
-Kenshi was closed for build and installation, so this establishes native-built
-and installed state only, not plugin load or live command behavior.
+Kenshi was closed for both replacements. The final artifact then passed the
+guarded 45-second loaded/paused health window and the exact live direction run
+`20260725T2223-direction-smoke-061-green`.
 
 ## Plugin staging/install layout
 

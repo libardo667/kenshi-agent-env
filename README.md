@@ -25,7 +25,7 @@ behavior, or public claims.
 
 ## What is runnable now
 
-- A deterministic Kenshi-like mock environment and a 480-test portable
+- A deterministic Kenshi-like mock environment and a 482-test portable
   regression suite.
 - Strict schemas for telemetry, observations, decisions, bounded plans,
   future-only patches, actions, receipts, native requests, and memories.
@@ -44,13 +44,14 @@ behavior, or public claims.
   movement, visible controls, screen dismissal, buying, selling, equipping,
   game bindings, and scrolling. Targetless `move_in_direction` now has aligned
   Python/C++ request and acknowledgement models, keyed option ownership, shared
-  cross-language fixtures, and a native-build conformance gate; its installed
-  0.6.0 DLL loads and receives the exact live command, but its first bounded
-  probe exposed a paused-start cancellation before movement.
+  cross-language fixtures, a native-build conformance gate, and one exact live
+  completion proof. Protocol `0.6.1` survives the bounded stop-motion pause
+  handoff and completes a direction after reaching its destination tolerance or
+  crossing the intended destination plane.
 - A Windows client-area capture and SendInput controller with polite handoff,
   explicit control ownership, F12, semantic current bounds, and calibration
   identity.
-- Native protocol `0.6.0`, which emits stable identities, squad state and
+- Native protocol `0.6.1`, which emits stable identities, squad state and
   inventory, dialogue/trade/management UI, named item cells, combat state,
   camera facts, and a keyed acknowledgement ring for reviewed movement
   commands.
@@ -309,8 +310,11 @@ operate visible controls, enter screens through Kenshi's own default bindings,
 buy, sell, equip, scroll, and close windows. The declared bounded
 `move_in_direction` action now keeps `target_id` empty by contract and binds
 command identity to the selected character, bearing, and distance. Portable
-tests and the native conformance executable pass, and the byte-identical 0.6.0
-DLL is installed; live Kenshi acceptance and arrival remain unclaimed. Raw
+tests and the native conformance executable pass, and the byte-identical 0.6.1
+DLL is installed. Run `20260725T2223-direction-smoke-061-green` proved one exact
+36.5-degree, 30-unit request from keyed acceptance through
+`walk_destination_reached`, plausible movement, a changed resulting frame, and
+safe final pause. Raw
 controller primitives, save/load/editor bindings, arbitrary native tasks, and
 direct game-state mutation remain unavailable.
 
@@ -427,7 +431,7 @@ fresh observation and plan rather than resuming cancelled work. Use
 
 The plugin hooks Kenshi's title and loaded-game update points, calls the
 original methods first, and samples on the game/UI thread at about two hertz.
-Its telemetry path is observational. Protocol `0.6.0` currently exports:
+Its telemetry path is observational. Protocol `0.6.1` currently exports:
 
 - loaded, paused, speed, money, and elapsed in-game minutes;
 - camera position/center and nearby-character camera bearings;
@@ -547,10 +551,11 @@ then present the result as general play ability.
   Kenshi/RE_Kenshi/KenshiLib versions and the current Windows host.
 - `move_in_direction` is declared and bounded to 2,000 world units. Its
   targetless cross-language path is portable-tested, native-built, and
-  installed. Live load, dispatch identity, and safe paused cancellation are
-  proven; arrival is not. The stop-motion paused-start handshake currently
-  cancels before the environment begins its movement pulse. Selecting and
-  executing a remote map destination is separately absent.
+  installed. One live 36.5-degree, 30-unit probe proves exact dispatch identity,
+  bounded pause handoff, native completion, plausible movement, a resulting
+  frame, and safe final pause. Other bearings, distances, obstacles, and scenes
+  are not thereby generalized. Selecting and executing a remote map destination
+  is separately absent.
 - Management screens can be entered, exited, and identified, but their domain
   contents and operations are not comprehensively modelled.
 - The 224-entry native UI export and planner context are bounded. A busy screen

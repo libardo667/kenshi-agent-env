@@ -4,9 +4,9 @@
 > single-step compatibility, but the current generic live planner uses
 > `move_to_character`, `move_in_direction`, `approach_dialogue_target`, and
 > `use_game_binding` contracts. `move_in_direction` now passes its targetless
-> Python/native protocol and monitored-option path, but still awaits a live
-> Kenshi command smoke. Remote map-position travel is separately missing; see
-> `STATUS.md`.
+> Python/native protocol and monitored-option path plus one exact live
+> acceptance/completion smoke. That does not generalize every local route.
+> Remote map-position travel is separately missing; see `STATUS.md`.
 
 Live movement is intentionally split into two skills because Kenshi exposes two
 different navigation scales through the same right mouse button.

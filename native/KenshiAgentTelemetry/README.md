@@ -29,7 +29,7 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.6.0` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.6.1` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
@@ -67,14 +67,16 @@ arguments:
 - `move_to_character` walks to one exact current nearby character through
   `MOVE_CUS_ORDERED` without opening dialogue and completes on arrival.
 - `move_in_direction` walks a bearing/distance from the selected character,
-  capped at 2,000 units, and completes on arrival. Its request and
-  acknowledgement carry an empty target plus the exact bearing and distance.
+  capped at 2,000 units, and completes inside the fixed arrival tolerance or
+  after crossing the intended destination plane. Its request and acknowledgement
+  carry an empty target plus the exact bearing and distance.
 
 The plugin rechecks all shared and command-specific facts and never substitutes
 a nearer target. `native_control` exposes a bounded ring of keyed
 accepted/rejected/completed/cancelled acknowledgements. Active work cancels if
-selection, pause, target lifetime, or required target role changes. The legacy
-last-command fields remain diagnostics.
+selection, uninterrupted pause beyond the bounded handoff window, target
+lifetime, or required target role changes. The legacy last-command fields
+remain diagnostics.
 This makes the DLL a native-assisted control bridge, not a globally read-only
 plugin. The Python runtime exposes these commands only in `native_assisted`
 mode; `interface_only` filters their capabilities/state and rejects the marked
@@ -158,9 +160,11 @@ folder component.
 - Repeat for `move_to_character`, verifying bounded arrival without opening
   dialogue and explicit cancellation when the world is paused.
 - Perform the same live check for `move_in_direction`. The 2026-07-25 probe
-  proved targetless parsing and exact acknowledgement identity, but the
-  stop-motion path terminally cancelled `world_paused` before its first unpause
-  pulse. Repeat after correcting that handshake; no live arrival is claimed.
+  `20260725T2223-direction-smoke-061-green` proved one exact 36.5-degree,
+  30-unit order from keyed acceptance through `walk_destination_reached`, about
+  30.4 units of plausible movement, a resulting frame, and safe final pause.
+  Repeat across other bearings, distances, obstacles, and scenes before making
+  broader movement claims.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -176,10 +180,11 @@ runs with inventory/trading/movement telemetry. Alternate-resolution, broader
 identity transitions, repeated interruption/ownership trials, and multi-hour
 stability remain open in the broader checklist.
 
-Protocol `0.6.0` is an additive command-identity correction built and installed
-on 2026-07-25. Its production parser and acknowledgement serializer pass the
-shared targetless-direction fixtures under the pinned toolchain. A later live
-probe proved the installed DLL loads, emits fresh telemetry, and receives the
-exact targetless command, then exposed a paused-start timing defect: the command
-was accepted and terminally cancelled `world_paused` before movement began.
-Arrival remains a separate live proof.
+Protocol `0.6.0` is the additive command-identity correction built and installed
+on 2026-07-25. Its first live targetless probe exposed the paused-start timing
+defect. Protocol `0.6.1` replaces tick-count cancellation with a resettable
+wall-clock pause window and adds production-tested destination-plane completion.
+The final 202,240-byte installed DLL has SHA-256
+`0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb`;
+it passed the guarded loaded/paused health window and the exact live completion
+run named above.

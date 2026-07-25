@@ -81,7 +81,7 @@ The store:
 - provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
 
 This is an authoritative Python state stream over the plugin's atomic
-latest-snapshot file, not a native event transport. Native protocol `0.6.0`
+latest-snapshot file, not a native event transport. Native protocol `0.6.1`
 supplies session-scoped validated-handle identity, bounded keyed command
 acknowledgements, squad/inventory facts, game time, dialogue and management UI,
 tooltip/source bounds, named item cells, and visible controls. Older producers
@@ -174,11 +174,12 @@ order, arrival/dialogue success, target/threat/timeout failure, and idempotent
 cancellation. In an unpaused continuous profile it monitors ordinary world
 progress; in stop-motion profiles it owns bounded unpause/re-pause pulses.
 
-`move_in_direction` is declared with the same `MONITORED_OPTION` execution
-kind, but the current adapter extracts a nonempty `target_id` before creating
-an option. The targetless action therefore does not receive the ownership this
-architecture intends. It must not be described as a working generalized option
-until that mismatch and the native wire mismatch are fixed end to end.
+`move_in_direction` uses the same `MONITORED_OPTION` execution kind through a
+dedicated `StatefulNativeMovementOption`. It binds the empty target, exact
+selected character, bearing, distance, and native command ID; acceptance alone
+remains running. Stop-motion profiles use bounded unpause/re-pause pulses until
+the exact keyed command reaches `walk_destination_reached` or another terminal
+state.
 
 While that option is active, the executor may give the strategic planner an
 immutable observation containing `ActivePlanContext`. Only a `PlanPatch`
@@ -224,8 +225,7 @@ noop, wait, pause/speed, and whole-run stop. Reusable semantic actions bind
 current telemetry references through one catalog:
 
 - approach a dialogue target;
-- move to a nearby character; a bounded bearing/distance action is declared but
-  currently blocked at its targetless wire/option boundary;
+- move to a nearby character or a bounded bearing/distance;
 - activate a visible control or dismiss the current screen;
 - buy, sell, equip, or scroll one current window;
 - press one allowlisted reversible Kenshi game binding.
@@ -266,20 +266,16 @@ strict request bridge:
   valid dialogue target and completes only on exact-target dialogue;
 - `move_to_character`, which follows one exact nearby character and completes
   on arrival without opening dialogue;
-- `move_in_direction`, whose intended native handler walks a bounded
-  bearing/distance from the selected character. The current Python producer
-  sends the targetless shape the model permits, while the C++ parser and Python
-  acknowledgement model still require a nonempty target ID; the executor's
-  option adapter has the same target assumption. It is therefore not currently
-  accepted end to end.
+- `move_in_direction`, whose native handler walks a bounded bearing/distance
+  from the selected character and completes inside tolerance or after crossing
+  the intended destination plane.
 
 Python atomically writes one request before the private bridge hotkey. The
 plugin accepts only the exact caller command ID, current world-revision
-sequence, native mode, identity session, one-character selection, and exact
-target fields. Bounded direction fields are parsed and handled later in the
-native path, but the shared parser's earlier nonempty-target check currently
-prevents a targetless directional request from reaching that branch. A bounded
-acknowledgement ring reports
+sequence, native mode, identity session, one-character selection, and the
+command-specific exact target or direction fields. Directional commands require
+an empty target plus bounded bearing/distance; targeted commands require a
+stable target and zero direction fields. A bounded acknowledgement ring reports
 rejection, acceptance, completion/cancellation, and terminal sequences. These
 commands are unavailable in `interface_only`; the DLL is not described as
 globally read-only.

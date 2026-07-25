@@ -64,11 +64,49 @@ inspection alone.
       `reason=world_paused`; target was empty, vector and selected ID matched,
       position and before/after frame hash were unchanged, and the game
       remained paused. No retry was sent.
-- [ ] Correct the stop-motion paused-start handshake and repeat the bounded
-      direction probe until the exact keyed command reaches `arrived`, Hep's
-      position changes plausibly, and a resulting frame is captured. The first
-      live probe proves load, parsing, dispatch identity, cancellation, and safe
-      final state—not movement or arrival.
+- [x] Correct the stop-motion paused-start handshake and repeat the bounded
+      direction probe until the exact keyed command reaches
+      `walk_destination_reached`, Hep's position changes plausibly, and a
+      resulting frame is captured. Protocol `0.6.1` uses a resettable
+      five-second continuous-pause window, rather than player-update tick
+      count, and permits directional completion after reaching tolerance or
+      crossing the intended destination plane.
+- [x] Preserve both superseded installed packages. The original protocol
+      `0.6.0` DLL (`221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb`)
+      is under
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221022Z-pre-pause-handshake-0.6.1`;
+      the timing-only `0.6.1` DLL
+      (`734e201a4ee1461e8dc2fd7013eb3f88cf46bcf9181a64d39009d9b4f6a12540`)
+      is under
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221724Z-pre-destination-crossing-0.6.1`.
+- [x] Build, stage, and install the final 202,240-byte protocol `0.6.1` DLL
+      byte-for-byte while Kenshi is closed. Its SHA-256 is
+      `0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb`.
+      The pinned native conformance target exercises the production timing and
+      destination-completion helpers.
+- [x] Relaunch through the guarded preflight and pass the complete 45-second
+      fresh loaded/paused health window with protocol `0.6.1`, a responsive
+      client, and no plugin, renderer, device-removal, crash, or exception hit
+      in the relevant log tail.
+- [x] Complete one exact live request. Run
+      `20260725T2223-direction-smoke-061-green` issued
+      command `cmd-02ab601d82eb457cab3a355b886942c6` from sequence 535,
+      published keyed acceptance at 536 and terminal completion at 541 with
+      `reason=walk_destination_reached`, and advanced the selected Hep from
+      `(-51372.2, 1612.958, 2413.8)` to
+      `(-51354.12, 1614.212, 2438.221)`, about 30.4 x/z units. The plan step and
+      plan both succeeded, one command started and completed, zero environment
+      errors or supervisor preemptions occurred, and the game finished paused
+      with speed zero and no active command.
+- [x] Retain causal artifacts for the green run. The 240-line event log has
+      SHA-256
+      `6034705c4f0f7ba1cd10b8e3bcd143c4a9ecf86e1a5e81edda98b4d7675c33b4`;
+      before/after frames have SHA-256
+      `5e5eef04f9658f09fc44f7e41ac48357d6fba2bd507b6a631f9e5fa67ac2cede`
+      and
+      `7775ebbeec45a5c4066d163d6327d2f79adba94c27988609484aa36e0d93792a`.
+      This proves that exact route only, not every bearing, distance, obstacle,
+      or scene.
 
 ### Protocol 0.5 title-screen semantic lifecycle
 

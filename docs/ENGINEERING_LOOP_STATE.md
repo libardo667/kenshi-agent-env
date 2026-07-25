@@ -77,6 +77,119 @@ subprocess pipes. They did not affect Kenshi or the command result, but they are
 a separate subprocess-planner shutdown-cleanup issue; do not misclassify them
 as a native plugin or renderer failure.
 
+## Protocol 0.6.1 corrections and live completion (2026-07-25)
+
+Implementation commits `309f100`, `b3543ec`, and `53f9f42` supersede the
+paused-start defect above without erasing its evidence:
+
+- `NativeCommandTiming` is one production module shared by the DLL and native
+  conformance target. Telemetry still publishes every 500 ms. A newly accepted
+  movement command may survive that publication handoff, and cancellation now
+  requires five seconds of uninterrupted wall-clock pause; every unpaused
+  update resets the window.
+- `NativeMovementSemantics` preserves the 12-unit ordinary arrival tolerance.
+  A fixed directional destination also completes after the selected character
+  crosses its destination plane along the intended vector. Native conformance
+  rejects sideways and short blocked movement and accepts tolerance, the
+  measured overshoot, and destination-plane crossing.
+- Python, the live probe, fakes, tests, prompt, and public action contract use
+  the production terminal reason `walk_destination_reached` exactly. The
+  shorthand `arrived` is not accepted as a synonym.
+- The final portable suite passed 482 tests, Ruff, and strict mypy over 56
+  source files. The pinned VS2010 SP1 Release x64 build and native conformance
+  target passed. Remaining compiler/linker messages were the established
+  upstream MyGUI C4091, Boost C4715, and missing vc100 PDB warnings; the build
+  had zero errors.
+
+### Intermediate correction exposed destination overshoot
+
+Run `20260725T2213-direction-smoke-061` used the first timing-corrected
+protocol `0.6.1` candidate. Exact command
+`cmd-53cfed375e134fee9921b934eccf5716`, based on sequence 205, published keyed
+acceptance at 206 and survived the stop-motion unpause handoff. Hep moved from
+`(-51386.3, 1611.252, 2376.005)` to
+`(-51370.15, 1613.043, 2415.104)`, about 42.3 x/z units; distance to the Barman
+fell about 40.5 units. The character stopped 15.1 units beyond the intended
+destination, just outside the fixed 12-unit tolerance, so the option timed out
+and the runtime safely paused. Its terminal `world_paused` cancellation at
+sequence 267 occurred only after that timeout/final pause. This proved the
+publication handshake correction but also showed that equality-to-tolerance
+alone was too narrow for Kenshi's measured directional stop.
+
+The timing-only 202,240-byte candidate, SHA-256
+`734e201a4ee1461e8dc2fd7013eb3f88cf46bcf9181a64d39009d9b4f6a12540`,
+is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221724Z-pre-destination-crossing-0.6.1`.
+The earlier protocol `0.6.0` package, whose DLL SHA-256 is
+`221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb`,
+is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221022Z-pre-pause-handshake-0.6.1`.
+Both replacements occurred only after a graceful client close.
+
+### Final installed artifact and green live run
+
+The final 202,240-byte protocol `0.6.1` DLL was staged and installed
+byte-for-byte while Kenshi was closed:
+
+```text
+sha256: 0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb
+installed mtime: 2026-07-25 15:16:52.166443500 -07:00
+```
+
+The guarded relaunch passed Steam login, exact graphics, duplicate-client and
+memory preflight, then a complete 45-second fresh loaded/paused health window.
+Live telemetry reported protocol `0.6.1`. Kenshi remained responsive and the
+relevant `kenshi.log` tail contained no plugin, DXGI/device-removal,
+driver-internal, exception, crash, or error hit.
+
+The first run on that binary,
+`20260725T2220-direction-smoke-061-final`, proved native completion:
+command `cmd-84388350205e4fc6ba77a76f7527517f` was based on sequence 217,
+accepted at 218, and completed at 223 with
+`reason=walk_destination_reached`. The option itself finished in one
+two-second pulse. The probe plan nevertheless failed because its Python success
+check still expected the informal word `arrived`; commit `53f9f42` aligned that
+last fixture and prompt vocabulary with production telemetry.
+
+Run `20260725T2223-direction-smoke-061-green` then issued exactly one
+36.5-degree, 30-unit empty-target order for selected Hep:
+
+```text
+command: cmd-02ab601d82eb457cab3a355b886942c6
+command basis: sequence 535
+accepted: sequence 536
+completed: sequence 541, reason walk_destination_reached
+before position: (-51372.2, 1612.958, 2413.8)
+after position:  (-51354.12, 1614.212, 2438.221)
+x/z travel: about 30.4 units
+```
+
+The option, plan step, and plan all succeeded on causally later revisions.
+Exactly one command started and one completed; there were zero environment
+errors and zero supervisor preemptions. The 240-line event log is retained at
+`runs/20260725T2223-direction-smoke-061-green/events.jsonl` with SHA-256
+`6034705c4f0f7ba1cd10b8e3bcd143c4a9ecf86e1a5e81edda98b4d7675c33b4`.
+The before and after frames are retained under
+`runs/dev-shots/20260725T222224.614984Z-direction-061-green-before/` and
+`runs/dev-shots/20260725T222305.053875Z-direction-061-green-after/`, with
+SHA-256
+`5e5eef04f9658f09fc44f7e41ac48357d6fba2bd507b6a631f9e5fa67ac2cede`
+and
+`7775ebbeec45a5c4066d163d6327d2f79adba94c27988609484aa36e0d93792a`.
+The changed resulting frame and telemetry position corroborate movement.
+
+The run stopped because its deliberately one-action plan reached its action
+limit after completion. Final telemetry was fresh and advancing, paused with
+movement speed zero, money 179, and no active native command. This is live
+proof for that exact bearing, distance, character, save, and scene. It does not
+generalize other directions, distances, obstacles, or remote map travel.
+
+A later closing monitor found the still-open client responsive at PID 27396
+with telemetry sequence 1690, age 0.447 seconds, the same final Hep position,
+both completed acknowledgements retained, and no active command. The last 400
+`kenshi.log` lines still had no plugin, DXGI/device-removal, driver-internal,
+exception, or crash match.
+
 ## Audit input: deep systems review (2026-07-25)
 
 The externally supplied
