@@ -53,11 +53,22 @@ inspection alone.
       was staged and installed byte-for-byte while Kenshi was closed.
 - [x] The prior protocol 0.5 DLL is recoverable at
       `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T213500Z-direction-protocol-0.6.0`.
-- [ ] Launch Kenshi and confirm protocol `0.6.0` loads with fresh, advancing
+- [x] Launch Kenshi and confirm protocol `0.6.0` loads with fresh, advancing
       telemetry and no plugin error.
-- [ ] Issue one bounded `move_in_direction` request on a disposable save and
+- [x] Issue one bounded `move_in_direction` request on a disposable save and
       record the exact empty target, bearing/distance, selected ID, keyed
       acceptance, terminal arrival/cancellation, and final pause state.
+      Run `20260725T2157-direction-smoke` issued one 36.5-degree, 30-unit order
+      for exact selected Hep. Command `cmd-acf9eaa6682e4996be90b98f891c755b`
+      was accepted and terminally cancelled in telemetry sequence 638 with
+      `reason=world_paused`; target was empty, vector and selected ID matched,
+      position and before/after frame hash were unchanged, and the game
+      remained paused. No retry was sent.
+- [ ] Correct the stop-motion paused-start handshake and repeat the bounded
+      direction probe until the exact keyed command reaches `arrived`, Hep's
+      position changes plausibly, and a resulting frame is captured. The first
+      live probe proves load, parsing, dispatch identity, cancellation, and safe
+      final state—not movement or arrival.
 
 ### Protocol 0.5 title-screen semantic lifecycle
 

@@ -35,6 +35,48 @@ was staged and installed byte-for-byte while Kenshi was closed. The prior
 No game launch occurred, so protocol load, command acceptance, movement, and
 arrival remain explicitly unproven live.
 
+### Live smoke: protocol loaded; paused-start handshake failed
+
+Run `20260725T2157-direction-smoke` loaded the installed protocol `0.6.0`
+artifact through the guarded launcher. The 45-second launcher health window
+passed with fresh, advancing, strict telemetry; Kenshi stayed responsive and
+`kenshi.log` contained no renderer/device-removal/plugin error. This supersedes
+the preceding installation-time statement only for **load and telemetry**.
+One manual strict telemetry read during save-load assembly rejected a transient
+`selected_character_ids`/squad mismatch; later strict reads were valid and
+advanced throughout the launcher health window. No command had been issued at
+that point. Preserve it as a load-boundary assembly observation, not as command
+or live-stability evidence.
+
+The bounded command asked selected Hep to walk 30 units on bearing 36.5 degrees.
+The native side received the exact empty-target request and exact selected ID as
+command `cmd-acf9eaa6682e4996be90b98f891c755b`, based on telemetry sequence
+637. At sequence 638 it published one terminal acknowledgement:
+`status=cancelled`, `reason=world_paused`, with the same bearing, distance, and
+selection. Hep remained at `(-51386.3, 1611.252, 2376.005)`, both 1920x1080
+before/after frames have SHA-256
+`16f83704906bc207e8e2e2a785afac1a493dec422c176329672482e8d3806820`,
+and the final state was paused. No second order was sent.
+
+This is a deterministic integration defect, not arrival evidence. Native
+monitoring runs on every player-interface update and cancels after 12 paused
+ticks, while telemetry publishes only every 500 ms. The stop-motion live
+environment deliberately waits for a later keyed acceptance before beginning
+its bounded unpause pulse, so the plugin can cancel before an accepted snapshot
+can exist. The 93-event session log (SHA-256
+`8b7cba20c08f4e0a82e1bb2b85d06d935fd98f4b9c23d842fd0af6bf0154496b`)
+is retained under `runs/20260725T2157-direction-smoke/`; the reusable
+revision-bound probe is `scripts/live_direction_smoke_planner.py`. Direction
+arrival and resulting movement remain unproven. Correct the paused-start
+handshake, rebuild/install while Kenshi is closed, and repeat this exact probe
+before upgrading the evidence level.
+
+After the failed run had written its complete lifecycle and summary, Windows
+Python also emitted `asyncio` Proactor destructor warnings for already-closed
+subprocess pipes. They did not affect Kenshi or the command result, but they are
+a separate subprocess-planner shutdown-cleanup issue; do not misclassify them
+as a native plugin or renderer failure.
+
 ## Audit input: deep systems review (2026-07-25)
 
 The externally supplied

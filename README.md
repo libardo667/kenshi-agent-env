@@ -45,7 +45,8 @@ behavior, or public claims.
   game bindings, and scrolling. Targetless `move_in_direction` now has aligned
   Python/C++ request and acknowledgement models, keyed option ownership, shared
   cross-language fixtures, and a native-build conformance gate; its installed
-  0.6.0 DLL still awaits a live Kenshi acceptance/completion smoke.
+  0.6.0 DLL loads and receives the exact live command, but its first bounded
+  probe exposed a paused-start cancellation before movement.
 - A Windows client-area capture and SendInput controller with polite handoff,
   explicit control ownership, F12, semantic current bounds, and calibration
   identity.
@@ -546,8 +547,10 @@ then present the result as general play ability.
   Kenshi/RE_Kenshi/KenshiLib versions and the current Windows host.
 - `move_in_direction` is declared and bounded to 2,000 world units. Its
   targetless cross-language path is portable-tested, native-built, and
-  installed, but not yet live-proven in Kenshi. Selecting and executing a
-  remote map destination is separately absent.
+  installed. Live load, dispatch identity, and safe paused cancellation are
+  proven; arrival is not. The stop-motion paused-start handshake currently
+  cancels before the environment begins its movement pulse. Selecting and
+  executing a remote map destination is separately absent.
 - Management screens can be entered, exited, and identified, but their domain
   contents and operations are not comprehensively modelled.
 - The 224-entry native UI export and planner context are bounded. A busy screen

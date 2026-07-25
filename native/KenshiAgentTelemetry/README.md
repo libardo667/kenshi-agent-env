@@ -157,9 +157,10 @@ folder component.
   pause.
 - Repeat for `move_to_character`, verifying bounded arrival without opening
   dialogue and explicit cancellation when the world is paused.
-- Perform the same live check for `move_in_direction`; the targetless
-  request/parser/acknowledgement contract and cross-language fixture gate pass,
-  but no current live completion is claimed.
+- Perform the same live check for `move_in_direction`. The 2026-07-25 probe
+  proved targetless parsing and exact acknowledgement identity, but the
+  stop-motion path terminally cancelled `world_paused` before its first unpause
+  pulse. Repeat after correcting that handshake; no live arrival is claimed.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -177,6 +178,8 @@ stability remain open in the broader checklist.
 
 Protocol `0.6.0` is an additive command-identity correction built and installed
 on 2026-07-25. Its production parser and acknowledgement serializer pass the
-shared targetless-direction fixtures under the pinned toolchain. Kenshi was
-closed during installation, so load, acceptance, and arrival remain a separate
-live proof.
+shared targetless-direction fixtures under the pinned toolchain. A later live
+probe proved the installed DLL loads, emits fresh telemetry, and receives the
+exact targetless command, then exposed a paused-start timing defect: the command
+was accepted and terminally cancelled `world_paused` before movement began.
+Arrival remains a separate live proof.

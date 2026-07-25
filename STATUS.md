@@ -87,9 +87,11 @@ planner-authorable on the generic live path.
   long-form run bought Greenfruit and a first-aid kit with both debits confirmed.
 - Native walking supports exact-character destinations and a targetless bounded
   direction/distance order. Both complete on arrival rather than waiting for
-  dialogue; pausing an active walk produces an explicit cancellation. The
-  direction path has portable and native-build proof and an installed 0.6.0
-  artifact, but no live Kenshi acceptance/completion proof yet.
+  dialogue; pausing an active walk produces an explicit cancellation. Protocol
+  0.6.0 now has live load, fresh-telemetry, exact request identity, and explicit
+  cancellation proof. Its first bounded direction probe did not move: the
+  paused native monitor cancelled before the stop-motion environment could
+  begin its unpause pulse. Arrival remains unproven.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps a selectable, searchable `transcript.log`.
 
@@ -158,9 +160,12 @@ At implementation commits `87102c1` and `69b4322`:
 
 ## Open work
 
-- Targetless local directional movement still needs a live Kenshi
-  acceptance/completion smoke. Chosen remote map travel has no semantic action
-  at all; `move_to_character` remains bounded to the nearby-character query.
+- Targetless local directional movement needs its paused-start handshake
+  corrected and a live arrival smoke. Run `20260725T2157-direction-smoke`
+  proved the exact command reached protocol 0.6.0, then exposed a deterministic
+  12-paused-update-tick cancellation before the environment's bounded unpause
+  pulse. Chosen remote map travel has no semantic action at all;
+  `move_to_character` remains bounded to the nearby-character query.
 - Management screens are observable and navigable, but their domain contents
   and operations are not comprehensively modelled.
 - `active_screen` still names only title/world/inventory/dialogue/trade;
@@ -217,6 +222,6 @@ At implementation commits `87102c1` and `69b4322`:
   focus/input trials, multi-hour stability, and broad unsupervised strategy
   competence are not established.
 - There is a checked-in `uv.lock`, but no CI workflow.
-- The repository has no cross-language golden request/acknowledgement parser
-  test, so Python fakes can reproduce Python assumptions while the C++ consumer
-  disagrees.
+- The shared Python/C++ golden request and acknowledgement fixtures prove wire
+  shape, but they do not exercise native update timing. The first live
+  direction probe exposed exactly that remaining integration class.
