@@ -1689,8 +1689,16 @@ class LiveEnvironment(AgentEnvironment):
                     return acknowledgement
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                # Named for what it means to whoever reads it. An approach is
+                # only finished when a dialogue opens and a walk when the
+                # character arrives, so a target that wandered off, a blocked
+                # path or a stopped world all end up here - and "no causally
+                # later matching acknowledgement" told nobody any of that.
                 raise RuntimeError(
-                    "Timed out without a causally later matching native acknowledgement."
+                    f"Kenshi never confirmed the {request.command!r} order finished, "
+                    f"after {self._NATIVE_COMMAND_ACK_TIMEOUT_SECONDS:.0f}s. "
+                    "The order was accepted, so the character may still be walking: "
+                    "check whether it arrived before ordering it again."
                 )
             await asyncio.sleep(min(self._NATIVE_COMMAND_POLL_SECONDS, remaining))
 

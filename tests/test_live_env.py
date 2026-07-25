@@ -902,7 +902,7 @@ def test_old_native_ack_cannot_satisfy_new_command(
         monkeypatch.setattr(environment, "_NATIVE_COMMAND_POLL_SECONDS", 0.005)
         initial = await environment.reset()
 
-        with pytest.raises(RuntimeError, match="matching native acknowledgement"):
+        with pytest.raises(RuntimeError, match="never confirmed"):
             await environment.dispatch(
                 native_vendor_action(),
                 command=CommandDispatchContext(
