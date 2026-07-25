@@ -740,6 +740,61 @@ class AgentRuntime:
                             },
                         )
                 if (
+                    observation.mode == "live"
+                    and self.planning_config.live_execution_policy
+                    == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
+                    and not plan.based_on_revision.same_snapshot_as(
+                        observation.world_revision
+                    )
+                ):
+                    from .dialogue_interaction import dialogue_interaction_rebase_errors
+
+                    rebase_errors = dialogue_interaction_rebase_errors(
+                        plan,
+                        planner_observation,
+                        observation,
+                    )
+                    if rebase_errors:
+                        stop_reason = (
+                            "Plan rejected before execution: the plan aged during "
+                            "planning and its references no longer hold: "
+                            + "; ".join(rebase_errors)
+                        )
+                        self._plan_event(
+                            "plan_rejected",
+                            plan_id=plan.plan_id,
+                            plan_version=plan.plan_version,
+                            observation=observation,
+                            reason=stop_reason,
+                            evidence={
+                                "plan_basis": plan.based_on_revision.model_dump(mode="json"),
+                                "current_revision": (
+                                    observation.world_revision.model_dump(mode="json")
+                                ),
+                            },
+                        )
+                        terminated = True
+                        continue
+                    old_basis = plan.based_on_revision
+                    plan = plan.model_copy(
+                        update={"based_on_revision": observation.world_revision},
+                        deep=True,
+                    )
+                    self._plan_event(
+                        "plan_rebased",
+                        plan_id=plan.plan_id,
+                        plan_version=plan.plan_version,
+                        observation=observation,
+                        reason=(
+                            "Every action still binds to the same current reference and "
+                            "all assumptions still hold on the newer revision."
+                        ),
+                        evidence={
+                            "old_basis": old_basis.model_dump(mode="json"),
+                            "new_basis": plan.based_on_revision.model_dump(mode="json"),
+                        },
+                    )
+                if (
                     self.planning_config.live_execution_policy
                     == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
                 ):

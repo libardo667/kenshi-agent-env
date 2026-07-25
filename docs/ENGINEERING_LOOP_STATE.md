@@ -105,18 +105,83 @@ generic path.
   upstream warnings (MyGUI C4091, Boost C4715). Candidate DLL is 188,416 bytes,
   SHA-256 `23916a7e8fb62f11d5bfa1796160dc32d09c15dea0515daccb2d67c77d926674`.
 
-### Live status
+### Live evidence: the complete chain (2026-07-24, supervised, operator present)
 
-**Not yet live-proven.** All evidence above is portable. The generalized DLL is
-**built but not installed**; the installed plug-in remains the proven
-`33e54224f4b4729ba5b96c85db8b8f81137b5e153a7a97b3d4b8125813a89a7c`
-(188,416 bytes), which still enforces the vendor role natively. Consequences:
+The generalized DLL was installed and the composed chain ran end to end live on
+the Hub Barman save.
 
-- A live approach to a **vendor** works today on the installed DLL through the
-  new generic Python path.
-- A live approach to a **non-vendor** would be rejected natively
-  (`target_role_invalid`) until the rebuilt DLL is installed. The generic claim
-  is therefore portable-only for now.
+Installed plug-in: 188,416 bytes, SHA-256
+`23916a7e8fb62f11d5bfa1796160dc32d09c15dea0515daccb2d67c77d926674`. The prior
+`33e54224...` package is backed up complete under
+`runs/p6b-dialogue-fence-preinstall-20260724T233911Z/`.
+
+**Native generalization confirmed live.** Read-only telemetry reported **six**
+dialogue targets where the vendor-only fence would have shown one: Pacifier
+(28.2), Bar Thug (47.1), Twitchy Bar Thug (47.3), Mercenary Captain (65.3),
+Barman (77.8, the only vendor), Metaru (87.6). The five non-vendors were
+unreachable by any approach order before this change.
+
+**Chain proven live**, across runs `p6b-live-chain-01` .. `-06`:
+
+- `approach_dialogue_target` walked the selected character from 77.8 to 19.2
+  units and the native side reported `last_result: exact_dialogue_target_open`
+  with `active_command_id: null`. Final approach state: `dialogue_open: true`,
+  `active_screen: dialogue`, `dialogue_target_id` equal to the Barman's exact
+  stable ID, game paused.
+- `activate_visible_control` then resolved `'1. Show me your goods.'` from live
+  telemetry, re-resolved it inside the input lease, clicked its observed bounds
+  `(0.4531-0.6151, 0.8037-0.8194)`, and the UI causally transitioned:
+  `active_screen: trade`, `dialogue_open: false`,
+  `active_shop_trader_count: 1`, game paused.
+- The run ended through the independent safety supervisor's confirmed-pause
+  cleanup. No purchase, sale, theft, or other irreversible action occurred.
+
+**Five real defects were found and fixed by these runs:**
+
+1. *Every generic plan was rejected as stale.* A hosted call takes ~25s while
+   telemetry ticks twice a second, so the plan's `based_on_revision` never
+   matched the current one. `dialogue_interaction_rebase_errors` now rebases on
+   what actually authorized the plan - each action still binding to the same
+   current reference, assumptions still true, control mode and capabilities
+   unchanged, no human input - rather than on the sequence number. Run `-01`
+   was the zero-input rejection that exposed it.
+2. *The monitored option did not own continuation.* The order was issued, one
+   2-second pulse ran, the game re-paused, and the option then monitored a
+   frozen world until timeout: real progress each turn, but a plan abort and a
+   ~30s replan every time. The semantic approach now advances in bounded
+   pulses until the native command reaches a terminal status or its
+   `native_approach_max_seconds` budget expires, re-pausing after every pulse.
+   The legacy macro keeps its exact one-pulse contract.
+3. *A live pathing order outlives its run.* Run `-03` was refused
+   `command_already_active` because run `-02` left an accepted order walking.
+   The action now adopts an active accepted order for the same exact target and
+   selection and continues it with time, never issuing a second at-most-once
+   command.
+4. *Run-control steps were treated as unbindable.* The policy and rebase both
+   rejected a plan ending in `stop` as having "no contract". `PlannerControlAction`
+   binds to no game reference and is now handled as such.
+5. *Generic control activation emitted a zero-duration press.* The cursor
+   landed correctly on the dialogue option but nothing activated. The proven
+   calibrated macro used `hold_seconds: 0.12`; Kenshi's MyGUI ignores an
+   instantaneous down/up. That calibration is now
+   `controls.control_activation_hold_seconds`, so the generic action inherits
+   the knowledge instead of rediscovering it.
+
+The planner prompt also gained two live-earned rules: author the approach action
+even when an order is already active (it adopts in-flight orders; stopping
+strands the character mid-walk), and copy opaque IDs verbatim - run `-04` failed
+closed when the model inserted an extra `-00000001` segment into a 90-character
+stable ID.
+
+**Known live limitation:** `_execute_movement_pulse` logged "Kenshi did not
+confirm unpaused state" while the operator observed the game visibly unpause.
+The confirmation appears to race the 500 ms telemetry cadence. It fails safe -
+the guaranteed re-pause still runs - but the message is untrustworthy and should
+be fixed before it misleads a future diagnosis.
+
+**Not yet proven live:** the same chain against a **non-vendor** target. The
+native fence now permits it and portable tests cover it, but no live run has
+approached one.
 
 `config/live.dialogue.yaml` is the runnable profile: `native_assisted` +
 `continuous` + `dialogue_interaction_v1`, both live gates still required, the
@@ -137,9 +202,8 @@ transport plus native-approach macros retained.
 
 ### Next vertical milestone
 
-Install and live-verify the generalized DLL, then prove the composed chain live
-against one vendor and one non-vendor target. After that, the second reusable
-chain: bounded profile-region inspection bound to the current tooltip
+Run the same composed chain live against a non-vendor target, and fix the
+untrustworthy unpause-confirmation message. Then the second reusable chain: bounded profile-region inspection bound to the current tooltip
 fingerprint, then a generic at-most-once purchase evaluated against a
 food-acquisition task — reusing this contract/policy machinery rather than
 extending the Barman recipe.

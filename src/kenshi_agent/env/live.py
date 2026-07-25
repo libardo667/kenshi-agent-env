@@ -777,6 +777,7 @@ class LiveEnvironment(AgentEnvironment):
             primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
+            continue_until_terminal=True,
         )
 
     async def _execute_visible_control(
@@ -807,7 +808,13 @@ class LiveEnvironment(AgentEnvironment):
         bounds = binding.resolved_bounds
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
-        primitive_receipt = await self.controller.execute(ClickAction(x=x, y=y))
+        primitive_receipt = await self.controller.execute(
+            ClickAction(
+                x=x,
+                y=y,
+                hold_seconds=self.controls_config.control_activation_hold_seconds,
+            )
+        )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=ACTIVATE_VISIBLE_CONTROL_CONTRACT.version,
@@ -843,16 +850,39 @@ class LiveEnvironment(AgentEnvironment):
         primitive_skill: SkillAction,
         require_vendor_role: bool,
         semantic: SemanticActionReceipt | None = None,
+        continue_until_terminal: bool = False,
     ) -> ActionReceipt:
-        request = self._native_approach_request(
-            target_id,
-            command,
-            require_vendor_role=require_vendor_role,
+        adopted = (
+            self._active_approach_for(target_id) if continue_until_terminal else None
         )
-        request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
-        write_native_command_request_atomic(request_path, request)
-        primitive_count, messages = await self._execute_skill_primitives(primitive_skill)
-        acknowledgement = await self._wait_for_native_acknowledgement(request)
+        if adopted is not None:
+            # This exact pathing order is already issued and still walking. The
+            # order is at-most-once, so continuing it is advancing time, not
+            # sending a second command.
+            primitive_count, messages = 0, [
+                f"Continuing the already active approach {adopted.command_id} "
+                f"toward the same target; no second order was issued."
+            ]
+            acknowledgement = adopted
+            if semantic is not None:
+                semantic = semantic.model_copy(
+                    update={
+                        "revalidation": (
+                            "Adopted this target's already active native order and "
+                            "continued it; no second pathing order was issued."
+                        )
+                    }
+                )
+        else:
+            request = self._native_approach_request(
+                target_id,
+                command,
+                require_vendor_role=require_vendor_role,
+            )
+            request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
+            write_native_command_request_atomic(request_path, request)
+            primitive_count, messages = await self._execute_skill_primitives(primitive_skill)
+            acknowledgement = await self._wait_for_native_acknowledgement(request)
         acknowledgement_message = (
             f"Native acknowledgement {acknowledgement.status.value!r} "
             f"for {acknowledgement.command_id}: {acknowledgement.reason}."
@@ -904,13 +934,94 @@ class LiveEnvironment(AgentEnvironment):
             pulse_seconds=pulse_seconds,
             prepared_primitives=(primitive_count, messages),
         )
+        if not continue_until_terminal:
+            # The legacy macro's contract is exactly one bounded pulse; the
+            # planner was responsible for asking to continue.
+            return receipt.model_copy(
+                update={
+                    "action": action,
+                    "native_acknowledgement": acknowledgement,
+                    "semantic": semantic,
+                }
+            )
+
+        # The order is accepted, but Kenshi is paused, so the character has not
+        # walked a single step yet. Advance time in bounded pulses until the
+        # native side reports a terminal outcome for *this* command. The pathing
+        # order is never reissued — continuation is time, not another command —
+        # and every pulse still guarantees its own confirmed re-pause, so the
+        # human keeps a stopping point roughly every `pulse_seconds`.
+        elapsed = pulse_seconds
+        budget = self.controls_config.native_approach_max_seconds
+        while elapsed < budget:
+            latest = await self.observe_without_capture()
+            if latest.telemetry is None or latest.telemetry_stale:
+                break
+            current = latest.telemetry.native_control.acknowledgement_for(
+                acknowledgement.command_id
+            )
+            if current is None or current.status in {
+                NativeCommandStatus.COMPLETED,
+                NativeCommandStatus.REJECTED,
+                NativeCommandStatus.CANCELLED,
+            }:
+                if current is not None:
+                    acknowledgement = current
+                break
+            remaining = min(pulse_seconds, budget - elapsed)
+            if remaining <= 0.0:
+                break
+            # No primitives: the hotkey already issued the one native order.
+            receipt = await self._execute_movement_pulse(
+                primitive_skill,
+                started,
+                pulse_seconds=remaining,
+                prepared_primitives=(0, []),
+            )
+            elapsed += remaining
+
         return receipt.model_copy(
             update={
                 "action": action,
                 "native_acknowledgement": acknowledgement,
                 "semantic": semantic,
+                "message": (
+                    f"Approached for up to {elapsed:.1f}s across bounded pulses, "
+                    f"re-pausing after each. Native status "
+                    f"{acknowledgement.status.value!r}: {acknowledgement.reason}."
+                ),
             }
         )
+
+    def _active_approach_for(
+        self,
+        target_id: str,
+    ) -> NativeCommandAcknowledgement | None:
+        """An already accepted, still active order toward this exact target.
+
+        A pathing order survives the run that issued it, so a later run can find
+        the character mid-walk. Reissuing would be a second at-most-once command
+        and the plug-in would refuse it; adopting the in-flight one is both
+        correct and what "the option owns continuation" means in practice.
+        """
+
+        observation = self._last_observation
+        if observation is None or observation.telemetry is None or observation.telemetry_stale:
+            return None
+        native = observation.telemetry.native_control
+        if native.active_command_id is None:
+            return None
+        acknowledgement = native.acknowledgement_for(native.active_command_id)
+        if (
+            acknowledgement is None
+            or acknowledgement.status is not NativeCommandStatus.ACCEPTED
+            or acknowledgement.target_id != target_id
+        ):
+            return None
+        selected_ids = observation.telemetry.ui.selected_character_ids
+        if acknowledgement.selected_character_ids != selected_ids:
+            return None
+        return acknowledgement
 
     def _native_approach_request(
         self,

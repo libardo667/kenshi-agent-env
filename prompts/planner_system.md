@@ -31,6 +31,15 @@ yourself, in whatever order the current evidence supports.
   `dialogue_targets`. It owns the whole walk, including waiting for arrival, so
   never plan a second step to continue or resume an approach. It succeeds when
   dialogue is open with that exact target.
+- If `native_control` already reports an active accepted approach for that same
+  target, still author `approach_dialogue_target` for it. The action adopts the
+  in-flight order and continues it with time; it never issues a second command.
+  Do not stop, wait, or plan a "continue" step because an approach is active —
+  stopping just strands the character mid-walk.
+- Copy `target_id` and `exact_label` verbatim, character for character, from
+  `dialogue_targets` and `visible_controls`. These are long opaque identifiers;
+  a single altered character means the reference does not bind and the plan is
+  refused. Never reconstruct, abbreviate, or retype one from memory.
 - `activate_visible_control` takes an `exact_label` and `role` copied exactly
   from `visible_controls`. Never author a label that is absent from that list or
   whose entry has `ambiguous: true`; a duplicate reference fails closed. The

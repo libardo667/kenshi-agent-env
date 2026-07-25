@@ -20,13 +20,16 @@ from .action_contracts import ActionContract, contract_for
 from .models import (
     Action,
     ConditionKind,
+    ConditionResult,
     ControlMode,
     IdempotencyPolicy,
     Observation,
     PlanEnvelope,
     PlanStep,
     is_controller_primitive,
+    is_planner_control_action,
 )
+from .planning import evaluate_conditions
 
 DIALOGUE_INTERACTION_MAX_STEPS = 4
 
@@ -60,6 +63,12 @@ def _step_action_errors(
             "surface accepts semantic actions only, because a bare coordinate "
             "carries no evidence about what it would activate"
         )
+        return errors
+
+    if is_planner_control_action(action):
+        # Run control (stop, noop, wait, pause, set_speed) touches no game object
+        # and binds to no reference, so contract checks and a causal success
+        # condition do not apply. A plan that simply ends is a valid plan.
         return errors
 
     contract: ActionContract | None = contract_for(action)
@@ -110,6 +119,93 @@ def _step_action_errors(
         errors.append(
             f"{label} has no causal success condition; success must be observable in a "
             "later world revision rather than assumed from dispatch"
+        )
+    return errors
+
+
+def dialogue_interaction_rebase_errors(
+    plan: PlanEnvelope,
+    planner_observation: Observation,
+    current_observation: Observation,
+) -> list[str]:
+    """Every reason a plan that aged during planning may not be rebased.
+
+    A hosted strategic call takes tens of seconds while telemetry advances every
+    half second, so a returned plan is essentially always stale by sequence
+    number. Refusing on that alone would make composition impossible while
+    proving nothing: the sequence is not what authorized the plan.
+
+    What authorized it is the contracts' reference bindings plus the plan's own
+    typed conditions. So a rebase is permitted exactly when each action still
+    binds to the same reference it bound to when the plan was written, the
+    assumptions still hold, and control mode and capabilities have not changed.
+    Anything else — a target that moved out of the valid set, a control that
+    became ambiguous, a withdrawn capability, an unpause — refuses, and the
+    executor still revalidates preconditions before dispatch and again inside
+    the input lease.
+    """
+
+    errors: list[str] = []
+    if not plan.based_on_revision.same_snapshot_as(planner_observation.world_revision):
+        errors.append("plan basis does not match its immutable planner snapshot")
+    if not current_observation.world_revision.is_later_than(
+        planner_observation.world_revision
+    ):
+        errors.append("current world revision is not causally later than the planner snapshot")
+
+    if current_observation.telemetry is None:
+        errors.append("current observation has no telemetry to rebase against")
+        return errors
+    if current_observation.telemetry_stale:
+        errors.append("current telemetry is stale, so the plan cannot be rebased")
+
+    if current_observation.control_mode != planner_observation.control_mode:
+        errors.append("control mode changed while the strategic planner was running")
+
+    before_capabilities = set(
+        planner_observation.telemetry.capabilities
+        if planner_observation.telemetry is not None
+        else []
+    )
+    withdrawn = sorted(before_capabilities - set(current_observation.telemetry.capabilities))
+    if withdrawn:
+        errors.append("capabilities were withdrawn during planning: " + ", ".join(withdrawn))
+
+    blocking = [
+        event
+        for event in current_observation.events
+        if event in ("human_input_detected", "emergency_stop_detected")
+    ]
+    if blocking:
+        errors.append(f"input authority was withdrawn during planning by {blocking[0]!r}")
+
+    for step in plan.steps:
+        if is_planner_control_action(step.action):
+            # Run control binds to no game reference, so ageing cannot invalidate
+            # it. Its own preconditions are still re-evaluated before dispatch.
+            continue
+        contract = contract_for(step.action)
+        if contract is None:
+            errors.append(
+                f"step {step.step_id!r} has no contract, so its reference cannot be rebased"
+            )
+            continue
+        current = contract.bind(step.action, current_observation)
+        if not current.bound:
+            errors.append(
+                f"step {step.step_id!r} no longer binds after planning: {current.reason}"
+            )
+
+    assumptions = evaluate_conditions(plan.assumptions, current_observation)
+    blocked = [
+        evaluation
+        for evaluation in assumptions
+        if evaluation.result is not ConditionResult.TRUE
+    ]
+    if blocked:
+        errors.append(
+            "plan assumptions no longer hold after planning: "
+            + "; ".join(f"{item.result.value}: {item.reason}" for item in blocked)
         )
     return errors
 

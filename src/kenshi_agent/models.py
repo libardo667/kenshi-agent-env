@@ -734,6 +734,17 @@ def is_semantic_action(action: Action) -> bool:
     return action.kind in SEMANTIC_ACTION_KINDS
 
 
+PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
+    {"noop", "stop", "pause", "set_speed", "wait"}
+)
+
+
+def is_planner_control_action(action: Action) -> bool:
+    """Run control that touches no game object and binds to no reference."""
+
+    return action.kind in PLANNER_CONTROL_ACTION_KINDS
+
+
 def new_command_id() -> str:
     return f"cmd-{uuid4().hex}"
 

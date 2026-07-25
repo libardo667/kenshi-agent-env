@@ -136,6 +136,9 @@ controls:
   # Supplies the audited native approach hotkey and its calibrated pulse for
   # the semantic approach action.
   native_approach_skill: approach_confirmed_vendor
+  # One pathing order, then up to this much bounded walking, re-pausing after
+  # every pulse so the operator always has a stopping point.
+  native_approach_max_seconds: 40.0
 
 safety:
   # This profile permits only the audited skills below. The CLI must still

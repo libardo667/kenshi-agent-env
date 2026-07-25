@@ -174,6 +174,15 @@ class ControlsConfig(ConfigModel):
     # movement pulse. The semantic approach action reuses those proven
     # primitives; it does not inherit the macro's vendor-specific authorization.
     native_approach_skill: str | None = Field(default=None, min_length=1, max_length=80)
+    # Total wall time the semantic approach may advance across bounded pulses
+    # before giving up. The pathing order is issued once; this budgets how long
+    # the option is allowed to keep walking toward it.
+    native_approach_max_seconds: float = Field(default=30.0, gt=0.0, le=120.0)
+    # Kenshi's MyGUI ignores a zero-duration press: an instantaneous down/up
+    # moves the cursor but activates nothing. The calibrated dialogue macros
+    # used 0.12s, so semantic control activation inherits that proven hold
+    # rather than rediscovering it.
+    control_activation_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
 
     def expected_calibration_identity(self) -> CalibrationIdentity:
         return CalibrationIdentity(

@@ -11,6 +11,7 @@ from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.models import (
     ActionReceipt,
     ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
     CalibrationStatus,
     CharacterState,
     ClickAction,
@@ -1101,5 +1102,100 @@ def test_visible_control_is_semantic_current_not_profile_calibrated(
         assert transition.receipt.executed
         assert transition.receipt.calibration is not None
         assert transition.receipt.calibration.status is CalibrationStatus.NOT_REQUIRED
+
+    asyncio.run(scenario())
+
+
+def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
+    tmp_path: Path,
+) -> None:
+    """A pathing order outlives the run that issued it.
+
+    Finding the character already walking toward the exact target must not
+    produce a second at-most-once command; the action adopts the in-flight order
+    and continues it with time instead.
+    """
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        # Advance past the acknowledgement's own sequences so the snapshot
+        # invariant (an ack cannot claim a future sequence) holds.
+        telemetry.sequence = 10
+        # An accepted order toward this exact target is already active.
+        active_id = "cmd-" + "b" * 32
+        telemetry.native_control = NativeControlState(
+            available=True,
+            active_command_id=active_id,
+            acknowledgements=[
+                NativeCommandAcknowledgement(
+                    command_id=active_id,
+                    command="approach_confirmed_vendor",
+                    status=NativeCommandStatus.ACCEPTED,
+                    reason="issued",
+                    target_id="entity-vendor",
+                    selected_character_ids=["entity-selected"],
+                    based_on_telemetry_sequence=1,
+                    acknowledged_at_telemetry_sequence=2,
+                    accepted_at_telemetry_sequence=2,
+                )
+            ],
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ApproachDialogueTargetAction(target_id="entity-vendor"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "c" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        # No second native order: the hotkey was never pressed and no request
+        # file was written by this dispatch.
+        assert not [a for a in controller.actions if isinstance(a, HotkeyAction)]
+        assert controller.request is None
+        # It adopted the in-flight order rather than inventing a new identity.
+        ack = transition.receipt.native_acknowledgement
+        assert ack is not None
+        assert ack.command_id == active_id
+        semantic = transition.receipt.semantic
+        assert semantic is not None
+        assert "Adopted" in semantic.revalidation
+        assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ApproachDialogueTargetAction(target_id="entity-vendor"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "d" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        hotkeys = [a for a in controller.actions if isinstance(a, HotkeyAction)]
+        assert len(hotkeys) == 1, "exactly one pathing order per option lifecycle"
+        assert controller.request is not None
+        assert controller.request.target_id == "entity-vendor"
+        assert transition.receipt.executed
+        assert telemetry.paused is True
 
     asyncio.run(scenario())

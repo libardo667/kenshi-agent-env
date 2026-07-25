@@ -7,7 +7,10 @@ chain work" test and still have failed this milestone.
 
 from __future__ import annotations
 
-from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
+from kenshi_agent.dialogue_interaction import (
+    dialogue_interaction_policy_errors,
+    dialogue_interaction_rebase_errors,
+)
 from kenshi_agent.models import (
     Action,
     ActivateVisibleControlAction,
@@ -439,3 +442,230 @@ class TestGenericPolicyRejections:
         )
         errors = dialogue_interaction_policy_errors(composed, stale)
         assert any("fresh telemetry" in error for error in errors)
+
+
+# ---------------------------------------------------------------------------
+# Rebasing a plan that aged during a slow strategic call.
+#
+# The sequence number always moves during a ~25s hosted call, so the question
+# that decides safety is whether the plan's references still bind — not whether
+# the counter changed.
+# ---------------------------------------------------------------------------
+
+
+def later(observation: Observation, *, sequence: int = 60) -> Observation:
+    """The same world, several telemetry ticks later."""
+
+    telemetry = observation.telemetry
+    assert telemetry is not None
+    return observation.model_copy(
+        update={
+            "world_revision": WorldStateRevision(
+                telemetry_sequence=sequence,
+                capability_epoch=REVISION.capability_epoch,
+                observed_at_monotonic=observation.world_revision.observed_at_monotonic + 25.0,
+            ),
+            "telemetry": telemetry.model_copy(update={"sequence": sequence}, deep=True),
+        },
+        deep=True,
+    )
+
+
+def chain_plan() -> PlanEnvelope:
+    return plan(
+        [
+            step(
+                "approach",
+                ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                on_success="activate",
+            ),
+            step(
+                "activate",
+                ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
+                success=[screen_is("trade")],
+            ),
+        ]
+    )
+
+
+class TestRebaseAcrossPlannerLatency:
+    def test_a_purely_older_sequence_rebases(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view)
+        assert dialogue_interaction_rebase_errors(chain_plan(), planner_view, current) == []
+
+    def test_an_unchanged_revision_is_not_a_rebase(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, planner_view)
+        assert any("causally later" in error for error in errors)
+
+    def test_a_target_that_left_the_valid_set_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view)
+        telemetry = current.telemetry
+        assert telemetry is not None
+        # The vendor turned hostile while the planner was thinking.
+        entities = [
+            entity.model_copy(update={"disposition": Disposition.HOSTILE}, deep=True)
+            if entity.id == VENDOR_ID
+            else entity
+            for entity in telemetry.nearby_entities
+        ]
+        current = current.model_copy(
+            update={"telemetry": telemetry.model_copy(update={"nearby_entities": entities})},
+            deep=True,
+        )
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("no longer binds" in error for error in errors)
+
+    def test_a_control_that_became_ambiguous_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view)
+        telemetry = current.telemetry
+        assert telemetry is not None
+        duplicated = [*TRADE_CONTROLS, VisibleUIControl(
+            label="Show me your goods.", role="button", bounds=bounds(0.8)
+        )]
+        current = current.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"visible_controls": duplicated})}
+                )
+            },
+            deep=True,
+        )
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("ambiguous" in error for error in errors)
+
+    def test_a_control_that_disappeared_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view)
+        telemetry = current.telemetry
+        assert telemetry is not None
+        current = current.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"visible_controls": []})}
+                )
+            },
+            deep=True,
+        )
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("no longer binds" in error for error in errors)
+
+    def test_withdrawn_capability_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view)
+        telemetry = current.telemetry
+        assert telemetry is not None
+        reduced = [c for c in telemetry.capabilities if c != "ui.visible_controls"]
+        current = current.model_copy(
+            update={"telemetry": telemetry.model_copy(update={"capabilities": reduced})},
+            deep=True,
+        )
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("withdrawn" in error for error in errors)
+
+    def test_human_input_during_planning_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view).model_copy(
+            update={"events": ["human_input_detected"]}, deep=True
+        )
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("input authority was withdrawn" in error for error in errors)
+
+    def test_control_mode_change_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view).model_copy(
+            update={"control_mode": ControlMode.INTERFACE_ONLY}, deep=True
+        )
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("control mode changed" in error for error in errors)
+
+    def test_stale_current_telemetry_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view).model_copy(update={"telemetry_stale": True}, deep=True)
+        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        assert any("stale" in error for error in errors)
+
+    def test_a_plan_whose_basis_is_not_its_planner_snapshot_refuses(self) -> None:
+        planner_view = observation(controls=TRADE_CONTROLS)
+        current = later(planner_view)
+        forged = chain_plan().model_copy(
+            update={
+                "based_on_revision": WorldStateRevision(
+                    telemetry_sequence=999, capability_epoch=REVISION.capability_epoch
+                )
+            },
+            deep=True,
+        )
+        errors = dialogue_interaction_rebase_errors(forged, planner_view, current)
+        assert any("immutable planner snapshot" in error for error in errors)
+
+
+class TestRunControlActions:
+    """A plan may include run control; it binds to nothing and ends the plan."""
+
+    def test_a_plan_ending_in_stop_is_accepted(self) -> None:
+        from kenshi_agent.models import StopAction
+
+        composed = plan(
+            [
+                step(
+                    "approach",
+                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    on_success="done",
+                ),
+                step(
+                    "done",
+                    StopAction(reason="Await the already active approach."),
+                    success=[screen_is("world")],
+                ),
+            ],
+            pointer=0,
+        )
+        assert dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        ) == []
+
+    def test_a_stop_only_plan_needs_no_causal_success_condition(self) -> None:
+        from kenshi_agent.models import ConditionPath, StopAction
+
+        control_mode_only = Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.CONTROL_MODE,
+            operator=ConditionOperator.EQUALS,
+            expected="native_assisted",
+            max_age_seconds=3.0,
+        )
+        composed = plan(
+            [step("halt", StopAction(reason="Nothing safe to do."), success=[control_mode_only])],
+            pointer=0,
+            native=0,
+        )
+        assert dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        ) == []
+
+    def test_run_control_steps_do_not_block_a_rebase(self) -> None:
+        from kenshi_agent.models import StopAction
+
+        composed = plan(
+            [
+                step(
+                    "approach",
+                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    on_success="done",
+                ),
+                step(
+                    "done",
+                    StopAction(reason="Await the already active approach."),
+                    success=[screen_is("world")],
+                ),
+            ],
+            pointer=0,
+        )
+        planner_view = observation(controls=TRADE_CONTROLS)
+        assert dialogue_interaction_rebase_errors(
+            composed, planner_view, later(planner_view)
+        ) == []
