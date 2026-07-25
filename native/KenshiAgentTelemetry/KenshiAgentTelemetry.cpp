@@ -117,7 +117,17 @@ namespace
         std::string selectedCharacterId;
         hand targetHandle;
         hand selectedHandle;
+        // A walk has no conversation to open, so it cannot be judged finished
+        // the way an approach is. It finishes by arriving.
+        bool isWalk;
+        bool hasFixedDestination;
+        float destinationX;
+        float destinationZ;
     };
+
+    // How close counts as arrived. Kenshi stops a walk short of the exact point
+    // whenever anything is in the way, so an exact match would never fire.
+    const float WALK_ARRIVAL_TOLERANCE = 12.0f;
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
     TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
@@ -183,6 +193,12 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.targetId.clear();
         g_activeNativeCommand.selectedCharacterId.clear();
+        // Cleared with the rest, or a finished walk would leave the next
+        // approach being judged by arrival instead of by dialogue.
+        g_activeNativeCommand.isWalk = false;
+        g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.destinationX = 0.0f;
+        g_activeNativeCommand.destinationZ = 0.0f;
     }
 
     std::string JsonEscape(const std::string& input)
@@ -588,6 +604,8 @@ namespace
         g_lastNativeCommandResult = reason;
         g_activeNativeCommand.active = false;
         g_activeNativeCommand.commandId.clear();
+        g_activeNativeCommand.isWalk = false;
+        g_activeNativeCommand.hasFixedDestination = false;
     }
 
     std::string UtcNowIso8601()
@@ -1321,6 +1339,44 @@ namespace
             return;
         }
 
+        Character* walker = selectedHandle.getCharacter();
+        if (g_activeNativeCommand.isWalk)
+        {
+            if (walker == NULL || !walker->isValid())
+            {
+                FinishActiveNativeCommand("cancelled", "selection_mismatch");
+                return;
+            }
+            float destinationX = g_activeNativeCommand.destinationX;
+            float destinationZ = g_activeNativeCommand.destinationZ;
+            if (!g_activeNativeCommand.hasFixedDestination)
+            {
+                // Walking to somebody who is walking themselves: aim at where
+                // they are now, not where they were when the order was given.
+                Character* follow =
+                    g_activeNativeCommand.targetHandle.getCharacter();
+                if (follow == NULL ||
+                    !follow->isValid() ||
+                    StableEntityId(follow) != g_activeNativeCommand.targetId)
+                {
+                    FinishActiveNativeCommand("cancelled", "target_lifetime_changed");
+                    return;
+                }
+                const Ogre::Vector3 followPosition = follow->getPosition();
+                destinationX = followPosition.x;
+                destinationZ = followPosition.z;
+            }
+            const Ogre::Vector3 here = walker->getPosition();
+            const float dx = here.x - destinationX;
+            const float dz = here.z - destinationZ;
+            if (dx * dx + dz * dz <=
+                WALK_ARRIVAL_TOLERANCE * WALK_ARRIVAL_TOLERANCE)
+            {
+                FinishActiveNativeCommand("completed", "walk_destination_reached");
+            }
+            return;
+        }
+
         Character* target = g_activeNativeCommand.targetHandle.getCharacter();
         if (target == NULL ||
             !target->isValid() ||
@@ -1489,6 +1545,10 @@ namespace
             g_activeNativeCommand.targetId = request.targetId;
             g_activeNativeCommand.selectedCharacterId = request.selectedCharacterId;
             g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = true;
+            g_activeNativeCommand.hasFixedDestination = true;
+            g_activeNativeCommand.destinationX = destination.x;
+            g_activeNativeCommand.destinationZ = destination.z;
             g_lastNativeCommandResult = "issued";
             g_lastNativeCommandTarget.clear();
             g_lastNativeCommandTargetId.clear();
@@ -1537,6 +1597,8 @@ namespace
             request.selectedCharacterId;
         g_activeNativeCommand.targetHandle = targetHandle;
         g_activeNativeCommand.selectedHandle = selectedHandle;
+        g_activeNativeCommand.isWalk = isMove;
+        g_activeNativeCommand.hasFixedDestination = false;
         g_lastNativeCommandResult = "issued";
         g_lastNativeCommandTarget = target->getName();
         g_lastNativeCommandTargetId = request.targetId;
