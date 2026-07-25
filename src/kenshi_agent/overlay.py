@@ -229,6 +229,12 @@ def show_overlay(
             "Windows could not exclude the decision overlay from screenshots; "
             "the viewer was closed so it cannot contaminate model input."
         )
+    if not _make_click_through(root.winfo_id()):
+        root.destroy()
+        raise RuntimeError(
+            "Windows could not make the decision overlay click-through; the "
+            "viewer was closed so it cannot swallow input meant for Kenshi."
+        )
 
     width = 620
     height = 520
@@ -309,6 +315,55 @@ def show_overlay(
 
     root.after(50, poll)
     root.mainloop()
+
+
+def _make_click_through(window_id: int) -> bool:
+    """Stop the overlay from ever receiving a mouse event.
+
+    It is topmost and sits over the top-right of the screen, which on the trade
+    screen is where Kenshi draws the shop's item grid. A layered window still
+    swallows input in its own rectangle unless it is marked transparent, so
+    every hover and click the agent aimed at a cell under the overlay went to
+    the viewer instead. The pointer still renders over the item, which is what
+    made it look like Kenshi was ignoring a perfectly good hover.
+    """
+    if sys.platform != "win32":
+        return True
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
+
+    # GetWindowLongPtrW only exists on 64-bit; the 32-bit name is the fallback.
+    get_long = getattr(user32, "GetWindowLongPtrW", user32.GetWindowLongW)
+    set_long = getattr(user32, "SetWindowLongPtrW", user32.SetWindowLongW)
+    get_long.argtypes = [wintypes.HWND, ctypes.c_int]
+    get_long.restype = ctypes.c_ssize_t
+    set_long.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
+    set_long.restype = ctypes.c_ssize_t
+
+    window = wintypes.HWND(window_id)
+    while parent := user32.GetParent(window):
+        window = parent
+
+    gwl_exstyle = -20
+    ws_ex_layered = 0x00080000
+    ws_ex_transparent = 0x00000020
+    ws_ex_noactivate = 0x08000000
+
+    style = get_long(window, gwl_exstyle)
+    if not style:
+        return False
+    wanted = style | ws_ex_layered | ws_ex_transparent | ws_ex_noactivate
+    if wanted == style:
+        return True
+    ctypes.set_last_error(0)
+    if not set_long(window, gwl_exstyle, wanted) and ctypes.get_last_error():
+        return False
+    return bool(get_long(window, gwl_exstyle) & ws_ex_transparent)
 
 
 def _exclude_from_capture(window_id: int) -> bool:
