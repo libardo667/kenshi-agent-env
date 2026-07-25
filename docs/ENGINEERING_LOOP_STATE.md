@@ -7,8 +7,8 @@ describe that checkpoint and may be superseded by a newer entry. Use
 
 ## Targetless direction protocol 0.6.0 (2026-07-25)
 
-Implementation commit `87102c1` closes the cross-layer direction mismatch
-identified by the deep systems review:
+Implementation commits `87102c1` and `69b4322` close the cross-layer direction
+mismatch identified by the deep systems review:
 
 - Python requests and acknowledgements use a discriminated identity:
   `move_in_direction` requires an empty target plus bearing/distance, while
@@ -17,11 +17,13 @@ identified by the deep systems review:
   acknowledgement becomes terminal; acceptance alone is still running.
 - Live revalidation uses the direction contract's own capabilities, and
   active-order adoption matches command, selection, bearing, and distance
-  rather than conflating every empty target.
+  rather than conflating every empty target. The option preserves the original
+  native command ID when it adopts an already-running exact vector, while the
+  executor retains its separate logical command ID for plan causality.
 - The C++ parser and acknowledgement serializer were extracted into one
   production module. A VS2010 console target runs that exact module against the
   same four golden JSON documents as Python on every native build.
-- Generated schemas were refreshed. The portable suite passed 479 tests, Ruff,
+- Generated schemas were refreshed. The portable suite passed 480 tests, Ruff,
   and strict mypy over 56 source files; the pinned VS2010 SP1 Release x64 build
   and its native fixture gate passed.
 

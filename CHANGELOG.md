@@ -37,7 +37,7 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 479 passing tests with
+- Added `uv.lock`. The current portable baseline is 480 passing tests with
   clean Ruff and strict mypy over 56 source files.
 
 ## 0.1.0 — scaffold

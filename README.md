@@ -25,7 +25,7 @@ behavior, or public claims.
 
 ## What is runnable now
 
-- A deterministic Kenshi-like mock environment and a 479-test portable
+- A deterministic Kenshi-like mock environment and a 480-test portable
   regression suite.
 - Strict schemas for telemetry, observations, decisions, bounded plans,
   future-only patches, actions, receipts, native requests, and memories.

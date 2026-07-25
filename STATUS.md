@@ -142,9 +142,9 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 ## Verified portable baseline
 
-At implementation commit `87102c1`:
+At implementation commits `87102c1` and `69b4322`:
 
-- `pytest -q`: **479 passed**.
+- `pytest -q`: **480 passed**.
 - `ruff check .`: passed.
 - `mypy src/kenshi_agent`: passed across **56 source files**.
 - pinned VS2010 SP1 `Release | x64` native build: passed, including the shared
