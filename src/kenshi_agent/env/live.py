@@ -952,9 +952,10 @@ class LiveEnvironment(AgentEnvironment):
                 "action": action,
                 "semantic": semantic,
                 "message": (
-                    f"Bought {action.item_name!r} for c.{action.expected_price} from "
-                    f"cell {binding.resolved_label!r}. A later observation must confirm "
-                    "the money and inventory change."
+                    f"Sent the buy gesture at cell {binding.resolved_label!r} for "
+                    f"{action.item_name!r}. This is not proof of a purchase: only a "
+                    "later observation showing money spent and the item carried is. "
+                    "Check both before buying again."
                 ),
             }
         )
