@@ -26,9 +26,8 @@ catalog when the current observation and control mode advertise them:
 
 - approach an exact current dialogue target;
 - move to an exact nearby character;
-- author the declared bounded bearing/distance action, although its current
-  targetless request is blocked by nonempty-target assumptions in the native
-  parser, acknowledgement model, and monitored-option adapter;
+- walk a declared bounded bearing/distance without inventing a target; its
+  keyed monitored option waits for the exact native vector to complete;
 - activate one unique visible control or dismiss the current screen;
 - purchase, sell, equip, or scroll one exact current window/cell;
 - use one allowlisted reversible Kenshi binding.
@@ -460,14 +459,14 @@ Portable tests and the built-in heuristic prove:
   inventory/trade navigation, and exact-character local movement. Sale/equip
   binding and money checks have portable coverage grounded in the observed
   live UI semantics, but are not claimed as completed live sale/equip proofs.
-  Targetless directional movement is neither a portable end-to-end
-  cross-language proof nor a live proof.
+  Targetless directional movement now has a portable end-to-end
+  cross-language proof and pinned native build, but not a live Kenshi proof.
 
-Option conversion remains bounded to configured movement skills and contracted
-exact-target approach. The directional contract declares monitored-option
-execution but currently fails the adapter's nonempty-target requirement, so it
-does not demonstrate a generalized option framework. Live continuous work remains
-disabled in default profiles and requires an implemented policy plus explicit
+Option conversion remains bounded to configured movement skills, contracted
+exact-target approach, and targetless native direction. The latter uses a
+separate keyed acknowledgement monitor because a bare destination has no
+nearby-entity distance to observe. Live continuous work remains disabled in
+default profiles and requires an implemented policy plus explicit
 acknowledgement. Stable native identity and causal bridge acknowledgements use
 the same caller-owned command/revision semantics; supervised results remain
 version- and host-specific.

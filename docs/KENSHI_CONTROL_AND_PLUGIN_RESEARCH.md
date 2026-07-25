@@ -6,10 +6,10 @@ uses allowlisted Kenshi game bindings for those operations, and the only
 reviewed native commands are dialogue approach plus two movement forms. Check
 `STATUS.md` before promoting a reference pattern into work.
 
-Current exception: the targetless directional form has a native handler but
-does not pass the shared request parser, acknowledgement model, or monitored
-option adapter. It is a design/implementation seam under review, not a working
-command.
+The targetless directional form now passes the shared request parser,
+acknowledgement model, monitored option, and pinned native conformance build.
+The installed 0.6.0 artifact still needs a live Kenshi command smoke before it
+is promoted from built/installed to live-proven.
 
 This note records the control references and open-source plugin patterns most
 useful to the live agent. The shallow reference clones live outside this repo at

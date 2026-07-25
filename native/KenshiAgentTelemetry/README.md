@@ -29,7 +29,7 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.5.0` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.6.0` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
@@ -66,11 +66,9 @@ arguments:
   completes only when dialogue opens with that exact target.
 - `move_to_character` walks to one exact current nearby character through
   `MOVE_CUS_ORDERED` without opening dialogue and completes on arrival.
-- `move_in_direction` has an intended handler that walks a bearing/distance from
-  the selected character, capped at 2,000 units, and completes on arrival.
-  It is currently unreachable through the public request path: Python sends an
-  empty target for this targetless command, while the shared C++ parser rejects
-  empty targets before command-specific validation.
+- `move_in_direction` walks a bearing/distance from the selected character,
+  capped at 2,000 units, and completes on arrival. Its request and
+  acknowledgement carry an empty target plus the exact bearing and distance.
 
 The plugin rechecks all shared and command-specific facts and never substitutes
 a nearer target. `native_control` exposes a bounded ring of keyed
@@ -108,7 +106,8 @@ diagnostics.
    `boost` and `stage\lib`.
 5. Run `scripts\native_doctor.ps1` and resolve every failed check.
 6. Run `scripts\build_native.ps1` to build **Release | x64** with local Windows
-   intermediate/output directories.
+   intermediate/output directories. The build also runs the production native
+   parser/serializer against the golden JSON fixtures shared with Python.
 7. Run `scripts\stage_native.ps1 -BuiltDll <path-to-built-dll>`.
 8. After reviewing the staged files, copy the staged `KenshiAgentTelemetry`
    folder to `<Kenshi>\mods\KenshiAgentTelemetry` and enable the mod in the
@@ -158,9 +157,9 @@ folder component.
   pause.
 - Repeat for `move_to_character`, verifying bounded arrival without opening
   dialogue and explicit cancellation when the world is paused.
-- After the targetless request/parser/acknowledgement contract is fixed and
-  cross-language fixtures pass, perform the same live check for
-  `move_in_direction`; no current live completion is claimed.
+- Perform the same live check for `move_in_direction`; the targetless
+  request/parser/acknowledgement contract and cross-language fixture gate pass,
+  but no current live completion is claimed.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -175,3 +174,9 @@ load-to-pause, generic dialogue/trade chain, UI surveys, and later long-form
 runs with inventory/trading/movement telemetry. Alternate-resolution, broader
 identity transitions, repeated interruption/ownership trials, and multi-hour
 stability remain open in the broader checklist.
+
+Protocol `0.6.0` is an additive command-identity correction built and installed
+on 2026-07-25. Its production parser and acknowledgement serializer pass the
+shared targetless-direction fixtures under the pinned toolchain. Kenshi was
+closed during installation, so load, acceptance, and arrival remain a separate
+live proof.

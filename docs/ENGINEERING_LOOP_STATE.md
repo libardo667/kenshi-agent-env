@@ -5,7 +5,35 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
-## Current audit input: deep systems review (2026-07-25)
+## Targetless direction protocol 0.6.0 (2026-07-25)
+
+Implementation commit `87102c1` closes the cross-layer direction mismatch
+identified by the deep systems review:
+
+- Python requests and acknowledgements use a discriminated identity:
+  `move_in_direction` requires an empty target plus bearing/distance, while
+  targeted commands require a stable target and zero direction fields.
+- `StatefulNativeMovementOption` owns a direction until the exact keyed native
+  acknowledgement becomes terminal; acceptance alone is still running.
+- Live revalidation uses the direction contract's own capabilities, and
+  active-order adoption matches command, selection, bearing, and distance
+  rather than conflating every empty target.
+- The C++ parser and acknowledgement serializer were extracted into one
+  production module. A VS2010 console target runs that exact module against the
+  same four golden JSON documents as Python on every native build.
+- Generated schemas were refreshed. The portable suite passed 479 tests, Ruff,
+  and strict mypy over 56 source files; the pinned VS2010 SP1 Release x64 build
+  and its native fixture gate passed.
+
+The 202,240-byte DLL with SHA-256
+`221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb`
+was staged and installed byte-for-byte while Kenshi was closed. The prior
+0.5.0 artifact is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T213500Z-direction-protocol-0.6.0`.
+No game launch occurred, so protocol load, command acceptance, movement, and
+arrival remain explicitly unproven live.
+
+## Audit input: deep systems review (2026-07-25)
 
 The externally supplied
 `kenshi_agent_env_deep_systems_review_2026-07-25.md` reviewed a ZIP snapshot
@@ -20,13 +48,15 @@ declared, advertised, serialized, portable-tested, native-built, installed, and
 live-proven evidence levels separate; and never equate a merely later revision
 with proof of the intended effect.
 
-This reconciliation confirmed that several ZIP findings had already moved
+At intake, this reconciliation confirmed that several ZIP findings had already moved
 (test count, schemas after regeneration, retired policy naming), but also found
 the directional native mismatch still current. Python emits the intended empty
 target for `move_in_direction`; the C++ parser and Python acknowledgement model
 require a nonempty target, and the executor will not create a monitored option
-without one. Current docs and planner guidance now call that path unavailable
-instead of inheriting the intended design as an implementation claim.
+without one. Docs and planner guidance called that path unavailable instead of
+inheriting the intended design as an implementation claim. The later protocol
+0.6.0 entry above supersedes that specific mismatch while preserving the
+review's broader truthfulness findings.
 
 ## Retired: the calibrated food path (2026-07-25)
 

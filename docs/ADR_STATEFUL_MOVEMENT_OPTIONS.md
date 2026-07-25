@@ -1,7 +1,7 @@
 # ADR: Adapt movement macros into stateful options
 
 Status: accepted; extended to contracted live approach and long-form movement
-on 2026-07-24
+on 2026-07-24, then targetless native movement on 2026-07-25
 
 The original decision below describes the portable movement adapter. The
 current executor also routes `approach_dialogue_target` through
@@ -11,10 +11,11 @@ confirmed-pause pulse contract; the long-form profile monitors movement in an
 intentionally unpaused world. The model still has no authority over the running
 option.
 
-The `move_in_direction` contract also declares `MONITORED_OPTION`, but the
-current adapter refuses any contracted option without a nonempty `target_id`.
-That targetless action therefore does not yet implement this decision and must
-not be used as evidence of generalized option ownership.
+The `move_in_direction` contract now routes through
+`StatefulNativeMovementOption`. A bare point has no target entity whose distance
+can be monitored, so the option waits for the exact keyed native
+acknowledgement and rechecks command, selection, bearing, and distance before
+accepting completion.
 
 ## Context
 

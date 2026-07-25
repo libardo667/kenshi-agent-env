@@ -25,7 +25,7 @@ Current compatibility:
 
 | Python package | Reader gate | Current matched producer | Evidence boundary |
 | --- | --- | --- | --- |
-| `0.1.0` | protocol major must be `0` | `0.5.0` | Portable parsing plus the pinned installed `0.5.0` DLL; an arbitrary future `0.x` producer may still fail strict model validation until Python is updated |
+| `0.1.0` | protocol major must be `0` | `0.6.0` | Portable parsing, shared Python/C++ fixtures, and the pinned installed `0.6.0` DLL; live Kenshi load/command evidence remains at `0.5.0`, and an arbitrary future `0.x` producer may still fail strict model validation until Python is updated |
 
 ## Freshness
 
@@ -70,7 +70,7 @@ the world.
 
 Protocol `0.4.0` added `game.time`, exact dialogue target/options, and tooltip
 evidence for the now-retired conditional food policy. Those fields remain part
-of current `0.5.0` because the generic contracts use them. A closed or
+of current `0.6.0` because the generic contracts use them. A closed or
 unreadable dialogue serializes target/options as null, not an invented empty
 choice list.
 
@@ -160,19 +160,19 @@ thread and rejects malformed, duplicate, stale, wrong-mode/session/selection,
 unavailable, replaced, role-invalid, or out-of-range work without choosing a
 substitute.
 
-Current exception: Python intentionally serializes an empty `target_id` for
-`move_in_direction`, but the shared C++ parser rejects every empty target before
-it branches on command. A malformed targetless request also fails the guarded
-rejection-ack path, and Python's acknowledgement model requires a nonempty
-target. The directional handler described below exists in source but is not
-reachable through the current end-to-end protocol.
+Protocol `0.6.0` makes the command identity discriminated. Directional requests
+and acknowledgements require an empty `target_id`, a bearing in `[0, 360)`, and
+a positive distance no greater than 2,000. Targeted commands require a nonempty
+stable target and zero direction fields. The production C++ parser and
+acknowledgement serializer run against the same golden documents as the Python
+models during every native build.
 
 For requests that pass every fence, the plugin uses Kenshi's own player-order API:
 `PLAYER_TALK_TO` for approach and `MOVE_CUS_ORDERED` for character/directional
 walking. Kenshi therefore owns pathfinding through doors and interior floors.
 `native_control` keeps at most 16 acknowledgements keyed by command ID. Each
 includes the request basis, acknowledgement/acceptance/terminal sequences,
-exact target/selection where applicable, status, and reason. Active work
+exact target or direction vector, exact selection, status, and reason. Active work
 cancels on selection mismatch, pause, target lifetime loss, or dialogue-role
 loss. Approach completes only for dialogue bound to the exact target; walking
 completes inside the bounded arrival tolerance. Python waits for the matching
@@ -183,7 +183,7 @@ causal authority.
 ## Identity
 
 Protocol `0.2.0` introduced `identity.stable_handles`, retained by current
-protocol `0.5.0`. When that capability is
+protocol `0.6.0`. When that capability is
 present, `identity_session_id` is non-null and every squad, selection, nearby,
 and native target ID comes from a validated Kenshi `hand`, its lifetime serials,
 and the current process/session generations. The string layout is an internal
@@ -240,7 +240,7 @@ does not make `bleeding_rate` or body-part wounds authoritative.
 
 ## Threading
 
-Sample Kenshi objects only on a verified game/UI thread. Protocol `0.5.0`
+Sample Kenshi objects only on a verified game/UI thread. Protocol `0.6.0`
 uses separate Kenshi-owned `TitleScreen::update` and
 `PlayerInterface::update` hooks. The former emits only title state and bounded
 visible controls; it must not dereference `GameWorld`, player, camera, entity,

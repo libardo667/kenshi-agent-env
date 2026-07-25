@@ -81,7 +81,7 @@ The store:
 - provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
 
 This is an authoritative Python state stream over the plugin's atomic
-latest-snapshot file, not a native event transport. Native protocol `0.5.0`
+latest-snapshot file, not a native event transport. Native protocol `0.6.0`
 supplies session-scoped validated-handle identity, bounded keyed command
 acknowledgements, squad/inventory facts, game time, dialogue and management UI,
 tooltip/source bounds, named item cells, and visible controls. Older producers

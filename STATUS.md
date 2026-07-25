@@ -40,18 +40,15 @@ action catalog rather than a fixed dialogue recipe. Its name is historical; the
 policy is the current generic semantic live policy.
 
 The current catalog advertises these contracts when their declared capability
-requirements are present; the directional entry below is a known case where
-that admission is broader than downstream executability:
+requirements are present:
 
 - `approach_dialogue_target` — approach one exact current non-hostile dialogue
   target and open dialogue through a monitored native-assisted option.
 - `move_to_character` — walk to one exact nearby character without opening
   dialogue.
-- `move_in_direction` — declared and currently advertised as a bounded
-  bearing/distance walk, but not usable end to end. Python intentionally emits
-  an empty target ID; the C++ parser and Python acknowledgement model require a
-  nonempty one, and the executor declines monitored-option ownership without a
-  target.
+- `move_in_direction` — walk a bounded bearing/distance without naming a
+  person. Its command identity is command ID, selected character, bearing, and
+  distance; a keyed monitored option owns it until native completion.
 - `activate_visible_control` — activate one unique current semantic UI control.
 - `dismiss_screen` — close a bound trade or inventory window through its own
   current close box. Dialogue ends by activating an exact visible closing
@@ -88,16 +85,15 @@ planner-authorable on the generic live path.
   Selling and equipping have guarded contracted implementations and portable
   coverage grounded in the observed right-click semantics. One recorded
   long-form run bought Greenfruit and a first-aid kit with both debits confirmed.
-- Native walking supports exact-character destinations. The native source also
-  contains a bounded direction/distance implementation, but the current
-  cross-language request and option-ownership mismatch prevents that command
-  from reaching it. Working walk commands complete on arrival rather than
-  waiting for dialogue; pausing an active walk produces an explicit
-  cancellation.
+- Native walking supports exact-character destinations and a targetless bounded
+  direction/distance order. Both complete on arrival rather than waiting for
+  dialogue; pausing an active walk produces an explicit cancellation. The
+  direction path has portable and native-build proof and an installed 0.6.0
+  artifact, but no live Kenshi acceptance/completion proof yet.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps a selectable, searchable `transcript.log`.
 
-## Native protocol 0.5.0
+## Native protocol 0.6.0
 
 The native plugin hooks Kenshi-owned title and loaded-game update points and
 atomically replaces a complete snapshot at roughly two hertz.
@@ -117,9 +113,9 @@ Current loaded-game telemetry includes:
   normalized bounds;
 - a bounded keyed acknowledgement ring for three declared native commands:
   approach a dialogue target, move to an exact nearby character, and move a
-  bounded bearing/distance. The third command is present in the protocol model
-  and native implementation but is currently blocked before acceptance by the
-  target-ID mismatch described above.
+  bounded bearing/distance. Direction acknowledgements carry the empty target
+  plus bearing and distance, while targeted commands carry a stable target and
+  zero direction fields.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities and acknowledgement state before planning and rejects
@@ -146,11 +142,13 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 ## Verified portable baseline
 
-At `bdc5b02`:
+At implementation commit `87102c1`:
 
-- `pytest -o addopts='' -q`: **468 passed**.
+- `pytest -q`: **479 passed**.
 - `ruff check .`: passed.
 - `mypy src/kenshi_agent`: passed across **56 source files**.
+- pinned VS2010 SP1 `Release | x64` native build: passed, including the shared
+  Python/C++ protocol fixtures.
 - `kenshi-agent doctor --config config/default.yaml`: passed in WSL.
 - `kenshi-agent doctor --config config/live.longform.yaml`: parsed the live
   profile and passed planner/config checks, then correctly failed the Windows
@@ -160,10 +158,9 @@ At `bdc5b02`:
 
 ## Open work
 
-- Movement has two distinct open gaps. Targetless local directional movement is
-  currently broken at the Python/C++/option boundary; chosen remote map travel
-  has no semantic action at all. `move_to_character` remains usable within the
-  bounded nearby-character query.
+- Targetless local directional movement still needs a live Kenshi
+  acceptance/completion smoke. Chosen remote map travel has no semantic action
+  at all; `move_to_character` remains bounded to the nearby-character query.
 - Management screens are observable and navigable, but their domain contents
   and operations are not comprehensively modelled.
 - `active_screen` still names only title/world/inventory/dialogue/trade;

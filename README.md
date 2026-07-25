@@ -25,7 +25,7 @@ behavior, or public claims.
 
 ## What is runnable now
 
-- A deterministic Kenshi-like mock environment and a 468-test portable
+- A deterministic Kenshi-like mock environment and a 479-test portable
   regression suite.
 - Strict schemas for telemetry, observations, decisions, bounded plans,
   future-only patches, actions, receipts, native requests, and memories.
@@ -42,13 +42,14 @@ behavior, or public claims.
   authorization fence.
 - Ten declared reusable action contracts covering dialogue approach, local
   movement, visible controls, screen dismissal, buying, selling, equipping,
-  game bindings, and scrolling. Nine are currently usable on their intended
-  path; targetless `move_in_direction` is still advertised but fails across the
-  Python/C++ request and monitored-option boundary.
+  game bindings, and scrolling. Targetless `move_in_direction` now has aligned
+  Python/C++ request and acknowledgement models, keyed option ownership, shared
+  cross-language fixtures, and a native-build conformance gate; its installed
+  0.6.0 DLL still awaits a live Kenshi acceptance/completion smoke.
 - A Windows client-area capture and SendInput controller with polite handoff,
   explicit control ownership, F12, semantic current bounds, and calibration
   identity.
-- Native protocol `0.5.0`, which emits stable identities, squad state and
+- Native protocol `0.6.0`, which emits stable identities, squad state and
   inventory, dialogue/trade/management UI, named item cells, combat state,
   camera facts, and a keyed acknowledgement ring for reviewed movement
   commands.
@@ -305,11 +306,12 @@ movement use reviewed native pathing commands. It can approach and talk to any
 current non-hostile dialogue target, move toward another nearby character,
 operate visible controls, enter screens through Kenshi's own default bindings,
 buy, sell, equip, scroll, and close windows. The declared bounded
-`move_in_direction` action is not currently usable end to end: Python sends its
-intended empty `target_id`, while the C++ parser and acknowledgement model still
-require a nonempty target and the monitored-option adapter rejects targetless
-movement. Raw controller primitives, save/load/editor bindings, arbitrary
-native tasks, and direct game-state mutation remain unavailable.
+`move_in_direction` action now keeps `target_id` empty by contract and binds
+command identity to the selected character, bearing, and distance. Portable
+tests and the native conformance executable pass, and the byte-identical 0.6.0
+DLL is installed; live Kenshi acceptance and arrival remain unclaimed. Raw
+controller primitives, save/load/editor bindings, arbitrary native tasks, and
+direct game-state mutation remain unavailable.
 
 `config/live.dialogue.yaml` is a shorter stop-motion continuous proof profile.
 `config/live.burnin.yaml` is retained for legacy single-step calibrated runs;
@@ -424,7 +426,7 @@ fresh observation and plan rather than resuming cancelled work. Use
 
 The plugin hooks Kenshi's title and loaded-game update points, calls the
 original methods first, and samples on the game/UI thread at about two hertz.
-Its telemetry path is observational. Protocol `0.5.0` currently exports:
+Its telemetry path is observational. Protocol `0.6.0` currently exports:
 
 - loaded, paused, speed, money, and elapsed in-game minutes;
 - camera position/center and nearby-character camera bearings;
@@ -542,11 +544,10 @@ then present the result as general play ability.
 
 - Native build/load and supervised evidence is specific to the pinned
   Kenshi/RE_Kenshi/KenshiLib versions and the current Windows host.
-- `move_in_direction` is declared and bounded to 2,000 world units, but its
-  targetless request is currently blocked by cross-language and option-ownership
-  assumptions that require a target ID. `move_to_character` remains the usable
-  local movement action. Selecting and executing a remote map destination is
-  also absent.
+- `move_in_direction` is declared and bounded to 2,000 world units. Its
+  targetless cross-language path is portable-tested, native-built, and
+  installed, but not yet live-proven in Kenshi. Selecting and executing a
+  remote map destination is separately absent.
 - Management screens can be entered, exited, and identified, but their domain
   contents and operations are not comprehensively modelled.
 - The 224-entry native UI export and planner context are bounded. A busy screen

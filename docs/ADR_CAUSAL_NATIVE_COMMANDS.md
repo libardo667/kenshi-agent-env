@@ -6,7 +6,8 @@ Accepted for P5. Portable tests, the pinned VS2010 SP1 Release x64 build, and
 the supervised in-game protocol `0.3.0` rejection/acceptance/completion proof
 pass.
 
-Extended in protocol `0.5.0` on 2026-07-25. The command-ID, issue-time revision,
+Extended in protocol `0.5.0` and corrected in `0.6.0` on 2026-07-25. The
+command-ID, issue-time revision,
 mode/session/selection, keyed acknowledgement, and no-implicit-retry decisions
 remain authoritative. The bridge now admits three reviewed commands rather than
 one: generic exact-target dialogue approach (under the legacy
@@ -14,12 +15,12 @@ one: generic exact-target dialogue approach (under the legacy
 directional walking. Command-specific completion is exact dialogue or bounded
 arrival.
 
-Current implementation exception: the directional handler was added, but the
-shared C++ parser still rejects its intended empty `target_id`; the Python
-acknowledgement model and monitored-option adapter also require a target. The
-accepted decision therefore describes the intended causal shape, not a current
-end-to-end directional proof. See `STATUS.md` and
-`docs/TELEMETRY_PROTOCOL.md` for current behavior.
+Protocol `0.6.0` closes the directional exception: targetless requests and
+acknowledgements bind to command ID, exact selection, bearing, and distance,
+and a dedicated monitored option owns the order until its keyed terminal
+acknowledgement. Shared Python/C++ fixtures prove the wire contract during the
+native build. Live Kenshi acceptance/completion remains a separate evidence
+level; see `STATUS.md` and `docs/TELEMETRY_PROTOCOL.md`.
 
 ## Problem
 

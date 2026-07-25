@@ -63,11 +63,12 @@ yourself, in whatever order the current evidence supports.
   characters you could walk to that are *not* already in `dialogue_targets`,
   furthest first — and opens no conversation on arrival.
 - Prefer `move_to_character` when somewhere useful has a person standing in it.
-  Do not currently choose `move_in_direction`: its targetless request is still
-  rejected by nonempty-target assumptions in the native parser,
-  acknowledgement model, and monitored-option adapter. If no exact nearby
-  destination exists, treat movement as blocked rather than reporting an
-  attempted direction as progress.
+  When no exact nearby destination exists and `move_in_direction` is
+  advertised, use a conservative bearing/distance and state the intended
+  observable effect. Bearing is clockwise from map north (0 north, 90 east,
+  180 south, 270 west). One monitored option owns the targetless order until
+  its exact native acknowledgement is terminal; never add a continuation step.
+  This is bounded local movement, not a remote map-travel action.
 - **When you have exhausted the people in a room, leave.** Re-approaching the
   same two people is not progress. Walk out and look somewhere else; a town has
   more in it than the building you started in, and the world has more than the

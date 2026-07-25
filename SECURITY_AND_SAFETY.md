@@ -70,8 +70,9 @@ with a disposable save and a fixed resolution/UI scale.
 The plugin's telemetry path is observational, but the DLL is not globally
 read-only. In native-assisted mode its bounded bridge may issue one of three
 declared player orders: talk to an exact valid dialogue target, walk to an exact
-nearby character, or intend a bounded bearing/distance walk. The third path is
-currently blocked by the targetless contract mismatch described below. No mode permits direct
+nearby character, or issue a bounded bearing/distance walk. The third path has
+portable and native-build proof but still awaits a live Kenshi command smoke.
+No mode permits direct
 health, position, money, faction, save/load, editor, or arbitrary task mutation.
 Interface-only actions remain visible keyboard/mouse operations through the
 ordinary UI.
@@ -83,11 +84,11 @@ native request additionally requires a globally unique caller command ID, exact
 issue-time telemetry revision, `native_assisted` mode, current identity session,
 and exactly one selected character. Targeted requests bind one exact current
 stable ID; the directional model instead binds bounded numeric fields and an
-empty target. The current shared C++ parser rejects that empty target before
-command-specific validation, the Python acknowledgement requires a nonempty
-target, and the executor's monitored-option adapter also assumes one. Directional
-movement is therefore a known unavailable path, not a reviewed live guarantee.
-For working targeted commands, Python waits only for that command's
+empty target. Protocol 0.6.0 enforces those command-specific identities in both
+Python and the production C++ parser/serializer, with one keyed option owning
+the direction through terminal acknowledgement. Directional movement remains
+an unproven live path, not a reviewed live guarantee. For every command, Python
+waits only for that command's
 acknowledgement on a later snapshot. The plugin retains at most 16 keyed
 acknowledgements, never reissues a duplicate ID, cancels on selection, pause,
 or target-lifetime/role change, and uses command-specific completion: exact

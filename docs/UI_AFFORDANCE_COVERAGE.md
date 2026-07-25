@@ -13,8 +13,9 @@ The current result is **31/31 registry entries with a declared mechanism**, **0
 missing exits**, and **1 pixel-fragile path** (the ESC menu is reached only as a
 side effect). This is a presence audit, not complete affordance coverage. It
 does not grade effect proof, mock parity, live verification, completeness of
-suboperations, or cross-language executability; `move_in_direction` is the
-current concrete case where a registered mechanism is not usable end to end.
+suboperations, or cross-language executability. `move_in_direction` now passes
+the cross-language and native-build gates but remains a concrete example of an
+advertised mechanism whose live game proof is still pending.
 
 The latest live UI survey was `runs/p7-ui-survey-6` on 2026-07-25, protocol
 `0.5.0`, Hub save, 1920x1080. Later supervised runs added named item facts,
@@ -24,11 +25,11 @@ purchase/sale/equip actions, game bindings, and local movement after that survey
 
 | Interface | Enter / exit | Observe | Interact | Current boundary |
 | --- | --- | --- | --- | --- |
-| World / camera | Base state | Nearby entities, camera, HUD | Pan/rotate/zoom, time, selection, dialogue approach, exact-character movement | Targetless direction is blocked; no remote map-position order |
+| World / camera | Base state | Nearby entities, camera, HUD | Pan/rotate/zoom, time, selection, dialogue approach, exact-character and bounded-direction movement | Direction awaits live proof; no remote map-position order |
 | Dialogue | Approach / exact closing reply | Exact target and replies | Activate exact current reply | Escape does not end conversation |
 | Inventory | `use_game_binding` / own close box | Owner window and named item cells | Scroll and equip | Drag/drop/move/drop is not modelled |
 | Trade | Dialogue control / own close box | Seller/owner windows and named stock | Scroll, buy, sell | Trader money and exact sale offer are not exported |
-| Map | Binding toggle | Management window, tab 0, controls | Pan/zoom; exact-character movement after closing | Targetless direction is blocked; no chosen remote map destination |
+| Map | Binding toggle | Management window, tab 0, controls | Pan/zoom; exact-character or bounded-direction movement after closing | Direction awaits live proof; no chosen remote map destination |
 | Research/tech | Binding toggle | Management window, tab 2, buttons/text | Activate current controls | Domain semantics are not catalogued |
 | Squad management | Current management controls | Management window, tab 4, buttons/text | Activate current controls | Recruit/reorder/dismiss workflows are not proven |
 | Stats | Binding toggle | Dedicated open flag plus visible text | Read current export | Body-part wound model is incomplete |
@@ -58,10 +59,10 @@ capabilities support them:
 - `use_game_binding`
 - `scroll_screen`
 
-Advertisement is not proof that every downstream layer agrees. In particular,
-`move_in_direction` is advertised from the contract/capability pair but is
-currently blocked by target assumptions in the C++ parser, Python
-acknowledgement model, and monitored-option adapter.
+Advertisement is not live proof. `move_in_direction` now agrees across the
+contract, Python/native request and acknowledgement models, executor ownership,
+schemas, and shared fixtures, but the installed build has not yet produced a
+live Kenshi terminal acknowledgement.
 
 Run control (`noop`, `wait`, `pause`, `set_speed`, whole-run `stop`) is separate.
 Raw keys, hotkeys, cursor moves, clicks, and scroll primitives are controller
@@ -69,9 +70,9 @@ implementation details and are rejected by the generic live policy.
 
 Each semantic action binds evidence instead of a model-authored coordinate.
 Controls bind exact label/role/window; items also bind item facts and owner
-window; working movement binds an exact identity, while the intended
-bearing/distance binding is blocked downstream. The same binding is recomputed
-inside the input lease.
+window; target movement binds an exact identity; direction binds the selected
+walker plus bearing and distance. The same binding is recomputed inside the
+input lease.
 
 ## Visible-control export
 
@@ -98,18 +99,17 @@ buttons remain distinct and fail closed unless the window disambiguates them.
 
 ## Current movement boundary
 
-The usable generic movement path is narrower than the registry count implies:
+The generic local movement path has two implemented forms:
 
 - `move_to_character` walks to an exact current nearby character within the
   400-unit query.
 - `move_in_direction` is intended to walk clockwise-from-north bearing plus
-  distance, capped at 2,000 units, without naming any target. Python produces
-  that targetless request, but the native parser/acknowledgement and executor
-  option paths currently require a target, so it is not usable end to end.
+  distance, capped at 2,000 units, without naming any target. The Python/native
+  protocol and keyed option path pass shared fixtures and the pinned build; the
+  installed 0.6.0 artifact still awaits a live command smoke.
 
 Working native movement uses Kenshi's own `MOVE_CUS_ORDERED` pathing and
-finishes on bounded arrival. An empty place can still strand the generic agent
-when there is no nearby character. Long-distance map travel is a separate gap:
+finishes on bounded arrival. Long-distance map travel is a separate gap:
 choosing a remote map position and issuing its right-click order has no action.
 
 ## Facts and exploration cost

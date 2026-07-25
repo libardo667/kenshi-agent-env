@@ -134,24 +134,26 @@ pinned upstream dependency and toolchain boundary is unchanged.
 
 ## Current installed development artifact
 
-Verified directly from the Windows install on 2026-07-25 after the combat
-telemetry rebuild:
+Verified directly from the Windows install on 2026-07-25 after the targetless
+direction protocol rebuild:
 
 ```text
 path: C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll
-size: 199168 bytes
-sha256: aaaa111e7d6828332e90242171138b99de9401ab43ba9d46f4e4703c038498e2
-mtime: 2026-07-25 11:19:14 -07:00
+size: 202240 bytes
+sha256: 221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb
+mtime: 2026-07-25 14:33:52 -07:00
 ```
 
-This is the current installed development DLL for protocol `0.5.0`. The
-checked-in `staging/KenshiAgentTelemetry/KenshiAgentTelemetry.dll` is an older
-185,344-byte semantic-title candidate with SHA-256
-`a1ea4c2a3c6c6e596b3bc8654b901511da1808979d49758d49e852bd0ad6da24`;
-do not mistake the staging copy for the installed build. The source warning
-text was corrected during the 2026-07-25 documentation reconciliation, so a
-fresh rebuild from the current tree is expected to have a different hash from
-the installed artifact even though the wire behavior is unchanged.
+This is the current installed development DLL for protocol `0.6.0`, built from
+implementation commit `87102c1`. The ignored local
+`staging/KenshiAgentTelemetry/KenshiAgentTelemetry.dll` and installed DLL were
+verified byte-identical. The prior 199,168-byte protocol `0.5.0` artifact with
+SHA-256
+`aaaa111e7d6828332e90242171138b99de9401ab43ba9d46f4e4703c038498e2`
+is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T213500Z-direction-protocol-0.6.0`.
+Kenshi was closed for build and installation, so this establishes native-built
+and installed state only, not plugin load or live command behavior.
 
 ## Plugin staging/install layout
 
@@ -162,6 +164,6 @@ KenshiAgentTelemetry/
   RE_Kenshi.json
 ```
 
-The package layout is staged under `staging\KenshiAgentTelemetry`. The current
-staged DLL is historical as noted above; rebuild and run the staging script
-before using that directory for a new install.
+The package layout is staged under the ignored local
+`staging\KenshiAgentTelemetry`. Rebuild and run the staging script before each
+new install; do not infer installed or live state from that directory alone.

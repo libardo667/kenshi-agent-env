@@ -42,6 +42,23 @@ inspection alone.
       stale pointers.
 - [x] Missing capabilities remain absent rather than fabricated.
 
+### Protocol 0.6 targetless-direction boundary
+
+- [x] Python request/acknowledgement models and the production C++ parser and
+      serializer pass the same targetless-direction golden fixtures.
+- [x] The pinned VS2010 SP1 Release x64 build runs the native conformance
+      executable successfully.
+- [x] The 202,240-byte DLL with SHA-256
+      `221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb`
+      was staged and installed byte-for-byte while Kenshi was closed.
+- [x] The prior protocol 0.5 DLL is recoverable at
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T213500Z-direction-protocol-0.6.0`.
+- [ ] Launch Kenshi and confirm protocol `0.6.0` loads with fresh, advancing
+      telemetry and no plugin error.
+- [ ] Issue one bounded `move_in_direction` request on a disposable save and
+      record the exact empty target, bearing/distance, selected ID, keyed
+      acceptance, terminal arrival/cancellation, and final pause state.
+
 ### Protocol 0.5 title-screen semantic lifecycle
 
 - [x] First 1920x1080 load reached a responsive title screen without the
