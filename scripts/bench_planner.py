@@ -49,7 +49,7 @@ async def main() -> int:
     for model in [m for m in models for _ in range(trials)]:
         cfg = config.planner.model_copy(update={
             "openrouter_model": model,
-            "reasoning_effort": "none",
+            "reasoning_effort": os.environ.get("REASONING", "none"),
             "include_screenshot": False,
         })
         planner = OpenRouterPlanner(cfg, Path("prompts/planner_system.md"))

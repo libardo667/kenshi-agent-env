@@ -15,6 +15,24 @@ from ..models import (
     PlanPatch,
 )
 from .base import Planner, instructions_for_policy, structured_output_model
+from .schema_dialect import portable_response_format
+
+
+def _json_body(content: str) -> str:
+    """Return the JSON object in a reply, tolerating a code fence around it.
+
+    Providers honouring the schema return bare JSON, but not every one does, and
+    a fenced reply is otherwise a whole wasted planning round trip.
+    """
+    text = content.strip()
+    if text.startswith("```"):
+        _, _, remainder = text.partition("\n")
+        text = remainder.rpartition("```")[0].strip() or remainder.strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start > 0 and end > start:
+        text = text[start : end + 1]
+    return text
 
 
 class OpenRouterPlanner(Planner):
@@ -81,7 +99,7 @@ class OpenRouterPlanner(Planner):
             extra["reasoning_effort"] = self.config.reasoning_effort
 
         async with asyncio.timeout(self.config.timeout_seconds):
-            response = await self.client.chat.completions.parse(
+            response = await self.client.chat.completions.create(
                 model=self.config.openrouter_model,
                 messages=[
                     {
@@ -93,7 +111,9 @@ class OpenRouterPlanner(Planner):
                     },
                     {"role": "user", "content": content},
                 ],
-                response_format=output_model,
+                # Sending the model class instead would let the SDK build a
+                # schema only OpenAI accepts; every other provider 400s on it.
+                response_format=portable_response_format(output_model),
                 extra_body={
                     "provider": {
                         "sort": self.config.openrouter_provider_sort,
@@ -106,12 +126,9 @@ class OpenRouterPlanner(Planner):
             )
 
         message = response.choices[0].message
-        parsed = message.parsed
-        if parsed is None:
-            if not message.content:
-                raise RuntimeError("OpenRouter response contained neither parsed output nor text.")
-            parsed = output_model.model_validate_json(message.content)
-        return output_model.model_validate(parsed)
+        if not message.content:
+            raise RuntimeError("OpenRouter response contained no text.")
+        return output_model.model_validate_json(_json_body(message.content))
 
     @staticmethod
     def _data_url(path: Path) -> str:

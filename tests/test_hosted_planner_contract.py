@@ -163,20 +163,18 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
         def __init__(self) -> None:
             self.kwargs: dict[str, Any] = {}
 
-        async def parse(self, **kwargs: Any) -> SimpleNamespace:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
             self.kwargs = kwargs
+            decision = PlannerDecision(
+                intent="Stop safely.",
+                rationale="The fake hosted response is complete.",
+                action=StopAction(reason="Test complete."),
+                confidence=1.0,
+            )
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
-                        message=SimpleNamespace(
-                            parsed=PlannerDecision(
-                                intent="Stop safely.",
-                                rationale="The fake hosted response is complete.",
-                                action=StopAction(reason="Test complete."),
-                                confidence=1.0,
-                            ),
-                            content="",
-                        )
+                        message=SimpleNamespace(content=decision.model_dump_json())
                     )
                 ]
             )
@@ -251,3 +249,72 @@ def test_only_the_active_policy_section_reaches_the_model() -> None:
     # property worth pinning — the generic section grows as actions are added.
     assert len(generic) < len(instructions)
     assert len(disabled) < len(instructions)
+
+
+def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
+    """Each of these cost a live run to discover, so pin them here.
+
+    Providers reject a whole request over how a constraint is spelled:
+    Google refuses `const` and any non-string `enum`, Anthropic refuses
+    `minimum`/`maximum` on integers. The meaning has to survive anyway, so a
+    dropped bound moves into the field description.
+    """
+    from kenshi_agent.planners.schema_dialect import portable_response_format
+
+    for model in (PlanEnvelope, PlanPatch, PlannerDecision):
+        schema = portable_response_format(model)["json_schema"]["schema"]
+        blob = json.dumps(schema)
+        for rejected in ("const", "minimum", "maximum", "pattern", "multipleOf"):
+            assert f'"{rejected}"' not in blob, f"{model.__name__} still emits {rejected}"
+
+        def walk(node: Any) -> None:
+            if isinstance(node, list):
+                for item in node:
+                    walk(item)
+                return
+            if not isinstance(node, dict):
+                return
+            values = node.get("enum")
+            if values is not None:
+                assert all(isinstance(value, str) for value in values), (
+                    f"non-string enum survived: {values}"
+                )
+            for value in node.values():
+                walk(value)
+
+        walk(schema)
+
+
+def test_a_discriminator_stays_required_and_fully_specified() -> None:
+    """The union only resolves if every branch pins its own `kind`."""
+    from kenshi_agent.planners.schema_dialect import portable_response_format
+
+    schema = portable_response_format(PlanEnvelope)["json_schema"]["schema"]
+    branches = schema["$defs"]["PlanStep"]["properties"]["action"]["anyOf"]
+    assert branches, "the action union lost its branches"
+    for branch in branches:
+        name = branch["$ref"].rsplit("/", maxsplit=1)[-1]
+        definition = schema["$defs"][name]
+        kind = definition["properties"]["kind"]
+        assert kind["enum"] and isinstance(kind["enum"][0], str), name
+        assert "kind" in definition["required"], name
+
+
+def test_a_dropped_bound_is_still_described_to_the_model() -> None:
+    from kenshi_agent.planners.schema_dialect import _sanitize
+
+    result = _sanitize({"type": "integer", "minimum": 1, "maximum": 3})
+    assert "minimum" not in result and "maximum" not in result
+    assert result["description"] == "Must be at least 1, at most 3."
+
+    kept = _sanitize({"type": "string", "description": "Why.", "maxLength": 500})
+    assert kept["description"] == "Why. Must be at most 500 characters."
+
+
+def test_a_fenced_reply_is_still_read_as_json() -> None:
+    """A model that wraps its JSON should not cost a whole planning round trip."""
+    from kenshi_agent.planners.openrouter_planner import _json_body
+
+    assert json.loads(_json_body('```json\n{"a": 1}\n```')) == {"a": 1}
+    assert json.loads(_json_body('{"a": 1}')) == {"a": 1}
+    assert json.loads(_json_body('Here you go:\n{"a": 1}')) == {"a": 1}
