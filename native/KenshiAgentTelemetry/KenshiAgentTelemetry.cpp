@@ -327,6 +327,8 @@ namespace
         return true;
     }
 
+#define ARRAY_COUNT(a) (static_cast<unsigned int>(sizeof(a) / sizeof((a)[0])))
+
     bool HasOnlyKeys(
         const boost::property_tree::ptree& tree,
         const char* const* allowed,
@@ -414,7 +416,12 @@ namespace
                     request.selectedCharacterId = selected->second.data();
             }
 
-            if (!HasOnlyKeys(root, rootKeys, 8))
+            // Counted from the array, never restated: the literal 8 outlived
+            // the list it described, so the two keys added for directional
+            // movement fell outside the allowed range and every native
+            // command - including the approach that had worked for weeks -
+            // was rejected as malformed.
+            if (!HasOnlyKeys(root, rootKeys, ARRAY_COUNT(rootKeys)))
             {
                 rejectionReason = "malformed_request";
                 return false;
@@ -436,7 +443,7 @@ namespace
 
             const boost::property_tree::ptree& revision =
                 root.get_child("based_on_revision");
-            if (!HasOnlyKeys(revision, revisionKeys, 4))
+            if (!HasOnlyKeys(revision, revisionKeys, ARRAY_COUNT(revisionKeys)))
             {
                 rejectionReason = "malformed_request";
                 return false;

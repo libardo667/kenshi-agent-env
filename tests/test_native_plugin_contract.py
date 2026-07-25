@@ -234,3 +234,21 @@ def test_native_approach_authorizes_any_valid_dialogue_target() -> None:
     assert "IsValidDialogueTarget(selected, target)" in vendor
     assert "getHasVendorList" in vendor
     assert "getSquadLeader" in vendor
+
+
+def test_request_key_allowlists_are_counted_not_restated() -> None:
+    """A literal count outlives the list it describes.
+
+    `HasOnlyKeys(root, rootKeys, 8)` kept saying 8 after two keys were added for
+    directional movement, so those keys fell outside the allowed range and every
+    native command was rejected as malformed - including the approach that had
+    worked for weeks. The count must come from the array.
+    """
+    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    for call in source.split("HasOnlyKeys(")[1:]:
+        arguments = call.split(")")[0]
+        if "const char* const*" in arguments:
+            continue  # the declaration itself
+        assert "ARRAY_COUNT(" in arguments, (
+            f"a key allowlist restated its length instead of counting it: {arguments}"
+        )
