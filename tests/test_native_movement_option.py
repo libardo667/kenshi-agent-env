@@ -32,6 +32,7 @@ def acknowledgement(
     sequence: int,
     status: NativeCommandStatus,
     *,
+    command_id: str = COMMAND_ID,
     bearing_degrees: float = 90.0,
     distance_units: float = 250.0,
 ) -> NativeCommandAcknowledgement:
@@ -42,7 +43,7 @@ def acknowledgement(
     }
     accepted = status is not NativeCommandStatus.REJECTED
     return NativeCommandAcknowledgement(
-        command_id=COMMAND_ID,
+        command_id=command_id,
         command="move_in_direction",
         status=status,
         reason={
@@ -92,7 +93,7 @@ def observation(
             ),
             native_control=NativeControlState(
                 active_command_id=(
-                    COMMAND_ID
+                    ack.command_id
                     if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
@@ -142,6 +143,29 @@ class InstantNativeMovementEnvironment(AgentEnvironment):
 
     async def close(self) -> None:
         return None
+
+
+class AdoptedNativeMovementEnvironment(InstantNativeMovementEnvironment):
+    def __init__(self, native_command_id: str) -> None:
+        self.native_command_id = native_command_id
+
+    async def step(self, action: Action) -> Transition:
+        accepted = acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+            command_id=self.native_command_id,
+        )
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="existing exact direction order adopted",
+                native_acknowledgement=accepted,
+            ),
+            observation=observation(2, ack=accepted),
+        )
 
 
 def option() -> StatefulNativeMovementOption:
@@ -221,5 +245,44 @@ def test_direction_option_treats_native_rejection_as_terminal_failure() -> None:
         )
         assert outcome.status is OptionStatus.FAILED
         assert "selection_mismatch" in outcome.reason
+
+    asyncio.run(scenario())
+
+
+def test_direction_option_monitors_the_original_id_when_order_is_adopted() -> None:
+    async def scenario() -> None:
+        adopted_id = "cmd-" + "a" * 32
+        accepted = acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+            command_id=adopted_id,
+        )
+        movement = StatefulNativeMovementOption(
+            option_id="native-direction-adopted",
+            action=MoveInDirectionAction(
+                bearing_degrees=90.0,
+                distance_units=250.0,
+                expected_effect="continue the existing eastbound walk",
+            ),
+            environment=AdoptedNativeMovementEnvironment(adopted_id),
+        )
+        movement.prepare(observation(2, ack=accepted))
+        logical_command = CommandDispatchContext(
+            command_id="cmd-" + "b" * 32,
+            based_on_revision=observation(2, ack=accepted).world_revision,
+        )
+        await movement.start(logical_command)
+        await asyncio.sleep(0)
+
+        completed = acknowledgement(
+            3,
+            NativeCommandStatus.COMPLETED,
+            command_id=adopted_id,
+        )
+        outcome = movement.poll(update(observation(3, ack=completed)))
+
+        assert movement.native_command_id == adopted_id
+        assert outcome.status is OptionStatus.SUCCEEDED
+        assert movement.result().receipt.command_id == logical_command.command_id
 
     asyncio.run(scenario())

@@ -199,6 +199,11 @@ class StatefulNativeMovementOption:
         self.task: asyncio.Task[Transition] | None = None
         self.transition: Transition | None = None
         self.command: CommandDispatchContext | None = None
+        # Usually this is the caller's new command ID. If the environment
+        # safely adopts an exact already-active direction, it is the original
+        # native command ID instead; the executor's logical command remains
+        # separate for plan causality.
+        self.native_command_id: str | None = None
         self.selected_character_ids: list[str] = []
         self.reason = "Native movement option has not been prepared."
 
@@ -229,6 +234,18 @@ class StatefulNativeMovementOption:
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
         self.selected_character_ids = list(selected_ids)
+        active_id = telemetry.native_control.active_command_id
+        active = (
+            telemetry.native_control.acknowledgement_for(active_id)
+            if active_id is not None
+            else None
+        )
+        if (
+            active is not None
+            and active.status is NativeCommandStatus.ACCEPTED
+            and self._matches_identity(active)
+        ):
+            self.native_command_id = active.command_id
         self.status = OptionStatus.PREPARED
         self.reason = (
             "Native movement start state is capable and the selection is exact."
@@ -250,6 +267,8 @@ class StatefulNativeMovementOption:
                 "Native movement option requires a keyed command context."
             )
         self.command = command.model_copy(deep=True)
+        if self.native_command_id is None:
+            self.native_command_id = command.command_id
         self.status = OptionStatus.RUNNING
         self.reason = (
             "Directional movement order dispatched; awaiting its terminal "
@@ -297,6 +316,22 @@ class StatefulNativeMovementOption:
                         f"{self.transition.receipt.message}"
                     )
                     return self._poll_result()
+                receipt_acknowledgement = (
+                    self.transition.receipt.native_acknowledgement
+                )
+                if (
+                    receipt_acknowledgement is not None
+                    and receipt_acknowledgement.status
+                    in {
+                        NativeCommandStatus.ACCEPTED,
+                        NativeCommandStatus.COMPLETED,
+                    }
+                    and self._matches_identity(receipt_acknowledgement)
+                ):
+                    # LiveEnvironment may have adopted an exact active order
+                    # instead of issuing the executor's fresh logical command.
+                    # Continue monitoring the native ID it actually returned.
+                    self.native_command_id = receipt_acknowledgement.command_id
 
         acknowledgement = self._current_acknowledgement()
         if acknowledgement is None:
@@ -378,13 +413,13 @@ class StatefulNativeMovementOption:
     def _current_acknowledgement(
         self,
     ) -> NativeCommandAcknowledgement | None:
-        if self.command is None:
+        if self.native_command_id is None:
             return None
         observation = self.latest_observation
         if observation is not None and observation.telemetry is not None:
             acknowledgement = (
                 observation.telemetry.native_control.acknowledgement_for(
-                    self.command.command_id
+                    self.native_command_id
                 )
             )
             if acknowledgement is not None:
@@ -394,10 +429,19 @@ class StatefulNativeMovementOption:
         return None
 
     def _matches(self, acknowledgement: NativeCommandAcknowledgement) -> bool:
-        assert self.command is not None
+        if self.native_command_id is None:
+            return False
         return bool(
-            acknowledgement.command_id == self.command.command_id
-            and acknowledgement.command == "move_in_direction"
+            acknowledgement.command_id == self.native_command_id
+            and self._matches_identity(acknowledgement)
+        )
+
+    def _matches_identity(
+        self,
+        acknowledgement: NativeCommandAcknowledgement,
+    ) -> bool:
+        return bool(
+            acknowledgement.command == "move_in_direction"
             and acknowledgement.target_id == ""
             and acknowledgement.selected_character_ids
             == self.selected_character_ids
