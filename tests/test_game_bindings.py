@@ -434,3 +434,88 @@ def test_equipping_refuses_another_owners_window() -> None:
     binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
     assert not binding.bound
     assert "own inventory" in binding.reason
+
+
+def test_price_separates_cells_that_share_a_name() -> None:
+    """The live Barman stocks five cells all labelled "Tooth Pick".
+
+    Two are worth c.809 and three c.390 - different weapon grades wearing the
+    same name. Refusing on the shared label made every one of them unbuyable, so
+    the price the planner already states is part of the reference.
+    """
+
+    from kenshi_agent.action_contracts import PURCHASE_ITEM_CONTRACT
+    from kenshi_agent.models import (
+        Disposition,
+        NearbyEntity,
+        NormalizedPointerBounds,
+        PurchaseItemAction,
+        VisibleUIControl,
+    )
+
+    def pick(value: int, y: float) -> VisibleUIControl:
+        return VisibleUIControl(
+            label="Tooth Pick",
+            role="item",
+            window="BARMAN",
+            item_name="Tooth Pick",
+            item_value=value,
+            bounds=NormalizedPointerBounds(
+                min_x=0.3, min_y=y, max_x=0.34, max_y=y + 0.04
+            ),
+        )
+
+    base = observation()
+    telemetry = base.telemetry
+    assert telemetry is not None
+    state = base.model_copy(
+        update={
+            "telemetry": telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        *telemetry.capabilities,
+                        "ui.visible_controls",
+                        "ui.tooltip",
+                        "nearby.shop_owners",
+                    ],
+                    "nearby_entities": [
+                        NearbyEntity(
+                            id="e-barman",
+                            name="Barman",
+                            disposition=Disposition.NEUTRAL,
+                            shop_inventory_owner=True,
+                        )
+                    ],
+                    "ui": telemetry.ui.model_copy(
+                        update={
+                            "visible_controls": [
+                                pick(809, 0.18),
+                                pick(390, 0.23),
+                                pick(809, 0.28),
+                                pick(390, 0.33),
+                                pick(390, 0.38),
+                            ]
+                        }
+                    ),
+                }
+            )
+        }
+    )
+
+    def buy(price: int):
+        return PURCHASE_ITEM_CONTRACT.bind(
+            PurchaseItemAction(
+                cell_label="Tooth Pick",
+                item_name="Tooth Pick",
+                expected_price=price,
+                window="BARMAN",
+                seller_id="e-barman",
+            ),
+            state,
+        )
+
+    # Both grades are reachable; interchangeable duplicates do not block.
+    assert buy(809).bound, buy(809).reason
+    assert buy(390).bound, buy(390).reason
+    # A price nothing is offered at is still refused.
+    assert not buy(5).bound

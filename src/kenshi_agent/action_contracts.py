@@ -253,12 +253,18 @@ def _bind_item_cell(
     observation: Observation,
     *,
     window: str | None = None,
+    item_value: int | None = None,
 ) -> ReferenceBinding:
     """Resolve one exact inventory or shop cell from current telemetry.
 
     `window` narrows the search to one open inventory. A trade screen shows two
     side by side and the cell ordinals run across both, so on that screen the
     label alone is not a reference to anything in particular.
+
+    `item_value` narrows further, because a label is not unique either: the live
+    Barman stocks five cells all labelled "Tooth Pick", two worth c.809 and
+    three worth c.390 - different weapon grades wearing the same name. Price is
+    what separates them, and the planner already states the price it means.
     """
 
     telemetry = observation.telemetry
@@ -278,15 +284,34 @@ def _bind_item_cell(
         if control.role == ITEM_ROLE
         and normalize_control_label(control.label) == wanted
         and (window is None or control.window == window)
+        # Only narrow among cells that actually declare a value; a cell from a
+        # plug-in too old to export one still reaches the tooltip check.
+        and (
+            item_value is None
+            or control.item_value is None
+            or control.item_value == item_value
+        )
     ]
     if not matches:
         where = f" in window {window!r}" if window is not None else ""
-        return _unbound(f"No current item cell matches {cell_label!r}{where}.")
+        price = f" at c.{item_value}" if item_value is not None else ""
+        return _unbound(f"No current item cell matches {cell_label!r}{price}{where}.")
     if len(matches) > 1:
-        return _unbound(
-            f"{len(matches)} current item cells match {cell_label!r}; an ambiguous "
-            "reference fails closed."
-        )
+        # Ambiguity only matters when the candidates differ in a way that could
+        # change the outcome. A shop holding five identical Tooth Picks at the
+        # same price in the same window offers five interchangeable cells, and
+        # refusing all of them makes stacked stock unbuyable - which is what the
+        # live Barman's shelf actually did. Distinguishable duplicates still
+        # fail closed.
+        distinct = {
+            (control.window, control.item_name, control.item_value)
+            for control in matches
+        }
+        if len(distinct) > 1 or matches[0].item_name is None:
+            return _unbound(
+                f"{len(matches)} current item cells match {cell_label!r} and they "
+                "are not interchangeable; an ambiguous reference fails closed."
+            )
     cell = matches[0]
     return ReferenceBinding(
         bound=True,
@@ -324,7 +349,12 @@ def bind_purchase_item(
 
     if not isinstance(action, PurchaseItemAction):
         return _unbound("Action is not a purchase_item action.")
-    cell = _bind_item_cell(action.cell_label, observation, window=action.window)
+    cell = _bind_item_cell(
+        action.cell_label,
+        observation,
+        window=action.window,
+        item_value=action.expected_price,
+    )
     if not cell.bound:
         return cell
     telemetry = observation.telemetry
@@ -464,14 +494,21 @@ def bind_sell_item(
         None,
     )
     if (
-        telemetry.active_shop_trader_count != 1
-        or buyer is None
+        buyer is None
         or buyer.shop_inventory_owner is not True
         or buyer.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
     ):
+        return _unbound("The buyer is not a verified non-hostile shop owner.")
+    # A trade is open with this buyer exactly when their own inventory is on
+    # screen beside ours. Counting shop traders in the world says nothing about
+    # that - the same misreading that made `purchase_item` unbindable.
+    if not any(
+        control.role == ITEM_ROLE and _window_belongs_to(control.window, buyer.name)
+        for control in (telemetry.ui.visible_controls or [])
+    ):
         return _unbound(
-            "The buyer is not the single verified non-hostile shop owner currently "
-            "trading."
+            f"No inventory window belonging to {buyer.name!r} is open, so there is "
+            "no trade to sell into."
         )
 
     return ReferenceBinding(

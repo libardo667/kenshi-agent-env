@@ -853,12 +853,15 @@ class TestPurchaseUsesExportedCellFacts:
                 item_name="Bread",
                 expected_price=5,
                 window="BARMAN",
-            seller_id="entity-barman",
+                seller_id="entity-barman",
             ),
             self._trade_state(),
         )
         assert not binding.bound
-        assert "price is c.52" in binding.reason
+        # Price is part of the reference, not a check applied after resolving
+        # one: the live Barman stocks five cells labelled "Tooth Pick" at two
+        # different prices, so the name alone does not identify a cell.
+        assert "at c.5" in binding.reason
 
     def test_a_name_that_disagrees_with_the_cell_is_refused(self) -> None:
         binding = PURCHASE_ITEM_CONTRACT.bind(
