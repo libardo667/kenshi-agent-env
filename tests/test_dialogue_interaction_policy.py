@@ -669,3 +669,63 @@ class TestRunControlActions:
         assert dialogue_interaction_rebase_errors(
             composed, planner_view, later(planner_view)
         ) == []
+
+
+class TestDismissScreen:
+    """Exiting an interface is a first-class step, not a raw Escape key."""
+
+    def _plan_with(self, action: Action, *, screen: str | None = None) -> PlanEnvelope:
+        return plan(
+            [
+                step(
+                    "leave",
+                    action,
+                    success=[screen_is(screen or "world")],
+                )
+            ],
+            pointer=0,
+            native=0,
+        )
+
+    def test_dismissing_the_open_screen_is_accepted(self) -> None:
+        from kenshi_agent.models import DismissScreenAction
+
+        state = observation(controls=TRADE_CONTROLS)
+        telemetry = state.telemetry
+        assert telemetry is not None
+        trading = state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "trade"})}
+                )
+            },
+            deep=True,
+        )
+        composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
+        assert dialogue_interaction_policy_errors(composed, trading) == []
+
+    def test_dismissing_a_screen_that_is_not_open_fails_closed(self) -> None:
+        from kenshi_agent.models import DismissScreenAction
+
+        state = observation(controls=TRADE_CONTROLS)
+        telemetry = state.telemetry
+        assert telemetry is not None
+        in_world = state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "world"})}
+                )
+            },
+            deep=True,
+        )
+        composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
+        errors = dialogue_interaction_policy_errors(composed, in_world)
+        assert any("does not bind to current state" in error for error in errors)
+
+    def test_dismiss_costs_no_pointer_or_native_budget(self) -> None:
+        from kenshi_agent.action_contracts import DISMISS_SCREEN_CONTRACT
+
+        assert DISMISS_SCREEN_CONTRACT.risk.as_tuple() == (0, 0, 0)
+        # It is available without any capability, in either control mode.
+        assert not DISMISS_SCREEN_CONTRACT.missing_capabilities(set())
+        assert DISMISS_SCREEN_CONTRACT.allows_control_mode(ControlMode.INTERFACE_ONLY)

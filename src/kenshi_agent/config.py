@@ -189,6 +189,9 @@ class ControlsConfig(ConfigModel):
     # used 0.12s, so semantic control activation inherits that proven hold
     # rather than rediscovering it.
     control_activation_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
+    # Key that backs out of an open screen. Coordinate-independent, so it works
+    # regardless of resolution or calibration.
+    dismiss_screen_key: str = Field(default="escape", min_length=1, max_length=32)
 
     def expected_calibration_identity(self) -> CalibrationIdentity:
         return CalibrationIdentity(

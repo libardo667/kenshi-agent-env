@@ -232,6 +232,7 @@ class TestContractCatalog:
         assert set(ACTION_CONTRACTS) == {
             "approach_dialogue_target",
             "activate_visible_control",
+            "dismiss_screen",
         }
         assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
             APPROACH_DIALOGUE_TARGET_CONTRACT
@@ -243,14 +244,20 @@ class TestContractCatalog:
             control_mode=ControlMode.INTERFACE_ONLY,
             capabilities=set(APPROACH_CAPABILITIES) | {"ui.visible_controls"},
         )
-        assert [contract.kind for contract in visible] == ["activate_visible_control"]
+        assert [contract.kind for contract in visible] == [
+            "activate_visible_control",
+            "dismiss_screen",
+        ]
 
     def test_missing_capability_withholds_an_action(self) -> None:
         visible = planner_visible_contracts(
             control_mode=ControlMode.NATIVE_ASSISTED,
             capabilities={"ui.visible_controls"},
         )
-        assert [contract.kind for contract in visible] == ["activate_visible_control"]
+        assert [contract.kind for contract in visible] == [
+            "activate_visible_control",
+            "dismiss_screen",
+        ]
 
     def test_legacy_capability_alias_still_satisfies_the_contract(self) -> None:
         """The installed plug-in emits the vendor-named capability."""
@@ -305,7 +312,11 @@ class TestSemanticActionsAreAdvertised:
         )
         digest = state.semantic_action_digest()
         kinds = {entry["kind"] for entry in digest}
-        assert kinds == {"approach_dialogue_target", "activate_visible_control"}
+        assert kinds == {
+            "approach_dialogue_target",
+            "activate_visible_control",
+            "dismiss_screen",
+        }
         assert all(entry["argument_source"] for entry in digest)
 
     def test_visible_control_digest_marks_ambiguity(self) -> None:

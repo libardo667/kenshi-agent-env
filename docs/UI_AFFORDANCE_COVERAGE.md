@@ -10,18 +10,33 @@ an empirical document. Regenerate its evidence with:
 python -m scripts.survey_ui_affordances --config <live config> --out runs/<dir>
 ```
 
-Last surveyed: **2026-07-24**, protocol `0.5.0`, Hub Barman save, 1920x1080.
+Last surveyed: **2026-07-25** (`runs/p7-ui-survey-4`), protocol `0.5.0`,
+Hub save, 1920x1080, with the two-pass control export installed.
 
 ## Summary
 
-| Interface | Enter | Observe contents | Interact | Exit | Verdict |
+Every screen below was **opened and closed successfully** by clicking its own
+advertised HUD button — entering and exiting work. The differences are in what
+the agent can *observe* once inside.
+
+| Interface | Enter | Screen state | Contents observable | Interact | Verdict |
 |---|---|---|---|---|---|
-| Dialogue | ✅ via approach | ✅ options are labelled controls | ✅ proven live | ⚠️ untested | **usable** |
-| Shopping / trade | ✅ via dialogue option | ❌ item grid not exported | ❌ no generic purchase | ⚠️ untested | **blocked** |
-| Inventory | ⚠️ button advertised, unverified | ❌ item cells not exported | ❌ no item actions | ⚠️ untested | **blocked** |
-| Map | ⚠️ button advertised, unverified | ❌ no map state at all | ❌ no map actions | ⚠️ untested | **blocked** |
-| Squad / stats / tech | ⚠️ buttons advertised | ❌ no screen state | ❌ none | ⚠️ untested | **blocked** |
-| World / camera | ✅ default | ✅ entities + HUD | ✅ approach only | n/a | **partial** |
+| Dialogue | ✅ via approach | ✅ `dialogue` | ✅ options are controls | ✅ proven live | **usable** |
+| Inventory | ✅ `INV` toggles | ✅ `inventory` + `open_inventory_windows: 1` | ⚠️ only `ARRANGE`; item cells absent | ❌ no item actions | **observable, not interactive** |
+| Stats | ✅ `STA` toggles | ✅ `stats_window_open: true` | ❌ no new controls | ❌ none | **observable only** |
+| Shopping / trade | ✅ via dialogue option | ✅ `trade` (staleness fixed) | ❌ item grid absent | ❌ no generic purchase | **blocked on contents** |
+| Map | ✅ `MAP` toggles | ❌ still reports `world` | ⚠️ only `+` / `-` zoom | ❌ no map actions | **blind** |
+| Squad | ✅ `SQD` toggles | ❌ still reports `world` | ⚠️ `ADD SQUAD`, `DELETE` | ❌ none | **blind** |
+| Tech | ✅ `TEC` toggles | ❌ still reports `world` | ✅ 8 category buttons | ❌ none | **blind to state** |
+| World / camera | ✅ default | ✅ `world` | ✅ entities + HUD | ✅ approach only | **partial** |
+
+Baseline world HUD advertises 21 buttons: `INV STA MAP TEC SQD HLP`,
+`BLOCK HOLD PASSIVE JOBS RANGED TAUNT SNEAK`, `MEDIC RESCUE PROSPECT`, `X`, and
+three tutorial entries.
+
+**The export cap is still saturated at 64 on every screen**, so text is being
+truncated even with buttons prioritized. Raising `MAX_VISIBLE_UI_CONTROLS` or
+scoping to the active window remains worthwhile.
 
 ## What the agent has today
 
@@ -108,6 +123,16 @@ still scenario-only under `food_procurement_v1`.
 *Needed:* export item cells (bounds + item name + stack/price) as first-class
 references, so a generic `inspect_item` / `purchase_item` can bind to one the
 way `activate_visible_control` binds to a control.
+
+## Navigation findings
+
+- **Escape is not a "back out" key.** With nothing open it *opens* Kenshi's ESC
+  pause menu (`RESUME`, `SAVE GAME`, `LOAD GAME`, `NEW GAME`, `OPTIONS`, `EXIT`).
+  The first surveys silently ran with that menu open, which blocked the clicks
+  underneath and corrupted the "world" baseline. Screens should be closed by
+  toggling their own HUD button; reserve Escape for dialogue/trade/inventory,
+  and leave the ESC menu via `RESUME`.
+- The HUD screen buttons **toggle**, so the same reference opens and closes.
 
 ## Control-layer findings
 

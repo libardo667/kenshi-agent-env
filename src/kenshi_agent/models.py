@@ -647,6 +647,20 @@ class ApproachDialogueTargetAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
+class DismissScreenAction(StrictModel):
+    """Close the screen that is currently open, back toward the world view.
+
+    Exiting is as much a part of using an interface as entering it, and it was
+    the one step with no reusable action: the calibrated path pressed Escape,
+    a raw key the generic surface rejects for good reason. Naming the screen the
+    planner believes is open makes the action bind to observed state instead of
+    blindly pressing a key and hoping.
+    """
+
+    kind: Literal["dismiss_screen"] = "dismiss_screen"
+    expected_screen: Literal["dialogue", "trade", "inventory"]
+
+
 class ActivateVisibleControlAction(StrictModel):
     """Activate exactly one control the interface currently advertises.
 
@@ -700,7 +714,9 @@ PlannerControlAction: TypeAlias = (
 )
 """Run-control intentions that touch no game object and bind to no reference."""
 
-SemanticAction: TypeAlias = ApproachDialogueTargetAction | ActivateVisibleControlAction
+SemanticAction: TypeAlias = (
+    ApproachDialogueTargetAction | ActivateVisibleControlAction | DismissScreenAction
+)
 """Reusable typed game/UI intentions bound to currently observed references."""
 
 PlannerAction: TypeAlias = PlannerControlAction | SemanticAction | SkillAction
@@ -720,11 +736,12 @@ Action: TypeAlias = (
     | SkillAction
     | ApproachDialogueTargetAction
     | ActivateVisibleControlAction
+    | DismissScreenAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
 SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
-    {"approach_dialogue_target", "activate_visible_control"}
+    {"approach_dialogue_target", "activate_visible_control", "dismiss_screen"}
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
     {"key", "hotkey", "move_cursor", "click", "scroll"}
@@ -1237,14 +1254,15 @@ class Observation(StrictModel):
         from .action_contracts import planner_visible_contracts
 
         capabilities = set(self.telemetry.capabilities if self.telemetry is not None else [])
+        # Deliberately terse: this rides in the irreducible planner envelope, so
+        # it must not grow without bound as actions are added. What the planner
+        # cannot get anywhere else is *which* actions are authorable now and
+        # where their arguments come from; the prose description of each lives
+        # in the system prompt, and the contract enforces the rest regardless.
         return [
             {
                 "kind": contract.kind,
-                "version": contract.version,
-                "summary": contract.summary,
                 "argument_source": contract.argument_source,
-                "idempotency": contract.idempotency.value,
-                "native_assisted": contract.native_assisted,
             }
             for contract in planner_visible_contracts(
                 control_mode=self.control_mode,

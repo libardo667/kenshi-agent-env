@@ -42,6 +42,12 @@ HUD_SCREENS: list[tuple[str, str]] = [
 
 SETTLE_SECONDS = 1.2
 
+# Kenshi's ESC menu. Pressing Escape with nothing open *opens* this rather than
+# backing out, so the survey must recognize it and leave via RESUME instead of
+# pressing Escape again. Its presence in a sample means the sample is not the
+# plain world HUD.
+ESC_MENU_MARKERS = ("RESUME", "SAVE GAME", "LOAD GAME", "OPTIONS")
+
 
 def read_snapshot(reader: TelemetryReader) -> Any:
     for _ in range(40):
@@ -67,6 +73,12 @@ def describe(snapshot: Any) -> dict[str, Any]:
         "dialogue_open": ui.dialogue_open,
         "tooltip_visible": ui.tooltip_visible,
         "active_shop_trader_count": snapshot.active_shop_trader_count,
+        "stats_window_open": ui.stats_window_open,
+        "open_inventory_windows": ui.open_inventory_windows,
+        "esc_menu_open": all(
+            any(control.label == marker for control in controls)
+            for marker in ESC_MENU_MARKERS
+        ),
         "control_count": len(controls),
         # The plug-in caps the exported set; saturation means real affordances
         # may be crowded out by HUD text, which is the crucial fact for
@@ -136,12 +148,23 @@ async def survey(config_path: Path, out_dir: Path) -> int:
     results["screens"]["initial"] = describe(read_snapshot(reader))
     print(f"initial: screen={results['screens']['initial']['active_screen']}")
 
-    # Back out to the world HUD first.
-    for _ in range(3):
-        await press_escape(controller)
+    # Reach a clean world HUD. Escape is not a "back out" key here: with nothing
+    # open it opens the ESC menu, so leave that menu by its own RESUME button.
+    for _ in range(4):
+        current = describe(read_snapshot(reader))
+        if current["esc_menu_open"]:
+            await click_label(controller, reader, "RESUME")
+        elif current["active_screen"] in ("dialogue", "trade", "inventory"):
+            await press_escape(controller)
+        else:
+            break
         await asyncio.sleep(SETTLE_SECONDS)
-    results["screens"]["world"] = describe(read_snapshot(reader))
-    print(f"world: {results['screens']['world']['control_count']} controls")
+
+    world = describe(read_snapshot(reader))
+    results["screens"]["world"] = world
+    if world["esc_menu_open"]:
+        print("WARNING: could not reach a clean world HUD; ESC menu still open.")
+    print(f"world: {world['control_count']} controls, esc_menu={world['esc_menu_open']}")
 
     for label, name in HUD_SCREENS:
         if controller.user_input_detected():
@@ -159,9 +182,12 @@ async def survey(config_path: Path, out_dir: Path) -> int:
             f"{name}: screen={described['active_screen']} "
             f"controls={described['control_count']} "
             f"buttons={len(described['buttons'])} "
+            f"esc_menu={described['esc_menu_open']} "
             f"cap={'YES' if described['at_export_cap'] else 'no'}"
         )
-        await press_escape(controller)
+        # These HUD buttons toggle, so close with the same button rather than
+        # Escape, which would open the ESC menu instead.
+        await click_label(controller, reader, label)
         await asyncio.sleep(SETTLE_SECONDS)
 
     raw = out_dir / "ui_affordance_survey.json"

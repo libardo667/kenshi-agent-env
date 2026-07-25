@@ -8,6 +8,7 @@ from pathlib import Path
 from ..action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
+    DISMISS_SCREEN_CONTRACT,
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
@@ -31,6 +32,7 @@ from ..models import (
     ClickAction,
     CommandDispatchContext,
     ControlMode,
+    DismissScreenAction,
     HotkeyAction,
     InputBoundaryDecision,
     KeyAction,
@@ -539,6 +541,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_semantic_approach(action, started, command)
         if isinstance(action, ActivateVisibleControlAction):
             return await self._execute_visible_control(action, started)
+        if isinstance(action, DismissScreenAction):
+            return await self._execute_dismiss_screen(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -835,6 +839,52 @@ class LiveEnvironment(AgentEnvironment):
                     f"Activated the current {binding.resolved_role} control "
                     f"{binding.resolved_label!r} at its observed bounds. "
                     "A later observation must confirm the resulting transition."
+                ),
+            }
+        )
+
+    async def _execute_dismiss_screen(
+        self,
+        action: DismissScreenAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Back out of the currently open screen with one configured key.
+
+        Re-checks inside the lease that the screen the planner named is still
+        the one that is open, so a screen that changed during the polite wait
+        cannot be closed by a stale intention.
+        """
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = DISMISS_SCREEN_CONTRACT.bind(action, observation)
+        if not binding.bound:
+            raise RuntimeError(f"No input was sent: {binding.reason}")
+        primitive_receipt = await self.controller.execute(
+            KeyAction(key=self.controls_config.dismiss_screen_key)
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=DISMISS_SCREEN_CONTRACT.version,
+            resolved_label=binding.resolved_label,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-confirmed the expected screen was still open inside the input "
+                f"lease before dismissing it. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Dismissed the current {action.expected_screen!r} screen with "
+                    f"the configured {self.controls_config.dismiss_screen_key!r} key. "
+                    "A later observation must confirm the transition."
                 ),
             }
         )

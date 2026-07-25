@@ -36,6 +36,7 @@ from .models import (
     ConditionOperator,
     ConditionPath,
     ControlMode,
+    DismissScreenAction,
     IdempotencyPolicy,
     NormalizedPointerBounds,
     Observation,
@@ -212,6 +213,58 @@ def bind_visible_control(
     )
 
 
+def bind_dismiss_screen(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a dismissal to the screen that is actually open right now.
+
+    The reference is the current screen. Refusing when the planner's belief
+    disagrees with observation is what stops a stray Escape from closing
+    something the planner never looked at.
+    """
+
+    if not isinstance(action, DismissScreenAction):
+        return _unbound("Action is not a dismiss_screen action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the current screen.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the current screen cannot be bound.")
+    current = telemetry.ui.active_screen
+    if current is None:
+        return _unbound("The current screen is unknown, so nothing may be dismissed.")
+    if current != action.expected_screen:
+        return _unbound(
+            f"Expected screen {action.expected_screen!r} but the interface reports "
+            f"{current!r}; dismissing the wrong screen is not permitted."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=f"Bound to the currently open {current!r} screen.",
+        resolved_label=current,
+        source_revision=observation.world_revision,
+    )
+
+
+def _dismiss_authorization_conditions(
+    action: Action,
+    *,
+    max_age_seconds: float,
+) -> list[Condition]:
+    if not isinstance(action, DismissScreenAction):
+        return []
+    return [
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_UI_ACTIVE_SCREEN,
+            operator=ConditionOperator.EQUALS,
+            expected=action.expected_screen,
+            max_age_seconds=max_age_seconds,
+        )
+    ]
+
+
 def _approach_authorization_conditions(
     action: Action,
     *,
@@ -370,11 +423,41 @@ ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
     authorization_conditions=_visible_control_authorization_conditions,
 )
 
+DISMISS_SCREEN_CONTRACT = ActionContract(
+    kind="dismiss_screen",
+    version="1.0",
+    model=DismissScreenAction,
+    summary=(
+        "Close the screen that is currently open, returning toward the world "
+        "view. Names the screen it expects so it cannot dismiss the wrong one."
+    ),
+    argument_source=(
+        "expected_screen must equal the observation's current "
+        "telemetry.ui.active_screen."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(),
+    capability_aliases=frozenset(),
+    # One configured key; it carries no screen position at all.
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=False,
+    risk=ActionRiskCost(),
+    max_primitive_actions=1,
+    reference_fields=("expected_screen",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_dismiss",
+    bind=bind_dismiss_screen,
+    authorization_conditions=_dismiss_authorization_conditions,
+)
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
+        DISMISS_SCREEN_CONTRACT,
     )
 }
 

@@ -118,6 +118,32 @@
       "title": "CoordinateSpace",
       "type": "string"
     },
+    "DismissScreenAction": {
+      "additionalProperties": false,
+      "description": "Close the screen that is currently open, back toward the world view.\n\nExiting is as much a part of using an interface as entering it, and it was\nthe one step with no reusable action: the calibrated path pressed Escape,\na raw key the generic surface rejects for good reason. Naming the screen the\nplanner believes is open makes the action bind to observed state instead of\nblindly pressing a key and hoping.",
+      "properties": {
+        "kind": {
+          "const": "dismiss_screen",
+          "default": "dismiss_screen",
+          "title": "Kind",
+          "type": "string"
+        },
+        "expected_screen": {
+          "enum": [
+            "dialogue",
+            "trade",
+            "inventory"
+          ],
+          "title": "Expected Screen",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_screen"
+      ],
+      "title": "DismissScreenAction",
+      "type": "object"
+    },
     "HotkeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -463,6 +489,9 @@
     },
     {
       "$ref": "#/$defs/ActivateVisibleControlAction"
+    },
+    {
+      "$ref": "#/$defs/DismissScreenAction"
     }
   ]
 }

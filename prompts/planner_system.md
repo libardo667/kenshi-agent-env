@@ -44,6 +44,10 @@ yourself, in whatever order the current evidence supports.
   from `visible_controls`. Never author a label that is absent from that list or
   whose entry has `ambiguous: true`; a duplicate reference fails closed. The
   bounds come from telemetry, so never supply coordinates.
+- `dismiss_screen` takes an `expected_screen` that must equal the observation's
+  current `telemetry.ui.active_screen`. Use it to leave dialogue, trade, or an
+  inventory window; it refuses if the screen you named is not the one open, so
+  read the current screen rather than assuming what a previous step produced.
 - Give every step a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
