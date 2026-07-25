@@ -114,8 +114,15 @@ $overlayArgs = @(
 )
 $overlay = Start-Process -FilePath $Pythonw -ArgumentList $overlayArgs -PassThru
 
+# The overlay is click-through so it cannot steal input meant for Kenshi, which
+# also means nothing in it can be selected or copied. It is the stream view. The
+# transcript is the reading view: the same decisions as plain text, scrollable in
+# any editor, still there after the run ends.
+$transcript = Join-Path $runDir "transcript.log"
+Write-Host "Transcript: $transcript"
+
 try {
-    & $Python @runArgs
+    & $Python @runArgs 2>&1 | Tee-Object -FilePath $transcript
     if ($LASTEXITCODE -ne 0) {
         throw "The live agent run exited with code $LASTEXITCODE."
     }
