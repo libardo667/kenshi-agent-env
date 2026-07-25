@@ -192,16 +192,22 @@ def bind_visible_control(
     matches = [
         control
         for control in controls
-        if normalize_control_label(control.label) == wanted and control.role == action.role
+        if normalize_control_label(control.label) == wanted
+        and control.role == action.role
+        # An empty `window` means "do not narrow"; naming one disambiguates a
+        # label that several open windows share, such as a close button.
+        and (not action.window or control.window == action.window)
     ]
     if not matches:
         return _unbound(
             f"No current {action.role} control matches label {action.exact_label!r}."
         )
     if len(matches) > 1:
+        windows = sorted({control.window or "<no window>" for control in matches})
         return _unbound(
             f"{len(matches)} current {action.role} controls match label "
-            f"{action.exact_label!r}; an ambiguous reference fails closed."
+            f"{action.exact_label!r} (in {windows}); an ambiguous reference fails "
+            "closed. Name the window to narrow it."
         )
     control = matches[0]
     return ReferenceBinding(
@@ -373,10 +379,39 @@ def bind_dismiss_screen(
             f"Expected screen {action.expected_screen!r} but the interface reports "
             f"{current!r}; dismissing the wrong screen is not permitted."
         )
+    if not action.window:
+        # Dialogue has no window of its own and is dismissed with a key.
+        return ReferenceBinding(
+            bound=True,
+            reason=f"Bound to the currently open {current!r} screen.",
+            resolved_label=current,
+            source_revision=observation.world_revision,
+        )
+
+    # A named window is closed by its own close box, positioned from the rect
+    # the window itself reports.
+    owned = [
+        control
+        for control in (telemetry.ui.visible_controls or [])
+        if control.window == action.window
+    ]
+    if not owned:
+        return _unbound(
+            f"No window captioned {action.window!r} is currently open, so it "
+            "cannot be closed."
+        )
+    rect = max(
+        (control.bounds for control in owned),
+        key=lambda b: (b.max_x - b.min_x) * (b.max_y - b.min_y),
+    )
     return ReferenceBinding(
         bound=True,
-        reason=f"Bound to the currently open {current!r} screen.",
-        resolved_label=current,
+        reason=(
+            f"Bound to the {action.window!r} window on the {current!r} screen; its "
+            "close box follows the window's own observed rect."
+        ),
+        resolved_label=action.window,
+        resolved_bounds=rect.model_copy(deep=True),
         source_revision=observation.world_revision,
     )
 

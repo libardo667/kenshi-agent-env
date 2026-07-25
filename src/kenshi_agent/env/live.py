@@ -62,6 +62,7 @@ from ..models import (
     Transition,
     WaitAction,
     WorldStateRevision,
+    window_close_point,
 )
 from ..native_commands import write_native_command_request_atomic
 from ..skills import MacroRegistry
@@ -980,9 +981,22 @@ class LiveEnvironment(AgentEnvironment):
         binding = DISMISS_SCREEN_CONTRACT.bind(action, observation)
         if not binding.bound:
             raise RuntimeError(f"No input was sent: {binding.reason}")
-        primitive_receipt = await self.controller.execute(
-            KeyAction(key=self.controls_config.dismiss_screen_key)
-        )
+        if binding.resolved_bounds is not None:
+            # A window closes by its own close box. Escape does not close
+            # Kenshi's inventory or trade windows at all - with nothing else
+            # open it opens the ESC menu instead.
+            close_x, close_y = window_close_point(binding.resolved_bounds)
+            primitive_receipt = await self.controller.execute(
+                ClickAction(
+                    x=close_x,
+                    y=close_y,
+                    hold_seconds=self.controls_config.control_activation_hold_seconds,
+                )
+            )
+        else:
+            primitive_receipt = await self.controller.execute(
+                KeyAction(key=self.controls_config.dismiss_screen_key)
+            )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=DISMISS_SCREEN_CONTRACT.version,
@@ -998,9 +1012,15 @@ class LiveEnvironment(AgentEnvironment):
                 "action": action,
                 "semantic": semantic,
                 "message": (
-                    f"Dismissed the current {action.expected_screen!r} screen with "
-                    f"the configured {self.controls_config.dismiss_screen_key!r} key. "
-                    "A later observation must confirm the transition."
+                    (
+                        f"Closed the {action.window!r} window on the "
+                        f"{action.expected_screen!r} screen via its own close box."
+                        if binding.resolved_bounds is not None
+                        else f"Dismissed the current {action.expected_screen!r} screen "
+                        f"with the configured "
+                        f"{self.controls_config.dismiss_screen_key!r} key."
+                    )
+                    + " A later observation must confirm the transition."
                 ),
             }
         )

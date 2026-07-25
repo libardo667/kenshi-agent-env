@@ -350,6 +350,20 @@ class NormalizedPointerBounds(StrictModel):
 MAX_DIGESTED_VISIBLE_CONTROLS = 120
 
 
+# Where a MyGUI window's close box sits relative to the window's own rect,
+# measured live: the title bar's right end. Derived from observed bounds, so it
+# follows the window when it moves and survives a resolution change - unlike the
+# calibrated screen coordinates this replaces.
+WINDOW_CLOSE_INSET_X = 0.012
+WINDOW_CLOSE_INSET_Y = 0.011
+
+
+def window_close_point(bounds: NormalizedPointerBounds) -> tuple[float, float]:
+    """The close box of a window occupying these bounds."""
+
+    return (bounds.max_x - WINDOW_CLOSE_INSET_X, bounds.min_y + WINDOW_CLOSE_INSET_Y)
+
+
 def normalize_control_label(value: str) -> str:
     """Collapse whitespace and case so an exact label survives UI formatting.
 
@@ -362,6 +376,10 @@ def normalize_control_label(value: str) -> str:
 
 class VisibleUIControl(StrictModel):
     label: str = Field(min_length=1, max_length=500)
+    # Caption of the MyGUI window this control belongs to, when it has one.
+    # Several open windows otherwise arrive as one flat list in which every
+    # close button looks identical, so "close the shop" cannot be expressed.
+    window: str = Field(default="", max_length=200)
     # `item` is an inventory or shop grid cell. It carries no caption of its
     # own, so its label is an ordinal from the deterministic export walk and
     # what it actually holds must be read from the tooltip after hovering it.
@@ -699,6 +717,11 @@ class DismissScreenAction(StrictModel):
 
     kind: Literal["dismiss_screen"] = "dismiss_screen"
     expected_screen: Literal["dialogue", "trade", "inventory"]
+    # Caption of the window to close. Inventory and trade windows are closed by
+    # their own close box, whose position is derived from the window's observed
+    # rect rather than a calibrated screen coordinate. Leave empty for dialogue,
+    # which has no window and is dismissed with a key.
+    window: str = Field(default="", max_length=200)
 
 
 class ActivateVisibleControlAction(StrictModel):
@@ -713,6 +736,8 @@ class ActivateVisibleControlAction(StrictModel):
     kind: Literal["activate_visible_control"] = "activate_visible_control"
     exact_label: str = Field(min_length=1, max_length=500)
     role: Literal["button", "text", "item"] = "button"
+    # Optional narrowing when several windows advertise the same label.
+    window: str = Field(default="", max_length=200)
 
 
 SkillArgumentValue: TypeAlias = str | int | float | bool | None
@@ -1277,6 +1302,18 @@ class Observation(StrictModel):
             for target in dialogue_targets(self.telemetry.nearby_entities)
         ]
 
+    def open_window_captions(self) -> list[str]:
+        """Captions of the windows currently advertising controls, in order."""
+
+        telemetry = self.telemetry
+        if telemetry is None or telemetry.ui.visible_controls is None:
+            return []
+        seen: list[str] = []
+        for control in telemetry.ui.visible_controls:
+            if control.window and control.window not in seen:
+                seen.append(control.window)
+        return seen
+
     def visible_control_digest(self) -> list[dict[str, Any]]:
         """Exact controls the interface currently advertises, unambiguous only.
 
@@ -1293,9 +1330,9 @@ class Observation(StrictModel):
         if "ui.visible_controls" not in telemetry.capabilities:
             return []
         controls = telemetry.ui.visible_controls
-        counts: dict[tuple[str, str], int] = {}
+        counts: dict[tuple[str, str, str], int] = {}
         for control in controls:
-            key = (normalize_control_label(control.label), control.role)
+            key = (normalize_control_label(control.label), control.role, control.window)
             counts[key] = counts.get(key, 0) + 1
         # Bounded so this digest cannot overflow the irreducible planner
         # envelope. Truncation is fail-closed: an unlisted control is one the
@@ -1304,7 +1341,13 @@ class Observation(StrictModel):
             {
                 "exact_label": control.label,
                 "role": control.role,
-                "ambiguous": counts[(normalize_control_label(control.label), control.role)] > 1,
+                "window": control.window,
+                "ambiguous": (
+                    counts[
+                        (normalize_control_label(control.label), control.role, control.window)
+                    ]
+                    > 1
+                ),
             }
             for control in controls[:MAX_DIGESTED_VISIBLE_CONTROLS]
         ]

@@ -1244,6 +1244,12 @@
           "title": "Label",
           "type": "string"
         },
+        "window": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Window",
+          "type": "string"
+        },
         "role": {
           "enum": [
             "button",

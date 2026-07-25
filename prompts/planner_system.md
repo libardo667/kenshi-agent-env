@@ -62,9 +62,16 @@ yourself, in whatever order the current evidence supports.
   so never guess a price or reuse one from an earlier observation. It is
   at-most-once: never retry it because confirmation is slow.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
-  current `telemetry.ui.active_screen`. Use it to leave dialogue, trade, or an
-  inventory window; it refuses if the screen you named is not the one open, so
-  read the current screen rather than assuming what a previous step produced.
+  current `telemetry.ui.active_screen`. It refuses if the screen you named is
+  not the one open, so read the current screen rather than assuming what a
+  previous step produced. To close an inventory or trade window, also give its
+  `window` caption exactly as it appears in `visible_controls` — several may be
+  open at once, and each closes separately. Leave `window` empty only for
+  dialogue.
+- Every entry in `visible_controls` carries the `window` it belongs to. When two
+  open windows advertise the same label, name the `window` on
+  `activate_visible_control` to disambiguate; without it the reference is
+  ambiguous and fails closed.
 - Give every step a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.

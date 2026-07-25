@@ -25,6 +25,12 @@
           ],
           "title": "Role",
           "type": "string"
+        },
+        "window": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Window",
+          "type": "string"
         }
       },
       "required": [
@@ -589,6 +595,12 @@
             "inventory"
           ],
           "title": "Expected Screen",
+          "type": "string"
+        },
+        "window": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Window",
           "type": "string"
         }
       },

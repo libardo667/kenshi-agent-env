@@ -190,6 +190,12 @@
           ],
           "title": "Role",
           "type": "string"
+        },
+        "window": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Window",
+          "type": "string"
         }
       },
       "required": [
@@ -714,6 +720,12 @@
             "inventory"
           ],
           "title": "Expected Screen",
+          "type": "string"
+        },
+        "window": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Window",
           "type": "string"
         }
       },
@@ -2239,6 +2251,12 @@
           "maxLength": 500,
           "minLength": 1,
           "title": "Label",
+          "type": "string"
+        },
+        "window": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Window",
           "type": "string"
         },
         "role": {

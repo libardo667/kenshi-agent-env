@@ -18,6 +18,7 @@
 #include <kenshi/util/UtilityT.h>
 #include <mygui/MyGUI_Button.h>
 #include <mygui/MyGUI_ImageBox.h>
+#include <mygui/MyGUI_Window.h>
 #include <mygui/MyGUI_Gui.h>
 #include <mygui/MyGUI_TextBox.h>
 
@@ -922,6 +923,29 @@ namespace
     // confirms what it actually is from the tooltip after hovering it.
     unsigned int g_itemCellOrdinal = 0;
 
+    // Which MyGUI window a control belongs to. Without this, several windows'
+    // controls arrive as one flat list and identical labels - every window has
+    // a close button - are indistinguishable, so closing "the shop" cannot be
+    // expressed at all.
+    std::string OwningWindowCaption(MyGUI::Widget* widget)
+    {
+        MyGUI::Widget* current = widget;
+        unsigned int depth = 0;
+        while (current != NULL && depth < MAX_UI_WIDGET_DEPTH)
+        {
+            MyGUI::Window* window = current->castType<MyGUI::Window>(false);
+            if (window != NULL)
+            {
+                const std::string caption = window->getCaption().asUTF8();
+                if (!caption.empty())
+                    return caption;
+            }
+            current = current->getParent();
+            ++depth;
+        }
+        return std::string();
+    }
+
     bool IsItemCellIcon(MyGUI::Widget* widget)
     {
         MyGUI::ImageBox* image = widget->castType<MyGUI::ImageBox>(false);
@@ -972,11 +996,21 @@ namespace
                     role = "item";
                 }
             }
-            else if (textBox != NULL &&
-                     ((pass == UI_PASS_BUTTONS_ONLY) ? isButton : !isButton))
+            else if (pass == UI_PASS_BUTTONS_ONLY && isButton)
+            {
+                // A caption-less button - a window's close box, an icon button -
+                // was previously invisible, because only TextBox-derived widgets
+                // were emitted. Fall back to the widget's own name so it can
+                // still be named and acted on.
+                label = textBox != NULL ? textBox->getCaption().asUTF8() : std::string();
+                if (label.empty())
+                    label = widget->getName();
+                role = "button";
+            }
+            else if (pass == UI_PASS_TEXT_ONLY && textBox != NULL && !isButton)
             {
                 label = textBox->getCaption().asUTF8();
-                role = isButton ? "button" : "text";
+                role = "text";
             }
 
             if (role != NULL)
@@ -997,6 +1031,8 @@ namespace
                     json << "{";
                     json << "\"label\":\"" << JsonEscape(label) << "\",";
                     json << "\"role\":\"" << role << "\",";
+                    json << "\"window\":\""
+                         << JsonEscape(OwningWindowCaption(widget)) << "\",";
                     json << "\"bounds\":{";
                     json << "\"min_x\":"
                          << static_cast<double>(bounds.left) /

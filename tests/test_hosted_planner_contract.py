@@ -242,5 +242,8 @@ def test_only_the_active_policy_section_reaches_the_model() -> None:
         assert "<!-- policy:" not in rendered
         assert "<!-- /policy -->" not in rendered
 
-    # The generic surface is the leanest: no recipe, no macro guidance.
-    assert len(generic) < len(disabled) < len(instructions)
+    # Each rendering is a strict subset of the document: it carries its own
+    # policy's section and drops the others. Their relative sizes are not a
+    # property worth pinning — the generic section grows as actions are added.
+    assert len(generic) < len(instructions)
+    assert len(disabled) < len(instructions)

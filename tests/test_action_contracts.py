@@ -689,3 +689,54 @@ class TestPurchaseSafety:
             self._state(tooltip="Ancient Katana\n[Weapon]\nValue c.865"),
         )
         assert binding.bound, binding.reason
+
+
+class TestWindowAttribution:
+    """Several open windows share labels; the owning window disambiguates."""
+
+    def _two_windows(self) -> Observation:
+        return observation(
+            controls=[
+                VisibleUIControl(label="ARRANGE", role="button", bounds=_bounds(0.5), window="HEP"),
+                VisibleUIControl(
+                    label="ARRANGE", role="button", bounds=_bounds(0.7), window="BARMAN"
+                ),
+            ],
+            capabilities=["ui.visible_controls"],
+        )
+
+    def test_a_label_shared_by_two_windows_is_ambiguous(self) -> None:
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(exact_label="ARRANGE", role="button"),
+            self._two_windows(),
+        )
+        assert not binding.bound
+        assert "Name the window" in binding.reason
+
+    def test_naming_the_window_resolves_it(self) -> None:
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(
+                exact_label="ARRANGE", role="button", window="BARMAN"
+            ),
+            self._two_windows(),
+        )
+        assert binding.bound
+        assert binding.resolved_bounds == _bounds(0.7)
+
+    def test_naming_a_window_that_does_not_have_it_fails_closed(self) -> None:
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(
+                exact_label="ARRANGE", role="button", window="NOBODY"
+            ),
+            self._two_windows(),
+        )
+        assert not binding.bound
+
+    def test_open_window_captions_are_reported_in_order(self) -> None:
+        assert self._two_windows().open_window_captions() == ["HEP", "BARMAN"]
+
+    def test_the_digest_reports_the_owning_window(self) -> None:
+        digest = self._two_windows().visible_control_digest()
+        assert {entry["window"] for entry in digest} == {"HEP", "BARMAN"}
+        # Same label, different windows: neither is ambiguous within its own.
+        assert not any(entry["ambiguous"] for entry in digest)
