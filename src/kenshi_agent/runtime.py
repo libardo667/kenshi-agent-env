@@ -776,7 +776,18 @@ class AgentRuntime:
                                 ),
                             },
                         )
-                        terminated = True
+                        # Same policy as an outright rejected plan: one plan that
+                        # aged badly is not a reason to end a session meant to run
+                        # continuously. Ask for another, and let the replan limit
+                        # bound a planner that cannot produce a usable one.
+                        consecutive_replans += 1
+                        if consecutive_replans > self.planning_config.max_consecutive_replans:
+                            stop_reason = (
+                                f"Stopped: the planner produced {consecutive_replans} "
+                                "unusable plans in a row. The last reason was: "
+                                + "; ".join(rebase_errors)
+                            )
+                            terminated = True
                         continue
                     old_basis = plan.based_on_revision
                     plan = plan.model_copy(

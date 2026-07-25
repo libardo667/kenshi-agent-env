@@ -58,8 +58,11 @@ yourself, in whatever order the current evidence supports.
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
 - `required_capabilities` takes **capability names, not field paths**. A field
-  path such as `telemetry.ui.active_screen` is never a capability name. The only
-  valid names are: `camera.position`, `control.approach_dialogue_target`, `control.approach_vendor`, `game.location`, `game.money`, `game.pause`, `game.speed`, `game.time`, `identity.stable_handles`, `nearby.characters`, `nearby.roles`, `nearby.shop_owners`, `nearby.visible_entities`, `squad.basic`, `squad.health`, `squad.hunger`, `squad.inventory`, `ui.dialogue`, `ui.dialogue.options`, `ui.dialogue.target`, `ui.inventory`, `ui.modal`, `ui.tooltip`, `ui.visible_controls`. Anything else is rejected outright.
+  path such as `telemetry.ui.active_screen` is never a capability name, and a
+  name Kenshi is not currently reporting makes the plan unusable even when it is
+  spelled correctly. Copy the names from this observation's exact
+  `telemetry.capabilities` list rather than from memory, and require only the
+  ones a step genuinely depends on. Anything not in that list is rejected.
 - Keep `idempotency: at_most_once` and `retry_budget: 0` for both actions, and
   declare risk budgets that cover them: `approach_dialogue_target` costs one
   native-assisted action, `activate_visible_control` costs one pointer action.
