@@ -180,6 +180,44 @@ being bought.
 - `pointer_mode: relative` requires `--exclusive-input-session` when live
   actions are enabled.
 
+## Auditing what the agent can know
+
+Affordances are only half of it: an action the agent cannot *decide* to take is
+as good as absent. `kenshi_agent.fact_coverage` names the facts playing Kenshi
+actually requires and classifies each against a live snapshot:
+
+```bash
+python -m scripts.audit_fact_coverage --telemetry "$LOCALAPPDATA/KenshiAgent/telemetry.latest.json"
+python -m scripts.audit_fact_coverage --log runs/<run>/events.jsonl
+```
+
+- **exported** — in the snapshot, free.
+- **discoverable** — obtainable only by acting, at roughly one model round-trip
+  (~20 s) each, with a staleness risk while the answer arrives.
+- **dark** — no route at all, so any goal needing it is unreachable.
+- **n/a** — the context cannot speak to it (dialogue options with no
+  conversation open), so it is not counted against coverage.
+
+The headline number is **exploration cost**: how many agent actions it takes to
+learn everything not already exported. On the Hub trade screen it was **10** —
+about three minutes of model calls before the agent could make one decision.
+
+Measured 2026-07-25 with a trade window open:
+
+| State | Facts |
+|---|---|
+| exported | `world.money`, `ui.visible_controls`, `ui.screen`, `nearby.dialogue_targets` |
+| discoverable (10 actions) | `self.hunger`, `self.inventory`, `self.health`, `self.first_aid_kits`, `shop.item_names`*, `shop.item_price`, `shop.item_category`, `shop.item_quantity` |
+| dark | `self.current_goal`, `world.location_name`, `world.clock`, `shop.trader_money` |
+
+\* item names are exported by the newest plug-in build; the measurement above
+predates installing it.
+
+Two things stand out. The agent is **blind to itself** — it set itself the goal
+"secure affordable food for Hep" while unable to read Hep's hunger, inventory or
+health. And **every shop fact costs a hover**, which is why one run spent 21
+planning cycles probing cells instead of buying anything.
+
 ## Reaching the long-form menu test
 
 **All four target interfaces — map, inventory, dialogue and shopping — can now
