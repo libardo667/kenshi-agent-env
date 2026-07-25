@@ -553,7 +553,14 @@ class Win32InputController(InputController):
                 use_alt_tab and restore_target_is_kenshi
             ):
                 self._focus_handle(self._restore_foreground, restore_window=False, strict=False)
-        if self.restore_cursor_after_input and self._restore_cursor is not None:
+        # In relative mode Kenshi tracks its own drawn cursor from motion
+        # deltas, so warping the OS cursor back on handback desynchronizes the
+        # two: the human's next small movement makes Kenshi's cursor jump to
+        # wherever it still believed it was, often a screen edge, which pans the
+        # camera. Leaving the cursor where the agent finished keeps both in
+        # agreement, which matters more than restoring the human's old position.
+        restore_cursor = self.restore_cursor_after_input and self.pointer_mode != "relative"
+        if restore_cursor and self._restore_cursor is not None:
             if self.user32.SetCursorPos(*self._restore_cursor):
                 # Cursor restoration is agent-authored input too. Without this
                 # attribution the continuous supervisor can misclassify the

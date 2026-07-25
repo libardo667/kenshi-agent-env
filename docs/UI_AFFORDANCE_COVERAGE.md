@@ -22,12 +22,12 @@ the agent can *observe* once inside.
 | Interface | Enter | Exit | Screen state | Contents | Interact | Verdict |
 |---|---|---|---|---|---|---|
 | Dialogue | ✅ via approach | ✅ `dismiss_screen` | ✅ `dialogue` | ✅ options are controls | ✅ proven live | **usable** |
-| Inventory | ✅ `INV` toggles | ✅ toggle / `dismiss_screen` | ✅ `inventory`, `open_inventory_windows: 1` | ⚠️ `ARRANGE` only | ❌ item cells absent | **navigable, not interactive** |
+| Inventory | ✅ `INV` toggles | ✅ toggle / `dismiss_screen` | ✅ `inventory`, `open_inventory_windows: 1` | ✅ `ARRANGE` + item cells | ✅ activate a cell | **navigable + interactive** |
 | Map | ✅ `MAP` toggles | ✅ toggle | ✅ `management_screen_open`, `tab: 0` | ⚠️ `+` / `-` zoom | ❌ no map actions | **navigable** |
 | Tech | ✅ `TEC` toggles | ✅ toggle | ✅ `management_screen_open`, `tab: 2` | ✅ 8 category buttons | ⚠️ buttons only | **navigable** |
 | Squad | ✅ `SQD` toggles | ✅ toggle | ✅ `management_screen_open`, `tab: 4` | ⚠️ `ADD SQUAD`, `DELETE` | ⚠️ buttons only | **navigable** |
 | Stats | ✅ `STA` toggles | ✅ toggle | ✅ `stats_window_open: true` | ❌ no new controls | ❌ none | **navigable** |
-| Shopping / trade | ✅ via dialogue option | ✅ `dismiss_screen` | ✅ `trade` (staleness fixed) | ❌ item grid absent | ❌ no generic purchase | **blocked on item cells** |
+| Shopping / trade | ✅ via dialogue option | ✅ `dismiss_screen` | ✅ `trade` (staleness fixed) | ✅ item cells exported | ✅ hover/activate a cell | **navigable + interactive** |
 | World / camera | ✅ default | n/a | ✅ `world` | ✅ entities + HUD | ✅ approach only | **partial** |
 
 **Management tabs are one window, not separate screens.** `MAP`, `TEC`, and
@@ -128,17 +128,27 @@ Consequences:
 scoping to the active window's subtree, and richer roles — dialogue options
 currently report as `text`, indistinguishable from a stat label.
 
-### 3. Item cells are not MyGUI labelled widgets
+### 3. RESOLVED 2026-07-25: item cells are exported
 
-Inventory and shop items are grid cells, not labelled controls, so neither
-`visible_controls` nor any current action can name one. The existing
-`inspect_shop_item` / `buy_inspected_shop_item` macros work around this with
-**calibrated coordinates plus tooltip verification** — which is why purchase is
-still scenario-only under `food_procurement_v1`.
+Inventory and shop items are `MyGUI::ImageBox` icons, not `TextBox` widgets, so
+the text-only export could never see them — the grid looked *empty* rather than
+crowded out. A third export pass now emits them as role `item`, gated to fire
+only while an inventory or trade window is open so the world view is not flooded
+with decorative images.
 
-*Needed:* export item cells (bounds + item name + stack/price) as first-class
-references, so a generic `inspect_item` / `purchase_item` can bind to one the
-way `activate_visible_control` binds to a control.
+Verified live: an open inventory reports `{'button': 25, 'item': 7, 'text': 32}`
+with real per-cell bounds.
+
+They carry no caption of their own, so each is labelled by its ordinal in the
+deterministic export walk (`item_0`, `item_1`, …) and `activate_visible_control`
+accepts `role: "item"`. **What a cell contains must still be read from the
+tooltip after hovering it** — the ordinal identifies a position, not an item.
+That is the same tooltip-grounded evidence the calibrated purchase path already
+required, now reachable without model-authored coordinates.
+
+*Still needed for generic purchase:* bind the tooltip readback to the hovered
+cell as one action, so price and item name are verified against the exact cell
+being bought.
 
 ## Navigation findings
 
@@ -162,22 +172,26 @@ way `activate_visible_control` binds to a control.
   survey panned the camera far to the left purely as a side effect. Fixed by
   warping to just short of the target and using relative steps only for the
   final resync (`relative_pointer_warp_*`).
+- **Restoring the cursor on handback desynchronizes Kenshi.** In relative mode
+  Kenshi tracks its drawn cursor from motion deltas, so warping the OS cursor
+  back to the human's old position left the two disagreeing: the operator's next
+  small movement made Kenshi's cursor jump to a screen edge and pan the camera.
+  The cursor is now left where the agent finished in relative mode.
 - `pointer_mode: relative` requires `--exclusive-input-session` when live
   actions are enabled.
 
 ## Reaching the long-form menu test
 
-**Done:** entering, navigating between, observing, and exiting map, inventory,
-dialogue, tech, squad and stats — all verified live, all assertable from a plan.
+**All four target interfaces — map, inventory, dialogue and shopping — can now
+be entered, navigated, interacted with, and exited**, all verified live and all
+assertable from a plan. A long-form menu test is buildable on this surface.
 
-**One gap remains: item cells.** Inventory and shop items are `MyGUI::ImageBox`
-icons (`InventoryIcon`, holding `Item* item`, an `ImageBox`, and a quantity
-`TextBox`), while the control export only emits `TextBox`-derived widgets — so
-the grid is structurally invisible. Exporting them needs care: the icon's
-*name* lives on the `Item`, not the widget, so it means walking
-`InventoryGUI`/`InventorySectionGUI` rather than the MyGUI tree. That is the
-next slice, and it unblocks both inventory interaction and generic purchase
-(the second reusable chain).
+Remaining refinements, none of them blockers:
 
-Until it lands, a long-form test can enter, navigate, and exit every interface,
-and interact fully with dialogue — but shopping remains look-don't-touch.
+- **Tooltip-bound item inspection.** Hovering an exported cell populates the
+  tooltip; binding that readback to the exact hovered cell in one action is what
+  generic at-most-once purchase should be built on.
+- **Richer roles.** Dialogue options still report as `text`, indistinguishable
+  from a stat label.
+- **Export scoping.** The 64-slot cap still binds on busy screens; scoping to
+  the active window's subtree would be cleaner than global priority passes.

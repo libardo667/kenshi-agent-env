@@ -17,6 +17,7 @@
 #include <kenshi/gui/ToolTip.h>
 #include <kenshi/util/UtilityT.h>
 #include <mygui/MyGUI_Button.h>
+#include <mygui/MyGUI_ImageBox.h>
 #include <mygui/MyGUI_Gui.h>
 #include <mygui/MyGUI_TextBox.h>
 
@@ -906,8 +907,29 @@ namespace
     enum UIControlPass
     {
         UI_PASS_BUTTONS_ONLY,
+        UI_PASS_ITEMS_ONLY,
         UI_PASS_TEXT_ONLY
     };
+
+    // Inventory and shop cells are ImageBox icons rather than TextBox widgets,
+    // so a text-only walk could never see the item grid at all - it looked
+    // empty rather than crowded out. They carry no caption, so a caller
+    // identifies one by its ordinal within this deterministic walk and then
+    // confirms what it actually is from the tooltip after hovering it.
+    unsigned int g_itemCellOrdinal = 0;
+
+    bool IsItemCellIcon(MyGUI::Widget* widget)
+    {
+        MyGUI::ImageBox* image = widget->castType<MyGUI::ImageBox>(false);
+        if (image == NULL)
+            return false;
+        // Item icons sit inside the inventory layout and are big enough to
+        // click; this filters out decorative chrome and 1px spacers.
+        const MyGUI::IntCoord bounds = widget->getAbsoluteCoord();
+        if (bounds.width < 8 || bounds.height < 8)
+            return false;
+        return widget->getParent() != NULL;
+    }
 
     void AppendVisibleUIControlTree(
         std::ostringstream& json,
@@ -933,11 +955,28 @@ namespace
             MyGUI::TextBox* textBox = widget->castType<MyGUI::TextBox>(false);
             const bool isButton =
                 widget->castType<MyGUI::Button>(false) != NULL;
-            const bool wantedThisPass =
-                (pass == UI_PASS_BUTTONS_ONLY) ? isButton : !isButton;
-            if (textBox != NULL && wantedThisPass)
+
+            std::string label;
+            const char* role = NULL;
+            if (pass == UI_PASS_ITEMS_ONLY)
             {
-                const std::string label = textBox->getCaption().asUTF8();
+                if (textBox == NULL && IsItemCellIcon(widget))
+                {
+                    std::ostringstream ordinal;
+                    ordinal << "item_" << g_itemCellOrdinal++;
+                    label = ordinal.str();
+                    role = "item";
+                }
+            }
+            else if (textBox != NULL &&
+                     ((pass == UI_PASS_BUTTONS_ONLY) ? isButton : !isButton))
+            {
+                label = textBox->getCaption().asUTF8();
+                role = isButton ? "button" : "text";
+            }
+
+            if (role != NULL)
+            {
                 const MyGUI::IntCoord bounds = widget->getAbsoluteCoord();
                 if (!label.empty() &&
                     bounds.width > 0 &&
@@ -953,8 +992,7 @@ namespace
                     ++appended;
                     json << "{";
                     json << "\"label\":\"" << JsonEscape(label) << "\",";
-                    json << "\"role\":\"" << (isButton ? "button" : "text")
-                         << "\",";
+                    json << "\"role\":\"" << role << "\",";
                     json << "\"bounds\":{";
                     json << "\"min_x\":"
                          << static_cast<double>(bounds.left) /
@@ -994,7 +1032,7 @@ namespace
         }
     }
 
-    void AppendVisibleUIControls(std::ostringstream& json)
+    void AppendVisibleUIControls(std::ostringstream& json, bool includeItemCells)
     {
         MyGUI::Gui* myGui = MyGUI::Gui::getInstancePtr();
         MyGUI::RenderManager* renderManager =
@@ -1014,9 +1052,19 @@ namespace
         json << "[";
         bool first = true;
         unsigned int appended = 0;
-        const UIControlPass passes[2] = {UI_PASS_BUTTONS_ONLY, UI_PASS_TEXT_ONLY};
-        for (unsigned int index = 0; index < 2; ++index)
+        g_itemCellOrdinal = 0;
+        // Item cells are emitted only while an inventory or trade window is
+        // open. Everywhere else the world is full of decorative images, and
+        // exporting them would spend the cap on things nothing can act on.
+        const UIControlPass passes[3] = {
+            UI_PASS_BUTTONS_ONLY,
+            UI_PASS_ITEMS_ONLY,
+            UI_PASS_TEXT_ONLY};
+        const unsigned int passCount = includeItemCells ? 3 : 2;
+        for (unsigned int index = 0; index < passCount; ++index)
         {
+            if (!includeItemCells && passes[index] == UI_PASS_ITEMS_ONLY)
+                continue;
             // Each pass re-walks the tree with its own visit budget so a wide
             // text-heavy HUD cannot exhaust the walk before buttons are seen.
             unsigned int visited = 0;
@@ -1414,7 +1462,7 @@ namespace
             json << "null";
         json << ",";
         json << "\"visible_controls\":";
-        AppendVisibleUIControls(json);
+        AppendVisibleUIControls(json, inventoryOpen || tradeOpen);
         json << ",";
         const std::string selectedId = StableEntityId(selected);
         if (!selectedId.empty() &&
@@ -1692,7 +1740,7 @@ namespace
         json << "\"ui\":{";
         json << "\"active_screen\":\"title\",";
         json << "\"visible_controls\":";
-        AppendVisibleUIControls(json);
+        AppendVisibleUIControls(json, false);
         json << "},";
         json << "\"native_control\":{";
         json << "\"available\":false,";

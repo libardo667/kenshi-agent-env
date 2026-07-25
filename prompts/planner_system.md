@@ -44,6 +44,12 @@ yourself, in whatever order the current evidence supports.
   from `visible_controls`. Never author a label that is absent from that list or
   whose entry has `ambiguous: true`; a duplicate reference fails closed. The
   bounds come from telemetry, so never supply coordinates.
+- `role: "item"` entries are inventory or shop grid cells, listed only while an
+  inventory or trade window is open. Their labels (`item_0`, `item_1`, …) are
+  positions in the current layout, **not** item identities: they say nothing
+  about what a cell holds. Read `telemetry.ui.tooltip_text` after hovering a
+  cell to learn what it actually is, and never assume an ordinal refers to the
+  same item across observations.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
   current `telemetry.ui.active_screen`. Use it to leave dialogue, trade, or an
   inventory window; it refuses if the screen you named is not the one open, so

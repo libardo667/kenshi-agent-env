@@ -361,7 +361,10 @@ def normalize_control_label(value: str) -> str:
 
 class VisibleUIControl(StrictModel):
     label: str = Field(min_length=1, max_length=500)
-    role: Literal["button", "text"]
+    # `item` is an inventory or shop grid cell. It carries no caption of its
+    # own, so its label is an ordinal from the deterministic export walk and
+    # what it actually holds must be read from the tooltip after hovering it.
+    role: Literal["button", "text", "item"]
     bounds: NormalizedPointerBounds
 
     @property
@@ -676,7 +679,7 @@ class ActivateVisibleControlAction(StrictModel):
 
     kind: Literal["activate_visible_control"] = "activate_visible_control"
     exact_label: str = Field(min_length=1, max_length=500)
-    role: Literal["button", "text"] = "button"
+    role: Literal["button", "text", "item"] = "button"
 
 
 SkillArgumentValue: TypeAlias = str | int | float | bool | None

@@ -179,7 +179,8 @@
           "default": "button",
           "enum": [
             "button",
-            "text"
+            "text",
+            "item"
           ],
           "title": "Role",
           "type": "string"
@@ -2172,7 +2173,8 @@
         "role": {
           "enum": [
             "button",
-            "text"
+            "text",
+            "item"
           ],
           "title": "Role",
           "type": "string"

@@ -479,3 +479,59 @@ class TestLegacyPlanTranslation:
         translated, counts = translate_legacy_plan_actions(plan, ledger=LegacyCompatibilityLedger())
         assert translated is plan
         assert counts == {}
+
+
+class TestItemCellControls:
+    """Shop and inventory grid cells bind like any other advertised control."""
+
+    def test_an_item_cell_binds_by_ordinal_and_role(self) -> None:
+        state = observation(
+            controls=[
+                VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5)),
+                VisibleUIControl(label="item_1", role="item", bounds=_bounds(0.6)),
+                VisibleUIControl(label="ARRANGE", role="button", bounds=_bounds(0.9)),
+            ],
+            capabilities=["ui.visible_controls"],
+        )
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(exact_label="item_1", role="item"),
+            state,
+        )
+        assert binding.bound
+        assert binding.resolved_role == "item"
+        assert binding.resolved_bounds == _bounds(0.6)
+
+    def test_an_item_ordinal_does_not_match_a_button(self) -> None:
+        state = observation(
+            controls=[VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5))],
+            capabilities=["ui.visible_controls"],
+        )
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(exact_label="item_0", role="button"),
+            state,
+        )
+        assert not binding.bound
+
+    def test_absent_cell_fails_closed(self) -> None:
+        state = observation(
+            controls=[VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5))],
+            capabilities=["ui.visible_controls"],
+        )
+        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(exact_label="item_9", role="item"),
+            state,
+        )
+        assert not binding.bound
+
+    def test_item_cells_appear_in_the_digest_with_ambiguity_marked(self) -> None:
+        state = observation(
+            controls=[
+                VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5)),
+                VisibleUIControl(label="item_1", role="item", bounds=_bounds(0.6)),
+            ],
+            capabilities=["ui.visible_controls"],
+        )
+        digest = state.visible_control_digest()
+        assert {e["exact_label"] for e in digest} == {"item_0", "item_1"}
+        assert all(e["role"] == "item" for e in digest)
+        assert not any(e["ambiguous"] for e in digest)
