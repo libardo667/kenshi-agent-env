@@ -48,6 +48,7 @@ from .models import (
     PointerActionClass,
     PurchaseItemAction,
     ScrollScreenAction,
+    SellItemAction,
     SkillAction,
     UseGameBindingAction,
     WorldStateRevision,
@@ -232,8 +233,18 @@ def bind_visible_control(
 ITEM_ROLE = "item"
 
 
-def _bind_item_cell(cell_label: str, observation: Observation) -> ReferenceBinding:
-    """Resolve one exact inventory or shop cell from current telemetry."""
+def _bind_item_cell(
+    cell_label: str,
+    observation: Observation,
+    *,
+    window: str | None = None,
+) -> ReferenceBinding:
+    """Resolve one exact inventory or shop cell from current telemetry.
+
+    `window` narrows the search to one open inventory. A trade screen shows two
+    side by side and the cell ordinals run across both, so on that screen the
+    label alone is not a reference to anything in particular.
+    """
 
     telemetry = observation.telemetry
     if telemetry is None:
@@ -249,10 +260,13 @@ def _bind_item_cell(cell_label: str, observation: Observation) -> ReferenceBindi
     matches = [
         control
         for control in (telemetry.ui.visible_controls or [])
-        if control.role == ITEM_ROLE and normalize_control_label(control.label) == wanted
+        if control.role == ITEM_ROLE
+        and normalize_control_label(control.label) == wanted
+        and (window is None or control.window == window)
     ]
     if not matches:
-        return _unbound(f"No current item cell matches {cell_label!r}.")
+        where = f" in window {window!r}" if window is not None else ""
+        return _unbound(f"No current item cell matches {cell_label!r}{where}.")
     if len(matches) > 1:
         return _unbound(
             f"{len(matches)} current item cells match {cell_label!r}; an ambiguous "
@@ -372,6 +386,79 @@ def bind_purchase_item(
             f"{action.seller_id}."
         ),
         target_id=action.seller_id,
+        resolved_label=cell.resolved_label,
+        resolved_role=cell.resolved_role,
+        resolved_bounds=cell.resolved_bounds,
+        source_revision=observation.world_revision,
+    )
+
+
+
+def bind_sell_item(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a sale to a cell in the *selected character's own* inventory.
+
+    The one thing that must not be got wrong here is whose item is being sold.
+    A trade screen shows two inventories side by side, and the cell ordinals run
+    across both, so "cell 12" alone is not a reference. The window caption must
+    match the selected character's own name, which is observed rather than
+    asserted; anything else - including the trader's window - fails closed.
+    """
+
+    if not isinstance(action, SellItemAction):
+        return _unbound("Action is not a sell_item action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the sale.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the sale cannot be bound.")
+
+    selected = next(
+        (character for character in telemetry.squad if character.selected),
+        None,
+    )
+    if selected is None or not selected.name:
+        return _unbound(
+            "No single selected character is named, so ownership of the cell "
+            "cannot be established."
+        )
+    if action.window != selected.name:
+        return _unbound(
+            f"Window {action.window!r} is not the selected character's own "
+            f"inventory ({selected.name!r}); selling from another owner's window "
+            "is not permitted."
+        )
+
+    cell = _bind_item_cell(action.cell_label, observation, window=action.window)
+    if not cell.bound:
+        return cell
+    if cell.item_name is not None and action.item_name != cell.item_name:
+        return _unbound(f"The cell holds {cell.item_name!r}, not {action.item_name!r}.")
+
+    buyer = next(
+        (entity for entity in telemetry.nearby_entities if entity.id == action.buyer_id),
+        None,
+    )
+    if (
+        telemetry.active_shop_trader_count != 1
+        or buyer is None
+        or buyer.shop_inventory_owner is not True
+        or buyer.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
+    ):
+        return _unbound(
+            "The buyer is not the single verified non-hostile shop owner currently "
+            "trading."
+        )
+
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to cell {cell.resolved_label!r} in {selected.name!r}'s own "
+            f"inventory, holding {action.item_name!r}, sold to {action.buyer_id}."
+        ),
+        target_id=action.buyer_id,
         resolved_label=cell.resolved_label,
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
@@ -895,6 +982,49 @@ SCROLL_SCREEN_CONTRACT = ActionContract(
     authorization_conditions=_visible_control_authorization_conditions,
 )
 
+
+SELL_ITEM_CONTRACT = ActionContract(
+    kind="sell_item",
+    version="1.0",
+    model=SellItemAction,
+    summary=(
+        "Sell one item from the selected character's own inventory to the shop "
+        "currently being traded with. The mirror of purchase_item, and the only "
+        "way the agent earns money rather than only spending it."
+    ),
+    argument_source=(
+        "cell_label from a visible_controls entry with role 'item'; window must "
+        "be the selected character's own name; item_name copied from that "
+        "cell's own entry; buyer_id the exact stable id of the one active shop "
+        "owner. No price is given: the shop's offer is not exported."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            VISIBLE_CONTROLS_CAPABILITY,
+            "ui.inventory",
+            "squad.inventory",
+            "game.money",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.shop_owners",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    # Counted against the purchase budget: a sale is as irreversible as a buy.
+    risk=ActionRiskCost(pointer_actions=1, purchase_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("cell_label", "window", "buyer_id"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_sell",
+    bind=bind_sell_item,
+    authorization_conditions=_visible_control_authorization_conditions,
+)
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
@@ -905,6 +1035,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         PURCHASE_ITEM_CONTRACT,
         USE_GAME_BINDING_CONTRACT,
         SCROLL_SCREEN_CONTRACT,
+        SELL_ITEM_CONTRACT,
     )
 }
 

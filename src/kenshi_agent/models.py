@@ -838,6 +838,29 @@ class SkillAction(StrictModel):
         return {argument.name: argument.value for argument in self.args}
 
 
+class SellItemAction(StrictModel):
+    """Sell the item in one exact cell of the agent's own inventory.
+
+    The mirror of `purchase_item`, and the reason trading stopped being one-way:
+    with only a purchase action the agent could spend its starting money and
+    then never earn any.
+
+    Deliberately carries no expected price. A shop pays its own multiplier on an
+    item's value rather than the listed value, and that offer is not exported,
+    so asserting a price here would be asserting something we cannot check - the
+    exact failure mode `purchase_item` was built to avoid. What *is* checked is
+    that the cell is in this character's own inventory and holds this item.
+    """
+
+    kind: Literal["sell_item"] = "sell_item"
+    cell_label: str = Field(min_length=1, max_length=80)
+    item_name: str = Field(min_length=1, max_length=200)
+    # Caption of the inventory window the cell sits in; must be the selected
+    # character's own window, never the trader's.
+    window: str = Field(min_length=1, max_length=200)
+    buyer_id: str = Field(min_length=1, max_length=200)
+
+
 class ScrollScreenAction(StrictModel):
     """Scroll inside one open window so more of its contents become visible.
 
@@ -993,6 +1016,7 @@ SemanticAction: TypeAlias = (
     | PurchaseItemAction
     | UseGameBindingAction
     | ScrollScreenAction
+    | SellItemAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
 
@@ -1018,6 +1042,7 @@ Action: TypeAlias = (
     | PurchaseItemAction
     | UseGameBindingAction
     | ScrollScreenAction
+    | SellItemAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
@@ -1030,6 +1055,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "purchase_item",
         "use_game_binding",
         "scroll_screen",
+        "sell_item",
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(

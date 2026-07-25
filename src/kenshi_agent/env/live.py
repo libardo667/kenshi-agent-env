@@ -15,6 +15,7 @@ from ..action_contracts import (
     NATIVE_APPROACH_WIRE_COMMAND,
     PURCHASE_ITEM_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
+    SELL_ITEM_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
     ActionContract,
     ReferenceBinding,
@@ -57,6 +58,7 @@ from ..models import (
     PurchaseItemAction,
     ScrollAction,
     ScrollScreenAction,
+    SellItemAction,
     SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
@@ -564,6 +566,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_game_binding(action, started)
         if isinstance(action, ScrollScreenAction):
             return await self._execute_scroll_screen(action, started)
+        if isinstance(action, SellItemAction):
+            return await self._execute_sell_item(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -1053,6 +1057,57 @@ class LiveEnvironment(AgentEnvironment):
                 "message": (
                     f"Scrolled {action.notches:+d} notches inside {action.window!r}. "
                     "A later observation must report the newly visible controls."
+                ),
+            }
+        )
+
+    async def _execute_sell_item(
+        self,
+        action: SellItemAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Sell one cell from our own inventory, re-proving ownership in-lease.
+
+        Right-click is Kenshi's own auto-trade gesture (`RClickAutoTrade`), the
+        same primitive a purchase uses; what makes this a sale rather than a
+        purchase is entirely which inventory the cell belongs to, so that is
+        re-checked here rather than trusted from validation time.
+        """
+
+        binding, observation = self._rebind_in_lease(SELL_ITEM_CONTRACT, action)
+        bounds = binding.resolved_bounds
+        assert bounds is not None
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        primitive_receipt = await self.controller.execute(
+            ClickAction(
+                x=x,
+                y=y,
+                button=MouseButton.RIGHT,
+                hold_seconds=self.controls_config.control_activation_hold_seconds,
+            )
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=SELL_ITEM_CONTRACT.version,
+            target_id=action.buyer_id,
+            resolved_label=binding.resolved_label,
+            resolved_role=binding.resolved_role,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-proved the cell belongs to the selected character's own "
+                f"inventory inside the input lease. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Sold {action.item_name!r} from {action.window!r} to "
+                    f"{action.buyer_id}. A later observation must confirm the "
+                    "money and inventory change."
                 ),
             }
         )

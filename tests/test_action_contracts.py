@@ -241,6 +241,7 @@ class TestContractCatalog:
             "purchase_item",
             "use_game_binding",
             "scroll_screen",
+            "sell_item",
         }
         assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
             APPROACH_DIALOGUE_TARGET_CONTRACT

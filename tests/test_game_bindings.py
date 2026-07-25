@@ -243,3 +243,116 @@ def test_a_scroll_must_actually_move() -> None:
 
     with pytest.raises(pydantic.ValidationError):
         ScrollScreenAction(window="BARMAN", notches=0)
+
+
+def _trade_observation(*, selected_name: str = "HEP") -> Observation:
+    """A trade screen: our inventory and the trader's, side by side."""
+
+    from kenshi_agent.models import (
+        CharacterState,
+        Disposition,
+        NearbyEntity,
+        NormalizedPointerBounds,
+        VisibleUIControl,
+    )
+
+    def cell(window: str, index: int, name: str, value: int) -> VisibleUIControl:
+        return VisibleUIControl(
+            label=f"item_{index}",
+            role="item",
+            window=window,
+            item_name=name,
+            item_value=value,
+            bounds=NormalizedPointerBounds(
+                min_x=0.1, min_y=0.1, max_x=0.15, max_y=0.15
+            ),
+        )
+
+    base = observation()
+    telemetry = base.telemetry
+    assert telemetry is not None
+    return base.model_copy(
+        update={
+            "telemetry": telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        *telemetry.capabilities,
+                        "ui.visible_controls",
+                        "ui.inventory",
+                        "squad.inventory",
+                        "game.money",
+                        "identity.stable_handles",
+                        "nearby.characters",
+                        "nearby.shop_owners",
+                    ],
+                    "squad": [
+                        CharacterState(id="c-hep", name=selected_name, selected=True)
+                    ],
+                    "active_shop_trader_count": 1,
+                    "nearby_entities": [
+                        NearbyEntity(
+                            id="e-barman",
+                            name="Barman",
+                            disposition=Disposition.NEUTRAL,
+                            shop_inventory_owner=True,
+                        )
+                    ],
+                    "ui": telemetry.ui.model_copy(
+                        update={
+                            "visible_controls": [
+                                cell("HEP", 0, "Iron Club", 240),
+                                cell("BARMAN", 1, "Foodcube", 60),
+                            ]
+                        }
+                    ),
+                }
+            )
+        }
+    )
+
+
+def test_selling_binds_to_our_own_inventory_cell() -> None:
+    from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
+    from kenshi_agent.models import SellItemAction
+
+    action = SellItemAction(
+        cell_label="item_0",
+        item_name="Iron Club",
+        window="HEP",
+        buyer_id="e-barman",
+    )
+    binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
+    assert binding.bound
+    assert binding.target_id == "e-barman"
+
+
+def test_selling_refuses_a_cell_in_the_traders_window() -> None:
+    """Cell ordinals run across both inventories; the window is the owner."""
+
+    from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
+    from kenshi_agent.models import SellItemAction
+
+    action = SellItemAction(
+        cell_label="item_1",
+        item_name="Foodcube",
+        window="BARMAN",
+        buyer_id="e-barman",
+    )
+    binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
+    assert not binding.bound
+    assert "not the selected character's own inventory" in binding.reason
+
+
+def test_selling_refuses_when_the_cell_holds_something_else() -> None:
+    from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
+    from kenshi_agent.models import SellItemAction
+
+    action = SellItemAction(
+        cell_label="item_0",
+        item_name="Foodcube",
+        window="HEP",
+        buyer_id="e-barman",
+    )
+    binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
+    assert not binding.bound
+    assert "holds 'Iron Club'" in binding.reason

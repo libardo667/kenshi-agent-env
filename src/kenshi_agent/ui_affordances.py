@@ -242,10 +242,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.TRADE,
         Operation.INTERACT,
         "Sell an item.",
-        Mechanism.NONE,
-        "",
+        Mechanism.CONTROL,
+        "sell_item",
         native_entry_point="InventoryGUI::RClickAutoTrade @ 0x712AB0",
-        gap="Trading is one-way; the agent can spend money but never earn it.",
     ),
     Affordance(
         Interface.TRADE,

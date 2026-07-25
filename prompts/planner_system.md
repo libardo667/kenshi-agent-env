@@ -91,6 +91,13 @@ yourself, in whatever order the current evidence supports.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
   and back it with a success condition that checks it, such as
   `telemetry.ui.active_screen` or `telemetry.game.paused`.
+- `sell_item` is the mirror of `purchase_item` and the only way to *earn*
+  money. Give the `cell_label`, the `item_name` copied from that cell, the
+  `window` — which must be the selected character's own name, never the
+  trader's — and the `buyer_id` of the one active shop owner. On a trade screen
+  the two inventories share one run of cell ordinals, so the `window` is what
+  says whose item it is. No price: the shop's offer is not exported, so do not
+  assert one.
 - `scroll_screen` names an open `window` and a number of `notches` (negative
   goes further down the list). Contents that are not currently rendered are not
   exported at all, so if a shop or inventory seems not to hold what you expect,
