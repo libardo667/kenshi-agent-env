@@ -773,10 +773,22 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     running = _purchase_guard_state(paused=False)
 
     macros = MacroRegistry({})
-    lenient = ActionGuard(SafetyConfig(require_paused_between_actions=False, allow_action_kinds=["purchase_item"]), macros)
+    lenient = ActionGuard(
+        SafetyConfig(
+            require_paused_between_actions=False,
+            allow_action_kinds=["purchase_item"],
+        ),
+        macros,
+    )
     lenient.validate(action, running)  # must not raise
 
-    strict = ActionGuard(SafetyConfig(require_paused_between_actions=True, allow_action_kinds=["purchase_item"]), macros)
+    strict = ActionGuard(
+        SafetyConfig(
+            require_paused_between_actions=True,
+            allow_action_kinds=["purchase_item"],
+        ),
+        macros,
+    )
     with pytest.raises(SafetyViolation, match="require_paused_between_actions"):
         strict.validate(action, running)
 
