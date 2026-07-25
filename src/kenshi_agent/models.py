@@ -2063,6 +2063,10 @@ class Observation(StrictModel):
                     "hunger": selected.hunger,
                     "food_items": selected.food_items,
                     "in_combat": selected.in_combat,
+                    # Kept so a post-mortem can tell a healthy run from one
+                    # where the character was quietly being beaten.
+                    "blood": selected.blood,
+                    "bleeding_rate": selected.bleeding_rate,
                     "position": (
                         selected.position.model_dump(mode="json")
                         if selected.position is not None

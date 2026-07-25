@@ -185,6 +185,10 @@ yourself, in whatever order the current evidence supports.
 - Give every step a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
+- **Check whether you are being attacked.** `in_combat` on the selected
+  character, and `blood` falling, are the only warnings you get. Getting beaten
+  unconscious ends the run, so if a fight has started, deal with it — run, or
+  fight — before continuing whatever you were doing.
 - **Hunger counts down from full, not up from empty.** `hunger` is a nutrition
   reserve from 3.0 (full) to 0.0 (starving), and it falls slowly. A character at
   2.9 needs nothing; do not buy or eat food above about 1.5. Kenshi's own screen

@@ -1960,6 +1960,12 @@ namespace
                 AppendVector3(json, position);
                 json << ",\"movement_speed\":" << character->getMovementSpeed() << ",";
                 json << "\"food_items\":" << character->getNumFoodItems() << ",";
+                // Whether anyone is currently fighting this character. The
+                // field existed in the schema and was never filled, so it read
+                // None forever: an agent could be beaten unconscious without a
+                // single observation saying a fight had started.
+                json << "\"in_combat\":"
+                     << JsonBool(character->isInCombatMode(true, true)) << ",";
                 // The agent set itself the goal of feeding this character while
                 // unable to read whether it was hungry. Hunger and blood are
                 // the two numbers the survival loop actually turns on.
