@@ -1,0 +1,15 @@
+{
+  "command_id": "cmd-0123456789abcdef0123456789abcdef",
+  "command": "move_in_direction",
+  "status": "accepted",
+  "reason": "issued",
+  "target_id": "",
+  "bearing_degrees": 90.0,
+  "distance_units": 250.0,
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "based_on_telemetry_sequence": 7,
+  "acknowledged_at_telemetry_sequence": 8,
+  "accepted_at_telemetry_sequence": 8
+}

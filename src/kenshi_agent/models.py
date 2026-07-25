@@ -594,7 +594,11 @@ class NativeCommandAcknowledgement(StrictModel):
     ]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
-    target_id: str = Field(min_length=1, max_length=200)
+    # Targeted commands bind to one stable entity. Directional movement binds
+    # to its bearing and distance instead and deliberately names no target.
+    target_id: str = Field(default="", max_length=200)
+    bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
+    distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
     selected_character_ids: list[str] = Field(min_length=1, max_length=1)
     based_on_telemetry_sequence: int = Field(ge=0)
     acknowledged_at_telemetry_sequence: int = Field(ge=0)
@@ -609,6 +613,22 @@ class NativeCommandAcknowledgement(StrictModel):
             )
         if len(set(self.selected_character_ids)) != 1:
             raise ValueError("native acknowledgement requires exactly one selected character")
+        if self.command == "move_in_direction":
+            if self.target_id:
+                raise ValueError(
+                    "a directional acknowledgement must not name a target"
+                )
+            if self.distance_units <= 0.0:
+                raise ValueError(
+                    "a directional acknowledgement requires a distance"
+                )
+        else:
+            if not self.target_id:
+                raise ValueError("this native acknowledgement requires a target")
+            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
+                raise ValueError(
+                    "a targeted acknowledgement must not carry direction fields"
+                )
 
         if self.status == NativeCommandStatus.REJECTED:
             if self.accepted_at_telemetry_sequence is not None:
@@ -845,10 +865,10 @@ class MoveInDirectionAction(StrictModel):
     """Walk a bearing and a distance from wherever the character is standing.
 
     The intended destination is a point, not a person, so this action models
-    movement even when no nearby character can serve as a destination. The
-    current targetless request is not accepted end to end: the native parser,
-    acknowledgement model, and monitored-option adapter still assume a nonempty
-    target ID.
+    movement even when no nearby character can serve as a destination. Its
+    native request and acknowledgement deliberately carry an empty target ID;
+    command identity is the keyed command, selected character, bearing, and
+    distance.
 
     `bearing_degrees` is clockwise from north, as read on the map: 0 north,
     90 east, 180 south, 270 west.
@@ -1386,10 +1406,15 @@ class NativeCommandRequest(StrictModel):
         if len(set(self.selected_character_ids)) != 1:
             raise ValueError("native command requires exactly one selected character")
         if self.command == "move_in_direction":
+            if self.target_id:
+                raise ValueError("a directional walk must not name a target")
             if self.distance_units <= 0.0:
                 raise ValueError("a directional walk requires a distance to walk")
-        elif not self.target_id:
-            raise ValueError("this native command requires a target")
+        else:
+            if not self.target_id:
+                raise ValueError("this native command requires a target")
+            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
+                raise ValueError("a targeted native command must not carry direction fields")
         return self
 
 

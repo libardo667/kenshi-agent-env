@@ -4,6 +4,8 @@ VisualStudioVersion = 16.0.28701.123
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "KenshiAgentTelemetry", "KenshiAgentTelemetry.vcxproj", "{D06913E7-A617-4B3D-9B92-32757DA54451}"
 EndProject
+Project("{BC8A1FFA-BEE3-4634-8014-F334798102B3}") = "NativeCommandProtocolTests", "NativeCommandProtocolTests.vcxproj", "{9C0AA6EC-1901-4B77-A7DB-8EEAF794172B}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|x64 = Debug|x64
@@ -14,5 +16,9 @@ Global
         {D06913E7-A617-4B3D-9B92-32757DA54451}.Debug|x64.Build.0 = Debug|x64
         {D06913E7-A617-4B3D-9B92-32757DA54451}.Release|x64.ActiveCfg = Release|x64
         {D06913E7-A617-4B3D-9B92-32757DA54451}.Release|x64.Build.0 = Release|x64
+        {9C0AA6EC-1901-4B77-A7DB-8EEAF794172B}.Debug|x64.ActiveCfg = Debug|x64
+        {9C0AA6EC-1901-4B77-A7DB-8EEAF794172B}.Debug|x64.Build.0 = Debug|x64
+        {9C0AA6EC-1901-4B77-A7DB-8EEAF794172B}.Release|x64.ActiveCfg = Release|x64
+        {9C0AA6EC-1901-4B77-A7DB-8EEAF794172B}.Release|x64.Build.0 = Release|x64
     EndGlobalSection
 EndGlobal

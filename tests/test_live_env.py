@@ -22,6 +22,7 @@ from kenshi_agent.models import (
     HotkeyAction,
     KeyAction,
     MouseButton,
+    MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandRequest,
     NativeCommandStatus,
@@ -674,6 +675,8 @@ class NativeAckController(PulseController):
                             else self.status.value
                         ),
                         target_id=request.target_id,
+                        bearing_degrees=request.bearing_degrees,
+                        distance_units=request.distance_units,
                         selected_character_ids=request.selected_character_ids,
                         based_on_telemetry_sequence=basis,
                         acknowledged_at_telemetry_sequence=acknowledgement_sequence,
@@ -1244,5 +1247,110 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         assert controller.request.target_id == "entity-vendor"
         assert transition.receipt.executed
         assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "control.move_in_direction",
+            "squad.health",
+        ]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            MoveInDirectionAction(
+                bearing_degrees=90.0,
+                distance_units=250.0,
+                expected_effect="leave the current building",
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "e" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "move_in_direction"
+        assert controller.request.target_id == ""
+        assert controller.request.bearing_degrees == 90.0
+        assert controller.request.distance_units == 250.0
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert acknowledgement is not None
+        assert acknowledgement.target_id == ""
+        assert acknowledgement.bearing_degrees == 90.0
+        assert acknowledgement.distance_units == 250.0
+
+    asyncio.run(scenario())
+
+
+def test_direction_does_not_adopt_an_active_order_for_another_vector(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "control.move_in_direction",
+            "squad.health",
+        ]
+        telemetry.sequence = 10
+        active_id = "cmd-" + "a" * 32
+        telemetry.native_control = NativeControlState(
+            available=True,
+            active_command_id=active_id,
+            acknowledgements=[
+                NativeCommandAcknowledgement(
+                    command_id=active_id,
+                    command="move_in_direction",
+                    status=NativeCommandStatus.ACCEPTED,
+                    reason="issued",
+                    target_id="",
+                    bearing_degrees=0.0,
+                    distance_units=100.0,
+                    selected_character_ids=["entity-selected"],
+                    based_on_telemetry_sequence=1,
+                    acknowledged_at_telemetry_sequence=2,
+                    accepted_at_telemetry_sequence=2,
+                )
+            ],
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        await environment.dispatch(
+            MoveInDirectionAction(
+                bearing_degrees=90.0,
+                distance_units=250.0,
+                expected_effect="walk east",
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "f" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert controller.request is not None
+        assert controller.request.command_id == "cmd-" + "f" * 32
+        assert len(
+            [action for action in controller.actions if isinstance(action, HotkeyAction)]
+        ) == 1
 
     asyncio.run(scenario())

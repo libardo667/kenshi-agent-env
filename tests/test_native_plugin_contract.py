@@ -4,6 +4,12 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SOURCE = REPO_ROOT / "native" / "KenshiAgentTelemetry" / "KenshiAgentTelemetry.cpp"
+PROTOCOL_SOURCE = (
+    REPO_ROOT
+    / "native"
+    / "KenshiAgentTelemetry"
+    / "NativeCommandProtocol.cpp"
+)
 ATOMIC_WRITER_SOURCE = (
     REPO_ROOT / "native" / "KenshiAgentTelemetry" / "AtomicJsonWriter.cpp"
 )
@@ -71,7 +77,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.5.0"' in source
+    assert 'PROTOCOL_VERSION = "0.6.0"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -91,7 +97,7 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
 def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.5.0"' in source
+    assert 'PROTOCOL_VERSION = "0.6.0"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactDialogueTarget" in source
@@ -244,7 +250,7 @@ def test_request_key_allowlists_are_counted_not_restated() -> None:
     native command was rejected as malformed - including the approach that had
     worked for weeks. The count must come from the array.
     """
-    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    source = PROTOCOL_SOURCE.read_text(encoding="utf-8")
     for call in source.split("HasOnlyKeys(")[1:]:
         arguments = call.split(")")[0]
         if "const char* const*" in arguments:
@@ -252,3 +258,18 @@ def test_request_key_allowlists_are_counted_not_restated() -> None:
         assert "ARRAY_COUNT(" in arguments, (
             f"a key allowlist restated its length instead of counting it: {arguments}"
         )
+
+
+def test_targetless_direction_uses_the_shared_native_protocol_module() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    protocol = PROTOCOL_SOURCE.read_text(encoding="utf-8")
+    project = PLUGIN_PROJECT.read_text(encoding="utf-8")
+
+    assert '#include "NativeCommandProtocol.h"' in plugin
+    assert "NativeCommandProtocol.cpp" in project
+    assert "request.targetId.empty()" in protocol
+    assert 'request.command == "move_in_direction"' in protocol
+    assert "request.distanceUnits > 0.0" in protocol
+    assert "acknowledgement.bearingDegrees" in protocol
+    assert "acknowledgement.distanceUnits" in protocol
+    assert "SerializeNativeCommandAcknowledgement" in plugin

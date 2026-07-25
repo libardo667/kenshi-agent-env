@@ -31,10 +31,6 @@
 #endif
 #include <Windows.h>
 
-#include <boost/property_tree/json_parser.hpp>
-#include <boost/property_tree/ptree.hpp>
-
-#include <cctype>
 #include <cmath>
 #include <exception>
 #include <iomanip>
@@ -43,9 +39,16 @@
 #include <string>
 
 #include "AtomicJsonWriter.h"
+#include "NativeCommandProtocol.h"
 
 namespace
 {
+    using KenshiAgentTelemetry::IsValidCommandId;
+    using KenshiAgentTelemetry::NativeCommandAcknowledgement;
+    using KenshiAgentTelemetry::NativeCommandRequest;
+    using KenshiAgentTelemetry::ParseNativeCommandRequest;
+    using KenshiAgentTelemetry::SerializeNativeCommandAcknowledgement;
+
     const DWORD SNAPSHOT_INTERVAL_MS = 500;
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
@@ -62,7 +65,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.5.0";
+    const char* PROTOCOL_VERSION = "0.6.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -74,39 +77,6 @@ namespace
     {
         ShopTrader* object;
         Character* owner;
-    };
-
-    struct NativeCommandRequest
-    {
-        std::string commandId;
-        std::string command;
-        std::string controlMode;
-        std::string identitySessionId;
-        unsigned long long basedOnTelemetrySequence;
-        std::string selectedCharacterId;
-        std::string targetId;
-        // For move_in_direction: where to walk relative to the character's own
-        // position. A destination that is always available, because a character
-        // list is not: walk somewhere empty and there is nobody to walk to, and
-        // an agent whose only destinations are people can strand itself.
-        double bearingDegrees;
-        double distanceUnits;
-    };
-
-    struct NativeCommandAcknowledgement
-    {
-        std::string commandId;
-        std::string command;
-        std::string status;
-        std::string reason;
-        std::string targetId;
-        std::string selectedCharacterId;
-        unsigned long long basedOnTelemetrySequence;
-        unsigned long long acknowledgedAtTelemetrySequence;
-        unsigned long long acceptedAtTelemetrySequence;
-        unsigned long long terminalAtTelemetrySequence;
-        bool hasAcceptedSequence;
-        bool hasTerminalSequence;
     };
 
     struct ActiveNativeCommand
@@ -335,181 +305,6 @@ namespace
         return false;
     }
 
-    bool IsValidCommandId(const std::string& value)
-    {
-        if (value.size() != 36 || value.compare(0, 4, "cmd-") != 0)
-            return false;
-        for (size_t index = 4; index < value.size(); ++index)
-        {
-            const unsigned char character =
-                static_cast<unsigned char>(value[index]);
-            if (!std::isdigit(character) &&
-                !(character >= 'a' && character <= 'f'))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-#define ARRAY_COUNT(a) (static_cast<unsigned int>(sizeof(a) / sizeof((a)[0])))
-
-    bool HasOnlyKeys(
-        const boost::property_tree::ptree& tree,
-        const char* const* allowed,
-        unsigned int allowedCount)
-    {
-        unsigned int count = 0;
-        for (boost::property_tree::ptree::const_iterator it = tree.begin();
-             it != tree.end();
-             ++it)
-        {
-            bool found = false;
-            for (unsigned int index = 0; index < allowedCount; ++index)
-            {
-                if (it->first == allowed[index])
-                {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found)
-                return false;
-            ++count;
-        }
-        return count == allowedCount;
-    }
-
-    bool IsLeaf(const boost::property_tree::ptree& tree)
-    {
-        return tree.empty() && !tree.data().empty();
-    }
-
-    bool ParseNativeCommandRequest(
-        const std::string& payload,
-        NativeCommandRequest& request,
-        std::string& rejectionReason)
-    {
-        static const char* const rootKeys[] = {
-            "schema_version",
-            "command_id",
-            "command",
-            "control_mode",
-            "identity_session_id",
-            "based_on_revision",
-            "selected_character_ids",
-            "target_id",
-            "bearing_degrees",
-            "distance_units"
-        };
-        static const char* const revisionKeys[] = {
-            "telemetry_sequence",
-            "frame_sequence",
-            "capability_epoch",
-            "observed_at_monotonic"
-        };
-
-        request.basedOnTelemetrySequence = 0;
-        request.selectedCharacterId.clear();
-        request.bearingDegrees = 0.0;
-        request.distanceUnits = 0.0;
-        try
-        {
-            std::istringstream input(payload);
-            boost::property_tree::ptree root;
-            boost::property_tree::read_json(input, root);
-
-            request.commandId = root.get<std::string>("command_id", "");
-            request.command = root.get<std::string>("command", "");
-            request.controlMode = root.get<std::string>("control_mode", "");
-            request.identitySessionId =
-                root.get<std::string>("identity_session_id", "");
-            request.targetId = root.get<std::string>("target_id", "");
-            request.bearingDegrees = root.get<double>("bearing_degrees", 0.0);
-            request.distanceUnits = root.get<double>("distance_units", 0.0);
-            request.basedOnTelemetrySequence =
-                root.get<unsigned long long>(
-                    "based_on_revision.telemetry_sequence",
-                    0);
-            const boost::property_tree::ptree& selectedIds =
-                root.get_child("selected_character_ids");
-            if (selectedIds.size() == 1)
-            {
-                boost::property_tree::ptree::const_iterator selected =
-                    selectedIds.begin();
-                if (selected->first.empty() && IsLeaf(selected->second))
-                    request.selectedCharacterId = selected->second.data();
-            }
-
-            // Counted from the array, never restated: the literal 8 outlived
-            // the list it described, so the two keys added for directional
-            // movement fell outside the allowed range and every native
-            // command - including the approach that had worked for weeks -
-            // was rejected as malformed.
-            if (!HasOnlyKeys(root, rootKeys, ARRAY_COUNT(rootKeys)))
-            {
-                rejectionReason = "malformed_request";
-                return false;
-            }
-            if (root.get<std::string>("schema_version") != "1.0" ||
-                !IsValidCommandId(request.commandId) ||
-                request.command.empty() ||
-                request.command.size() > 80 ||
-                request.controlMode.empty() ||
-                request.controlMode.size() > 80 ||
-                request.identitySessionId.empty() ||
-                request.identitySessionId.size() > 200 ||
-                request.targetId.empty() ||
-                request.targetId.size() > 200)
-            {
-                rejectionReason = "malformed_request";
-                return false;
-            }
-
-            const boost::property_tree::ptree& revision =
-                root.get_child("based_on_revision");
-            if (!HasOnlyKeys(revision, revisionKeys, ARRAY_COUNT(revisionKeys)))
-            {
-                rejectionReason = "malformed_request";
-                return false;
-            }
-            request.basedOnTelemetrySequence =
-                revision.get<unsigned long long>("telemetry_sequence");
-            revision.get<unsigned int>("capability_epoch");
-            revision.get<double>("observed_at_monotonic");
-            const boost::property_tree::ptree& frameSequence =
-                revision.get_child("frame_sequence");
-            if (!IsLeaf(frameSequence))
-            {
-                rejectionReason = "malformed_request";
-                return false;
-            }
-
-            if (selectedIds.size() != 1)
-            {
-                rejectionReason = "malformed_request";
-                return false;
-            }
-            boost::property_tree::ptree::const_iterator selected =
-                selectedIds.begin();
-            if (!selected->first.empty() ||
-                !IsLeaf(selected->second) ||
-                selected->second.data().empty() ||
-                selected->second.data().size() > 200)
-            {
-                rejectionReason = "malformed_request";
-                return false;
-            }
-            request.selectedCharacterId = selected->second.data();
-        }
-        catch (const std::exception&)
-        {
-            rejectionReason = "malformed_request";
-            return false;
-        }
-        return true;
-    }
-
     int FindNativeAcknowledgement(const std::string& commandId)
     {
         for (unsigned int index = 0;
@@ -565,6 +360,8 @@ namespace
         acknowledgement.status = status;
         acknowledgement.reason = reason;
         acknowledgement.targetId = request.targetId;
+        acknowledgement.bearingDegrees = request.bearingDegrees;
+        acknowledgement.distanceUnits = request.distanceUnits;
         acknowledgement.selectedCharacterId =
             request.selectedCharacterId;
         acknowledgement.basedOnTelemetrySequence =
@@ -1453,11 +1250,23 @@ namespace
         if (!ParseNativeCommandRequest(payload, request, rejectionReason))
         {
             g_lastNativeCommandResult = rejectionReason;
+            const bool isDirection =
+                request.command == "move_in_direction";
+            const bool hasCommandIdentity =
+                isDirection
+                    ? (request.targetId.empty() &&
+                       request.bearingDegrees >= 0.0 &&
+                       request.bearingDegrees < 360.0 &&
+                       request.distanceUnits > 0.0 &&
+                       request.distanceUnits <= 2000.0)
+                    : (!request.targetId.empty() &&
+                       request.bearingDegrees == 0.0 &&
+                       request.distanceUnits == 0.0);
             if (IsValidCommandId(request.commandId) &&
                 (request.command == "approach_confirmed_vendor" ||
                  request.command == "move_to_character" ||
                  request.command == "move_in_direction") &&
-                !request.targetId.empty() &&
+                hasCommandIdentity &&
                 !request.selectedCharacterId.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
             {
@@ -1877,35 +1686,7 @@ namespace
                 json << ",";
             const NativeCommandAcknowledgement& acknowledgement =
                 g_nativeAcknowledgements[index];
-            json << "{";
-            json << "\"command_id\":\""
-                 << JsonEscape(acknowledgement.commandId) << "\",";
-            json << "\"command\":\""
-                 << JsonEscape(acknowledgement.command) << "\",";
-            json << "\"status\":\""
-                 << JsonEscape(acknowledgement.status) << "\",";
-            json << "\"reason\":\""
-                 << JsonEscape(acknowledgement.reason) << "\",";
-            json << "\"target_id\":\""
-                 << JsonEscape(acknowledgement.targetId) << "\",";
-            json << "\"selected_character_ids\":[\""
-                 << JsonEscape(acknowledgement.selectedCharacterId)
-                 << "\"],";
-            json << "\"based_on_telemetry_sequence\":"
-                 << acknowledgement.basedOnTelemetrySequence << ",";
-            json << "\"acknowledged_at_telemetry_sequence\":"
-                 << acknowledgement.acknowledgedAtTelemetrySequence;
-            if (acknowledgement.hasAcceptedSequence)
-            {
-                json << ",\"accepted_at_telemetry_sequence\":"
-                     << acknowledgement.acceptedAtTelemetrySequence;
-            }
-            if (acknowledgement.hasTerminalSequence)
-            {
-                json << ",\"terminal_at_telemetry_sequence\":"
-                     << acknowledgement.terminalAtTelemetrySequence;
-            }
-            json << "}";
+            json << SerializeNativeCommandAcknowledgement(acknowledgement);
         }
         json << "],";
         json << "\"last_command_sequence\":" << g_nativeCommandSequence;

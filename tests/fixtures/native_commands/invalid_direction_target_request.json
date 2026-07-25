@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "command_id": "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "command": "move_in_direction",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 13,
+    "frame_sequence": null,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 14.0
+  },
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "target_id": "entity-not-a-direction",
+  "bearing_degrees": 180.0,
+  "distance_units": 100.0
+}

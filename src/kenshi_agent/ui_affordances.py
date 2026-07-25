@@ -315,16 +315,16 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.MAP,
         Operation.INTERACT,
-        "Travel locally toward an observed character; bounded bearing is declared.",
+        "Travel locally toward an observed character or along a bounded bearing.",
         Mechanism.NATIVE,
-        "move_to_character",
+        "move_to_character / move_in_direction",
         native_entry_point="PlayerInterface::newPlayerTaskSelectedCharacters MOVE_CUS_ORDERED",
         gap=(
-            "Local exact-character travel only. move_in_direction is declared "
-            "but its targetless request is blocked by current parser, "
-            "acknowledgement, and option assumptions. Crossing the map still "
-            "needs a travel order to a chosen location, which is a right-click "
-            "on the map screen and has no action yet."
+            "Local target and bearing orders are implemented; the corrected "
+            "targetless protocol has portable and native-build proof but still "
+            "needs a live Kenshi acceptance/completion smoke. Crossing the map "
+            "still needs a travel order to a chosen location, which is a "
+            "right-click on the map screen and has no action yet."
         ),
     ),
     Affordance(

@@ -13,8 +13,6 @@ from ..action_contracts import (
     EQUIP_ITEM_CONTRACT,
     MOVE_IN_DIRECTION_CONTRACT,
     MOVE_TO_CHARACTER_CONTRACT,
-    NATIVE_APPROACH_CAPABILITY,
-    NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
     NATIVE_DIRECTION_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
@@ -1345,7 +1343,14 @@ class LiveEnvironment(AgentEnvironment):
         continue_until_terminal: bool = False,
     ) -> ActionReceipt:
         adopted = (
-            self._active_approach_for(target_id) if continue_until_terminal else None
+            self._active_native_order_for(
+                wire_command=wire_command,
+                target_id=target_id,
+                bearing_degrees=bearing_degrees,
+                distance_units=distance_units,
+            )
+            if continue_until_terminal
+            else None
         )
         if adopted is not None:
             # This exact pathing order is already issued and still walking. The
@@ -1511,16 +1516,23 @@ class LiveEnvironment(AgentEnvironment):
             }
         )
 
-    def _active_approach_for(
+    def _active_native_order_for(
         self,
+        *,
+        wire_command: Literal[
+            "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+        ],
         target_id: str,
+        bearing_degrees: float,
+        distance_units: float,
     ) -> NativeCommandAcknowledgement | None:
-        """An already accepted, still active order toward this exact target.
+        """An already accepted, still active order with this exact identity.
 
         A pathing order survives the run that issued it, so a later run can find
-        the character mid-walk. Reissuing would be a second at-most-once command
-        and the plug-in would refuse it; adopting the in-flight one is both
-        correct and what "the option owns continuation" means in practice.
+        the character mid-walk. For targeted orders identity is command plus
+        target; for a targetless direction it is command plus bearing and
+        distance. Treating every empty target as the same order could adopt a
+        northbound walk when the plan asked to go east.
         """
 
         observation = self._last_observation
@@ -1533,7 +1545,20 @@ class LiveEnvironment(AgentEnvironment):
         if (
             acknowledgement is None
             or acknowledgement.status is not NativeCommandStatus.ACCEPTED
-            or acknowledgement.target_id != target_id
+            or acknowledgement.command != wire_command
+        ):
+            return None
+        if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
+            if (
+                acknowledgement.target_id
+                or acknowledgement.bearing_degrees != bearing_degrees
+                or acknowledgement.distance_units != distance_units
+            ):
+                return None
+        elif (
+            acknowledgement.target_id != target_id
+            or acknowledgement.bearing_degrees != 0.0
+            or acknowledgement.distance_units != 0.0
         ):
             return None
         selected_ids = observation.telemetry.ui.selected_character_ids
@@ -1592,14 +1617,15 @@ class LiveEnvironment(AgentEnvironment):
                 "Native command basis regressed behind the authorized revision."
             )
         telemetry = observation.telemetry
-        required_capabilities = {
-            "identity.stable_handles",
-            "nearby.characters",
-            "nearby.roles",
-        }
-        missing = required_capabilities - set(telemetry.capabilities)
-        if not NATIVE_APPROACH_CAPABILITY_ALIASES & set(telemetry.capabilities):
-            missing.add(NATIVE_APPROACH_CAPABILITY)
+        if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
+            native_contract = MOVE_IN_DIRECTION_CONTRACT
+        elif wire_command == NATIVE_MOVE_WIRE_COMMAND:
+            native_contract = MOVE_TO_CHARACTER_CONTRACT
+        else:
+            native_contract = APPROACH_DIALOGUE_TARGET_CONTRACT
+        missing = native_contract.missing_capabilities(
+            set(telemetry.capabilities)
+        )
         if missing:
             raise RuntimeError(
                 "Native command lacks required capabilities: " + ", ".join(sorted(missing))
@@ -1677,6 +1703,9 @@ class LiveEnvironment(AgentEnvironment):
                     if (
                         acknowledgement.based_on_telemetry_sequence != basis
                         or acknowledgement.target_id != request.target_id
+                        or acknowledgement.bearing_degrees
+                        != request.bearing_degrees
+                        or acknowledgement.distance_units != request.distance_units
                         or acknowledgement.selected_character_ids != request.selected_character_ids
                     ):
                         raise RuntimeError(

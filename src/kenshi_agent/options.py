@@ -10,6 +10,9 @@ from .input_boundary import ExecutionToken
 from .models import (
     Action,
     CommandDispatchContext,
+    MoveInDirectionAction,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
     Observation,
     SkillAction,
     Transition,
@@ -160,6 +163,255 @@ class StatefulMovementOption:
             revision = WorldStateRevision()
         else:
             revision = observation.world_revision.model_copy(deep=True)
+        return OptionPoll(
+            option_id=self.option_id,
+            status=self.status,
+            reason=self.reason,
+            revision=revision,
+        )
+
+
+class StatefulNativeMovementOption:
+    """Own one targetless native walk until its exact command becomes terminal.
+
+    Native dispatch returns as soon as Kenshi accepts the order while the
+    character continues walking. Unlike a target approach, a bare destination
+    has no nearby-entity distance to monitor. Its authoritative completion
+    signal is therefore the native acknowledgement keyed by command ID and
+    fenced again by command, selected character, bearing, and distance.
+    """
+
+    def __init__(
+        self,
+        *,
+        option_id: str,
+        action: MoveInDirectionAction,
+        environment: AgentEnvironment,
+        require_paused_start: bool = True,
+    ) -> None:
+        self.option_id = option_id
+        self.action = action.model_copy(deep=True)
+        self.environment = environment
+        self.require_paused_start = require_paused_start
+        self.status = OptionStatus.CREATED
+        self.start_observation: Observation | None = None
+        self.latest_observation: Observation | None = None
+        self.task: asyncio.Task[Transition] | None = None
+        self.transition: Transition | None = None
+        self.command: CommandDispatchContext | None = None
+        self.selected_character_ids: list[str] = []
+        self.reason = "Native movement option has not been prepared."
+
+    def prepare(self, observation: Observation) -> OptionPoll:
+        if self.status is not OptionStatus.CREATED:
+            raise OptionLifecycleError("Native movement option can only be prepared once.")
+        telemetry = observation.telemetry
+        if (
+            telemetry is None
+            or "game.pause" not in telemetry.capabilities
+            or "control.move_in_direction" not in telemetry.capabilities
+        ):
+            raise OptionLifecycleError(
+                "Native movement option requires a capable start state."
+            )
+        if self.require_paused_start and telemetry.game.paused is not True:
+            raise OptionLifecycleError(
+                "Native movement option requires a capable, confirmed paused start state."
+            )
+        selected_ids = telemetry.ui.selected_character_ids
+        if (
+            len(selected_ids) != 1
+            or telemetry.ui.selected_character_id != selected_ids[0]
+        ):
+            raise OptionLifecycleError(
+                "Native movement option requires one exact primary selection."
+            )
+        self.start_observation = observation.model_copy(deep=True)
+        self.latest_observation = observation.model_copy(deep=True)
+        self.selected_character_ids = list(selected_ids)
+        self.status = OptionStatus.PREPARED
+        self.reason = (
+            "Native movement start state is capable and the selection is exact."
+        )
+        return self._poll_result()
+
+    def start(
+        self,
+        command: CommandDispatchContext | None = None,
+        *,
+        token: ExecutionToken | None = None,
+    ) -> asyncio.Task[Transition]:
+        if self.status is not OptionStatus.PREPARED:
+            raise OptionLifecycleError(
+                "Native movement option must be prepared before start."
+            )
+        if command is None:
+            raise OptionLifecycleError(
+                "Native movement option requires a keyed command context."
+            )
+        self.command = command.model_copy(deep=True)
+        self.status = OptionStatus.RUNNING
+        self.reason = (
+            "Directional movement order dispatched; awaiting its terminal "
+            "native acknowledgement."
+        )
+        work = self.environment.dispatch(self.action, command=command, token=token)
+        self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
+        return self.task
+
+    def poll(self, update: StoreUpdate | None = None) -> OptionPoll:
+        if update is not None:
+            self.latest_observation = update.observation.model_copy(deep=True)
+        if self.status is not OptionStatus.RUNNING:
+            return self._poll_result()
+
+        task = self.task
+        if task is not None and task.done():
+            if task.cancelled():
+                self.status = OptionStatus.CANCELLED
+                self.reason = "Native movement option task was cancelled."
+                return self._poll_result()
+            error = task.exception()
+            if error is not None:
+                self.status = OptionStatus.FAILED
+                self.reason = (
+                    f"Native movement dispatch failed: {type(error).__name__}: {error}"
+                )
+                return self._poll_result()
+            if self.transition is None:
+                self.transition = task.result()
+                # A store update passed to this poll may already be later than
+                # the observation bundled with the quick dispatch receipt. Do
+                # not roll the monitor backward to that older acceptance.
+                if update is None:
+                    self.latest_observation = self.transition.observation.model_copy(
+                        deep=True
+                    )
+                if (
+                    not self.transition.receipt.accepted
+                    and not self.transition.receipt.executed
+                ):
+                    self.status = OptionStatus.FAILED
+                    self.reason = (
+                        "Native movement order was rejected without execution: "
+                        f"{self.transition.receipt.message}"
+                    )
+                    return self._poll_result()
+
+        acknowledgement = self._current_acknowledgement()
+        if acknowledgement is None:
+            self.reason = (
+                "Directional movement was dispatched; awaiting a matching native "
+                "acknowledgement."
+            )
+            return self._poll_result()
+        if not self._matches(acknowledgement):
+            self.status = OptionStatus.FAILED
+            self.reason = (
+                "Native movement acknowledgement identity did not match the "
+                "dispatched command vector and selection."
+            )
+            return self._poll_result()
+        if acknowledgement.status is NativeCommandStatus.ACCEPTED:
+            self.reason = (
+                "Kenshi accepted the exact directional movement order; the "
+                "character is still walking."
+            )
+        elif acknowledgement.status is NativeCommandStatus.COMPLETED:
+            if self.transition is None:
+                self.reason = (
+                    "Kenshi completed the exact directional movement order; "
+                    "awaiting the dispatch transition."
+                )
+            else:
+                self.status = OptionStatus.SUCCEEDED
+                self.reason = (
+                    "Kenshi completed the exact directional movement order: "
+                    f"{acknowledgement.reason}."
+                )
+        else:
+            self.status = OptionStatus.FAILED
+            self.reason = (
+                f"Kenshi ended the directional movement as "
+                f"{acknowledgement.status.value!r}: {acknowledgement.reason}."
+            )
+        return self._poll_result()
+
+    async def cancel(self, reason: str) -> OptionPoll:
+        if self.status in {
+            OptionStatus.SUCCEEDED,
+            OptionStatus.FAILED,
+            OptionStatus.CANCELLED,
+        }:
+            return self._poll_result()
+        task = self.task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                self.status = OptionStatus.FAILED
+                self.reason = (
+                    "Native movement cancellation cleanup failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                return self._poll_result()
+        self.status = OptionStatus.CANCELLED
+        self.reason = reason
+        return self._poll_result()
+
+    def result(self) -> Transition:
+        if self.status is OptionStatus.FAILED and self.task is not None:
+            done_cleanly = self.task.done() and not self.task.cancelled()
+            error = self.task.exception() if done_cleanly else None
+            if error is not None:
+                raise error
+        if self.status is not OptionStatus.SUCCEEDED or self.transition is None:
+            raise OptionLifecycleError(
+                "Native movement option has no successful transition in state "
+                f"{self.status.value!r}."
+            )
+        return self.transition.model_copy(deep=True)
+
+    def _current_acknowledgement(
+        self,
+    ) -> NativeCommandAcknowledgement | None:
+        if self.command is None:
+            return None
+        observation = self.latest_observation
+        if observation is not None and observation.telemetry is not None:
+            acknowledgement = (
+                observation.telemetry.native_control.acknowledgement_for(
+                    self.command.command_id
+                )
+            )
+            if acknowledgement is not None:
+                return acknowledgement
+        if self.transition is not None:
+            return self.transition.receipt.native_acknowledgement
+        return None
+
+    def _matches(self, acknowledgement: NativeCommandAcknowledgement) -> bool:
+        assert self.command is not None
+        return bool(
+            acknowledgement.command_id == self.command.command_id
+            and acknowledgement.command == "move_in_direction"
+            and acknowledgement.target_id == ""
+            and acknowledgement.selected_character_ids
+            == self.selected_character_ids
+            and acknowledgement.bearing_degrees == self.action.bearing_degrees
+            and acknowledgement.distance_units == self.action.distance_units
+        )
+
+    def _poll_result(self) -> OptionPoll:
+        observation = self.latest_observation or self.start_observation
+        revision = (
+            observation.world_revision.model_copy(deep=True)
+            if observation is not None
+            else WorldStateRevision()
+        )
         return OptionPoll(
             option_id=self.option_id,
             status=self.status,

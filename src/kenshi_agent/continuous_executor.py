@@ -17,6 +17,7 @@ from .models import (
     ConditionEvaluation,
     ConditionResult,
     InputBoundaryDecision,
+    MoveInDirectionAction,
     Observation,
     ObservationPolicy,
     PlanEnvelope,
@@ -34,6 +35,7 @@ from .options import (
     OptionStatus,
     StatefulApproachOption,
     StatefulMovementOption,
+    StatefulNativeMovementOption,
 )
 from .planning import (
     PlanBudgetError,
@@ -636,6 +638,65 @@ class ContinuousPlanExecutor:
                 },
             )
 
+        native_movement_option: StatefulNativeMovementOption | None = None
+        contract = contract_for(action)
+        if (
+            isinstance(action, MoveInDirectionAction)
+            and contract is not None
+            and contract.execution is ActionExecution.MONITORED_OPTION
+        ):
+            native_movement_option = StatefulNativeMovementOption(
+                option_id=(
+                    f"native-movement-{plan.plan_id}-{plan.plan_version}-{step.step_id}"
+                ),
+                action=action,
+                environment=self.environment,
+                require_paused_start=(
+                    self.planning_config.require_paused_between_actions
+                ),
+            )
+            try:
+                prepared = native_movement_option.prepare(observation)
+            except OptionLifecycleError as exc:
+                budget.release(reserved_risk)
+                reason = f"Native movement option preparation failed: {exc}"
+                self._event(
+                    "plan_budget_released",
+                    plan,
+                    observation,
+                    step=step,
+                    reason="No directional movement command was dispatched.",
+                )
+                self._event(
+                    "option_failed",
+                    plan,
+                    observation,
+                    step=step,
+                    reason=reason,
+                    evidence={
+                        "option_id": native_movement_option.option_id,
+                        "option_status": native_movement_option.status.value,
+                    },
+                )
+                return _StepResult(
+                    observation=observation,
+                    succeeded=False,
+                    actions_completed=0,
+                    reason=reason,
+                )
+            self._event(
+                "option_prepared",
+                plan,
+                observation,
+                step=step,
+                reason=prepared.reason,
+                evidence={
+                    "option_id": prepared.option_id,
+                    "option_status": prepared.status.value,
+                    "start_revision": prepared.revision.model_dump(mode="json"),
+                },
+            )
+
         approach_option: StatefulApproachOption | None = None
         approach_params = self._resolve_approach_params(action)
         if approach_params is not None:
@@ -734,7 +795,7 @@ class ContinuousPlanExecutor:
         )
 
         staged_patch: _StagedPatch | None = None
-        approach_outcome: OptionPoll | None = None
+        monitored_outcome: OptionPoll | None = None
         try:
             if movement_option is not None:
                 transition, staged_patch = await self._execute_movement_option(
@@ -748,9 +809,15 @@ class ContinuousPlanExecutor:
                     protected_step_ids=protected_step_ids,
                     token=token,
                 )
-            elif approach_option is not None:
-                transition, staged_patch, approach_outcome = await self._execute_approach_option(
-                    approach_option,
+            elif native_movement_option is not None or approach_option is not None:
+                monitored_option = native_movement_option or approach_option
+                assert monitored_option is not None
+                (
+                    transition,
+                    staged_patch,
+                    monitored_outcome,
+                ) = await self._execute_monitored_option(
+                    monitored_option,
                     plan,
                     step,
                     observation,
@@ -907,7 +974,10 @@ class ContinuousPlanExecutor:
                 terminated=transition.terminated,
                 success=transition.success,
             )
-        if approach_outcome is not None and approach_outcome.status is not OptionStatus.SUCCEEDED:
+        if (
+            monitored_outcome is not None
+            and monitored_outcome.status is not OptionStatus.SUCCEEDED
+        ):
             # The monitored option is this action's authority on arrival. A lost
             # target or a hostile inside threat range is a terminal verdict, not
             # a hint to be overridden by a postcondition that happens to read
@@ -917,8 +987,8 @@ class ContinuousPlanExecutor:
                 succeeded=False,
                 actions_completed=1,
                 reason=(
-                    "The monitored approach did not reach its target, so the step "
-                    f"cannot succeed: {approach_outcome.reason}"
+                    "The monitored native option did not reach its terminal success, "
+                    f"so the step cannot succeed: {monitored_outcome.reason}"
                 ),
                 terminated=transition.terminated,
                 success=transition.success,
@@ -1224,9 +1294,9 @@ class ContinuousPlanExecutor:
                     evidence={"option_id": option.option_id},
                 )
 
-    async def _execute_approach_option(
+    async def _execute_monitored_option(
         self,
-        option: StatefulApproachOption,
+        option: StatefulApproachOption | StatefulNativeMovementOption,
         plan: PlanEnvelope,
         step: PlanStep,
         observation: Observation,
@@ -1239,12 +1309,11 @@ class ContinuousPlanExecutor:
         step_deadline: float,
     ) -> tuple[Transition, _StagedPatch | None, OptionPoll]:
         # Sibling of _execute_movement_option. The one difference is the terminal
-        # condition: the approach dispatch is acknowledged quickly while the
-        # character keeps walking, so this loop runs until the option's monitor
-        # reports terminal (arrival or abort) or the step deadline passes, not
-        # until the dispatch task completes. The concurrent-planner overlap is
-        # preserved: the ~30s strategic call runs while the character walks, so
-        # the next plan is not computed from scratch in a post-arrival gap.
+        # condition: native dispatch is acknowledged quickly while the character
+        # keeps walking, so this loop runs until the option's own authority
+        # reports terminal or the step deadline passes, not merely until the
+        # dispatch task completes. A target approach watches world state; a
+        # targetless direction watches its keyed native acknowledgement.
         option_task = option.start(command, token=token)
         self._event(
             "option_started",
@@ -1360,7 +1429,8 @@ class ContinuousPlanExecutor:
 
             if timed_out:
                 await option.cancel(
-                    "Approach exceeded its step timeout before reaching the target."
+                    "Monitored native movement exceeded its step timeout before "
+                    "terminal success."
                 )
 
             terminal = option.poll()
@@ -1384,7 +1454,7 @@ class ContinuousPlanExecutor:
                     latest,
                     step=step,
                     reason=(
-                        "Approach timed out before arriving."
+                        "Monitored native movement timed out before terminal success."
                         if timed_out
                         else terminal.reason
                     ),
@@ -1404,7 +1474,7 @@ class ContinuousPlanExecutor:
             return option.result(), staged_patch, terminal
         except asyncio.CancelledError:
             cancelled = await option.cancel(
-                "Independent safety supervision cancelled the approach option."
+                "Independent safety supervision cancelled the monitored native option."
             )
             self._event(
                 (
@@ -1437,7 +1507,7 @@ class ContinuousPlanExecutor:
                     "strategic_planner_call",
                     step_index=observation.step_index,
                     payload={
-                        "source": "concurrent_approach_cancelled",
+                        "source": "concurrent_option_cancelled",
                         "planner_latency_seconds": (
                             self.clock.monotonic() - planner_started_at
                             if planner_started_at is not None
@@ -1453,7 +1523,10 @@ class ContinuousPlanExecutor:
                     plan,
                     self.state_store.latest or observation,
                     step=step,
-                    reason="Approach ended before the concurrent advisory completed.",
+                    reason=(
+                        "Monitored native option ended before the concurrent "
+                        "advisory completed."
+                    ),
                     evidence={"option_id": option.option_id},
                 )
 

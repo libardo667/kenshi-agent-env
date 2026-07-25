@@ -231,8 +231,8 @@ def bind_move_in_direction(
     There is no external reference to resolve - the intended destination is
     derived from where the character already is - so this binder proves only
     that the game is running and somebody is selected to receive the order.
-    The current downstream native and option paths still require a target ID,
-    so successful binding is not end-to-end executability.
+    The monitored option then owns the walk through the exact keyed native
+    acknowledgement rather than inventing an external target.
     """
 
     if not isinstance(action, MoveInDirectionAction):
@@ -935,9 +935,8 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     model=MoveInDirectionAction,
     summary=(
         "Walk a bearing and distance from where the character stands, ordering "
-        "a walk to a bare point rather than toward anyone. This is the intended "
-        "targetless local-movement contract; current native/parser and "
-        "monitored-option target assumptions block end-to-end execution."
+        "a walk to a bare point rather than toward anyone. One monitored option "
+        "owns the targetless native order through its exact command vector."
     ),
     argument_source=(
         "bearing_degrees is clockwise from north (0 N, 90 E, 180 S, 270 W); "

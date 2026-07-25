@@ -18,6 +18,7 @@ from kenshi_agent.models import (
     ActionReceipt,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    CharacterState,
     CommandDispatchContext,
     Condition,
     ConditionKind,
@@ -28,6 +29,10 @@ from kenshi_agent.models import (
     IdempotencyPolicy,
     InputBoundaryDecision,
     InputBoundaryReport,
+    MoveInDirectionAction,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
@@ -450,6 +455,7 @@ def runtime_for(
             "skill",
             "stop",
             "approach_dialogue_target",
+            "move_in_direction",
             "activate_visible_control",
         ],
         max_actions_per_minute=500,
@@ -1454,6 +1460,248 @@ def test_approach_option_reaches_success_by_closing_distance_and_dialogue(
         assert [a.name for a in environment.actions if isinstance(a, SkillAction)] == [
             "mock_approach"
         ]
+
+    asyncio.run(scenario())
+
+
+class NativeDirectionEnvironment(RevisionEnvironment):
+    """Accept a bare-point order, then publish its keyed arrival."""
+
+    def __init__(self, *, clock: FakeClock) -> None:
+        super().__init__(clock=clock, control_mode=ControlMode.NATIVE_ASSISTED)
+        self.dispatched = asyncio.Event()
+        self.command: CommandDispatchContext | None = None
+        self.completed = False
+
+    def _acknowledgement(
+        self,
+        status: NativeCommandStatus,
+    ) -> NativeCommandAcknowledgement:
+        assert self.command is not None
+        terminal = status is NativeCommandStatus.COMPLETED
+        return NativeCommandAcknowledgement(
+            command_id=self.command.command_id,
+            command="move_in_direction",
+            status=status,
+            reason="arrived" if terminal else "issued",
+            target_id="",
+            bearing_degrees=90.0,
+            distance_units=250.0,
+            selected_character_ids=["entity-hep"],
+            based_on_telemetry_sequence=(
+                self.command.based_on_revision.telemetry_sequence or 0
+            ),
+            acknowledged_at_telemetry_sequence=2,
+            accepted_at_telemetry_sequence=2,
+            terminal_at_telemetry_sequence=self.sequence if terminal else None,
+        )
+
+    def observation(self) -> Observation:
+        obs = super().observation()
+        telemetry = obs.telemetry
+        assert telemetry is not None
+        acknowledgement = (
+            self._acknowledgement(
+                NativeCommandStatus.COMPLETED
+                if self.completed
+                else NativeCommandStatus.ACCEPTED
+            )
+            if self.command is not None
+            else None
+        )
+        native_control = NativeControlState(
+            active_command_id=(
+                self.command.command_id
+                if self.command is not None and not self.completed
+                else None
+            ),
+            acknowledgements=(
+                [acknowledgement] if acknowledgement is not None else []
+            ),
+            last_command_sequence=1 if acknowledgement is not None else 0,
+            last_command=(
+                "move_in_direction" if acknowledgement is not None else None
+            ),
+            last_result=(
+                "arrived"
+                if self.completed
+                else ("issued" if acknowledgement is not None else None)
+            ),
+        )
+        return obs.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={
+                        "capabilities": [
+                            *telemetry.capabilities,
+                            "control.move_in_direction",
+                            "squad.health",
+                        ],
+                        "game": telemetry.game.model_copy(
+                            update={"loaded": True}
+                        ),
+                        "ui": telemetry.ui.model_copy(
+                            update={
+                                "selected_character_id": "entity-hep",
+                                "selected_character_ids": ["entity-hep"],
+                            }
+                        ),
+                        "squad": [
+                            CharacterState(
+                                id="entity-hep",
+                                name="Hep",
+                                selected=True,
+                                alive=True,
+                            )
+                        ],
+                        "native_control": native_control,
+                    }
+                )
+            },
+            deep=True,
+        )
+
+    async def observe_without_capture(self) -> Observation:
+        self.sequence += 1
+        if self.dispatched.is_set():
+            self.completed = True
+        return self.observation()
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
+    ) -> Transition:
+        del token
+        assert isinstance(action, MoveInDirectionAction)
+        self.command = command
+        self.actions.append(action)
+        self.sequence = 2
+        self.dispatched.set()
+        acknowledgement = self._acknowledgement(NativeCommandStatus.ACCEPTED)
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                command_id=command.command_id,
+                started_after_revision=command.based_on_revision,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                primitive_actions=1,
+                message="targetless direction order issued",
+                native_acknowledgement=acknowledgement,
+            ),
+            observation=self.observation(),
+        )
+
+
+def test_targetless_direction_is_owned_until_its_native_arrival(
+    tmp_path: Path,
+) -> None:
+    class DirectionPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return PlanEnvelope(
+                    schema_version="1.0",
+                    plan_id="direction-proof",
+                    plan_version=1,
+                    objective="Walk east without inventing a target character.",
+                    control_mode=current.control_mode,
+                    based_on_revision=current.world_revision,
+                    assumptions=[fresh()],
+                    steps=[
+                        PlanStep(
+                            step_id="walk-east",
+                            action=MoveInDirectionAction(
+                                bearing_degrees=90.0,
+                                distance_units=250.0,
+                                expected_effect="leave the current building",
+                            ),
+                            preconditions=[
+                                condition(
+                                    "telemetry.game.paused",
+                                    True,
+                                    "game.pause",
+                                )
+                            ],
+                            success_conditions=[
+                                condition(
+                                    "telemetry.native_control.last_result",
+                                    "arrived",
+                                    "control.move_in_direction",
+                                )
+                            ],
+                            failure_conditions=[],
+                            timeout_seconds=5.0,
+                            retry_budget=0,
+                            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                        )
+                    ],
+                    entry_step_id="walk-east",
+                    max_actions=1,
+                    max_wall_seconds=10.0,
+                    max_game_seconds=10.0,
+                    risk_budget=RiskBudget(
+                        max_pointer_actions=0,
+                        max_purchase_actions=0,
+                        max_native_assisted_actions=1,
+                    ),
+                )
+            return PlannerDecision(
+                intent="stop",
+                rationale="The targetless movement reached its native terminal state.",
+                action=StopAction(reason="direction test complete"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = NativeDirectionEnvironment(clock=clock)
+        planner = DirectionPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_enabled=False,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.dispatched.wait(), timeout=1.0)
+            for _ in range(8):
+                pump_clock.advance(0.1)
+                await asyncio.sleep(0)
+                if run.done():
+                    break
+            await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        events = read_events(tmp_path / "events.jsonl")
+        started = [event for event in events if event["event_type"] == "option_started"]
+        assert len(started) == 1
+        assert "native-movement-" in started[0]["payload"]["evidence"]["option_id"]
+        assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
+        assert sum(event["event_type"] == "plan_step_succeeded" for event in events) == 1
+        directions = [
+            action
+            for action in environment.actions
+            if isinstance(action, MoveInDirectionAction)
+        ]
+        assert len(directions) == 1
+        assert directions[0].bearing_degrees == 90.0
 
     asyncio.run(scenario())
 

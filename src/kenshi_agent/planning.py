@@ -64,6 +64,11 @@ _NATIVE_APPROACH_CAPABILITIES = (
     "control.approach_dialogue_target",
     "control.approach_vendor",
 )
+_NATIVE_CONTROL_CAPABILITIES = (
+    *_NATIVE_APPROACH_CAPABILITIES,
+    "control.move_to_character",
+    "control.move_in_direction",
+)
 
 # Capability names that mean the same thing. The plug-in still emits the
 # vendor-era name for what is really "may issue a pathing order to a valid
@@ -109,14 +114,16 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.ui.selected_character_id": ("squad.basic",),
     "telemetry.ui.selected_character_count": ("identity.stable_handles",),
     "telemetry.active_shop_trader_count": ("nearby.shop_owners",),
-    # Either the generic dialogue-approach capability or the legacy vendor-named
-    # alias the installed plug-in still emits authorizes these native fields.
-    "telemetry.native_control.available": _NATIVE_APPROACH_CAPABILITIES,
-    "telemetry.native_control.last_command_sequence": _NATIVE_APPROACH_CAPABILITIES,
-    "telemetry.native_control.last_command": _NATIVE_APPROACH_CAPABILITIES,
-    "telemetry.native_control.last_result": _NATIVE_APPROACH_CAPABILITIES,
-    "telemetry.native_control.last_target": _NATIVE_APPROACH_CAPABILITIES,
-    "telemetry.native_control.last_target_id": _NATIVE_APPROACH_CAPABILITIES,
+    # These are the shared command-channel fields, so any reviewed native
+    # command capability makes them authoritative. Restricting them to the
+    # first approach command made a direction's own terminal result impossible
+    # to use as a postcondition.
+    "telemetry.native_control.available": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.native_control.last_command_sequence": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.native_control.last_command": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.native_control.last_result": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.native_control.last_target": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.native_control.last_target_id": _NATIVE_CONTROL_CAPABILITIES,
     "selected.alive": ("squad.basic",),
     "selected.conscious": ("squad.basic",),
     "selected.down": ("squad.basic",),

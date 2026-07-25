@@ -60,4 +60,14 @@ if (-not (Test-Path -LiteralPath $dll -PathType Leaf)) {
     throw "MSBuild completed without producing $dll"
 }
 
+$protocolTests = Join-Path $output "NativeCommandProtocolTests.exe"
+if (-not (Test-Path -LiteralPath $protocolTests -PathType Leaf)) {
+    throw "MSBuild completed without producing $protocolTests"
+}
+$fixtures = Join-Path $repo "tests\fixtures\native_commands"
+& $protocolTests $fixtures
+if ($LASTEXITCODE -ne 0) {
+    throw "Native command protocol conformance failed with exit code $LASTEXITCODE."
+}
+
 Write-Host "Built native plugin at $dll"
