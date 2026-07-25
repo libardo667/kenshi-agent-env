@@ -627,7 +627,17 @@ def bind_dismiss_screen(
             f"{current!r}; dismissing the wrong screen is not permitted."
         )
     if not action.window:
-        # Dialogue has no window of its own and is dismissed with a key.
+        if telemetry.ui.dialogue_target_id is not None:
+            # Escape does not back out of a Kenshi conversation. With a dialogue
+            # open it opens the ESC menu, which costs a step to undo and leaves
+            # the conversation exactly where it was. A conversation ends by
+            # choosing the option that ends it.
+            return _unbound(
+                "A Kenshi conversation is not dismissed with a key: Escape opens "
+                "the ESC menu and leaves the dialogue open. End it by choosing the "
+                "closing dialogue option with activate_visible_control."
+            )
+        # A keyed screen with no window of its own is dismissed with the key.
         return ReferenceBinding(
             bound=True,
             reason=f"Bound to the currently open {current!r} screen.",
@@ -661,24 +671,6 @@ def bind_dismiss_screen(
         resolved_bounds=rect.model_copy(deep=True),
         source_revision=observation.world_revision,
     )
-
-
-def _dismiss_authorization_conditions(
-    action: Action,
-    *,
-    max_age_seconds: float,
-) -> list[Condition]:
-    if not isinstance(action, DismissScreenAction):
-        return []
-    return [
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_UI_ACTIVE_SCREEN,
-            operator=ConditionOperator.EQUALS,
-            expected=action.expected_screen,
-            max_age_seconds=max_age_seconds,
-        )
-    ]
 
 
 def bind_use_game_binding(
@@ -715,25 +707,6 @@ def bind_use_game_binding(
         resolved_label=action.binding.value,
         source_revision=observation.world_revision,
     )
-
-
-def _game_binding_authorization_conditions(
-    action: Action,
-    *,
-    max_age_seconds: float,
-) -> list[Condition]:
-    if not isinstance(action, UseGameBindingAction):
-        return []
-    return [
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_GAME_LOADED,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            max_age_seconds=max_age_seconds,
-        )
-    ]
-
 
 
 def bind_scroll_screen(
@@ -788,55 +761,6 @@ def bind_scroll_screen(
     )
 
 
-def _approach_authorization_conditions(
-    action: Action,
-    *,
-    max_age_seconds: float,
-) -> list[Condition]:
-    if not isinstance(action, ApproachDialogueTargetAction):
-        return []
-    return [
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TARGET_HAS_DIALOGUE,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            target_id=action.target_id,
-            max_age_seconds=max_age_seconds,
-        ),
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TARGET_DISPOSITION,
-            operator=ConditionOperator.NOT_EQUALS,
-            expected="hostile",
-            target_id=action.target_id,
-            max_age_seconds=max_age_seconds,
-        ),
-    ]
-
-
-def _visible_control_authorization_conditions(
-    action: Action,
-    *,
-    max_age_seconds: float,
-) -> list[Condition]:
-    if not isinstance(action, ActivateVisibleControlAction):
-        return []
-    return [
-        _capability_condition(
-            ConditionPath.UI_VISIBLE_CONTROLS_CAPABILITY,
-            max_age_seconds=max_age_seconds,
-        ),
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_UI_VISIBLE_CONTROL_COUNT,
-            operator=ConditionOperator.GREATER_THAN_OR_EQUAL,
-            expected=1,
-            max_age_seconds=max_age_seconds,
-        ),
-    ]
-
-
 @dataclass(frozen=True, slots=True)
 class ActionContract:
     """Everything the runtime must know to route one typed action safely."""
@@ -859,7 +783,6 @@ class ActionContract:
     execution: ActionExecution
     receipt_kind: str
     bind: Callable[[Action, Observation], ReferenceBinding]
-    authorization_conditions: Callable[..., list[Condition]]
     # Fields a step's own success conditions must check for this action. An
     # action whose effect is invisible in its receipt needs the plan to verify
     # it against the world, or a no-op reports success: three consecutive live
@@ -919,7 +842,6 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     execution=ActionExecution.MONITORED_OPTION,
     receipt_kind="semantic_approach",
     bind=bind_approach_dialogue_target,
-    authorization_conditions=_approach_authorization_conditions,
 )
 
 ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
@@ -949,7 +871,6 @@ ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_control",
     bind=bind_visible_control,
-    authorization_conditions=_visible_control_authorization_conditions,
 )
 
 DISMISS_SCREEN_CONTRACT = ActionContract(
@@ -978,7 +899,6 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_dismiss",
     bind=bind_dismiss_screen,
-    authorization_conditions=_dismiss_authorization_conditions,
 )
 
 INSPECT_ITEM_CELL_CONTRACT = ActionContract(
@@ -1007,7 +927,6 @@ INSPECT_ITEM_CELL_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_inspect",
     bind=bind_inspect_item_cell,
-    authorization_conditions=_visible_control_authorization_conditions,
 )
 
 PURCHASE_ITEM_CONTRACT = ActionContract(
@@ -1049,7 +968,6 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     receipt_kind="semantic_purchase",
     verification_paths=frozenset({"telemetry.game.money"}),
     bind=bind_purchase_item,
-    authorization_conditions=_visible_control_authorization_conditions,
 )
 
 
@@ -1086,7 +1004,6 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_binding",
     bind=bind_use_game_binding,
-    authorization_conditions=_game_binding_authorization_conditions,
 )
 
 
@@ -1120,7 +1037,6 @@ SCROLL_SCREEN_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_scroll",
     bind=bind_scroll_screen,
-    authorization_conditions=_visible_control_authorization_conditions,
 )
 
 
@@ -1164,7 +1080,6 @@ SELL_ITEM_CONTRACT = ActionContract(
     receipt_kind="semantic_sell",
     verification_paths=frozenset({"telemetry.game.money"}),
     bind=bind_sell_item,
-    authorization_conditions=_visible_control_authorization_conditions,
 )
 
 
@@ -1197,7 +1112,6 @@ EQUIP_ITEM_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_equip",
     bind=bind_equip_item,
-    authorization_conditions=_visible_control_authorization_conditions,
 )
 
 ACTION_CONTRACTS: dict[str, ActionContract] = {

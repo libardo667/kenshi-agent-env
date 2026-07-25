@@ -1781,6 +1781,23 @@ class Observation(StrictModel):
                     if telemetry.ui.visible_controls is not None
                     else None
                 ),
+                # Buttons and captions are the bulk of the controls and are not
+                # worth keeping, but the item cells are the shelf: without them
+                # a post-mortem cannot say what was for sale, at what price, or
+                # whether the thing the agent kept reaching for was ever there.
+                # They are the minority of controls, so this stays cheap.
+                "item_cells": [
+                    {
+                        "label": control.label,
+                        "window": control.window,
+                        "section": control.section,
+                        "item_name": control.item_name,
+                        "item_value": control.item_value,
+                        "item_quantity": control.item_quantity,
+                    }
+                    for control in (telemetry.ui.visible_controls or [])
+                    if control.role == "item"
+                ][:60],
                 "open_windows": self.open_window_captions(),
             },
             # The evaluator reconstructs native command causality from these, so
