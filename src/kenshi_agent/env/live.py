@@ -11,10 +11,12 @@ from ..action_contracts import (
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
     EQUIP_ITEM_CONTRACT,
+    MOVE_IN_DIRECTION_CONTRACT,
     MOVE_TO_CHARACTER_CONTRACT,
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
+    NATIVE_DIRECTION_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
     PURCHASE_ITEM_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
@@ -50,6 +52,7 @@ from ..models import (
     KeyAction,
     MouseButton,
     MoveCursorAction,
+    MoveInDirectionAction,
     MoveToCharacterAction,
     NativeCommandAcknowledgement,
     NativeCommandRequest,
@@ -558,6 +561,12 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_semantic_approach(action, started, command)
+        if isinstance(action, MoveInDirectionAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_directional_move(action, started, command)
         if isinstance(action, MoveToCharacterAction):
             if command is None:
                 raise RuntimeError(
@@ -817,6 +826,60 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
+        )
+
+    async def _execute_directional_move(
+        self,
+        action: MoveInDirectionAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Walk a bearing and distance from wherever the character stands.
+
+        The one movement that names nobody, so the one that still works
+        somewhere empty. Everything else about the lifecycle - the bounded
+        primitives, the acknowledgement, the monitored walk - is the approach's.
+        """
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Directional movement requires a configured native approach skill "
+                "to supply its bounded primitives."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value="")],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native approach skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=MOVE_IN_DIRECTION_CONTRACT.version,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                f"Ordered a walk of {action.distance_units:.0f} units on bearing "
+                f"{action.bearing_degrees:.0f} from the selected character's own "
+                "position."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id="",
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=NATIVE_DIRECTION_WIRE_COMMAND,
+            require_dialogue_target=False,
+            bearing_degrees=action.bearing_degrees,
+            distance_units=action.distance_units,
         )
 
     async def _execute_semantic_move(
@@ -1272,10 +1335,12 @@ class LiveEnvironment(AgentEnvironment):
         pulse_seconds: float,
         primitive_skill: SkillAction,
         require_vendor_role: bool,
-        wire_command: Literal["approach_confirmed_vendor", "move_to_character"] = (
-            NATIVE_APPROACH_WIRE_COMMAND
-        ),
+        wire_command: Literal[
+            "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+        ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
+        bearing_degrees: float = 0.0,
+        distance_units: float = 0.0,
         semantic: SemanticActionReceipt | None = None,
         continue_until_terminal: bool = False,
     ) -> ActionReceipt:
@@ -1307,6 +1372,8 @@ class LiveEnvironment(AgentEnvironment):
                 require_vendor_role=require_vendor_role,
                 wire_command=wire_command,
                 require_dialogue_target=require_dialogue_target,
+                bearing_degrees=bearing_degrees,
+                distance_units=distance_units,
             )
             request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
             write_native_command_request_atomic(request_path, request)
@@ -1480,10 +1547,12 @@ class LiveEnvironment(AgentEnvironment):
         command: CommandDispatchContext,
         *,
         require_vendor_role: bool,
-        wire_command: Literal["approach_confirmed_vendor", "move_to_character"] = (
-            NATIVE_APPROACH_WIRE_COMMAND
-        ),
+        wire_command: Literal[
+            "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+        ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
+        bearing_degrees: float = 0.0,
+        distance_units: float = 0.0,
     ) -> NativeCommandRequest:
         """Build the native pathing request for one exact stable target.
 
@@ -1540,6 +1609,21 @@ class LiveEnvironment(AgentEnvironment):
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
             raise RuntimeError("Native command requires one exact primary selection.")
+        if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
+            # References nobody: the destination is derived from where the
+            # character already stands, which is what makes it available in a
+            # place a destination list would be empty.
+            return NativeCommandRequest(
+                schema_version="1.0",
+                command_id=command.command_id,
+                command=wire_command,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                identity_session_id=telemetry.identity_session_id,
+                based_on_revision=observation.world_revision,
+                selected_character_ids=list(selected_ids),
+                bearing_degrees=bearing_degrees,
+                distance_units=distance_units,
+            )
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
         target = next(

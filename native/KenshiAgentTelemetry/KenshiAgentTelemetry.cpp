@@ -85,6 +85,12 @@ namespace
         unsigned long long basedOnTelemetrySequence;
         std::string selectedCharacterId;
         std::string targetId;
+        // For move_in_direction: where to walk relative to the character's own
+        // position. A destination that is always available, because a character
+        // list is not: walk somewhere empty and there is nobody to walk to, and
+        // an agent whose only destinations are people can strand itself.
+        double bearingDegrees;
+        double distanceUnits;
     };
 
     struct NativeCommandAcknowledgement
@@ -365,7 +371,9 @@ namespace
             "identity_session_id",
             "based_on_revision",
             "selected_character_ids",
-            "target_id"
+            "target_id",
+            "bearing_degrees",
+            "distance_units"
         };
         static const char* const revisionKeys[] = {
             "telemetry_sequence",
@@ -376,6 +384,8 @@ namespace
 
         request.basedOnTelemetrySequence = 0;
         request.selectedCharacterId.clear();
+        request.bearingDegrees = 0.0;
+        request.distanceUnits = 0.0;
         try
         {
             std::istringstream input(payload);
@@ -388,6 +398,8 @@ namespace
             request.identitySessionId =
                 root.get<std::string>("identity_session_id", "");
             request.targetId = root.get<std::string>("target_id", "");
+            request.bearingDegrees = root.get<double>("bearing_degrees", 0.0);
+            request.distanceUnits = root.get<double>("distance_units", 0.0);
             request.basedOnTelemetrySequence =
                 root.get<unsigned long long>(
                     "based_on_revision.telemetry_sequence",
@@ -1362,7 +1374,8 @@ namespace
             g_lastNativeCommandResult = rejectionReason;
             if (IsValidCommandId(request.commandId) &&
                 (request.command == "approach_confirmed_vendor" ||
-                 request.command == "move_to_character") &&
+                 request.command == "move_to_character" ||
+                 request.command == "move_in_direction") &&
                 !request.targetId.empty() &&
                 !request.selectedCharacterId.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
@@ -1388,9 +1401,10 @@ namespace
         }
         const bool isApproach = request.command == "approach_confirmed_vendor";
         const bool isMove = request.command == "move_to_character";
-        if (isApproach || isMove)
+        const bool isDirection = request.command == "move_in_direction";
+        if (isApproach || isMove || isDirection)
             g_lastNativeCommand = request.command;
-        if (!isApproach && !isMove)
+        if (!isApproach && !isMove && !isDirection)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -1428,6 +1442,49 @@ namespace
             selectedId != request.selectedCharacterId)
         {
             RejectNativeCommand(request, "selection_mismatch");
+            return;
+        }
+
+        if (isDirection)
+        {
+            if (!(request.distanceUnits > 0.0) || request.distanceUnits > 2000.0)
+            {
+                RejectNativeCommand(request, "distance_out_of_range");
+                return;
+            }
+            Character* walker = player->selectedCharacter.getCharacter();
+            if (walker == NULL || !walker->isValid())
+            {
+                RejectNativeCommand(request, "selection_mismatch");
+                return;
+            }
+            // Kenshi's world is x/z with y up, and bearing is measured
+            // clockwise from +z so that 0 is "north" in the way the map reads.
+            const double radians = request.bearingDegrees * 3.14159265358979323846 / 180.0;
+            // Copied and offset rather than constructed: Ogre's three-float
+            // Vector3 constructor is dllimport and is not in the libraries this
+            // plug-in links against.
+            Ogre::Vector3 destination = walker->getPosition();
+            destination.x += static_cast<float>(sin(radians) * request.distanceUnits);
+            destination.z += static_cast<float>(cos(radians) * request.distanceUnits);
+            // No target handle and no destination building: this is a walk to a
+            // bare point, the same order a player gives by right-clicking the
+            // ground, and it is available wherever the character is standing.
+            player->newPlayerTaskSelectedCharacters(
+                MOVE_CUS_ORDERED,
+                hand(),
+                NULL,
+                destination,
+                false);
+            AddNativeAcknowledgement(request, "accepted", "issued", true, false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.selectedCharacterId = request.selectedCharacterId;
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_lastNativeCommandResult = "issued";
+            g_lastNativeCommandTarget.clear();
+            g_lastNativeCommandTargetId.clear();
             return;
         }
 
@@ -1589,6 +1646,7 @@ namespace
              << "\"nearby.characters\",\"nearby.roles\","
              << "\"control.approach_vendor\","
              << "\"control.move_to_character\","
+             << "\"control.move_in_direction\","
              << "\"identity.stable_handles\"";
         if (g_shopTraderRegistryReady)
             json << ",\"nearby.shop_owners\"";

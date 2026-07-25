@@ -42,6 +42,7 @@ from .models import (
     Disposition,
     EquipItemAction,
     IdempotencyPolicy,
+    MoveInDirectionAction,
     MoveToCharacterAction,
     NormalizedPointerBounds,
     Observation,
@@ -70,6 +71,8 @@ NATIVE_APPROACH_CAPABILITY_ALIASES: frozenset[str] = frozenset(
 NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = "approach_confirmed_vendor"
 
 NATIVE_MOVE_CAPABILITY = "control.move_to_character"
+NATIVE_DIRECTION_CAPABILITY = "control.move_in_direction"
+NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
 NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
@@ -215,6 +218,47 @@ def bind_move_to_character(
             f"distance {target.distance if target.distance is not None else 'unknown'}."
         ),
         target_id=target.id,
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_move_in_direction(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a directional walk to the character actually doing the walking.
+
+    There is no external reference to resolve - the destination is derived from
+    where the character already is - so what must be proved is only that the
+    game is running and somebody is selected to receive the order. That is what
+    makes this the movement of last resort: it binds in an empty desert where a
+    destination list has nothing in it.
+    """
+
+    if not isinstance(action, MoveInDirectionAction):
+        return _unbound("Action is not a move_in_direction action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the walk.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the walk cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("The game is not loaded, so no order can be given.")
+    selected = [character for character in telemetry.squad if character.selected]
+    if len(selected) != 1:
+        return _unbound(
+            f"{len(selected)} characters are selected; exactly one must be, so the "
+            "order has an unambiguous walker."
+        )
+    walker = selected[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to selected character {walker.name!r} walking "
+            f"{action.distance_units:.0f} units on bearing "
+            f"{action.bearing_degrees:.0f}."
+        ),
+        resolved_label=walker.name,
         source_revision=observation.world_revision,
     )
 
@@ -884,6 +928,35 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     bind=bind_approach_dialogue_target,
 )
 
+MOVE_IN_DIRECTION_CONTRACT = ActionContract(
+    kind="move_in_direction",
+    version="1.0",
+    model=MoveInDirectionAction,
+    summary=(
+        "Walk a bearing and distance from where the character stands, ordering "
+        "a walk to a bare point rather than toward anyone. Always available, "
+        "which is what makes it the way out of somewhere with nobody in it."
+    ),
+    argument_source=(
+        "bearing_degrees is clockwise from north (0 N, 90 E, 180 S, 270 W); "
+        "distance_units is how far to walk. Neither is read from the "
+        "observation - they are chosen."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({NATIVE_DIRECTION_CAPABILITY, "squad.health"}),
+    capability_aliases=frozenset({NATIVE_DIRECTION_CAPABILITY}),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_move",
+    bind=bind_move_in_direction,
+)
+
 MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     kind="move_to_character",
     version="1.0",
@@ -1166,6 +1239,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
+        MOVE_IN_DIRECTION_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
         DISMISS_SCREEN_CONTRACT,
         PURCHASE_ITEM_CONTRACT,

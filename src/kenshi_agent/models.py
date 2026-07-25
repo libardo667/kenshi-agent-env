@@ -589,7 +589,9 @@ class NativeCommandAcknowledgement(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     # Two reviewed commands now: the legacy vendor-named approach, and the move
     # order that lets the agent go somewhere without talking to anyone.
-    command: Literal["approach_confirmed_vendor", "move_to_character"]
+    command: Literal[
+        "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+    ]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
     target_id: str = Field(min_length=1, max_length=200)
@@ -837,6 +839,27 @@ class ApproachDialogueTargetAction(StrictModel):
 
     kind: Literal["approach_dialogue_target"] = "approach_dialogue_target"
     target_id: str = Field(min_length=1, max_length=200)
+
+
+class MoveInDirectionAction(StrictModel):
+    """Walk a bearing and a distance from wherever the character is standing.
+
+    The destination is a point, not a person, which is what makes this the one
+    movement that is always available. Destinations drawn from a character list
+    run out: walk somewhere empty and there is nobody to walk to, and an agent
+    whose only way to move is toward people can strand itself somewhere with
+    none. A bearing always exists.
+
+    `bearing_degrees` is clockwise from north, as read on the map: 0 north,
+    90 east, 180 south, 270 west.
+    """
+
+    kind: Literal["move_in_direction"] = "move_in_direction"
+    bearing_degrees: float = Field(ge=0.0, lt=360.0)
+    distance_units: float = Field(gt=0.0, le=2000.0)
+    # Said in the plan so a later observation can judge it; the action itself
+    # cannot know what is that way.
+    expected_effect: str = Field(min_length=1, max_length=200)
 
 
 class MoveToCharacterAction(StrictModel):
@@ -1126,6 +1149,7 @@ PlannerControlAction: TypeAlias = (
 SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | MoveToCharacterAction
+    | MoveInDirectionAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1153,6 +1177,7 @@ Action: TypeAlias = (
     | SkillAction
     | ApproachDialogueTargetAction
     | MoveToCharacterAction
+    | MoveInDirectionAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1167,6 +1192,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
         "move_to_character",
+        "move_in_direction",
         "activate_visible_control",
         "dismiss_screen",
         "purchase_item",
@@ -1338,12 +1364,17 @@ class NativeCommandRequest(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     # Two reviewed commands now: the legacy vendor-named approach, and the move
     # order that lets the agent go somewhere without talking to anyone.
-    command: Literal["approach_confirmed_vendor", "move_to_character"]
+    command: Literal[
+        "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+    ]
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
     based_on_revision: WorldStateRevision
     selected_character_ids: list[str] = Field(min_length=1, max_length=1)
-    target_id: str = Field(min_length=1, max_length=200)
+    # Empty for a directional walk, which references nobody.
+    target_id: str = Field(default="", max_length=200)
+    bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
+    distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
 
     @model_validator(mode="after")
     def validate_native_fences(self) -> NativeCommandRequest:
@@ -1351,6 +1382,11 @@ class NativeCommandRequest(StrictModel):
             raise ValueError("native command basis requires a telemetry sequence")
         if len(set(self.selected_character_ids)) != 1:
             raise ValueError("native command requires exactly one selected character")
+        if self.command == "move_in_direction":
+            if self.distance_units <= 0.0:
+                raise ValueError("a directional walk requires a distance to walk")
+        elif not self.target_id:
+            raise ValueError("this native command requires a target")
         return self
 
 

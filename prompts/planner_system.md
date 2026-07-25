@@ -57,12 +57,19 @@ yourself, in whatever order the current evidence supports.
   `dialogue_targets`. It owns the whole walk, including waiting for arrival, so
   never plan a second step to continue or resume an approach. It succeeds when
   dialogue is open with that exact target.
-- **`move_to_character` is how you go somewhere.** It walks to any character in
-  `telemetry.nearby_entities` — reported within 400 units, which across a town
-  is most of it — and opens no conversation on arrival. The destination need not
-  be talkable, so this is what gets you out of a building and across a town.
-  When you have exhausted the people in a room, do not keep re-approaching
-  them: pick someone further away and walk there.
+- **Two ways to go somewhere, and you will need both.**
+  `move_to_character` walks to any character in `telemetry.nearby_entities`,
+  talkable or not, and opens no conversation on arrival.
+  `move_in_direction` walks a `bearing_degrees` (0 north, 90 east, 180 south,
+  270 west) and a `distance_units` from where you stand, naming nobody.
+- Prefer `move_to_character` when somewhere useful has a person standing in it.
+  Use `move_in_direction` to explore, to leave, and above all when there is
+  nobody worth walking to — it is the only movement that still works in an
+  empty place, and it is how you avoid being stranded in one.
+- **When you have exhausted the people in a room, leave.** Re-approaching the
+  same two people is not progress. Walk out and look somewhere else; a town has
+  more in it than the building you started in, and the world has more than the
+  town.
 - If `native_control` already reports an active accepted approach for that same
   target, still author `approach_dialogue_target` for it. The action adopts the
   in-flight order and continues it with time; it never issues a second command.

@@ -235,6 +235,7 @@ class TestContractCatalog:
         assert set(ACTION_CONTRACTS) == {
             "approach_dialogue_target",
             "move_to_character",
+            "move_in_direction",
             "activate_visible_control",
             "dismiss_screen",
             "purchase_item",

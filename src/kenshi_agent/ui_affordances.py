@@ -313,10 +313,11 @@ AFFORDANCES: tuple[Affordance, ...] = (
         "move_to_character",
         native_entry_point="PlayerInterface::newPlayerTaskSelectedCharacters MOVE_CUS_ORDERED",
         gap=(
-            "Destinations are people, not points: the agent walks to any nearby "
-            "character, reported within 400 units, rather than naming a place. "
-            "Enough to leave a building and cross a town; not enough to cross "
-            "the map, which still needs a travel order to a chosen location."
+            "Local travel only. move_in_direction walks a bearing and distance "
+            "from where the character stands, and move_to_character walks to "
+            "anyone within 400 units, so no place is a dead end. Crossing the "
+            "map still needs a travel order to a chosen location, which is a "
+            "right-click on the map screen and has no action yet."
         ),
     ),
     Affordance(
