@@ -237,9 +237,11 @@ explicitly in the payload. The planner returns a validated `PlannerDecision`,
 
 The active profile prints a human-readable stream for decisions and continuous
 plan lifecycle events: objective, steps, rejections, failures, safety
-preemptions, planner latency, and execution results. The same transcript is
-kept at `runs/<run-id>/transcript.log`, while `events.jsonl` retains the typed
-machine-readable record used by summaries and evaluation metrics.
+preemptions, planner latency, and execution results. `events.jsonl` retains the
+typed machine-readable record used by summaries and evaluation metrics.
+`transcript.log` is intended as the selectable copy of the feed, but some
+current run paths do not create it; treat `events.jsonl` as the authoritative
+retained artifact and verify the transcript exists before relying on it.
 
 On Windows, the overlay launcher puts the same feed in a translucent,
 always-on-top window over the game:
@@ -257,7 +259,8 @@ Use `-Planner openrouter` after adding `OPENROUTER_API_KEY`. The viewer is an
 external read-only process that follows the append-only run log; it never calls
 Kenshi UI code or input APIs. Windows capture exclusion keeps it out of model
 screenshots and the window is click-through after it is mapped, so input reaches
-the game. Use `transcript.log` when text must be selected, copied, or searched.
+the game. When present, use `transcript.log` when text must be selected, copied,
+or searched.
 
 ## Moving toward live Kenshi
 

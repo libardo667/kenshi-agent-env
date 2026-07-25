@@ -108,6 +108,57 @@ inspection alone.
       This proves that exact route only, not every bearing, distance, obstacle,
       or scene.
 
+### GPT-4.1 80-turn endurance boundary
+
+- [x] Start from live protocol `0.6.1` with fresh loaded telemetry and use the
+      normal continuous/native-assisted/exclusive-input acknowledgements,
+      input-boundary checks, F12 path, and independent supervisor.
+- [x] Request exact OpenRouter route `openai/gpt-4.1`, omit reasoning effort,
+      authorize 80 runtime action steps, and retain the exact objective and
+      invocation. The event log does not independently persist the resolved
+      provider/model identifier; that reproducibility gap remains open.
+- [x] Complete the full endurance length. Run
+      `20260725T80turn-gpt41-live-01` recorded
+      `steps_completed=80` after 946.369 seconds. Its honest terminal is
+      `success=null`, `terminated=false`, with the last movement option timed
+      out; do not call this a successful gameplay objective.
+- [x] Retain and inspect the full lifecycle. The run published 5,046
+      observations with zero stale reads, accepted 77 of 80 proposed plans,
+      completed 44, executed 58 of 59 receipts, wrote 67 memories, and had
+      zero input-boundary rejections, supervisor preemptions, subscriber drops,
+      pump errors, command mismatches, renderer failures, or process crashes.
+- [x] Record material autonomous behavior. The model used its first 30
+      executed receipts on camera/pause recovery, then approached and talked to
+      the Barman, navigated/closed/scrolled trade, made one causally unproven
+      Rice Bowl purchase without retrying it, travelled toward an Escaped
+      Servant, and opened/closed stats. Hep never entered combat; blood and
+      money were unchanged.
+- [x] Preserve the failure boundary. Native command
+      `cmd-d98144009ea344d09aa44023bf3d12f4` remained accepted after its option
+      timed out; later movement requests were rejected as
+      `command_already_active`, and 21 options hit an invalid failed-state
+      transition.
+- [x] Perform and separately label post-run safety cleanup. Normal runtime
+      close left the world unpaused with the command active. An immediate
+      out-of-run production safety helper confirmed pause at sequence 6,158;
+      the exact command terminally cancelled at sequence 6,168 with
+      `reason=world_paused`. Later telemetry remained fresh, loaded, paused,
+      and free of an active command.
+- [x] Retain causal artifacts. The 16,167-line event log is 42,073,198 bytes
+      with SHA-256
+      `d7f6baad947c55fe10f2d1044da42b2f3bebc41dd4d73a21dcf8fa57b17446ab`.
+      Its 81 frames include first/last SHA-256 values
+      `7775ebbeec45a5c4066d163d6327d2f79adba94c27988609484aa36e0d93792a`
+      and
+      `c43fee1369788dc75fd97f1b3fd36c146cd8875811078d88ca40d06b9763f7b2`.
+      The post-safety-pause frame SHA-256 is
+      `4f425855beeadbecfc5bbe4f1eb174aed4cffbe8cbb0918e98a94484f674e3fa`.
+      No `transcript.log` was produced.
+- [x] Preserve the full report and camera-recovery recommendation in
+      `docs/LIVE_GPT41_80_TURN_REPORT_20260725.md`. The observed result supports
+      a controller-owned, bounded, frame-scored `recover_camera_view`; it does
+      not support asking the model to keep composing camera key presses.
+
 ### Protocol 0.5 title-screen semantic lifecycle
 
 - [x] First 1920x1080 load reached a responsive title screen without the

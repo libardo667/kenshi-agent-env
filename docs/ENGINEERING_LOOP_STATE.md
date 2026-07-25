@@ -5,6 +5,63 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## GPT-4.1 80-turn live endurance run (2026-07-25)
+
+Run `20260725T80turn-gpt41-live-01` completed the requested 80-step live action
+budget against the explicit OpenRouter route `openai/gpt-4.1`. It ran for
+946.369 seconds with protocol `0.6.1`, continuous planning, native-assisted
+control, and the ordinary live/native/continuous/input/supervisor fences.
+The authoritative terminal is `steps_completed=80`, `success=null`,
+`terminated=false`: this is green endurance-length evidence, not a green task
+result.
+
+The run published 5,046 observations with zero stale observations, zero
+input-boundary rejections, zero supervisor preemptions, zero subscriber drops,
+and zero pump errors. It produced 80 valid primary plans after four additional
+schema-invalid primary attempts, accepted 77 plans, completed 44, executed 58
+of 59 action receipts, and wrote 67 persistent memories. Kenshi remained
+responsive and the relevant log tail had no plugin, renderer/device-removal,
+exception, or crash match.
+
+Behavior was materially mixed. The model spent its first 30 executed receipts
+finagling camera and pause bindings, then autonomously approached the Barman,
+navigated dialogue and trade, scrolled and closed windows, and made one
+purchase attempt. The attempted Rice Bowl produced neither a debit nor an item
+change and was correctly not repeated. A later walk toward an Escaped Servant
+moved Hep about 393.93 units but timed out without terminal native success.
+Command `cmd-d98144009ea344d09aa44023bf3d12f4` remained accepted, caused later
+direction orders to be rejected as `command_already_active`, and exposed 21
+invalid failed-option transitions.
+
+Normal runtime close left Kenshi unpaused with that command active. Immediately
+after the complete run lifecycle was retained, the existing safety helper
+confirmed a pause at telemetry sequence 6,158; the exact command terminally
+cancelled at sequence 6,168 with `reason=world_paused`. That out-of-run cleanup
+is safety evidence, not run success. A later audit remained fresh, loaded,
+paused, and free of an active command.
+
+The full quantitative report, action narrative, evidence hashes, player camera
+research, and controller-owned `recover_camera_view` design are in
+`docs/LIVE_GPT41_80_TURN_REPORT_20260725.md`. Its central camera conclusion is
+that recovery should be one bounded semantic transaction: establish tested
+character follow, select the appropriate building floor, try a fixed
+zoom/orbit candidate sequence, score resulting frames, and return
+`already_clear`, `recovered`, or `failed_after_bounded_attempts`. The model
+should say “recover” once rather than author camera directions or predicates.
+
+The 16,167-line, 42,073,198-byte event log is retained at
+`runs/20260725T80turn-gpt41-live-01/events.jsonl`, SHA-256
+`d7f6baad947c55fe10f2d1044da42b2f3bebc41dd4d73a21dcf8fa57b17446ab`.
+Its 81 frames include initial/final hashes
+`7775ebbeec45a5c4066d163d6327d2f79adba94c27988609484aa36e0d93792a`
+and
+`c43fee1369788dc75fd97f1b3fd36c146cd8875811078d88ca40d06b9763f7b2`.
+The post-safety-pause frame hash is
+`4f425855beeadbecfc5bbe4f1eb174aed4cffbe8cbb0918e98a94484f674e3fa`.
+Contrary to the prior public claim, this run did not produce a
+`transcript.log`; the README and status now name typed JSONL as authoritative,
+and this run's JSONL and frames are the retained evidence.
+
 ## Targetless direction protocol 0.6.0 (2026-07-25)
 
 Implementation commits `87102c1` and `69b4322` close the cross-layer direction

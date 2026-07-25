@@ -95,8 +95,18 @@ planner-authorable on the generic live path.
   `20260725T2223-direction-smoke-061-green` moved Hep about 30.4 world units,
   completed the exact keyed order with `walk_destination_reached`, captured a
   changed resulting frame, and left Kenshi paused with no active command.
+- Run `20260725T80turn-gpt41-live-01` completed an 80-step GPT-4.1 live action
+  budget in 15m46.369s. It published 5,046 observations with zero stale
+  observations, zero input-boundary rejections, and zero safety preemptions;
+  executed 58 receipts; approached and traded with the Barman; and remained
+  process/renderer stable. Its terminal is intentionally `success=null`.
+  Camera recovery consumed the first 30 executed receipts, and a later
+  nonterminal native walk left movement poisoned until an explicit post-run
+  safety pause cancelled it. The full report is
+  `docs/LIVE_GPT41_80_TURN_REPORT_20260725.md`.
 - The decision overlay is capture-excluded and click-through. Each run also
-  keeps a selectable, searchable `transcript.log`.
+  keeps typed lifecycle evidence in `events.jsonl`. A selectable
+  `transcript.log` is intended, but the 80-turn run did not produce one.
 
 ## Native protocol 0.6.1
 
@@ -163,6 +173,17 @@ At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
 
 ## Open work
 
+- Camera recovery is not a model-planning problem. Add a single controller-owned
+  `recover_camera_view` action that establishes tested character follow, sets
+  the selected character's building floor, applies a fixed zoom/orbit search,
+  scores resulting frames for readability/occlusion, and returns a bounded
+  typed outcome. The model should not author recovery directions or success
+  predicates.
+- A native movement option can time out while its exact command remains
+  accepted. Later direction options then fail or are rejected with
+  `command_already_active`; failed options have no successful terminalization
+  transition. Timeout/abandonment must explicitly stop, cancel, or continue
+  monitoring the owned command before the movement surface is reused.
 - Targetless local directional movement has one exact live proof at a
   36.5-degree bearing and 30-unit distance. Broader bearings, distances,
   obstacle layouts, and scenes remain unproven rather than inferred from that
@@ -190,6 +211,12 @@ At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
 - Only safety-supervisor preemption owns causally verified final pause cleanup.
   Normal stop, objective completion, budget/replan exhaustion, exceptions, and
   cancellation end through `LiveEnvironment.close()`, which is a no-op.
+- Run metadata does not persist the resolved provider/model route, and
+  `transcript.log` can be absent despite the prior public claim. The README now
+  treats JSONL as authoritative. The summarizer also reported
+  `planner_errors=0` for the 80-turn log even though it contains four top-level
+  `planner_error` events. Two late invalid condition paths emitted Pydantic
+  enum-serialization warnings only to the console.
 - The mock environment meaningfully models only a subset of the current
   semantic catalog; newer movement, trade, equip, scrolling, and binding paths
   mostly rely on focused fakes rather than one representative end-to-end mock
