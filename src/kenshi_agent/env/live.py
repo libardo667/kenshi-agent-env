@@ -4,15 +4,18 @@ import asyncio
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from ..action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
     EQUIP_ITEM_CONTRACT,
+    MOVE_TO_CHARACTER_CONTRACT,
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
+    NATIVE_MOVE_WIRE_COMMAND,
     PURCHASE_ITEM_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
     SELL_ITEM_CONTRACT,
@@ -47,6 +50,7 @@ from ..models import (
     KeyAction,
     MouseButton,
     MoveCursorAction,
+    MoveToCharacterAction,
     NativeCommandAcknowledgement,
     NativeCommandRequest,
     NativeCommandStatus,
@@ -554,6 +558,12 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_semantic_approach(action, started, command)
+        if isinstance(action, MoveToCharacterAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_semantic_move(action, started, command)
         if isinstance(action, ActivateVisibleControlAction):
             return await self._execute_visible_control(action, started)
         if isinstance(action, DismissScreenAction):
@@ -807,6 +817,59 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
+        )
+
+    async def _execute_semantic_move(
+        self,
+        action: MoveToCharacterAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Walk to one exact observed character without opening dialogue.
+
+        Shares the approach's bounded primitives and pulse timing, which are
+        proven, and differs in exactly two ways: the destination need not be
+        talkable, and the native order is a move rather than a talk-to, so
+        arriving starts no conversation.
+        """
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Semantic move requires a configured native approach skill to "
+                "supply its bounded primitives."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value=action.target_id)],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native approach skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=MOVE_TO_CHARACTER_CONTRACT.version,
+            target_id=action.target_id,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Bound to the exact stable nearby character and issued at most one "
+                "native move order for this option lifecycle."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=NATIVE_MOVE_WIRE_COMMAND,
+            require_dialogue_target=False,
         )
 
     async def _execute_visible_control(
@@ -1209,6 +1272,10 @@ class LiveEnvironment(AgentEnvironment):
         pulse_seconds: float,
         primitive_skill: SkillAction,
         require_vendor_role: bool,
+        wire_command: Literal["approach_confirmed_vendor", "move_to_character"] = (
+            NATIVE_APPROACH_WIRE_COMMAND
+        ),
+        require_dialogue_target: bool = True,
         semantic: SemanticActionReceipt | None = None,
         continue_until_terminal: bool = False,
     ) -> ActionReceipt:
@@ -1238,6 +1305,8 @@ class LiveEnvironment(AgentEnvironment):
                 target_id,
                 command,
                 require_vendor_role=require_vendor_role,
+                wire_command=wire_command,
+                require_dialogue_target=require_dialogue_target,
             )
             request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
             write_native_command_request_atomic(request_path, request)
@@ -1411,6 +1480,10 @@ class LiveEnvironment(AgentEnvironment):
         command: CommandDispatchContext,
         *,
         require_vendor_role: bool,
+        wire_command: Literal["approach_confirmed_vendor", "move_to_character"] = (
+            NATIVE_APPROACH_WIRE_COMMAND
+        ),
+        require_dialogue_target: bool = True,
     ) -> NativeCommandRequest:
         """Build the native pathing request for one exact stable target.
 
@@ -1475,7 +1548,9 @@ class LiveEnvironment(AgentEnvironment):
         )
         if target is None:
             raise RuntimeError("Native command target is absent from current nearby telemetry.")
-        if not target.is_dialogue_target() or target.conscious is not True:
+        if require_dialogue_target and (
+            not target.is_dialogue_target() or target.conscious is not True
+        ):
             raise RuntimeError(
                 "Native command target lacks exact current conscious non-hostile "
                 "dialogue evidence."
@@ -1487,7 +1562,7 @@ class LiveEnvironment(AgentEnvironment):
             command_id=command.command_id,
             # The wire name is a legacy alias retained so the proven installed
             # plug-in keeps parsing this request without a rebuild.
-            command=NATIVE_APPROACH_WIRE_COMMAND,
+            command=wire_command,
             control_mode=ControlMode.NATIVE_ASSISTED,
             identity_session_id=telemetry.identity_session_id,
             based_on_revision=observation.world_revision,

@@ -57,6 +57,12 @@ yourself, in whatever order the current evidence supports.
   `dialogue_targets`. It owns the whole walk, including waiting for arrival, so
   never plan a second step to continue or resume an approach. It succeeds when
   dialogue is open with that exact target.
+- **`move_to_character` is how you go somewhere.** It walks to any character in
+  `telemetry.nearby_entities` — reported within 400 units, which across a town
+  is most of it — and opens no conversation on arrival. The destination need not
+  be talkable, so this is what gets you out of a building and across a town.
+  When you have exhausted the people in a room, do not keep re-approaching
+  them: pick someone further away and walk there.
 - If `native_control` already reports an active accepted approach for that same
   target, still author `approach_dialogue_target` for it. The action adopts the
   in-flight order and continues it with time; it never issues a second command.

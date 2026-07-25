@@ -32,7 +32,15 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "GetRealAddress(&GameWorld::resetGame)" in source
     assert "ResetSessionState();" in source
     assert "NEARBY_CHARACTER_RADIUS = 400.0f" in source
-    assert source.count("NEARBY_CHARACTER_RADIUS") == 3
+    # Every nearby-character sweep must use the one radius, so telemetry and
+    # both command lookups agree about what counts as nearby. Counting the
+    # uses pinned an incidental number; what matters is that nothing sweeps
+    # with a literal of its own.
+    assert "getCharactersWithinSphere" in source
+    for call in source.split("getCharactersWithinSphere(")[1:]:
+        assert "NEARBY_CHARACTER_RADIUS" in call.split(")")[0], (
+            "a nearby-character sweep used a radius of its own"
+        )
     assert "IsTrackedShopOwner(target)" in source
     assert "platoon->getIsTrader()" in source
     assert "platoon->getHasVendorList()" in source

@@ -200,6 +200,7 @@ safety:
     - wait
     - skill
     - approach_dialogue_target
+    - move_to_character
     - activate_visible_control
     - dismiss_screen
     - purchase_item

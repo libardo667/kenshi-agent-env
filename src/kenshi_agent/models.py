@@ -587,7 +587,9 @@ class NativeCommandStatus(StrEnum):
 
 class NativeCommandAcknowledgement(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    command: Literal["approach_confirmed_vendor"]
+    # Two reviewed commands now: the legacy vendor-named approach, and the move
+    # order that lets the agent go somewhere without talking to anyone.
+    command: Literal["approach_confirmed_vendor", "move_to_character"]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
     target_id: str = Field(min_length=1, max_length=200)
@@ -834,6 +836,23 @@ class ApproachDialogueTargetAction(StrictModel):
     """
 
     kind: Literal["approach_dialogue_target"] = "approach_dialogue_target"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
+class MoveToCharacterAction(StrictModel):
+    """Walk to any exact observed nearby character without talking to them.
+
+    Movement used to be possible only toward someone the agent could hold a
+    conversation with, so inside a building holding two people that was the
+    whole reachable world: it sold what it could, asked both for work, recorded
+    that it was repeating itself, and had no action that could take it
+    anywhere. Nearby characters are reported within four hundred units, which
+    across a town is most of it, so walking to a person is how the agent gets
+    to a place - the destination is a stable observed identity, never a
+    coordinate.
+    """
+
+    kind: Literal["move_to_character"] = "move_to_character"
     target_id: str = Field(min_length=1, max_length=200)
 
 
@@ -1106,6 +1125,7 @@ PlannerControlAction: TypeAlias = (
 
 SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
+    | MoveToCharacterAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1132,6 +1152,7 @@ Action: TypeAlias = (
     | ScrollAction
     | SkillAction
     | ApproachDialogueTargetAction
+    | MoveToCharacterAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1145,6 +1166,7 @@ ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
+        "move_to_character",
         "activate_visible_control",
         "dismiss_screen",
         "purchase_item",
@@ -1314,7 +1336,9 @@ class CommandDispatchContext(StrictModel):
 class NativeCommandRequest(StrictModel):
     schema_version: Literal["1.0"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    command: Literal["approach_confirmed_vendor"]
+    # Two reviewed commands now: the legacy vendor-named approach, and the move
+    # order that lets the agent go somewhere without talking to anyone.
+    command: Literal["approach_confirmed_vendor", "move_to_character"]
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
     based_on_revision: WorldStateRevision

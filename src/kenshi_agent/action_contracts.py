@@ -42,6 +42,7 @@ from .models import (
     Disposition,
     EquipItemAction,
     IdempotencyPolicy,
+    MoveToCharacterAction,
     NormalizedPointerBounds,
     Observation,
     PlanEnvelope,
@@ -67,6 +68,9 @@ NATIVE_APPROACH_CAPABILITY_ALIASES: frozenset[str] = frozenset(
     {NATIVE_APPROACH_CAPABILITY, LEGACY_NATIVE_APPROACH_CAPABILITY}
 )
 NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = "approach_confirmed_vendor"
+
+NATIVE_MOVE_CAPABILITY = "control.move_to_character"
+NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
 
@@ -162,6 +166,52 @@ def bind_approach_dialogue_target(
         bound=True,
         reason=(
             f"Bound to current dialogue target {target.name!r} ({target.id}) at "
+            f"distance {target.distance if target.distance is not None else 'unknown'}."
+        ),
+        target_id=target.id,
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_move_to_character(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a walk to one exact currently observed nearby character.
+
+    Deliberately looser than the approach binding in one respect and no other:
+    the destination need not be talkable, because going somewhere is not the
+    same as talking to someone, and requiring talkability is what confined the
+    agent to whichever room it started in. Everything else holds - the id must
+    match exactly one current entity, and an ambiguous or absent one fails
+    closed.
+    """
+
+    if not isinstance(action, MoveToCharacterAction):
+        return _unbound("Action is not a move_to_character action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the destination.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the destination cannot be bound.")
+    matches = [
+        entity for entity in telemetry.nearby_entities if entity.id == action.target_id
+    ]
+    if not matches:
+        return _unbound(
+            f"Destination {action.target_id!r} is not a currently observed nearby "
+            "character."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Destination {action.target_id!r} matches {len(matches)} current "
+            "entities; an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to current nearby character {target.name!r} ({target.id}) at "
             f"distance {target.distance if target.distance is not None else 'unknown'}."
         ),
         target_id=target.id,
@@ -834,6 +884,41 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     bind=bind_approach_dialogue_target,
 )
 
+MOVE_TO_CHARACTER_CONTRACT = ActionContract(
+    kind="move_to_character",
+    version="1.0",
+    model=MoveToCharacterAction,
+    summary=(
+        "Walk to one exact currently observed nearby character without talking "
+        "to them. This is how the agent goes somewhere: nearby characters are "
+        "reported within four hundred units, so someone standing where you want "
+        "to be is a destination. One monitored option owns the whole walk."
+    ),
+    argument_source=(
+        "target_id must be an exact id from the observation's "
+        "telemetry.nearby_entities."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_MOVE_CAPABILITY,
+            "identity.stable_handles",
+            "nearby.characters",
+        }
+    ),
+    capability_aliases=frozenset({NATIVE_MOVE_CAPABILITY}),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=("target_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_move",
+    bind=bind_move_to_character,
+)
+
 ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
     kind="activate_visible_control",
     version="1.0",
@@ -1080,6 +1165,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
+        MOVE_TO_CHARACTER_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
         DISMISS_SCREEN_CONTRACT,
         PURCHASE_ITEM_CONTRACT,

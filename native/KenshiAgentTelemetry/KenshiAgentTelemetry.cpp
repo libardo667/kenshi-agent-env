@@ -765,6 +765,55 @@ namespace
         return NULL;
     }
 
+    // Same exact-identity lookup as the dialogue target, without requiring the
+    // character be talkable. Movement was only ever ordered toward someone the
+    // agent could hold a conversation with, so inside a building containing two
+    // people that was the entire reachable world: it sold what it could, asked
+    // both for work, noticed it was repeating itself, and had no action that
+    // could take it anywhere else.
+    Character* FindExactNearbyCharacter(
+        PlayerInterface* player,
+        const std::string& targetId,
+        bool& exactIdentityFound)
+    {
+        exactIdentityFound = false;
+        Character* selected =
+            player != NULL ? player->selectedCharacter.getCharacter() : NULL;
+        if (ou == NULL ||
+            selected == NULL ||
+            !selected->isValid() ||
+            targetId.empty())
+        {
+            return NULL;
+        }
+
+        lektor<RootObject*> nearbyCharacters;
+        const Ogre::Vector3 selectedPosition = selected->getPosition();
+        ou->getCharactersWithinSphere(
+            nearbyCharacters,
+            selectedPosition,
+            NEARBY_CHARACTER_RADIUS,
+            0.0f,
+            30.0f,
+            MAX_NEARBY_CHARACTERS,
+            0,
+            selected);
+
+        for (lektor<RootObject*>::iterator it = nearbyCharacters.begin();
+             it != nearbyCharacters.end();
+             ++it)
+        {
+            Character* candidate = reinterpret_cast<Character*>(*it);
+            if (candidate == NULL || !candidate->isValid())
+                continue;
+            if (StableEntityId(candidate) != targetId)
+                continue;
+            exactIdentityFound = true;
+            return candidate;
+        }
+        return NULL;
+    }
+
     bool IsExactDialogueTargetOpen(const hand& targetHandle)
     {
         if (gui == NULL ||
@@ -1283,6 +1332,9 @@ namespace
     void ProcessNativeCommandRequest(PlayerInterface* player)
     {
         ++g_nativeCommandSequence;
+        // Only a default until the request is parsed; it is overwritten with
+        // what was actually asked for, or every move would report as an
+        // approach now that more than one command exists.
         g_lastNativeCommand = "approach_confirmed_vendor";
         g_lastNativeCommandTarget.clear();
         g_lastNativeCommandTargetId.clear();
@@ -1309,7 +1361,8 @@ namespace
         {
             g_lastNativeCommandResult = rejectionReason;
             if (IsValidCommandId(request.commandId) &&
-                request.command == "approach_confirmed_vendor" &&
+                (request.command == "approach_confirmed_vendor" ||
+                 request.command == "move_to_character") &&
                 !request.targetId.empty() &&
                 !request.selectedCharacterId.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
@@ -1333,10 +1386,14 @@ namespace
             RejectNativeCommand(request, "command_already_active");
             return;
         }
-        if (request.command != "approach_confirmed_vendor")
+        const bool isApproach = request.command == "approach_confirmed_vendor";
+        const bool isMove = request.command == "move_to_character";
+        if (isApproach || isMove)
+            g_lastNativeCommand = request.command;
+        if (!isApproach && !isMove)
         {
             // The telemetry acknowledgement schema is intentionally limited
-            // to the one reviewed command. Do not publish an unparseable ack.
+            // to reviewed commands. Do not publish an unparseable ack.
             g_lastNativeCommandResult = "unsupported_command";
             return;
         }
@@ -1375,10 +1432,11 @@ namespace
         }
 
         bool exactIdentityFound = false;
-        Character* target = FindExactDialogueTarget(
-            player,
-            request.targetId,
-            exactIdentityFound);
+        // Moving somewhere does not require the destination be talkable; only
+        // that it is exactly the character the caller named, still present.
+        Character* target = isMove
+            ? FindExactNearbyCharacter(player, request.targetId, exactIdentityFound)
+            : FindExactDialogueTarget(player, request.targetId, exactIdentityFound);
         if (target == NULL)
         {
             RejectNativeCommand(
@@ -1391,8 +1449,12 @@ namespace
 
         const hand& targetHandle = target->getHandle();
         Building* destinationIndoors = target->isIndoors().getBuilding();
+        // The same order a player issues by right-clicking: walk there, and
+        // enter the destination's building if it is inside one. Unlike
+        // PLAYER_TALK_TO it opens no conversation on arrival, which is what
+        // makes it usable for going somewhere rather than talking to someone.
         player->newPlayerTaskSelectedCharacters(
-            PLAYER_TALK_TO,
+            isMove ? MOVE_CUS_ORDERED : PLAYER_TALK_TO,
             targetHandle,
             destinationIndoors,
             target->getPosition(),
@@ -1526,6 +1588,7 @@ namespace
              << "\"ui.tooltip\",\"ui.visible_controls\","
              << "\"nearby.characters\",\"nearby.roles\","
              << "\"control.approach_vendor\","
+             << "\"control.move_to_character\","
              << "\"identity.stable_handles\"";
         if (g_shopTraderRegistryReady)
             json << ",\"nearby.shop_owners\"";

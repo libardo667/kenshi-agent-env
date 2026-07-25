@@ -234,6 +234,7 @@ class TestContractCatalog:
     def test_contracts_are_registered_by_kind(self) -> None:
         assert set(ACTION_CONTRACTS) == {
             "approach_dialogue_target",
+            "move_to_character",
             "activate_visible_control",
             "dismiss_screen",
             "purchase_item",
