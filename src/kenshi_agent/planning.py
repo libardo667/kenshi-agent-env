@@ -65,6 +65,22 @@ _NATIVE_APPROACH_CAPABILITIES = (
     "control.approach_vendor",
 )
 
+# Capability names that mean the same thing. The plug-in still emits the
+# vendor-era name for what is really "may issue a pathing order to a valid
+# dialogue target", so a condition naming either must be satisfied by either -
+# otherwise the generic vocabulary is unusable until every DLL is rebuilt.
+_CAPABILITY_ALIASES: dict[str, tuple[str, ...]] = {
+    name: _NATIVE_APPROACH_CAPABILITIES for name in _NATIVE_APPROACH_CAPABILITIES
+}
+
+
+def capability_satisfied(name: str, available: set[str] | frozenset[str]) -> bool:
+    """Whether an advertised capability set satisfies a required name."""
+
+    if name in available:
+        return True
+    return any(alias in available for alias in _CAPABILITY_ALIASES.get(name, ()))
+
 _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "telemetry.game.loaded": ("game.pause",),
     "telemetry.game.paused": ("game.pause",),
@@ -327,8 +343,11 @@ def evaluate_condition(
                 ConditionResult.STALE,
                 f"Telemetry age {age:.3f}s exceeds {condition.max_age_seconds:.3f}s.",
             )
+        available = set(observation.telemetry.capabilities)
         missing = sorted(
-            set(condition.required_capabilities) - set(observation.telemetry.capabilities)
+            name
+            for name in set(condition.required_capabilities)
+            if not capability_satisfied(name, available)
         )
         if missing:
             return _evaluation(
@@ -366,7 +385,9 @@ def evaluate_condition(
                 ConditionResult.UNAVAILABLE,
                 "Telemetry capabilities are unavailable.",
             )
-        actual = condition.path in observation.telemetry.capabilities
+        actual = condition.path is not None and capability_satisfied(
+            condition.path, set(observation.telemetry.capabilities)
+        )
     else:
         actual = _resolve_field(condition, observation)
 

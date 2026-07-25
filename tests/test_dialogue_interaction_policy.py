@@ -20,6 +20,7 @@ from kenshi_agent.models import (
     ConditionKind,
     ConditionOperator,
     ConditionPath,
+    ConditionResult,
     ControlMode,
     Disposition,
     GameState,
@@ -729,3 +730,40 @@ class TestDismissScreen:
         # It is available without any capability, in either control mode.
         assert not DISMISS_SCREEN_CONTRACT.missing_capabilities(set())
         assert DISMISS_SCREEN_CONTRACT.allows_control_mode(ControlMode.INTERFACE_ONLY)
+
+
+class TestCapabilityAliases:
+    """The generic capability name must work against a legacy-named plug-in."""
+
+    def test_either_approach_capability_name_satisfies_the_other(self) -> None:
+        from kenshi_agent.planning import capability_satisfied
+
+        legacy_only = {"control.approach_vendor"}
+        generic_only = {"control.approach_dialogue_target"}
+        assert capability_satisfied("control.approach_dialogue_target", legacy_only)
+        assert capability_satisfied("control.approach_vendor", generic_only)
+        assert not capability_satisfied("control.approach_vendor", set())
+
+    def test_an_unrelated_capability_is_not_aliased(self) -> None:
+        from kenshi_agent.planning import capability_satisfied
+
+        assert not capability_satisfied("ui.tooltip", {"control.approach_vendor"})
+
+    def test_a_plan_requiring_the_generic_name_runs_on_a_legacy_plugin(self) -> None:
+        """The exact failure that stopped run p8-longform-05."""
+
+        from kenshi_agent.planning import evaluate_condition
+
+        generic = Condition(
+            kind=ConditionKind.TELEMETRY_FRESH,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            max_age_seconds=3.0,
+            required_capabilities=["control.approach_dialogue_target"],
+        )
+        # Telemetry advertises only the legacy vendor-era name.
+        state = observation(controls=TRADE_CONTROLS, capabilities=list(CAPABILITIES))
+        assert "control.approach_vendor" in CAPABILITIES
+        assert "control.approach_dialogue_target" not in CAPABILITIES
+        result = evaluate_condition(generic, state)
+        assert result.result is ConditionResult.TRUE, result.reason
