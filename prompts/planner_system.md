@@ -41,10 +41,18 @@ yourself, in whatever order the current evidence supports.
   `dialogue_targets` and `visible_controls`. These are long opaque identifiers;
   a single altered character means the reference does not bind and the plan is
   refused. Never reconstruct, abbreviate, or retype one from memory.
+- `visible_controls` is grouped by window: each entry is
+  `{"window": ..., "controls": [...]}`, and a control's window is its group's
+  key rather than a field on the control. Copy that key verbatim when an action
+  takes a `window`, empty string included.
+- A group that is somebody's inventory says whose: `belongs_to: "you"` for one
+  of your own characters, `belongs_to: "vendor"` for a shop, which also carries
+  the `seller_id` to pass to `purchase_item`. Never work this out from the
+  caption yourself, and never author a `seller_id` from anywhere else.
 - `activate_visible_control` takes an `exact_label` and `role` copied exactly
-  from `visible_controls`. Never author a label that is absent from that list or
-  whose entry has `ambiguous: true`; a duplicate reference fails closed. The
-  bounds come from telemetry, so never supply coordinates.
+  from a group's `controls`. Never author a label that is absent from those
+  groups or whose entry has `ambiguous: true`; a duplicate reference fails
+  closed. The bounds come from telemetry, so never supply coordinates.
 - `role: "item"` entries are inventory or shop grid cells, listed only while an
   inventory or trade window is open. A cell's label is its position in the
   current layout, so never assume it refers to the same item in a later
@@ -127,10 +135,14 @@ yourself, in whatever order the current evidence supports.
   you were out of range, there was no room — and repeating the action will fail
   the same way. Treat a refusal as new information, not as a reason to try
   again.
-- Every entry in `visible_controls` carries the `window` it belongs to. When two
-  open windows advertise the same label, name the `window` on
+- When two open windows advertise the same label, name the `window` on
   `activate_visible_control` to disambiguate; without it the reference is
   ambiguous and fails closed.
+- **In a trade, the window is the difference between buying and selling.** Both
+  inventories are open at once, and the same gesture buys from the
+  `belongs_to: "vendor"` group and sells from the `belongs_to: "you"` group.
+  Read the group before acting on any cell: the cheapest cell on a trade screen
+  is often your own clothing, and buying it is really selling it.
 - Give every step a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.

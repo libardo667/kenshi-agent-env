@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
@@ -378,6 +378,46 @@ MAX_PLANNER_CONTEXT_CHARS = 400_000
 # starves a dense trade screen while leaving room unused on a sparse one - and
 # picking a new one just moves the cliff.
 MAX_DIGESTED_VISIBLE_CONTROLS = 4096
+
+
+def group_controls_by_window(
+    entries: Sequence[dict[str, Any]],
+    owners: Mapping[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Present controls the way Kenshi actually arranges them: per window.
+
+    A flat list repeats the window on all 188 entries and still leaves the
+    planner to reconstruct which of two open inventories a cell sits in. That
+    question is not cosmetic: in a trade the same right-click buys from the
+    shop's window and sells from your own, so "which window" is the whole
+    difference between spending and being robbed. A probe that ignored it once
+    sold a character's clothes and weapon.
+
+    Windows keep first-appearance order and controls keep document order within
+    a window, so positional reasoning still holds. The key is the exact string
+    an action's `window` argument takes, empty string included - it is meant to
+    be copied, not read.
+    """
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for entry in entries:
+        window = str(entry.get("window", ""))
+        groups.setdefault(window, []).append(
+            {key: value for key, value in entry.items() if key != "window"}
+        )
+
+    resolved = owners or {}
+    grouped = []
+    for window, controls in groups.items():
+        group: dict[str, Any] = {"window": window}
+        # Say whose window it is rather than leaving the planner to match the
+        # caption against a trader's name. For a vendor this also carries the
+        # id `purchase_item` needs as its `seller_id`, so nothing about the
+        # trade has to be inferred from a string.
+        group.update(resolved.get(normalize_control_label(window), {}))
+        group["controls"] = controls
+        grouped.append(group)
+    return grouped
 
 
 def budgeted_visible_controls(
@@ -1648,6 +1688,36 @@ class Observation(StrictModel):
                 seen.append(control.window)
         return seen
 
+    def window_owners(self) -> dict[str, dict[str, Any]]:
+        """Whose inventory each open window is, keyed by normalized caption.
+
+        Kenshi captions an inventory window with its owner's name, upper-cased,
+        so the only thing standing between the planner and "is this the shop's
+        stock or mine" is a case-insensitive name match. Doing it here means the
+        answer arrives as a fact rather than as a string comparison the planner
+        has to think to make - and gets wrong in the direction that sells your
+        own coat.
+        """
+
+        telemetry = self.telemetry
+        if telemetry is None:
+            return {}
+        owners: dict[str, dict[str, Any]] = {}
+        for entity in telemetry.nearby_entities:
+            if entity.shop_inventory_owner is True and entity.name:
+                owners[normalize_control_label(entity.name)] = {
+                    "belongs_to": "vendor",
+                    "seller_id": entity.id,
+                }
+        # Squad last: a window naming one of your own characters is yours, even
+        # if something nearby shares the name.
+        for character in telemetry.squad:
+            if character.name:
+                owners[normalize_control_label(character.name)] = {
+                    "belongs_to": "you",
+                }
+        return owners
+
     def visible_control_digest(
         self,
         limit: int = MAX_DIGESTED_VISIBLE_CONTROLS,
@@ -1863,10 +1933,11 @@ class Observation(StrictModel):
         # conclude there is never room for a single control. What the digest
         # actually competes with is the content that budgeting can never drop.
         floor = irreducible_payload(payload)
+        owners = self.window_owners()
 
         def fits(limit: int) -> list[dict[str, Any]] | None:
             candidate = self.visible_control_digest(limit)
-            floor["visible_controls"] = candidate
+            floor["visible_controls"] = group_controls_by_window(candidate, owners)
             if len(json.dumps(floor, indent=2, ensure_ascii=False)) > max_chars:
                 return None
             return candidate
@@ -1927,7 +1998,7 @@ class Observation(StrictModel):
         # been. Only the control list may push past the budget, because that is
         # a property of the screen the agent happens to be looking at.
         base_required = len(json.dumps(floor, indent=2, ensure_ascii=False))
-        floor["visible_controls"] = controls
+        floor["visible_controls"] = group_controls_by_window(controls, self.window_owners())
         required = len(json.dumps(floor, indent=2, ensure_ascii=False))
         if max_chars < base_required:
             required = max_chars
@@ -1946,7 +2017,7 @@ class Observation(StrictModel):
             }
             controls = shown
 
-        payload["visible_controls"] = controls
+        payload["visible_controls"] = group_controls_by_window(controls, self.window_owners())
         text = json.dumps(payload, indent=2, ensure_ascii=False)
         return budget_observation_payload(
             payload,

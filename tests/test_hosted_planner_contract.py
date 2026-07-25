@@ -426,20 +426,100 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
     def shown(max_chars: int, **kwargs: Any) -> dict[str, Any]:
         return json.loads(crowded.planner_payload(max_chars=max_chars, **kwargs))
 
+    def listed(payload: dict[str, Any]) -> list[dict[str, Any]]:
+        return [
+            entry for group in payload["visible_controls"] for entry in group["controls"]
+        ]
+
     # A budget far below what the controls cost does not cost the agent one.
     tight = shown(12000)
-    assert len(tight["visible_controls"]) == len(controls)
+    assert len(listed(tight)) == len(controls)
     assert "visible_controls_truncated" not in tight
-    assert len(shown(60000)["visible_controls"]) == len(controls)
+    assert len(listed(shown(60000))) == len(controls)
+
+    # Controls arrive grouped by their window, which is the difference between
+    # buying from a shop and selling your own coat, and the window is stated
+    # once per group rather than repeated on every entry.
+    assert [group["window"] for group in tight["visible_controls"]] == ["SHOP"]
+    assert all("window" not in entry for entry in listed(tight))
 
     # The model's real ceiling does cut it - and never silently.
     squeezed = shown(12000, max_context_chars=9000)
-    listed = squeezed["visible_controls"]
-    assert 0 < len(listed) < len(controls)
+    cut = listed(squeezed)
+    assert 0 < len(cut) < len(controls)
     notice = squeezed["visible_controls_truncated"]
-    assert notice["shown"] == len(listed) and notice["total"] == len(controls)
+    assert notice["shown"] == len(cut) and notice["total"] == len(controls)
 
     # Even cut, no role is starved entirely.
-    roles = collections.Counter(entry["role"] for entry in listed)
+    roles = collections.Counter(entry["role"] for entry in cut)
     assert len(roles) == 3, f"a role was starved entirely: {roles}"
     assert max(roles.values()) - min(roles.values()) <= 1, roles
+
+
+def test_two_open_inventories_stay_distinguishable() -> None:
+    """In a trade, which window a cell sits in decides buy versus sell.
+
+    The same right-click buys from the shop's window and sells from your own,
+    so a flat list of cells is not just verbose, it is the shape that once let
+    a probe sell a character's clothes and weapon. Grouping makes the
+    distinction structural rather than a field to be noticed.
+    """
+    from kenshi_agent.models import (
+        CharacterState,
+        NearbyEntity,
+        NormalizedPointerBounds,
+        VisibleUIControl,
+    )
+
+    def cell(label: str, window: str, value: int) -> VisibleUIControl:
+        return VisibleUIControl(
+            label=label,
+            role="item",
+            window=window,
+            item_name=label,
+            item_value=value,
+            bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
+        )
+
+    trading = observation().model_copy(
+        update={
+            "telemetry": TelemetrySnapshot(
+                ui=UIState(
+                    active_screen="trade",
+                    visible_controls=[
+                        cell("Water", "BARMAN", 30),
+                        cell("Rag Loincloth", "BARMAN", 12),
+                        cell("Hep's Shirt", "HEP", 40),
+                    ],
+                ),
+                # Kenshi captions the window "HEP" while the character is "Hep",
+                # so ownership has to survive the case difference.
+                squad=[CharacterState(id="hep-1", name="Hep", selected=True)],
+                nearby_entities=[
+                    NearbyEntity(
+                        id="barman-1", name="Barman", shop_inventory_owner=True
+                    )
+                ],
+                capabilities=["ui.visible_controls"],
+            )
+        }
+    )
+
+    groups = json.loads(trading.planner_payload(max_chars=30000))["visible_controls"]
+    by_window = {group["window"]: group["controls"] for group in groups}
+    assert set(by_window) == {"BARMAN", "HEP"}
+
+    # Whose window it is arrives as a fact, not as a name the planner must
+    # match, and the vendor's group carries the id purchase_item asks for.
+    owners = {group["window"]: group for group in groups}
+    assert owners["HEP"]["belongs_to"] == "you"
+    assert owners["BARMAN"]["belongs_to"] == "vendor"
+    assert owners["BARMAN"]["seller_id"] == "barman-1"
+    assert "seller_id" not in owners["HEP"]
+    assert [entry["item_name"] for entry in by_window["BARMAN"]] == [
+        "Water",
+        "Rag Loincloth",
+    ]
+    assert [entry["item_name"] for entry in by_window["HEP"]] == ["Hep's Shirt"]
+    # Prices travel with the cell, so affording a thing needs no extra step.
+    assert [entry["item_value"] for entry in by_window["BARMAN"]] == [30, 12]
