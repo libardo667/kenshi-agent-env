@@ -89,10 +89,12 @@
     <ClCompile Include="AtomicJsonWriter.cpp" />
     <ClCompile Include="KenshiAgentTelemetry.cpp" />
     <ClCompile Include="NativeCommandProtocol.cpp" />
+    <ClCompile Include="NativeCommandTiming.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AtomicJsonWriter.h" />
     <ClInclude Include="NativeCommandProtocol.h" />
+    <ClInclude Include="NativeCommandTiming.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

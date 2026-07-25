@@ -40,6 +40,7 @@
 
 #include "AtomicJsonWriter.h"
 #include "NativeCommandProtocol.h"
+#include "NativeCommandTiming.h"
 
 namespace
 {
@@ -49,7 +50,6 @@ namespace
     using KenshiAgentTelemetry::ParseNativeCommandRequest;
     using KenshiAgentTelemetry::SerializeNativeCommandAcknowledgement;
 
-    const DWORD SNAPSHOT_INTERVAL_MS = 500;
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
@@ -65,7 +65,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.6.0";
+    const char* PROTOCOL_VERSION = "0.6.1";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -91,8 +91,9 @@ namespace
         // the way an approach is. It finishes by arriving.
         bool isWalk;
         bool hasFixedDestination;
-        // Ticks observed with the world paused while this command was active.
-        unsigned int pausedTicks;
+        // One uninterrupted pause may mean an abandoned movement order, but
+        // short paused gaps are how the stop-motion controller safely pulses.
+        KenshiAgentTelemetry::NativeMovementPauseWindow pauseWindow;
         float destinationX;
         float destinationZ;
     };
@@ -100,12 +101,6 @@ namespace
     // How close counts as arrived. Kenshi stops a walk short of the exact point
     // whenever anything is in the way, so an exact match would never fire.
     const float WALK_ARRIVAL_TOLERANCE = 12.0f;
-
-    // A paused world cannot move anybody, so a movement command issued into one
-    // can never finish. Left alone it produces a silent wait and then "timed out
-    // without a causally later matching native acknowledgement", which tells the
-    // agent nothing it can act on. Say what is actually wrong instead.
-    const unsigned int MAX_PAUSED_TICKS_WHILE_MOVING = 12;
 
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
     TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
@@ -177,7 +172,8 @@ namespace
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.destinationX = 0.0f;
         g_activeNativeCommand.destinationZ = 0.0f;
-        g_activeNativeCommand.pausedTicks = 0;
+        KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+            g_activeNativeCommand.pauseWindow);
     }
 
     std::string JsonEscape(const std::string& input)
@@ -412,7 +408,8 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
-        g_activeNativeCommand.pausedTicks = 0;
+        KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+            g_activeNativeCommand.pauseWindow);
     }
 
     std::string UtcNowIso8601()
@@ -1134,13 +1131,16 @@ namespace
         if (!g_activeNativeCommand.active)
             return;
 
-        if (ou != NULL && ou->isPaused())
+        if (KenshiAgentTelemetry::ObserveNativeMovementPause(
+                g_activeNativeCommand.pauseWindow,
+                ou != NULL && ou->isPaused(),
+                GetTickCount()))
         {
-            if (++g_activeNativeCommand.pausedTicks >= MAX_PAUSED_TICKS_WHILE_MOVING)
-                FinishActiveNativeCommand("cancelled", "world_paused");
+            FinishActiveNativeCommand("cancelled", "world_paused");
             return;
         }
-        g_activeNativeCommand.pausedTicks = 0;
+        if (ou != NULL && ou->isPaused())
+            return;
 
         std::string selectedId;
         hand selectedHandle;
@@ -1374,6 +1374,8 @@ namespace
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
+            KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+                g_activeNativeCommand.pauseWindow);
             g_activeNativeCommand.destinationX = destination.x;
             g_activeNativeCommand.destinationZ = destination.z;
             g_lastNativeCommandResult = "issued";
@@ -1426,6 +1428,8 @@ namespace
         g_activeNativeCommand.selectedHandle = selectedHandle;
         g_activeNativeCommand.isWalk = isMove;
         g_activeNativeCommand.hasFixedDestination = false;
+        KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+            g_activeNativeCommand.pauseWindow);
         g_lastNativeCommandResult = "issued";
         g_lastNativeCommandTarget = target->getName();
         g_lastNativeCommandTargetId = request.targetId;
@@ -2021,7 +2025,8 @@ namespace
         if (ou != NULL &&
             ou->initialized &&
             player != NULL &&
-            now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
+            now - g_lastSnapshotTick >=
+                KenshiAgentTelemetry::TELEMETRY_SNAPSHOT_INTERVAL_MS)
         {
             g_lastSnapshotTick = now;
             Sample(player, false);
@@ -2033,7 +2038,8 @@ namespace
         g_originalTitleScreenUpdate(titleScreen);
         const DWORD now = GetTickCount();
         if ((ou == NULL || !ou->initialized) &&
-            now - g_lastSnapshotTick >= SNAPSHOT_INTERVAL_MS)
+            now - g_lastSnapshotTick >=
+                KenshiAgentTelemetry::TELEMETRY_SNAPSHOT_INTERVAL_MS)
         {
             g_lastSnapshotTick = now;
             Sample(NULL, true);

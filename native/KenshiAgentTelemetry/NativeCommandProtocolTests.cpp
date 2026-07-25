@@ -11,6 +11,7 @@
 // The VS2010-era solution has no shared-library indirection, and this keeps the
 // conformance executable on the same parser and serializer the DLL uses.
 #include "NativeCommandProtocol.cpp"
+#include "NativeCommandTiming.cpp"
 
 namespace
 {
@@ -35,12 +36,88 @@ namespace
                   << message << std::endl;
         return 1;
     }
+
+    int TestNativeMovementPauseTiming()
+    {
+        using KenshiAgentTelemetry::NativeMovementPauseWindow;
+        using KenshiAgentTelemetry::ObserveNativeMovementPause;
+
+        if (KenshiAgentTelemetry::NATIVE_MOVEMENT_CONTINUOUS_PAUSE_LIMIT_MS <=
+            KenshiAgentTelemetry::TELEMETRY_SNAPSHOT_INTERVAL_MS)
+        {
+            return Fail(
+                "movement pause limit cannot expose one accepted snapshot");
+        }
+
+        NativeMovementPauseWindow window;
+        KenshiAgentTelemetry::ResetNativeMovementPauseWindow(window);
+        const unsigned long acceptedAt = 1000UL;
+        if (ObserveNativeMovementPause(window, true, acceptedAt))
+            return Fail("movement cancelled on its first paused update");
+
+        // Simulate player-interface updates until the next 500 ms telemetry
+        // publication. The accepted command must remain observable.
+        unsigned long now = acceptedAt + 16UL;
+        const unsigned long firstSnapshot =
+            acceptedAt + KenshiAgentTelemetry::TELEMETRY_SNAPSHOT_INTERVAL_MS;
+        while (now <= firstSnapshot)
+        {
+            if (ObserveNativeMovementPause(window, true, now))
+                return Fail("movement cancelled before its accepted snapshot");
+            now += 16UL;
+        }
+
+        // The controller receives that snapshot, acquires its bounded input
+        // turn, and begins the first pulse without cancellation.
+        if (ObserveNativeMovementPause(window, false, firstSnapshot + 1250UL))
+            return Fail("unpausing did not reset the initial pause window");
+
+        // Re-pausing between two bounded pulses starts a fresh window rather
+        // than inheriting time from command acceptance.
+        const unsigned long betweenPulses = firstSnapshot + 3250UL;
+        if (ObserveNativeMovementPause(window, true, betweenPulses))
+            return Fail("movement cancelled at the first bounded re-pause");
+        if (ObserveNativeMovementPause(window, true, betweenPulses + 1250UL))
+            return Fail("movement cancelled during a bounded pulse gap");
+        if (ObserveNativeMovementPause(window, false, betweenPulses + 1750UL))
+            return Fail("next pulse did not reset the pause window");
+
+        // A genuinely abandoned continuously paused order still names its
+        // terminal reason at the exact wall-clock boundary.
+        const unsigned long abandonedAt = betweenPulses + 3000UL;
+        if (ObserveNativeMovementPause(window, true, abandonedAt))
+            return Fail("abandoned pause cancelled before its limit");
+        if (ObserveNativeMovementPause(
+                window,
+                true,
+                abandonedAt +
+                    KenshiAgentTelemetry::
+                        NATIVE_MOVEMENT_CONTINUOUS_PAUSE_LIMIT_MS -
+                    1UL))
+        {
+            return Fail("abandoned pause cancelled one millisecond early");
+        }
+        if (!ObserveNativeMovementPause(
+                window,
+                true,
+                abandonedAt +
+                    KenshiAgentTelemetry::
+                        NATIVE_MOVEMENT_CONTINUOUS_PAUSE_LIMIT_MS))
+        {
+            return Fail("abandoned pause did not cancel at its limit");
+        }
+
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
 {
     if (argc != 2)
         return Fail("expected the native fixture directory as one argument");
+    const int timingResult = TestNativeMovementPauseTiming();
+    if (timingResult != 0)
+        return timingResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =
@@ -163,6 +240,8 @@ int main(int argc, char** argv)
             "serialized direction acknowledgement diverged from the fixture");
     }
 
-    std::cout << "Native command protocol fixtures passed." << std::endl;
+    std::cout
+        << "Native command protocol fixtures and movement timing passed."
+        << std::endl;
     return 0;
 }

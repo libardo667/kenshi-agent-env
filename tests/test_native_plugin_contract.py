@@ -77,7 +77,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.6.0"' in source
+    assert 'PROTOCOL_VERSION = "0.6.1"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -97,7 +97,7 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
 def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.6.0"' in source
+    assert 'PROTOCOL_VERSION = "0.6.1"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactDialogueTarget" in source
@@ -273,3 +273,19 @@ def test_targetless_direction_uses_the_shared_native_protocol_module() -> None:
     assert "acknowledgement.bearingDegrees" in protocol
     assert "acknowledgement.distanceUnits" in protocol
     assert "SerializeNativeCommandAcknowledgement" in plugin
+
+
+def test_native_movement_pause_timing_uses_the_shared_conformance_module() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    tests = (
+        PLUGIN_SOURCE.parent / "NativeCommandProtocolTests.cpp"
+    ).read_text(encoding="utf-8")
+    project = PLUGIN_PROJECT.read_text(encoding="utf-8")
+
+    assert '#include "NativeCommandTiming.h"' in plugin
+    assert "NativeCommandTiming.cpp" in project
+    assert "ObserveNativeMovementPause" in plugin
+    assert "MAX_PAUSED_TICKS_WHILE_MOVING" not in plugin
+    assert '#include "NativeCommandTiming.cpp"' in tests
+    assert "movement cancelled before its accepted snapshot" in tests
+    assert "movement cancelled during a bounded pulse gap" in tests
