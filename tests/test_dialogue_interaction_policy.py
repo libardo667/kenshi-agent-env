@@ -1005,3 +1005,19 @@ class TestDerivedRiskBudget:
         )
         assert not any("purchase budget" in error for error in errors)
         assert errors, "an unbindable purchase must still be refused"
+
+
+def test_a_camera_move_can_prove_itself() -> None:
+    """The camera is what anyone watching a stream actually sees.
+
+    `camera.position` records where it is, but it was absent from the causal
+    prefixes, so a camera step could not be proven however it was written and
+    was rejected for having no causal success condition. The only field that
+    records the effect did not count as evidence of it.
+    """
+    from kenshi_agent.dialogue_interaction import _is_causal_condition
+    from kenshi_agent.models import ConditionKind, ConditionPath
+
+    assert _is_causal_condition(ConditionKind.FIELD, ConditionPath.CAMERA_POSITION_CAPABILITY.value)
+    # Run bookkeeping still is not evidence the world moved.
+    assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")

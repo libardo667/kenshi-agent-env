@@ -41,7 +41,14 @@ DIALOGUE_INTERACTION_MAX_STEPS = 4
 # Conditions that can only be settled by a later world revision. A plan whose
 # success is judged solely by, say, control_mode would "succeed" without the
 # game ever changing, so at least one causal check is required per step.
-_CAUSAL_CONDITION_PREFIXES = ("telemetry.", "selected.", "target.")
+#
+# `camera.` belongs here: the camera's position is observed world state that a
+# later revision reports differently once it moves. Leaving it out made every
+# camera step unprovable - the only field that records the effect did not count
+# as evidence of it - so panning was rejected however it was written. On a
+# streamed run that is not a small thing: the camera is what anyone watching
+# actually sees.
+_CAUSAL_CONDITION_PREFIXES = ("telemetry.", "selected.", "target.", "camera.")
 
 
 def _is_causal_condition(kind: ConditionKind, path: str | None) -> bool:

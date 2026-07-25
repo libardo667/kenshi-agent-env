@@ -130,7 +130,12 @@ yourself, in whatever order the current evidence supports.
   `retry_budget`, and to *close* a screen you opened this way, press the same
   binding again rather than reaching for `dismiss_screen`.
 - Camera and speed bindings are not toggles, so a `retry_budget` is fine there —
-  panning usually takes several presses.
+  panning usually takes several presses. Keep `idempotency` at `at_most_once`
+  regardless: that is the contract, and a `retry_budget` is how you ask for
+  repeats, not a weaker idempotency claim.
+- **Prove a camera move with `camera.position`.** It is the field that records
+  where the camera is, and it counts as causal evidence. A camera step with no
+  condition on it cannot succeed.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
   and back it with a success condition that checks it, such as
   `telemetry.ui.active_screen` or `telemetry.game.paused`.
