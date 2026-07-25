@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 from types import SimpleNamespace
 from typing import Any
@@ -390,3 +391,54 @@ def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
     rate_limited = Exception("Error code: 429 - schema")
     rate_limited.status_code = 429  # type: ignore[attr-defined]
     assert not _is_schema_refusal(rate_limited)
+
+
+def test_the_control_list_grows_with_the_room_available() -> None:
+    """How many controls the planner sees must follow the budget, not a constant.
+
+    A hand-picked cap is wrong on both sides: it starves a crowded trade screen
+    and leaves room unused on a sparse one. Raising the constant only moves the
+    cliff, so what is pinned here is that the count actually tracks the budget.
+    """
+    from kenshi_agent.models import VisibleUIControl, NormalizedPointerBounds
+
+    def cell(index: int, role: str) -> VisibleUIControl:
+        return VisibleUIControl(
+            label=f"{role}-{index}",
+            role=role,  # type: ignore[arg-type]
+            window="SHOP",
+            bounds=NormalizedPointerBounds(
+                min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2
+            ),
+        )
+
+    controls = [
+        cell(i, role)
+        for i in range(60)
+        for role in ("button", "item", "text")
+    ]
+    crowded = observation().model_copy(
+        update={
+            "telemetry": TelemetrySnapshot(
+                ui=UIState(
+                    active_screen="trade",
+                    visible_controls=controls,
+                ),
+                capabilities=["ui.visible_controls"],
+            )
+        }
+    )
+
+    def shown(max_chars: int) -> list[dict[str, Any]]:
+        return json.loads(crowded.planner_payload(max_chars=max_chars)).get(
+            "visible_controls", []
+        )
+
+    tight, roomy = shown(12000), shown(60000)
+    assert len(tight) < len(roomy), "a bigger budget must surface more controls"
+    assert len(roomy) == len(controls), "a budget with room to spare must surface all"
+
+    # Every size stays role-balanced, so a crowded screen cannot starve one role.
+    roles = collections.Counter(entry["role"] for entry in tight)
+    assert len(roles) == 3, f"a role was starved entirely: {roles}"
+    assert max(roles.values()) - min(roles.values()) <= 1, roles

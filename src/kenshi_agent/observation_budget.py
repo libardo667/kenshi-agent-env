@@ -57,7 +57,7 @@ def budget_observation_payload(
         return full_text
 
     original = deepcopy(payload)
-    retained = _irreducible_payload(original)
+    retained = irreducible_payload(original)
     text = _serialize_budgeted(
         original,
         retained,
@@ -237,7 +237,7 @@ def budget_observation_payload(
     return text
 
 
-def _irreducible_payload(original: JsonObject) -> JsonObject:
+def irreducible_payload(original: JsonObject) -> JsonObject:
     retained = {
         key: deepcopy(value)
         for key, value in original.items()

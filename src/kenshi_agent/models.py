@@ -19,7 +19,7 @@ from pydantic import (
     model_validator,
 )
 
-from .observation_budget import budget_observation_payload
+from .observation_budget import budget_observation_payload, irreducible_payload
 
 
 class StrictModel(BaseModel):
@@ -363,9 +363,12 @@ class NormalizedPointerBounds(StrictModel):
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
 
-# Large enough that a dialogue's options are never truncated away by leading
-# HUD buttons; the planner payload budget reduces the observation if needed.
-MAX_DIGESTED_VISIBLE_CONTROLS = 120
+# Only a backstop against a pathological control list, not the working limit:
+# how many controls the planner actually sees is decided by how many fit in the
+# payload's character budget. A hand-picked count is wrong on both sides - it
+# starves a dense trade screen while leaving room unused on a sparse one - and
+# picking a new one just moves the cliff.
+MAX_DIGESTED_VISIBLE_CONTROLS = 4096
 
 
 def budgeted_visible_controls(
@@ -1652,7 +1655,10 @@ class Observation(StrictModel):
                 seen.append(control.window)
         return seen
 
-    def visible_control_digest(self) -> list[dict[str, Any]]:
+    def visible_control_digest(
+        self,
+        limit: int = MAX_DIGESTED_VISIBLE_CONTROLS,
+    ) -> list[dict[str, Any]]:
         """Exact controls the interface currently advertises, unambiguous only.
 
         The bounded argument source for `activate_visible_control`. A label that
@@ -1660,6 +1666,10 @@ class Observation(StrictModel):
         silently resolved, because a duplicate reference must fail closed rather
         than pick one. Bounds stay in telemetry; the planner names a label and
         role, never a coordinate.
+
+        `limit` is normally derived from the room left in the payload rather
+        than passed, so a screen with few controls surfaces all of them and a
+        crowded one surfaces as many as actually fit.
         """
 
         telemetry = self.telemetry
@@ -1676,7 +1686,7 @@ class Observation(StrictModel):
         # envelope. Truncation is fail-closed: an unlisted control is one the
         # planner will not author, never one it may author blindly.
         digest = []
-        for control in budgeted_visible_controls(controls):
+        for control in budgeted_visible_controls(controls, limit):
             entry = {
                 "exact_label": control.label,
                 "role": control.role,
@@ -1837,14 +1847,64 @@ class Observation(StrictModel):
         }
         return digest
 
+    def _fitted_visible_controls(
+        self,
+        payload: dict[str, Any],
+        max_chars: int,
+    ) -> list[dict[str, Any]]:
+        """As many controls as the payload has room for, role-balanced.
+
+        The control digest is preserved whole through payload budgeting - the
+        planner may only act on a control it was shown, so a half-listed action
+        surface is worse than a smaller observation elsewhere. That made it the
+        one collection nothing bounded, which is why it carried a hand-picked
+        cap of 120 for so long. Measuring the room that is actually left keeps
+        the fail-closed guarantee without guessing the number: a dialogue with
+        nine controls surfaces all nine, a trade screen surfaces what fits, and
+        raising the payload budget widens both without another edit here.
+        """
+
+        # Measured against the irreducible payload, not the full one. Budgeting
+        # has not run yet, so the payload still carries whole telemetry and is
+        # normally larger than the budget on its own; comparing against it would
+        # conclude there is never room for a single control. What the digest
+        # actually competes with is the content that budgeting can never drop.
+        floor = irreducible_payload(payload)
+
+        def fits(limit: int) -> list[dict[str, Any]] | None:
+            candidate = self.visible_control_digest(limit)
+            floor["visible_controls"] = candidate
+            if len(json.dumps(floor, indent=2, ensure_ascii=False)) > max_chars:
+                return None
+            return candidate
+
+        everything = fits(MAX_DIGESTED_VISIBLE_CONTROLS)
+        if everything is not None:
+            return everything
+
+        # Serialized size grows with the limit, so bisect for the largest
+        # role-balanced selection that still fits rather than walking up to it -
+        # this runs on every observation, at telemetry cadence.
+        fitted: list[dict[str, Any]] = []
+        low, high = 0, MAX_DIGESTED_VISIBLE_CONTROLS
+        while low < high:
+            middle = (low + high + 1) // 2
+            candidate = fits(middle)
+            if candidate is None:
+                high = middle - 1
+            else:
+                fitted = candidate
+                low = middle
+        return fitted
+
     def planner_payload(self, *, max_chars: int = 24000) -> str:
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         # Surface the deterministic talk-target list the planner must trust
         # rather than re-derive. A top-level non-collection key is preserved
         # through budgeting.
         payload["dialogue_targets"] = self.dialogue_target_digest()
-        payload["visible_controls"] = self.visible_control_digest()
         payload["semantic_actions"] = self.semantic_action_digest()
+        payload["visible_controls"] = self._fitted_visible_controls(payload, max_chars)
         text = json.dumps(payload, indent=2, ensure_ascii=False)
         return budget_observation_payload(
             payload,
