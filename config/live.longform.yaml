@@ -160,6 +160,10 @@ safety:
   supervisor_max_sequence_stalls: 3
   supervisor_sequence_stall_min_age_seconds: 1.0
   supervisor_pause_timeout_seconds: 2.0
+  # An agent playing continuously runs an unpaused game; that is Kenshi working,
+  # not an anomaly. Every other reflex still applies - threats, stale telemetry,
+  # capability loss, human input, F12.
+  require_paused_between_actions: false
   # Human input first receives explicit ownership. After three quiet seconds,
   # a visible five-second countdown starts; any new input resets it and F12
   # disarms automatic takeover for the run.

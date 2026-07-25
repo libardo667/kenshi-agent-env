@@ -953,6 +953,9 @@ class AgentRuntime:
             minimum_live_stall_age_seconds=(
                 self.guard.config.supervisor_sequence_stall_min_age_seconds
             ),
+            require_paused_between_actions=(
+                self.guard.config.require_paused_between_actions
+            ),
         )
 
     async def _finish_safety_supervisor(

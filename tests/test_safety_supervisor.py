@@ -296,3 +296,37 @@ def test_emergency_stop_event_preempts_an_authorized_active_plan() -> None:
         await supervisor.stop()
 
     asyncio.run(scenario())
+
+
+def test_an_unpaused_game_can_be_normal_for_a_continuously_playing_agent() -> None:
+    """The unpause reflex is a stop-motion assumption, not a universal one.
+
+    Pausing between every action suits a careful supervised experiment. An agent
+    meant to play Kenshi continuously runs an unpaused game by definition, and
+    preempting on that ended three otherwise-healthy live runs.
+    """
+
+    from kenshi_agent.safety_supervisor import SafetyCause
+
+    store = WorldStateStore()
+    strict = SafetySupervisor(
+        store=store, reflexes=ReflexEngine(), max_sequence_stalls=3
+    )
+    relaxed = SafetySupervisor(
+        store=store,
+        reflexes=ReflexEngine(),
+        max_sequence_stalls=3,
+        require_paused_between_actions=False,
+    )
+    assert strict.require_paused_between_actions is True
+    assert relaxed.require_paused_between_actions is False
+
+    store.publish(observation(1))
+    update = store.publish(observation(2, paused=False))
+
+    strict_result = strict._evaluate(update)
+    assert strict_result is not None
+    assert strict_result.cause is SafetyCause.UNEXPECTED_UNPAUSE
+
+    # The same state is unremarkable for an agent that is meant to be playing.
+    assert relaxed._evaluate(update) is None

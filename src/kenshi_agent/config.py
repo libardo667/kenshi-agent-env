@@ -260,6 +260,11 @@ class SafetyConfig(ConfigModel):
         le=30.0,
     )
     supervisor_pause_timeout_seconds: float = Field(default=2.0, gt=0.0, le=30.0)
+    # Treat an unpaused game with nothing in flight as an anomaly. True suits a
+    # careful stop-motion run, where time passing unattended means the character
+    # can be hurt while the agent thinks. An agent meant to play continuously
+    # should set it False: there, an unpaused game is simply Kenshi running.
+    require_paused_between_actions: bool = True
     automatic_takeover_enabled: bool = False
     human_control_quiet_seconds: float = Field(default=3.0, ge=0.0, le=300.0)
     takeover_countdown_seconds: float = Field(default=5.0, gt=0.0, le=300.0)

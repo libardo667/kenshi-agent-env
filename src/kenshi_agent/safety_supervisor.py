@@ -57,6 +57,7 @@ class SafetySupervisor:
         reflexes: ReflexEngine,
         max_sequence_stalls: int,
         minimum_live_stall_age_seconds: float = 1.0,
+        require_paused_between_actions: bool = True,
     ) -> None:
         if max_sequence_stalls <= 0:
             raise ValueError("max_sequence_stalls must be positive.")
@@ -66,6 +67,13 @@ class SafetySupervisor:
         self.reflexes = reflexes
         self.max_sequence_stalls = max_sequence_stalls
         self.minimum_live_stall_age_seconds = minimum_live_stall_age_seconds
+        # Whether an unpaused game with nothing in flight is an anomaly. It is
+        # for a careful stop-motion run, where time passing unattended means the
+        # character can be hurt while the agent thinks. It is *not* for an agent
+        # meant to play continuously: there, an unpaused game is simply Kenshi
+        # running. Every other reflex - threats, stale telemetry, capability
+        # loss, human input, emergency stop - applies either way.
+        self.require_paused_between_actions = require_paused_between_actions
         self.metrics = SafetySupervisorMetrics()
         self.task: asyncio.Task[None] | None = None
         self._subscription: WorldStateSubscription | None = None
@@ -284,7 +292,8 @@ class SafetySupervisor:
             )
 
         if (
-            telemetry is not None
+            self.require_paused_between_actions
+            and telemetry is not None
             and telemetry.game.paused is False
             and update.active_plan is None
             and update.active_command is None
