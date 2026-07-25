@@ -37,6 +37,10 @@ class RuntimeConfig(ConfigModel):
     stop_when_terminated: bool = True
     objective: str | None = Field(default=None, max_length=1000)
     decision_stream: bool = False
+    # Log a compact observation digest instead of the whole observation. Full
+    # payloads are only needed to replay a run with the replay environment, and
+    # writing them every pump tick produced a 112 MB log in ten minutes.
+    log_full_observations: bool = False
 
 
 class ControlConfig(ConfigModel):

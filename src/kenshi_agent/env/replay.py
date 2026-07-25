@@ -22,7 +22,14 @@ class ReplayEnvironment(AgentEnvironment):
             for line in handle:
                 record = json.loads(line)
                 if record.get("event_type") == "observation":
-                    observations.append(Observation.model_validate(record["payload"]))
+                    payload = record["payload"]
+                    if isinstance(payload, dict) and payload.get("digest"):
+                        raise ValueError(
+                            f"{path} was recorded with observation digests, which omit "
+                            "most of the observation and cannot be replayed. Re-record "
+                            "the run with runtime.log_full_observations: true."
+                        )
+                    observations.append(Observation.model_validate(payload))
         if not observations:
             raise ValueError(f"No observation events found in {path}.")
         return observations

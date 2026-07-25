@@ -1,6 +1,7 @@
 #include <Debug.h>
 #include <core/Functions.h>
 #include <kenshi/Character.h>
+#include <kenshi/Item.h>
 #include <kenshi/CameraClass.h>
 #include <kenshi/Dialogue.h>
 #include <kenshi/Faction.h>
@@ -12,6 +13,7 @@
 #include <kenshi/ShopTrader.h>
 #include <kenshi/gui/DialogueWindow.h>
 #include <kenshi/gui/ForgottenGUI.h>
+#include <kenshi/gui/InventoryGUI.h>
 #include <kenshi/gui/ManagementScreen.h>
 #include <kenshi/gui/TitleScreen.h>
 #include <kenshi/gui/ToolTip.h>
@@ -946,6 +948,89 @@ namespace
         return std::string();
     }
 
+    // Inventory and shop cells, named. Walking the MyGUI tree can only report
+    // that *a* cell exists at some bounds, which left the agent hovering cells
+    // one at a time to discover what each held - a model call per cell, while a
+    // human simply sees the bread. The icons themselves know their Item, so
+    // walk the inventory structure instead and say what is actually there.
+    void AppendNamedItemCells(std::ostringstream& json, bool& first, unsigned int& appended)
+    {
+        if (gui == NULL)
+            return;
+        const MyGUI::IntSize view =
+            MyGUI::RenderManager::getInstancePtr() != NULL
+                ? MyGUI::RenderManager::getInstancePtr()->getViewSize()
+                : MyGUI::IntSize(0, 0);
+        if (view.width <= 0 || view.height <= 0)
+            return;
+
+        ogre_unordered_map<hand, InventoryGUI*>::type::const_iterator windowIt =
+            gui->inventoryWindowsOpen.begin();
+        for (; windowIt != gui->inventoryWindowsOpen.end(); ++windowIt)
+        {
+            InventoryGUI* inventory = windowIt->second;
+            if (inventory == NULL || appended >= MAX_VISIBLE_UI_CONTROLS)
+                continue;
+
+            std::map<std::string, InventorySectionGUI*, std::less<std::string>,
+                     Ogre::STLAllocator<std::pair<std::string const, InventorySectionGUI*>,
+                                        Ogre::GeneralAllocPolicy> >::const_iterator sectionIt =
+                inventory->inventorySections.begin();
+            for (; sectionIt != inventory->inventorySections.end(); ++sectionIt)
+            {
+                InventorySectionGUI* section = sectionIt->second;
+                if (section == NULL)
+                    continue;
+                for (size_t i = 0;
+                     i < section->itemsIcons.size() && appended < MAX_VISIBLE_UI_CONTROLS;
+                     ++i)
+                {
+                    InventoryIcon* icon = section->itemsIcons[i];
+                    if (icon == NULL || icon->item == NULL || icon->image == NULL)
+                        continue;
+                    if (!icon->image->getInheritedVisible())
+                        continue;
+                    const std::string name = icon->item->getName();
+                    if (name.empty())
+                        continue;
+                    const MyGUI::IntCoord bounds = icon->image->getAbsoluteCoord();
+                    if (bounds.width <= 0 || bounds.height <= 0 ||
+                        bounds.left < 0 || bounds.top < 0 ||
+                        bounds.left + bounds.width > view.width ||
+                        bounds.top + bounds.height > view.height)
+                    {
+                        continue;
+                    }
+                    if (!first)
+                        json << ",";
+                    first = false;
+                    ++appended;
+                    json << "{";
+                    json << "\"label\":\"" << JsonEscape(name) << "\",";
+                    json << "\"role\":\"item\",";
+                    json << "\"window\":\""
+                         << JsonEscape(OwningWindowCaption(icon->image)) << "\",";
+                    json << "\"section\":\"" << JsonEscape(sectionIt->first) << "\",";
+                    json << "\"bounds\":{";
+                    json << "\"min_x\":"
+                         << static_cast<double>(bounds.left) / static_cast<double>(view.width)
+                         << ",";
+                    json << "\"max_x\":"
+                         << static_cast<double>(bounds.left + bounds.width) /
+                                static_cast<double>(view.width)
+                         << ",";
+                    json << "\"min_y\":"
+                         << static_cast<double>(bounds.top) / static_cast<double>(view.height)
+                         << ",";
+                    json << "\"max_y\":"
+                         << static_cast<double>(bounds.top + bounds.height) /
+                                static_cast<double>(view.height);
+                    json << "}}";
+                }
+            }
+        }
+    }
+
     bool IsItemCellIcon(MyGUI::Widget* widget)
     {
         MyGUI::ImageBox* image = widget->castType<MyGUI::ImageBox>(false);
@@ -1106,8 +1191,14 @@ namespace
         // removed dialogue options from the export.
         for (unsigned int index = 0; index < 3; ++index)
         {
-            if (!includeItemCells && passes[index] == UI_PASS_ITEMS_ONLY)
+            if (passes[index] == UI_PASS_ITEMS_ONLY)
+            {
+                // Named cells come from the inventory structure, not the widget
+                // tree, so this pass does not walk widgets at all.
+                if (includeItemCells)
+                    AppendNamedItemCells(json, first, appended);
                 continue;
+            }
             // Each pass re-walks the tree with its own visit budget so a wide
             // text-heavy HUD cannot exhaust the walk before buttons are seen.
             unsigned int visited = 0;

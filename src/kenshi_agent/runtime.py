@@ -100,6 +100,7 @@ class AgentRuntime:
         planning_config: PlanningConfig | None = None,
         planning_clock: PlanningClock | None = None,
         observation_clock: PlanningClock | None = None,
+        log_full_observations: bool = False,
     ) -> None:
         self.run_id = run_id
         self.environment = environment
@@ -117,7 +118,20 @@ class AgentRuntime:
         self.planning_config = planning_config or PlanningConfig()
         self.planning_clock = planning_clock or SystemPlanningClock()
         self.observation_clock = observation_clock or SystemPlanningClock()
+        self.log_full_observations = log_full_observations
         self._state_store: WorldStateStore | None = None
+
+    def _log_observation(self, observation: Observation) -> None:
+        """Record an observation at the configured level of detail."""
+
+        payload: Observation | dict[str, Any] = (
+            observation if self.log_full_observations else observation.log_digest()
+        )
+        self.logger.write(
+            "observation",
+            step_index=observation.step_index,
+            payload=payload,
+        )
 
     @staticmethod
     def _bounded_text(value: str, max_chars: int) -> str:
@@ -188,7 +202,7 @@ class AgentRuntime:
             )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
-            self.logger.write("observation", step_index=observation.step_index, payload=observation)
+            self._log_observation(observation)
 
             for _ in range(max_steps):
                 planning_started = monotonic()
@@ -344,9 +358,7 @@ class AgentRuntime:
                 )
                 self._store_memories(decision)
                 observation = self._with_memories(transition.observation)
-                self.logger.write(
-                    "observation", step_index=observation.step_index, payload=observation
-                )
+                self._log_observation(observation)
 
                 if transition.terminated:
                     terminated = True
@@ -436,11 +448,7 @@ class AgentRuntime:
                 and self.planning_config.live_execution_policy
                 == LiveContinuousPolicy.DISABLED
             ):
-                self.logger.write(
-                    "observation",
-                    step_index=observation.step_index,
-                    payload=observation,
-                )
+                self._log_observation(observation)
                 return self._finish_continuous_summary(
                     started=started,
                     steps_completed=0,
@@ -1592,11 +1600,7 @@ class AgentRuntime:
         self._store_memories(decision)
         latest = self._with_memories(latest)
         if self._state_store is None:
-            self.logger.write(
-                "observation",
-                step_index=latest.step_index,
-                payload=latest,
-            )
+            self._log_observation(latest)
         else:
             latest = self._state_store.decorate_latest(latest)
             if update is not None:
@@ -1640,11 +1644,7 @@ class AgentRuntime:
             },
         )
         if log_observation:
-            self.logger.write(
-                "observation",
-                step_index=observation.step_index,
-                payload=observation,
-            )
+            self._log_observation(observation)
 
     def _log_world_event(self, event: WorldEvent) -> None:
         self.logger.write(

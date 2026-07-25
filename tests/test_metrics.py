@@ -145,3 +145,75 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.native_commands_cancelled == 0
     assert metrics.mean_native_ack_sequence_lag == 1.5
     assert metrics.native_command_completion_percentage == 100.0
+
+
+def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
+    """A digest must not silently break replay metrics.
+
+    Logging every full observation produced a 112 MB file in ten minutes, but
+    the evaluator reads only a few fields from them and a human reading the log
+    wants orientation, not two hundred control bounds.
+    """
+
+    from kenshi_agent.models import (
+        GameState,
+        NativeCommandAcknowledgement,
+        NativeCommandStatus,
+        NativeControlState,
+        Observation,
+        TelemetrySnapshot,
+        UIState,
+        WorldStateRevision,
+    )
+
+    command_id = "cmd-" + "a" * 32
+    observation = Observation(
+        run_id="digest-test",
+        step_index=4,
+        mode="live",
+        world_revision=WorldStateRevision(telemetry_sequence=12, capability_epoch=1),
+        telemetry=TelemetrySnapshot(
+            sequence=12,
+            identity_session_id="session-digest",
+            capabilities=["game.pause", "identity.stable_handles"],
+            game=GameState(loaded=True, paused=True, money=1000),
+            ui=UIState(active_screen="trade"),
+            native_control=NativeControlState(
+                available=True,
+                acknowledgements=[
+                    NativeCommandAcknowledgement(
+                        command_id=command_id,
+                        command="approach_confirmed_vendor",
+                        status=NativeCommandStatus.ACCEPTED,
+                        reason="issued",
+                        target_id="entity-barman",
+                        selected_character_ids=["entity-hep"],
+                        based_on_telemetry_sequence=10,
+                        acknowledged_at_telemetry_sequence=11,
+                        accepted_at_telemetry_sequence=11,
+                    )
+                ],
+            ),
+        ),
+        telemetry_stale=True,
+    )
+
+    digest = observation.log_digest()
+
+    # Exactly the fields metrics.py reads off an observation.
+    assert digest["telemetry_stale"] is True
+    acknowledgements = digest["telemetry"]["native_control"]["acknowledgements"]
+    assert [item["command_id"] for item in acknowledgements] == [command_id]
+
+    # Enough to orient a human reading the log.
+    assert digest["telemetry"]["ui"]["active_screen"] == "trade"
+    assert digest["telemetry"]["game"]["money"] == 1000
+    assert digest["world_revision"]["telemetry_sequence"] == 12
+
+    # And it is marked, so replay can refuse it instead of failing obscurely.
+    assert digest["digest"] is True
+
+    import json
+
+    full_size = len(json.dumps(observation.model_dump(mode="json"), default=str))
+    assert len(json.dumps(digest, default=str)) < full_size

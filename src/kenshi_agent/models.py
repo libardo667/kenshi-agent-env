@@ -1382,6 +1382,94 @@ class Observation(StrictModel):
             )
         ]
 
+    def log_digest(self) -> dict[str, Any]:
+        """A compact record of this observation for the session log.
+
+        Writing the whole observation every pump tick produced a 112 MB log in
+        ten minutes - unworkable for an agent meant to run continuously. Only
+        the replay environment ever needed the full payload; the evaluator reads
+        a handful of fields, and a human reading the log wants orientation, not
+        two hundred control bounds. This keeps every field either consumer uses
+        plus enough state to diagnose a run, at roughly a hundredth of the size.
+        """
+
+        telemetry = self.telemetry
+        digest: dict[str, Any] = {
+            "run_id": self.run_id,
+            "step_index": self.step_index,
+            "mode": self.mode,
+            "control_mode": self.control_mode.value,
+            "planning_mode": self.planning_mode.value,
+            "live_execution_policy": self.live_execution_policy.value,
+            "world_revision": self.world_revision.model_dump(mode="json"),
+            "telemetry_stale": self.telemetry_stale,
+            "telemetry_age_seconds": self.telemetry_age_seconds,
+            "events": list(self.events),
+            "objective": self.objective,
+            "digest": True,
+        }
+        if telemetry is None:
+            digest["telemetry"] = None
+            return digest
+
+        selected = next(
+            (character for character in telemetry.squad if character.selected),
+            None,
+        )
+        digest["telemetry"] = {
+            "sequence": telemetry.sequence,
+            "source": telemetry.source,
+            "identity_session_id": telemetry.identity_session_id,
+            "capabilities": list(telemetry.capabilities),
+            "game": {
+                "loaded": telemetry.game.loaded,
+                "paused": telemetry.game.paused,
+                "money": telemetry.game.money,
+                "elapsed_minutes": telemetry.game.elapsed_minutes,
+                "location_name": telemetry.game.location_name,
+            },
+            "ui": {
+                "active_screen": telemetry.ui.active_screen,
+                "modal_open": telemetry.ui.modal_open,
+                "dialogue_open": telemetry.ui.dialogue_open,
+                "dialogue_target_id": telemetry.ui.dialogue_target_id,
+                "tooltip_visible": telemetry.ui.tooltip_visible,
+                "open_inventory_windows": telemetry.ui.open_inventory_windows,
+                "management_screen_open": telemetry.ui.management_screen_open,
+                "management_tab": telemetry.ui.management_tab,
+                "selected_character_id": telemetry.ui.selected_character_id,
+                "visible_control_count": (
+                    len(telemetry.ui.visible_controls)
+                    if telemetry.ui.visible_controls is not None
+                    else None
+                ),
+                "open_windows": self.open_window_captions(),
+            },
+            # The evaluator reconstructs native command causality from these, so
+            # they are kept whole rather than counted.
+            "native_control": telemetry.native_control.model_dump(mode="json"),
+            "active_shop_trader_count": telemetry.active_shop_trader_count,
+            "nearby_entity_count": len(telemetry.nearby_entities),
+            "dialogue_target_count": len(dialogue_targets(telemetry.nearby_entities)),
+            "selected": (
+                {
+                    "id": selected.id,
+                    "name": selected.name,
+                    "hunger": selected.hunger,
+                    "food_items": selected.food_items,
+                    "in_combat": selected.in_combat,
+                    "position": (
+                        selected.position.model_dump(mode="json")
+                        if selected.position is not None
+                        else None
+                    ),
+                }
+                if selected is not None
+                else None
+            ),
+        }
+        return digest
+
     def planner_payload(self, *, max_chars: int = 24000) -> str:
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         # Surface the deterministic talk-target list the planner must trust

@@ -271,6 +271,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             action_outcome_limit=config.runtime.observation_memory_limit,
             control_mode=run_control_mode,
             planning_config=config.planning,
+        log_full_observations=config.runtime.log_full_observations,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,
