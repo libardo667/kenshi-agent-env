@@ -1,5 +1,35 @@
 # Engineering loop state
 
+## Retired: the calibrated food path (2026-07-25)
+
+`food_procurement_v1` is gone: the policy module, its enum value, its five
+branch points across `runtime`, `planning` and `planners.base`, its prompt
+section, and its 954-line test module. `live.burnin.yaml` now names `disabled`,
+which is what `single_step` always effectively used.
+
+What was worth keeping was lifted first, not deleted. `inspect_item_cell` and
+`purchase_item` carry the purchase fence forward and strengthen it: the
+calibrated version took model-authored x/y and only checked they landed inside
+the tooltip's source, whereas the contract binds to an exact item cell and
+requires the visible tooltip to belong to *that* cell and to name that item at
+that price, with the price matched on a word boundary. Purchase safety and
+food-task intent are now separate — the contract is indifferent to what an item
+is, and a food run expresses that with
+`safety.required_purchase_tooltip_markers: ["[Food]"]`.
+
+Spending limits became opt-in and default to unlimited. How freely an agent
+trades in a game is an operator preference, not a safety boundary; the fences
+that stop it buying the *wrong* thing are not configurable.
+
+Prompt sections are now selected per policy, so a generic run is no longer sent
+a recipe it cannot execute: the generic surface dropped from 19,347 to ~10,700
+characters and contains no legacy skill terms.
+
+The legacy macros themselves (`approach_confirmed_vendor`, `choose_show_goods`,
+`inspect_shop_item`, `buy_inspected_shop_item`) and their `safety.py` fences
+remain, because `live.burnin.yaml` still allowlists them for single-step runs.
+Retiring those is a separate, later cleanup.
+
 ## Active milestone: reusable composable semantic actions (2026-07-24)
 
 The action surface is no longer the coupling point. Two reusable typed actions

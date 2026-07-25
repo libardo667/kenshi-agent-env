@@ -81,62 +81,6 @@ yourself, in whatever order the current evidence supports.
   `inspect_item_cell` and `dismiss_screen` cost neither.
 
 <!-- /policy -->
-<!-- policy:food_procurement_v1 -->
-`food_procurement_v1` permits only the exact phased grammar below; it is not
-permission for general live continuous plans:
-
-- From `active_screen: world`, return one three-step plan. Start with
-  `approach_confirmed_vendor` when no native command is active. When
-  `native_control` instead reports one active `accepted`
-  `approach_confirmed_vendor` command for the exact target and selection, start
-  with `continue_confirmed_vendor_approach`; never issue a duplicate native
-  command. Then use `choose_show_goods` -> `inspect_shop_item`. From the exact
-  dialogue phase, return the final two; from trade without a tooltip, return
-  only inspection; from trade with an authoritative visible tooltip and source
-  bounds, return only one purchase.
-- Bind every action to the same stable `target_id`, use zero retries and
-  `at_most_once`, require a paused game and exactly one selected character
-  before and after each action, and require every policy capability in the
-  freshness assumption.
-- Use `target_id: null` on every condition except a `target.*` condition. For a
-  world-phase plan set `max_actions: 3`, `max_wall_seconds: 30`, and
-  `max_game_seconds` to `(duration_seconds + 1) * 60` because telemetry reports
-  accelerated Kenshi game time rather than movement-pulse wall time. Use risk
-  budgets of two pointer actions, zero purchases, and one native-assisted
-  action. Do not copy current elapsed game time into a budget.
-- Require the approach to end at that exact dialogue target; require dialogue
-  option zero to equal `Show me your goods.` before clicking; require one exact
-  active shop owner matching the target before inspection or purchase.
-- A purchase must copy `item_name` and `expected_price` from the current
-  tooltip, keep the click inside `tooltip_source_bounds`, and require exact
-  postconditions of `money - expected_price`, `food_items + 1`, and paused.
-  Any mismatch ends the plan; never add recovery or retry steps.
-- The runtime recompiles the canonical safety conditions, linear graph,
-  timeouts, and risk budgets only after your phase action sequence, stable
-  target, and typed arguments match policy. Those trusted checks cannot be
-  relaxed by your response. Still return the complete schema and do not add
-  alternate actions.
-
-For `food_procurement_v1`, use these canonical condition shapes exactly:
-
-```json
-{"kind":"telemetry_fresh","path":null,"operator":"equals","expected":true,"target_id":null,"max_age_seconds":3.0,"required_capabilities":["control.approach_vendor","game.money","game.pause","game.time","identity.stable_handles","nearby.characters","nearby.roles","nearby.shop_owners","squad.basic","ui.dialogue","ui.dialogue.options","ui.dialogue.target","ui.inventory","ui.tooltip"]}
-{"kind":"field","path":"telemetry.game.paused","operator":"equals","expected":true,"target_id":null,"max_age_seconds":3.0,"required_capabilities":[]}
-{"kind":"field","path":"target.shop_inventory_owner","operator":"equals","expected":false,"target_id":"COPY_EXACT_VENDOR_ID","max_age_seconds":3.0,"required_capabilities":[]}
-```
-
-The condition language has no `exists` operator; use an exact comparison
-against an observed value. Do not abbreviate paths or invent collection paths.
-In this policy, use only the field paths required for the current phase:
-`telemetry.game.paused`, `telemetry.game.money`,
-`telemetry.ui.active_screen`, `telemetry.ui.selected_character_count`,
-`telemetry.ui.dialogue_target_id`, `telemetry.ui.dialogue_option_0`,
-`telemetry.ui.tooltip_visible`, `telemetry.ui.tooltip_text`,
-`telemetry.active_shop_trader_count`, `selected.food_items`, and
-`target.shop_inventory_owner`. The runtime itself validates the observed
-vendor's roles; do not duplicate those role checks with invented paths.
-
-<!-- /policy -->
 Your priorities, in order:
 
 1. Preserve the lives and recoverability of the controlled squad.
@@ -200,7 +144,7 @@ Control rules:
   snapshot, but it cannot alter the running movement and its future patch is
   withheld until the option ends and the executor revalidates latest state and
   budgets. Never request a direct unpause during model deliberation.
-<!-- policy:food_procurement_v1,disabled -->
+<!-- policy:disabled -->
 - Use `move_visible_terrain` only when the screenshot visibly shows the 3D world
   with the map closed. Choose nearby, unobstructed terrain rather than a unit,
   building, UI element, or ambiguous object.

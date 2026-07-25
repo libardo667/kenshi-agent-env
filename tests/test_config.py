@@ -81,10 +81,9 @@ def test_live_burnin_profile_allows_only_audited_actions(
 
     assert config.safety.live_actions_enabled
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
-    assert (
-        config.planning.live_execution_policy
-        is LiveContinuousPolicy.FOOD_PROCUREMENT_V1
-    )
+    # burnin is single_step, which never consulted a continuous policy; the
+    # calibrated food recipe it used to name has been retired.
+    assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
     assert config.control.native_assisted_actions_enabled
     assert config.safety.require_cli_execute_flag
     assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}

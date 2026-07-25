@@ -1,6 +1,6 @@
 """Generic live-continuous policy for composable semantic actions.
 
-`food_procurement_v1` is a recipe: it knows the exact phases, the exact skill
+The policy this replaced was a recipe: it knew the exact phases, the exact skill
 order, and the exact sentence a Barman says. That made one calibrated chain safe
 and every other chain impossible.
 

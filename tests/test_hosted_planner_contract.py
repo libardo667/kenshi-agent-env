@@ -27,7 +27,7 @@ def observation(
     *,
     planning_mode: PlanningMode = PlanningMode.CONTINUOUS,
     screen: str = "world",
-    policy: LiveContinuousPolicy = LiveContinuousPolicy.FOOD_PROCUREMENT_V1,
+    policy: LiveContinuousPolicy = LiveContinuousPolicy.DIALOGUE_INTERACTION_V1,
     active_plan: ActivePlanContext | None = None,
 ) -> Observation:
     return Observation(
@@ -64,7 +64,16 @@ def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> 
 
 
 def test_output_token_budget_tracks_structured_response_complexity() -> None:
+    """The budget scales with how much plan the model is being asked for.
+
+    It used to vary by Kenshi screen, encoding how many steps the calibrated
+    food recipe needed from each phase. With that recipe retired the only honest
+    inputs are the planning mode and how much plan is actually outstanding.
+    """
+
     config = PlannerConfig()
+
+    # One decision needs only the base budget.
     assert (
         output_token_budget(
             config,
@@ -73,20 +82,20 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
         )
         == 4096
     )
-    assert output_token_budget(config, observation(screen="trade"), max_plan_steps=4) == 6144
-    assert (
-        output_token_budget(config, observation(screen="dialogue"), max_plan_steps=4)
-        == 8192
-    )
-    assert output_token_budget(config, observation(screen="world"), max_plan_steps=4) == 10240
-    assert (
-        output_token_budget(
-            config,
-            observation(policy=LiveContinuousPolicy.DISABLED),
-            max_plan_steps=4,
+
+    # A fresh continuous plan may use every step it is allowed.
+    assert output_token_budget(config, observation(screen="trade"), max_plan_steps=1) == 6144
+    assert output_token_budget(config, observation(screen="world"), max_plan_steps=2) == 8192
+    # ...up to the configured ceiling.
+    assert output_token_budget(config, observation(screen="world"), max_plan_steps=8) == 12288
+
+    # The screen no longer changes the answer; only the step allowance does.
+    for screen in ("trade", "dialogue", "world"):
+        assert (
+            output_token_budget(config, observation(screen=screen), max_plan_steps=2) == 8192
         )
-        == 12288
-    )
+
+    # A patch only has to replace what remains.
     assert (
         output_token_budget(
             config,
@@ -212,21 +221,15 @@ def test_only_the_active_policy_section_reaches_the_model() -> None:
     generic = instructions_for_policy(
         instructions, LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
     )
-    food = instructions_for_policy(instructions, LiveContinuousPolicy.FOOD_PROCUREMENT_V1)
     disabled = instructions_for_policy(instructions, LiveContinuousPolicy.DISABLED)
 
     # The generic run sees its own rules and none of the recipe.
     assert "approach_dialogue_target" in generic
     assert "Show me your goods." not in generic
-    assert "choose_show_goods" not in generic
 
     # The generic run is also spared the legacy macro guidance, since that
     # policy rejects SkillAction outright.
     assert "move_visible_terrain" not in generic
-
-    # The calibrated run still sees its recipe and not the generic rules.
-    assert "choose_show_goods" in food
-    assert "semantic_actions" not in food
 
     # `disabled` means no *continuous* live policy, but single-step live runs
     # still author macros, so legacy skill guidance belongs there.
@@ -234,7 +237,7 @@ def test_only_the_active_policy_section_reaches_the_model() -> None:
     assert "approach_dialogue_target" not in disabled
 
     # Shared guidance survives in all three, and no markers leak to the model.
-    for rendered in (generic, food, disabled):
+    for rendered in (generic, disabled):
         assert "Your priorities, in order:" in rendered
         assert "<!-- policy:" not in rendered
         assert "<!-- /policy -->" not in rendered

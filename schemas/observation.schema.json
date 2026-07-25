@@ -989,7 +989,6 @@
     "LiveContinuousPolicy": {
       "enum": [
         "disabled",
-        "food_procurement_v1",
         "dialogue_interaction_v1"
       ],
       "title": "LiveContinuousPolicy",

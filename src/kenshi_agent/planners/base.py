@@ -56,21 +56,6 @@ def output_token_budget(
     if observation.planning_mode == PlanningMode.CONTINUOUS:
         if observation.active_plan is not None:
             expected_steps = max(1, observation.active_plan.remaining_actions)
-        elif (
-            observation.live_execution_policy
-            == LiveContinuousPolicy.FOOD_PROCUREMENT_V1
-            and observation.telemetry is not None
-        ):
-            phase_steps: dict[str | None, int] = {
-                None: 1,
-                "world": 3,
-                "dialogue": 2,
-                "trade": 1,
-            }
-            expected_steps = phase_steps.get(
-                observation.telemetry.ui.active_screen,
-                1,
-            )
         else:
             expected_steps = max_plan_steps
         expected_steps = min(expected_steps, max_plan_steps)

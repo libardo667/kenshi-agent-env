@@ -44,7 +44,6 @@ class PlanningMode(StrEnum):
 
 class LiveContinuousPolicy(StrEnum):
     DISABLED = "disabled"
-    FOOD_PROCUREMENT_V1 = "food_procurement_v1"
     # Generic: validates contracts, references, and budgets rather than an exact
     # scenario recipe. It does not prescribe a step sequence.
     DIALOGUE_INTERACTION_V1 = "dialogue_interaction_v1"

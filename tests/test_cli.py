@@ -181,7 +181,7 @@ def test_continuous_live_policy_requires_its_own_cli_acknowledgement() -> None:
                 update={
                     "mode": PlanningMode.CONTINUOUS,
                     "live_execution_policy": (
-                        LiveContinuousPolicy.FOOD_PROCUREMENT_V1
+                        LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
                     ),
                 }
             )

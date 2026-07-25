@@ -249,7 +249,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
         planning_mode=PlanningMode.CONTINUOUS,
-        live_execution_policy=LiveContinuousPolicy.FOOD_PROCUREMENT_V1,
+        live_execution_policy=LiveContinuousPolicy.DIALOGUE_INTERACTION_V1,
         world_revision=WorldStateRevision(
             telemetry_sequence=42,
             frame_sequence=9,
@@ -306,7 +306,7 @@ def _path(document: dict[str, object], path: str) -> object:
 def _assert_critical_envelope(document: dict[str, object]) -> None:
     assert document["control_mode"] == "native_assisted"
     assert document["planning_mode"] == "continuous"
-    assert document["live_execution_policy"] == "food_procurement_v1"
+    assert document["live_execution_policy"] == "dialogue_interaction_v1"
     assert _path(document, "world_revision.telemetry_sequence") == 42
     assert _path(document, "world_revision.capability_epoch") == 3
     assert _path(document, "active_plan.plan_id") == "food-chain"

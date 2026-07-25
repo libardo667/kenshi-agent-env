@@ -502,10 +502,6 @@ def validate_plan(
     if observation.mode == "live":
         if config.live_execution_policy == LiveContinuousPolicy.DISABLED:
             errors.append("continuous live execution policy is disabled")
-        elif config.live_execution_policy == LiveContinuousPolicy.FOOD_PROCUREMENT_V1:
-            from .food_procurement import food_procurement_policy_errors
-
-            errors.extend(food_procurement_policy_errors(plan, observation))
         elif config.live_execution_policy == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
             from .dialogue_interaction import dialogue_interaction_policy_errors
 
