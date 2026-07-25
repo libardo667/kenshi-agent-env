@@ -273,7 +273,12 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Operation.EXIT,
         "Close the stats window.",
         Mechanism.CONTROL,
-        "dismiss_screen",
+        "use_game_binding",
+        native_entry_point="re-press toggle_stats",
+        gap=(
+            "Verified live. Same as the map: active_screen stays 'world', so "
+            "`dismiss_screen` has nothing to bind to."
+        ),
     ),
     # --- map --------------------------------------------------------------
     Affordance(
@@ -312,7 +317,12 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Operation.EXIT,
         "Close the map.",
         Mechanism.CONTROL,
-        "dismiss_screen",
+        "use_game_binding",
+        native_entry_point="re-press toggle_map",
+        gap=(
+            "Verified live. `dismiss_screen` cannot close it: it binds on "
+            "active_screen, which the map leaves on 'world'."
+        ),
     ),
     # --- message boxes ----------------------------------------------------
     Affordance(
@@ -353,6 +363,7 @@ AFFORDANCES: tuple[Affordance, ...] = (
         "Get back out of the menu without quitting.",
         Mechanism.CONTROL,
         "dismiss_screen",
+        gap="Not yet measured live; the ESC menu's active_screen value is unconfirmed.",
     ),
 )
 

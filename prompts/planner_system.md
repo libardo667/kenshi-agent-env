@@ -101,6 +101,9 @@ yourself, in whatever order the current evidence supports.
   `telemetry.ui.management_screen_open` for the map, and
   `telemetry.ui.stats_window_open` for stats. A success condition on
   `active_screen == 'inventory'` can never become true.
+- It follows that `dismiss_screen` **cannot close the map or the stats window** —
+  it binds on `active_screen`, which those leave on `world`. Close them by
+  pressing their own binding again.
 - `purchase_item` also takes the `window` of the **seller's** inventory, copied
   from that cell's own entry. A trade shows two inventories at once, so the
   window is what says the item is the shop's stock and not yours.
