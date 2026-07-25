@@ -763,7 +763,11 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
         assert controller.request_seen_before_hotkey
         assert controller.request is not None
         assert controller.request.command_id == command.command_id
-        assert controller.request.based_on_revision == initial.world_revision
+        assert controller.request.based_on_revision.telemetry_sequence is not None
+        assert (
+            controller.request.based_on_revision.telemetry_sequence
+            >= (initial.world_revision.telemetry_sequence or 0)
+        )
         assert controller.request.selected_character_ids == ["entity-selected"]
         assert controller.request.target_id == "entity-vendor"
         assert [action.kind for action in controller.actions] == [
@@ -808,27 +812,70 @@ def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
 
         assert transition.receipt.executed
         assert controller.request is not None
-        assert controller.request.based_on_revision == command.based_on_revision
+        assert controller.request.based_on_revision.telemetry_sequence is not None
+        assert (
+            controller.request.based_on_revision.telemetry_sequence
+            >= (command.based_on_revision.telemetry_sequence or 0)
+        )
 
     asyncio.run(scenario())
 
 
-def test_native_vendor_dispatch_rejects_different_telemetry_basis(
+def test_native_vendor_dispatch_rebases_an_older_authorized_revision(
     tmp_path: Path,
 ) -> None:
+    """An order authorized a few telemetry ticks ago still issues on the newest.
+
+    Telemetry advances at about 2Hz and the plug-in fences a request against an
+    exact sequence, so an authorization that had to wait for the polite input
+    lease is routinely older than the snapshot the plug-in will compare against.
+    Re-basing forward - having re-proved every fact on the newer snapshot - is
+    what stops that from being a coin flip.
+    """
+
     async def scenario() -> None:
         environment, _, controller = native_vendor_environment(tmp_path)
         initial = await environment.reset()
         sequence = initial.world_revision.telemetry_sequence
         assert sequence is not None
 
-        with pytest.raises(RuntimeError, match="current telemetry snapshot"):
+        transition = await environment.dispatch(
+            native_vendor_action(),
+            command=CommandDispatchContext(
+                command_id="cmd-0123456789abcdef0123456789abcdef",
+                based_on_revision=initial.world_revision.model_copy(
+                    update={"telemetry_sequence": sequence - 1}
+                ),
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        # Issued on the snapshot read at dispatch, not the older authorization.
+        assert controller.request.based_on_revision.telemetry_sequence is not None
+        assert controller.request.based_on_revision.telemetry_sequence > sequence - 1
+
+    asyncio.run(scenario())
+
+
+def test_native_vendor_dispatch_rejects_a_basis_ahead_of_telemetry(
+    tmp_path: Path,
+) -> None:
+    """Re-basing may only move forward, never onto evidence never observed."""
+
+    async def scenario() -> None:
+        environment, _, controller = native_vendor_environment(tmp_path)
+        initial = await environment.reset()
+        sequence = initial.world_revision.telemetry_sequence
+        assert sequence is not None
+
+        with pytest.raises(RuntimeError, match="regressed behind the authorized revision"):
             await environment.dispatch(
                 native_vendor_action(),
                 command=CommandDispatchContext(
                     command_id="cmd-0123456789abcdef0123456789abcdef",
                     based_on_revision=initial.world_revision.model_copy(
-                        update={"telemetry_sequence": sequence + 1}
+                        update={"telemetry_sequence": sequence + 1000}
                     ),
                 ),
             )

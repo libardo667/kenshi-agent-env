@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
@@ -93,6 +93,36 @@ class _StepResult:
 class _StagedPatch:
     patch: PlanPatch
     planner_observation: Observation
+
+
+def _unmet_postcondition_reason(
+    success_evaluations: Sequence[ConditionEvaluation],
+    *,
+    step_deadline_seconds: float,
+) -> str:
+    """Say why a step ran out of time, in terms of what was actually observed.
+
+    "Timed out" is only an honest summary when the evidence never arrived. When
+    the conditions were evaluable the whole time and simply read false, the step
+    did not run out of time - the action did not do what the plan predicted, and
+    calling that a timeout sends the next reader hunting for a slow clock.
+    """
+
+    stale = [e for e in success_evaluations if e.result == ConditionResult.STALE]
+    if stale:
+        return (
+            f"No causally later world revision arrived within "
+            f"{step_deadline_seconds:.1f}s, so the step could not be verified: "
+            + "; ".join(e.reason for e in stale[:3])
+        )
+    unmet = [e for e in success_evaluations if e.result != ConditionResult.TRUE]
+    if not unmet:
+        return f"Step ran out of its {step_deadline_seconds:.1f}s budget."
+    return (
+        f"The action completed but did not have its intended effect within "
+        f"{step_deadline_seconds:.1f}s: "
+        + "; ".join(f"{e.condition.path or e.condition.kind.value}: {e.reason}" for e in unmet[:3])
+    )
 
 
 class ContinuousPlanExecutor:
@@ -973,20 +1003,14 @@ class ContinuousPlanExecutor:
                 step.observation_policy == ObservationPolicy.AFTER_ACTION
                 or self.clock.monotonic() >= step_deadline
             ):
-                stale_evidence = any(
-                    evaluation.result == ConditionResult.STALE for evaluation in success_evaluations
-                )
-                reason = (
-                    "Step timed out without a causally later world revision "
-                    "satisfying postconditions."
-                    if stale_evidence
-                    else "Step timed out before its success conditions became true."
-                )
                 return _StepResult(
                     observation=latest,
                     succeeded=False,
                     actions_completed=1,
-                    reason=reason,
+                    reason=_unmet_postcondition_reason(
+                        success_evaluations,
+                        step_deadline_seconds=step.timeout_seconds,
+                    ),
                 )
 
             try:
@@ -1003,18 +1027,13 @@ class ContinuousPlanExecutor:
                     ),
                 )
             except TimeoutError:
-                stale_evidence = any(
-                    evaluation.result == ConditionResult.STALE for evaluation in success_evaluations
-                )
                 return _StepResult(
                     observation=latest,
                     succeeded=False,
                     actions_completed=1,
-                    reason=(
-                        "Step timed out without a causally later world revision "
-                        "satisfying postconditions."
-                        if stale_evidence
-                        else "Step timed out before its success conditions became true."
+                    reason=_unmet_postcondition_reason(
+                        success_evaluations,
+                        step_deadline_seconds=step.timeout_seconds,
                     ),
                 )
 

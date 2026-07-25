@@ -1247,16 +1247,33 @@ class LiveEnvironment(AgentEnvironment):
         a commerce affordance.
         """
 
-        observation = self._last_observation
-        if observation is None or observation.telemetry is None:
-            raise RuntimeError("Native command requires a current telemetry observation.")
-        if observation.telemetry_stale:
+        # The plug-in fences a request against the telemetry sequence that is
+        # current when it reads the file, and telemetry only advances at ~2Hz,
+        # so the basis has a working life of about half a second. The executor's
+        # revision is older than that by the time the polite input lease is
+        # acquired, which made roughly a fifth of native orders die on
+        # `stale_revision` for no reason but elapsed time. So re-read telemetry
+        # here and issue on the newest sequence, re-proving every authorization
+        # fact against that same snapshot - the same discipline `_rebind_in_lease`
+        # applies to semantic actions, one layer deeper.
+        result = self.telemetry_reader.read()
+        if result.stale:
             raise RuntimeError("Native command requires fresh telemetry.")
-        if not observation.world_revision.same_telemetry_snapshot_as(
-            command.based_on_revision
+        observation = self._observation_from_snapshot(result.snapshot)
+        if observation.telemetry is None:
+            raise RuntimeError("Native command requires a current telemetry observation.")
+        # Re-basing may only move forward. A snapshot older than the revision the
+        # executor authorized would mean acting on evidence it never saw. This
+        # compares telemetry sequence directly because that is the exact fence
+        # the plug-in applies; `is_later_than` also weighs wall-clock and frame
+        # counters, which cannot express "ahead of what telemetry can supply."
+        current_sequence = observation.world_revision.telemetry_sequence
+        authorized_sequence = command.based_on_revision.telemetry_sequence
+        if current_sequence is None or (
+            authorized_sequence is not None and current_sequence < authorized_sequence
         ):
             raise RuntimeError(
-                "Native command basis does not match the current telemetry snapshot."
+                "Native command basis regressed behind the authorized revision."
             )
         telemetry = observation.telemetry
         required_capabilities = {
@@ -1299,7 +1316,7 @@ class LiveEnvironment(AgentEnvironment):
             command=NATIVE_APPROACH_WIRE_COMMAND,
             control_mode=ControlMode.NATIVE_ASSISTED,
             identity_session_id=telemetry.identity_session_id,
-            based_on_revision=command.based_on_revision,
+            based_on_revision=observation.world_revision,
             selected_character_ids=list(selected_ids),
             target_id=target_id,
         )
