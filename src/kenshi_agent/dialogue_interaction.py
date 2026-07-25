@@ -27,6 +27,7 @@ from .models import (
     Observation,
     PlanEnvelope,
     PlanStep,
+    RiskBudget,
     UseGameBindingAction,
     is_controller_primitive,
     is_planner_control_action,
@@ -258,6 +259,47 @@ def dialogue_interaction_rebase_errors(
     return errors
 
 
+def plan_contract_costs(plan: PlanEnvelope) -> tuple[int, int, int]:
+    """What this plan's steps cost in pointer, purchase and native actions."""
+    pointer = purchase = native = 0
+    for step in plan.steps:
+        contract = contract_for(step.action)
+        if contract is None:
+            continue
+        attempts = 1 + step.retry_budget
+        pointer += contract.risk.pointer_actions * attempts
+        purchase += contract.risk.purchase_actions * attempts
+        native += contract.risk.native_assisted_actions * attempts
+    return pointer, purchase, native
+
+
+def with_covering_risk_budget(plan: PlanEnvelope) -> PlanEnvelope:
+    """Raise a plan's declared risk budget to cover its own steps.
+
+    The budget was a number the planner had to state and the validator then
+    recomputed in order to reject any disagreement — so a plan that plainly said
+    "buy this one thing" was thrown away for not also saying "and I intend to
+    buy once", at thirty seconds a round trip. The steps are the declaration.
+
+    Only ever raised, never lowered: a planner asking for more headroom than
+    this plan spends is stating intent across the patches that may follow, and
+    that is its call. The real ceilings are the configured ones, which this does
+    not touch, so nothing is smuggled past a limit that was actually protecting
+    something.
+    """
+
+    pointer, purchase, native = plan_contract_costs(plan)
+    budget = plan.risk_budget
+    covering = RiskBudget(
+        max_pointer_actions=max(budget.max_pointer_actions, pointer),
+        max_purchase_actions=max(budget.max_purchase_actions, purchase),
+        max_native_assisted_actions=max(budget.max_native_assisted_actions, native),
+    )
+    if covering == budget:
+        return plan
+    return plan.model_copy(update={"risk_budget": covering})
+
+
 def dialogue_interaction_policy_errors(
     plan: PlanEnvelope,
     observation: Observation,
@@ -306,15 +348,7 @@ def dialogue_interaction_policy_errors(
 
     # Risk budgets must cover what the contracts actually cost, so an
     # underdeclared budget cannot smuggle a native or pointer action through.
-    pointer = purchase = native = 0
-    for step in plan.steps:
-        contract = contract_for(step.action)
-        if contract is None:
-            continue
-        attempts = 1 + step.retry_budget
-        pointer += contract.risk.pointer_actions * attempts
-        purchase += contract.risk.purchase_actions * attempts
-        native += contract.risk.native_assisted_actions * attempts
+    pointer, purchase, native = plan_contract_costs(plan)
     if pointer > plan.risk_budget.max_pointer_actions:
         errors.append(
             f"plan contract pointer cost {pointer} exceeds its declared pointer budget "

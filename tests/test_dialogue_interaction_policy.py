@@ -946,3 +946,62 @@ class TestIdempotencyClaims:
         )
         errors = dialogue_interaction_policy_errors(composed, observation(controls=TRADE_CONTROLS))
         assert any("may not be retried" in error for error in errors)
+
+
+class TestDerivedRiskBudget:
+    """The plan's steps are its declaration of what it will spend."""
+
+    def _buying_plan(self, declared: int) -> PlanEnvelope:
+        from kenshi_agent.models import PurchaseItemAction, RiskBudget
+
+        composed = plan(
+            [
+                step(
+                    "buy",
+                    PurchaseItemAction(
+                        cell_label="Greenfruit",
+                        item_name="Greenfruit",
+                        expected_price=22,
+                        window="BARMAN",
+                        seller_id=VENDOR_ID,
+                    ),
+                    success=[screen_is("trade")],
+                )
+            ],
+            pointer=1,
+            native=0,
+        )
+        return composed.model_copy(
+            update={
+                "risk_budget": RiskBudget(
+                    max_pointer_actions=1,
+                    max_purchase_actions=declared,
+                    max_native_assisted_actions=0,
+                )
+            }
+        )
+
+    def test_a_plan_that_buys_no_longer_has_to_also_say_it_buys(self) -> None:
+        """Four plans in one live run died for exactly this omission."""
+        from kenshi_agent.dialogue_interaction import with_covering_risk_budget
+
+        covered = with_covering_risk_budget(self._buying_plan(declared=0))
+        assert covered.risk_budget.max_purchase_actions == 1
+
+    def test_headroom_the_planner_asked_for_is_left_alone(self) -> None:
+        """A higher budget states intent across the patches that may follow."""
+        from kenshi_agent.dialogue_interaction import with_covering_risk_budget
+
+        covered = with_covering_risk_budget(self._buying_plan(declared=5))
+        assert covered.risk_budget.max_purchase_actions == 5
+
+    def test_deriving_the_budget_does_not_excuse_an_unbindable_purchase(self) -> None:
+        """Only the bookkeeping goes away, not any check that was protecting something."""
+        from kenshi_agent.dialogue_interaction import with_covering_risk_budget
+
+        covered = with_covering_risk_budget(self._buying_plan(declared=0))
+        errors = dialogue_interaction_policy_errors(
+            covered, observation(controls=TRADE_CONTROLS)
+        )
+        assert not any("purchase budget" in error for error in errors)
+        assert errors, "an unbindable purchase must still be refused"

@@ -233,9 +233,9 @@ Control rules:
      the plan was built from is still current.
   2. Every condition using `equals`, `not_equals` or `contains` must set
      `expected`. A comparison with nothing to compare against is not a check.
-- Declare in `risk_budget` what the plan intends to spend before it spends it:
-  `max_purchase_actions` must be at least the number of buy actions in the
-  plan, and `max_pointer_actions` at least the number of pointer actions.
+- `risk_budget` is derived from your steps, so it never has to be talked up to
+  match them. Set it higher than this plan spends only if you mean to reserve
+  headroom for the patches that follow.
 - Keep action, wall-clock, game-time, pointer, purchase, and native-assisted
   budgets no larger than necessary. Retries require
   `idempotency=safe_to_retry`; never retry a click, purchase, movement, or
