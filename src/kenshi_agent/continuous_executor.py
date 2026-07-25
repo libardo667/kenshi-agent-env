@@ -590,6 +590,9 @@ class ContinuousPlanExecutor:
                 option_id=(f"option-{plan.plan_id}-{plan.plan_version}-{step.step_id}"),
                 action=action,
                 environment=self.environment,
+                require_paused_start=(
+                    self.planning_config.require_paused_between_actions
+                ),
             )
             try:
                 prepared = movement_option.prepare(observation)

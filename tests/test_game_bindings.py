@@ -691,3 +691,91 @@ def test_a_long_caption_does_not_blind_the_agent() -> None:
     assert len(control.label) == 500
     assert control.label.startswith("#140806Hoo boy")
     assert control.label.endswith("...")
+
+
+def _purchase_guard_state(*, paused: bool):
+    """A live trade screen with everything a purchase needs except pause."""
+
+    from datetime import UTC, datetime
+
+    from kenshi_agent.models import (
+        CharacterState,
+        Disposition,
+        GameState,
+        NearbyEntity,
+        NormalizedPointerBounds,
+        TelemetrySnapshot,
+        UIState,
+        VisibleUIControl,
+        WorldStateRevision,
+    )
+
+    cell = VisibleUIControl(
+        label="Dried Meat",
+        role="item",
+        window="BARMAN",
+        item_name="Dried Meat",
+        item_value=38,
+        bounds=NormalizedPointerBounds(min_x=0.3, min_y=0.2, max_x=0.34, max_y=0.24),
+    )
+    return Observation(
+        run_id="guard",
+        step_index=0,
+        mode="live",
+        world_revision=WorldStateRevision(telemetry_sequence=11),
+        telemetry=TelemetrySnapshot(
+            sequence=11,
+            captured_at=datetime.now(UTC),
+            identity_session_id="sess-1",
+            capabilities=[
+                "ui.visible_controls", "ui.tooltip", "ui.inventory", "game.money",
+                "game.pause", "identity.stable_handles", "nearby.characters",
+                "nearby.shop_owners", "squad.inventory", "squad.basic",
+            ],
+            game=GameState(loaded=True, paused=paused, money=1000),
+            squad=[CharacterState(id="c-hep", name="Hep", selected=True)],
+            active_shop_trader_count=1,
+            nearby_entities=[
+                NearbyEntity(
+                    id="e-barman", name="Barman",
+                    disposition=Disposition.NEUTRAL, shop_inventory_owner=True,
+                )
+            ],
+            ui=UIState(
+                active_screen="trade",
+                open_inventory_windows=2,
+                selected_character_ids=["c-hep"],
+                selected_character_id="c-hep",
+                visible_controls=[cell],
+            ),
+        ),
+        telemetry_stale=False,
+        objective="buy",
+    )
+
+
+def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
+    """An agent has to unpause to walk anywhere it could shop.
+
+    Two unconditional `paused is not True` checks refused every purchase a live
+    run could reach, ignoring the profile's require_paused_between_actions=false.
+    """
+
+    from kenshi_agent.config import SafetyConfig
+    from kenshi_agent.models import PurchaseItemAction
+    from kenshi_agent.safety import ActionGuard, SafetyViolation
+    from kenshi_agent.skills import MacroRegistry
+
+    action = PurchaseItemAction(
+        cell_label="Dried Meat", item_name="Dried Meat", expected_price=38,
+        window="BARMAN", seller_id="e-barman",
+    )
+    running = _purchase_guard_state(paused=False)
+
+    macros = MacroRegistry({})
+    lenient = ActionGuard(SafetyConfig(require_paused_between_actions=False, allow_action_kinds=["purchase_item"]), macros)
+    lenient.validate(action, running)  # must not raise
+
+    strict = ActionGuard(SafetyConfig(require_paused_between_actions=True, allow_action_kinds=["purchase_item"]), macros)
+    with pytest.raises(SafetyViolation, match="require_paused_between_actions"):
+        strict.validate(action, running)

@@ -202,8 +202,20 @@ class ActionGuard:
 
         assert observation.telemetry is not None
         telemetry = observation.telemetry
-        if telemetry.game.paused is not True:
-            raise SafetyViolation("Purchase requires a confirmed paused game.")
+        if (
+            self.config.require_paused_between_actions
+            and telemetry.game.paused is not True
+        ):
+            # Only when the profile actually asks for it. A stream agent has to
+            # unpause to walk anywhere, so an unconditional check here refuses
+            # every purchase it could ever reach a shop to make. What protects
+            # the purchase is the cell binding, the verified seller, the exact
+            # selection and the open trade screen - all still enforced below,
+            # all independent of whether the world is moving.
+            raise SafetyViolation(
+                "Purchase requires a confirmed paused game because this profile "
+                "sets require_paused_between_actions."
+            )
         if telemetry.ui.active_screen != "trade":
             raise SafetyViolation("Purchase blocked because the trade screen is not open.")
         self._validate_exact_selection(action.kind, observation)
@@ -365,8 +377,20 @@ class ActionGuard:
                 "Purchase lacks required authoritative capabilities: "
                 + ", ".join(sorted(missing))
             )
-        if telemetry.game.paused is not True:
-            raise SafetyViolation("Purchase requires a confirmed paused game.")
+        if (
+            self.config.require_paused_between_actions
+            and telemetry.game.paused is not True
+        ):
+            # Only when the profile actually asks for it. A stream agent has to
+            # unpause to walk anywhere, so an unconditional check here refuses
+            # every purchase it could ever reach a shop to make. What protects
+            # the purchase is the cell binding, the verified seller, the exact
+            # selection and the open trade screen - all still enforced below,
+            # all independent of whether the world is moving.
+            raise SafetyViolation(
+                "Purchase requires a confirmed paused game because this profile "
+                "sets require_paused_between_actions."
+            )
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
             raise SafetyViolation("Purchase requires one exact primary selected character.")

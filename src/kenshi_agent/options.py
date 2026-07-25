@@ -48,10 +48,15 @@ class StatefulMovementOption:
         option_id: str,
         action: SkillAction,
         environment: AgentEnvironment,
+        require_paused_start: bool = True,
     ) -> None:
         self.option_id = option_id
         self.action = action.model_copy(deep=True)
         self.environment = environment
+        # Same reason the approach option carries this: an agent playing
+        # continuously moves from a running world, and an unconditional demand
+        # for a paused start means the move can never begin.
+        self.require_paused_start = require_paused_start
         self.status = OptionStatus.CREATED
         self.start_observation: Observation | None = None
         self.latest_observation: Observation | None = None
@@ -63,11 +68,9 @@ class StatefulMovementOption:
         if self.status is not OptionStatus.CREATED:
             raise OptionLifecycleError("Movement option can only be prepared once.")
         telemetry = observation.telemetry
-        if (
-            telemetry is None
-            or "game.pause" not in telemetry.capabilities
-            or telemetry.game.paused is not True
-        ):
+        if telemetry is None or "game.pause" not in telemetry.capabilities:
+            raise OptionLifecycleError("Movement option requires a capable start state.")
+        if self.require_paused_start and telemetry.game.paused is not True:
             raise OptionLifecycleError(
                 "Movement option requires a capable, confirmed paused start state."
             )
