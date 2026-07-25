@@ -5,6 +5,7 @@ import json
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 from kenshi_agent.action_contracts import ACTIVATE_VISIBLE_CONTROL_CONTRACT
@@ -2317,3 +2318,51 @@ def test_a_malformed_planner_response_is_retried_not_fatal(tmp_path: Path) -> No
         assert any(event["event_type"] == "planner_error" for event in events)
 
     asyncio.run(scenario())
+
+
+def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Continuity was structurally impossible, not merely neglected.
+
+    `memory_writes` existed only on `PlannerDecision`, which single-step runs
+    use, so a continuous run recalled the memory store into every observation
+    and could never put anything into it. An intention died with the plan that
+    held it, and the next plan re-derived a goal from whatever was on screen -
+    which in a bar is the barman, every time.
+    """
+    from kenshi_agent.memory import MemoryStore
+    from kenshi_agent.models import MemoryKind, MemoryWrite
+    from kenshi_agent.runtime import AgentRuntime
+
+    store = MemoryStore(tmp_path / "memory.sqlite3", namespace="test")
+    runner = object.__new__(AgentRuntime)
+    runner.memory = store
+    runner.run_id = "continuity"
+    runner.logger = SimpleNamespace(write=lambda *a, **k: None)
+
+    basis = Observation(
+        run_id="continuity",
+        step_index=0,
+        mode="mock",
+        world_revision=WorldStateRevision(telemetry_sequence=1),
+        telemetry=TelemetrySnapshot(sequence=1),
+    )
+    plan = two_step_plan(basis).model_copy(
+        update={
+            "objective": "Leave the bar and look for paying work in town.",
+            "memory_writes": [
+                MemoryWrite(
+                    kind=MemoryKind.FACT,
+                    content="The barman offers no work.",
+                    salience=0.8,
+                )
+            ],
+        }
+    )
+    runner._remember_plan(plan)
+
+    # Recalled at the live profile's floor, so both actually reach a planner.
+    recalled = [record.content for record in store.recall(limit=16, minimum_salience=0.2)]
+    assert "The barman offers no work." in recalled
+    assert any("Leave the bar and look for paying work" in item for item in recalled), (
+        "the objective must be recorded without the planner having to think to write it"
+    )

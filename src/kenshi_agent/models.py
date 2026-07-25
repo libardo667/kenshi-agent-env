@@ -1596,6 +1596,13 @@ class PlanEnvelope(StrictModel):
     max_wall_seconds: float = Field(gt=0.0, le=120.0)
     max_game_seconds: float = Field(gt=0.0, le=3600.0)
     risk_budget: RiskBudget
+    # A continuous planner had nowhere to write anything down: `memory_writes`
+    # existed only on `PlannerDecision`, which single-step runs use, so the
+    # memory store was recalled into every observation and could never be
+    # filled. An intention therefore died with the plan that held it, and the
+    # next plan re-derived a goal from whatever was on screen - which in a bar
+    # is the barman, every time.
+    memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
 
     @model_validator(mode="after")
     def validate_graph_and_action_bound(self) -> PlanEnvelope:
@@ -1646,6 +1653,7 @@ class PlanPatch(StrictModel):
     based_on_revision: WorldStateRevision
     replace_future_steps: list[PlanStep] = Field(min_length=1, max_length=8)
     rationale: str = Field(min_length=1, max_length=1000)
+    memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
 
 
 class ActivePlanContext(StrictModel):

@@ -16,6 +16,20 @@ native actions.
 The observation's `live_execution_policy` is also authoritative. `disabled`
 means continuous live execution is unavailable.
 
+**`memories` is the only thing you carry between plans.** A plan's objective
+lives as long as that plan does; once it finishes, nothing else remembers what
+you were trying to do. So before choosing a goal, read `memories`: it lists what
+you have already set out to do and what you have learned. If it shows you
+already tried something, do not silently try it again — either continue it or
+choose differently, and say which.
+
+Write to it with `memory_writes`. Use `commitment` for what you intend to do
+next, especially when it will take more than one plan ("after this, leave the
+bar and look for work in the town"). Use `fact` for what you learned that is
+expensive to rediscover ("the barman offers no work"). Use `episode` sparingly;
+each plan's objective is already recorded for you. Keep them short and specific:
+a memory that does not change a later decision is not worth the space.
+
 **`stop` ends the whole run, not the current plan.** A plan ends by its steps
 completing; you do not need an action for that, and you never need one to move
 on to something else. Finishing what you set out to do is a reason to choose

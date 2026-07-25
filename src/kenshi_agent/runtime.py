@@ -29,6 +29,8 @@ from .models import (
     CommandDispatchContext,
     ControlMode,
     LiveContinuousPolicy,
+    MemoryKind,
+    MemoryWrite,
     NearbyEntity,
     Observation,
     PauseAction,
@@ -837,6 +839,7 @@ class AgentRuntime:
                         terminated = True
                     continue
 
+                self._remember_plan(plan)
                 self._plan_event(
                     "plan_accepted",
                     plan_id=plan.plan_id,
@@ -1774,7 +1777,30 @@ class AgentRuntime:
             )
         return observation.model_copy(update=updates)
 
-    def _store_memories(self, decision: PlannerDecision) -> None:
+    def _remember_plan(self, plan: PlanEnvelope) -> None:
+        """Record what this plan was for, and anything it asked to remember.
+
+        The objective is written automatically rather than left to the planner
+        to note, because continuity is not something to be relied on the model
+        choosing to do. Without it an agent that decided to "go find work
+        elsewhere" had no trace of that decision once the plan carrying it
+        finished, and went back to the only person it could see.
+        """
+
+        if self.memory is None:
+            return
+        self._store_memories(plan)
+        self.memory.add(
+            self.run_id,
+            MemoryWrite(
+                kind=MemoryKind.EPISODE,
+                content=f"Set out to: {plan.objective}",
+                salience=0.4,
+                evidence=f"plan {plan.plan_id} v{plan.plan_version}",
+            ),
+        )
+
+    def _store_memories(self, decision: PlannerDecision | PlanEnvelope | PlanPatch) -> None:
         if self.memory is None:
             return
         for write in decision.memory_writes:
