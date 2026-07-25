@@ -1379,7 +1379,24 @@ class Condition(StrictModel):
                 object.__setattr__(self, "target_id", None)
         elif self.kind == ConditionKind.CAPABILITY:
             if self.path is None:
-                raise ValueError("Capability conditions require path")
+                # The commonest single failure in the model benchmark, across
+                # both models and intermittently rather than always: a capability
+                # condition whose subject is stated in `required_capabilities`
+                # instead of `path`. When exactly one capability is named there
+                # the intent is unambiguous, so read it rather than refuse. More
+                # than one is genuinely ambiguous and still fails.
+                candidates = [
+                    name
+                    for name in self.required_capabilities
+                    if name in _ALLOWED_CAPABILITY_PATHS
+                ]
+                if len(candidates) == 1:
+                    object.__setattr__(self, "path", candidates[0])
+            if self.path is None:
+                raise ValueError(
+                    "Capability conditions require path: name the capability in "
+                    "`path`, not only in `required_capabilities`."
+                )
             if self.path not in _ALLOWED_CAPABILITY_PATHS:
                 raise ValueError(f"Unsupported capability path: {self.path!r}")
             if self.target_id is not None:

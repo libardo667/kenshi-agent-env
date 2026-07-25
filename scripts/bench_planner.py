@@ -39,9 +39,11 @@ async def main() -> int:
           f"actions_offered={len(obs.semantic_action_digest())} "
           f"payload={len(obs.planner_payload(max_chars=config.planner.max_observation_chars))} chars\n")
 
+    trials = int(os.environ.get("TRIALS", "1"))
     models = sys.argv[1:] or ["openai/gpt-4.1-mini"]
     print(f"{'model':44s} {'secs':>6s}  verdict")
-    for model in models:
+    tally: dict[str, list] = {}
+    for model in [m for m in models for _ in range(trials)]:
         cfg = config.planner.model_copy(update={
             "openrouter_model": model,
             "reasoning_effort": "none",
@@ -58,10 +60,21 @@ async def main() -> int:
             goal = getattr(out, "goal", None)
             if goal:
                 print(f"{'':44s}         goal: {goal[:90]}")
+            tally.setdefault(model, []).append((True, secs))
         except Exception as exc:
             secs = time.monotonic() - start
             msg = f"{type(exc).__name__}: {exc}"
             print(f"{model:44s} {secs:6.1f}  FAILED {msg[:150]}")
+            if os.environ.get("FULL_ERROR"):
+                print("      FULL:", str(exc)[:1400])
+            tally.setdefault(model, []).append((False, secs))
+
+    print(f"\n{'model':44s} {'ok/n':>7s} {'median s':>9s}")
+    for model, runs in tally.items():
+        ok = sum(1 for good, _ in runs if good)
+        times = sorted(s for _, s in runs)
+        med = times[len(times) // 2]
+        print(f"{model:44s} {ok:3d}/{len(runs):<3d} {med:9.1f}")
     return 0
 
 

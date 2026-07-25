@@ -597,3 +597,37 @@ def test_a_field_path_in_required_capabilities_does_not_kill_the_plan() -> None:
     )
     # The field path is dropped; the real capability name survives.
     assert condition.required_capabilities == ["ui.inventory"]
+
+
+def test_a_capability_condition_reads_its_subject_from_required_capabilities() -> None:
+    """The commonest single failure across benchmarked models.
+
+    They state the capability in `required_capabilities` and leave `path` unset.
+    One named capability is an unambiguous subject, so read it.
+    """
+
+    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+
+    condition = Condition(
+        kind=ConditionKind.CAPABILITY,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=2.0,
+        required_capabilities=["ui.inventory"],
+    )
+    assert condition.path == "ui.inventory"
+
+
+def test_two_named_capabilities_are_genuinely_ambiguous() -> None:
+    import pydantic
+
+    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+
+    with pytest.raises(pydantic.ValidationError):
+        Condition(
+            kind=ConditionKind.CAPABILITY,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            max_age_seconds=2.0,
+            required_capabilities=["ui.inventory", "ui.dialogue"],
+        )
