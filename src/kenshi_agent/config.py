@@ -269,9 +269,19 @@ class SafetyConfig(ConfigModel):
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
     block_clicks_when_telemetry_stale: bool = True
     allow_live_unpause_actions: bool = False
-    max_purchase_price: int = Field(default=1000, ge=1)
-    min_money_after_purchase: int = Field(default=0, ge=0)
-    max_purchases_per_run: int = Field(default=1, ge=0, le=20)
+    # Spending limits are opt-in. It is a game the operator is choosing to let
+    # an agent play, so how freely it trades is a preference, not a safety
+    # boundary — null means unlimited. The fences that stop it buying the
+    # *wrong* thing (the cell must bind, the tooltip must name this item at this
+    # price, the seller must be the one verified trader) are not configurable
+    # and always apply.
+    max_purchase_price: int | None = Field(default=None, ge=1)
+    min_money_after_purchase: int | None = Field(default=None, ge=0)
+    max_purchases_per_run: int | None = Field(default=None, ge=0)
+    # Task intent, deliberately separate from purchase safety: a food run sets
+    # ["[Food]"] so nothing else can be bought, while the generic purchase
+    # contract itself stays indifferent to what an item is.
+    required_purchase_tooltip_markers: list[str] = Field(default_factory=list, max_length=8)
     allow_action_kinds: list[str] = Field(default_factory=list)
     allow_skills: list[str] = Field(default_factory=list)
 

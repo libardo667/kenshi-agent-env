@@ -658,6 +658,36 @@ class ApproachDialogueTargetAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
+class InspectItemCellAction(StrictModel):
+    """Hover one inventory or shop cell so Kenshi renders its tooltip.
+
+    The deliberately non-destructive half of trading: it moves the pointer and
+    emits no click, which is how the agent learns what a cell actually holds.
+    Cell ordinals name a position, never an item, so this is the only way to
+    turn a position into evidence.
+    """
+
+    kind: Literal["inspect_item_cell"] = "inspect_item_cell"
+    cell_label: str = Field(min_length=1, max_length=80)
+
+
+class PurchaseItemAction(StrictModel):
+    """Buy the item in one exact cell, at a price read from its own tooltip.
+
+    Every argument must agree with what the interface is showing right now: the
+    cell must exist, the tooltip must belong to that cell, and it must name this
+    item at this price. The action carries no coordinates - the calibrated
+    predecessor took model-authored ones - so the only way to buy the wrong
+    thing is for telemetry itself to be wrong.
+    """
+
+    kind: Literal["purchase_item"] = "purchase_item"
+    cell_label: str = Field(min_length=1, max_length=80)
+    item_name: str = Field(min_length=1, max_length=200)
+    expected_price: int = Field(gt=0)
+    seller_id: str = Field(min_length=1, max_length=200)
+
+
 class DismissScreenAction(StrictModel):
     """Close the screen that is currently open, back toward the world view.
 
@@ -726,7 +756,11 @@ PlannerControlAction: TypeAlias = (
 """Run-control intentions that touch no game object and bind to no reference."""
 
 SemanticAction: TypeAlias = (
-    ApproachDialogueTargetAction | ActivateVisibleControlAction | DismissScreenAction
+    ApproachDialogueTargetAction
+    | ActivateVisibleControlAction
+    | DismissScreenAction
+    | InspectItemCellAction
+    | PurchaseItemAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
 
@@ -748,11 +782,19 @@ Action: TypeAlias = (
     | ApproachDialogueTargetAction
     | ActivateVisibleControlAction
     | DismissScreenAction
+    | InspectItemCellAction
+    | PurchaseItemAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
 SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
-    {"approach_dialogue_target", "activate_visible_control", "dismiss_screen"}
+    {
+        "approach_dialogue_target",
+        "activate_visible_control",
+        "dismiss_screen",
+        "inspect_item_cell",
+        "purchase_item",
+    }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
     {"key", "hotkey", "move_cursor", "click", "scroll"}

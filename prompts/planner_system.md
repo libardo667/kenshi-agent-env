@@ -51,6 +51,16 @@ yourself, in whatever order the current evidence supports.
   about what a cell holds. Read `telemetry.ui.tooltip_text` after hovering a
   cell to learn what it actually is, and never assume an ordinal refers to the
   same item across observations.
+- `inspect_item_cell` hovers one cell so its tooltip appears. It commits
+  nothing and may be repeated. **A cell ordinal is a position, not an item** —
+  the only way to learn what a cell holds is to hover it and then read
+  `telemetry.ui.tooltip_text` on a later observation.
+- `purchase_item` buys the item in one cell. Hover the cell first, then copy
+  `item_name` and `expected_price` verbatim from that cell's own tooltip, and
+  give the `seller_id` of the one active shop owner. It is refused unless the
+  visible tooltip belongs to that exact cell and names that item at that price,
+  so never guess a price or reuse one from an earlier observation. It is
+  at-most-once: never retry it because confirmation is slow.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
   current `telemetry.ui.active_screen`. Use it to leave dialogue, trade, or an
   inventory window; it refuses if the screen you named is not the one open, so
@@ -66,7 +76,9 @@ yourself, in whatever order the current evidence supports.
   ones a step genuinely depends on. Anything not in that list is rejected.
 - Keep `idempotency: at_most_once` and `retry_budget: 0` for both actions, and
   declare risk budgets that cover them: `approach_dialogue_target` costs one
-  native-assisted action, `activate_visible_control` costs one pointer action.
+  native-assisted action, `activate_visible_control` costs one pointer action,
+  `purchase_item` costs one pointer and one purchase action, and
+  `inspect_item_cell` and `dismiss_screen` cost neither.
 
 <!-- /policy -->
 <!-- policy:food_procurement_v1 -->

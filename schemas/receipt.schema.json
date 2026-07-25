@@ -736,6 +736,29 @@
       "title": "InputBoundaryReport",
       "type": "object"
     },
+    "InspectItemCellAction": {
+      "additionalProperties": false,
+      "description": "Hover one inventory or shop cell so Kenshi renders its tooltip.\n\nThe deliberately non-destructive half of trading: it moves the pointer and\nemits no click, which is how the agent learns what a cell actually holds.\nCell ordinals name a position, never an item, so this is the only way to\nturn a position into evidence.",
+      "properties": {
+        "kind": {
+          "const": "inspect_item_cell",
+          "default": "inspect_item_cell",
+          "title": "Kind",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cell_label"
+      ],
+      "title": "InspectItemCellAction",
+      "type": "object"
+    },
     "KeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -983,6 +1006,49 @@
       ],
       "title": "PointerActionClass",
       "type": "string"
+    },
+    "PurchaseItemAction": {
+      "additionalProperties": false,
+      "description": "Buy the item in one exact cell, at a price read from its own tooltip.\n\nEvery argument must agree with what the interface is showing right now: the\ncell must exist, the tooltip must belong to that cell, and it must name this\nitem at this price. The action carries no coordinates - the calibrated\npredecessor took model-authored ones - so the only way to buy the wrong\nthing is for telemetry itself to be wrong.",
+      "properties": {
+        "kind": {
+          "const": "purchase_item",
+          "default": "purchase_item",
+          "title": "Kind",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "expected_price": {
+          "exclusiveMinimum": 0,
+          "title": "Expected Price",
+          "type": "integer"
+        },
+        "seller_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Seller Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "cell_label",
+        "item_name",
+        "expected_price",
+        "seller_id"
+      ],
+      "title": "PurchaseItemAction",
+      "type": "object"
     },
     "ScrollAction": {
       "additionalProperties": false,
@@ -1354,6 +1420,12 @@
         },
         {
           "$ref": "#/$defs/DismissScreenAction"
+        },
+        {
+          "$ref": "#/$defs/InspectItemCellAction"
+        },
+        {
+          "$ref": "#/$defs/PurchaseItemAction"
         }
       ],
       "title": "Action"

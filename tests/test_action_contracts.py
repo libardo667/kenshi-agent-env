@@ -12,6 +12,7 @@ from kenshi_agent.action_contracts import (
     ACTION_CONTRACTS,
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
+    PURCHASE_ITEM_CONTRACT,
     LegacyCompatibilityLedger,
     contract_for,
     planner_visible_contracts,
@@ -24,9 +25,12 @@ from kenshi_agent.models import (
     ControlMode,
     Disposition,
     GameState,
+    IdempotencyPolicy,
+    InspectItemCellAction,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    PurchaseItemAction,
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
@@ -233,6 +237,8 @@ class TestContractCatalog:
             "approach_dialogue_target",
             "activate_visible_control",
             "dismiss_screen",
+            "inspect_item_cell",
+            "purchase_item",
         }
         assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
             APPROACH_DIALOGUE_TARGET_CONTRACT
@@ -244,20 +250,20 @@ class TestContractCatalog:
             control_mode=ControlMode.INTERFACE_ONLY,
             capabilities=set(APPROACH_CAPABILITIES) | {"ui.visible_controls"},
         )
-        assert [contract.kind for contract in visible] == [
-            "activate_visible_control",
-            "dismiss_screen",
-        ]
+        kinds = [contract.kind for contract in visible]
+        assert "approach_dialogue_target" not in kinds
+        assert "activate_visible_control" in kinds
 
     def test_missing_capability_withholds_an_action(self) -> None:
         visible = planner_visible_contracts(
             control_mode=ControlMode.NATIVE_ASSISTED,
             capabilities={"ui.visible_controls"},
         )
-        assert [contract.kind for contract in visible] == [
-            "activate_visible_control",
-            "dismiss_screen",
-        ]
+        kinds = [contract.kind for contract in visible]
+        assert "activate_visible_control" in kinds
+        # Purchase and inspection need the tooltip capability, which is absent.
+        assert "purchase_item" not in kinds
+        assert "inspect_item_cell" not in kinds
 
     def test_legacy_capability_alias_still_satisfies_the_contract(self) -> None:
         """The installed plug-in emits the vendor-named capability."""
@@ -312,11 +318,7 @@ class TestSemanticActionsAreAdvertised:
         )
         digest = state.semantic_action_digest()
         kinds = {entry["kind"] for entry in digest}
-        assert kinds == {
-            "approach_dialogue_target",
-            "activate_visible_control",
-            "dismiss_screen",
-        }
+        assert {"approach_dialogue_target", "activate_visible_control", "dismiss_screen"} <= kinds
         assert all(entry["argument_source"] for entry in digest)
 
     def test_visible_control_digest_marks_ambiguity(self) -> None:
@@ -535,3 +537,155 @@ class TestItemCellControls:
         assert {e["exact_label"] for e in digest} == {"item_0", "item_1"}
         assert all(e["role"] == "item" for e in digest)
         assert not any(e["ambiguous"] for e in digest)
+
+
+class TestPurchaseSafety:
+    """The purchase fence, lifted out of the calibrated food policy.
+
+    The legacy version took model-authored x/y and merely checked they landed
+    inside the tooltip's source. Here the cell is the reference and the tooltip
+    must belong to *it*, so "buy what I am looking at" is proven rather than
+    asserted.
+    """
+
+    SELLER = "entity-barman"
+
+    def _state(
+        self,
+        *,
+        tooltip: str | None = "Dried Meat\n[Food]\nValue c.52",
+        tooltip_visible: bool = True,
+        tooltip_over_cell: bool = True,
+        traders: int = 1,
+        shop_owner: bool = True,
+    ) -> Observation:
+        cell = VisibleUIControl(label="item_3", role="item", bounds=_bounds(0.5))
+        # The tooltip's source is the cell itself unless told otherwise.
+        source = _bounds(0.5) if tooltip_over_cell else _bounds(0.8)
+        seller = NearbyEntity(
+            id=self.SELLER,
+            name="Barman",
+            is_animal=False,
+            has_dialogue=True,
+            has_vendor_list=True,
+            is_squad_leader=True,
+            shop_inventory_owner=shop_owner,
+            disposition=Disposition.NEUTRAL,
+            distance=3.0,
+            conscious=True,
+        )
+        state = observation(
+            entities=[seller],
+            controls=[cell],
+            capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
+        )
+        telemetry = state.telemetry
+        assert telemetry is not None
+        return state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={
+                        "active_shop_trader_count": traders,
+                        "ui": telemetry.ui.model_copy(
+                            update={
+                                "active_screen": "trade",
+                                "tooltip_visible": tooltip_visible,
+                                "tooltip_text": tooltip,
+                                "tooltip_source_bounds": source,
+                            }
+                        ),
+                    }
+                )
+            },
+            deep=True,
+        )
+
+    def _action(self, **overrides: object) -> PurchaseItemAction:
+        fields: dict[str, object] = {
+            "cell_label": "item_3",
+            "item_name": "Dried Meat",
+            "expected_price": 52,
+            "seller_id": self.SELLER,
+        }
+        fields.update(overrides)
+        return PurchaseItemAction(**fields)  # type: ignore[arg-type]
+
+    def test_a_purchase_matching_its_own_tooltip_binds(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state())
+        assert binding.bound, binding.reason
+        assert binding.target_id == self.SELLER
+        assert binding.resolved_bounds == _bounds(0.5)
+
+    def test_a_tooltip_describing_another_widget_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(), self._state(tooltip_over_cell=False)
+        )
+        assert not binding.bound
+        assert "does not belong to cell" in binding.reason
+
+    def test_a_wrong_item_name_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(item_name="Ancient Katana"), self._state()
+        )
+        assert not binding.bound
+        assert "does not name" in binding.reason
+
+    def test_a_wrong_price_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(expected_price=5), self._state())
+        assert not binding.bound
+        assert "does not show price" in binding.reason
+
+    def test_a_price_that_is_only_a_substring_is_refused(self) -> None:
+        """c.52 must not satisfy a claim of c.5."""
+
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(expected_price=5),
+            self._state(tooltip="Dried Meat\n[Food]\nValue c.52"),
+        )
+        assert not binding.bound
+
+    def test_no_visible_tooltip_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(), self._state(tooltip_visible=False)
+        )
+        assert not binding.bound
+        assert "hover the cell first" in binding.reason
+
+    def test_a_seller_who_is_not_the_active_shop_owner_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state(shop_owner=False))
+        assert not binding.bound
+        assert "verified non-hostile shop owner" in binding.reason
+
+    def test_more_than_one_active_trader_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state(traders=2))
+        assert not binding.bound
+
+    def test_an_absent_cell_is_refused(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(cell_label="item_99"), self._state()
+        )
+        assert not binding.bound
+        assert "No current item cell" in binding.reason
+
+    def test_purchase_is_at_most_once_and_costs_a_purchase_budget(self) -> None:
+        assert PURCHASE_ITEM_CONTRACT.idempotency is IdempotencyPolicy.AT_MOST_ONCE
+        assert PURCHASE_ITEM_CONTRACT.risk.purchase_actions == 1
+
+    def test_inspection_commits_nothing_and_may_be_retried(self) -> None:
+        from kenshi_agent.action_contracts import INSPECT_ITEM_CELL_CONTRACT
+
+        assert INSPECT_ITEM_CELL_CONTRACT.risk.as_tuple() == (0, 0, 0)
+        assert INSPECT_ITEM_CELL_CONTRACT.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
+        binding = INSPECT_ITEM_CELL_CONTRACT.bind(
+            InspectItemCellAction(cell_label="item_3"), self._state()
+        )
+        assert binding.bound
+
+    def test_purchase_says_nothing_about_what_kind_of_item_is_worth_buying(self) -> None:
+        """Task intent lives in config, not in the purchase contract."""
+
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            self._action(item_name="Ancient Katana", expected_price=865),
+            self._state(tooltip="Ancient Katana\n[Weapon]\nValue c.865"),
+        )
+        assert binding.bound, binding.reason

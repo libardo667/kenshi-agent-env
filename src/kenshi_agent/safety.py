@@ -15,6 +15,7 @@ from .models import (
     NativeCommandStatus,
     Observation,
     PauseAction,
+    PurchaseItemAction,
     ScrollAction,
     SkillAction,
     WaitAction,
@@ -46,7 +47,11 @@ class ActionGuard:
         contract = contract_for(action)
         if contract is not None:
             self._validate_contracted_action(action, contract, observation)
+            if isinstance(action, PurchaseItemAction) and observation.mode == "live":
+                self._validate_generic_purchase(action, observation)
             self._consume_rate_budget(contract.max_primitive_actions)
+            if isinstance(action, PurchaseItemAction) and observation.mode == "live":
+                self._purchase_count += 1
             return action
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
@@ -176,6 +181,58 @@ class ActionGuard:
             )
         if contract.native_assisted:
             self._validate_exact_selection(contract.kind, observation)
+
+    def _validate_generic_purchase(
+        self,
+        action: PurchaseItemAction,
+        observation: Observation,
+    ) -> None:
+        """Spending limits for the generic purchase.
+
+        The contract already proved the cell, its tooltip, the item name, the
+        price and the seller. What is left is what no amount of evidence can
+        settle - how much of the operator's money this run may spend, and how
+        often - so those stay configuration, enforced here.
+        """
+
+        assert observation.telemetry is not None
+        telemetry = observation.telemetry
+        if telemetry.game.paused is not True:
+            raise SafetyViolation("Purchase requires a confirmed paused game.")
+        if telemetry.ui.active_screen != "trade":
+            raise SafetyViolation("Purchase blocked because the trade screen is not open.")
+        self._validate_exact_selection(action.kind, observation)
+        # Each of these is enforced only when the profile actually asks for it.
+        if (
+            self.config.max_purchases_per_run is not None
+            and self._purchase_count >= self.config.max_purchases_per_run
+        ):
+            raise SafetyViolation("Per-run purchase limit has already been reached.")
+        if (
+            self.config.max_purchase_price is not None
+            and action.expected_price > self.config.max_purchase_price
+        ):
+            raise SafetyViolation(
+                f"Expected price {action.expected_price} exceeds maximum "
+                f"{self.config.max_purchase_price}."
+            )
+        money = telemetry.game.money
+        if money is None:
+            raise SafetyViolation("Purchase blocked because current money is unknown.")
+        if (
+            self.config.min_money_after_purchase is not None
+            and money - action.expected_price < self.config.min_money_after_purchase
+        ):
+            raise SafetyViolation(
+                f"Expected purchase would leave {money - action.expected_price} cats; "
+                f"minimum is {self.config.min_money_after_purchase}."
+            )
+        for marker in self.config.required_purchase_tooltip_markers:
+            if marker not in (telemetry.ui.tooltip_text or ""):
+                raise SafetyViolation(
+                    f"Purchase blocked because the tooltip lacks the required marker "
+                    f"{marker!r}."
+                )
 
     @staticmethod
     def _validate_exact_selection(kind: str, observation: Observation) -> None:
@@ -328,7 +385,10 @@ class ActionGuard:
                 "Purchase blocked because the exact target is not the one verified "
                 "non-hostile shop owner."
             )
-        if self._purchase_count >= self.config.max_purchases_per_run:
+        if (
+            self.config.max_purchases_per_run is not None
+            and self._purchase_count >= self.config.max_purchases_per_run
+        ):
             raise SafetyViolation("Per-run purchase limit has already been reached.")
 
         expected_price = arguments.get("expected_price")
@@ -338,14 +398,20 @@ class ActionGuard:
             or expected_price <= 0
         ):
             raise SafetyViolation("Purchase requires a positive integer expected_price.")
-        if expected_price > self.config.max_purchase_price:
+        if (
+            self.config.max_purchase_price is not None
+            and expected_price > self.config.max_purchase_price
+        ):
             raise SafetyViolation(
                 f"Expected price {expected_price} exceeds maximum {self.config.max_purchase_price}."
             )
         money = telemetry.game.money
         if money is None:
             raise SafetyViolation("Purchase blocked because current money is unknown.")
-        if money - expected_price < self.config.min_money_after_purchase:
+        if (
+            self.config.min_money_after_purchase is not None
+            and money - expected_price < self.config.min_money_after_purchase
+        ):
             raise SafetyViolation(
                 f"Expected purchase would leave {money - expected_price} cats; minimum is "
                 f"{self.config.min_money_after_purchase}."

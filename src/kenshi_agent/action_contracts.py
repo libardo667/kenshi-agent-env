@@ -20,6 +20,7 @@ reference fails closed.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -37,11 +38,14 @@ from .models import (
     ConditionPath,
     ControlMode,
     DismissScreenAction,
+    Disposition,
     IdempotencyPolicy,
+    InspectItemCellAction,
     NormalizedPointerBounds,
     Observation,
     PlanEnvelope,
     PointerActionClass,
+    PurchaseItemAction,
     SkillAction,
     WorldStateRevision,
     dialogue_targets,
@@ -209,6 +213,136 @@ def bind_visible_control(
         resolved_label=control.label,
         resolved_role=control.role,
         resolved_bounds=control.bounds.model_copy(deep=True),
+        source_revision=observation.world_revision,
+    )
+
+
+ITEM_ROLE = "item"
+
+
+def _bind_item_cell(cell_label: str, observation: Observation) -> ReferenceBinding:
+    """Resolve one exact inventory or shop cell from current telemetry."""
+
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the item cell.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the item cell cannot be bound.")
+    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
+        return _unbound(
+            f"Capability {VISIBLE_CONTROLS_CAPABILITY!r} is unavailable, so item "
+            "cells are unknown rather than absent."
+        )
+    wanted = normalize_control_label(cell_label)
+    matches = [
+        control
+        for control in (telemetry.ui.visible_controls or [])
+        if control.role == ITEM_ROLE and normalize_control_label(control.label) == wanted
+    ]
+    if not matches:
+        return _unbound(f"No current item cell matches {cell_label!r}.")
+    if len(matches) > 1:
+        return _unbound(
+            f"{len(matches)} current item cells match {cell_label!r}; an ambiguous "
+            "reference fails closed."
+        )
+    cell = matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=f"Bound to current item cell {cell.label!r} at its observed bounds.",
+        resolved_label=cell.label,
+        resolved_role=cell.role,
+        resolved_bounds=cell.bounds.model_copy(deep=True),
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_inspect_item_cell(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    if not isinstance(action, InspectItemCellAction):
+        return _unbound("Action is not an inspect_item_cell action.")
+    return _bind_item_cell(action.cell_label, observation)
+
+
+def bind_purchase_item(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a purchase to a cell whose *own* tooltip names this item and price.
+
+    The calibrated predecessor took model-authored coordinates and merely checked
+    they landed inside the tooltip's source. Here the cell is the reference and
+    the tooltip must belong to it, so "buy what I am looking at" is checked
+    rather than asserted. Deliberately says nothing about *what kind* of item is
+    worth buying: that is task intent, not purchase safety.
+    """
+
+    if not isinstance(action, PurchaseItemAction):
+        return _unbound("Action is not a purchase_item action.")
+    cell = _bind_item_cell(action.cell_label, observation)
+    if not cell.bound:
+        return cell
+    telemetry = observation.telemetry
+    assert telemetry is not None
+
+    tooltip_text = telemetry.ui.tooltip_text
+    tooltip_bounds = telemetry.ui.tooltip_source_bounds
+    if telemetry.ui.tooltip_visible is not True or not tooltip_text or tooltip_bounds is None:
+        return _unbound(
+            "Purchase requires a visible tooltip and its source bounds; hover the "
+            "cell first so the interface says what it holds."
+        )
+
+    # The tooltip must describe *this* cell, not whatever was hovered last.
+    assert cell.resolved_bounds is not None
+    centre_x = (cell.resolved_bounds.min_x + cell.resolved_bounds.max_x) / 2.0
+    centre_y = (cell.resolved_bounds.min_y + cell.resolved_bounds.max_y) / 2.0
+    if not tooltip_bounds.contains(centre_x, centre_y):
+        return _unbound(
+            f"The visible tooltip does not belong to cell {action.cell_label!r}; "
+            "it describes a different widget."
+        )
+
+    if action.item_name not in tooltip_text:
+        return _unbound(
+            f"The tooltip does not name {action.item_name!r}, so the item being "
+            "bought is not the item described."
+        )
+    price_pattern = rf"(?<![A-Za-z0-9])c\.{action.expected_price}(?![0-9])"
+    if re.search(price_pattern, tooltip_text) is None:
+        return _unbound(
+            f"The tooltip does not show price c.{action.expected_price}; the "
+            "expected price disagrees with the interface."
+        )
+
+    seller = next(
+        (entity for entity in telemetry.nearby_entities if entity.id == action.seller_id),
+        None,
+    )
+    if (
+        telemetry.active_shop_trader_count != 1
+        or seller is None
+        or seller.shop_inventory_owner is not True
+        or seller.disposition not in (Disposition.NEUTRAL, Disposition.FRIENDLY)
+    ):
+        return _unbound(
+            "The seller is not the single verified non-hostile shop owner currently "
+            "trading."
+        )
+
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound to cell {cell.resolved_label!r}, whose own tooltip names "
+            f"{action.item_name!r} at c.{action.expected_price} from seller "
+            f"{action.seller_id}."
+        ),
+        target_id=action.seller_id,
+        resolved_label=cell.resolved_label,
+        resolved_role=cell.resolved_role,
+        resolved_bounds=cell.resolved_bounds,
         source_revision=observation.world_revision,
     )
 
@@ -452,12 +586,84 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     authorization_conditions=_dismiss_authorization_conditions,
 )
 
+INSPECT_ITEM_CELL_CONTRACT = ActionContract(
+    kind="inspect_item_cell",
+    version="1.0",
+    model=InspectItemCellAction,
+    summary=(
+        "Hover one inventory or shop cell so its tooltip appears, revealing what "
+        "the cell actually holds. Emits no click and changes nothing."
+    ),
+    argument_source=(
+        "cell_label must match exactly one current visible_controls entry whose "
+        "role is 'item'."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY, "ui.tooltip"}),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    # Moving the pointer is not a pointer *action*: nothing is committed.
+    risk=ActionRiskCost(),
+    max_primitive_actions=1,
+    reference_fields=("cell_label",),
+    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_inspect",
+    bind=bind_inspect_item_cell,
+    authorization_conditions=_visible_control_authorization_conditions,
+)
+
+PURCHASE_ITEM_CONTRACT = ActionContract(
+    kind="purchase_item",
+    version="1.0",
+    model=PurchaseItemAction,
+    summary=(
+        "Buy the item in one exact cell at the price its own tooltip shows. "
+        "Hover the cell first; the tooltip is the evidence."
+    ),
+    argument_source=(
+        "cell_label from visible_controls (role 'item'); item_name and "
+        "expected_price copied from that cell's current tooltip; seller_id the "
+        "exact stable id of the one active shop owner."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            VISIBLE_CONTROLS_CAPABILITY,
+            "ui.tooltip",
+            "ui.inventory",
+            "game.money",
+            "game.pause",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.shop_owners",
+            "squad.basic",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1, purchase_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("cell_label", "item_name", "expected_price", "seller_id"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_purchase",
+    bind=bind_purchase_item,
+    authorization_conditions=_visible_control_authorization_conditions,
+)
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
         DISMISS_SCREEN_CONTRACT,
+        INSPECT_ITEM_CELL_CONTRACT,
+        PURCHASE_ITEM_CONTRACT,
     )
 }
 

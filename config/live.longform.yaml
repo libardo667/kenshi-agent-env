@@ -172,9 +172,9 @@ safety:
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
   allow_live_unpause_actions: false
-  max_purchase_price: 750
-  min_money_after_purchase: 250
-  max_purchases_per_run: 1
+  # Unset: the agent trades freely on this profile. What stops it buying the
+  # wrong thing is evidence — the cell must bind and its own tooltip must name
+  # the item and price — not a spending cap.
   allow_action_kinds:
     - noop
     - stop
@@ -184,6 +184,8 @@ safety:
     - approach_dialogue_target
     - activate_visible_control
     - dismiss_screen
+    - inspect_item_cell
+    - purchase_item
   # The generic chain authors semantic actions, not macros. Only the transport
   # and native-approach macros remain allowlisted, because the semantic approach
   # reuses the latter's primitives.
