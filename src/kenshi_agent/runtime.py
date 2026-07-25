@@ -569,11 +569,41 @@ class AgentRuntime:
                         continue
                     assert output is not None
                 except Exception as exc:
+                    # A malformed planner response is one bad answer, not a
+                    # reason to end a session meant to run continuously. Ask
+                    # again and let the replan limit bound a planner that cannot
+                    # produce a well-formed one.
                     planner_source = "planner_error"
-                    output = self._planner_failure_decision(
+                    self._planner_failure_decision(
                         exc,
                         step_index=observation.step_index,
                     )
+                    # A failed call is still a call: keep it in the replay record
+                    # so latency and failure rate stay measurable.
+                    self.logger.write(
+                        "strategic_planner_call",
+                        step_index=observation.step_index,
+                        payload={
+                            "source": planner_source,
+                            "planner_latency_seconds": monotonic() - planning_started,
+                            "world_revision": observation.world_revision.model_dump(
+                                mode="json"
+                            ),
+                            "control_mode": observation.control_mode.value,
+                            "output_type": type(exc).__name__,
+                        },
+                    )
+                    consecutive_replans += 1
+                    if consecutive_replans > self.planning_config.max_consecutive_replans:
+                        stop_reason = (
+                            f"Stopped: the planner returned {consecutive_replans} "
+                            "unusable responses in a row. The last was: "
+                            + self._bounded_text(
+                                str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS
+                            )
+                        )
+                        terminated = True
+                    continue
                 planner_latency_seconds = monotonic() - planning_started
                 self.logger.write(
                     "strategic_planner_call",
@@ -591,8 +621,8 @@ class AgentRuntime:
                 if isinstance(output, PlannerDecision):
                     if not isinstance(output.action, StopAction):
                         stop_reason = (
-                            "Continuous mode rejected a single-action planner output; "
-                            "a PlanEnvelope or safe StopAction is required."
+                            "The planner returned a single action where continuous mode "
+                            "needs a PlanEnvelope or a StopAction."
                         )
                         self.logger.write(
                             "planner_output_rejected",
@@ -606,7 +636,11 @@ class AgentRuntime:
                                 "control_mode": observation.control_mode.value,
                             },
                         )
-                        terminated = True
+                        # A wrongly shaped response is a bad answer, not a reason
+                        # to end the session; ask again.
+                        consecutive_replans += 1
+                        if consecutive_replans > self.planning_config.max_consecutive_replans:
+                            terminated = True
                         continue
                     (
                         observation,

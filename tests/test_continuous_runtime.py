@@ -710,8 +710,12 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
         finally:
             logger.close()
 
+        # A malformed response is retried; the run ends only once the planner
+        # has failed more times in a row than the replan limit allows. What must
+        # not happen is the original failure being lost or logged unbounded.
         assert summary.terminated is True
-        assert summary.stop_reason == "Planner failure."
+        assert "unusable responses in a row" in summary.stop_reason
+        assert len(summary.stop_reason) < 20_000
         events = read_events(tmp_path / "events.jsonl")
         planner_error = next(
             event for event in events if event["event_type"] == "planner_error"
@@ -2254,3 +2258,62 @@ def test_hostile_in_threat_range_fails_the_approach_option(tmp_path: Path) -> No
     assert len(failed) == 1
     assert "hostile" in str(failed[0]["payload"]).lower()
     assert not [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]
+
+
+def test_a_malformed_planner_response_is_retried_not_fatal(tmp_path: Path) -> None:
+    """One bad answer must not end a session meant to run continuously.
+
+    A schema slip, a single action where a plan was needed, or a patch with no
+    plan to patch are all *bad answers*. Ending the run on the first one meant a
+    stream died to a transient model mistake; the replan limit is what bounds a
+    planner that genuinely cannot produce a usable response.
+    """
+
+    class FlakyThenGoodPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, observation: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                raise ValueError("invalid structured output")
+            if self.calls == 2:
+                # A single action where continuous mode needs a plan.
+                return PlannerDecision(
+                    intent="move",
+                    rationale="Wrong shape for continuous mode.",
+                    action=SetSpeedAction(speed=2),
+                    confidence=1.0,
+                )
+            return PlannerDecision(
+                intent="stop",
+                rationale="Recovered and finished.",
+                action=StopAction(reason="done after recovering"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = FlakyThenGoodPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            summary = await runtime.run(max_steps=5)
+        finally:
+            logger.close()
+
+        # It kept going through both malformed responses and reached the third.
+        assert planner.calls == 3
+        assert summary.stop_reason == "done after recovering"
+
+        events = read_events(tmp_path / "events.jsonl")
+        # The failed call is still in the replay record.
+        sources = [
+            event["payload"]["source"]
+            for event in events
+            if event["event_type"] == "strategic_planner_call"
+        ]
+        assert "planner_error" in sources
+        assert any(event["event_type"] == "planner_error" for event in events)
+
+    asyncio.run(scenario())
