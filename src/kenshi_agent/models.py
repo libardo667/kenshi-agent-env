@@ -1383,17 +1383,34 @@ class Condition(StrictModel):
             if self.path not in _ALLOWED_CAPABILITY_PATHS:
                 raise ValueError(f"Unsupported capability path: {self.path!r}")
             if self.target_id is not None:
-                raise ValueError("Capability conditions do not accept target_id")
-        elif self.path is not None or self.target_id is not None:
-            raise ValueError("telemetry_fresh conditions do not accept path or target_id")
-        unknown = sorted(set(self.required_capabilities) - KNOWN_CAPABILITIES)
-        if unknown:
-            raise ValueError(
-                f"Unknown capability names in required_capabilities: {unknown}. "
-                "These must be capability names the telemetry advertises, not "
-                "condition field paths. Valid names: "
-                + ", ".join(sorted(KNOWN_CAPABILITIES))
-            )
+                # Inert here for the same reason as on a global field: evaluation
+                # never reads it. Normalize rather than refuse.
+                object.__setattr__(self, "target_id", None)
+        else:
+            # `telemetry_fresh` asks one question - is telemetry current - and
+            # evaluation consults neither path nor target_id when answering it.
+            # Rejecting a plan over fields that cannot change its meaning threw
+            # away every plan six different models produced, each of which
+            # annotated the condition with the field it was about. Normalize to
+            # the canonical shape, as the field branch above already does.
+            if self.path is not None:
+                object.__setattr__(self, "path", None)
+            if self.target_id is not None:
+                object.__setattr__(self, "target_id", None)
+        # `required_capabilities` is a belt over braces: evaluation independently
+        # looks up the capability a condition's own field path depends on and
+        # withholds a verdict when Kenshi is not reporting it. So an entry here
+        # can only ever *add* strictness, and a wrong one cannot let an unsafe
+        # condition through - it can only destroy an otherwise sound plan, which
+        # is what it did to three of five models in one benchmark, each naming a
+        # field path where a capability name goes despite the prompt saying not
+        # to. When five independent models make one mistake the vocabulary is at
+        # fault, so drop what we do not recognise and keep the plan.
+        recognised = [
+            name for name in self.required_capabilities if name in KNOWN_CAPABILITIES
+        ]
+        if len(recognised) != len(self.required_capabilities):
+            object.__setattr__(self, "required_capabilities", recognised)
         if self.expected is None:
             raise ValueError(f"{self.operator.value} conditions require expected")
         if self.operator == ConditionOperator.CONTAINS and not isinstance(

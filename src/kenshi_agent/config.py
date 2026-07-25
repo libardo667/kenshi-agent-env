@@ -95,6 +95,12 @@ class PlannerConfig(ConfigModel):
     openrouter_model: str = "openai/gpt-5.6-luna"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_provider_sort: Literal["latency", "throughput", "price"] = "latency"
+    # OpenRouter drops any provider that cannot honour every parameter sent.
+    # That is the right setting only when every parameter is load-bearing; with
+    # `reasoning_effort` in the request it silently excludes every non-reasoning
+    # model, which is most of the fast ones. Off by default so the model choice
+    # is ours rather than a side effect of the request shape.
+    openrouter_require_parameters: bool = False
 
     @model_validator(mode="after")
     def output_token_ceiling_covers_base(self) -> PlannerConfig:

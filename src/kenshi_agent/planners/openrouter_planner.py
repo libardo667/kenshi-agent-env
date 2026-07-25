@@ -73,6 +73,13 @@ class OpenRouterPlanner(Planner):
                 }
             )
 
+        # A non-reasoning model has no effort to set, and sending the parameter
+        # anyway either errors or - with require_parameters on - quietly routes
+        # the request nowhere. `none` means "do not ask for reasoning at all".
+        extra: dict[str, Any] = {}
+        if self.config.reasoning_effort != "none":
+            extra["reasoning_effort"] = self.config.reasoning_effort
+
         async with asyncio.timeout(self.config.timeout_seconds):
             response = await self.client.chat.completions.parse(
                 model=self.config.openrouter_model,
@@ -87,13 +94,15 @@ class OpenRouterPlanner(Planner):
                     {"role": "user", "content": content},
                 ],
                 response_format=output_model,
-                reasoning_effort=self.config.reasoning_effort,
                 extra_body={
                     "provider": {
                         "sort": self.config.openrouter_provider_sort,
-                        "require_parameters": True,
+                        "require_parameters": (
+                            self.config.openrouter_require_parameters
+                        ),
                     }
                 },
+                **extra,
             )
 
         message = response.choices[0].message

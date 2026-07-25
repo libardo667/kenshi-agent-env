@@ -519,3 +519,81 @@ def test_price_separates_cells_that_share_a_name() -> None:
     assert buy(390).bound, buy(390).reason
     # A price nothing is offered at is still refused.
     assert not buy(5).bound
+
+
+def test_inert_condition_fields_are_normalised_not_rejected() -> None:
+    """Six different models annotated these conditions the same harmless way.
+
+    `telemetry_fresh` asks one question - is telemetry current - and evaluation
+    reads neither `path` nor `target_id` when answering it; the same is true of
+    `target_id` on a capability condition. Refusing a whole plan over a field
+    that cannot change its meaning threw away every plan every model produced,
+    while the field branch of the same validator had always normalised the
+    equivalent redundancy instead.
+    """
+
+    from kenshi_agent.models import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
+
+    fresh = Condition(
+        kind=ConditionKind.TELEMETRY_FRESH,
+        path="telemetry.game.paused",
+        target_id="entity-barman",
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=2.0,
+    )
+    assert fresh.path is None
+    assert fresh.target_id is None
+
+    capability = Condition(
+        kind=ConditionKind.CAPABILITY,
+        path="ui.visible_controls",
+        target_id="entity-barman",
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=2.0,
+    )
+    assert capability.path == "ui.visible_controls"
+    assert capability.target_id is None
+
+
+def test_a_capability_condition_still_requires_a_path() -> None:
+    """Unlike the inert fields, this one has no meaning without it."""
+
+    import pydantic
+
+    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+
+    with pytest.raises(pydantic.ValidationError):
+        Condition(
+            kind=ConditionKind.CAPABILITY,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            max_age_seconds=2.0,
+        )
+
+
+def test_a_field_path_in_required_capabilities_does_not_kill_the_plan() -> None:
+    """Three of five benchmarked models made exactly this mistake.
+
+    Evaluation independently enforces the capability behind a condition's own
+    field path, so an entry here can only add strictness - a wrong one cannot
+    let an unsafe condition through, only destroy a sound plan.
+    """
+
+    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+
+    condition = Condition(
+        kind=ConditionKind.FIELD,
+        path="telemetry.ui.active_screen",
+        operator=ConditionOperator.EQUALS,
+        expected="trade",
+        max_age_seconds=2.0,
+        required_capabilities=["telemetry.ui.active_screen", "ui.inventory"],
+    )
+    # The field path is dropped; the real capability name survives.
+    assert condition.required_capabilities == ["ui.inventory"]
