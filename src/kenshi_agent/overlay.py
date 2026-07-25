@@ -36,6 +36,21 @@ def ownership_banner(record: dict[str, Any]) -> tuple[str, str] | None:
     return None
 
 
+def _step_action_label(step_payload: dict[str, Any]) -> str:
+    """A short, readable name for one plan step's action."""
+
+    action = step_payload.get("action") or {}
+    kind = action.get("kind", "?")
+    for field in ("target_id", "exact_label", "cell_label", "item_name", "expected_screen"):
+        value = action.get(field)
+        if value:
+            text = str(value)
+            if len(text) > 24:
+                text = text[:21] + "..."
+            return f"{kind}({text})"
+    return str(kind)
+
+
 def format_event(record: dict[str, Any]) -> str | None:
     event_type = record.get("event_type")
     step_index = record.get("step_index")
@@ -78,6 +93,53 @@ def format_event(record: dict[str, Any]) -> str | None:
             "TAKEOVER COUNTDOWN COMPLETE\n"
             f"{payload.get('reason', 'Current state is being revalidated.')}\n"
         )
+    # Continuous mode narrates itself through plan lifecycle events. Without
+    # these the overlay stayed blank through an entire run while the agent was
+    # planning, being rejected, and replanning - the operator could see the game
+    # moving but had no idea why.
+    if event_type == "strategic_planner_call":
+        latency = float(payload.get("planner_latency_seconds", 0.0))
+        source = payload.get("source", "planner")
+        if source == "planner_error":
+            return f"{step} | THINKING {latency:.1f}s | response was unusable\n"
+        return f"{step} | THINKING {latency:.1f}s | {payload.get('output_type', '')}\n"
+    if event_type == "plan_proposed":
+        evidence = payload.get("evidence") or {}
+        plan = evidence.get("plan") or {}
+        actions = [
+            _step_action_label(item) for item in (plan.get("steps") or [])
+        ]
+        objective = plan.get("objective") or payload.get("reason", "")
+        lines = [f"{step} | PLAN {payload.get('plan_id', '?')}"]
+        if objective:
+            lines.append(f"GOAL    {objective}")
+        if actions:
+            lines.append("STEPS   " + " -> ".join(actions))
+        return "\n".join(lines) + "\n"
+    if event_type == "plan_accepted":
+        return f"{step} | PLAN ACCEPTED | {payload.get('plan_id', '?')}\n"
+    if event_type == "plan_rejected":
+        return f"{step} | PLAN REJECTED\n{payload.get('reason', 'No reason given.')}\n"
+    if event_type == "plan_step_started":
+        return f"{step} | RUNNING {payload.get('step_id', '?')}\n"
+    if event_type == "plan_step_succeeded":
+        return f"{step} | STEP OK  {payload.get('step_id', '?')}\n"
+    if event_type in {"plan_step_cancelled", "plan_aborted"}:
+        return (
+            f"{step} | STEP STOPPED {payload.get('step_id', '?')}\n"
+            f"{payload.get('reason', '')}\n"
+        )
+    if event_type == "plan_completed":
+        return f"{step} | PLAN COMPLETE | {payload.get('plan_id', '?')}\n"
+    if event_type == "planner_error":
+        return f"{step} | PLANNER ERROR | {payload.get('message', '')[:300]}\n"
+    if event_type == "safety_supervisor_preempted":
+        return (
+            f"{step} | SAFETY STOP | {payload.get('cause', 'unknown')}\n"
+            f"{payload.get('reason', '')}\n"
+        )
+    if event_type == "option_progress":
+        return f"{step} | ... {payload.get('reason', '')}\n"
     if event_type in {"action_rejected", "environment_error"}:
         message = payload.get("message") or payload.get("error_type") or "Unknown error."
         return f"{step} | ERROR | {message}\n"
@@ -88,6 +150,58 @@ def format_event(record: dict[str, Any]) -> str | None:
             f"{payload.get('stop_reason', 'Episode ended.')}\n"
         )
     return None
+
+
+# Colour by what the operator needs to notice, not by event name: what the
+# agent is trying to do, what worked, what refused it, and what stopped it.
+EVENT_COLOURS: dict[str, str] = {
+    "goal": "#7fd6ff",      # what it is trying to do
+    "progress": "#9fe6a0",  # something worked
+    "refused": "#ffcf6b",   # refused, but recoverable - it will try again
+    "error": "#ff8f8f",     # failed
+    "safety": "#ff6b6b",    # a brake fired
+    "thinking": "#9aa4ad",  # waiting on the model
+    "control": "#d5b3ff",   # ownership changed hands
+    "plain": "#e8e8e8",
+}
+
+_EVENT_CATEGORIES: dict[str, str] = {
+    "run_started": "goal",
+    "plan_proposed": "goal",
+    "plan_accepted": "goal",
+    "decision": "goal",
+    "plan_step_started": "thinking",
+    "strategic_planner_call": "thinking",
+    "option_progress": "thinking",
+    "plan_step_succeeded": "progress",
+    "plan_completed": "progress",
+    "action_receipt": "progress",
+    "plan_rejected": "refused",
+    "plan_step_cancelled": "refused",
+    "plan_aborted": "refused",
+    "action_rejected": "refused",
+    "planner_error": "error",
+    "environment_error": "error",
+    "safety_supervisor_preempted": "safety",
+    "control_ownership_changed": "control",
+    "agent_takeover_countdown": "control",
+    "agent_takeover_cancelled": "control",
+    "agent_takeover_ready": "control",
+    "run_finished": "goal",
+}
+
+
+def event_category(record: dict[str, Any]) -> str:
+    """Which colour band an event belongs to."""
+
+    event_type = str(record.get("event_type", ""))
+    category = _EVENT_CATEGORIES.get(event_type, "plain")
+    # A failed action reads as an error even though receipts are usually progress.
+    if event_type == "action_receipt":
+        payload = record.get("payload") or {}
+        if payload.get("error_type") or not payload.get("accepted"):
+            return "error"
+    return category
 
 
 def show_overlay(
@@ -152,16 +266,19 @@ def show_overlay(
     offset = 0
     close_scheduled = False
 
-    def append(value: str) -> None:
+    for name, colour in EVENT_COLOURS.items():
+        text.tag_configure(name, foreground=colour)
+
+    def append(value: str, category: str = "plain") -> None:
         text.configure(state="normal")
-        text.insert("end", value + "\n")
+        text.insert("end", value + "\n", category)
         line_count = int(text.index("end-1c").split(".")[0])
         if line_count > 240:
             text.delete("1.0", f"{line_count - 200}.0")
         text.see("end")
         text.configure(state="disabled")
 
-    append("Waiting for the agent run to begin...")
+    append("Waiting for the agent run to begin...", "thinking")
 
     def poll() -> None:
         nonlocal offset, close_scheduled
@@ -176,7 +293,7 @@ def show_overlay(
                     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                         continue
                     if rendered is not None:
-                        append(rendered)
+                        append(rendered, event_category(record))
                     banner = ownership_banner(record)
                     if banner is not None:
                         banner_text, banner_colour = banner

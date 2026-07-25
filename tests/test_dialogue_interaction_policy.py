@@ -863,3 +863,70 @@ class TestFutureStepsMayReferenceFutureState:
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("does not bind to current state" in error for error in errors)
+
+
+class TestIdempotencyClaims:
+    """A step may be more cautious than its contract, never less."""
+
+    def _plan_with(self, idem: IdempotencyPolicy, retries: int = 0) -> PlanEnvelope:
+        from kenshi_agent.models import InspectItemCellAction
+
+        return plan(
+            [
+                step(
+                    "inspect",
+                    InspectItemCellAction(cell_label="item_3"),
+                    success=[screen_is("trade")],
+                    idempotency=idem,
+                    retry_budget=retries,
+                )
+            ],
+            pointer=0,
+            native=0,
+        )
+
+    def _trade_state(self) -> Observation:
+        state = observation(
+            controls=[
+                VisibleUIControl(label="item_3", role="item", bounds=bounds(0.5)),
+            ],
+            capabilities=[*CAPABILITIES, "ui.tooltip"],
+        )
+        telemetry = state.telemetry
+        assert telemetry is not None
+        return state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "trade"})}
+                )
+            },
+            deep=True,
+        )
+
+    def test_declaring_at_most_once_for_a_retryable_action_is_accepted(self) -> None:
+        """The exact loop that stalled an open-ended live run."""
+
+        errors = dialogue_interaction_policy_errors(
+            self._plan_with(IdempotencyPolicy.AT_MOST_ONCE), self._trade_state()
+        )
+        assert errors == [], errors
+
+    def test_the_contract_idempotency_is_also_accepted(self) -> None:
+        errors = dialogue_interaction_policy_errors(
+            self._plan_with(IdempotencyPolicy.SAFE_TO_RETRY), self._trade_state()
+        )
+        assert errors == [], errors
+
+    def test_claiming_retryable_for_an_at_most_once_action_is_refused(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "buy",
+                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+                )
+            ],
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(composed, observation(controls=TRADE_CONTROLS))
+        assert any("may not be retried" in error for error in errors)

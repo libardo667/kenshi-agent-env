@@ -92,3 +92,108 @@ def test_human_and_disarmed_states_have_distinct_banners() -> None:
     assert human is not None and "HUMAN CONTROL" in human[0]
     assert disarmed is not None and "DISARMED" in disarmed[0]
     assert human[1] != disarmed[1]
+
+
+def test_the_overlay_narrates_continuous_mode() -> None:
+    """The operator must be able to see what a continuous run is doing.
+
+    The overlay only rendered single-step `decision` events, so a continuous run
+    that proposed and rejected plans repeatedly showed a blank window: the game
+    visibly moved while the operator had no idea why.
+    """
+
+    proposed = format_event(
+        {
+            "event_type": "plan_proposed",
+            "step_index": 0,
+            "payload": {
+                "plan_id": "goal-1",
+                "evidence": {
+                    "plan": {
+                        "objective": "Buy food from the Barman",
+                        "steps": [
+                            {
+                                "action": {
+                                    "kind": "approach_dialogue_target",
+                                    "target_id": "entity-" + "a" * 40,
+                                }
+                            },
+                            {
+                                "action": {
+                                    "kind": "activate_visible_control",
+                                    "exact_label": "Show me your goods.",
+                                }
+                            },
+                        ],
+                    }
+                },
+            },
+        }
+    )
+    assert proposed is not None
+    assert "Buy food from the Barman" in proposed
+    assert "approach_dialogue_target" in proposed
+    assert "activate_visible_control" in proposed
+    # Long opaque ids are abbreviated so the line stays readable.
+    assert "a" * 40 not in proposed
+
+    rejected = format_event(
+        {
+            "event_type": "plan_rejected",
+            "step_index": 1,
+            "payload": {"reason": "the tooltip does not name that item"},
+        }
+    )
+    assert rejected is not None and "the tooltip does not name that item" in rejected
+
+    for event_type, payload, expected in (
+        ("plan_step_started", {"step_id": "approach"}, "approach"),
+        ("plan_completed", {"plan_id": "goal-1"}, "goal-1"),
+        ("planner_error", {"message": "bad schema"}, "bad schema"),
+        (
+            "safety_supervisor_preempted",
+            {"cause": "human_input", "reason": "human took over"},
+            "human took over",
+        ),
+        (
+            "strategic_planner_call",
+            {"planner_latency_seconds": 18.4, "output_type": "PlanEnvelope"},
+            "18.4",
+        ),
+    ):
+        rendered = format_event(
+            {"event_type": event_type, "step_index": 2, "payload": payload}
+        )
+        assert rendered is not None, event_type
+        assert expected in rendered, event_type
+
+
+def test_events_are_colour_coded_by_what_the_operator_must_notice() -> None:
+    from kenshi_agent.overlay import EVENT_COLOURS, event_category
+
+    assert event_category({"event_type": "plan_proposed"}) == "goal"
+    assert event_category({"event_type": "plan_completed"}) == "progress"
+    assert event_category({"event_type": "plan_rejected"}) == "refused"
+    assert event_category({"event_type": "planner_error"}) == "error"
+    assert event_category({"event_type": "safety_supervisor_preempted"}) == "safety"
+    assert event_category({"event_type": "control_ownership_changed"}) == "control"
+    assert event_category({"event_type": "strategic_planner_call"}) == "thinking"
+
+    # A refusal is distinct from a failure: the agent will simply try again.
+    assert EVENT_COLOURS["refused"] != EVENT_COLOURS["error"]
+
+    # A receipt is progress unless the action actually failed.
+    assert (
+        event_category({"event_type": "action_receipt", "payload": {"accepted": True}})
+        == "progress"
+    )
+    assert (
+        event_category(
+            {"event_type": "action_receipt", "payload": {"accepted": False, "error_type": "X"}}
+        )
+        == "error"
+    )
+
+    # Every category names a real colour.
+    for record in ({"event_type": "plan_proposed"}, {"event_type": "unknown_event"}):
+        assert event_category(record) in EVENT_COLOURS

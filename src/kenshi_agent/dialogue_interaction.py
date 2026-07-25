@@ -112,10 +112,17 @@ def _step_action_errors(
                 f"{label} reference does not bind to current state: {binding.reason}"
             )
 
-    if step.idempotency is not contract.idempotency:
+    # Only a claim *weaker* than the contract is a problem. Declaring
+    # `at_most_once` for an action the contract says is safe to retry is simply
+    # more cautious, and rejecting it trapped the planner in a loop it could not
+    # escape: everything else in the prompt tells it to prefer at_most_once.
+    if (
+        contract.idempotency is IdempotencyPolicy.AT_MOST_ONCE
+        and step.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
+    ):
         errors.append(
-            f"{label} declares idempotency {step.idempotency.value!r} but the contract "
-            f"for {action.kind!r} requires {contract.idempotency.value!r}"
+            f"{label} declares idempotency {step.idempotency.value!r}, but "
+            f"{action.kind!r} is {contract.idempotency.value!r} and may not be retried"
         )
     if step.retry_budget and contract.idempotency is IdempotencyPolicy.AT_MOST_ONCE:
         errors.append(
