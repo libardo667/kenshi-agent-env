@@ -723,9 +723,9 @@ class AgentRuntime:
                     )
                     if rebase_errors:
                         stop_reason = (
-                            "Plan rejected before execution: the plan aged during "
-                            "planning and its references no longer hold: "
-                            + "; ".join(rebase_errors)
+                            "Plan rejected before execution: the world moved on while "
+                            "the plan was being written, so what it points at is no "
+                            "longer there: " + "; ".join(rebase_errors)
                         )
                         planner_feedback = (
                             "Your previous plan was rejected because its references "

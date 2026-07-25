@@ -1459,7 +1459,11 @@ class Condition(StrictModel):
         if len(recognised) != len(self.required_capabilities):
             object.__setattr__(self, "required_capabilities", recognised)
         if self.expected is None:
-            raise ValueError(f"{self.operator.value} conditions require expected")
+            raise ValueError(
+                f"an '{self.operator.value}' condition has no `expected` value, so "
+                f"there is nothing to compare the observation against. Set `expected` "
+                f"to the value this condition should hold"
+            )
         if self.operator == ConditionOperator.CONTAINS and not isinstance(
             self.expected, str
         ):

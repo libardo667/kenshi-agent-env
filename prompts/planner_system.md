@@ -193,6 +193,17 @@ Control rules:
   Declare a freshness assumption, explicit preconditions for every action, and
   observable success conditions. Missing, null, unavailable, and stale evidence
   are not false and must not be used as permission to act.
+- Two rules are enforced on every plan and are the most common reason one is
+  thrown away, so satisfy them before returning:
+  1. `assumptions` must contain a freshness entry, exactly this shape:
+     `{"kind": "telemetry_fresh", "operator": "equals", "expected": true,
+     "max_age_seconds": 3.0}`. Without it nothing establishes that the world
+     the plan was built from is still current.
+  2. Every condition using `equals`, `not_equals` or `contains` must set
+     `expected`. A comparison with nothing to compare against is not a check.
+- Declare in `risk_budget` what the plan intends to spend before it spends it:
+  `max_purchase_actions` must be at least the number of buy actions in the
+  plan, and `max_pointer_actions` at least the number of pointer actions.
 - Keep action, wall-clock, game-time, pointer, purchase, and native-assisted
   budgets no larger than necessary. Retries require
   `idempotency=safe_to_retry`; never retry a click, purchase, movement, or

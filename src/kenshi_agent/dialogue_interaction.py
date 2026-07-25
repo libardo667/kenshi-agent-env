@@ -287,7 +287,12 @@ def dialogue_interaction_policy_errors(
     if not any(
         condition.kind is ConditionKind.TELEMETRY_FRESH for condition in plan.assumptions
     ):
-        errors.append("plan must assume telemetry freshness")
+        errors.append(
+            "the plan has no freshness assumption, so nothing establishes that the "
+            "world it was built from is still current. Add one entry to "
+            '`assumptions`: {"kind": "telemetry_fresh", "operator": "equals", '
+            '"expected": true, "max_age_seconds": 3.0}'
+        )
 
     for step in plan.steps:
         errors.extend(
@@ -317,8 +322,10 @@ def dialogue_interaction_policy_errors(
         )
     if purchase > plan.risk_budget.max_purchase_actions:
         errors.append(
-            f"plan contract purchase cost {purchase} exceeds its declared purchase budget "
-            f"{plan.risk_budget.max_purchase_actions}"
+            f"the plan buys {purchase} time(s) but declares a purchase budget of "
+            f"{plan.risk_budget.max_purchase_actions}. A plan has to declare what it "
+            f"intends to spend before it spends it: set "
+            f"`risk_budget.max_purchase_actions` to {purchase}"
         )
     if native > plan.risk_budget.max_native_assisted_actions:
         errors.append(
