@@ -1788,10 +1788,30 @@ class Observation(StrictModel):
         if "ui.visible_controls" not in telemetry.capabilities:
             return []
         controls = telemetry.ui.visible_controls
-        counts: dict[tuple[str, str, str], int] = {}
+        # Ambiguity is judged the way the binder judges it, or the advice is
+        # stricter than the rule it describes. The binder resolves duplicate item
+        # cells that are interchangeable - same window, same item, same price -
+        # and only fails closed when they differ. Counting bare labels instead
+        # flagged two identical Greenfruit as ambiguous, and since the prompt
+        # forbids authoring an ambiguous entry, a stack of anything became
+        # unsellable: the agent refused its own duplicate stock, correctly, on
+        # our own advice.
+        variants: dict[tuple[str, str, str], set[tuple[Any, ...]]] = {}
         for control in controls:
             key = (normalize_control_label(control.label), control.role, control.window)
-            counts[key] = counts.get(key, 0) + 1
+            # Two buttons sharing a caption are two different buttons and stay
+            # ambiguous; only stock has a notion of being interchangeable.
+            distinguishing: tuple[Any, ...] = (id(control),)
+            if control.role == "item":
+                # A cell with no name cannot be shown interchangeable with
+                # anything, so each stays its own variant and fails closed.
+                distinguishing = (
+                    (control.item_name, control.item_value)
+                    if control.item_name is not None
+                    else (id(control),)
+                )
+            variants.setdefault(key, set()).add(distinguishing)
+        counts = {key: len(seen) for key, seen in variants.items()}
         # Bounded so this digest cannot overflow the irreducible planner
         # envelope. Truncation is fail-closed: an unlisted control is one the
         # planner will not author, never one it may author blindly.

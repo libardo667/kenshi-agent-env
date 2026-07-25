@@ -869,3 +869,59 @@ class TestPurchaseUsesExportedCellFacts:
         )
         assert not binding.bound
         assert "holds 'Bread'" in binding.reason
+
+
+class TestAmbiguityMatchesTheBinder:
+    """The digest's advice must not be stricter than the rule it describes."""
+
+    def _cell(self, name: str, value: int, window: str = "HEP") -> VisibleUIControl:
+        return VisibleUIControl(
+            label=name,
+            role="item",
+            window=window,
+            item_name=name,
+            item_value=value,
+            bounds=_bounds(0.5),
+        )
+
+    def test_a_stack_of_identical_items_is_not_ambiguous(self) -> None:
+        """Two Greenfruit are two Greenfruit; either will do.
+
+        The binder already resolves interchangeable cells, but the digest
+        counted bare labels and flagged both. Since the prompt forbids
+        authoring an ambiguous entry, a stack of anything became unsellable and
+        the agent refused its own duplicate stock on our own advice.
+        """
+        state = observation(
+            controls=[self._cell("Greenfruit", 22), self._cell("Greenfruit", 22)],
+            capabilities=["ui.visible_controls"],
+        )
+        entries = state.visible_control_digest()
+        assert entries and not any(entry["ambiguous"] for entry in entries)
+
+        from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
+        from kenshi_agent.models import SellItemAction
+
+        binding = SELL_ITEM_CONTRACT.bind(
+            SellItemAction(
+                cell_label="Greenfruit",
+                item_name="Greenfruit",
+                window="HEP",
+                buyer_id=VENDOR_ID,
+            ),
+            state,
+        )
+        # Selling needs more than an unambiguous cell - a selected owner, a
+        # buyer - so this does not assert it binds. It asserts the two agree
+        # about ambiguity, which is the thing that disagreed.
+        assert "ambiguous" not in binding.reason, (
+            f"the binder called interchangeable stock ambiguous: {binding.reason}"
+        )
+
+    def test_same_name_at_different_prices_still_fails_closed(self) -> None:
+        """Distinguishable duplicates are a real ambiguity: the price differs."""
+        state = observation(
+            controls=[self._cell("Tooth Pick", 809), self._cell("Tooth Pick", 390)],
+            capabilities=["ui.visible_controls"],
+        )
+        assert all(entry["ambiguous"] for entry in state.visible_control_digest())
