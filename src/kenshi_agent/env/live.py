@@ -10,7 +10,6 @@ from ..action_contracts import (
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
     EQUIP_ITEM_CONTRACT,
-    INSPECT_ITEM_CELL_CONTRACT,
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_APPROACH_CAPABILITY_ALIASES,
     NATIVE_APPROACH_WIRE_COMMAND,
@@ -45,7 +44,6 @@ from ..models import (
     EquipItemAction,
     HotkeyAction,
     InputBoundaryDecision,
-    InspectItemCellAction,
     KeyAction,
     MouseButton,
     MoveCursorAction,
@@ -560,8 +558,6 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_visible_control(action, started)
         if isinstance(action, DismissScreenAction):
             return await self._execute_dismiss_screen(action, started)
-        if isinstance(action, InspectItemCellAction):
-            return await self._execute_inspect_item_cell(action, started)
         if isinstance(action, PurchaseItemAction):
             return await self._execute_purchase_item(action, started)
         if isinstance(action, UseGameBindingAction):
@@ -868,43 +864,6 @@ class LiveEnvironment(AgentEnvironment):
                     f"Activated the current {binding.resolved_role} control "
                     f"{binding.resolved_label!r} at its observed bounds. "
                     "A later observation must confirm the resulting transition."
-                ),
-            }
-        )
-
-    async def _execute_inspect_item_cell(
-        self,
-        action: InspectItemCellAction,
-        started: datetime,
-    ) -> ActionReceipt:
-        """Move the pointer onto one cell so Kenshi renders its tooltip.
-
-        Emits a cursor move and no click, so it commits nothing: this is how the
-        agent turns a cell ordinal into an actual item identity.
-        """
-
-        binding, observation = self._rebind_in_lease(INSPECT_ITEM_CELL_CONTRACT, action)
-        bounds = binding.resolved_bounds
-        assert bounds is not None
-        x = (bounds.min_x + bounds.max_x) / 2.0
-        y = (bounds.min_y + bounds.max_y) / 2.0
-        primitive_receipt = await self.controller.execute(MoveCursorAction(x=x, y=y))
-        semantic = SemanticActionReceipt(
-            action_kind=action.kind,
-            contract_version=INSPECT_ITEM_CELL_CONTRACT.version,
-            resolved_label=binding.resolved_label,
-            resolved_role=binding.resolved_role,
-            resolved_bounds=bounds,
-            source_revision=observation.world_revision,
-            revalidation=f"Re-resolved the cell inside the input lease. {binding.reason}",
-        )
-        return primitive_receipt.model_copy(
-            update={
-                "action": action,
-                "semantic": semantic,
-                "message": (
-                    f"Hovered item cell {binding.resolved_label!r}; a later "
-                    "observation must report the resulting tooltip."
                 ),
             }
         )

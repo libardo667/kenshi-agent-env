@@ -883,13 +883,13 @@ class TestIdempotencyClaims:
     """A step may be more cautious than its contract, never less."""
 
     def _plan_with(self, idem: IdempotencyPolicy, retries: int = 0) -> PlanEnvelope:
-        from kenshi_agent.models import InspectItemCellAction
+        from kenshi_agent.models import ScrollScreenAction
 
         return plan(
             [
                 step(
-                    "inspect",
-                    InspectItemCellAction(cell_label="item_3"),
+                    "scroll",
+                    ScrollScreenAction(window="BARMAN", notches=-3),
                     success=[screen_is("trade")],
                     idempotency=idem,
                     retry_budget=retries,
@@ -902,7 +902,9 @@ class TestIdempotencyClaims:
     def _trade_state(self) -> Observation:
         state = observation(
             controls=[
-                VisibleUIControl(label="item_3", role="item", bounds=bounds(0.5)),
+                VisibleUIControl(
+                    label="item_3", role="item", window="BARMAN", bounds=bounds(0.5)
+                ),
             ],
             capabilities=[*CAPABILITIES, "ui.tooltip"],
         )

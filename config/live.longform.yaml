@@ -202,7 +202,6 @@ safety:
     - approach_dialogue_target
     - activate_visible_control
     - dismiss_screen
-    - inspect_item_cell
     - purchase_item
     - use_game_binding
     - scroll_screen

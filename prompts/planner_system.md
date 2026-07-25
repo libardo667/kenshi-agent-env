@@ -46,14 +46,13 @@ yourself, in whatever order the current evidence supports.
   whose entry has `ambiguous: true`; a duplicate reference fails closed. The
   bounds come from telemetry, so never supply coordinates.
 - `role: "item"` entries are inventory or shop grid cells, listed only while an
-  inventory or trade window is open. Their labels (`item_0`, `item_1`, …) are
-  positions in the current layout, **not** item identities: they say nothing
-  about what a cell holds. Read `telemetry.ui.tooltip_text` after hovering a
-  cell to learn what it actually is, and never assume an ordinal refers to the
-  same item across observations.
+  inventory or trade window is open. A cell's label is its position in the
+  current layout, so never assume it refers to the same item in a later
+  observation — read the entry's own `item_name` each time.
 - **Item cells name themselves.** A `role: "item"` entry in `visible_controls`
   carries `item_name`, `item_value` and `item_quantity` straight from the game.
-  Read them and decide. Do **not** hover a cell to find out what it is.
+  Read them and decide. There is no action for inspecting a cell, because there
+  is nothing left to find out: never plan a step to discover what a cell holds.
 - `purchase_item` buys the item in one cell: copy `cell_label`, `item_name` and
   `expected_price` from that cell's own entry, and give the `seller_id` of the
   one active shop owner. It is refused if any of them disagree with the cell, so
@@ -61,9 +60,6 @@ yourself, in whatever order the current evidence supports.
   confirmation is slow.
 - Buying something you can already see is **one step**, not two. Plan the
   purchase directly.
-- `inspect_item_cell` exists only for cells that arrive without a name, and for
-  reading detail the cell does not carry. If the cell already names itself, do
-  not hover it.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
   current `telemetry.ui.active_screen`. It refuses if the screen you named is
   not the one open, so read the current screen rather than assuming what a
@@ -148,7 +144,7 @@ yourself, in whatever order the current evidence supports.
   declare risk budgets that cover them: `approach_dialogue_target` costs one
   native-assisted action, `activate_visible_control` costs one pointer action,
   `purchase_item` costs one pointer and one purchase action, and
-  `inspect_item_cell` and `dismiss_screen` cost neither.
+  `dismiss_screen` costs neither.
 
 <!-- /policy -->
 Your priorities, in order:

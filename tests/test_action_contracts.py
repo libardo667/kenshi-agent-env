@@ -26,7 +26,6 @@ from kenshi_agent.models import (
     Disposition,
     GameState,
     IdempotencyPolicy,
-    InspectItemCellAction,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
@@ -237,7 +236,6 @@ class TestContractCatalog:
             "approach_dialogue_target",
             "activate_visible_control",
             "dismiss_screen",
-            "inspect_item_cell",
             "purchase_item",
             "use_game_binding",
             "scroll_screen",
@@ -265,9 +263,8 @@ class TestContractCatalog:
         )
         kinds = [contract.kind for contract in visible]
         assert "activate_visible_control" in kinds
-        # Purchase and inspection need the tooltip capability, which is absent.
+        # Purchase needs the tooltip capability, which is absent here.
         assert "purchase_item" not in kinds
-        assert "inspect_item_cell" not in kinds
 
     def test_legacy_capability_alias_still_satisfies_the_contract(self) -> None:
         """The installed plug-in emits the vendor-named capability."""
@@ -713,16 +710,6 @@ class TestPurchaseSafety:
     def test_purchase_is_at_most_once_and_costs_a_purchase_budget(self) -> None:
         assert PURCHASE_ITEM_CONTRACT.idempotency is IdempotencyPolicy.AT_MOST_ONCE
         assert PURCHASE_ITEM_CONTRACT.risk.purchase_actions == 1
-
-    def test_inspection_commits_nothing_and_may_be_retried(self) -> None:
-        from kenshi_agent.action_contracts import INSPECT_ITEM_CELL_CONTRACT
-
-        assert INSPECT_ITEM_CELL_CONTRACT.risk.as_tuple() == (0, 0, 0)
-        assert INSPECT_ITEM_CELL_CONTRACT.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
-        binding = INSPECT_ITEM_CELL_CONTRACT.bind(
-            InspectItemCellAction(cell_label="item_3"), self._state()
-        )
-        assert binding.bound
 
     def test_purchase_says_nothing_about_what_kind_of_item_is_worth_buying(self) -> None:
         """Task intent lives in config, not in the purchase contract."""

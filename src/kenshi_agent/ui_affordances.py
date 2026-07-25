@@ -200,8 +200,12 @@ AFFORDANCES: tuple[Affordance, ...] = (
         Interface.INVENTORY,
         Operation.INTERACT,
         "Read what an item actually is.",
-        Mechanism.CONTROL,
-        "inspect_item_cell",
+        # Served by telemetry, not by a gesture: every item cell arrives already
+        # carrying its name, value and quantity. This was a hover that waited on
+        # a tooltip Kenshi never reports as visible, so it could only time out.
+        Mechanism.NATIVE,
+        "telemetry.ui.visible_controls[item].item_name",
+        native_entry_point="InventoryItem::getName",
     ),
     Affordance(
         Interface.INVENTORY,

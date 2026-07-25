@@ -778,19 +778,6 @@ class ApproachDialogueTargetAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
-class InspectItemCellAction(StrictModel):
-    """Hover one inventory or shop cell so Kenshi renders its tooltip.
-
-    The deliberately non-destructive half of trading: it moves the pointer and
-    emits no click, which is how the agent learns what a cell actually holds.
-    Cell ordinals name a position, never an item, so this is the only way to
-    turn a position into evidence.
-    """
-
-    kind: Literal["inspect_item_cell"] = "inspect_item_cell"
-    cell_label: str = Field(min_length=1, max_length=80)
-
-
 class PurchaseItemAction(StrictModel):
     """Buy the item in one exact cell, at a price read from its own tooltip.
 
@@ -1062,7 +1049,6 @@ SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | ActivateVisibleControlAction
     | DismissScreenAction
-    | InspectItemCellAction
     | PurchaseItemAction
     | UseGameBindingAction
     | ScrollScreenAction
@@ -1089,7 +1075,6 @@ Action: TypeAlias = (
     | ApproachDialogueTargetAction
     | ActivateVisibleControlAction
     | DismissScreenAction
-    | InspectItemCellAction
     | PurchaseItemAction
     | UseGameBindingAction
     | ScrollScreenAction
@@ -1103,7 +1088,6 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "approach_dialogue_target",
         "activate_visible_control",
         "dismiss_screen",
-        "inspect_item_cell",
         "purchase_item",
         "use_game_binding",
         "scroll_screen",

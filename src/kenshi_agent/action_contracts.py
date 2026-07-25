@@ -42,7 +42,6 @@ from .models import (
     Disposition,
     EquipItemAction,
     IdempotencyPolicy,
-    InspectItemCellAction,
     NormalizedPointerBounds,
     Observation,
     PlanEnvelope,
@@ -327,15 +326,6 @@ def _bind_item_cell(
         item_name=cell.item_name,
         item_value=cell.item_value,
     )
-
-
-def bind_inspect_item_cell(
-    action: Action,
-    observation: Observation,
-) -> ReferenceBinding:
-    if not isinstance(action, InspectItemCellAction):
-        return _unbound("Action is not an inspect_item_cell action.")
-    return _bind_item_cell(action.cell_label, observation)
 
 
 def bind_purchase_item(
@@ -901,34 +891,6 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     bind=bind_dismiss_screen,
 )
 
-INSPECT_ITEM_CELL_CONTRACT = ActionContract(
-    kind="inspect_item_cell",
-    version="1.0",
-    model=InspectItemCellAction,
-    summary=(
-        "Hover one inventory or shop cell so its tooltip appears, revealing what "
-        "the cell actually holds. Emits no click and changes nothing."
-    ),
-    argument_source=(
-        "cell_label must match exactly one current visible_controls entry whose "
-        "role is 'item'."
-    ),
-    planner_visible=True,
-    allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
-    required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY, "ui.tooltip"}),
-    capability_aliases=frozenset(),
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
-    native_assisted=False,
-    # Moving the pointer is not a pointer *action*: nothing is committed.
-    risk=ActionRiskCost(),
-    max_primitive_actions=1,
-    reference_fields=("cell_label",),
-    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-    execution=ActionExecution.ATOMIC_HANDLER,
-    receipt_kind="semantic_inspect",
-    bind=bind_inspect_item_cell,
-)
-
 PURCHASE_ITEM_CONTRACT = ActionContract(
     kind="purchase_item",
     version="1.0",
@@ -1120,7 +1082,6 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
         DISMISS_SCREEN_CONTRACT,
-        INSPECT_ITEM_CELL_CONTRACT,
         PURCHASE_ITEM_CONTRACT,
         USE_GAME_BINDING_CONTRACT,
         SCROLL_SCREEN_CONTRACT,
