@@ -1764,7 +1764,12 @@ def test_stale_plan_output_is_rejected_without_executing_an_action(
             logger.close()
 
         assert summary.terminated
-        assert environment.actions == []
+        # A rejected plan now yields a replan rather than ending the session, so
+        # the planner's own Stop may run. What must not happen is any action
+        # that touches the game.
+        assert not [
+            action for action in environment.actions if not isinstance(action, StopAction)
+        ]
         events = read_events(tmp_path / "events.jsonl")
         rejected = [event for event in events if event["event_type"] == "plan_rejected"]
         assert len(rejected) == 1
@@ -1867,12 +1872,15 @@ def test_planner_output_that_becomes_stale_during_call_is_rejected(
         finally:
             logger.close()
 
-        assert summary.terminated
-        assert environment.actions == []
+        # The plan that went stale during the planner call is rejected, and the
+        # session continues rather than ending — for an agent meant to run
+        # continuously, one unusable plan is not a reason to stop. The sibling
+        # test covers that a rejected plan itself executes nothing.
         events = read_events(tmp_path / "events.jsonl")
         rejected = [event for event in events if event["event_type"] == "plan_rejected"]
         assert len(rejected) == 1
         assert "stale" in str(rejected[0]["payload"])
+        assert summary.stop_reason
 
     asyncio.run(scenario())
 

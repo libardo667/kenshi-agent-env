@@ -822,6 +822,10 @@ class AgentRuntime:
                         self.guard.macros,
                     )
                 except PlanValidationError as exc:
+                    # A rejected plan is one bad plan, not a reason to end the
+                    # session. An agent meant to run continuously should ask for
+                    # another plan; `max_consecutive_replans` is what bounds a
+                    # planner that cannot produce an acceptable one.
                     stop_reason = f"Plan rejected before execution: {exc}"
                     self._plan_event(
                         "plan_rejected",
@@ -831,7 +835,14 @@ class AgentRuntime:
                         reason=stop_reason,
                         evidence={"plan_basis": plan.based_on_revision.model_dump(mode="json")},
                     )
-                    terminated = True
+                    consecutive_replans += 1
+                    if consecutive_replans > self.planning_config.max_consecutive_replans:
+                        stop_reason = (
+                            "Stopped: the planner produced "
+                            f"{consecutive_replans} unusable plans in a row. The last "
+                            f"reason was: {exc}"
+                        )
+                        terminated = True
                     continue
 
                 self._plan_event(

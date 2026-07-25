@@ -173,6 +173,7 @@ safety:
     - skill
     - approach_dialogue_target
     - activate_visible_control
+    - dismiss_screen
   # The generic chain authors semantic actions, not macros. Only the transport
   # and native-approach macros remain allowlisted, because the semantic approach
   # reuses the latter's primitives.

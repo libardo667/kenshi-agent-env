@@ -276,3 +276,38 @@ def test_live_dialogue_profile_authorizes_semantic_actions_not_raw_input(
         "inspect_shop_item",
         "buy_inspected_shop_item",
     } & set(config.safety.allow_skills)
+
+
+def test_live_profiles_allowlist_every_planner_visible_action(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Adding a reusable action must not silently leave it unusable.
+
+    `dismiss_screen` shipped as a contract, a live handler, a policy rule and a
+    prompt rule — but its kind was never added to `allow_action_kinds`, so the
+    guard rejected every attempt and the planner spun retrying it. The catalog
+    and the profiles that claim to expose it have to agree.
+    """
+
+    from kenshi_agent.action_contracts import ACTION_CONTRACTS
+
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    planner_visible = {
+        contract.kind for contract in ACTION_CONTRACTS.values() if contract.planner_visible
+    }
+    assert planner_visible, "expected at least one planner-visible contract"
+
+    for profile in ("live.dialogue.yaml", "live.longform.yaml"):
+        config = load_config(root / "config" / profile)
+        policy = config.planning.live_execution_policy
+        if policy is not LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
+            continue
+        allowed = set(config.safety.allow_action_kinds)
+        missing = sorted(planner_visible - allowed)
+        assert not missing, (
+            f"{profile} runs the generic policy but does not allowlist: {missing}"
+        )
+        # And it still must not allowlist raw controller primitives.
+        assert not allowed & {"click", "key", "hotkey", "move_cursor", "scroll"}
