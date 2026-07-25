@@ -154,6 +154,16 @@ yourself, in whatever order the current evidence supports.
 - Give every step a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
+- **Hunger counts down from full, not up from empty.** `hunger` is a nutrition
+  reserve from 3.0 (full) to 0.0 (starving), and it falls slowly. A character at
+  2.9 needs nothing; do not buy or eat food above about 1.5. Kenshi's own screen
+  shows this number times a hundred, so "Hunger: 300" is a full character.
+- **Read `inventory` for what you are carrying.** It names every item held,
+  worn and wielded. `food_items` is Kenshi's own count and is unreliable — it
+  has been measured at 0 while the character carried two Greenfruit — so never
+  conclude from it that you have nothing. Check `inventory` before buying
+  anything: shopping for what is already in your pack wastes the money you
+  would need for what is not.
 - **`recent_changes` is what actually moved since the last observation**, as
   `path`, `before`, `after`. Read it first: it is the only direct evidence that
   your previous step did anything. An empty list after an action that should

@@ -236,9 +236,19 @@ class CharacterState(StrictModel):
     stealth: bool | None = None
     position: Vec3 | None = None
     movement_speed: float | None = None
+    # How *fed* the character is, not how hungry, despite the name: a nutrition
+    # reserve on a 0.0-3.0 scale where 3.0 is full and 0.0 is starving. It falls
+    # slowly and eating refills it. Kenshi's own UI shows the same number times
+    # a hundred, so an on-screen "Hunger: 300" is a character that needs nothing.
+    # Read the wrong way round it is a standing instruction to panic: an agent
+    # at 2.94, essentially full, spent a run buying food it could not eat.
     hunger: float | None = None
     blood: float | None = None
     bleeding_rate: float | None = None
+    # Kenshi's own count, and not to be trusted against `inventory`: measured
+    # live it reported 0 while the character carried two Greenfruit and a Water.
+    # `inventory` names what is actually held; prefer it, and never conclude
+    # from a zero here that there is nothing to eat.
     food_items: int | None = None
     first_aid_kits: int | None = None
     current_goal: str | None = None
