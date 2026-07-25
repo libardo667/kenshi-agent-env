@@ -7,6 +7,9 @@ chain work" test and still have failed this milestone.
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from kenshi_agent.dialogue_interaction import (
     dialogue_interaction_policy_errors,
     dialogue_interaction_rebase_errors,
@@ -250,29 +253,40 @@ class TestGenericComposition:
 
 
 class TestGenericPolicyRejections:
-    def test_raw_click_is_rejected(self) -> None:
-        composed = plan(
-            [step("click", ClickAction(x=0.5, y=0.5), success=[screen_is("trade")])],
-            native=0,
+    def test_a_raw_primitive_cannot_even_be_expressed_as_a_plan_step(self) -> None:
+        """A raw coordinate carries no evidence of what it would activate.
+
+        The policy used to be the only thing refusing these, which meant the
+        response schema still offered the planner five primitives it was never
+        allowed to pick. `PlanStep.action` is now the narrower `PlannerAction`,
+        so a primitive fails at parse time and never reaches the policy.
+        """
+        from kenshi_agent.models import HotkeyAction, KeyAction
+
+        for action in (
+            ClickAction(x=0.5, y=0.5),
+            KeyAction(key="space"),
+            HotkeyAction(keys=["ctrl", "s"]),
+        ):
+            with pytest.raises(ValidationError):
+                step("raw", action, success=[screen_is("trade")])
+
+    def test_a_raw_primitive_smuggled_past_the_schema_is_still_refused(self) -> None:
+        """Validation is the first defence, not the only one."""
+        smuggled = PlanStep.model_construct(
+            step_id="click",
+            action=ClickAction(x=0.5, y=0.5),
+            preconditions=[freshness()],
+            success_conditions=[screen_is("trade")],
+            timeout_seconds=30.0,
+            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            retry_budget=0,
         )
+        composed = plan([smuggled], native=0)
         errors = dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("raw controller primitive" in error for error in errors)
-
-    def test_raw_key_and_hotkey_are_rejected(self) -> None:
-        from kenshi_agent.models import HotkeyAction, KeyAction
-
-        for action in (KeyAction(key="space"), HotkeyAction(keys=["ctrl", "s"])):
-            composed = plan(
-                [step("raw", action, success=[screen_is("trade")])],
-                native=0,
-                pointer=0,
-            )
-            errors = dialogue_interaction_policy_errors(
-                composed, observation(controls=TRADE_CONTROLS)
-            )
-            assert any("raw controller primitive" in error for error in errors)
 
     def test_legacy_skill_action_has_no_contract(self) -> None:
         composed = plan(

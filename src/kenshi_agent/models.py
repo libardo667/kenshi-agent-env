@@ -1482,7 +1482,10 @@ class RiskBudget(StrictModel):
 
 class PlanStep(StrictModel):
     step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
-    action: Action
+    # `PlannerAction`, not `Action`: a plan is authored, so it must not offer
+    # the controller primitives. Advertising them put five raw-input actions in
+    # the response schema the planner is never allowed to choose.
+    action: PlannerAction
     preconditions: list[Condition] = Field(min_length=1, max_length=12)
     success_conditions: list[Condition] = Field(min_length=1, max_length=12)
     failure_conditions: list[Condition] = Field(default_factory=list, max_length=12)
@@ -1820,7 +1823,7 @@ class Observation(StrictModel):
 class PlannerDecision(StrictModel):
     intent: str = Field(min_length=1, max_length=1000)
     rationale: str = Field(min_length=1, max_length=1500)
-    action: Action
+    action: PlannerAction
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     expected_observation: str | None = Field(default=None, max_length=1000)
     memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
