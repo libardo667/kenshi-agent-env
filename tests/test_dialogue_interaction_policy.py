@@ -535,7 +535,19 @@ class TestRebaseAcrossPlannerLatency:
             },
             deep=True,
         )
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        control_first = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.", role="button"
+                    ),
+                    success=[screen_is("trade")],
+                )
+            ],
+            native=0,
+        )
+        errors = dialogue_interaction_rebase_errors(control_first, planner_view, current)
         assert any("ambiguous" in error for error in errors)
 
     def test_a_control_that_disappeared_refuses(self) -> None:
@@ -551,7 +563,19 @@ class TestRebaseAcrossPlannerLatency:
             },
             deep=True,
         )
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        control_first = plan(
+            [
+                step(
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.", role="button"
+                    ),
+                    success=[screen_is("trade")],
+                )
+            ],
+            native=0,
+        )
+        errors = dialogue_interaction_rebase_errors(control_first, planner_view, current)
         assert any("changed while the planner was thinking" in error for error in errors)
 
     def test_withdrawn_capability_refuses(self) -> None:
@@ -767,3 +791,75 @@ class TestCapabilityAliases:
         assert "control.approach_dialogue_target" not in CAPABILITIES
         result = evaluate_condition(generic, state)
         assert result.result is ConditionResult.TRUE, result.reason
+
+
+class TestFutureStepsMayReferenceFutureState:
+    """The point of composing: later steps describe state that does not exist yet.
+
+    Requiring every step to bind against the *current* observation quietly made
+    real multi-step plans impossible — "dismiss the dialogue" cannot bind before
+    an approach has opened one. Only the entry step must bind now; the rest are
+    bound when reached and again inside the input lease.
+    """
+
+    def _approach_then_dismiss(self) -> PlanEnvelope:
+        from kenshi_agent.models import DismissScreenAction
+
+        return plan(
+            [
+                step(
+                    "approach",
+                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    on_success="leave",
+                ),
+                step(
+                    "leave",
+                    # Nothing is open yet; this refers to what the approach creates.
+                    DismissScreenAction(expected_screen="dialogue"),
+                    success=[screen_is("world")],
+                ),
+            ],
+            pointer=0,
+        )
+
+    def test_a_plan_whose_later_step_needs_future_state_is_accepted(self) -> None:
+        state = observation(controls=TRADE_CONTROLS)
+        telemetry = state.telemetry
+        assert telemetry is not None
+        in_world = state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "world"})}
+                )
+            },
+            deep=True,
+        )
+        assert dialogue_interaction_policy_errors(self._approach_then_dismiss(), in_world) == []
+
+    def test_the_same_plan_rebases_across_planner_latency(self) -> None:
+        state = observation(controls=TRADE_CONTROLS)
+        telemetry = state.telemetry
+        assert telemetry is not None
+        in_world = state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"ui": telemetry.ui.model_copy(update={"active_screen": "world"})}
+                )
+            },
+            deep=True,
+        )
+        assert dialogue_interaction_rebase_errors(
+            self._approach_then_dismiss(), in_world, later(in_world)
+        ) == []
+
+    def test_an_unbindable_entry_step_is_still_refused(self) -> None:
+        """Relaxing future steps must not relax the step about to run."""
+
+        composed = plan(
+            [step("approach", ApproachDialogueTargetAction(target_id="entity-ghost"))],
+            pointer=0,
+        )
+        errors = dialogue_interaction_policy_errors(
+            composed, observation(controls=TRADE_CONTROLS)
+        )
+        assert any("does not bind to current state" in error for error in errors)

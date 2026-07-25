@@ -54,6 +54,7 @@ def _step_action_errors(
     observation: Observation,
     *,
     control_mode: ControlMode,
+    require_binding: bool,
 ) -> list[str]:
     errors: list[str] = []
     action: Action = step.action
@@ -99,9 +100,17 @@ def _step_action_errors(
             + ", ".join(missing)
         )
 
-    binding = contract.bind(action, observation)
-    if not binding.bound:
-        errors.append(f"{label} reference does not bind to current state: {binding.reason}")
+    # Only the step about to run must bind right now. A later step legitimately
+    # refers to state its predecessors will create - "dismiss the dialogue"
+    # cannot bind before the approach has opened one - and demanding otherwise
+    # would reject every genuinely composed plan. Each step is still bound and
+    # revalidated when it is actually reached, and again inside the input lease.
+    if require_binding:
+        binding = contract.bind(action, observation)
+        if not binding.bound:
+            errors.append(
+                f"{label} reference does not bind to current state: {binding.reason}"
+            )
 
     if step.idempotency is not contract.idempotency:
         errors.append(
@@ -181,23 +190,25 @@ def dialogue_interaction_rebase_errors(
     if blocking:
         errors.append(f"input authority was withdrawn during planning by {blocking[0]!r}")
 
-    for step in plan.steps:
-        if is_planner_control_action(step.action):
-            # Run control binds to no game reference, so ageing cannot invalidate
-            # it. Its own preconditions are still re-evaluated before dispatch.
-            continue
-        contract = contract_for(step.action)
+    # Only the entry step has to still bind: later steps refer to state their
+    # predecessors will create, and each is rebound when it is actually reached.
+    entry = next(
+        (step for step in plan.steps if step.step_id == plan.entry_step_id),
+        None,
+    )
+    if entry is not None and not is_planner_control_action(entry.action):
+        contract = contract_for(entry.action)
         if contract is None:
             errors.append(
-                f"step {step.step_id!r} has no contract, so its reference cannot be rebased"
+                f"step {entry.step_id!r} has no contract, so its reference cannot be rebased"
             )
-            continue
-        current = contract.bind(step.action, current_observation)
-        if not current.bound:
-            errors.append(
-                f"step {step.step_id!r} pointed at something that changed while the "
-                f"planner was thinking: {current.reason}"
-            )
+        else:
+            current = contract.bind(entry.action, current_observation)
+            if not current.bound:
+                errors.append(
+                    f"step {entry.step_id!r} pointed at something that changed while the "
+                    f"planner was thinking: {current.reason}"
+                )
 
     assumptions = evaluate_conditions(plan.assumptions, current_observation)
     blocked = [
@@ -247,7 +258,12 @@ def dialogue_interaction_policy_errors(
 
     for step in plan.steps:
         errors.extend(
-            _step_action_errors(step, observation, control_mode=plan.control_mode)
+            _step_action_errors(
+                step,
+                observation,
+                control_mode=plan.control_mode,
+                require_binding=step.step_id == plan.entry_step_id,
+            )
         )
 
     # Risk budgets must cover what the contracts actually cost, so an

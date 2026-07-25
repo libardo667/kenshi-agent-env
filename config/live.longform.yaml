@@ -47,7 +47,7 @@ planning:
   # Kenshi's elapsed_minutes is accelerated game time, not movement-pulse
   # wall time. This ceiling covers the longest audited eight-second pulse
   # plus one wall-second at the conservative 60x conversion.
-  max_plan_game_seconds: 540
+  max_plan_game_seconds: 3600
   max_pointer_actions_per_plan: 16
   max_purchase_actions_per_plan: 1
   max_native_assisted_actions_per_plan: 4
