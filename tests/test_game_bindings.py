@@ -648,3 +648,22 @@ def test_a_capability_name_used_as_a_field_path_is_read_as_a_capability() -> Non
     )
     assert condition.kind is ConditionKind.CAPABILITY
     assert condition.path == "squad.inventory"
+
+
+def test_the_observation_can_carry_planner_feedback() -> None:
+    """A deterministic planner mistake must not be remade on every retry.
+
+    A live run ended after 21 identical validation failures, each replanned from
+    an observation that said nothing about the previous twenty.
+    """
+
+    base = observation()
+    with_feedback = base.model_copy(
+        update={"planner_feedback": "Fix exactly this: capability needs a path."}
+    )
+    payload = with_feedback.planner_payload(max_chars=6000)
+    assert "capability needs a path" in payload
+    # Survives a budget far too small for the whole observation, because a
+    # correction the planner cannot see is a correction that does not happen.
+    tight = with_feedback.planner_payload(max_chars=4200)
+    assert "capability needs a path" in tight

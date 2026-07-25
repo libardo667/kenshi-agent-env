@@ -422,6 +422,7 @@ class AgentRuntime:
         stop_reason = "Maximum action count reached."
         observation: Observation | None = None
         consecutive_replans = 0
+        planner_feedback: str | None = None
         observation_pump: ObservationPump | None = None
         safety_supervisor: SafetySupervisor | None = None
         state_store: WorldStateStore | None = None
@@ -524,7 +525,11 @@ class AgentRuntime:
                     continue
 
                 planning_started = monotonic()
-                planner_observation = observation
+                planner_observation = (
+                    observation.model_copy(update={"planner_feedback": planner_feedback})
+                    if planner_feedback is not None
+                    else observation
+                )
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
                 planner_source = "planner"
@@ -582,6 +587,14 @@ class AgentRuntime:
                     # again and let the replan limit bound a planner that cannot
                     # produce a well-formed one.
                     planner_source = "planner_error"
+                    # Tell the next attempt what was wrong with this one. Without
+                    # it a deterministic mistake is remade every retry until the
+                    # replan limit ends the run.
+                    planner_feedback = (
+                        "Your previous response could not be used. Fix exactly "
+                        "this and return the schema again: "
+                        + self._bounded_text(str(exc), 900)
+                    )
                     self._planner_failure_decision(
                         exc,
                         step_index=observation.step_index,
@@ -714,6 +727,12 @@ class AgentRuntime:
                             "planning and its references no longer hold: "
                             + "; ".join(rebase_errors)
                         )
+                        planner_feedback = (
+                            "Your previous plan was rejected because its references "
+                            "no longer matched the world by the time it arrived. "
+                            "Re-read the observation and bind to what is there now: "
+                            + self._bounded_text("; ".join(rebase_errors), 900)
+                        )
                         self._plan_event(
                             "plan_rejected",
                             plan_id=plan.plan_id,
@@ -789,6 +808,10 @@ class AgentRuntime:
                     # another plan; `max_consecutive_replans` is what bounds a
                     # planner that cannot produce an acceptable one.
                     stop_reason = f"Plan rejected before execution: {exc}"
+                    planner_feedback = (
+                        "Your previous plan was rejected. Fix exactly this and "
+                        "return the schema again: " + self._bounded_text(str(exc), 900)
+                    )
                     self._plan_event(
                         "plan_rejected",
                         plan_id=plan.plan_id,
@@ -881,6 +904,8 @@ class AgentRuntime:
                     continue
                 if result.completed:
                     consecutive_replans = 0
+                    # The advice was taken; stop repeating it.
+                    planner_feedback = None
                     if steps_completed >= max_steps:
                         stop_reason = "Maximum action count reached after plan completion."
                     continue

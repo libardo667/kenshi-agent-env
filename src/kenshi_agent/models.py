@@ -1583,6 +1583,11 @@ class Observation(StrictModel):
     objective: str | None = Field(default=None, max_length=1000)
     active_plan: ActivePlanContext | None = None
     recent_action_outcomes: list[ActionOutcome] = Field(default_factory=list, max_length=100)
+    # Why the previous planner response could not be used. Without it a planner
+    # that makes one deterministic mistake remakes it on every retry: a live run
+    # ended after 21 identical validation failures, each replanned from an
+    # observation that said nothing about the previous twenty.
+    planner_feedback: str | None = Field(default=None, max_length=1200)
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
