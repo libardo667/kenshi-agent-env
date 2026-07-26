@@ -122,4 +122,14 @@ namespace KenshiAgentTelemetry
         const float progressZ = currentZ - originZ;
         return progressX * goalX + progressZ * goalZ >= goalLengthSquared;
     }
+
+    bool ShouldMaintainCameraFollow(
+        bool commandActive,
+        bool exactSelectionResolved,
+        bool selectionIdentityMatches)
+    {
+        return commandActive &&
+               exactSelectionResolved &&
+               selectionIdentityMatches;
+    }
 }

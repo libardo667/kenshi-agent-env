@@ -24,7 +24,8 @@ planner-visible surface is a contracted action catalog
 advisor and a `request_affordance` channel exist and emit zero game input.
 
 The native plug-in exports telemetry at ~2 Hz and accepts five reviewed
-commands. **Protocol `0.8.0` has never been live-loaded.**
+commands. Protocol `0.8.0` has been live-loaded with fresh advancing telemetry,
+but its contextual natural-resource operation remains unproven.
 
 Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
@@ -184,10 +185,11 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Live-prove protocol `0.8.0`.** Observe an exact natural resource, dispatch
-   its advertised `operate` pair, receive the keyed `context_task_started`
-   terminal, confirm plausible behavior in a resulting frame plus fresh
-   advancing telemetry, and leave the run safely paused.
+1. **Complete the protocol `0.8.0` live proof.** Diagnose why the loaded plug-in
+   exports no natural-resource targets in the tested terrain. Then observe one
+   exact target, dispatch its advertised `operate` pair, receive the keyed
+   `context_task_started` terminal, confirm plausible behavior in a resulting
+   frame plus fresh advancing telemetry, and leave the run safely paused.
 2. **Make affordance requests aggregable.** `capability` is free text, so
    requests from different runs cannot be counted or ranked. A controlled
    vocabulary (or a clustering pass) is required before fanning out across

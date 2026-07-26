@@ -69,4 +69,12 @@ namespace KenshiAgentTelemetry
         float destinationZ,
         float currentX,
         float currentZ);
+
+    // Camera ownership follows native command ownership. Reassert follow only
+    // while one command is active and the current exact selection still owns
+    // that command; any ambiguity or selection drift fails closed.
+    bool ShouldMaintainCameraFollow(
+        bool commandActive,
+        bool exactSelectionResolved,
+        bool selectionIdentityMatches);
 }

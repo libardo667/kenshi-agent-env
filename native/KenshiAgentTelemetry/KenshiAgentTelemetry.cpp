@@ -628,6 +628,32 @@ namespace
         return true;
     }
 
+    void MaintainCameraFollowForActiveCommand(PlayerInterface* player)
+    {
+        std::string selectedId;
+        hand selectedHandle;
+        const bool exactSelectionResolved =
+            TryGetExactSelection(player, selectedId, selectedHandle);
+        const bool selectionIdentityMatches =
+            exactSelectionResolved &&
+            selectedId == g_activeNativeCommand.selectedCharacterId &&
+            SameHandleIdentity(
+                selectedHandle,
+                g_activeNativeCommand.selectedHandle);
+        if (!KenshiAgentTelemetry::ShouldMaintainCameraFollow(
+                g_activeNativeCommand.active,
+                exactSelectionResolved,
+                selectionIdentityMatches))
+        {
+            return;
+        }
+
+        CameraClass* camera = player->getCamera();
+        if (camera == NULL)
+            return;
+        camera->followObject(selectedHandle);
+    }
+
     Character* FindExactDialogueTarget(
         PlayerInterface* player,
         const std::string& targetId,
@@ -2543,6 +2569,10 @@ namespace
     void PlayerInterfaceUpdateHook(PlayerInterface* player)
     {
         g_originalPlayerInterfaceUpdate(player);
+        // Engine-native follow is reasserted because vanilla camera panning
+        // clears it. Keeping the camera center on the command owner also keeps
+        // terrain and interactable streaming aligned with native movement.
+        MaintainCameraFollowForActiveCommand(player);
         MonitorActiveNativeCommand(player);
         const bool approachVendorHotkeyDown =
             (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0 &&

@@ -52,7 +52,8 @@ portable coverage but no completed live proof. Native walking supports
 exact-character destinations, a targetless bounded direction order, and a
 no-argument building exit; all movement orders share a ten-second
 continuous-unpaused no-progress terminal, so a blocked order cannot poison later
-movement.
+movement. During exact native commands, engine-native camera follow is reasserted
+each frame and live-proven through one short obstructed move.
 
 ## Native protocol 0.8.0
 
@@ -74,12 +75,10 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 ## Open work
 
-- **Protocol `0.8.0` has never been live-loaded.** Its contextual
-  `operate_natural_resource` action passes portable and native-build gates only.
-  Live-proving it means observing an exact natural resource, dispatching its
-  advertised `operate` pair, receiving the keyed `context_task_started`
-  terminal, confirming plausible behavior in a resulting frame plus fresh
-  advancing telemetry, and leaving the run safely paused.
+- **Protocol `0.8.0` is live-loaded; contextual operation is not live-proven.**
+  Resource discovery returned no target in the tested terrain. Completion still
+  requires an exact target, keyed `context_task_started`, a plausible resulting
+  frame, fresh advancing telemetry, and a safe final pause.
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
@@ -114,7 +113,8 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   unavailable or unvalidated.
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
-- Renderer resets on this host traced to the older Intel Iris Xe driver, not the
-  graphics profile. Driver `32.0.101.7088` passed two dissimilar 20-minute soaks;
-  multi-hour and large-water coverage remain open.
+- Renderer stability remains open on this Intel Iris Xe host. Driver
+  `32.0.101.7088` passed two dissimilar 20-minute soaks, but a later supervised
+  run still hit DXGI device-removal and driver-internal failures; multi-hour and
+  large-water coverage remain open.
 - The mock world tests orchestration, not Kenshi strategy competence.

@@ -85,7 +85,11 @@ a nearer target. `native_control` exposes a bounded ring of keyed
 accepted/rejected/completed/cancelled acknowledgements. Active work cancels if
 selection, uninterrupted pause beyond the bounded handoff window, target
 lifetime, or required target role changes. The legacy last-command fields
-remain diagnostics.
+remain diagnostics. While an active command still belongs to one exact selected
+character, the player-update hook reasserts `CameraClass::followObject` each
+frame. This keeps the camera and world streaming centered on the command owner;
+inactive, ambiguous, or selection-mismatched states never claim camera
+ownership.
 This makes the DLL a native-assisted control bridge, not a globally read-only
 plugin. The Python runtime exposes these commands only in `native_assisted`
 mode; `interface_only` filters their capabilities/state and rejects the marked
@@ -175,6 +179,9 @@ folder component.
   30.4 units of plausible movement, a resulting frame, and safe final pause.
   Repeat across other bearings, distances, obstacles, and scenes before making
   broader movement claims.
+- During native movement, verify the camera center follows the exact selected
+  character without a separate portrait gesture. Confirm inactive commands and
+  selection mismatch do not retain agent camera ownership.
 - Repeat for `operate_natural_resource`: first verify the target is present in
   `world_targets` with `operate` advertised, then issue that exact ID and
   confirm keyed `context_task_started`, plausible movement/task behavior in a

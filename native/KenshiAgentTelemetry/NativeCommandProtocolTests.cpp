@@ -307,6 +307,21 @@ namespace
         }
         return 0;
     }
+
+    int TestNativeCameraFollowPolicy()
+    {
+        using KenshiAgentTelemetry::ShouldMaintainCameraFollow;
+
+        if (!ShouldMaintainCameraFollow(true, true, true))
+            return Fail("an exact active selection did not maintain camera follow");
+        if (ShouldMaintainCameraFollow(false, true, true))
+            return Fail("an inactive command maintained camera follow");
+        if (ShouldMaintainCameraFollow(true, false, true))
+            return Fail("an unresolved selection maintained camera follow");
+        if (ShouldMaintainCameraFollow(true, true, false))
+            return Fail("a mismatched selection maintained camera follow");
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
@@ -328,6 +343,9 @@ int main(int argc, char** argv)
     const int exitDestinationResult = TestNativeExitDestinationCompletion();
     if (exitDestinationResult != 0)
         return exitDestinationResult;
+    const int cameraFollowResult = TestNativeCameraFollowPolicy();
+    if (cameraFollowResult != 0)
+        return cameraFollowResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =
