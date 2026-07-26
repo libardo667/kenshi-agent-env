@@ -14,6 +14,7 @@ from .models import (
     Action,
     ActionReceipt,
     ActivePlanContext,
+    ApproachDialogueTargetAction,
     CameraRecoveryStatus,
     CommandDispatchContext,
     ConditionEvaluation,
@@ -731,6 +732,11 @@ class ContinuousPlanExecutor:
                 target_id=approach_params.target_id,
                 arrival_distance=approach_params.arrival_distance,
                 threat_distance=approach_params.threat_distance,
+                direct_interaction_distance=(
+                    self.planning_config.semantic_dialogue_direct_click_distance
+                    if isinstance(action, ApproachDialogueTargetAction)
+                    else 0.0
+                ),
                 require_paused_start=(
                     self.planning_config.require_paused_between_actions
                 ),

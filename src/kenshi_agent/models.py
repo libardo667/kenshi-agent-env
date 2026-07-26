@@ -870,13 +870,14 @@ class ScrollAction(StrictModel):
 
 
 class ApproachDialogueTargetAction(StrictModel):
-    """Walk to one exact currently observed dialogue target and open dialogue.
+    """Initiate dialogue with one exact currently observed dialogue target.
 
     Reusable and target-generic: the target is any current non-hostile person
     the telemetry already reports as talkable, vendor or not. The action names
     only a stable observed identity, never a role, a scenario, or a coordinate.
-    One monitored option owns the whole walk, so there is no planner-visible
-    "continue approaching" command.
+    The controller right-clicks a close visible target without unpausing and
+    otherwise owns the whole monitored walk, so there is no planner-visible
+    "continue approaching" or prerequisite unpause command.
     """
 
     kind: Literal["approach_dialogue_target"] = "approach_dialogue_target"

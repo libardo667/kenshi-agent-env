@@ -9,6 +9,7 @@ from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
 from .models import (
     Action,
+    ApproachDialogueTargetAction,
     CommandDispatchContext,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
@@ -486,6 +487,7 @@ class StatefulApproachOption:
         target_id: str,
         arrival_distance: float = 5.0,
         threat_distance: float = 15.0,
+        direct_interaction_distance: float = 0.0,
         require_paused_start: bool = True,
     ) -> None:
         self.option_id = option_id
@@ -494,6 +496,7 @@ class StatefulApproachOption:
         # An agent playing continuously starts its walk from a running world;
         # demanding a paused start there means the approach can never begin.
         self.require_paused_start = require_paused_start
+        self.direct_interaction_distance = direct_interaction_distance
         self.monitor = ApproachMonitor(
             target_id=target_id,
             arrival_distance=arrival_distance,
@@ -524,7 +527,23 @@ class StatefulApproachOption:
             raise OptionLifecycleError(
                 "Approach option requires the target to be present at the start."
             )
-        if begin.arrived:
+        target = next(
+            (
+                entity
+                for entity in telemetry.nearby_entities
+                if entity.id == self.monitor.target_id
+            ),
+            None,
+        )
+        direct_interaction_available = (
+            isinstance(self.action, ApproachDialogueTargetAction)
+            and target is not None
+            and target.visible is True
+            and target.screen_position is not None
+            and target.distance is not None
+            and target.distance <= self.direct_interaction_distance
+        )
+        if begin.arrived and not direct_interaction_available:
             raise OptionLifecycleError(
                 "Approach option must not dispatch after the target has already "
                 "been reached."
@@ -537,7 +556,12 @@ class StatefulApproachOption:
         self.latest_observation = observation.model_copy(deep=True)
         self.latest_status = begin
         self.status = OptionStatus.PREPARED
-        self.reason = "Approach start state is capable, paused, and the target is present."
+        self.reason = (
+            "Close visible dialogue target will be interacted with directly "
+            "without unpausing."
+            if direct_interaction_available
+            else "Approach start state is capable, paused, and the target is present."
+        )
         return self._poll_result()
 
     def start(
@@ -549,7 +573,11 @@ class StatefulApproachOption:
         if self.status is not OptionStatus.PREPARED:
             raise OptionLifecycleError("Approach option must be prepared before start.")
         self.status = OptionStatus.RUNNING
-        self.reason = "Approach order dispatched; walking toward the target."
+        self.reason = (
+            "Dialogue interaction dispatched; monitoring the exact target."
+            if isinstance(self.action, ApproachDialogueTargetAction)
+            else "Approach order dispatched; walking toward the target."
+        )
         work = (
             self.environment.dispatch(self.action, command=command, token=token)
             if command is not None

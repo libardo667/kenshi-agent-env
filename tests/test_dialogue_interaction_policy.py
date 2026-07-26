@@ -31,6 +31,7 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    PauseAction,
     PlanEnvelope,
     PlanStep,
     RiskBudget,
@@ -203,7 +204,8 @@ class TestGenericComposition:
                     ),
                     success=[screen_is("trade")],
                 ),
-            ]
+            ],
+            pointer=2,
         )
         assert dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
@@ -221,7 +223,8 @@ class TestGenericComposition:
                     on_success="approach",
                 ),
                 step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID)),
-            ]
+            ],
+            pointer=2,
         )
         assert dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
@@ -230,7 +233,7 @@ class TestGenericComposition:
     def test_a_single_action_plan_is_acceptable(self) -> None:
         composed = plan(
             [step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID))],
-            pointer=0,
+            pointer=1,
         )
         assert dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
@@ -245,7 +248,7 @@ class TestGenericComposition:
                     success=[dialogue_open_with(CIVILIAN_ID)],
                 )
             ],
-            pointer=0,
+            pointer=1,
         )
         assert dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
@@ -661,11 +664,44 @@ class TestRunControlActions:
                     success=[screen_is("world")],
                 ),
             ],
-            pointer=0,
+            pointer=1,
         )
         assert dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
+
+    def test_direct_unpause_is_rejected_before_the_plan_can_start(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "unpause",
+                    PauseAction(paused=False),
+                    success=[
+                        Condition(
+                            kind=ConditionKind.FIELD,
+                            path="telemetry.game.paused",
+                            operator=ConditionOperator.EQUALS,
+                            expected=False,
+                            max_age_seconds=3.0,
+                            required_capabilities=["game.pause"],
+                        )
+                    ],
+                )
+            ],
+            native=0,
+            pointer=0,
+        )
+
+        errors = dialogue_interaction_policy_errors(
+            composed,
+            observation(
+                controls=TRADE_CONTROLS,
+                capabilities=[*CAPABILITIES, "game.pause"],
+            ),
+        )
+
+        assert any("direct live unpause" in error for error in errors)
+        assert any("approach_dialogue_target" in error for error in errors)
 
     def test_a_stop_only_plan_needs_no_causal_success_condition(self) -> None:
         from kenshi_agent.models import ConditionPath, StopAction
@@ -836,7 +872,7 @@ class TestFutureStepsMayReferenceFutureState:
                     success=[screen_is("world")],
                 ),
             ],
-            pointer=1,
+            pointer=2,
         )
 
     def test_a_plan_whose_later_step_needs_future_state_is_accepted(self) -> None:

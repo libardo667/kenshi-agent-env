@@ -31,6 +31,8 @@ planning:
   # are its arrival/threat radii, not a feature flag.
   semantic_approach_arrival_distance: 5.0
   semantic_approach_threat_distance: 15.0
+  # A close visible person can be right-clicked while Kenshi remains paused.
+  semantic_dialogue_direct_click_distance: 15.0
   # The strategic call overlaps the walk, which is the whole point of a long
   # monitored option.
   concurrent_option_planning_enabled: true

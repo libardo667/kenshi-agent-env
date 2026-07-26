@@ -9,6 +9,7 @@ from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
+    ApproachDialogueTargetAction,
     Disposition,
     GameState,
     NearbyEntity,
@@ -17,6 +18,7 @@ from kenshi_agent.models import (
     TelemetrySnapshot,
     Transition,
     UIState,
+    Vec2,
     WorldStateRevision,
 )
 from kenshi_agent.options import OptionStatus, StatefulApproachOption
@@ -34,6 +36,7 @@ def observation(
     dialogue_target: str | None = None,
     modal_open: bool | None = None,
     hostile_distance: float | None = None,
+    visible: bool = False,
 ) -> Observation:
     entities: list[NearbyEntity] = []
     if target_present:
@@ -47,6 +50,8 @@ def observation(
                 has_dialogue=True,
                 disposition=Disposition.NEUTRAL,
                 distance=target_distance,
+                visible=visible,
+                screen_position=Vec2(x=0.5, y=0.5) if visible else None,
             )
         )
     if hostile_distance is not None:
@@ -167,6 +172,25 @@ def test_approach_succeeds_by_arrival_radius() -> None:
         assert arrived.status is OptionStatus.SUCCEEDED
 
     asyncio.run(scenario())
+
+
+def test_close_visible_semantic_target_can_dispatch_from_arrival_radius() -> None:
+    option = StatefulApproachOption(
+        option_id="direct-dialogue",
+        action=ApproachDialogueTargetAction(target_id=TARGET_ID),
+        environment=InstantApproachEnvironment(),
+        target_id=TARGET_ID,
+        arrival_distance=5.0,
+        threat_distance=15.0,
+        direct_interaction_distance=15.0,
+    )
+
+    prepared = option.prepare(
+        observation(1, target_distance=4.0, visible=True)
+    )
+
+    assert prepared.status is OptionStatus.PREPARED
+    assert "directly" in prepared.reason
 
 
 def test_target_loss_during_approach_fails() -> None:

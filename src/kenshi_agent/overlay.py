@@ -246,6 +246,12 @@ def format_event(record: dict[str, Any]) -> str | None:
         return f"{step} | PLAN COMPLETE | {payload.get('plan_id', '?')}\n"
     if event_type == "planner_error":
         return f"{step} | PLANNER ERROR | {payload.get('message', '')[:300]}\n"
+    if event_type == "replan_stalled":
+        return (
+            f"{step} | REPLAN STALLED | "
+            f"{payload.get('identical_failures', '?')} identical failures\n"
+            f"{payload.get('reason', '')[:300]}\n"
+        )
     if event_type == "safety_supervisor_preempted":
         return (
             f"{step} | SAFETY STOP | {payload.get('cause', 'unknown')}\n"
@@ -301,6 +307,7 @@ _EVENT_CATEGORIES: dict[str, str] = {
     "plan_aborted": "refused",
     "action_rejected": "refused",
     "planner_error": "error",
+    "replan_stalled": "safety",
     "environment_error": "error",
     "safety_supervisor_preempted": "safety",
     "control_ownership_changed": "control",

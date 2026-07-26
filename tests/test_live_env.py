@@ -34,6 +34,7 @@ from kenshi_agent.models import (
     SkillAction,
     TelemetrySnapshot,
     UIState,
+    Vec2,
     VisibleUIControl,
 )
 from kenshi_agent.skills import MacroRegistry
@@ -582,6 +583,9 @@ class NativePulseTelemetry(PulseTelemetry):
             "nearby.characters",
             "nearby.roles",
         ]
+        self.target_distance: float | None = None
+        self.target_screen_position: Vec2 | None = None
+        self.target_visible: bool | None = None
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -615,6 +619,9 @@ class NativePulseTelemetry(PulseTelemetry):
                         has_dialogue=True,
                         conscious=True,
                         disposition=Disposition.NEUTRAL,
+                        distance=self.target_distance,
+                        screen_position=self.target_screen_position,
+                        visible=self.target_visible,
                     )
                 ],
             ),
@@ -1247,6 +1254,39 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         assert controller.request.target_id == "entity-vendor"
         assert transition.receipt.executed
         assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_close_visible_dialogue_target_is_right_clicked_without_unpausing(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.target_distance = 11.5
+        telemetry.target_screen_position = Vec2(x=0.51, y=0.54)
+        telemetry.target_visible = True
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ApproachDialogueTargetAction(target_id="entity-vendor"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "e" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        clicks = [action for action in controller.actions if isinstance(action, ClickAction)]
+        assert len(clicks) == 1
+        assert clicks[0].button is MouseButton.RIGHT
+        assert clicks[0].x == pytest.approx(0.51)
+        assert clicks[0].y == pytest.approx(0.54)
+        assert not [action for action in controller.actions if isinstance(action, HotkeyAction)]
+        assert controller.request is None
+        assert telemetry.paused is True
+        assert transition.receipt.native_acknowledgement is None
+        assert transition.receipt.semantic is not None
+        assert "without changing pause" in transition.receipt.semantic.revalidation
 
     asyncio.run(scenario())
 

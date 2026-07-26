@@ -34,6 +34,7 @@ from kenshi_agent.models import (
     SkillArgument,
     TelemetrySnapshot,
     UIState,
+    Vec2,
     VisibleUIControl,
     WorldStateRevision,
 )
@@ -127,6 +128,29 @@ class TestApproachBindsAnyDialogueTarget:
         )
         assert binding.bound
         assert binding.target_id == CIVILIAN_ID
+
+    def test_visible_target_binding_carries_current_interaction_point(self) -> None:
+        close_vendor = vendor(distance=11.5).model_copy(
+            update={
+                "visible": True,
+                "screen_position": Vec2(x=0.51, y=0.54),
+            }
+        )
+
+        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+            ApproachDialogueTargetAction(target_id=VENDOR_ID),
+            observation(entities=[close_vendor]),
+        )
+
+        assert binding.bound
+        assert binding.resolved_label == "Barman"
+        assert binding.resolved_role == "dialogue_target"
+        assert binding.resolved_bounds == NormalizedPointerBounds(
+            min_x=0.51,
+            max_x=0.51,
+            min_y=0.54,
+            max_y=0.54,
+        )
 
     def test_rejects_a_target_absent_from_current_state(self) -> None:
         binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(

@@ -26,6 +26,7 @@ from .models import (
     ControlMode,
     IdempotencyPolicy,
     Observation,
+    PauseAction,
     PlanEnvelope,
     PlanStep,
     RiskBudget,
@@ -76,6 +77,15 @@ def _step_action_errors(
             f"{label} authors raw controller primitive {action.kind!r}; the generic "
             "surface accepts semantic actions only, because a bare coordinate "
             "carries no evidence about what it would activate"
+        )
+        return errors
+
+    if isinstance(action, PauseAction) and action.paused is False:
+        errors.append(
+            f"{label} requests direct live unpause, which the action guard cannot "
+            "authorize. Do not add an unpause step before movement: "
+            "approach_dialogue_target, move_to_character, and move_in_direction "
+            "own any world-time transition they require."
         )
         return errors
 

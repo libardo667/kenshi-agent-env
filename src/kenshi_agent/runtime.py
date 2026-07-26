@@ -93,6 +93,7 @@ class AgentRuntime:
     _MATERIAL_VISUAL_CHANGE_FRACTION = 0.01
     _PLANNER_ERROR_LOG_MAX_CHARS = 8_000
     _PLANNER_ERROR_RATIONALE_MAX_CHARS = 1_500
+    _IDENTICAL_REPLAN_FAILURE_LIMIT = 3
 
     def __init__(
         self,
@@ -453,9 +454,37 @@ class AgentRuntime:
         observation: Observation | None = None
         consecutive_replans = 0
         planner_feedback: str | None = None
+        last_replan_failure: str | None = None
+        identical_replan_failures = 0
         observation_pump: ObservationPump | None = None
         safety_supervisor: SafetySupervisor | None = None
         state_store: WorldStateStore | None = None
+
+        def identical_failure_limit_reached(reason: str) -> bool:
+            nonlocal last_replan_failure, identical_replan_failures
+            signature = self._bounded_text(reason, 1_500)
+            if signature == last_replan_failure:
+                identical_replan_failures += 1
+            else:
+                last_replan_failure = signature
+                identical_replan_failures = 1
+            if identical_replan_failures < self._IDENTICAL_REPLAN_FAILURE_LIMIT:
+                return False
+            self.logger.write(
+                "replan_stalled",
+                step_index=observation.step_index if observation is not None else None,
+                payload={
+                    "reason": signature,
+                    "identical_failures": identical_replan_failures,
+                    "limit": self._IDENTICAL_REPLAN_FAILURE_LIMIT,
+                },
+            )
+            return True
+
+        def reset_replan_failure() -> None:
+            nonlocal last_replan_failure, identical_replan_failures
+            last_replan_failure = None
+            identical_replan_failures = 0
 
         try:
             self._action_outcomes.clear()
@@ -645,7 +674,17 @@ class AgentRuntime:
                         },
                     )
                     consecutive_replans += 1
-                    if consecutive_replans > self.planning_config.max_consecutive_replans:
+                    if identical_failure_limit_reached(str(exc)):
+                        stop_reason = (
+                            "Stopped: the planner returned "
+                            f"{identical_replan_failures} unusable responses in a "
+                            "row because the same failure repeated: "
+                            + self._bounded_text(
+                                str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS
+                            )
+                        )
+                        terminated = True
+                    elif consecutive_replans > self.planning_config.max_consecutive_replans:
                         stop_reason = (
                             f"Stopped: the planner returned {consecutive_replans} "
                             "unusable responses in a row. The last was: "
@@ -689,8 +728,18 @@ class AgentRuntime:
                         )
                         # A wrongly shaped response is a bad answer, not a reason
                         # to end the session; ask again.
+                        planner_feedback = (
+                            "Your previous response had the wrong shape. Continuous "
+                            "mode needs a PlanEnvelope or StopAction."
+                        )
                         consecutive_replans += 1
-                        if consecutive_replans > self.planning_config.max_consecutive_replans:
+                        if identical_failure_limit_reached(stop_reason):
+                            stop_reason = (
+                                "Stopped after the same wrong planner output shape "
+                                f"repeated {identical_replan_failures} times."
+                            )
+                            terminated = True
+                        elif consecutive_replans > self.planning_config.max_consecutive_replans:
                             terminated = True
                         continue
                     (
@@ -781,7 +830,14 @@ class AgentRuntime:
                         # continuously. Ask for another, and let the replan limit
                         # bound a planner that cannot produce a usable one.
                         consecutive_replans += 1
-                        if consecutive_replans > self.planning_config.max_consecutive_replans:
+                        if identical_failure_limit_reached("; ".join(rebase_errors)):
+                            stop_reason = (
+                                "Stopped after the same stale-reference plan failure "
+                                f"repeated {identical_replan_failures} times: "
+                                + "; ".join(rebase_errors)
+                            )
+                            terminated = True
+                        elif consecutive_replans > self.planning_config.max_consecutive_replans:
                             stop_reason = (
                                 f"Stopped: the planner produced {consecutive_replans} "
                                 "unusable plans in a row. The last reason was: "
@@ -858,7 +914,13 @@ class AgentRuntime:
                         evidence={"plan_basis": plan.based_on_revision.model_dump(mode="json")},
                     )
                     consecutive_replans += 1
-                    if consecutive_replans > self.planning_config.max_consecutive_replans:
+                    if identical_failure_limit_reached(str(exc)):
+                        stop_reason = (
+                            "Stopped after the same rejected plan repeated "
+                            f"{identical_replan_failures} times. The reason was: {exc}"
+                        )
+                        terminated = True
+                    elif consecutive_replans > self.planning_config.max_consecutive_replans:
                         stop_reason = (
                             "Stopped: the planner produced "
                             f"{consecutive_replans} unusable plans in a row. The last "
@@ -943,6 +1005,7 @@ class AgentRuntime:
                     continue
                 if result.completed:
                     consecutive_replans = 0
+                    reset_replan_failure()
                     # The advice was taken; stop repeating it.
                     planner_feedback = None
                     if steps_completed >= max_steps:
@@ -950,11 +1013,22 @@ class AgentRuntime:
                     continue
 
                 consecutive_replans += 1
+                planner_feedback = (
+                    "Your previous accepted plan could not make progress. Do not "
+                    "repeat the same action shape; fix exactly this: "
+                    + self._bounded_text(result.reason, 900)
+                )
                 if result.reflex_decision is not None:
                     # The next scheduler pass executes the deterministic reflex
                     # through the ordinary guard/environment path before replanning.
                     continue
-                if consecutive_replans > self.planning_config.max_consecutive_replans:
+                if identical_failure_limit_reached(result.reason):
+                    stop_reason = (
+                        "Continuous planning stopped after the same plan failure "
+                        f"repeated {identical_replan_failures} times: {result.reason}"
+                    )
+                    terminated = True
+                elif consecutive_replans > self.planning_config.max_consecutive_replans:
                     stop_reason = (
                         "Continuous planning stopped after exceeding the bounded "
                         "consecutive replan limit."

@@ -233,6 +233,9 @@ def _build_environment(
             capture_config=config.capture,
             execute_actions=execute_actions,
             emergency_stop_key=config.safety.emergency_stop_key,
+            semantic_dialogue_direct_click_distance=(
+                config.planning.semantic_dialogue_direct_click_distance
+            ),
             available_skills=config.safety.allow_skills,
             control_mode=config.control.mode,
         )

@@ -727,6 +727,9 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
         assert "unusable responses in a row" in summary.stop_reason
         assert len(summary.stop_reason) < 20_000
         events = read_events(tmp_path / "events.jsonl")
+        stalled = [event for event in events if event["event_type"] == "replan_stalled"]
+        assert len(stalled) == 1
+        assert stalled[0]["payload"]["identical_failures"] == 3
         planner_error = next(
             event for event in events if event["event_type"] == "planner_error"
         )

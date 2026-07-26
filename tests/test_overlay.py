@@ -190,6 +190,11 @@ def test_the_overlay_narrates_continuous_mode() -> None:
             {"planner_latency_seconds": 18.4, "output_type": "PlanEnvelope"},
             "18.4",
         ),
+        (
+            "replan_stalled",
+            {"identical_failures": 3, "reason": "direct live unpause"},
+            "direct live unpause",
+        ),
     ):
         rendered = format_event(
             {"event_type": event_type, "step_index": 2, "payload": payload}
@@ -208,6 +213,7 @@ def test_events_are_colour_coded_by_what_the_operator_must_notice() -> None:
     assert event_category({"event_type": "safety_supervisor_preempted"}) == "safety"
     assert event_category({"event_type": "control_ownership_changed"}) == "control"
     assert event_category({"event_type": "strategic_planner_call"}) == "thinking"
+    assert event_category({"event_type": "replan_stalled"}) == "safety"
 
     # A refusal is distinct from a failure: the agent will simply try again.
     assert EVENT_COLOURS["refused"] != EVENT_COLOURS["error"]
