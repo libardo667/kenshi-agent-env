@@ -5,6 +5,43 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Guide-grounded strategic advisor (2026-07-26)
+
+Commit `3d4670f` implements the bounded advisor signalled by the second
+80-turn run. `consult_advisor` is a cognitive planner action: it consumes one
+strategic action but bypasses `AgentEnvironment`, creates no world command, and
+emits zero controller primitives. It must be the only step in its plan. The
+next planner observation carries the resulting attributed brief.
+
+`AdvisorSession` owns the per-run call budget, cooldown, meaningful-state
+fingerprint, latest brief, and deterministic suggestion signal. A model may ask
+whenever `may_request` is true; cadence or repeated action signatures set
+`suggested` but never trigger a call by themselves. Disabled, cooldown,
+unchanged-state, exhausted-budget, failed, and answered outcomes are typed and
+logged. Metrics count requests, hosted attempts, answers, suppressions, and
+failures separately.
+
+The first corpus is `knowledge/kenshi_strategy_v1.yaml`. It keeps concise claims
+together with source title, creator/community, URL, type, access date,
+confidence, and notes. Provider output may cite only those source IDs. The
+corpus includes Reignswolf's attributed Steam guide, Kenshi wiki references,
+and an r/Kenshi discussion that directly identifies Greenfruit as an ingredient
+rather than edible food.
+
+Portable verification passed 502 tests, Ruff, strict mypy over 58 source files,
+and a byte-exact second schema export. The end-to-end mock proves that the
+advisor answer reaches the next planner call while the receipt carries no
+command ID and zero primitives. Unknown source IDs fail closed.
+
+One real OpenRouter smoke used `openai/gpt-5.4` against a synthetic observation
+with 135 Cats and no edible food. It returned `answered`, ranked four goals,
+prioritized confirmed edible food and town-safe income, and resolved five
+cited source IDs. This validates the hosted structured-output and attribution
+seam only. At the subsequent check Kenshi was not running and its last paused
+telemetry was stale, so live in-game advisor use remains unproven.
+
+The enduring authority decision is in `docs/ADR_STRATEGIC_ADVISOR.md`.
+
 ## Second GPT-4.1 80-turn live run and advisor signal (2026-07-26)
 
 Run `20260725T80turn-camera-recovery-live-02` completed all 80 authorized

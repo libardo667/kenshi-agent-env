@@ -27,6 +27,8 @@ Python runtime
   │                                                   ↕ future-only advisory
   ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
+  ├─ strategic advisor (read-only hosted model + attributed guide corpus)
+  │     └─ planner context only; no environment or controller authority
   ├─ schema + policy + rate-limit guard
   ├─ skill/macro compiler
   └─ executor
@@ -98,6 +100,28 @@ step still binds when reached, passes policy and budget validation, and is
 rebound inside the input lease. The policy name is historical: it now
 validates the generic semantic action catalog and prescribes no dialogue,
 vendor, or food sequence.
+
+## Read-only strategic advisor
+
+`AdvisorSession` is a planner-context service, not a second executor. The
+playing planner may author a sole-step `consult_advisor` plan when the
+observation says `advisor.may_request=true`. Runtime interception occurs after
+the normal allowlist guard and plan-action reservation but before
+`WorldStateStore.begin_command`; the environment is never dispatched and the
+typed receipt carries no command ID and zero primitives.
+
+The service builds a bounded strategic view from the current observation and
+an attributed fact corpus. Hosted output is limited to ranked goals,
+prerequisites, cautions, uncertainty, and corpus source IDs. Unknown IDs fail
+closed. A successful brief decorates the current planner context without
+claiming a new world revision, and only the next strategic call can use it.
+
+Per-run call budget, step cooldown, and a meaningful-state fingerprint suppress
+unchanged repeats. A deterministic cadence/repeated-action detector sets an
+availability suggestion but never calls the provider itself. Thus the playing
+model retains discretion, the advisor retains no physical authority, and
+current telemetry remains authoritative over general guide knowledge. See
+`docs/ADR_STRATEGIC_ADVISOR.md`.
 
 ## Independent safety supervision
 

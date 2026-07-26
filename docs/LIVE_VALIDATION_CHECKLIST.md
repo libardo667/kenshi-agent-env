@@ -208,6 +208,34 @@ inspection alone.
       log SHA-256 is
       `05ecf3cfe16f9978e7eaa81349b50ddda63260679083ec43941a1bd027b73992`.
 
+### Read-only strategic-advisor boundary
+
+- [x] Implement `consult_advisor` outside the environment/command boundary.
+      The portable end-to-end test records one consumed strategic action, zero
+      controller primitives, no command ID, and the attributed brief in the
+      next planner observation.
+- [x] Bound provider use. The session enforces per-run calls, cooldown,
+      unchanged-state suppression, a deterministic cadence/repetition
+      suggestion, and the plan step's timeout. Suggestions do not automatically
+      call the provider.
+- [x] Validate attribution. The checked-in corpus retains titles,
+      creator/community names, URLs, access dates, confidence, and concise
+      claims. Provider replies citing an unknown source ID fail closed.
+- [x] Exercise the real provider seam without claiming live Kenshi evidence.
+      `openai/gpt-5.4` returned `answered` for a synthetic 135-Cat, zero-food
+      observation, ranked four near-term goals, and resolved all five cited
+      source IDs. The provider emitted no game input because no game environment
+      participated.
+- [x] Preserve the portable verification boundary at commit `3d4670f`: 502
+      tests, Ruff, strict mypy over 58 source files, and a byte-identical second
+      schema export passed. No native code changed or was rebuilt.
+- [ ] Retain one live run in which the playing model requests the advisor, the
+      JSONL receipt has `primitive_actions=0` and `command_id=null`, the next
+      planner call receives the exact attributed brief, and a later game action
+      demonstrates a changed, currently grounded goal. The post-implementation
+      check found no Kenshi process and stale paused telemetry, so this remains
+      open.
+
 ### Protocol 0.5 title-screen semantic lifecycle
 
 - [x] First 1920x1080 load reached a responsive title screen without the

@@ -226,7 +226,17 @@ prompt and validates it locally rather than ending the run.
 
 The planner receives a JSON observation with planning/control mode, world
 revision, deltas, memories, deterministic dialogue/travel targets, current
-semantic actions, window-grouped controls, and a base64 image when enabled.
+semantic actions, window-grouped controls, advisor availability, and a base64
+image when enabled.
+The long-form profile also exposes a read-only strategic advisor. The playing
+model may author one `consult_advisor` cognitive step when `advisor.may_request`
+is true; a deterministic cadence/repetition signal sets `suggested` without
+automatically spending a call. The consult emits zero controller primitives and
+no world command. Its next observation contains a ranked, source-attributed
+brief grounded in `knowledge/kenshi_strategy_v1.yaml`; the playing model still
+has to verify current-world requirements and author the actual game plan.
+`KENSHI_AGENT_ADVISOR_MODEL` selects the independently configured OpenRouter
+model.
 When `recover_camera_view` is advertised, the planner requests it with no
 arguments and no success conditions. The controller alone binds the selected
 character/HUD, establishes follow, searches bounded floors and fixed
@@ -523,6 +533,9 @@ Independent preemption and the narrow safe-pause exception are recorded in
 [ADR: Independent safety supervision](docs/ADR_SAFETY_SUPERVISOR.md).
 Portable movement lifecycle and future-only patch authority are recorded in
 [ADR: Stateful movement options](docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md).
+The cognitive-action boundary, source attribution, and advisor call policy are
+recorded in
+[ADR: Read-only guide-grounded strategic advisor](docs/ADR_STRATEGIC_ADVISOR.md).
 
 The Python guard enforces:
 

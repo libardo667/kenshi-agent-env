@@ -1,6 +1,6 @@
 # Implementation status
 
-Current as of 2026-07-25. This is the current-state snapshot; dated proofs and
+Current as of 2026-07-26. This is the current-state snapshot; dated proofs and
 superseded milestones remain in `docs/ENGINEERING_LOOP_STATE.md` and
 `docs/LIVE_VALIDATION_CHECKLIST.md`.
 
@@ -32,6 +32,12 @@ superseded milestones remain in `docs/ENGINEERING_LOOP_STATE.md` and
 - Human input cancels the active plan and hands control over visibly. The
   long-form profile may restore an originally running world after a quiet,
   resettable takeover countdown; F12 disarms automatic takeover for the run.
+- The long-form profile has a read-only guide-grounded strategic advisor.
+  `consult_advisor` consumes one strategic turn but creates no world command and
+  emits zero controller primitives. Every observation carries availability,
+  cadence/repetition suggestion, cooldown, budget, and the latest attributed
+  brief. Unknown source IDs fail closed, and unchanged-state requests are
+  suppressed before the provider call.
 
 ## Planner-visible action surface
 
@@ -64,17 +70,18 @@ requirements are present:
   selected character and the current world HUD, then let the controller own a
   bounded follow/floor/zoom/orbit/tilt transaction and typed frame-scored verdict.
 
-Run control (`noop`, `wait`, `pause`, `set_speed`, and whole-run `stop`) remains
-separate from game-object contracts. Raw keys, hotkeys, cursor moves, clicks,
-and scroll primitives are controller implementation details and are not
-planner-authorable on the generic live path.
+Planner-layer control (`noop`, `wait`, `pause`, `set_speed`, whole-run `stop`,
+and read-only `consult_advisor`) remains separate from game-object contracts.
+Raw keys, hotkeys, cursor moves, clicks, and scroll primitives are controller
+implementation details and are not planner-authorable on the generic live
+path.
 
 ## Live profile and observed behavior
 
 - `config/live.longform.yaml` is the open-ended supervised profile:
   `native_assisted`, `continuous`, `dialogue_interaction_v1`, an unpaused world,
-  persistent plan memory, the generic contracted action catalog, and explicit
-  live/native/continuous acknowledgements.
+  persistent plan memory, the generic contracted action catalog, the bounded
+  OpenRouter advisor, and explicit live/native/continuous acknowledgements.
 - `config/live.dialogue.yaml` is the shorter stop-motion proof profile.
 - `config/live.burnin.yaml` is a legacy single-step calibrated profile. Its
   former `food_procurement_v1` policy is retired and its continuous policy is
@@ -124,6 +131,12 @@ planner-authorable on the generic live path.
   best frame, left Kenshi paused with no active command, and returned the
   truthful bounded terminal `failed_after_bounded_attempts` rather than
   exposing more camera gestures to the model.
+- The advisor implementation at `3d4670f` has portable end-to-end proof and one
+  real-provider smoke. A synthetic 135-Cat, zero-food observation reached
+  OpenRouter `openai/gpt-5.4`; the reply ranked four goals, treated Greenfruit
+  as an ingredient rather than edible food, and resolved every cited source ID
+  to its checked-in attribution. No Kenshi process was present afterward, so
+  this is hosted-adapter evidence, not an in-game advisor-action proof.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps typed lifecycle evidence in `events.jsonl`. A selectable
   `transcript.log` is intended, but the 80-turn run did not produce one.
@@ -177,28 +190,28 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 ## Verified portable baseline
 
-At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
+At implementation commit `3d4670f`:
 
-- `pytest -q`: **482 passed**.
+- `pytest -q`: **502 passed**.
 - `ruff check .`: passed.
-- `mypy src/kenshi_agent`: passed across **56 source files**.
-- pinned VS2010 SP1 `Release | x64` native build: passed, including the shared
-  Python/C++ protocol fixtures.
+- `mypy src/kenshi_agent`: passed across **58 source files**.
+- All generated schemas were byte-identical on an immediate second export.
+- The advisor's real OpenRouter structured-output and attribution seam passed
+  one synthetic-observation smoke against `openai/gpt-5.4`.
+- No native code changed in this slice, so the previously passing pinned VS2010
+  SP1 `Release | x64` build was not rerun.
 - `kenshi-agent doctor --config config/default.yaml`: passed in WSL.
-- `kenshi-agent doctor --config config/live.longform.yaml`: parsed the live
-  profile and passed planner/config checks, then correctly failed the Windows
-  host and `%LOCALAPPDATA%` telemetry checks because it was run from WSL.
-- The worktree was clean before this documentation reconciliation and
-  `main == origin/main`.
+- `kenshi-agent doctor --config config/live.longform.yaml` now also checks the
+  advisor corpus, provider key, and OpenAI-compatible package. Its Windows/live
+  host checks remain platform-specific.
 
 ## Open work
 
-- Retain a live `recovered` receipt when Hep is naturally in a
-  camera-recoverable scene. The current ruined-building state has already
-  closed the live contract gate with a causally advancing, frame-retained,
-  pause-preserving bounded failure; moving Hep merely to manufacture a green
-  camera frame is outside the recovery action and would conflate camera control
-  with gameplay.
+- Retain one live plan in which the playing model authors `consult_advisor`, the
+  receipt records no command ID and zero primitives, the next planner
+  observation contains the attributed brief, and its subsequent changed goal
+  is grounded in both that brief and current Kenshi evidence. Portable and
+  synthetic hosted proofs do not satisfy this boundary.
 - A native movement option can time out while its exact command remains
   accepted. Later direction options then fail or are rejected with
   `command_already_active`; failed options have no successful terminalization
@@ -253,8 +266,9 @@ At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
   `runtime.log_full_observations: true` and substantially larger logs.
 - Provider-neutral strict schema compilation currently imports private
   `openai.lib._pydantic` code, and two schema tests import it at collection
-  time. The OpenRouter adapter also does not apply the configured output-token
-  budget or temperature.
+  time. The playing-planner OpenRouter adapter also does not apply its
+  configured output-token budget or temperature; the advisor adapter does apply
+  its separate output-token ceiling.
 - Sale consumes the risk field named `purchase_actions`; capability aliases are
   represented as one flat set rather than aliases per required capability; and
   condition normalization silently changes some planner-authored shapes. These
