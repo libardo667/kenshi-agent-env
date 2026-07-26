@@ -401,6 +401,27 @@ int main(int argc, char** argv)
         return Fail("valid building exit did not remain parameterless");
     }
 
+    KenshiAgentTelemetry::NativeCommandRequest contextAction;
+    const std::string contextActionPayload =
+        ReadFile(prefix + "valid_context_action_request.json");
+    if (contextActionPayload.empty())
+        return Fail("could not read valid_context_action_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            contextActionPayload,
+            contextAction,
+            rejectionReason))
+    {
+        return Fail(
+            "valid context-action request was rejected as " + rejectionReason);
+    }
+    if (contextAction.command != "operate_natural_resource" ||
+        contextAction.targetId != "entity-natural-resource" ||
+        contextAction.bearingDegrees != 0.0 ||
+        contextAction.distanceUnits != 0.0)
+    {
+        return Fail("valid context action did not retain its exact target");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest invalid;
     const std::string invalidPayload =
         ReadFile(prefix + "invalid_direction_target_request.json");

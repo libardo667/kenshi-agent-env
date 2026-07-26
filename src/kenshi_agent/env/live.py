@@ -18,6 +18,8 @@ from ..action_contracts import (
     NATIVE_DIRECTION_WIRE_COMMAND,
     NATIVE_EXIT_BUILDING_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
+    NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
+    PERFORM_CONTEXT_ACTION_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
     RECOVER_CAMERA_VIEW_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
@@ -68,6 +70,7 @@ from ..models import (
     NormalizedPointerBounds,
     Observation,
     PauseAction,
+    PerformContextAction,
     PointerActionClass,
     PurchaseItemAction,
     RecoverCameraViewAction,
@@ -577,6 +580,12 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_semantic_approach(action, started, command)
+        if isinstance(action, PerformContextAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_context_action(action, started, command)
         if isinstance(action, MoveInDirectionAction):
             if command is None:
                 raise RuntimeError(
@@ -850,6 +859,54 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
+        )
+
+    async def _execute_context_action(
+        self,
+        action: PerformContextAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Issue one reviewed default task on one exact observed world object."""
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Context actions require a configured native transport skill."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value=action.target_id)],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native transport skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=PERFORM_CONTEXT_ACTION_CONTRACT.version,
+            target_id=action.target_id,
+            resolved_label=action.context_action.value,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound the exact advertised world object/action pair and delegated "
+                "the reviewed Kenshi default task plus terminal AI-goal proof to "
+                "native code."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
+            require_dialogue_target=False,
         )
 
     async def _execute_directional_move(
@@ -1853,6 +1910,7 @@ class LiveEnvironment(AgentEnvironment):
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
+            "operate_natural_resource",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -2091,6 +2149,7 @@ class LiveEnvironment(AgentEnvironment):
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
+            "operate_natural_resource",
         ],
         target_id: str,
         bearing_degrees: float,
@@ -2161,6 +2220,7 @@ class LiveEnvironment(AgentEnvironment):
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
+            "operate_natural_resource",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -2208,6 +2268,8 @@ class LiveEnvironment(AgentEnvironment):
             native_contract = MOVE_IN_DIRECTION_CONTRACT
         elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             native_contract = EXIT_CURRENT_BUILDING_CONTRACT
+        elif wire_command == NATIVE_OPERATE_RESOURCE_WIRE_COMMAND:
+            native_contract = PERFORM_CONTEXT_ACTION_CONTRACT
         elif wire_command == NATIVE_MOVE_WIRE_COMMAND:
             native_contract = MOVE_TO_CHARACTER_CONTRACT
         else:
@@ -2259,6 +2321,29 @@ class LiveEnvironment(AgentEnvironment):
             )
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
+        if wire_command == NATIVE_OPERATE_RESOURCE_WIRE_COMMAND:
+            matches = [
+                target
+                for target in telemetry.world_targets
+                if target.id == target_id
+                and target.task_available
+                and "operate" in target.context_actions
+            ]
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "Native context target is absent or no longer advertises "
+                    "the exact operate action."
+                )
+            return NativeCommandRequest(
+                schema_version="1.0",
+                command_id=command.command_id,
+                command=wire_command,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                identity_session_id=telemetry.identity_session_id,
+                based_on_revision=observation.world_revision,
+                selected_character_ids=list(selected_ids),
+                target_id=target_id,
+            )
         target = next(
             (entity for entity in telemetry.nearby_entities if entity.id == target_id),
             None,

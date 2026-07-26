@@ -67,6 +67,20 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "conscious": True,
         }
     ]
+    payload["world_targets"] = [
+        {
+            "id": "entity-copper",
+            "name": "Copper Resource",
+            "kind": "natural_resource",
+            "position": {"x": -80.0, "y": 20.0, "z": 60.0},
+            "distance": 31.5,
+            "context_actions": ["operate"],
+            "default_task": "operate_machinery",
+            "task_available": True,
+            "task_probability": 1.0,
+            "mining_resource_level": 0.8,
+        }
+    ]
     payload["active_shop_trader_count"] = 1
     payload["native_control"] = {
         "available": True,
@@ -93,3 +107,5 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
     assert result.snapshot.nearby_entities[0].screen_position is not None
     assert result.snapshot.nearby_entities[0].screen_position.x == 0.45
     assert result.snapshot.nearby_entities[0].visible is None
+    assert result.snapshot.world_targets[0].context_actions == ["operate"]
+    assert result.snapshot.world_targets[0].mining_resource_level == 0.8

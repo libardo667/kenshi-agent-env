@@ -16,6 +16,7 @@ from kenshi_agent.models import (
     CharacterState,
     ClickAction,
     CommandDispatchContext,
+    ContextActionKind,
     ControlMode,
     Disposition,
     ExitCurrentBuildingAction,
@@ -31,12 +32,15 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     PauseAction,
+    PerformContextAction,
     PointerActionClass,
     SkillAction,
     TelemetrySnapshot,
     UIState,
     Vec2,
+    Vec3,
     VisibleUIControl,
+    WorldTarget,
 )
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
@@ -583,6 +587,8 @@ class NativePulseTelemetry(PulseTelemetry):
             "identity.stable_handles",
             "nearby.characters",
             "nearby.roles",
+            "world.context_targets",
+            "control.perform_context_action",
         ]
         self.target_distance: float | None = None
         self.target_screen_position: Vec2 | None = None
@@ -632,6 +638,20 @@ class NativePulseTelemetry(PulseTelemetry):
                         distance=self.target_distance,
                         screen_position=self.target_screen_position,
                         visible=self.target_visible,
+                    )
+                ],
+                world_targets=[
+                    WorldTarget(
+                        id="entity-copper",
+                        name="Copper Resource",
+                        kind="natural_resource",
+                        position=Vec3(x=10.0, y=0.0, z=20.0),
+                        distance=30.0,
+                        context_actions=[ContextActionKind.OPERATE],
+                        default_task="operate_machinery",
+                        task_available=True,
+                        task_probability=1.0,
+                        mining_resource_level=0.8,
                     )
                 ],
             ),
@@ -1270,6 +1290,53 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         assert controller.request.target_id == "entity-vendor"
         assert transition.receipt.executed
         assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_context_action_issues_exact_native_resource_task_without_world_click(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            PerformContextAction(
+                target_id="entity-copper",
+                context_action=ContextActionKind.OPERATE,
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "2" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert not [
+            action for action in controller.actions if isinstance(action, ClickAction)
+        ]
+        assert len(
+            [
+                action
+                for action in controller.actions
+                if isinstance(action, HotkeyAction)
+            ]
+        ) == 1
+        assert controller.request is not None
+        assert controller.request.command == "operate_natural_resource"
+        assert controller.request.target_id == "entity-copper"
+        assert transition.receipt.executed
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.resolved_label == "operate"
 
     asyncio.run(scenario())
 

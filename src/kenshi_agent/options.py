@@ -16,6 +16,7 @@ from .models import (
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     Observation,
+    PerformContextAction,
     SkillAction,
     Transition,
     WorldStateRevision,
@@ -174,20 +175,19 @@ class StatefulMovementOption:
 
 
 class StatefulNativeMovementOption:
-    """Own one targetless native walk until its exact command becomes terminal.
+    """Own one native command until its exact acknowledgement becomes terminal.
 
-    Native dispatch returns as soon as Kenshi accepts the order while the
-    character continues walking. Unlike a target approach, a bare destination
-    has no nearby-entity distance to monitor. Its authoritative completion
-    signal is therefore the native acknowledgement keyed by command ID and
-    fenced again by command, selected character, bearing, and distance.
+    Directional movement and building exits finish after native pathing.
+    Context actions finish when native code proves that Kenshi's AI accepted
+    the exact reviewed task/subject pair. In every case the acknowledgement is
+    keyed by command ID and fenced by the complete command identity.
     """
 
     def __init__(
         self,
         *,
         option_id: str,
-        action: MoveInDirectionAction | ExitCurrentBuildingAction,
+        action: MoveInDirectionAction | ExitCurrentBuildingAction | PerformContextAction,
         environment: AgentEnvironment,
         require_paused_start: bool = True,
     ) -> None:
@@ -211,12 +211,16 @@ class StatefulNativeMovementOption:
 
     @property
     def _wire_command(self) -> str:
+        if isinstance(self.action, PerformContextAction):
+            return "operate_natural_resource"
         if isinstance(self.action, ExitCurrentBuildingAction):
             return "exit_current_building"
         return "move_in_direction"
 
     @property
     def _required_capability(self) -> str:
+        if isinstance(self.action, PerformContextAction):
+            return "control.perform_context_action"
         if isinstance(self.action, ExitCurrentBuildingAction):
             return "control.exit_current_building"
         return "control.move_in_direction"
@@ -257,6 +261,19 @@ class StatefulNativeMovementOption:
                     "Building-exit option requires one selected character "
                     "confirmed indoors."
                 )
+        if isinstance(self.action, PerformContextAction):
+            targets = [
+                target
+                for target in telemetry.world_targets
+                if target.id == self.action.target_id
+                and self.action.context_action in target.context_actions
+                and target.task_available
+            ]
+            if len(targets) != 1:
+                raise OptionLifecycleError(
+                    "Context-action option requires one exact currently actionable "
+                    "world target."
+                )
         active_id = telemetry.native_control.active_command_id
         active = (
             telemetry.native_control.acknowledgement_for(active_id)
@@ -293,15 +310,21 @@ class StatefulNativeMovementOption:
         if self.native_command_id is None:
             self.native_command_id = command.command_id
         self.status = OptionStatus.RUNNING
-        self.reason = (
-            "Building-exit order dispatched; awaiting its terminal native "
-            "acknowledgement."
-            if isinstance(self.action, ExitCurrentBuildingAction)
-            else (
+        if isinstance(self.action, PerformContextAction):
+            self.reason = (
+                "Contextual task dispatched; awaiting native proof of the exact "
+                "task and target."
+            )
+        elif isinstance(self.action, ExitCurrentBuildingAction):
+            self.reason = (
+                "Building-exit order dispatched; awaiting its terminal native "
+                "acknowledgement."
+            )
+        else:
+            self.reason = (
                 "Directional movement order dispatched; awaiting its terminal "
                 "native acknowledgement."
             )
-        )
         work = self.environment.dispatch(self.action, command=command, token=token)
         self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
         return self.task
@@ -470,11 +493,15 @@ class StatefulNativeMovementOption:
     ) -> bool:
         if acknowledgement.command != self._wire_command:
             return False
-        if (
-            acknowledgement.target_id != ""
-            or acknowledgement.selected_character_ids
-            != self.selected_character_ids
-        ):
+        if acknowledgement.selected_character_ids != self.selected_character_ids:
+            return False
+        if isinstance(self.action, PerformContextAction):
+            return bool(
+                acknowledgement.target_id == self.action.target_id
+                and acknowledgement.bearing_degrees == 0.0
+                and acknowledgement.distance_units == 0.0
+            )
+        if acknowledgement.target_id != "":
             return False
         if isinstance(self.action, ExitCurrentBuildingAction):
             return bool(

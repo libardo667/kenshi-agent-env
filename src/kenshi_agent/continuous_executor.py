@@ -24,6 +24,7 @@ from .models import (
     MoveInDirectionAction,
     Observation,
     ObservationPolicy,
+    PerformContextAction,
     PlanEnvelope,
     PlannerDecision,
     PlannerOutput,
@@ -529,6 +530,8 @@ class ContinuousPlanExecutor:
         if contract is not None:
             if contract.execution is not ActionExecution.MONITORED_OPTION:
                 return None
+            if isinstance(action, PerformContextAction):
+                return None
             target_id = getattr(action, "target_id", None)
             if not isinstance(target_id, str) or not target_id:
                 return None
@@ -686,7 +689,14 @@ class ContinuousPlanExecutor:
         native_movement_option: StatefulNativeMovementOption | None = None
         contract = contract_for(action)
         if (
-            isinstance(action, (MoveInDirectionAction, ExitCurrentBuildingAction))
+            isinstance(
+                action,
+                (
+                    MoveInDirectionAction,
+                    ExitCurrentBuildingAction,
+                    PerformContextAction,
+                ),
+            )
             and contract is not None
             and contract.execution is ActionExecution.MONITORED_OPTION
         ):
@@ -1031,13 +1041,13 @@ class ContinuousPlanExecutor:
             )
         contract = contract_for(step.action)
         if contract is not None and contract.controller_verified:
-            if isinstance(step.action, ExitCurrentBuildingAction) and monitored_outcome is not None:
+            if monitored_outcome is not None:
                 self._event(
                     "plan_step_progress",
                     plan,
                     latest,
                     step=step,
-                    reason=("Accepted the native building-exit option's keyed terminal verdict."),
+                    reason="Accepted the monitored option's keyed terminal verdict.",
                     evidence={
                         "controller_verified": True,
                         "option_status": monitored_outcome.status.value,
@@ -1048,7 +1058,10 @@ class ContinuousPlanExecutor:
                     observation=latest,
                     succeeded=True,
                     actions_completed=1,
-                    reason=("Controller-owned building exit reached its native terminal success."),
+                    reason=(
+                        "Controller-owned monitored action reached its native "
+                        "terminal success."
+                    ),
                     terminated=transition.terminated,
                     success=transition.success,
                     staged_patch=staged_patch,

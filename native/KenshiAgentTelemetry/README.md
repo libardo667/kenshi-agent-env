@@ -15,7 +15,9 @@ inventory/equipment, modal and management UI state, exact dialogue
 target/options, tooltip evidence, and bounded visible buttons/text plus named
 item cells with owner windows and current bounds. Nearby telemetry carries
 stable identity, roles, disposition, distance, position, viewport state, and
-camera-relative bearing.
+camera-relative bearing. Bounded world-target telemetry separately carries
+exact reviewed natural-resource identities, positions, distances, task
+availability/probability, and resource levels.
 
 An item cell's `item_value` is base worth, not the shop's authoritative asking
 price or sale offer. Transaction effect must be established from later money
@@ -29,9 +31,10 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.7.0` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.8.0` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
-list reordering and distinguish duplicate names without serializing addresses.
+and world-target list reordering and distinguish duplicate names without
+serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
 `selected_character_ids` reports the full player-character selection set, while
 the singular ID identifies its active member.
@@ -70,6 +73,12 @@ arguments:
   capped at 2,000 units, and completes inside the fixed arrival tolerance or
   after crossing the intended destination plane. Its request and acknowledgement
   carry an empty target plus the exact bearing and distance.
+- `exit_current_building` resolves the selected character's current unlocked
+  exit and outside point without accepting model-authored geometry.
+- `operate_natural_resource` re-resolves one exact current natural resource,
+  rechecks `BF_MINE_NATURAL`, `OPERATE_MACHINERY`, and native task
+  availability, issues Kenshi's own task, and completes only when the selected
+  character's AI reports that exact task and subject.
 
 The plugin rechecks all shared and command-specific facts and never substitutes
 a nearer target. `native_control` exposes a bounded ring of keyed
@@ -82,7 +91,8 @@ plugin. The Python runtime exposes these commands only in `native_assisted`
 mode; `interface_only` filters their capabilities/state and rejects the marked
 actions. The bounded nearby query uses a 400-world-unit town-local radius,
 which covers most of the Hub from the default Wanderer spawn without encoding
-a person or coordinate.
+a person or coordinate. The separate world-target query is bounded to 128
+objects within 2,000 world units.
 
 It explicitly leaves body-part wounds, bleeding rate, getting-eaten state,
 imprisonment/enslavement, current tasks, location name, distant world state,
@@ -165,6 +175,10 @@ folder component.
   30.4 units of plausible movement, a resulting frame, and safe final pause.
   Repeat across other bearings, distances, obstacles, and scenes before making
   broader movement claims.
+- Repeat for `operate_natural_resource`: first verify the target is present in
+  `world_targets` with `operate` advertised, then issue that exact ID and
+  confirm keyed `context_task_started`, plausible movement/task behavior in a
+  resulting frame, fresh advancing telemetry, and final pause.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -197,3 +211,12 @@ installed DLL has SHA-256
 `2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`;
 run `20260726Tnative-building-exit-live-04` completed the exact keyed exit with
 `outside_door_destination_reached` and a safe final pause.
+
+Protocol `0.8.0` adds bounded reviewed natural-resource targets and the exact
+`operate_natural_resource` command. The pinned native build and shared
+conformance fixtures pass. Built, staged, and installed 210,944-byte DLLs are
+byte-identical at SHA-256
+`e6e7189f5e62af529d6c400cce6e0ce331cdc1cdb52297045f1b236beb083168`.
+This version has not yet been live-loaded or exercised in Kenshi; target
+discovery, native task acceptance, visible behavior, and final safe-state proof
+remain open.

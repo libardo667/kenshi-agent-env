@@ -241,6 +241,7 @@ safety:
     - move_to_character
     - move_in_direction
     - exit_current_building
+    - perform_context_action
     - activate_visible_control
     - dismiss_screen
     - purchase_item

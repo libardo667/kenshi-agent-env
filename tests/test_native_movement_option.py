@@ -12,6 +12,7 @@ from kenshi_agent.models import (
     ActionReceipt,
     CharacterState,
     CommandDispatchContext,
+    ContextActionKind,
     ExitCurrentBuildingAction,
     GameState,
     MoveInDirectionAction,
@@ -19,10 +20,13 @@ from kenshi_agent.models import (
     NativeCommandStatus,
     NativeControlState,
     Observation,
+    PerformContextAction,
     TelemetrySnapshot,
     Transition,
     UIState,
+    Vec3,
     WorldStateRevision,
+    WorldTarget,
 )
 from kenshi_agent.options import OptionStatus, StatefulNativeMovementOption
 from kenshi_agent.world_state import SequenceStatus, StateDelta, StoreUpdate
@@ -195,6 +199,87 @@ def exit_observation(
     )
 
 
+def context_acknowledgement(
+    sequence: int,
+    status: NativeCommandStatus,
+) -> NativeCommandAcknowledgement:
+    terminal = status is not NativeCommandStatus.ACCEPTED
+    return NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="operate_natural_resource",
+        status=status,
+        reason=(
+            "issued"
+            if status is NativeCommandStatus.ACCEPTED
+            else (
+                "context_task_started"
+                if status is NativeCommandStatus.COMPLETED
+                else "movement_stalled"
+            )
+        ),
+        target_id="entity-copper",
+        selected_character_ids=[SELECTED_ID],
+        based_on_telemetry_sequence=1,
+        acknowledged_at_telemetry_sequence=2,
+        accepted_at_telemetry_sequence=2,
+        terminal_at_telemetry_sequence=sequence if terminal else None,
+    )
+
+
+def context_observation(
+    sequence: int,
+    *,
+    ack: NativeCommandAcknowledgement | None = None,
+) -> Observation:
+    return Observation(
+        run_id="native-context-option-test",
+        step_index=sequence,
+        mode="mock",
+        world_revision=WorldStateRevision(
+            telemetry_sequence=sequence,
+            capability_epoch=1,
+            observed_at_monotonic=float(sequence),
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=sequence,
+            captured_at=datetime.now(UTC),
+            capabilities=[
+                "game.pause",
+                "control.perform_context_action",
+                "world.context_targets",
+            ],
+            game=GameState(paused=True, elapsed_minutes=0.0),
+            ui=UIState(
+                selected_character_id=SELECTED_ID,
+                selected_character_ids=[SELECTED_ID],
+            ),
+            world_targets=[
+                WorldTarget(
+                    id="entity-copper",
+                    name="Copper Resource",
+                    kind="natural_resource",
+                    position=Vec3(x=1.0, y=0.0, z=2.0),
+                    distance=20.0,
+                    context_actions=[ContextActionKind.OPERATE],
+                    default_task="operate_machinery",
+                    task_available=True,
+                    task_probability=1.0,
+                )
+            ],
+            native_control=NativeControlState(
+                active_command_id=(
+                    ack.command_id
+                    if ack is not None
+                    and ack.status is NativeCommandStatus.ACCEPTED
+                    else None
+                ),
+                acknowledgements=[ack] if ack is not None else [],
+            ),
+        ),
+        telemetry_age_seconds=0.0,
+    )
+
+
 class InstantNativeMovementEnvironment(AgentEnvironment):
     async def reset(self, *, seed: int | None = None) -> Observation:
         del seed
@@ -273,6 +358,32 @@ class InstantExitBuildingEnvironment(AgentEnvironment):
         return None
 
 
+class InstantContextActionEnvironment(AgentEnvironment):
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return context_observation(1)
+
+    async def observe(self) -> Observation:
+        return context_observation(1)
+
+    async def step(self, action: Action) -> Transition:
+        accepted = context_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="context action issued",
+                native_acknowledgement=accepted,
+            ),
+            observation=context_observation(2, ack=accepted),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
 def option() -> StatefulNativeMovementOption:
     return StatefulNativeMovementOption(
         option_id="native-direction-1",
@@ -341,6 +452,42 @@ def test_building_exit_option_accepts_native_terminal_when_indoor_handle_lingers
 
         assert outcome.status is OptionStatus.SUCCEEDED
         assert movement.result().receipt.native_acknowledgement == accepted
+
+    asyncio.run(scenario())
+
+
+def test_context_action_option_waits_for_exact_native_task_proof() -> None:
+    async def scenario() -> None:
+        context = StatefulNativeMovementOption(
+            option_id="native-context-1",
+            action=PerformContextAction(
+                target_id="entity-copper",
+                context_action=ContextActionKind.OPERATE,
+            ),
+            environment=InstantContextActionEnvironment(),
+        )
+        start = context_observation(1)
+        context.prepare(start)
+        await context.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=start.world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        accepted = context_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        assert (
+            context.poll(update(context_observation(2, ack=accepted))).status
+            is OptionStatus.RUNNING
+        )
+        completed = context_acknowledgement(3, NativeCommandStatus.COMPLETED)
+        outcome = context.poll(
+            update(context_observation(3, ack=completed))
+        )
+
+        assert outcome.status is OptionStatus.SUCCEEDED
+        assert "context_task_started" in outcome.reason
 
     asyncio.run(scenario())
 

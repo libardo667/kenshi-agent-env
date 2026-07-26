@@ -22,6 +22,7 @@ _TELEMETRY_COLLECTION_PATHS = (
     "telemetry.native_control.acknowledgements",
     "telemetry.squad",
     "telemetry.nearby_entities",
+    "telemetry.world_targets",
     "telemetry.warnings",
 )
 _COLLECTION_PATHS = _ROOT_COLLECTION_PATHS + _TELEMETRY_COLLECTION_PATHS
@@ -233,6 +234,18 @@ def budget_observation_payload(
                     entity,
                 )
             )
+        retained_world_target_ids = {
+            target["id"] for target in retained["telemetry"]["world_targets"]
+        }
+        for target in sorted(telemetry["world_targets"], key=_world_target_sort_key):
+            if target["id"] in retained_world_target_ids:
+                continue
+            attempt(
+                _append_mutator(
+                    "telemetry.world_targets",
+                    target,
+                )
+            )
 
     return text
 
@@ -311,6 +324,7 @@ def irreducible_payload(original: JsonObject) -> JsonObject:
             "native_control",
             "squad",
             "nearby_entities",
+            "world_targets",
             "warnings",
         }
     }
@@ -332,6 +346,14 @@ def irreducible_payload(original: JsonObject) -> JsonObject:
                     deepcopy(entity)
                     for entity in telemetry["nearby_entities"]
                     if entity["id"] in referenced_target_ids
+                ),
+                key=_entity_sort_key,
+            ),
+            "world_targets": sorted(
+                (
+                    deepcopy(target)
+                    for target in telemetry["world_targets"]
+                    if target["id"] in referenced_target_ids
                 ),
                 key=_entity_sort_key,
             ),
@@ -502,18 +524,25 @@ def _skill_contract_mutator(
 
 def _outcome_target_ids(outcome: JsonObject) -> set[str]:
     action = outcome.get("action")
-    if not isinstance(action, dict) or action.get("kind") != "skill":
+    if not isinstance(action, dict):
         return set()
+    ids: set[str] = set()
+    semantic_target = action.get("target_id")
+    if isinstance(semantic_target, str) and semantic_target:
+        ids.add(semantic_target)
+    if action.get("kind") != "skill":
+        return ids
     arguments = action.get("args")
     if not isinstance(arguments, list):
-        return set()
-    return {
+        return ids
+    ids.update(
         str(argument["value"])
         for argument in arguments
         if isinstance(argument, dict)
         and argument.get("name") == "target_id"
         and isinstance(argument.get("value"), str)
-    }
+    )
+    return ids
 
 
 def _canonical_json(value: Any) -> str:
@@ -539,6 +568,14 @@ def _nearby_sort_key(entity: JsonObject) -> tuple[float, str, str]:
         float("inf") if distance is None else float(distance),
         str(entity["id"]),
         _canonical_json(entity),
+    )
+
+
+def _world_target_sort_key(target: JsonObject) -> tuple[float, str, str]:
+    return (
+        float(target["distance"]),
+        str(target["id"]),
+        _canonical_json(target),
     )
 
 

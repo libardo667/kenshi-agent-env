@@ -54,6 +54,11 @@ requirements are present:
 
 - `approach_dialogue_target` — approach one exact current non-hostile dialogue
   target and open dialogue through a monitored native-assisted option.
+- `perform_context_action` — perform one exact contextual task currently
+  advertised by an authoritative world object. Protocol `0.8.0` supports the
+  reviewed `operate` task for natural resources; native code rechecks the
+  object/task pair and owns it until the selected character's AI reports that
+  exact goal and subject.
 - `move_to_character` — walk to one exact nearby character without opening
   dialogue.
 - `move_in_direction` — walk a bounded bearing/distance without naming a
@@ -160,18 +165,21 @@ path.
   near-term food constraint, not immediate danger. It retained source
   attribution, town-safety advice, and combat avoidance. A live multi-turn
   advisor-to-next-planner behavioral handoff remains separate open evidence.
-- Exact-target contextual world work is not yet planner-authorable. The owner
-  clarified that the immediate need is mining/operating an ore resource for
-  income, with animal hunting as a possible later guarded task—not an
-  enemy-attack primitive. Pinned KenshiLib exposes object queries, natural-mine
-  classification, task-probability checks, and exact task issuance; exporting
-  authoritative actionable targets and completing a monitored mining task is
-  the next implementation/live-proof slice.
+- Exact-target contextual world work is planner-authorable in protocol `0.8.0`.
+  The plugin exports bounded actionable natural resources within 2,000 world
+  units, including stable identity, position, distance, reviewed `operate`
+  action, default task, task availability/probability, and resource level.
+  `perform_context_action` copies one exact advertised target/action pair.
+  Python and native code both recheck it; native code issues
+  `OPERATE_MACHINERY` and completes only after the selected character's current
+  AI goal matches that exact task and object. This is the immediate ore-income
+  primitive the owner requested, not an enemy-attack action. Animal hunting and
+  other contextual tasks remain separate guarded additions.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps typed lifecycle evidence in `events.jsonl`. A selectable
   `transcript.log` is intended, but the 80-turn run did not produce one.
 
-## Native protocol 0.7.0
+## Native protocol 0.8.0
 
 The native plugin hooks Kenshi-owned title and loaded-game update points and
 atomically replaces a complete snapshot at roughly two hertz.
@@ -181,7 +189,7 @@ Current loaded-game telemetry includes:
 - pause, speed, money, elapsed game time, camera position, and camera-relative
   bearings;
 - stable session-scoped squad, selection, nearby-character, dialogue-target,
-  and native-command identities;
+  actionable-world-target, and native-command identities;
 - squad life/consciousness/down/crippled/combat state, position, movement,
   reported indoor-building membership, nutrition reserve (`hunger`), blood,
   and bounded inventory/equipment facts;
@@ -190,12 +198,15 @@ Current loaded-game telemetry includes:
 - exact dialogue target/options, tooltip state, shop ownership, and up to 224
   visible buttons, named item cells, and text controls with window ownership and
   normalized bounds;
-- a bounded keyed acknowledgement ring for four declared native commands:
+- up to 128 reviewed natural resources from a bounded 2,000-unit object query,
+  with exact position/distance, task probability, and mining resource level;
+- a bounded keyed acknowledgement ring for five declared native commands:
   approach a dialogue target, move to an exact nearby character, and move a
-  bounded bearing/distance, or exit the selected character's current building.
-  Direction acknowledgements carry the empty target plus bearing and distance;
-  targeted commands carry a stable target and zero direction fields; building
-  exit carries neither a target nor a model-authored vector.
+  bounded bearing/distance, exit the selected character's current building, or
+  operate an exact current natural resource. Direction acknowledgements carry
+  the empty target plus bearing and distance; targeted commands carry a stable
+  target and zero direction fields; building exit carries neither a target nor
+  a model-authored vector.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities and acknowledgement state before planning and rejects
@@ -222,18 +233,26 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 ## Verified portable baseline
 
-For the protocol `0.7.0` building-exit slice on 2026-07-26:
+For the protocol `0.8.0` contextual-action slice on 2026-07-26:
 
-- `pytest -q`: **532 passed**.
-- `ruff check .`: passed.
-- `mypy --strict src/kenshi_agent`: passed across **58 source files**.
-- Generated schemas were refreshed from the current strict models.
+- `pytest -q`: **541 passed**.
+- `ruff check src tests scripts`: passed.
+- `mypy src`: passed under the repository's strict configuration across
+  **58 source files**.
+- All eight generated schemas were refreshed from the current strict models;
+  a second export was byte-identical.
 - The pinned VS2010 SP1 `Release | x64` DLL and native conformance executable
-  passed; built, staged, and installed 205,824-byte artifacts were
+  passed. Built, staged, and installed 210,944-byte artifacts are
   byte-identical at SHA-256
-  `2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`.
-- The guarded preflight passed, live protocol `0.7.0` telemetry remained fresh
-  and advancing, and the exact visible building-exit run completed safely.
+  `e6e7189f5e62af529d6c400cce6e0ce331cdc1cdb52297045f1b236beb083168`.
+- The shared Python/C++ request fixture proves the exact targeted wire shape.
+  Focused tests prove advertisement, exact binding, stale/unavailable
+  rejection, zero world clicks, keyed option ownership, and controller-owned
+  terminal acceptance.
+- Protocol `0.8.0` has not yet been live-loaded or exercised in Kenshi. A launch
+  attempted while the operator was actively typing did not open the game and
+  was intentionally not retried after the operator requested hands-off. Live
+  target discovery, task acceptance, motion, and resulting state remain open.
 
 ## Open work
 
@@ -242,6 +261,11 @@ For the protocol `0.7.0` building-exit slice on 2026-07-26:
   observation contains the attributed brief, and its subsequent changed goal
   is grounded in both that brief and current Kenshi evidence. Portable and
   synthetic hosted proofs do not satisfy this boundary.
+- Live-prove protocol `0.8.0`: observe at least one exact natural resource,
+  dispatch its advertised `operate` pair, receive the keyed
+  `context_task_started` terminal, confirm plausible movement/task behavior in
+  a resulting frame plus fresh advancing telemetry, and leave the run safely
+  paused. The installed/build evidence alone does not satisfy this boundary.
 - `Character::isIndoors()` can remain valid after Hep is visibly outside the
   Storm House bar. Do not use it as the sole exit terminal; broader buildings,
   doors, and zone transitions still need explicit live coverage.

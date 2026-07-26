@@ -7,16 +7,20 @@ from pydantic import ValidationError
 from kenshi_agent.models import (
     CharacterState,
     ClickAction,
+    ContextActionKind,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    PerformContextAction,
     PlannerDecision,
     ScrollAction,
     SkillAction,
     SkillSpec,
     TelemetrySnapshot,
     UIState,
+    Vec3,
     VisibleUIControl,
+    WorldTarget,
     parse_action,
 )
 from kenshi_agent.schema_export import export_schemas
@@ -84,6 +88,26 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
             squad=[CharacterState(id="entity-shared", name="Wanderer")],
             nearby_entities=[NearbyEntity(id="entity-shared", name="Barman", kind="character")],
         )
+    with pytest.raises(ValidationError, match="must be unique"):
+        TelemetrySnapshot(
+            protocol_version="0.8.0",
+            identity_session_id="session-process-1",
+            capabilities=["identity.stable_handles"],
+            squad=[CharacterState(id="entity-shared", name="Wanderer")],
+            world_targets=[
+                WorldTarget(
+                    id="entity-shared",
+                    name="Copper Resource",
+                    kind="natural_resource",
+                    position=Vec3(x=1.0, y=0.0, z=2.0),
+                    distance=10.0,
+                    context_actions=[ContextActionKind.OPERATE],
+                    default_task="operate_machinery",
+                    task_available=True,
+                    task_probability=1.0,
+                )
+            ],
+        )
 
 
 def test_action_discriminator_parses_click() -> None:
@@ -99,6 +123,19 @@ def test_action_discriminator_parses_click() -> None:
     assert isinstance(action, ClickAction)
     assert action.x == 0.25
     assert action.hold_seconds == 0.0
+
+
+def test_action_discriminator_parses_context_action() -> None:
+    action = parse_action(
+        {
+            "kind": "perform_context_action",
+            "target_id": "entity-copper",
+            "context_action": "operate",
+        }
+    )
+
+    assert isinstance(action, PerformContextAction)
+    assert action.context_action is ContextActionKind.OPERATE
 
 
 def test_click_hold_is_bounded() -> None:

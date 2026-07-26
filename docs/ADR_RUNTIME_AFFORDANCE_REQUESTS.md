@@ -50,7 +50,9 @@ workaround or pursue another useful goal.
   briefs, memories, action outcomes, and affordance requests forward when raw
   telemetry advances, rather than allowing the observation pump to erase them.
 
-The first clarified target is a semantic exact-target contextual task, with ore
-mining as the immediate survival/economy use case. It is not synonymous with
-combat and will not be implemented as an ungrounded screen-coordinate
-right-click.
+The first clarified target produced protocol `0.8.0`'s semantic exact-target
+contextual task, with ore mining as the immediate survival/economy use case.
+It exports reviewed natural-resource targets and issues only the exact
+advertised `operate` task. It is not synonymous with combat and is not an
+ungrounded screen-coordinate right-click. Portable, native-build, and install
+evidence is complete; live task evidence remains a separate gate.

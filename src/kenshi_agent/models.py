@@ -314,6 +314,33 @@ class NearbyEntity(StrictModel):
         )
 
 
+class ContextActionKind(StrEnum):
+    """A reviewed Kenshi task an exact world object currently advertises."""
+
+    OPERATE = "operate"
+
+
+class WorldTarget(StrictModel):
+    """A non-character object with exact native contextual affordances.
+
+    This is the semantic equivalent of what a player learns by right-clicking
+    an object. It carries only tasks the native plug-in has positively
+    identified and reviewed; absence means unsupported, never permission to
+    improvise a screen-coordinate click.
+    """
+
+    id: str
+    name: str
+    kind: str
+    position: Vec3
+    distance: float = Field(ge=0.0)
+    context_actions: list[ContextActionKind] = Field(default_factory=list)
+    default_task: str
+    task_available: bool
+    task_probability: float
+    mining_resource_level: float | None = None
+
+
 def _nearest_first(entities: list[NearbyEntity]) -> list[NearbyEntity]:
     return sorted(
         entities,
@@ -595,6 +622,7 @@ class NativeCommandAcknowledgement(StrictModel):
         "move_to_character",
         "move_in_direction",
         "exit_current_building",
+        "operate_natural_resource",
     ]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
@@ -722,6 +750,7 @@ class TelemetrySnapshot(StrictModel):
     squad: list[CharacterState] = Field(default_factory=list)
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
+    world_targets: list[WorldTarget] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
     @field_validator("captured_at")
@@ -740,7 +769,8 @@ class TelemetrySnapshot(StrictModel):
 
         squad_ids = [character.id for character in self.squad]
         nearby_ids = [entity.id for entity in self.nearby_entities]
-        all_ids = squad_ids + nearby_ids
+        world_target_ids = [target.id for target in self.world_targets]
+        all_ids = squad_ids + nearby_ids + world_target_ids
         if any(not entity_id for entity_id in all_ids):
             raise ValueError("stable entity IDs must be non-empty")
         if len(all_ids) != len(set(all_ids)):
@@ -908,6 +938,20 @@ class ApproachDialogueTargetAction(StrictModel):
 
     kind: Literal["approach_dialogue_target"] = "approach_dialogue_target"
     target_id: str = Field(min_length=1, max_length=200)
+
+
+class PerformContextAction(StrictModel):
+    """Perform one exact contextual task an observed world object advertises.
+
+    The planner copies only a `(target_id, context_action)` pair from current
+    `context_targets`. Native code re-resolves the object, rechecks the reviewed
+    task, issues Kenshi's own default order, and proves the selected character's
+    AI accepted that exact object/task pair.
+    """
+
+    kind: Literal["perform_context_action"] = "perform_context_action"
+    target_id: str = Field(min_length=1, max_length=200)
+    context_action: ContextActionKind
 
 
 class MoveInDirectionAction(StrictModel):
@@ -1249,6 +1293,7 @@ PlannerControlAction: TypeAlias = (
 
 SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
+    | PerformContextAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | ExitCurrentBuildingAction
@@ -1281,6 +1326,7 @@ Action: TypeAlias = (
     | ScrollAction
     | SkillAction
     | ApproachDialogueTargetAction
+    | PerformContextAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | ExitCurrentBuildingAction
@@ -1298,6 +1344,7 @@ ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
+        "perform_context_action",
         "move_to_character",
         "move_in_direction",
         "exit_current_building",
@@ -1563,6 +1610,7 @@ class NativeCommandRequest(StrictModel):
         "move_to_character",
         "move_in_direction",
         "exit_current_building",
+        "operate_natural_resource",
     ]
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
@@ -1852,12 +1900,14 @@ class PlanStep(StrictModel):
                 ConsultAdvisorAction,
                 RequestAffordanceAction,
                 ExitCurrentBuildingAction,
+                PerformContextAction,
             ),
         ):
             raise ValueError(
                 "success_conditions may be empty only for recover_camera_view, "
-                "consult_advisor, request_affordance, or exit_current_building, whose owning "
-                "subsystem returns a typed terminal outcome"
+                "consult_advisor, request_affordance, exit_current_building, or "
+                "perform_context_action, whose owning subsystem returns a typed "
+                "terminal outcome"
             )
         return self
 
@@ -2044,6 +2094,27 @@ class Observation(StrictModel):
                 "is_vendor": target.is_confirmed_vendor(),
             }
             for target in dialogue_targets(self.telemetry.nearby_entities)
+        ]
+
+    def context_target_digest(self) -> list[dict[str, Any]]:
+        """Exact reviewed object/task pairs that can be dispatched right now."""
+
+        if self.telemetry is None:
+            return []
+        targets = sorted(
+            self.telemetry.world_targets,
+            key=lambda target: (target.distance, target.name, target.id),
+        )
+        return [
+            {
+                "id": target.id,
+                "name": target.name,
+                "kind": target.kind,
+                "distance": target.distance,
+                "context_actions": [action.value for action in target.context_actions],
+                "mining_resource_level": target.mining_resource_level,
+            }
+            for target in targets[:16]
         ]
 
     def open_window_captions(self) -> list[str]:
@@ -2283,6 +2354,8 @@ class Observation(StrictModel):
             "active_shop_trader_count": telemetry.active_shop_trader_count,
             "nearby_entity_count": len(telemetry.nearby_entities),
             "dialogue_target_count": len(dialogue_targets(telemetry.nearby_entities)),
+            "world_target_count": len(telemetry.world_targets),
+            "context_targets": self.context_target_digest(),
             "selected": (
                 {
                     "id": selected.id,
@@ -2386,6 +2459,7 @@ class Observation(StrictModel):
         # through budgeting.
         payload["dialogue_targets"] = self.dialogue_target_digest()
         payload["travel_destinations"] = self.travel_destination_digest()
+        payload["context_targets"] = self.context_target_digest()
         payload["semantic_actions"] = self.semantic_action_digest()
 
         controls = self.visible_control_digest()

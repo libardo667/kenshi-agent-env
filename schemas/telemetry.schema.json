@@ -380,6 +380,14 @@
       "title": "CharacterState",
       "type": "object"
     },
+    "ContextActionKind": {
+      "description": "A reviewed Kenshi task an exact world object currently advertises.",
+      "enum": [
+        "operate"
+      ],
+      "title": "ContextActionKind",
+      "type": "string"
+    },
     "Disposition": {
       "enum": [
         "friendly",
@@ -638,7 +646,8 @@
             "approach_confirmed_vendor",
             "move_to_character",
             "move_in_direction",
-            "exit_current_building"
+            "exit_current_building",
+            "operate_natural_resource"
           ],
           "title": "Command",
           "type": "string"
@@ -1434,6 +1443,75 @@
       ],
       "title": "VisibleUIControl",
       "type": "object"
+    },
+    "WorldTarget": {
+      "additionalProperties": false,
+      "description": "A non-character object with exact native contextual affordances.\n\nThis is the semantic equivalent of what a player learns by right-clicking\nan object. It carries only tasks the native plug-in has positively\nidentified and reviewed; absence means unsupported, never permission to\nimprovise a screen-coordinate click.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "position": {
+          "$ref": "#/$defs/Vec3"
+        },
+        "distance": {
+          "minimum": 0.0,
+          "title": "Distance",
+          "type": "number"
+        },
+        "context_actions": {
+          "items": {
+            "$ref": "#/$defs/ContextActionKind"
+          },
+          "title": "Context Actions",
+          "type": "array"
+        },
+        "default_task": {
+          "title": "Default Task",
+          "type": "string"
+        },
+        "task_available": {
+          "title": "Task Available",
+          "type": "boolean"
+        },
+        "task_probability": {
+          "title": "Task Probability",
+          "type": "number"
+        },
+        "mining_resource_level": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mining Resource Level"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "kind",
+        "position",
+        "distance",
+        "default_task",
+        "task_available",
+        "task_probability"
+      ],
+      "title": "WorldTarget",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1515,6 +1593,13 @@
         "$ref": "#/$defs/NearbyEntity"
       },
       "title": "Nearby Entities",
+      "type": "array"
+    },
+    "world_targets": {
+      "items": {
+        "$ref": "#/$defs/WorldTarget"
+      },
+      "title": "World Targets",
       "type": "array"
     },
     "warnings": {

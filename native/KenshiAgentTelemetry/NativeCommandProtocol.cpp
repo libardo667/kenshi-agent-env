@@ -256,7 +256,8 @@ namespace KenshiAgentTelemetry
                 request.command == "exit_current_building";
             const bool isTargeted =
                 request.command == "approach_confirmed_vendor" ||
-                request.command == "move_to_character";
+                request.command == "move_to_character" ||
+                request.command == "operate_natural_resource";
             if (isDirection)
             {
                 if (!request.targetId.empty() ||

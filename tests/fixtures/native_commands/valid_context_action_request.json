@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "command_id": "cmd-22222222222222222222222222222222",
+  "command": "operate_natural_resource",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 17,
+    "frame_sequence": 5,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 18.0
+  },
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "target_id": "entity-natural-resource",
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0
+}

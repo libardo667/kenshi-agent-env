@@ -62,7 +62,8 @@
         "approach_confirmed_vendor",
         "move_to_character",
         "move_in_direction",
-        "exit_current_building"
+        "exit_current_building",
+        "operate_natural_resource"
       ],
       "title": "Command",
       "type": "string"

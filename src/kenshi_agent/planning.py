@@ -69,6 +69,7 @@ _NATIVE_CONTROL_CAPABILITIES = (
     "control.move_to_character",
     "control.move_in_direction",
     "control.exit_current_building",
+    "control.perform_context_action",
 )
 
 # Capability names that mean the same thing. The plug-in still emits the

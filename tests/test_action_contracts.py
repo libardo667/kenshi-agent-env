@@ -13,6 +13,7 @@ from kenshi_agent.action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     EXIT_CURRENT_BUILDING_CONTRACT,
+    PERFORM_CONTEXT_ACTION_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
     LegacyCompatibilityLedger,
     contract_for,
@@ -27,6 +28,7 @@ from kenshi_agent.models import (
     Condition,
     ConditionKind,
     ConditionOperator,
+    ContextActionKind,
     ControlMode,
     Disposition,
     ExitCurrentBuildingAction,
@@ -35,6 +37,7 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    PerformContextAction,
     PlanStep,
     PointerActionClass,
     PurchaseItemAction,
@@ -42,8 +45,10 @@ from kenshi_agent.models import (
     SkillArgument,
     TelemetrySnapshot,
     UIState,
+    Vec3,
     VisibleUIControl,
     WorldStateRevision,
+    WorldTarget,
 )
 
 VENDOR_ID = "entity-barman"
@@ -70,6 +75,7 @@ def observation(
     squad: list[CharacterState] | None = None,
     stale: bool = False,
     control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
+    world_targets: list[WorldTarget] | None = None,
 ) -> Observation:
     return Observation(
         run_id="contract-test",
@@ -85,6 +91,7 @@ def observation(
             ui=ui or UIState(visible_controls=controls),
             squad=squad or [],
             nearby_entities=entities or [],
+            world_targets=world_targets or [],
         ),
         telemetry_stale=stale,
         telemetry_age_seconds=0.1,
@@ -362,6 +369,68 @@ class TestExitCurrentBuildingBinding:
         assert "not confirmed inside" in binding.reason
 
 
+class TestPerformContextAction:
+    def test_binds_exact_advertised_object_action_pair(self) -> None:
+        target = WorldTarget(
+            id="entity-copper",
+            name="Copper Resource",
+            kind="natural_resource",
+            position=Vec3(x=1.0, y=0.0, z=2.0),
+            distance=40.0,
+            context_actions=[ContextActionKind.OPERATE],
+            default_task="operate_machinery",
+            task_available=True,
+            task_probability=1.0,
+            mining_resource_level=0.8,
+        )
+        state = observation(
+            capabilities=[
+                "control.perform_context_action",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[target],
+        )
+
+        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+            PerformContextAction(
+                target_id=target.id,
+                context_action=ContextActionKind.OPERATE,
+            ),
+            state,
+        )
+
+        assert binding.bound
+        assert binding.target_id == target.id
+        assert binding.resolved_label == "operate"
+
+    def test_rejects_action_not_advertised_by_exact_target(self) -> None:
+        target = WorldTarget(
+            id="entity-copper",
+            name="Copper Resource",
+            kind="natural_resource",
+            position=Vec3(x=1.0, y=0.0, z=2.0),
+            distance=40.0,
+            context_actions=[],
+            default_task="operate_machinery",
+            task_available=True,
+            task_probability=1.0,
+        )
+        state = observation(world_targets=[target])
+
+        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+            PerformContextAction(
+                target_id=target.id,
+                context_action=ContextActionKind.OPERATE,
+            ),
+            state,
+        )
+
+        assert not binding.bound
+        assert "does not currently advertise" in binding.reason
+
+
 class TestContractCatalog:
     def test_contracts_are_registered_by_kind(self) -> None:
         assert set(ACTION_CONTRACTS) == {
@@ -369,6 +438,7 @@ class TestContractCatalog:
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
+            "perform_context_action",
             "activate_visible_control",
             "dismiss_screen",
             "purchase_item",
@@ -381,6 +451,12 @@ class TestContractCatalog:
         assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
             APPROACH_DIALOGUE_TARGET_CONTRACT
         )
+        assert contract_for(
+            PerformContextAction(
+                target_id="entity-copper",
+                context_action=ContextActionKind.OPERATE,
+            )
+        ) is PERFORM_CONTEXT_ACTION_CONTRACT
         assert contract_for(ClickAction(x=0.5, y=0.5)) is None
 
     def test_approach_is_withheld_from_interface_only(self) -> None:

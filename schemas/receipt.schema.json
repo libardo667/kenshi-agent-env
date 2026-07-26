@@ -1111,6 +1111,14 @@
       "title": "ConsultAdvisorAction",
       "type": "object"
     },
+    "ContextActionKind": {
+      "description": "A reviewed Kenshi task an exact world object currently advertises.",
+      "enum": [
+        "operate"
+      ],
+      "title": "ContextActionKind",
+      "type": "string"
+    },
     "ControlMode": {
       "enum": [
         "interface_only",
@@ -1520,7 +1528,8 @@
             "approach_confirmed_vendor",
             "move_to_character",
             "move_in_direction",
-            "exit_current_building"
+            "exit_current_building",
+            "operate_natural_resource"
           ],
           "title": "Command",
           "type": "string"
@@ -1693,6 +1702,33 @@
         }
       },
       "title": "PauseAction",
+      "type": "object"
+    },
+    "PerformContextAction": {
+      "additionalProperties": false,
+      "description": "Perform one exact contextual task an observed world object advertises.\n\nThe planner copies only a `(target_id, context_action)` pair from current\n`context_targets`. Native code re-resolves the object, rechecks the reviewed\ntask, issues Kenshi's own default order, and proves the selected character's\nAI accepted that exact object/task pair.",
+      "properties": {
+        "kind": {
+          "const": "perform_context_action",
+          "default": "perform_context_action",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "context_action": {
+          "$ref": "#/$defs/ContextActionKind"
+        }
+      },
+      "required": [
+        "target_id",
+        "context_action"
+      ],
+      "title": "PerformContextAction",
       "type": "object"
     },
     "PointerActionClass": {
@@ -2314,6 +2350,9 @@
         },
         {
           "$ref": "#/$defs/ApproachDialogueTargetAction"
+        },
+        {
+          "$ref": "#/$defs/PerformContextAction"
         },
         {
           "$ref": "#/$defs/MoveToCharacterAction"

@@ -47,6 +47,7 @@ from .models import (
     MoveToCharacterAction,
     NormalizedPointerBounds,
     Observation,
+    PerformContextAction,
     PlanEnvelope,
     PointerActionClass,
     PurchaseItemAction,
@@ -81,6 +82,11 @@ NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
     "exit_current_building"
 )
 NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
+NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
+NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
+NATIVE_OPERATE_RESOURCE_WIRE_COMMAND: Literal["operate_natural_resource"] = (
+    "operate_natural_resource"
+)
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
 CAMERA_RECOVERY_CAPABILITY = "camera.recovery"
@@ -246,6 +252,58 @@ def bind_move_to_character(
             f"distance {target.distance if target.distance is not None else 'unknown'}."
         ),
         target_id=target.id,
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_perform_context_action(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind one exact object/action pair from current world-target telemetry."""
+
+    if not isinstance(action, PerformContextAction):
+        return _unbound("Action is not a perform_context_action action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the context target.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the context target cannot be bound.")
+    if telemetry.ui.dialogue_open or telemetry.ui.modal_open:
+        return _unbound(
+            "A modal or dialogue interface blocks a new world context action; "
+            "finish or close it first."
+        )
+    matches = [
+        target for target in telemetry.world_targets if target.id == action.target_id
+    ]
+    if not matches:
+        return _unbound(
+            f"Target {action.target_id!r} is not a current actionable world target."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Target {action.target_id!r} matches {len(matches)} world targets; "
+            "an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    if action.context_action not in target.context_actions:
+        return _unbound(
+            f"Target {target.name!r} does not currently advertise context action "
+            f"{action.context_action.value!r}."
+        )
+    if not target.task_available:
+        return _unbound(
+            f"Target {target.name!r} currently reports its contextual task unavailable."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound {action.context_action.value!r} to current {target.kind} "
+            f"{target.name!r} ({target.id}) at distance {target.distance}."
+        ),
+        target_id=target.id,
+        resolved_label=action.context_action.value,
         source_revision=observation.world_revision,
     )
 
@@ -1104,6 +1162,43 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     bind=bind_approach_dialogue_target,
 )
 
+PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
+    kind="perform_context_action",
+    version="1.0",
+    model=PerformContextAction,
+    summary=(
+        "Perform one exact contextual task advertised by a current world object. "
+        "The native controller rechecks the object and reviewed default task, then "
+        "owns pathing until the selected character's AI reports that exact task and "
+        "subject. Natural-resource operation is the first supported task."
+    ),
+    argument_source=(
+        "target_id and context_action must be copied as an exact pair from the "
+        "observation's context_targets."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_CONTEXT_ACTION_CAPABILITY,
+            NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            "game.pause",
+            "identity.stable_handles",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=("target_id", "context_action"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_context_action",
+    bind=bind_perform_context_action,
+    controller_verified=True,
+)
+
 MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     kind="move_in_direction",
     version="1.0",
@@ -1497,6 +1592,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
+        PERFORM_CONTEXT_ACTION_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,
         EXIT_CURRENT_BUILDING_CONTRACT,

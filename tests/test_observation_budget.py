@@ -11,6 +11,7 @@ from kenshi_agent.models import (
     ActionOutcomeAssessment,
     ActivePlanContext,
     CharacterState,
+    ContextActionKind,
     ControlMode,
     GameState,
     InventoryItem,
@@ -29,8 +30,10 @@ from kenshi_agent.models import (
     SkillSpec,
     TelemetrySnapshot,
     UIState,
+    Vec3,
     VisibleUIControl,
     WorldStateRevision,
+    WorldTarget,
 )
 from kenshi_agent.observation_budget import PlannerPayloadBudgetError
 
@@ -191,6 +194,20 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             [target, outcome_target, *unrelated],
             reverse_low_priority,
         ),
+        world_targets=[
+            WorldTarget(
+                id="entity-copper",
+                name="Copper Resource",
+                kind="natural_resource",
+                position=Vec3(x=10.0, y=0.0, z=20.0),
+                distance=30.0,
+                context_actions=[ContextActionKind.OPERATE],
+                default_task="operate_machinery",
+                task_available=True,
+                task_probability=1.0,
+                mining_resource_level=0.8,
+            )
+        ],
         warnings=_maybe_reversed(warnings, reverse_low_priority),
     )
 
@@ -332,6 +349,18 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     nearby = _path(document, "telemetry.nearby_entities")
     assert isinstance(nearby, list)
     assert {item["id"] for item in nearby} == {_TARGET_ID, _OUTCOME_TARGET_ID}
+    context_targets = document["context_targets"]
+    assert isinstance(context_targets, list)
+    assert context_targets == [
+        {
+            "id": "entity-copper",
+            "name": "Copper Resource",
+            "kind": "natural_resource",
+            "distance": 30.0,
+            "context_actions": ["operate"],
+            "mining_resource_level": 0.8,
+        }
+    ]
 
     outcomes = document["recent_action_outcomes"]
     assert isinstance(outcomes, list)

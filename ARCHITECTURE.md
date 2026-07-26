@@ -83,11 +83,12 @@ The store:
 - provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
 
 This is an authoritative Python state stream over the plugin's atomic
-latest-snapshot file, not a native event transport. Native protocol `0.7.0`
-supplies session-scoped validated-handle identity, bounded keyed command
-acknowledgements, squad/inventory facts, game time, dialogue and management UI,
-tooltip/source bounds, named item cells, and visible controls. Older producers
-still use the portable ambiguity-aware registry. See
+latest-snapshot file, not a native event transport. Native protocol `0.8.0`
+supplies session-scoped validated-handle identity, bounded exact actionable
+world objects, keyed command acknowledgements, squad/inventory facts, game
+time, dialogue and management UI, tooltip/source bounds, named item cells, and
+visible controls. Older producers still use the portable ambiguity-aware
+registry. See
 `docs/ADR_WORLD_STATE_STREAM.md` and
 `docs/ADR_STABLE_NATIVE_IDENTITY.md`.
 
@@ -256,12 +257,14 @@ noop, wait, pause/speed, and whole-run stop. Reusable semantic actions bind
 current telemetry references through one catalog:
 
 - approach a dialogue target;
+- perform one exact reviewed contextual task that a current world object
+  advertises;
 - move to a nearby character or a bounded bearing/distance;
 - activate a visible control or dismiss the current screen;
 - buy, sell, equip, or scroll one current window;
-- press one allowlisted reversible Kenshi game binding.
+- press one allowlisted reversible Kenshi game binding;
 - leave the selected character's current building without model-authored door
-  geometry.
+  geometry;
 - recover the selected-character camera through one bounded controller-owned,
   frame-scored follow/floor/zoom/orbit/tilt transaction.
 
@@ -273,9 +276,9 @@ never micromanages primitive timing or coordinates. Legacy skills still expand
 into bounded primitives for compatibility and calibrated transport.
 
 This is the intended single source of action truth, not yet complete executable
-truth. Camera recovery and current-building exit are controller-verified
-contracts: their owning subsystems return typed terminal verdicts, so the
-planner supplies no success predicate.
+truth. Camera recovery, current-building exit, and exact contextual operation
+are controller-verified contracts: their owning subsystems return typed
+terminal verdicts, so the planner supplies no success predicate.
 Most other contracts still name no controller-owned effect predicate:
 the generic policy requires a model-authored condition and evaluates it only on
 a causally later revision. That proves temporal ordering, not necessarily that
@@ -297,7 +300,7 @@ partial snapshot at a low fixed frequency. It hooks a known main/UI-thread
 update point, calls the original function, samples only validated fields, and
 writes an atomic file. The Python process never loads Kenshi memory directly.
 
-The plugin also contains four reviewed native-assisted commands behind one
+The plugin also contains five reviewed native-assisted commands behind one
 strict request bridge:
 
 - `approach_confirmed_vendor`, a legacy wire name that now accepts any exact
@@ -309,7 +312,11 @@ strict request bridge:
   the intended destination plane;
 - `exit_current_building`, which takes no model geometry, resolves an unlocked
   current-building door and outside point, and completes from stable outdoor
-  membership or tightly reaching that native destination after real movement.
+  membership or tightly reaching that native destination after real movement;
+- `operate_natural_resource`, which re-resolves an exact advertised natural
+  resource, rechecks its reviewed default task and current availability, and
+  completes only when the selected character's AI goal matches that exact task
+  and subject.
 
 Python atomically writes one request before the private bridge hotkey. The
 plugin accepts only the exact caller command ID, current world-revision

@@ -906,6 +906,7 @@ class WorldStateStore:
         )
         if telemetry is not None:
             nearby = telemetry.get("nearby_entities")
+            world_targets = telemetry.get("world_targets")
             capabilities = telemetry.get("capabilities")
             has_stable_source_ids = (
                 isinstance(capabilities, list) and "identity.stable_handles" in capabilities
@@ -920,6 +921,11 @@ class WorldStateStore:
                         normalized_nearby.append(normalized)
                 telemetry["nearby_entities"] = sorted(
                     normalized_nearby,
+                    key=repr,
+                )
+            if isinstance(world_targets, list):
+                telemetry["world_targets"] = sorted(
+                    world_targets,
                     key=repr,
                 )
         return {
@@ -1004,7 +1010,11 @@ class WorldStateStore:
                 cls._flatten(path, value[key], output)
         elif isinstance(value, list):
             rendered = [str(item) for item in value]
-            if prefix.endswith("nearby_entities") or prefix.endswith("capabilities"):
+            if (
+                prefix.endswith("nearby_entities")
+                or prefix.endswith("world_targets")
+                or prefix.endswith("capabilities")
+            ):
                 rendered.sort()
             output[prefix] = tuple(rendered)
         else:

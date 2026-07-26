@@ -5,6 +5,48 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Protocol 0.8.0 contextual natural-resource operation (2026-07-26)
+
+The first retained affordance request is now implemented as an exact-target
+semantic control rather than a blind right-click or generic attack. Native
+telemetry queries at most 128 building objects within 2,000 world units,
+retains only valid `BF_MINE_NATURAL` objects whose default task is
+`OPERATE_MACHINERY` and whose player task is available, and exports stable
+identity, position, distance, task probability, and mining resource level.
+The planner receives a bounded `context_targets` digest and may author only an
+exact `(target_id, context_action="operate")` pair.
+
+`perform_context_action` is a native-assisted, coordinate-independent,
+at-most-once monitored option. The contract and in-lease fence rebind the exact
+advertised object/action pair. Protocol `0.8.0` then re-resolves the exact
+native handle, rechecks its reviewed classification/default task/availability,
+and issues Kenshi's own `OPERATE_MACHINERY` task. The keyed command completes
+only when the selected character's current AI goal reports that exact task and
+subject (`context_task_started`); selection change, object lifetime/role
+change, uninterrupted pause, or no-progress movement cancels it. No world
+screen click is emitted.
+
+The Python and C++ request parsers share a valid exact-target fixture. Focused
+coverage proves action advertisement and exact binding, unavailable/stale
+rejection, observation-budget retention, one native transport hotkey with zero
+clicks, keyed option ownership, and controller-verified terminal acceptance.
+The full portable baseline is 541 tests, clean Ruff, and strict mypy over 58
+source files. All eight generated schemas were stable across two exports. The
+pinned VS2010 SP1 `Release | x64` build and native conformance executable
+passed. Built, staged, and installed 210,944-byte DLLs are byte-identical at
+SHA-256
+`e6e7189f5e62af529d6c400cce6e0ce331cdc1cdb52297045f1b236beb083168`;
+the previous installed DLL is recoverable from
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260726T153758Z-pre-context-protocol-0.8.0`.
+
+This is not live proof. The first launch attempt occurred while the operator was
+actively typing and did not open Kenshi; it was not retried after the operator
+requested hands-off. Protocol `0.8.0` has therefore not yet been observed
+loaded, has not exported a real resource target, and has not produced a live
+`context_task_started` acknowledgement or resulting frame. Those are the next
+acceptance boundaries. Animal hunting and other object-context operations
+remain separate guarded additions rather than being inferred from ore support.
+
 ## Runtime affordance-request channel (2026-07-26)
 
 The playing model can now report a grounded missing control with the typed

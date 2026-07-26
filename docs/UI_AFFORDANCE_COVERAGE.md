@@ -1,6 +1,6 @@
 # Registered UI mechanism coverage
 
-Current as of 2026-07-25. This document distinguishes broad interface
+Current as of 2026-07-26. This document distinguishes broad interface
 reachability from complete Kenshi gameplay support.
 
 Regenerate the static action-surface audit with:
@@ -13,10 +13,10 @@ The current result is **31/31 registry entries with a declared mechanism**, **0
 missing exits**, and **1 pixel-fragile path** (the ESC menu is reached only as a
 side effect). This is a presence audit, not complete affordance coverage. It
 does not grade effect proof, mock parity, live verification, completeness of
-suboperations, or cross-language executability. `move_in_direction` now passes
-the cross-language and native-build gates plus one exact live completion smoke;
-that single route is not evidence for every bearing, distance, or obstacle
-layout.
+suboperations, or cross-language executability. `move_in_direction` passes the
+cross-language and native-build gates plus one exact live completion smoke;
+protocol `0.8.0` contextual resource operation passes the portable and
+native-build gates but has no live proof.
 
 The latest live UI survey was `runs/p7-ui-survey-6` on 2026-07-25, protocol
 `0.5.0`, Hub save, 1920x1080. Later supervised runs added named item facts,
@@ -26,7 +26,7 @@ purchase/sale/equip actions, game bindings, and local movement after that survey
 
 | Interface | Enter / exit | Observe | Interact | Current boundary |
 | --- | --- | --- | --- | --- |
-| World / camera | Base state | Nearby entities, camera, HUD | Pan/rotate/zoom, time, selection, dialogue approach, exact-character and bounded-direction movement | One direction smoke passed; no remote map-position order |
+| World / camera | Base state | Nearby entities, exact actionable natural resources, camera, HUD | Pan/rotate/zoom, time, selection, dialogue approach, exact-resource operation, exact-character and bounded-direction movement | Resource operation is not live-proven; no remote map-position order |
 | Dialogue | Approach / exact closing reply | Exact target and replies | Activate exact current reply | Escape does not end conversation |
 | Inventory | `use_game_binding` / own close box | Owner window and named item cells | Scroll and equip | Drag/drop/move/drop is not modelled |
 | Trade | Dialogue control / own close box | Seller/owner windows and named stock | Scroll, buy, sell | Trader money and exact sale offer are not exported |
@@ -46,12 +46,14 @@ must use `management_screen_open`, `management_tab`,
 ## Planner-visible semantic actions
 
 `src/kenshi_agent/action_contracts.py` is the intended authority. The current
-catalog contains eleven actions, advertised when the current control mode and
+catalog contains thirteen actions, advertised when the current control mode and
 capabilities support them:
 
 - `approach_dialogue_target`
+- `perform_context_action`
 - `move_to_character`
 - `move_in_direction`
+- `exit_current_building`
 - `activate_visible_control`
 - `dismiss_screen`
 - `purchase_item`
@@ -65,7 +67,9 @@ Advertisement is not live proof. `move_in_direction` now agrees across the
 contract, Python/native request and acknowledgement models, executor ownership,
 schemas, and shared fixtures. The installed `0.6.1` build produced one exact
 live Kenshi `walk_destination_reached` acknowledgement with plausible movement
-and a resulting frame.
+and a resulting frame. `perform_context_action` similarly agrees across those
+portable/native-build layers in installed protocol `0.8.0`, but no live
+resource target or `context_task_started` terminal has yet been observed.
 
 `recover_camera_view` has no model-authored arguments or success conditions.
 When capture, fresh world telemetry, one selected character, its lower-HUD
@@ -87,8 +91,9 @@ implementation details and are rejected by the generic live policy.
 Each semantic action binds evidence instead of a model-authored coordinate.
 Controls bind exact label/role/window; items also bind item facts and owner
 window; target movement binds an exact identity; direction binds the selected
-walker plus bearing and distance. The same binding is recomputed inside the
-input lease.
+walker plus bearing and distance; contextual work binds an exact object and
+one action that object currently advertises. The same binding is recomputed
+inside the input lease.
 
 ## Visible-control export
 

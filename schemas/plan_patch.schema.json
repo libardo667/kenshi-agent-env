@@ -298,6 +298,14 @@
       "title": "ConsultAdvisorAction",
       "type": "object"
     },
+    "ContextActionKind": {
+      "description": "A reviewed Kenshi task an exact world object currently advertises.",
+      "enum": [
+        "operate"
+      ],
+      "title": "ContextActionKind",
+      "type": "string"
+    },
     "DismissScreenAction": {
       "additionalProperties": false,
       "description": "Close one bound inventory or trade window toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. It deliberately\ndoes not end an active conversation: Kenshi's Escape opens the ESC menu, so\ndialogue must choose an exact visible closing reply.",
@@ -581,6 +589,33 @@
       "title": "PauseAction",
       "type": "object"
     },
+    "PerformContextAction": {
+      "additionalProperties": false,
+      "description": "Perform one exact contextual task an observed world object advertises.\n\nThe planner copies only a `(target_id, context_action)` pair from current\n`context_targets`. Native code re-resolves the object, rechecks the reviewed\ntask, issues Kenshi's own default order, and proves the selected character's\nAI accepted that exact object/task pair.",
+      "properties": {
+        "kind": {
+          "const": "perform_context_action",
+          "default": "perform_context_action",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "context_action": {
+          "$ref": "#/$defs/ContextActionKind"
+        }
+      },
+      "required": [
+        "target_id",
+        "context_action"
+      ],
+      "title": "PerformContextAction",
+      "type": "object"
+    },
     "PlanStep": {
       "additionalProperties": false,
       "properties": {
@@ -614,6 +649,9 @@
             },
             {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
+            },
+            {
+              "$ref": "#/$defs/PerformContextAction"
             },
             {
               "$ref": "#/$defs/MoveToCharacterAction"

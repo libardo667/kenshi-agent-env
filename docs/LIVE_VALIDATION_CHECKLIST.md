@@ -42,6 +42,36 @@ inspection alone.
       stale pointers.
 - [x] Missing capabilities remain absent rather than fabricated.
 
+### Protocol 0.8 contextual natural-resource boundary
+
+- [x] Add exact `world_targets` telemetry plus
+      `world.context_targets`/`control.perform_context_action` capabilities.
+      Export only valid `BF_MINE_NATURAL` objects whose reviewed default
+      `OPERATE_MACHINERY` task is currently available.
+- [x] Bind one exact advertised `(target_id, context_action="operate")` pair at
+      the contract and in-lease boundaries. Emit no model-authored coordinate
+      and no world click.
+- [x] Re-resolve the exact native handle at issue time and complete the keyed
+      command only when the selected character's AI reports the exact
+      task/subject pair. Retain selection, lifetime, role, pause, and
+      no-progress cancellation fences.
+- [x] Pass the shared Python/C++ exact-target request fixture, 541 portable
+      tests, Ruff, strict mypy over 58 source files, and two byte-identical
+      exports of all eight schemas.
+- [x] Build with the pinned VS2010 SP1 Release x64 toolchain and pass the native
+      conformance executable. Build, stage, and installed DLLs are
+      byte-identical: 210,944 bytes, SHA-256
+      `e6e7189f5e62af529d6c400cce6e0ce331cdc1cdb52297045f1b236beb083168`.
+      The prior installed DLL is recoverable at
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260726T153758Z-pre-context-protocol-0.8.0`.
+- [ ] Launch Kenshi and confirm protocol `0.8.0` loads with fresh, advancing
+      telemetry and no plugin error. The first attempt occurred while the
+      operator was typing and did not open the game; it is not load evidence.
+- [ ] Observe one real natural resource in `world_targets`, dispatch its exact
+      advertised `operate` pair, receive keyed `context_task_started`, confirm
+      plausible behavior in a resulting frame plus fresh telemetry, and
+      confirm final pause. Installed/build evidence does not satisfy this item.
+
 ### Protocol 0.7 native building-exit boundary
 
 - [x] Add `squad.indoors` and `control.exit_current_building` capabilities,

@@ -6,11 +6,12 @@
   causal revisions, valued state deltas, option lifecycle, persistent plan
   memory, an independent safety supervisor, and final input-lease
   revalidation.
-- Added the generic `dialogue_interaction_v1` live policy and eleven reusable
-  semantic action contracts for dialogue approach, local movement, visible
-  controls, screen dismissal, buying, selling, equipping, game bindings, and
-  scrolling. Retired the fixed `food_procurement_v1` policy after lifting its
-  useful reference and purchase guarantees into the generic catalog.
+- Added the generic `dialogue_interaction_v1` live policy and thirteen reusable
+  semantic action contracts for dialogue approach, exact reviewed world-object
+  tasks, local movement, visible controls, screen dismissal, buying, selling,
+  equipping, game bindings, camera recovery, and scrolling. Retired the fixed
+  `food_procurement_v1` policy after lifting its useful reference and purchase
+  guarantees into the generic catalog.
 - Added an open-ended supervised long-form profile that can leave the world
   running, overlap strategic planning with movement, hand control to the human,
   and resume from a fresh plan after a visible resettable takeover countdown.
@@ -32,6 +33,13 @@
   unpause, completion, and the shared no-progress terminal. A live Storm House
   exit completed with `outside_door_destination_reached` even though Kenshi's
   indoor handle lingered after visible traversal.
+- Added protocol `0.8.0` exact contextual world targets and the
+  `perform_context_action` contract. The first reviewed operation identifies a
+  natural resource, rechecks its native default task and availability, issues
+  `OPERATE_MACHINERY` to that exact handle, and completes only when Kenshi's AI
+  reports the exact task/subject pair. Python/C++ fixtures, the pinned native
+  build, and the byte-identical installed DLL pass; live target discovery and
+  effect remain deliberately unclaimed.
 - Adopted a right-sized native-integration boundary: faithful semantic Kenshi
   coverage, truthful capabilities, and reviewable evidence determine plugin
   scope rather than a small/medium/large size target.
@@ -59,7 +67,7 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 534 passing tests with
+- Added `uv.lock`. The current portable baseline is 541 passing tests with
   clean Ruff and strict mypy over 58 source files.
 
 ## 0.1.0 — scaffold

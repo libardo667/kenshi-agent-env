@@ -1,6 +1,10 @@
 #include <Debug.h>
 #include <core/Functions.h>
 #include <kenshi/Character.h>
+#define CharacterMessage KenshiAgentAICharacterMessage
+#include <kenshi/AI/AI.h>
+#undef CharacterMessage
+#include <kenshi/AI/AITaskSystem.h>
 #include <kenshi/Item.h>
 #include <kenshi/Inventory.h>
 #include <kenshi/MedicalSystem.h>
@@ -42,6 +46,7 @@
 #undef BD_SLAVE_STORAGE
 #undef BD_RESIDENTIAL_SMALL
 #include <kenshi/Building/DoorStuff.h>
+#include <kenshi/Building/ProductionBuilding.h>
 #include <kenshi/PlayerInterface.h>
 #include <kenshi/RootObject.h>
 #include <kenshi/ShopTrader.h>
@@ -86,6 +91,8 @@ namespace
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
+    const float WORLD_CONTEXT_TARGET_RADIUS = 2000.0f;
+    const int MAX_WORLD_CONTEXT_TARGETS = 128;
     // Raised from 64 after button-priority passes pushed dialogue options -
     // which are TextBox widgets, walked last - out of the export entirely.
     // Prioritizing one role only helps if the cap is not the binding
@@ -98,7 +105,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.7.0";
+    const char* PROTOCOL_VERSION = "0.8.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -129,6 +136,8 @@ namespace
         // outside-door point. Kenshi can retain its indoor handle across a
         // visually complete doorway traversal.
         bool isBuildingExit;
+        bool isContextAction;
+        TaskType expectedTask;
         // One uninterrupted pause may mean an abandoned movement order, but
         // short paused gaps are how the stop-motion controller safely pulses.
         KenshiAgentTelemetry::NativeMovementPauseWindow pauseWindow;
@@ -209,6 +218,8 @@ namespace
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isBuildingExit = false;
+        g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
         g_activeNativeCommand.destinationX = 0.0f;
@@ -454,6 +465,8 @@ namespace
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isBuildingExit = false;
+        g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
@@ -705,6 +718,83 @@ namespace
             return candidate;
         }
         return NULL;
+    }
+
+    bool IsReviewedNaturalResource(
+        PlayerInterface* player,
+        Building* candidate,
+        float& probability)
+    {
+        probability = 0.0f;
+        if (player == NULL ||
+            candidate == NULL ||
+            !candidate->isValid() ||
+            candidate->getSpecialFunction() != BF_MINE_NATURAL ||
+            candidate->getDefaultTask() != OPERATE_MACHINERY)
+        {
+            return false;
+        }
+        return player->getPlayerTaskProbability(
+            OPERATE_MACHINERY,
+            candidate,
+            probability);
+    }
+
+    Building* FindExactNaturalResource(
+        PlayerInterface* player,
+        const std::string& targetId,
+        bool& exactIdentityFound)
+    {
+        exactIdentityFound = false;
+        Character* selected =
+            player != NULL ? player->selectedCharacter.getCharacter() : NULL;
+        if (ou == NULL ||
+            selected == NULL ||
+            !selected->isValid() ||
+            targetId.empty())
+        {
+            return NULL;
+        }
+
+        lektor<RootObject*> nearbyBuildings;
+        ou->getObjectsWithinSphere(
+            nearbyBuildings,
+            selected->getPosition(),
+            WORLD_CONTEXT_TARGET_RADIUS,
+            BUILDING,
+            MAX_WORLD_CONTEXT_TARGETS,
+            selected);
+        for (lektor<RootObject*>::iterator it = nearbyBuildings.begin();
+             it != nearbyBuildings.end();
+             ++it)
+        {
+            Building* candidate = reinterpret_cast<Building*>(*it);
+            if (candidate == NULL || !candidate->isValid())
+                continue;
+            if (StableEntityId(candidate->getHandle()) != targetId)
+                continue;
+            exactIdentityFound = true;
+            float probability = 0.0f;
+            return IsReviewedNaturalResource(player, candidate, probability)
+                ? candidate
+                : NULL;
+        }
+        return NULL;
+    }
+
+    bool HasExactContextGoal(Character* selected)
+    {
+        if (selected == NULL || !selected->isValid())
+            return false;
+        AI* ai = selected->getAI();
+        AITaskSytem* tasks = ai != NULL ? ai->getTaskSystem() : NULL;
+        if (tasks == NULL)
+            return false;
+        const TaskMatch& goal = tasks->getCurrentGoal();
+        return goal.key() == g_activeNativeCommand.expectedTask &&
+               SameHandleIdentity(
+                   goal.subject,
+                   g_activeNativeCommand.targetHandle);
     }
 
     bool IsExactDialogueTargetOpen(const hand& targetHandle)
@@ -1189,12 +1279,57 @@ namespace
         // dialogue modal (which removes the pause control) can never turn a
         // completed talk order into `world_paused`.
         if (!g_activeNativeCommand.isWalk &&
+            !g_activeNativeCommand.isContextAction &&
             IsExactDialogueTargetOpen(g_activeNativeCommand.targetHandle))
         {
             FinishActiveNativeCommand(
                 "completed",
                 "exact_dialogue_target_open");
             return;
+        }
+
+        std::string selectedId;
+        hand selectedHandle;
+        if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
+            selectedId != g_activeNativeCommand.selectedCharacterId ||
+            !SameHandleIdentity(
+                selectedHandle,
+                g_activeNativeCommand.selectedHandle))
+        {
+            FinishActiveNativeCommand("cancelled", "selection_mismatch");
+            return;
+        }
+        Character* walker = selectedHandle.getCharacter();
+        if (g_activeNativeCommand.isContextAction)
+        {
+            Building* contextTarget =
+                g_activeNativeCommand.targetHandle.getBuilding();
+            if (contextTarget == NULL ||
+                !contextTarget->isValid() ||
+                StableEntityId(contextTarget->getHandle()) !=
+                    g_activeNativeCommand.targetId)
+            {
+                FinishActiveNativeCommand(
+                    "cancelled",
+                    "target_lifetime_changed");
+                return;
+            }
+            if (contextTarget->getSpecialFunction() != BF_MINE_NATURAL ||
+                contextTarget->getDefaultTask() !=
+                    g_activeNativeCommand.expectedTask)
+            {
+                FinishActiveNativeCommand(
+                    "cancelled",
+                    "target_role_invalid");
+                return;
+            }
+            if (HasExactContextGoal(walker))
+            {
+                FinishActiveNativeCommand(
+                    "completed",
+                    "context_task_started");
+                return;
+            }
         }
 
         const bool worldPaused = ou != NULL && ou->isPaused();
@@ -1218,19 +1353,26 @@ namespace
         if (worldPaused)
             return;
 
-        std::string selectedId;
-        hand selectedHandle;
-        if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
-            selectedId != g_activeNativeCommand.selectedCharacterId ||
-            !SameHandleIdentity(
-                selectedHandle,
-                g_activeNativeCommand.selectedHandle))
+        if (g_activeNativeCommand.isContextAction)
         {
-            FinishActiveNativeCommand("cancelled", "selection_mismatch");
+            if (walker == NULL || !walker->isValid())
+            {
+                FinishActiveNativeCommand("cancelled", "selection_mismatch");
+                return;
+            }
+            const Ogre::Vector3 here = walker->getPosition();
+            if (KenshiAgentTelemetry::ObserveNativeMovementStall(
+                    g_activeNativeCommand.stallWindow,
+                    false,
+                    here.x,
+                    here.z,
+                    GetTickCount()))
+            {
+                FinishActiveNativeCommand("cancelled", "movement_stalled");
+            }
             return;
         }
 
-        Character* walker = selectedHandle.getCharacter();
         if (g_activeNativeCommand.isWalk)
         {
             if (walker == NULL || !walker->isValid())
@@ -1406,7 +1548,8 @@ namespace
                 (request.command == "approach_confirmed_vendor" ||
                  request.command == "move_to_character" ||
                  request.command == "move_in_direction" ||
-                 request.command == "exit_current_building") &&
+                 request.command == "exit_current_building" ||
+                 request.command == "operate_natural_resource") &&
                 hasCommandIdentity &&
                 !request.selectedCharacterId.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
@@ -1435,9 +1578,15 @@ namespace
         const bool isDirection = request.command == "move_in_direction";
         const bool isBuildingExit =
             request.command == "exit_current_building";
-        if (isApproach || isMove || isDirection || isBuildingExit)
+        const bool isContextAction =
+            request.command == "operate_natural_resource";
+        if (isApproach || isMove || isDirection || isBuildingExit || isContextAction)
             g_lastNativeCommand = request.command;
-        if (!isApproach && !isMove && !isDirection && !isBuildingExit)
+        if (!isApproach &&
+            !isMove &&
+            !isDirection &&
+            !isBuildingExit &&
+            !isContextAction)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -1475,6 +1624,69 @@ namespace
             selectedId != request.selectedCharacterId)
         {
             RejectNativeCommand(request, "selection_mismatch");
+            return;
+        }
+
+        if (isContextAction)
+        {
+            bool exactIdentityFound = false;
+            Building* target = FindExactNaturalResource(
+                player,
+                request.targetId,
+                exactIdentityFound);
+            if (target == NULL)
+            {
+                RejectNativeCommand(
+                    request,
+                    exactIdentityFound
+                        ? "target_role_invalid"
+                        : "target_lifetime_changed");
+                return;
+            }
+            float taskProbability = 0.0f;
+            if (!IsReviewedNaturalResource(player, target, taskProbability))
+            {
+                RejectNativeCommand(request, "context_task_unavailable");
+                return;
+            }
+            const hand& targetHandle = target->getHandle();
+            Building* destinationIndoors =
+                target->isIndoors().getBuilding();
+            player->newPlayerTaskSelectedCharacters(
+                OPERATE_MACHINERY,
+                targetHandle,
+                destinationIndoors,
+                target->getPosition(),
+                false);
+            AddNativeAcknowledgement(
+                request,
+                "accepted",
+                "issued",
+                true,
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.selectedCharacterId =
+                request.selectedCharacterId;
+            g_activeNativeCommand.targetHandle = targetHandle;
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.expectedTask = OPERATE_MACHINERY;
+            KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+                g_activeNativeCommand.pauseWindow);
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
+            g_activeNativeCommand.originX = 0.0f;
+            g_activeNativeCommand.originZ = 0.0f;
+            g_lastNativeCommandResult = "issued";
+            g_lastNativeCommandTarget = target->getName();
+            g_lastNativeCommandTargetId = request.targetId;
             return;
         }
 
@@ -1519,6 +1731,8 @@ namespace
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
             KenshiAgentTelemetry::ResetNativeMovementStallWindow(
@@ -1612,6 +1826,8 @@ namespace
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isBuildingExit = true;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
             KenshiAgentTelemetry::ResetNativeMovementStallWindow(
@@ -1673,6 +1889,8 @@ namespace
         g_activeNativeCommand.isWalk = isMove;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isBuildingExit = false;
+        g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.expectedTask = NULL_TASK;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
         KenshiAgentTelemetry::ResetNativeMovementStallWindow(
@@ -1800,6 +2018,8 @@ namespace
              << "\"control.move_to_character\","
              << "\"control.move_in_direction\","
              << "\"control.exit_current_building\","
+             << "\"world.context_targets\","
+             << "\"control.perform_context_action\","
              << "\"identity.stable_handles\"";
         if (g_shopTraderRegistryReady)
             json << ",\"nearby.shop_owners\"";
@@ -2166,6 +2386,61 @@ namespace
             }
         }
         json << "],";
+        json << "\"world_targets\":[";
+        if (ou != NULL && selected != NULL && selected->isValid())
+        {
+            lektor<RootObject*> nearbyBuildings;
+            const Ogre::Vector3 selectedPosition = selected->getPosition();
+            ou->getObjectsWithinSphere(
+                nearbyBuildings,
+                selectedPosition,
+                WORLD_CONTEXT_TARGET_RADIUS,
+                BUILDING,
+                MAX_WORLD_CONTEXT_TARGETS,
+                selected);
+            bool first = true;
+            for (lektor<RootObject*>::iterator it = nearbyBuildings.begin();
+                 it != nearbyBuildings.end();
+                 ++it)
+            {
+                Building* target = reinterpret_cast<Building*>(*it);
+                float taskProbability = 0.0f;
+                if (!IsReviewedNaturalResource(
+                        player,
+                        target,
+                        taskProbability))
+                {
+                    continue;
+                }
+                const std::string targetId =
+                    StableEntityId(target->getHandle());
+                if (targetId.empty())
+                    continue;
+                if (!first)
+                    json << ",";
+                first = false;
+                const Ogre::Vector3 targetPosition = target->getPosition();
+                json << "{";
+                json << "\"id\":\"" << targetId << "\",";
+                json << "\"name\":\""
+                     << JsonEscape(target->getName()) << "\",";
+                json << "\"kind\":\"natural_resource\",";
+                json << "\"position\":";
+                AppendVector3(json, targetPosition);
+                json << ",";
+                json << "\"distance\":"
+                     << Distance(targetPosition, selectedPosition) << ",";
+                json << "\"context_actions\":[\"operate\"],";
+                json << "\"default_task\":\"operate_machinery\",";
+                json << "\"task_available\":true,";
+                json << "\"task_probability\":"
+                     << taskProbability << ",";
+                json << "\"mining_resource_level\":"
+                     << target->getMiningResourceLevel();
+                json << "}";
+            }
+        }
+        json << "],";
         json << "\"warnings\":["
              << "\"Partial telemetry only: body-part wounds, bleeding rate, "
              << "getting-eaten state, imprisonment/enslavement, current tasks, "
@@ -2211,6 +2486,7 @@ namespace
         json << "\"squad\":[],";
         json << "\"active_shop_trader_count\":null,";
         json << "\"nearby_entities\":[],";
+        json << "\"world_targets\":[],";
         json << "\"warnings\":[";
         json << "\"Title-screen snapshot: loaded-game, entity, command, and "
              << "world capabilities are intentionally unavailable.\"";

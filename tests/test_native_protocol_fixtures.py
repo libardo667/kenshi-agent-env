@@ -46,6 +46,17 @@ def test_python_accepts_parameterless_building_exit_request_fixture() -> None:
     assert request.distance_units == 0.0
 
 
+def test_python_accepts_exact_context_action_request_fixture() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_context_action_request.json").read_bytes()
+    )
+
+    assert request.command == "operate_natural_resource"
+    assert request.target_id == "entity-natural-resource"
+    assert request.bearing_degrees == 0.0
+    assert request.distance_units == 0.0
+
+
 def test_python_rejects_direction_request_that_smuggles_a_target() -> None:
     with pytest.raises(ValidationError, match="must not name a target"):
         NativeCommandRequest.model_validate_json(
