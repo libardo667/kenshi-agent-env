@@ -107,6 +107,13 @@ planner-authorable on the generic live path.
   nonterminal native walk left movement poisoned until an explicit post-run
   safety pause cancelled it. The full report is
   `docs/LIVE_GPT41_80_TURN_REPORT_20260725.md`.
+- Run `20260725-camera-recovery-live-02` exercised the completed no-argument
+  controller transaction against Hep's still-obstructed ruined Storm House
+  view. It advanced fresh telemetry 24,999→25,041, established a zero-distance
+  character anchor, retained ten floor/zoom/orbit/tilt candidates, selected the
+  best frame, left Kenshi paused with no active command, and returned the
+  truthful bounded terminal `failed_after_bounded_attempts` rather than
+  exposing more camera gestures to the model.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps typed lifecycle evidence in `events.jsonl`. A selectable
   `transcript.log` is intended, but the 80-turn run did not produce one.
@@ -176,12 +183,12 @@ At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
 
 ## Open work
 
-- Obtain one bounded live acceptance receipt for the new controller-owned
-  `recover_camera_view`. Portable evidence now covers zero-input
-  `already_clear`, successful follow/floor/zoom/orbit/tilt selection, safe pause
-  without unpause, human interruption, continuous controller-verdict handling,
-  and terminal `failed_after_bounded_attempts`; live Kenshi evidence is still a
-  separate gate.
+- Retain a live `recovered` receipt when Hep is naturally in a
+  camera-recoverable scene. The current ruined-building state has already
+  closed the live contract gate with a causally advancing, frame-retained,
+  pause-preserving bounded failure; moving Hep merely to manufacture a green
+  camera frame is outside the recovery action and would conflate camera control
+  with gameplay.
 - A native movement option can time out while its exact command remains
   accepted. Later direction options then fail or are rejected with
   `command_already_active`; failed options have no successful terminalization

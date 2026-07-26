@@ -164,10 +164,16 @@ inspection alone.
       `recovered`, or `failed_after_bounded_attempts` evidence; owns an
       fifteen-primitive ceiling; and allows empty model-authored success
       conditions only for this controller-verified action.
-- [ ] Retain one live Kenshi receipt with advancing fresh telemetry, resulting
+- [x] Retain one live Kenshi receipt with advancing fresh telemetry, resulting
       candidate frames, final pause state, selected-character anchor evidence,
       and a terminal camera-recovery status. Portable scoring/mock receipts do
-      not satisfy this box.
+      not satisfy this box. Run `20260725-camera-recovery-live-02` advanced
+      telemetry 24,999 to 25,041, retained ten scored candidates, kept Hep
+      anchored at distance 0 on floor 0, left the world paused with no active
+      native command, and honestly returned
+      `failed_after_bounded_attempts` after ten primitives. Its event log
+      SHA-256 is
+      `cea99292fba627ae137e8b2396b3dda215c85119974958410061fbb7ecb2df87`.
 
 ### Protocol 0.5 title-screen semantic lifecycle
 

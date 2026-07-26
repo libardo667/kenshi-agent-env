@@ -49,6 +49,14 @@ The receipt retains all scored frame paths/hashes and returns exactly
 means the bounded controller policy exhausted its options; the model must not
 start composing camera keys to continue the same recovery.
 
+Live run `20260725-camera-recovery-live-02` demonstrated that failure boundary
+in Hep's ruined Storm House: portrait follow established a zero-distance
+anchor, floor 0 was already the lowest available floor, End was inert under the
+zoom lock, and fixed orbit/tilt candidates all remained occluded by building
+mesh. The controller selected the least-obstructed tilt-up frame and stopped
+after ten primitives, leaving the game paused. This is expected best-effort
+behavior; walking Hep outside would be gameplay, not camera recovery.
+
 Community references:
 
 - [Steam guide: Locked Height for New Perspective](https://steamcommunity.com/sharedfiles/filedetails/?id=2926728062)

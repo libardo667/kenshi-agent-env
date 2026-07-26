@@ -30,8 +30,35 @@ pause-without-unpause, exact floor restoration, fixed orbit selection, human
 interruption before the next primitive, capability/binding gates, and
 continuous-executor acceptance of the controller verdict without
 model-authored postconditions. Mock mode exposes the same typed action and
-receipt. This is declared and portable evidence only until the separate live
-acceptance box in `docs/LIVE_VALIDATION_CHECKLIST.md` is completed.
+receipt.
+
+Two one-action scripted live probes then exercised the exact no-argument
+surface without a strategic model or unrelated gameplay. Run
+`20260725-camera-recovery-live-01` proved follow/floor/zoom/orbit execution and
+honest bounded failure, and exposed that the implementation had omitted the
+design's fixed tilt candidates. Commit `82c4a98` added Windows OEM comma/period
+support and a symmetric tilt comparison under a separate controller-verified
+primitive ceiling, without loosening the ordinary four-primitive macro cap.
+
+Run `20260725-camera-recovery-live-02` exercised the completed transaction in
+the same ruined Storm House scene. The action advanced from telemetry 24,999
+and frame 1 to telemetry 25,041 and frame 12, retained ten scored candidates,
+kept Hep's world label visible and camera anchor distance at 0, stayed on floor
+0 when floor-down could go no lower, and selected `final_tilt_up` as the best
+view. That view improved from score 0.472 to 0.494 but remained dominated by
+ruined-building mesh, below the 0.72 threshold, so the typed terminal was
+`failed_after_bounded_attempts` after ten primitives. The runtime correctly
+classified it as `no_op` and instructed the planner not to finagle or retry.
+Kenshi remained fresh, loaded, paused, with Hep stationary and no active native
+command. The event log SHA-256 is
+`cea99292fba627ae137e8b2396b3dda215c85119974958410061fbb7ecb2df87`;
+the initial/final candidate frame hashes are
+`0ac2b831556bc0bccbf52342d26e90428bab2f471587bba5a188f466b6bda290`
+and
+`c5254e343cab9e0ee926478010a38c4c14fd70a99349ed9365bfb2ad294f94a5`.
+This is green live acceptance of the bounded controller contract and truthful
+failure path, not evidence that every physical scene can be made readable
+without moving the character.
 
 ## GPT-4.1 80-turn live endurance run (2026-07-25)
 
