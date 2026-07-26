@@ -134,20 +134,24 @@ pinned upstream dependency and toolchain boundary is unchanged.
 
 ## Current installed development artifact
 
-Verified directly from the Windows install on 2026-07-25 after the paused-start
-and destination-crossing corrections:
+Verified directly from the Windows install on 2026-07-26 after the native
+building-exit destination-terminal correction:
 
 ```text
 path: C:\Program Files (x86)\Steam\steamapps\common\Kenshi\mods\KenshiAgentTelemetry\KenshiAgentTelemetry.dll
-size: 202240 bytes
-sha256: 0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb
-mtime: 2026-07-25 15:16:52.166443500 -07:00
+size: 205824 bytes
+sha256: 2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9
+mtime: 2026-07-26 07:32:44.351021100 -07:00
 ```
 
-This is the current installed development DLL for protocol `0.6.1`, built from
-implementation commits `309f100` and `b3543ec`. The ignored local
+This is the current installed development DLL for protocol `0.7.0`. The ignored local
 `staging/KenshiAgentTelemetry/KenshiAgentTelemetry.dll` and installed DLL were
-verified byte-identical before the supervised launch. The original protocol
+verified byte-identical with the build output before the supervised launch.
+The prior 205,312-byte protocol `0.7.0` DLL, SHA-256
+`9329f7317b94d521db063776a2cd72b05476043fb022e0ff9be08bc177ec3529`,
+is recoverable at
+`%LOCALAPPDATA%\KenshiAgent\backups\native\20260726T143306Z-pre-exit-destination-terminal-0.7.0`.
+The original protocol
 `0.6.0` DLL, SHA-256
 `221ecf2eb0bbc4e4417d7ea58740af46da6c092692a6bf45e32fb52db20aeceb`,
 is recoverable at
@@ -158,9 +162,10 @@ is recoverable at
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T221724Z-pre-destination-crossing-0.6.1`.
 The prior 199,168-byte protocol `0.5.0` artifact remains recoverable at
 `%LOCALAPPDATA%\KenshiAgent\backups\native\20260725T213500Z-direction-protocol-0.6.0`.
-Kenshi was closed for both replacements. The final artifact then passed the
-guarded 45-second loaded/paused health window and the exact live direction run
-`20260725T2223-direction-smoke-061-green`.
+Kenshi was closed for the replacement. The final artifact then passed guarded
+preflight, fresh advancing protocol `0.7.0` loaded telemetry, the native
+conformance executable, and exact live building-exit run
+`20260726Tnative-building-exit-live-04`.
 
 ## Plugin staging/install layout
 

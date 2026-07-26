@@ -42,6 +42,41 @@ inspection alone.
       stale pointers.
 - [x] Missing capabilities remain absent rather than fabricated.
 
+### Protocol 0.7 native building-exit boundary
+
+- [x] Add `squad.indoors` and `control.exit_current_building` capabilities,
+      strict parameterless request/acknowledgement identity, and shared
+      Python/C++ fixtures.
+- [x] Resolve the selected character's current valid unlocked door and outside
+      point in native code. The planner supplies no target, bearing, distance,
+      coordinate, or door identity.
+- [x] Add a shared movement terminal: less than one world unit of progress for
+      ten continuous unpaused seconds ends the exact active command with
+      `movement_stalled`; deliberate paused gaps reset the timer.
+- [x] Make the continuous controller own a verified paused-start unpause after
+      native acceptance, then leave run-finished safety responsible for the
+      terminal pause.
+- [x] Correct the exit terminal against live evidence. A building-handle change
+      alone was too early, while `isIndoors()==false` never arrived after the
+      user visibly saw Hep outside. Completion now accepts stable outdoor
+      membership or reaching the resolved outside-door point within three units
+      after at least one unit of movement.
+- [x] Build with the pinned VS2010 SP1 Release x64 toolchain and pass the native
+      protocol/movement conformance executable. Build, stage, and installed
+      DLLs are byte-identical: 205,824 bytes, SHA-256
+      `2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`.
+      The prior installed DLL is recoverable at
+      `%LOCALAPPDATA%\KenshiAgent\backups\native\20260726T143306Z-pre-exit-destination-terminal-0.7.0`.
+- [x] Retain one visible green live run.
+      `20260726Tnative-building-exit-live-04` issued exact command
+      `cmd-fd4a3d1171d743488d8e58fa905f19de` from sequence 494,
+      accepted it at 495, moved Hep about 155.58 x/z units, completed at 506
+      with `outside_door_destination_reached`, succeeded at option and plan
+      layers, and confirmed final pause at 508.
+- [x] Preserve the honest evidence boundary: this proves one open unlocked
+      Storm House door. Other buildings, multiple/locked/disabled doors, and
+      broader zone transitions remain unproven.
+
 ### Protocol 0.6 targetless-direction boundary
 
 - [x] Python request/acknowledgement models and the production C++ parser and

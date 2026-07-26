@@ -169,6 +169,144 @@ namespace
 
         return 0;
     }
+
+    int TestNativeMovementStallTiming()
+    {
+        using KenshiAgentTelemetry::NativeMovementStallWindow;
+        using KenshiAgentTelemetry::ObserveNativeMovementStall;
+
+        NativeMovementStallWindow window;
+        KenshiAgentTelemetry::ResetNativeMovementStallWindow(window);
+        if (ObserveNativeMovementStall(window, false, 0.0f, 0.0f, 1000UL))
+            return Fail("movement stalled on its first observation");
+        if (ObserveNativeMovementStall(
+                window,
+                false,
+                0.5f,
+                0.0f,
+                1000UL +
+                    KenshiAgentTelemetry::NATIVE_MOVEMENT_STALL_LIMIT_MS -
+                    1UL))
+        {
+            return Fail("sub-threshold movement stalled one millisecond early");
+        }
+        if (!ObserveNativeMovementStall(
+                window,
+                false,
+                0.5f,
+                0.0f,
+                1000UL +
+                    KenshiAgentTelemetry::NATIVE_MOVEMENT_STALL_LIMIT_MS))
+        {
+            return Fail("blocked movement did not stall at its exact limit");
+        }
+
+        KenshiAgentTelemetry::ResetNativeMovementStallWindow(window);
+        ObserveNativeMovementStall(window, false, 0.0f, 0.0f, 2000UL);
+        if (ObserveNativeMovementStall(window, false, 1.0f, 0.0f, 7000UL))
+            return Fail("meaningful progress incorrectly stalled");
+        if (ObserveNativeMovementStall(
+                window,
+                false,
+                1.0f,
+                0.0f,
+                7000UL +
+                    KenshiAgentTelemetry::NATIVE_MOVEMENT_STALL_LIMIT_MS -
+                    1UL))
+        {
+            return Fail("progress did not reset the stall interval");
+        }
+
+        // A deliberate controller pause does not count against movement time.
+        if (ObserveNativeMovementStall(window, true, 1.0f, 0.0f, 50000UL))
+            return Fail("paused movement was classified as stalled");
+        if (ObserveNativeMovementStall(window, false, 1.0f, 0.0f, 51000UL))
+            return Fail("movement stalled immediately after a pause");
+
+        return 0;
+    }
+
+    int TestNativeOutdoorConfirmation()
+    {
+        using KenshiAgentTelemetry::NativeOutdoorConfirmationWindow;
+        using KenshiAgentTelemetry::ObserveNativeOutdoorConfirmation;
+
+        NativeOutdoorConfirmationWindow window;
+        KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(window);
+        if (ObserveNativeOutdoorConfirmation(window, false, 1000UL))
+            return Fail("first outdoor frame completed a building exit");
+        if (ObserveNativeOutdoorConfirmation(
+                window,
+                false,
+                1000UL +
+                    KenshiAgentTelemetry::NATIVE_OUTDOOR_CONFIRMATION_MS -
+                    1UL))
+        {
+            return Fail("building exit completed before outdoor confirmation");
+        }
+        if (!ObserveNativeOutdoorConfirmation(
+                window,
+                false,
+                1000UL +
+                    KenshiAgentTelemetry::NATIVE_OUTDOOR_CONFIRMATION_MS))
+        {
+            return Fail("stable outdoor state did not complete at its limit");
+        }
+
+        // A nested/intermediate indoor handle resets a transient outdoor gap.
+        if (ObserveNativeOutdoorConfirmation(window, true, 2000UL))
+            return Fail("an indoor state completed a building exit");
+        if (ObserveNativeOutdoorConfirmation(window, false, 2100UL))
+            return Fail("outdoor confirmation did not restart after indoors");
+        return 0;
+    }
+
+    int TestNativeExitDestinationCompletion()
+    {
+        using KenshiAgentTelemetry::HasReachedResolvedExitDestination;
+
+        if (HasReachedResolvedExitDestination(
+                0.0f,
+                0.0f,
+                100.0f,
+                50.0f,
+                0.5f,
+                0.0f))
+        {
+            return Fail("an exit completed without meaningful movement");
+        }
+        if (HasReachedResolvedExitDestination(
+                0.0f,
+                0.0f,
+                100.0f,
+                50.0f,
+                96.9f,
+                50.0f))
+        {
+            return Fail("an exit completed outside its tight door tolerance");
+        }
+        if (!HasReachedResolvedExitDestination(
+                0.0f,
+                0.0f,
+                100.0f,
+                50.0f,
+                97.0f,
+                50.0f))
+        {
+            return Fail("a reached native outside-door point did not complete");
+        }
+        if (!HasReachedResolvedExitDestination(
+                0.0f,
+                0.0f,
+                100.0f,
+                50.0f,
+                100.0f,
+                50.0f))
+        {
+            return Fail("an exact native outside-door point did not complete");
+        }
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
@@ -181,6 +319,15 @@ int main(int argc, char** argv)
     const int completionResult = TestNativeDirectionCompletion();
     if (completionResult != 0)
         return completionResult;
+    const int stallResult = TestNativeMovementStallTiming();
+    if (stallResult != 0)
+        return stallResult;
+    const int outdoorResult = TestNativeOutdoorConfirmation();
+    if (outdoorResult != 0)
+        return outdoorResult;
+    const int exitDestinationResult = TestNativeExitDestinationCompletion();
+    if (exitDestinationResult != 0)
+        return exitDestinationResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =
@@ -231,6 +378,27 @@ int main(int argc, char** argv)
         targeted.distanceUnits != 0.0)
     {
         return Fail("targeted request did not retain its exact identity");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest buildingExit;
+    const std::string buildingExitPayload =
+        ReadFile(prefix + "valid_exit_building_request.json");
+    if (buildingExitPayload.empty())
+        return Fail("could not read valid_exit_building_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            buildingExitPayload,
+            buildingExit,
+            rejectionReason))
+    {
+        return Fail(
+            "valid building-exit request was rejected as " + rejectionReason);
+    }
+    if (buildingExit.command != "exit_current_building" ||
+        !buildingExit.targetId.empty() ||
+        buildingExit.bearingDegrees != 0.0 ||
+        buildingExit.distanceUnits != 0.0)
+    {
+        return Fail("valid building exit did not remain parameterless");
     }
 
     KenshiAgentTelemetry::NativeCommandRequest invalid;

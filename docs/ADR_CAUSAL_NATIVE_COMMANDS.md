@@ -6,15 +6,16 @@ Accepted for P5. Portable tests, the pinned VS2010 SP1 Release x64 build, and
 the supervised in-game protocol `0.3.0` rejection/acceptance/completion proof
 pass.
 
-Extended in protocol `0.5.0` and corrected in `0.6.0` and `0.6.1` on
-2026-07-25. The
+Extended in protocol `0.5.0`, corrected in `0.6.0` and `0.6.1` on
+2026-07-25, and extended again in `0.7.0` on 2026-07-26. The
 command-ID, issue-time revision,
 mode/session/selection, keyed acknowledgement, and no-implicit-retry decisions
-remain authoritative. The bridge now admits three reviewed commands rather than
+remain authoritative. The bridge now admits four reviewed commands rather than
 one: generic exact-target dialogue approach (under the legacy
 `approach_confirmed_vendor` wire name), exact-character walking, and bounded
-directional walking. Command-specific completion is exact dialogue or bounded
-arrival.
+directional walking, plus a parameterless current-building exit whose door and
+outside destination are resolved natively. Command-specific completion is exact
+dialogue, bounded arrival, or the building exit's controller-owned terminal.
 
 Protocol `0.6.0` closes the directional exception: targetless requests and
 acknowledgements bind to command ID, exact selection, bearing, and distance,
@@ -26,6 +27,15 @@ crosses the intended destination plane. Run
 `20260725T2223-direction-smoke-061-green` supplies one exact live
 acceptance/completion proof; broader movement cases remain a separate evidence
 level.
+
+Protocol `0.7.0` adds a shared continuous-unpaused movement-stall terminal and
+`exit_current_building`. Exit request identity is command ID plus exact
+selection with empty target and zero vector. The plugin resolves one unlocked
+door and its outside point. Completion accepts stable outdoor membership or
+tightly reaching that native-resolved destination after meaningful movement,
+because live Kenshi retained a valid indoor handle after Hep visibly crossed
+the Storm House doorway. Run `20260726Tnative-building-exit-live-04` supplies
+the exact acceptance/completion proof.
 
 ## Problem
 

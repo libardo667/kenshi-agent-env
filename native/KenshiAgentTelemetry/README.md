@@ -29,7 +29,7 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.6.1` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.7.0` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 list reordering and distinguish duplicate names without serializing addresses.
 `identity_session_id` changes across process or game-session lifetimes.
@@ -188,3 +188,12 @@ The final 202,240-byte installed DLL has SHA-256
 `0f30b245382210b5a0e7c3c347d22f3c320eae17142808cea1a44ae49f214afb`;
 it passed the guarded loaded/paused health window and the exact live completion
 run named above.
+
+Protocol `0.7.0` adds reported squad indoor membership, the parameterless
+`exit_current_building` request, and shared no-progress movement
+terminalization. The plugin resolves one valid unlocked door and its outside
+point from the selected character's current building. The current 205,824-byte
+installed DLL has SHA-256
+`2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`;
+run `20260726Tnative-building-exit-live-04` completed the exact keyed exit with
+`outside_door_destination_reached` and a safe final pause.

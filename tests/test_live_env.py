@@ -18,6 +18,7 @@ from kenshi_agent.models import (
     CommandDispatchContext,
     ControlMode,
     Disposition,
+    ExitCurrentBuildingAction,
     GameState,
     HotkeyAction,
     KeyAction,
@@ -587,6 +588,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.target_screen_position: Vec2 | None = None
         self.target_visible: bool | None = None
         self.dialogue_target_id: str | None = None
+        self.indoors = False
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -614,6 +616,7 @@ class NativePulseTelemetry(PulseTelemetry):
                         id="entity-selected",
                         name="Wanderer",
                         selected=True,
+                        indoors=self.indoors,
                     )
                 ],
                 nearby_entities=[
@@ -1392,6 +1395,90 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
         assert acknowledgement.target_id == ""
         assert acknowledgement.bearing_degrees == 90.0
         assert acknowledgement.distance_units == 250.0
+
+    asyncio.run(scenario())
+
+
+def test_building_exit_request_is_parameterless_and_requires_current_indoor_state(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "control.exit_current_building",
+            "identity.stable_handles",
+            "squad.indoors",
+        ]
+        telemetry.indoors = True
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ExitCurrentBuildingAction(),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "d" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "exit_current_building"
+        assert controller.request.target_id == ""
+        assert controller.request.bearing_degrees == 0.0
+        assert controller.request.distance_units == 0.0
+
+        telemetry.indoors = False
+        later = await environment.observe_without_capture()
+        with pytest.raises(RuntimeError, match="confirmed indoors"):
+            await environment.dispatch(
+                ExitCurrentBuildingAction(),
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "c" * 32,
+                    based_on_revision=later.world_revision,
+                ),
+            )
+
+    asyncio.run(scenario())
+
+
+def test_continuous_native_movement_starts_a_paused_world_without_repausing(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "control.exit_current_building",
+            "identity.stable_handles",
+            "squad.indoors",
+        ]
+        telemetry.indoors = True
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "require_paused_between_actions": False,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ExitCurrentBuildingAction(),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "b" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert telemetry.paused is False
+        assert [action.kind for action in controller.actions] == ["hotkey", "key"]
+        assert "Started the paused world" in transition.receipt.message
 
     asyncio.run(scenario())
 

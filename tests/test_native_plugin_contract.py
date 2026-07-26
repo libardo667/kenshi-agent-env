@@ -79,7 +79,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.6.1"' in source
+    assert 'PROTOCOL_VERSION = "0.7.0"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -99,7 +99,7 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
 def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.6.1"' in source
+    assert 'PROTOCOL_VERSION = "0.7.0"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactDialogueTarget" in source
@@ -281,6 +281,21 @@ def test_targetless_direction_uses_the_shared_native_protocol_module() -> None:
     assert "SerializeNativeCommandAcknowledgement" in plugin
 
 
+def test_parameterless_building_exit_resolves_a_native_outdoor_door_point() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    protocol = PROTOCOL_SOURCE.read_text(encoding="utf-8")
+
+    assert 'request.command == "exit_current_building"' in protocol
+    assert "control.exit_current_building" in plugin
+    assert "walker->isIndoors()" in plugin
+    assert "building->doors.begin()" in plugin
+    assert "door->isLocked()" in plugin
+    assert "door->getDoorPosOutside_extraFarOut" in plugin
+    assert "ObserveNativeOutdoorConfirmation" in plugin
+    assert '"left_current_building"' in plugin
+    assert '"no_usable_exit"' in plugin
+
+
 def test_native_movement_pause_timing_uses_the_shared_conformance_module() -> None:
     plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
     tests = (
@@ -311,4 +326,17 @@ def test_native_direction_completion_uses_the_shared_conformance_module() -> Non
     assert "purely sideways movement completed a direction" in tests
     assert "short movement outside tolerance completed a direction" in tests
     assert "crossing the destination plane did not complete" in tests
+
+
+def test_native_movement_stall_uses_the_shared_conformance_module() -> None:
+    plugin = PLUGIN_SOURCE.read_text(encoding="utf-8")
+    tests = (
+        PLUGIN_SOURCE.parent / "NativeCommandProtocolTests.cpp"
+    ).read_text(encoding="utf-8")
+
+    assert "ObserveNativeMovementStall" in plugin
+    assert '"movement_stalled"' in plugin
+    assert "blocked movement did not stall at its exact limit" in tests
+    assert "progress did not reset the stall interval" in tests
+    assert "stable outdoor state did not complete at its limit" in tests
     assert f'"{NATIVE_WALK_DESTINATION_REACHED_RESULT}"' in plugin

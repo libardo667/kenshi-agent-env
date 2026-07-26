@@ -62,6 +62,9 @@
               "$ref": "#/$defs/MoveInDirectionAction"
             },
             {
+              "$ref": "#/$defs/ExitCurrentBuildingAction"
+            },
+            {
               "$ref": "#/$defs/ActivateVisibleControlAction"
             },
             {
@@ -843,6 +846,18 @@
           "default": null,
           "title": "Movement Speed"
         },
+        "indoors": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Indoors"
+        },
         "hunger": {
           "anyOf": [
             {
@@ -1112,6 +1127,20 @@
         "window"
       ],
       "title": "EquipItemAction",
+      "type": "object"
+    },
+    "ExitCurrentBuildingAction": {
+      "additionalProperties": false,
+      "description": "Leave the selected character's current building through a native door.\n\nThe planner supplies no coordinates, bearing, door identity, or retry\nstrategy. The native controller resolves an unlocked door from the exact\nbuilding the selected character currently occupies, issues one pathing\norder to its outdoor point, and owns completion or typed failure.",
+      "properties": {
+        "kind": {
+          "const": "exit_current_building",
+          "default": "exit_current_building",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "ExitCurrentBuildingAction",
       "type": "object"
     },
     "GameBinding": {
@@ -1631,7 +1660,8 @@
           "enum": [
             "approach_confirmed_vendor",
             "move_to_character",
-            "move_in_direction"
+            "move_in_direction",
+            "exit_current_building"
           ],
           "title": "Command",
           "type": "string"

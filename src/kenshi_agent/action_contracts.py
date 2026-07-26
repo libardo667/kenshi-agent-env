@@ -41,6 +41,7 @@ from .models import (
     DismissScreenAction,
     Disposition,
     EquipItemAction,
+    ExitCurrentBuildingAction,
     IdempotencyPolicy,
     MoveInDirectionAction,
     MoveToCharacterAction,
@@ -75,6 +76,10 @@ NATIVE_MOVE_CAPABILITY = "control.move_to_character"
 NATIVE_DIRECTION_CAPABILITY = "control.move_in_direction"
 NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
 NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
+NATIVE_EXIT_BUILDING_CAPABILITY = "control.exit_current_building"
+NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
+    "exit_current_building"
+)
 NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
@@ -282,6 +287,43 @@ def bind_move_in_direction(
             f"{action.bearing_degrees:.0f}."
         ),
         resolved_label=walker.name,
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_exit_current_building(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a parameter-free exit request to one selected indoor character."""
+
+    if not isinstance(action, ExitCurrentBuildingAction):
+        return _unbound("Action is not an exit_current_building action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the building exit.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the building exit cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("The game is not loaded, so no exit order can be given.")
+    selected = [character for character in telemetry.squad if character.selected]
+    if len(selected) != 1:
+        return _unbound(
+            f"{len(selected)} characters are selected; exactly one must be, so the "
+            "building occupant is unambiguous."
+        )
+    character = selected[0]
+    if character.indoors is not True:
+        return _unbound(
+            f"Selected character {character.name!r} is not confirmed inside a building."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound a controller-owned exit from the selected character "
+            f"{character.name!r}'s current building."
+        ),
+        resolved_label=character.name,
         source_revision=observation.world_revision,
     )
 
@@ -1092,6 +1134,45 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     bind=bind_move_in_direction,
 )
 
+EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
+    kind="exit_current_building",
+    version="1.0",
+    model=ExitCurrentBuildingAction,
+    summary=(
+        "Leave the selected character's current building. The planner supplies "
+        "no direction or coordinates; native code resolves an unlocked door, "
+        "issues one order to its outdoor point, and owns completion or bounded "
+        "failure. Completion accepts either stable outdoor membership or tightly "
+        "reaching that resolved outside-door destination because Kenshi can "
+        "retain a stale indoor handle after visible traversal."
+    ),
+    argument_source=(
+        "No arguments. Availability requires one exact selected character with "
+        "selected.indoors=true in current telemetry."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_EXIT_BUILDING_CAPABILITY,
+            "game.pause",
+            "identity.stable_handles",
+            "squad.indoors",
+        }
+    ),
+    capability_aliases=frozenset({NATIVE_EXIT_BUILDING_CAPABILITY}),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_move",
+    bind=bind_exit_current_building,
+    controller_verified=True,
+)
+
 MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     kind="move_to_character",
     version="1.0",
@@ -1418,6 +1499,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,
+        EXIT_CURRENT_BUILDING_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
         DISMISS_SCREEN_CONTRACT,
         PURCHASE_ITEM_CONTRACT,

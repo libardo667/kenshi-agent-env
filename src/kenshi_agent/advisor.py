@@ -392,6 +392,7 @@ def advisor_state_fingerprint(observation: Observation) -> str:
                 "conscious": selected.conscious,
                 "in_combat": selected.in_combat,
                 "hunger": selected.hunger,
+                "indoors": selected.indoors,
                 "food_items": selected.food_items,
                 "position": (
                     {
@@ -510,4 +511,3 @@ def _json_body(content: str) -> str:
     if start > 0 and end > start:
         text = text[start : end + 1]
     return text
-

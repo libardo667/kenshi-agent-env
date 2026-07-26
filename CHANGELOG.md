@@ -6,7 +6,7 @@
   causal revisions, valued state deltas, option lifecycle, persistent plan
   memory, an independent safety supervisor, and final input-lease
   revalidation.
-- Added the generic `dialogue_interaction_v1` live policy and ten reusable
+- Added the generic `dialogue_interaction_v1` live policy and eleven reusable
   semantic action contracts for dialogue approach, local movement, visible
   controls, screen dismissal, buying, selling, equipping, game bindings, and
   scrolling. Retired the fixed `food_procurement_v1` policy after lifting its
@@ -26,6 +26,15 @@
   paused-start handoff and destination-crossing completion semantics; the
   installed DLL passed an exact live acceptance/completion smoke with plausible
   movement, a resulting frame, and safe final pause.
+- Added protocol `0.7.0` indoor telemetry and the no-argument
+  `exit_current_building` contract. Native code resolves the current building's
+  unlocked door and outside point; a keyed monitored option owns paused-start
+  unpause, completion, and the shared no-progress terminal. A live Storm House
+  exit completed with `outside_door_destination_reached` even though Kenshi's
+  indoor handle lingered after visible traversal.
+- Adopted a right-sized native-integration boundary: faithful semantic Kenshi
+  coverage, truthful capabilities, and reviewable evidence determine plugin
+  scope rather than a small/medium/large size target.
 - Added OpenRouter structured planning with provider routing and a local-schema
   fallback, mode-aware OpenAI output budgets, dynamic observation/control
   budgeting, and a fast non-reasoning long-form planner default.
@@ -39,8 +48,8 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 482 passing tests with
-  clean Ruff and strict mypy over 56 source files.
+- Added `uv.lock`. The current portable baseline is 531 passing tests with
+  clean Ruff and strict mypy over 58 source files.
 
 ## 0.1.0 — scaffold
 

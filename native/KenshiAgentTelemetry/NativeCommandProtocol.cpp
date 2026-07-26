@@ -252,6 +252,8 @@ namespace KenshiAgentTelemetry
 
             const bool isDirection =
                 request.command == "move_in_direction";
+            const bool isBuildingExit =
+                request.command == "exit_current_building";
             const bool isTargeted =
                 request.command == "approach_confirmed_vendor" ||
                 request.command == "move_to_character";
@@ -267,10 +269,25 @@ namespace KenshiAgentTelemetry
                     return false;
                 }
             }
+            else if (isBuildingExit)
+            {
+                if (!request.targetId.empty() ||
+                    request.bearingDegrees != 0.0 ||
+                    request.distanceUnits != 0.0)
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
             else if (isTargeted &&
                      (request.targetId.empty() ||
                       request.bearingDegrees != 0.0 ||
                       request.distanceUnits != 0.0))
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
+            else if (!isTargeted)
             {
                 rejectionReason = "malformed_request";
                 return false;

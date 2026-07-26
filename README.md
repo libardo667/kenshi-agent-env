@@ -5,7 +5,7 @@ screenshots, persistent memory, structured continuous planning, semantic action
 contracts, analyzable lifecycle logs, optional full-observation replay, and
 explicitly labelled control modes. The default
 `interface_only` mode uses ordinary Windows input. The optional
-`native_assisted` mode also permits three narrowly reviewed movement command
+`native_assisted` mode also permits four reviewed native command
 bridges and is never merged silently into interface-only evidence.
 
 The project now supports a supervised open-ended live loop over a bounded,
@@ -25,7 +25,7 @@ behavior, or public claims.
 
 ## What is runnable now
 
-- A deterministic Kenshi-like mock environment and a 482-test portable
+- A deterministic Kenshi-like mock environment and a 531-test portable
   regression suite.
 - Strict schemas for telemetry, observations, decisions, bounded plans,
   future-only patches, actions, receipts, native requests, and memories.
@@ -40,7 +40,7 @@ behavior, or public claims.
   `runtime.log_full_observations: true` when full environment replay is needed.
 - An independent deterministic safety supervisor and a final in-input-lease
   authorization fence.
-- Ten declared reusable action contracts covering dialogue approach, local
+- Eleven declared reusable action contracts covering dialogue approach, local
   movement, visible controls, screen dismissal, buying, selling, equipping,
   game bindings, and scrolling. Targetless `move_in_direction` now has aligned
   Python/C++ request and acknowledgement models, keyed option ownership, shared
@@ -48,10 +48,14 @@ behavior, or public claims.
   completion proof. Protocol `0.6.1` survives the bounded stop-motion pause
   handoff and completes a direction after reaching its destination tolerance or
   crossing the intended destination plane.
+- A no-argument `exit_current_building` contract. Protocol `0.7.0` resolves the
+  selected character's current unlocked door and outside point natively, owns
+  paused-start unpause and terminal monitoring, and passed one exact live Storm
+  House exit with `outside_door_destination_reached`.
 - A Windows client-area capture and SendInput controller with polite handoff,
   explicit control ownership, F12, semantic current bounds, and calibration
   identity.
-- Native protocol `0.6.1`, which emits stable identities, squad state and
+- Native protocol `0.7.0`, which emits stable identities, squad state and
   inventory, dialogue/trade/management UI, named item cells, combat state,
   camera facts, and a keyed acknowledgement ring for reviewed movement
   commands.
@@ -330,11 +334,13 @@ operate visible controls, enter screens through Kenshi's own default bindings,
 buy, sell, equip, scroll, and close windows. The declared bounded
 `move_in_direction` action now keeps `target_id` empty by contract and binds
 command identity to the selected character, bearing, and distance. Portable
-tests and the native conformance executable pass, and the byte-identical 0.6.1
+tests and the native conformance executable pass, and the byte-identical 0.7.0
 DLL is installed. Run `20260725T2223-direction-smoke-061-green` proved one exact
 36.5-degree, 30-unit request from keyed acceptance through
 `walk_destination_reached`, plausible movement, a changed resulting frame, and
-safe final pause. Raw
+safe final pause. The parameterless building-exit action similarly passed run
+`20260726Tnative-building-exit-live-04`, which moved Hep through the resolved
+door and completed with `outside_door_destination_reached`. Raw
 controller primitives, save/load/editor bindings, arbitrary native tasks, and
 direct game-state mutation remain unavailable.
 
@@ -451,7 +457,7 @@ fresh observation and plan rather than resuming cancelled work. Use
 
 The plugin hooks Kenshi's title and loaded-game update points, calls the
 original methods first, and samples on the game/UI thread at about two hertz.
-Its telemetry path is observational. Protocol `0.6.1` currently exports:
+Its telemetry path is observational. Protocol `0.7.0` currently exports:
 
 - loaded, paused, speed, money, and elapsed in-game minutes;
 - camera position/center and nearby-character camera bearings;
@@ -468,8 +474,9 @@ Its telemetry path is observational. Protocol `0.6.1` currently exports:
 The current protocol retains validated session-scoped opaque IDs and a strict
 atomic request plus bounded keyed acknowledgement ring. The same DLL contains
 separately labelled native-assisted commands for approaching a valid dialogue
-target, walking to an exact nearby character, and walking a bounded
-bearing/distance. Python removes their capabilities and acknowledgement state
+target, walking to an exact nearby character, walking a bounded
+bearing/distance, and exiting the selected character's current building without
+model-authored geometry. Python removes their capabilities and acknowledgement state
 in `interface_only`; both the guard and environment reject them again. In
 `native_assisted`, every request must match its command ID, current revision,
 identity session, complete one-character selection, and exact target or bounded

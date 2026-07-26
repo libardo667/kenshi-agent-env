@@ -274,6 +274,18 @@
           "default": null,
           "title": "Movement Speed"
         },
+        "indoors": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Indoors"
+        },
         "hunger": {
           "anyOf": [
             {
@@ -625,7 +637,8 @@
           "enum": [
             "approach_confirmed_vendor",
             "move_to_character",
-            "move_in_direction"
+            "move_in_direction",
+            "exit_current_building"
           ],
           "title": "Command",
           "type": "string"

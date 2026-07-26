@@ -10,6 +10,38 @@
 #include <kenshi/GameWorld.h>
 #include <kenshi/Globals.h>
 #include <kenshi/Platoon.h>
+// The pinned KenshiLib headers declare BuildingDesignation independently in
+// Platoon.h and Building.h. Rename the building-header copy in this one
+// translation unit; both are ABI-identical enums and this plugin does not pass
+// either type across its boundary.
+#define BuildingDesignation KenshiAgentBuildingDesignation
+#define BD_NONE KENSHI_AGENT_BD_NONE
+#define BD_SHOP KENSHI_AGENT_BD_SHOP
+#define BD_BARRACKS KENSHI_AGENT_BD_BARRACKS
+#define BD_BAR KENSHI_AGENT_BD_BAR
+#define BD_HOSPITAL KENSHI_AGENT_BD_HOSPITAL
+#define BD_ARMOURY KENSHI_AGENT_BD_ARMOURY
+#define BD_TREASURE KENSHI_AGENT_BD_TREASURE
+#define BD_PRISON KENSHI_AGENT_BD_PRISON
+#define BD_HQ KENSHI_AGENT_BD_HQ
+#define BD_RESIDENTIAL KENSHI_AGENT_BD_RESIDENTIAL
+#define BD_SLAVE_STORAGE KENSHI_AGENT_BD_SLAVE_STORAGE
+#define BD_RESIDENTIAL_SMALL KENSHI_AGENT_BD_RESIDENTIAL_SMALL
+#include <kenshi/Building/Building.h>
+#undef BuildingDesignation
+#undef BD_NONE
+#undef BD_SHOP
+#undef BD_BARRACKS
+#undef BD_BAR
+#undef BD_HOSPITAL
+#undef BD_ARMOURY
+#undef BD_TREASURE
+#undef BD_PRISON
+#undef BD_HQ
+#undef BD_RESIDENTIAL
+#undef BD_SLAVE_STORAGE
+#undef BD_RESIDENTIAL_SMALL
+#include <kenshi/Building/DoorStuff.h>
 #include <kenshi/PlayerInterface.h>
 #include <kenshi/RootObject.h>
 #include <kenshi/ShopTrader.h>
@@ -66,7 +98,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.6.1";
+    const char* PROTOCOL_VERSION = "0.7.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -92,9 +124,16 @@ namespace
         // the way an approach is. It finishes by arriving.
         bool isWalk;
         bool hasFixedDestination;
+        // A parameter-free building exit succeeds after the selected character
+        // remains outside every building or tightly reaches the native-resolved
+        // outside-door point. Kenshi can retain its indoor handle across a
+        // visually complete doorway traversal.
+        bool isBuildingExit;
         // One uninterrupted pause may mean an abandoned movement order, but
         // short paused gaps are how the stop-motion controller safely pulses.
         KenshiAgentTelemetry::NativeMovementPauseWindow pauseWindow;
+        KenshiAgentTelemetry::NativeMovementStallWindow stallWindow;
+        KenshiAgentTelemetry::NativeOutdoorConfirmationWindow outdoorWindow;
         float originX;
         float originZ;
         float destinationX;
@@ -169,12 +208,17 @@ namespace
         // approach being judged by arrival instead of by dialogue.
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
         g_activeNativeCommand.destinationX = 0.0f;
         g_activeNativeCommand.destinationZ = 0.0f;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
+        KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+            g_activeNativeCommand.stallWindow);
+        KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+            g_activeNativeCommand.outdoorWindow);
     }
 
     std::string JsonEscape(const std::string& input)
@@ -409,10 +453,15 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
+        KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+            g_activeNativeCommand.stallWindow);
+        KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+            g_activeNativeCommand.outdoorWindow);
     }
 
     std::string UtcNowIso8601()
@@ -1148,15 +1197,25 @@ namespace
             return;
         }
 
+        const bool worldPaused = ou != NULL && ou->isPaused();
+        if (worldPaused)
+        {
+            // Paused gaps are controller/human thinking time, not evidence
+            // that Kenshi's pathfinder has failed to advance.
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
+        }
         if (KenshiAgentTelemetry::ObserveNativeMovementPause(
                 g_activeNativeCommand.pauseWindow,
-                ou != NULL && ou->isPaused(),
+                worldPaused,
                 GetTickCount()))
         {
             FinishActiveNativeCommand("cancelled", "world_paused");
             return;
         }
-        if (ou != NULL && ou->isPaused())
+        if (worldPaused)
             return;
 
         std::string selectedId;
@@ -1199,8 +1258,35 @@ namespace
                 destinationZ = followPosition.z;
             }
             const Ogre::Vector3 here = walker->getPosition();
+            bool buildingExitIndoors = false;
+            if (g_activeNativeCommand.isBuildingExit)
+            {
+                const hand& currentBuilding = walker->isIndoors();
+                buildingExitIndoors = currentBuilding.isValid();
+                if (KenshiAgentTelemetry::ObserveNativeOutdoorConfirmation(
+                        g_activeNativeCommand.outdoorWindow,
+                        buildingExitIndoors,
+                        GetTickCount()))
+                {
+                    FinishActiveNativeCommand(
+                        "completed",
+                        "left_current_building");
+                    return;
+                }
+            }
             bool arrived = false;
-            if (g_activeNativeCommand.hasFixedDestination)
+            if (g_activeNativeCommand.isBuildingExit)
+            {
+                arrived =
+                    KenshiAgentTelemetry::HasReachedResolvedExitDestination(
+                        g_activeNativeCommand.originX,
+                        g_activeNativeCommand.originZ,
+                        destinationX,
+                        destinationZ,
+                        here.x,
+                        here.z);
+            }
+            else if (g_activeNativeCommand.hasFixedDestination)
             {
                 arrived =
                     KenshiAgentTelemetry::HasReachedFixedDirectionDestination(
@@ -1221,7 +1307,21 @@ namespace
             }
             if (arrived)
             {
-                FinishActiveNativeCommand("completed", "walk_destination_reached");
+                FinishActiveNativeCommand(
+                    "completed",
+                    g_activeNativeCommand.isBuildingExit
+                        ? "outside_door_destination_reached"
+                        : "walk_destination_reached");
+                return;
+            }
+            if (KenshiAgentTelemetry::ObserveNativeMovementStall(
+                    g_activeNativeCommand.stallWindow,
+                    false,
+                    here.x,
+                    here.z,
+                    GetTickCount()))
+            {
+                FinishActiveNativeCommand("cancelled", "movement_stalled");
             }
             return;
         }
@@ -1286,6 +1386,8 @@ namespace
             g_lastNativeCommandResult = rejectionReason;
             const bool isDirection =
                 request.command == "move_in_direction";
+            const bool isBuildingExit =
+                request.command == "exit_current_building";
             const bool hasCommandIdentity =
                 isDirection
                     ? (request.targetId.empty() &&
@@ -1293,13 +1395,18 @@ namespace
                        request.bearingDegrees < 360.0 &&
                        request.distanceUnits > 0.0 &&
                        request.distanceUnits <= 2000.0)
-                    : (!request.targetId.empty() &&
+                    : (isBuildingExit
+                        ? (request.targetId.empty() &&
+                           request.bearingDegrees == 0.0 &&
+                           request.distanceUnits == 0.0)
+                        : (!request.targetId.empty() &&
                        request.bearingDegrees == 0.0 &&
-                       request.distanceUnits == 0.0);
+                       request.distanceUnits == 0.0));
             if (IsValidCommandId(request.commandId) &&
                 (request.command == "approach_confirmed_vendor" ||
                  request.command == "move_to_character" ||
-                 request.command == "move_in_direction") &&
+                 request.command == "move_in_direction" ||
+                 request.command == "exit_current_building") &&
                 hasCommandIdentity &&
                 !request.selectedCharacterId.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
@@ -1326,9 +1433,11 @@ namespace
         const bool isApproach = request.command == "approach_confirmed_vendor";
         const bool isMove = request.command == "move_to_character";
         const bool isDirection = request.command == "move_in_direction";
-        if (isApproach || isMove || isDirection)
+        const bool isBuildingExit =
+            request.command == "exit_current_building";
+        if (isApproach || isMove || isDirection || isBuildingExit)
             g_lastNativeCommand = request.command;
-        if (!isApproach && !isMove && !isDirection)
+        if (!isApproach && !isMove && !isDirection && !isBuildingExit)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -1409,8 +1518,106 @@ namespace
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
+            g_activeNativeCommand.isBuildingExit = false;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
+            g_activeNativeCommand.originX = origin.x;
+            g_activeNativeCommand.originZ = origin.z;
+            g_activeNativeCommand.destinationX = destination.x;
+            g_activeNativeCommand.destinationZ = destination.z;
+            g_lastNativeCommandResult = "issued";
+            g_lastNativeCommandTarget.clear();
+            g_lastNativeCommandTargetId.clear();
+            return;
+        }
+
+        if (isBuildingExit)
+        {
+            Character* walker = player->selectedCharacter.getCharacter();
+            if (walker == NULL || !walker->isValid())
+            {
+                RejectNativeCommand(request, "selection_mismatch");
+                return;
+            }
+            const hand& buildingHandle = walker->isIndoors();
+            Building* building = buildingHandle.getBuilding();
+            if (!buildingHandle.isValid() ||
+                building == NULL ||
+                !building->isValid())
+            {
+                RejectNativeCommand(request, "not_indoors");
+                return;
+            }
+
+            const Ogre::Vector3 origin = walker->getPosition();
+            Ogre::Vector3 destination = origin;
+            bool foundDoor = false;
+            float bestDistanceSquared = 0.0f;
+            for (lektor<Building*>::iterator doorIt = building->doors.begin();
+                 doorIt != building->doors.end();
+                 ++doorIt)
+            {
+                Building* doorBuilding = *doorIt;
+                if (doorBuilding == NULL || !doorBuilding->isValid())
+                    continue;
+                DoorStuff* door = doorBuilding->getDoor();
+                if (door == NULL ||
+                    !door->isValid() ||
+                    door->isDisabled() ||
+                    door->isLocked())
+                {
+                    continue;
+                }
+                const Ogre::Vector3 candidate =
+                    door->getDoorPosOutside_extraFarOut(1.0f);
+                const float dx = candidate.x - origin.x;
+                const float dz = candidate.z - origin.z;
+                const float distanceSquared = dx * dx + dz * dz;
+                if (!foundDoor || distanceSquared < bestDistanceSquared)
+                {
+                    foundDoor = true;
+                    bestDistanceSquared = distanceSquared;
+                    // Component copies avoid Ogre's imported Vector3
+                    // assignment operator, which the KenshiLib import library
+                    // does not provide to this plug-in.
+                    destination.x = candidate.x;
+                    destination.y = candidate.y;
+                    destination.z = candidate.z;
+                }
+            }
+            if (!foundDoor)
+            {
+                RejectNativeCommand(request, "no_usable_exit");
+                return;
+            }
+
+            player->newPlayerTaskSelectedCharacters(
+                MOVE_CUS_ORDERED,
+                hand(),
+                NULL,
+                destination,
+                false);
+            AddNativeAcknowledgement(request, "accepted", "issued", true, false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId.clear();
+            g_activeNativeCommand.selectedCharacterId =
+                request.selectedCharacterId;
+            g_activeNativeCommand.targetHandle = hand();
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = true;
+            g_activeNativeCommand.hasFixedDestination = true;
+            g_activeNativeCommand.isBuildingExit = true;
+            KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+                g_activeNativeCommand.pauseWindow);
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
             g_activeNativeCommand.originX = origin.x;
             g_activeNativeCommand.originZ = origin.z;
             g_activeNativeCommand.destinationX = destination.x;
@@ -1465,8 +1672,13 @@ namespace
         g_activeNativeCommand.selectedHandle = selectedHandle;
         g_activeNativeCommand.isWalk = isMove;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.isBuildingExit = false;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
+        KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+            g_activeNativeCommand.stallWindow);
+        KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+            g_activeNativeCommand.outdoorWindow);
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
         g_lastNativeCommandResult = "issued";
@@ -1579,6 +1791,7 @@ namespace
              // Now genuinely emitted, so advertise them: a capability the
              // agent cannot rely on is worse than one it knows is absent.
              << "\"squad.hunger\",\"squad.health\",\"squad.inventory\","
+             << "\"squad.indoors\","
              << "\"ui.inventory\",\"ui.dialogue\","
              << "\"ui.dialogue.target\",\"ui.dialogue.options\","
              << "\"ui.tooltip\",\"ui.visible_controls\","
@@ -1586,6 +1799,7 @@ namespace
              << "\"control.approach_vendor\","
              << "\"control.move_to_character\","
              << "\"control.move_in_direction\","
+             << "\"control.exit_current_building\","
              << "\"identity.stable_handles\"";
         if (g_shopTraderRegistryReady)
             json << ",\"nearby.shop_owners\"";
@@ -1783,6 +1997,8 @@ namespace
                 json << "\"position\":";
                 AppendVector3(json, position);
                 json << ",\"movement_speed\":" << character->getMovementSpeed() << ",";
+                json << "\"indoors\":"
+                     << JsonBool(character->isIndoors().isValid()) << ",";
                 json << "\"food_items\":" << character->getNumFoodItems() << ",";
                 // Whether anyone is currently fighting this character. The
                 // field existed in the schema and was never filled, so it read

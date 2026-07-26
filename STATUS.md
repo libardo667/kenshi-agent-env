@@ -55,6 +55,9 @@ requirements are present:
 - `move_in_direction` — walk a bounded bearing/distance without naming a
   person. Its command identity is command ID, selected character, bearing, and
   distance; a keyed monitored option owns it until native completion.
+- `exit_current_building` — take no door, direction, or coordinate arguments;
+  native code resolves the selected character's current unlocked exit and a
+  keyed option owns the order through completion or bounded pathing failure.
 - `activate_visible_control` — activate one unique current semantic UI control.
 - `dismiss_screen` — close a bound trade or inventory window through its own
   current close box. Dialogue ends by activating an exact visible closing
@@ -95,16 +98,26 @@ path.
   Selling and equipping have guarded contracted implementations and portable
   coverage grounded in the observed right-click semantics. One recorded
   long-form run bought Greenfruit and a first-aid kit with both debits confirmed.
-- Native walking supports exact-character destinations and a targetless bounded
-  direction/distance order. The former completes inside its arrival tolerance;
-  the latter also completes after crossing its intended destination plane.
-  Neither waits for dialogue, and abandoning an active walk in a continuously
-  paused world produces an explicit cancellation. Protocol
-  0.6.1 now has live load, fresh-telemetry, exact request identity, explicit
-  cancellation proof, and one bounded completion proof. Run
+- Native walking supports exact-character destinations, a targetless bounded
+  direction/distance order, and a no-argument current-building exit. The exit
+  resolves an unlocked door and outside destination natively; completion
+  accepts stable outdoor membership or tightly reaching that resolved point
+  after meaningful movement. All movement orders have a shared ten-second
+  continuous-unpaused no-progress terminal, so a blocked order cannot poison
+  later movement. Protocol `0.7.0` has live load, fresh telemetry, exact request
+  identity, explicit cancellation/stall proof, and bounded completion proofs.
+  Run
   `20260725T2223-direction-smoke-061-green` moved Hep about 30.4 world units,
   completed the exact keyed order with `walk_destination_reached`, captured a
   changed resulting frame, and left Kenshi paused with no active command.
+- Run `20260726Tnative-building-exit-live-04` issued one parameterless exit
+  request from a paused indoor start, moved Hep about 155.58 x/z units through
+  the Storm House door, completed at telemetry sequence 506 with
+  `outside_door_destination_reached`, succeeded at the monitored option and
+  plan layers, and auto-paused at sequence 508. The user directly observed Hep
+  outside even though Kenshi retained `indoors=true`; that flag authorizes the
+  start but is not the sole terminal. The full correction history and evidence
+  boundary are in `docs/LIVE_NATIVE_BUILDING_EXIT_REPORT_20260726.md`.
 - Run `20260725T80turn-gpt41-live-01` completed an 80-step GPT-4.1 live action
   budget in 15m46.369s. It published 5,046 observations with zero stale
   observations, zero input-boundary rejections, and zero safety preemptions;
@@ -141,7 +154,7 @@ path.
   keeps typed lifecycle evidence in `events.jsonl`. A selectable
   `transcript.log` is intended, but the 80-turn run did not produce one.
 
-## Native protocol 0.6.1
+## Native protocol 0.7.0
 
 The native plugin hooks Kenshi-owned title and loaded-game update points and
 atomically replaces a complete snapshot at roughly two hertz.
@@ -153,17 +166,19 @@ Current loaded-game telemetry includes:
 - stable session-scoped squad, selection, nearby-character, dialogue-target,
   and native-command identities;
 - squad life/consciousness/down/crippled/combat state, position, movement,
-  nutrition reserve (`hunger`), blood, and bounded inventory/equipment facts;
+  reported indoor-building membership, nutrition reserve (`hunger`), blood,
+  and bounded inventory/equipment facts;
 - dialogue, trade, inventory, stats, and management-window state, including the
   active management tab;
 - exact dialogue target/options, tooltip state, shop ownership, and up to 224
   visible buttons, named item cells, and text controls with window ownership and
   normalized bounds;
-- a bounded keyed acknowledgement ring for three declared native commands:
+- a bounded keyed acknowledgement ring for four declared native commands:
   approach a dialogue target, move to an exact nearby character, and move a
-  bounded bearing/distance. Direction acknowledgements carry the empty target
-  plus bearing and distance, while targeted commands carry a stable target and
-  zero direction fields.
+  bounded bearing/distance, or exit the selected character's current building.
+  Direction acknowledgements carry the empty target plus bearing and distance;
+  targeted commands carry a stable target and zero direction fields; building
+  exit carries neither a target nor a model-authored vector.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities and acknowledgement state before planning and rejects
@@ -190,20 +205,18 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 ## Verified portable baseline
 
-At implementation commit `3d4670f`:
+For the protocol `0.7.0` building-exit slice on 2026-07-26:
 
-- `pytest -q`: **502 passed**.
+- `pytest -q`: **531 passed**.
 - `ruff check .`: passed.
-- `mypy src/kenshi_agent`: passed across **58 source files**.
-- All generated schemas were byte-identical on an immediate second export.
-- The advisor's real OpenRouter structured-output and attribution seam passed
-  one synthetic-observation smoke against `openai/gpt-5.4`.
-- No native code changed in this slice, so the previously passing pinned VS2010
-  SP1 `Release | x64` build was not rerun.
-- `kenshi-agent doctor --config config/default.yaml`: passed in WSL.
-- `kenshi-agent doctor --config config/live.longform.yaml` now also checks the
-  advisor corpus, provider key, and OpenAI-compatible package. Its Windows/live
-  host checks remain platform-specific.
+- `mypy --strict src/kenshi_agent`: passed across **58 source files**.
+- Generated schemas were refreshed from the current strict models.
+- The pinned VS2010 SP1 `Release | x64` DLL and native conformance executable
+  passed; built, staged, and installed 205,824-byte artifacts were
+  byte-identical at SHA-256
+  `2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`.
+- The guarded preflight passed, live protocol `0.7.0` telemetry remained fresh
+  and advancing, and the exact visible building-exit run completed safely.
 
 ## Open work
 
@@ -212,11 +225,9 @@ At implementation commit `3d4670f`:
   observation contains the attributed brief, and its subsequent changed goal
   is grounded in both that brief and current Kenshi evidence. Portable and
   synthetic hosted proofs do not satisfy this boundary.
-- A native movement option can time out while its exact command remains
-  accepted. Later direction options then fail or are rejected with
-  `command_already_active`; failed options have no successful terminalization
-  transition. Timeout/abandonment must explicitly stop, cancel, or continue
-  monitoring the owned command before the movement surface is reused.
+- `Character::isIndoors()` can remain valid after Hep is visibly outside the
+  Storm House bar. Do not use it as the sole exit terminal; broader buildings,
+  doors, and zone transitions still need explicit live coverage.
 - Targetless local directional movement has one exact live proof at a
   36.5-degree bearing and 30-unit distance. Broader bearings, distances,
   obstacle layouts, and scenes remain unproven rather than inferred from that

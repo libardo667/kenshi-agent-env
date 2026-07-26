@@ -5,6 +5,51 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Protocol 0.7.0 native building exit (2026-07-26)
+
+Hep's repeated blind direction nudges exposed two missing controller
+responsibilities: local pathing could remain accepted indefinitely after
+stopping, and the model had no semantic way to leave its current building.
+Protocol `0.7.0` adds reported squad indoor membership, a shared
+continuous-unpaused ten-second no-progress terminal for native movement, and
+the no-argument `exit_current_building` action.
+
+The planner supplies no door, bearing, distance, or coordinate. Python binds
+one exact selected character reported indoors. Native code resolves the nearest
+valid enabled unlocked door in that character's current building and issues one
+ordinary order to its outside point. The long-form controller now also owns the
+deterministic paused-start unpause after acceptance, reconciling run-finished
+auto-pause with a profile that normally expects the world to be running.
+
+Three live probes found the real terminal boundary. A paused order first
+cancelled honestly; the controller-owned unpause then moved Hep to the door,
+but changing building handles was too early and requiring `isIndoors()==false`
+was too strict. The user directly observed Hep outside while Kenshi continued
+to report a valid indoor handle. Completion now accepts stable outdoor
+membership or tightly reaching the native-resolved outside-door point after
+meaningful movement. Genuine stopped paths still terminate
+`movement_stalled`.
+
+Run `20260726Tnative-building-exit-live-04` is green. Command
+`cmd-fd4a3d1171d743488d8e58fa905f19de` was based on sequence 494,
+accepted at 495, moved Hep about 155.58 x/z units, and completed at 506 with
+`outside_door_destination_reached`. The keyed option and controller-verified
+step succeeded without a redundant `indoors=false` postcondition; run-finished
+safety paused at 508.
+
+Portable verification passed 531 tests, Ruff, strict mypy over 58 source files,
+schema export, and the pinned native build/conformance executable. The exact
+installed 205,824-byte DLL has SHA-256
+`2110dcf73421a5919e5c3f0efb44cdd9929946a0902aa09d8662191cd94ba8d9`.
+Full evidence and correction history are in
+`docs/LIVE_NATIVE_BUILDING_EXIT_REPORT_20260726.md`.
+
+The project owner also clarified that the plugin has no intended
+small/medium/large size. The durable decision is a right-sized authoritative
+integration layer for faithful Kenshi play, constrained by truth, safety,
+maintainability, and evidence rather than line count; see
+`docs/ADR_NATIVE_INTEGRATION_SCOPE.md`.
+
 ## Guide-grounded strategic advisor (2026-07-26)
 
 Commit `3d4670f` implements the bounded advisor signalled by the second

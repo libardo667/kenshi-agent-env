@@ -11,6 +11,7 @@ from .models import (
     Action,
     ApproachDialogueTargetAction,
     CommandDispatchContext,
+    ExitCurrentBuildingAction,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
@@ -186,7 +187,7 @@ class StatefulNativeMovementOption:
         self,
         *,
         option_id: str,
-        action: MoveInDirectionAction,
+        action: MoveInDirectionAction | ExitCurrentBuildingAction,
         environment: AgentEnvironment,
         require_paused_start: bool = True,
     ) -> None:
@@ -208,6 +209,18 @@ class StatefulNativeMovementOption:
         self.selected_character_ids: list[str] = []
         self.reason = "Native movement option has not been prepared."
 
+    @property
+    def _wire_command(self) -> str:
+        if isinstance(self.action, ExitCurrentBuildingAction):
+            return "exit_current_building"
+        return "move_in_direction"
+
+    @property
+    def _required_capability(self) -> str:
+        if isinstance(self.action, ExitCurrentBuildingAction):
+            return "control.exit_current_building"
+        return "control.move_in_direction"
+
     def prepare(self, observation: Observation) -> OptionPoll:
         if self.status is not OptionStatus.CREATED:
             raise OptionLifecycleError("Native movement option can only be prepared once.")
@@ -215,7 +228,7 @@ class StatefulNativeMovementOption:
         if (
             telemetry is None
             or "game.pause" not in telemetry.capabilities
-            or "control.move_in_direction" not in telemetry.capabilities
+            or self._required_capability not in telemetry.capabilities
         ):
             raise OptionLifecycleError(
                 "Native movement option requires a capable start state."
@@ -235,6 +248,15 @@ class StatefulNativeMovementOption:
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
         self.selected_character_ids = list(selected_ids)
+        if isinstance(self.action, ExitCurrentBuildingAction):
+            selected = [
+                character for character in telemetry.squad if character.selected
+            ]
+            if len(selected) != 1 or selected[0].indoors is not True:
+                raise OptionLifecycleError(
+                    "Building-exit option requires one selected character "
+                    "confirmed indoors."
+                )
         active_id = telemetry.native_control.active_command_id
         active = (
             telemetry.native_control.acknowledgement_for(active_id)
@@ -272,8 +294,13 @@ class StatefulNativeMovementOption:
             self.native_command_id = command.command_id
         self.status = OptionStatus.RUNNING
         self.reason = (
-            "Directional movement order dispatched; awaiting its terminal "
-            "native acknowledgement."
+            "Building-exit order dispatched; awaiting its terminal native "
+            "acknowledgement."
+            if isinstance(self.action, ExitCurrentBuildingAction)
+            else (
+                "Directional movement order dispatched; awaiting its terminal "
+                "native acknowledgement."
+            )
         )
         work = self.environment.dispatch(self.action, command=command, token=token)
         self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
@@ -337,7 +364,7 @@ class StatefulNativeMovementOption:
         acknowledgement = self._current_acknowledgement()
         if acknowledgement is None:
             self.reason = (
-                "Directional movement was dispatched; awaiting a matching native "
+                "Native movement was dispatched; awaiting a matching "
                 "acknowledgement."
             )
             return self._poll_result()
@@ -350,25 +377,25 @@ class StatefulNativeMovementOption:
             return self._poll_result()
         if acknowledgement.status is NativeCommandStatus.ACCEPTED:
             self.reason = (
-                "Kenshi accepted the exact directional movement order; the "
-                "character is still walking."
+                "Kenshi accepted the exact native movement order; the character "
+                "is still walking."
             )
         elif acknowledgement.status is NativeCommandStatus.COMPLETED:
             if self.transition is None:
                 self.reason = (
-                    "Kenshi completed the exact directional movement order; "
+                    "Kenshi completed the exact native movement order; "
                     "awaiting the dispatch transition."
                 )
             else:
                 self.status = OptionStatus.SUCCEEDED
                 self.reason = (
-                    "Kenshi completed the exact directional movement order: "
+                    "Kenshi completed the exact native movement order: "
                     f"{acknowledgement.reason}."
                 )
         else:
             self.status = OptionStatus.FAILED
             self.reason = (
-                f"Kenshi ended the directional movement as "
+                f"Kenshi ended the native movement as "
                 f"{acknowledgement.status.value!r}: {acknowledgement.reason}."
             )
         return self._poll_result()
@@ -441,12 +468,21 @@ class StatefulNativeMovementOption:
         self,
         acknowledgement: NativeCommandAcknowledgement,
     ) -> bool:
+        if acknowledgement.command != self._wire_command:
+            return False
+        if (
+            acknowledgement.target_id != ""
+            or acknowledgement.selected_character_ids
+            != self.selected_character_ids
+        ):
+            return False
+        if isinstance(self.action, ExitCurrentBuildingAction):
+            return bool(
+                acknowledgement.bearing_degrees == 0.0
+                and acknowledgement.distance_units == 0.0
+            )
         return bool(
-            acknowledgement.command == "move_in_direction"
-            and acknowledgement.target_id == ""
-            and acknowledgement.selected_character_ids
-            == self.selected_character_ids
-            and acknowledgement.bearing_degrees == self.action.bearing_degrees
+            acknowledgement.bearing_degrees == self.action.bearing_degrees
             and acknowledgement.distance_units == self.action.distance_units
         )
 

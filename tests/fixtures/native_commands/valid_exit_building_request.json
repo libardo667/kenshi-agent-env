@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "command_id": "cmd-11111111111111111111111111111111",
+  "command": "exit_current_building",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 15,
+    "frame_sequence": null,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 16.0
+  },
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "target_id": "",
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0
+}

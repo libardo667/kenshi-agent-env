@@ -236,6 +236,10 @@ class CharacterState(StrictModel):
     stealth: bool | None = None
     position: Vec3 | None = None
     movement_speed: float | None = None
+    # Native building membership, exported directly from Character::isIndoors.
+    # This is deliberately a boolean rather than a model-authored location:
+    # it answers the exact controller question "is an exit order applicable?"
+    indoors: bool | None = None
     # How *fed* the character is, not how hungry, despite the name: a nutrition
     # reserve on a 0.0-3.0 scale where 3.0 is full and 0.0 is starving. It falls
     # slowly and eating refills it. Kenshi's own UI shows the same number times
@@ -587,10 +591,11 @@ class NativeCommandStatus(StrEnum):
 
 class NativeCommandAcknowledgement(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    # Two reviewed commands now: the legacy vendor-named approach, and the move
-    # order that lets the agent go somewhere without talking to anyone.
     command: Literal[
-        "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+        "approach_confirmed_vendor",
+        "move_to_character",
+        "move_in_direction",
+        "exit_current_building",
     ]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
@@ -621,6 +626,15 @@ class NativeCommandAcknowledgement(StrictModel):
             if self.distance_units <= 0.0:
                 raise ValueError(
                     "a directional acknowledgement requires a distance"
+                )
+        elif self.command == "exit_current_building":
+            if self.target_id:
+                raise ValueError(
+                    "a building-exit acknowledgement must not name a target"
+                )
+            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
+                raise ValueError(
+                    "a building-exit acknowledgement must not carry direction fields"
                 )
         else:
             if not self.target_id:
@@ -903,6 +917,18 @@ class MoveInDirectionAction(StrictModel):
     # Said in the plan so a later observation can judge it; the action itself
     # cannot know what is that way.
     expected_effect: str = Field(min_length=1, max_length=200)
+
+
+class ExitCurrentBuildingAction(StrictModel):
+    """Leave the selected character's current building through a native door.
+
+    The planner supplies no coordinates, bearing, door identity, or retry
+    strategy. The native controller resolves an unlocked door from the exact
+    building the selected character currently occupies, issues one pathing
+    order to its outdoor point, and owns completion or typed failure.
+    """
+
+    kind: Literal["exit_current_building"] = "exit_current_building"
 
 
 class MoveToCharacterAction(StrictModel):
@@ -1212,6 +1238,7 @@ SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | MoveToCharacterAction
     | MoveInDirectionAction
+    | ExitCurrentBuildingAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1242,6 +1269,7 @@ Action: TypeAlias = (
     | ApproachDialogueTargetAction
     | MoveToCharacterAction
     | MoveInDirectionAction
+    | ExitCurrentBuildingAction
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
@@ -1258,6 +1286,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "approach_dialogue_target",
         "move_to_character",
         "move_in_direction",
+        "exit_current_building",
         "activate_visible_control",
         "dismiss_screen",
         "purchase_item",
@@ -1489,10 +1518,11 @@ class CommandDispatchContext(StrictModel):
 class NativeCommandRequest(StrictModel):
     schema_version: Literal["1.0"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
-    # Two reviewed commands now: the legacy vendor-named approach, and the move
-    # order that lets the agent go somewhere without talking to anyone.
     command: Literal[
-        "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+        "approach_confirmed_vendor",
+        "move_to_character",
+        "move_in_direction",
+        "exit_current_building",
     ]
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
@@ -1514,6 +1544,13 @@ class NativeCommandRequest(StrictModel):
                 raise ValueError("a directional walk must not name a target")
             if self.distance_units <= 0.0:
                 raise ValueError("a directional walk requires a distance to walk")
+        elif self.command == "exit_current_building":
+            if self.target_id:
+                raise ValueError("a building-exit command must not name a target")
+            if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
+                raise ValueError(
+                    "a building-exit command must not carry direction fields"
+                )
         else:
             if not self.target_id:
                 raise ValueError("this native command requires a target")
@@ -1533,6 +1570,7 @@ class ConditionPath(StrEnum):
     TELEMETRY_GAME_SPEED_MULTIPLIER = "telemetry.game.speed_multiplier"
     TELEMETRY_GAME_ELAPSED_MINUTES = "telemetry.game.elapsed_minutes"
     TELEMETRY_GAME_MONEY = "telemetry.game.money"
+    SELECTED_INDOORS = "selected.indoors"
     TELEMETRY_GAME_LOCATION_NAME = "telemetry.game.location_name"
     TELEMETRY_GAME_DAY = "telemetry.game.day"
     TELEMETRY_GAME_HOUR = "telemetry.game.hour"
@@ -1776,12 +1814,17 @@ class PlanStep(StrictModel):
         if self.retry_budget and self.idempotency != IdempotencyPolicy.SAFE_TO_RETRY:
             raise ValueError("retry_budget requires idempotency=safe_to_retry")
         if not self.success_conditions and not isinstance(
-            self.action, (RecoverCameraViewAction, ConsultAdvisorAction)
+            self.action,
+            (
+                RecoverCameraViewAction,
+                ConsultAdvisorAction,
+                ExitCurrentBuildingAction,
+            ),
         ):
             raise ValueError(
-                "success_conditions may be empty only for recover_camera_view "
-                "or consult_advisor, whose owning subsystem returns a typed "
-                "terminal outcome"
+                "success_conditions may be empty only for recover_camera_view, "
+                "consult_advisor, or exit_current_building, whose owning "
+                "subsystem returns a typed terminal outcome"
             )
         return self
 
@@ -2209,6 +2252,7 @@ class Observation(StrictModel):
                     "hunger": selected.hunger,
                     "food_items": selected.food_items,
                     "in_combat": selected.in_combat,
+                    "indoors": selected.indoors,
                     # Kept so a post-mortem can tell a healthy run from one
                     # where the character was quietly being beaten.
                     "blood": selected.blood,

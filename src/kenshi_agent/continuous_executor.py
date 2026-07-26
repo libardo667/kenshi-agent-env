@@ -19,6 +19,7 @@ from .models import (
     ConditionEvaluation,
     ConditionResult,
     ConsultAdvisorAction,
+    ExitCurrentBuildingAction,
     InputBoundaryDecision,
     MoveInDirectionAction,
     Observation,
@@ -665,7 +666,7 @@ class ContinuousPlanExecutor:
         native_movement_option: StatefulNativeMovementOption | None = None
         contract = contract_for(action)
         if (
-            isinstance(action, MoveInDirectionAction)
+            isinstance(action, (MoveInDirectionAction, ExitCurrentBuildingAction))
             and contract is not None
             and contract.execution is ActionExecution.MONITORED_OPTION
         ):
@@ -689,7 +690,7 @@ class ContinuousPlanExecutor:
                     plan,
                     observation,
                     step=step,
-                    reason="No directional movement command was dispatched.",
+                    reason="No native movement command was dispatched.",
                 )
                 self._event(
                     "option_failed",
@@ -1019,6 +1020,37 @@ class ContinuousPlanExecutor:
             )
         contract = contract_for(step.action)
         if contract is not None and contract.controller_verified:
+            if (
+                isinstance(step.action, ExitCurrentBuildingAction)
+                and monitored_outcome is not None
+            ):
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Accepted the native building-exit option's keyed "
+                        "terminal verdict."
+                    ),
+                    evidence={
+                        "controller_verified": True,
+                        "option_status": monitored_outcome.status.value,
+                        "terminal_reason": monitored_outcome.reason,
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=True,
+                    actions_completed=1,
+                    reason=(
+                        "Controller-owned building exit reached its native "
+                        "terminal success."
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch,
+                )
             recovery = (
                 transition.receipt.semantic.camera_recovery
                 if transition.receipt.semantic is not None

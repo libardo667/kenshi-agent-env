@@ -11,10 +11,12 @@ from ..action_contracts import (
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
     EQUIP_ITEM_CONTRACT,
+    EXIT_CURRENT_BUILDING_CONTRACT,
     MOVE_IN_DIRECTION_CONTRACT,
     MOVE_TO_CHARACTER_CONTRACT,
     NATIVE_APPROACH_WIRE_COMMAND,
     NATIVE_DIRECTION_WIRE_COMMAND,
+    NATIVE_EXIT_BUILDING_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
     PURCHASE_ITEM_CONTRACT,
     RECOVER_CAMERA_VIEW_CONTRACT,
@@ -50,6 +52,7 @@ from ..models import (
     ControlMode,
     DismissScreenAction,
     EquipItemAction,
+    ExitCurrentBuildingAction,
     HotkeyAction,
     InputBoundaryDecision,
     KeyAction,
@@ -580,6 +583,12 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_directional_move(action, started, command)
+        if isinstance(action, ExitCurrentBuildingAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_exit_current_building(action, started, command)
         if isinstance(action, MoveToCharacterAction):
             if command is None:
                 raise RuntimeError(
@@ -895,6 +904,52 @@ class LiveEnvironment(AgentEnvironment):
             require_dialogue_target=False,
             bearing_degrees=action.bearing_degrees,
             distance_units=action.distance_units,
+        )
+
+    async def _execute_exit_current_building(
+        self,
+        action: ExitCurrentBuildingAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Ask native code to resolve and traverse the current building's door."""
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Building exit requires a configured native approach skill to "
+                "supply its bounded transport primitive."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value="")],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native approach skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=EXIT_CURRENT_BUILDING_CONTRACT.version,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-proved one selected character indoors, then delegated door "
+                "choice, outdoor destination, and terminal judgment to native code."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id="",
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=NATIVE_EXIT_BUILDING_WIRE_COMMAND,
+            require_dialogue_target=False,
         )
 
     async def _execute_semantic_move(
@@ -1794,7 +1849,10 @@ class LiveEnvironment(AgentEnvironment):
         primitive_skill: SkillAction,
         require_vendor_role: bool,
         wire_command: Literal[
-            "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+            "approach_confirmed_vendor",
+            "move_to_character",
+            "move_in_direction",
+            "exit_current_building",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -1919,10 +1977,30 @@ class LiveEnvironment(AgentEnvironment):
                     semantic=semantic,
                 )
         if not self.controls_config.require_paused_between_actions:
-            # The world is already running: the pathing order is enough, and the
-            # monitored option watches the character walk. Pulsing here would
-            # mean unpausing an unpaused game and then pausing a game the
-            # operator wants running.
+            # A continuous profile wants the world running while the option
+            # monitors it, but every completed run deliberately leaves Kenshi
+            # paused. Resolve that handoff here: the semantic movement owns
+            # starting time when necessary, so the planner does not need a
+            # fragile prerequisite unpause step. Never toggle blindly.
+            paused = self._fresh_pause_state()
+            if paused is None:
+                raise RuntimeError(
+                    "Native movement cannot determine whether Kenshi is paused."
+                )
+            if paused:
+                unpause_count, unpause_control = await self._execute_pause_request(
+                    False
+                )
+                primitive_count += unpause_count
+                if not await self._wait_for_pause_state(False):
+                    raise RuntimeError(
+                        "Native movement did not confirm Kenshi running after "
+                        f"using {unpause_control}."
+                    )
+                messages.append(
+                    f"Started the paused world with {unpause_control}; the "
+                    "monitored option now owns the running movement."
+                )
             return ActionReceipt(
                 action=action,
                 command_id=command.command_id,
@@ -2009,7 +2087,10 @@ class LiveEnvironment(AgentEnvironment):
         self,
         *,
         wire_command: Literal[
-            "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+            "approach_confirmed_vendor",
+            "move_to_character",
+            "move_in_direction",
+            "exit_current_building",
         ],
         target_id: str,
         bearing_degrees: float,
@@ -2044,6 +2125,20 @@ class LiveEnvironment(AgentEnvironment):
                 or acknowledgement.distance_units != distance_units
             ):
                 return None
+        elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+            if (
+                acknowledgement.target_id
+                or acknowledgement.bearing_degrees != 0.0
+                or acknowledgement.distance_units != 0.0
+            ):
+                return None
+            selected = [
+                character
+                for character in observation.telemetry.squad
+                if character.selected
+            ]
+            if len(selected) != 1 or selected[0].indoors is not True:
+                return None
         elif (
             acknowledgement.target_id != target_id
             or acknowledgement.bearing_degrees != 0.0
@@ -2062,7 +2157,10 @@ class LiveEnvironment(AgentEnvironment):
         *,
         require_vendor_role: bool,
         wire_command: Literal[
-            "approach_confirmed_vendor", "move_to_character", "move_in_direction"
+            "approach_confirmed_vendor",
+            "move_to_character",
+            "move_in_direction",
+            "exit_current_building",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -2108,6 +2206,8 @@ class LiveEnvironment(AgentEnvironment):
         telemetry = observation.telemetry
         if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
             native_contract = MOVE_IN_DIRECTION_CONTRACT
+        elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+            native_contract = EXIT_CURRENT_BUILDING_CONTRACT
         elif wire_command == NATIVE_MOVE_WIRE_COMMAND:
             native_contract = MOVE_TO_CHARACTER_CONTRACT
         else:
@@ -2138,6 +2238,24 @@ class LiveEnvironment(AgentEnvironment):
                 selected_character_ids=list(selected_ids),
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
+            )
+        if wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+            selected = [
+                character for character in telemetry.squad if character.selected
+            ]
+            if len(selected) != 1 or selected[0].indoors is not True:
+                raise RuntimeError(
+                    "Native building exit requires the selected character to be "
+                    "confirmed indoors at issue time."
+                )
+            return NativeCommandRequest(
+                schema_version="1.0",
+                command_id=command.command_id,
+                command=wire_command,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                identity_session_id=telemetry.identity_session_id,
+                based_on_revision=observation.world_revision,
+                selected_character_ids=list(selected_ids),
             )
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")

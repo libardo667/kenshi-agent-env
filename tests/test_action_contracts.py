@@ -12,6 +12,7 @@ from kenshi_agent.action_contracts import (
     ACTION_CONTRACTS,
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
+    EXIT_CURRENT_BUILDING_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
     LegacyCompatibilityLedger,
     contract_for,
@@ -21,14 +22,20 @@ from kenshi_agent.action_contracts import (
 from kenshi_agent.models import (
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    CharacterState,
     ClickAction,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
     ControlMode,
     Disposition,
+    ExitCurrentBuildingAction,
     GameState,
     IdempotencyPolicy,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    PlanStep,
     PointerActionClass,
     PurchaseItemAction,
     SkillAction,
@@ -60,6 +67,7 @@ def observation(
     controls: list[VisibleUIControl] | None = None,
     ui: UIState | None = None,
     capabilities: list[str] | None = None,
+    squad: list[CharacterState] | None = None,
     stale: bool = False,
     control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
 ) -> Observation:
@@ -75,6 +83,7 @@ def observation(
             capabilities=capabilities if capabilities is not None else APPROACH_CAPABILITIES,
             game=GameState(loaded=True, paused=True),
             ui=ui or UIState(visible_controls=controls),
+            squad=squad or [],
             nearby_entities=entities or [],
         ),
         telemetry_stale=stale,
@@ -273,12 +282,93 @@ class TestVisibleControlBinding:
         assert "unavailable" in binding.reason
 
 
+class TestExitCurrentBuildingBinding:
+    def test_binds_only_one_selected_character_confirmed_indoors(self) -> None:
+        state = observation(
+            capabilities=[
+                "control.exit_current_building",
+                "identity.stable_handles",
+                "squad.indoors",
+            ],
+            ui=UIState(
+                selected_character_id="entity-hep",
+                selected_character_ids=["entity-hep"],
+            ),
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    indoors=True,
+                )
+            ],
+        )
+
+        binding = EXIT_CURRENT_BUILDING_CONTRACT.bind(
+            ExitCurrentBuildingAction(),
+            state,
+        )
+
+        assert binding.bound
+        assert binding.resolved_label == "Hep"
+        assert EXIT_CURRENT_BUILDING_CONTRACT.pointer_class is (
+            PointerActionClass.COORDINATE_INDEPENDENT
+        )
+        assert EXIT_CURRENT_BUILDING_CONTRACT.reference_fields == ()
+        assert EXIT_CURRENT_BUILDING_CONTRACT.controller_verified
+
+    def test_controller_owned_exit_allows_no_redundant_world_postcondition(
+        self,
+    ) -> None:
+        step = PlanStep(
+            step_id="exit",
+            action=ExitCurrentBuildingAction(),
+            preconditions=[
+                Condition(
+                    kind=ConditionKind.TELEMETRY_FRESH,
+                    operator=ConditionOperator.EQUALS,
+                    expected=True,
+                    max_age_seconds=3.0,
+                )
+            ],
+            success_conditions=[],
+            timeout_seconds=30,
+        )
+
+        assert step.success_conditions == []
+
+    def test_rejects_an_outdoor_character(self) -> None:
+        state = observation(
+            ui=UIState(
+                selected_character_id="entity-hep",
+                selected_character_ids=["entity-hep"],
+            ),
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    indoors=False,
+                )
+            ],
+        )
+
+        binding = EXIT_CURRENT_BUILDING_CONTRACT.bind(
+            ExitCurrentBuildingAction(),
+            state,
+        )
+
+        assert not binding.bound
+        assert "not confirmed inside" in binding.reason
+
+
 class TestContractCatalog:
     def test_contracts_are_registered_by_kind(self) -> None:
         assert set(ACTION_CONTRACTS) == {
             "approach_dialogue_target",
             "move_to_character",
             "move_in_direction",
+            "exit_current_building",
             "activate_visible_control",
             "dismiss_screen",
             "purchase_item",

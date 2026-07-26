@@ -83,13 +83,20 @@ The store:
 - provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
 
 This is an authoritative Python state stream over the plugin's atomic
-latest-snapshot file, not a native event transport. Native protocol `0.6.1`
+latest-snapshot file, not a native event transport. Native protocol `0.7.0`
 supplies session-scoped validated-handle identity, bounded keyed command
 acknowledgements, squad/inventory facts, game time, dialogue and management UI,
 tooltip/source bounds, named item cells, and visible controls. Older producers
 still use the portable ambiguity-aware registry. See
 `docs/ADR_WORLD_STATE_STREAM.md` and
 `docs/ADR_STABLE_NATIVE_IDENTITY.md`.
+
+The native layer is right-sized by faithful game coverage, not by a target line
+count. Semantic planner intent may delegate stable identity, geometry
+resolution, bounded recovery, and terminal evidence to reviewed native
+capabilities when ordinary UI input cannot expose them reliably. It remains a
+capability-gated integration layer rather than an arbitrary method dispatcher;
+see `docs/ADR_NATIVE_INTEGRATION_SCOPE.md`.
 
 Portable generic strategic output must match the current exact revision. The
 live `dialogue_interaction_v1` policy may rebase a plan that aged during a
@@ -253,6 +260,8 @@ current telemetry references through one catalog:
 - activate a visible control or dismiss the current screen;
 - buy, sell, equip, or scroll one current window;
 - press one allowlisted reversible Kenshi game binding.
+- leave the selected character's current building without model-authored door
+  geometry.
 - recover the selected-character camera through one bounded controller-owned,
   frame-scored follow/floor/zoom/orbit/tilt transaction.
 
@@ -264,8 +273,9 @@ never micromanages primitive timing or coordinates. Legacy skills still expand
 into bounded primitives for compatibility and calibrated transport.
 
 This is the intended single source of action truth, not yet complete executable
-truth. Camera recovery is the first controller-verified contract: its receipt
-owns a typed terminal verdict, so the planner supplies no success predicate.
+truth. Camera recovery and current-building exit are controller-verified
+contracts: their owning subsystems return typed terminal verdicts, so the
+planner supplies no success predicate.
 Most other contracts still name no controller-owned effect predicate:
 the generic policy requires a model-authored condition and evaluates it only on
 a causally later revision. That proves temporal ordering, not necessarily that
@@ -287,7 +297,7 @@ partial snapshot at a low fixed frequency. It hooks a known main/UI-thread
 update point, calls the original function, samples only validated fields, and
 writes an atomic file. The Python process never loads Kenshi memory directly.
 
-The plugin also contains three reviewed native-assisted commands behind one
+The plugin also contains four reviewed native-assisted commands behind one
 strict request bridge:
 
 - `approach_confirmed_vendor`, a legacy wire name that now accepts any exact
@@ -296,14 +306,18 @@ strict request bridge:
   on arrival without opening dialogue;
 - `move_in_direction`, whose native handler walks a bounded bearing/distance
   from the selected character and completes inside tolerance or after crossing
-  the intended destination plane.
+  the intended destination plane;
+- `exit_current_building`, which takes no model geometry, resolves an unlocked
+  current-building door and outside point, and completes from stable outdoor
+  membership or tightly reaching that native destination after real movement.
 
 Python atomically writes one request before the private bridge hotkey. The
 plugin accepts only the exact caller command ID, current world-revision
 sequence, native mode, identity session, one-character selection, and the
 command-specific exact target or direction fields. Directional commands require
-an empty target plus bounded bearing/distance; targeted commands require a
-stable target and zero direction fields. A bounded acknowledgement ring reports
+an empty target plus bounded bearing/distance; building exit requires an empty
+target and zero vector; targeted commands require a stable target and zero
+direction fields. A bounded acknowledgement ring reports
 rejection, acceptance, completion/cancellation, and terminal sequences. These
 commands are unavailable in `interface_only`; the DLL is not described as
 globally read-only.

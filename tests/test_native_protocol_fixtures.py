@@ -35,6 +35,17 @@ def test_python_accepts_targeted_request_fixture_with_no_direction_payload() -> 
     assert request.distance_units == 0.0
 
 
+def test_python_accepts_parameterless_building_exit_request_fixture() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_exit_building_request.json").read_bytes()
+    )
+
+    assert request.command == "exit_current_building"
+    assert request.target_id == ""
+    assert request.bearing_degrees == 0.0
+    assert request.distance_units == 0.0
+
+
 def test_python_rejects_direction_request_that_smuggles_a_target() -> None:
     with pytest.raises(ValidationError, match="must not name a target"):
         NativeCommandRequest.model_validate_json(

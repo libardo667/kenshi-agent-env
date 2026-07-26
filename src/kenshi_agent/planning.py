@@ -68,6 +68,7 @@ _NATIVE_CONTROL_CAPABILITIES = (
     *_NATIVE_APPROACH_CAPABILITIES,
     "control.move_to_character",
     "control.move_in_direction",
+    "control.exit_current_building",
 )
 
 # Capability names that mean the same thing. The plug-in still emits the
@@ -132,6 +133,7 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "selected.position.y": ("squad.basic",),
     "selected.position.z": ("squad.basic",),
     "selected.movement_speed": ("squad.basic",),
+    "selected.indoors": ("squad.indoors",),
     "selected.hunger": ("squad.hunger",),
     "selected.bleeding_rate": ("squad.health",),
     "selected.food_items": ("squad.hunger", "squad.inventory", "squad.basic"),
@@ -238,6 +240,7 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
             "selected.down": selected.down,
             "selected.in_combat": selected.in_combat,
             "selected.movement_speed": selected.movement_speed,
+            "selected.indoors": selected.indoors,
             "selected.hunger": selected.hunger,
             "selected.bleeding_rate": selected.bleeding_rate,
             "selected.food_items": selected.food_items,

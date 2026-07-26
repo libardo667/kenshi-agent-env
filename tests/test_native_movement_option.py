@@ -10,7 +10,9 @@ from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
+    CharacterState,
     CommandDispatchContext,
+    ExitCurrentBuildingAction,
     GameState,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
@@ -117,6 +119,82 @@ def update(obs: Observation) -> StoreUpdate:
     )
 
 
+def exit_acknowledgement(
+    sequence: int,
+    status: NativeCommandStatus,
+) -> NativeCommandAcknowledgement:
+    terminal = status is not NativeCommandStatus.ACCEPTED
+    return NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="exit_current_building",
+        status=status,
+        reason=(
+            "issued"
+            if status is NativeCommandStatus.ACCEPTED
+            else (
+                "left_current_building"
+                if status is NativeCommandStatus.COMPLETED
+                else "movement_stalled"
+            )
+        ),
+        selected_character_ids=[SELECTED_ID],
+        based_on_telemetry_sequence=1,
+        acknowledged_at_telemetry_sequence=2,
+        accepted_at_telemetry_sequence=2,
+        terminal_at_telemetry_sequence=sequence if terminal else None,
+    )
+
+
+def exit_observation(
+    sequence: int,
+    *,
+    ack: NativeCommandAcknowledgement | None = None,
+    indoors: bool = True,
+) -> Observation:
+    return Observation(
+        run_id="native-exit-option-test",
+        step_index=sequence,
+        mode="mock",
+        world_revision=WorldStateRevision(
+            telemetry_sequence=sequence,
+            capability_epoch=1,
+            observed_at_monotonic=float(sequence),
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=sequence,
+            captured_at=datetime.now(UTC),
+            capabilities=[
+                "game.pause",
+                "control.exit_current_building",
+                "squad.indoors",
+            ],
+            game=GameState(paused=True, elapsed_minutes=0.0),
+            ui=UIState(
+                selected_character_id=SELECTED_ID,
+                selected_character_ids=[SELECTED_ID],
+            ),
+            squad=[
+                CharacterState(
+                    id=SELECTED_ID,
+                    name="Hep",
+                    selected=True,
+                    indoors=indoors,
+                )
+            ],
+            native_control=NativeControlState(
+                active_command_id=(
+                    ack.command_id
+                    if ack is not None
+                    and ack.status is NativeCommandStatus.ACCEPTED
+                    else None
+                ),
+                acknowledgements=[ack] if ack is not None else [],
+            ),
+        ),
+        telemetry_age_seconds=0.0,
+    )
+
+
 class InstantNativeMovementEnvironment(AgentEnvironment):
     async def reset(self, *, seed: int | None = None) -> Observation:
         del seed
@@ -169,6 +247,32 @@ class AdoptedNativeMovementEnvironment(InstantNativeMovementEnvironment):
         )
 
 
+class InstantExitBuildingEnvironment(AgentEnvironment):
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return exit_observation(1)
+
+    async def observe(self) -> Observation:
+        return exit_observation(1)
+
+    async def step(self, action: Action) -> Transition:
+        accepted = exit_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="building exit issued",
+                native_acknowledgement=accepted,
+            ),
+            observation=exit_observation(2, ack=accepted),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
 def option() -> StatefulNativeMovementOption:
     return StatefulNativeMovementOption(
         option_id="native-direction-1",
@@ -207,6 +311,53 @@ def test_direction_option_waits_for_terminal_acknowledgement() -> None:
         assert movement.result().receipt.accepted is True
 
     asyncio.run(scenario())
+
+
+def test_building_exit_option_accepts_native_terminal_when_indoor_handle_lingers() -> None:
+    async def scenario() -> None:
+        movement = StatefulNativeMovementOption(
+            option_id="native-exit-1",
+            action=ExitCurrentBuildingAction(),
+            environment=InstantExitBuildingEnvironment(),
+        )
+        movement.prepare(exit_observation(1))
+        await movement.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=exit_observation(1).world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        accepted = exit_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        assert (
+            movement.poll(update(exit_observation(2, ack=accepted))).status
+            is OptionStatus.RUNNING
+        )
+        completed = exit_acknowledgement(3, NativeCommandStatus.COMPLETED)
+        outcome = movement.poll(
+            update(exit_observation(3, ack=completed, indoors=True))
+        )
+
+        assert outcome.status is OptionStatus.SUCCEEDED
+        assert movement.result().receipt.native_acknowledgement == accepted
+
+    asyncio.run(scenario())
+
+
+def test_building_exit_option_rejects_an_outdoor_start() -> None:
+    movement = StatefulNativeMovementOption(
+        option_id="native-exit-outdoors",
+        action=ExitCurrentBuildingAction(),
+        environment=InstantExitBuildingEnvironment(),
+    )
+
+    try:
+        movement.prepare(exit_observation(1, indoors=False))
+    except Exception as exc:
+        assert "confirmed indoors" in str(exc)
+    else:
+        raise AssertionError("outdoor building-exit start was accepted")
 
 
 def test_direction_option_rejects_acknowledgement_for_other_vector() -> None:

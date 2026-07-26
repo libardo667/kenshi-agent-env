@@ -171,6 +171,20 @@
       "title": "EquipItemAction",
       "type": "object"
     },
+    "ExitCurrentBuildingAction": {
+      "additionalProperties": false,
+      "description": "Leave the selected character's current building through a native door.\n\nThe planner supplies no coordinates, bearing, door identity, or retry\nstrategy. The native controller resolves an unlocked door from the exact\nbuilding the selected character currently occupies, issues one pathing\norder to its outdoor point, and owns completion or typed failure.",
+      "properties": {
+        "kind": {
+          "const": "exit_current_building",
+          "default": "exit_current_building",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "ExitCurrentBuildingAction",
+      "type": "object"
+    },
     "GameBinding": {
       "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Only the\nreversible ones are here: `quicksave`, `quickload`, `editor_toggle`,\n`rebuild_navmesh` and `reload_biomes` all exist in that file and are all\ndeliberately absent from this enum, because an agent running unattended on a\nstream must not be one keystroke away from overwriting a save.",
       "enum": [
@@ -691,6 +705,9 @@
         },
         {
           "$ref": "#/$defs/MoveInDirectionAction"
+        },
+        {
+          "$ref": "#/$defs/ExitCurrentBuildingAction"
         },
         {
           "$ref": "#/$defs/ActivateVisibleControlAction"

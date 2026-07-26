@@ -68,9 +68,10 @@ filter narrow. Close applications containing secrets before live tests. Start
 with a disposable save and a fixed resolution/UI scale.
 
 The plugin's telemetry path is observational, but the DLL is not globally
-read-only. In native-assisted mode its bounded bridge may issue one of three
+read-only. In native-assisted mode its bounded bridge may issue one of four
 declared player orders: talk to an exact valid dialogue target, walk to an exact
-nearby character, or issue a bounded bearing/distance walk. The third path has
+nearby character, issue a bounded bearing/distance walk, or resolve and use the
+selected character's current unlocked building exit. The directional path has
 portable, native-build, and one exact live completion proof; that one probe does
 not generalize every bearing, distance, obstacle layout, or scene.
 No mode permits direct
@@ -85,7 +86,7 @@ native request additionally requires a globally unique caller command ID, exact
 issue-time telemetry revision, `native_assisted` mode, current identity session,
 and exactly one selected character. Targeted requests bind one exact current
 stable ID; the directional model instead binds bounded numeric fields and an
-empty target. Protocol 0.6.1 enforces those command-specific identities in both
+empty target. Protocol 0.7.0 enforces those command-specific identities in both
 Python and the production C++ parser/serializer, with one keyed option owning
 the direction through terminal acknowledgement. For every command, Python
 waits only for that command's
@@ -94,7 +95,11 @@ acknowledgements, never reissues a duplicate ID, cancels on selection,
 uninterrupted pause beyond the bounded handoff window, or target-lifetime/role
 change, and uses command-specific completion: exact dialogue for approach,
 bounded arrival for targeted walking, and destination tolerance or intended
-destination-plane crossing for directional walking.
+destination-plane crossing for directional walking. Building exit completes
+from stable outdoor membership or tightly reaching the native-resolved
+outside-door point after meaningful movement; the model supplies no target or
+vector. A shared continuous-unpaused no-progress timer terminally cancels
+blocked native movement rather than leaving the bridge poisoned.
 Rejection is definitive; timeout or transport failure remains uncertain and is
 never retried automatically.
 

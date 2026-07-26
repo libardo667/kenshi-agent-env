@@ -3,6 +3,59 @@
 namespace KenshiAgentTelemetry
 {
     const float WALK_DESTINATION_TOLERANCE = 12.0f;
+    const float NATIVE_MOVEMENT_PROGRESS_DISTANCE = 1.0f;
+    const float NATIVE_EXIT_DESTINATION_TOLERANCE = 3.0f;
+    const unsigned long NATIVE_MOVEMENT_STALL_LIMIT_MS = 10000UL;
+    const unsigned long NATIVE_OUTDOOR_CONFIRMATION_MS = 500UL;
+
+    struct NativeMovementStallWindow
+    {
+        bool observing;
+        unsigned long lastProgressAtMs;
+        float lastProgressX;
+        float lastProgressZ;
+    };
+
+    struct NativeOutdoorConfirmationWindow
+    {
+        bool observingOutside;
+        unsigned long startedAtMs;
+    };
+
+    void ResetNativeMovementStallWindow(NativeMovementStallWindow& window);
+
+    // A continuous unpaused interval with less than one world unit of progress
+    // is a terminal pathing stall. Paused stop-motion gaps reset the interval
+    // rather than counting human/controller thinking time as a movement fault.
+    bool ObserveNativeMovementStall(
+        NativeMovementStallWindow& window,
+        bool worldPaused,
+        float currentX,
+        float currentZ,
+        unsigned long nowMs);
+
+    void ResetNativeOutdoorConfirmationWindow(
+        NativeOutdoorConfirmationWindow& window);
+
+    // Building handles can change while traversing nested interior/door
+    // objects. Completion requires remaining outside every building for one
+    // telemetry interval, not merely observing a different valid handle.
+    bool ObserveNativeOutdoorConfirmation(
+        NativeOutdoorConfirmationWindow& window,
+        bool indoors,
+        unsigned long nowMs);
+
+    // Kenshi can retain an indoor building handle after the character has
+    // visibly crossed an open doorway. The native-resolved outside point is a
+    // second authoritative terminal: it must be reached tightly, and the
+    // character must have made real progress from the indoor origin.
+    bool HasReachedResolvedExitDestination(
+        float originX,
+        float originZ,
+        float destinationX,
+        float destinationZ,
+        float currentX,
+        float currentZ);
 
     // A bare directional destination is reached either inside the ordinary
     // walk tolerance or after the character crosses the destination plane
