@@ -44,6 +44,11 @@
   eating, malnutrition, and fainting thresholds plus the layered-HUD caveat.
   A repeated live consultation changed "urgent starvation" into a conservative
   near-term food goal while preserving town-safety and combat-avoidance advice.
+- Added the zero-input `request_affordance` planner action so a live playing
+  model can retain a grounded missing capability, blocked goal, evidence,
+  workaround, and urgency. Requests survive advancing telemetry, duplicates are
+  suppressed, receipts and metrics stay typed, and recording one never grants
+  the missing tool.
 - Added semantic launcher controls, reversible graphics-profile verification,
   duplicate-client/Steam/memory/renderer checks, relative-pointer
   synchronization, window-scoped controls, and exact close-box derivation.
@@ -54,7 +59,7 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 532 passing tests with
+- Added `uv.lock`. The current portable baseline is 534 passing tests with
   clean Ruff and strict mypy over 58 source files.
 
 ## 0.1.0 — scaffold

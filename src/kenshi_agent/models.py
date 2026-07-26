@@ -119,9 +119,7 @@ class CalibrationIdentity(StrictModel):
         """Names this identity actually asserts, in stable order."""
 
         return tuple(
-            name
-            for name in self.__class__.model_fields
-            if getattr(self, name) is not None
+            name for name in self.__class__.model_fields if getattr(self, name) is not None
         )
 
 
@@ -525,6 +523,7 @@ class VisibleUIControl(StrictModel):
         if isinstance(value, str) and len(value) > 500:
             return value[:497] + "..."
         return value
+
     # Caption of the MyGUI window this control belongs to, when it has one.
     # Several open windows otherwise arrive as one flat list in which every
     # close button looks identical, so "close the shop" cannot be expressed.
@@ -620,29 +619,19 @@ class NativeCommandAcknowledgement(StrictModel):
             raise ValueError("native acknowledgement requires exactly one selected character")
         if self.command == "move_in_direction":
             if self.target_id:
-                raise ValueError(
-                    "a directional acknowledgement must not name a target"
-                )
+                raise ValueError("a directional acknowledgement must not name a target")
             if self.distance_units <= 0.0:
-                raise ValueError(
-                    "a directional acknowledgement requires a distance"
-                )
+                raise ValueError("a directional acknowledgement requires a distance")
         elif self.command == "exit_current_building":
             if self.target_id:
-                raise ValueError(
-                    "a building-exit acknowledgement must not name a target"
-                )
+                raise ValueError("a building-exit acknowledgement must not name a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError(
-                    "a building-exit acknowledgement must not carry direction fields"
-                )
+                raise ValueError("a building-exit acknowledgement must not carry direction fields")
         else:
             if not self.target_id:
                 raise ValueError("this native acknowledgement requires a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError(
-                    "a targeted acknowledgement must not carry direction fields"
-                )
+                raise ValueError("a targeted acknowledgement must not carry direction fields")
 
         if self.status == NativeCommandStatus.REJECTED:
             if self.accepted_at_telemetry_sequence is not None:
@@ -836,6 +825,29 @@ class ConsultAdvisorAction(StrictModel):
     kind: Literal["consult_advisor"] = "consult_advisor"
     question: str = Field(min_length=1, max_length=600)
     focus: AdvisorFocus = AdvisorFocus.NEXT_GOAL
+
+
+class AffordanceUrgency(StrEnum):
+    SURVIVAL_CRITICAL = "survival_critical"
+    BLOCKS_CURRENT_GOAL = "blocks_current_goal"
+    IMPROVES_FIDELITY = "improves_fidelity"
+
+
+class RequestAffordanceAction(StrictModel):
+    """Retain a concrete capability gap without emitting game input.
+
+    This is a cognitive action, like consulting the advisor. It tells the
+    engineering loop which intention the current action surface cannot express;
+    it does not grant that capability or authorize an improvised substitute.
+    """
+
+    kind: Literal["request_affordance"] = "request_affordance"
+    capability: str = Field(min_length=1, max_length=120)
+    blocked_goal: str = Field(min_length=1, max_length=300)
+    why_needed: str = Field(min_length=1, max_length=600)
+    evidence: str = Field(min_length=1, max_length=600)
+    available_workaround: str | None = Field(default=None, max_length=400)
+    urgency: AffordanceUrgency = AffordanceUrgency.BLOCKS_CURRENT_GOAL
 
 
 class KeyAction(StrictModel):
@@ -1231,6 +1243,7 @@ PlannerControlAction: TypeAlias = (
     | SetSpeedAction
     | WaitAction
     | ConsultAdvisorAction
+    | RequestAffordanceAction
 )
 """Planner-layer intentions that touch no game object and bind to no reference."""
 
@@ -1260,6 +1273,7 @@ Action: TypeAlias = (
     | SetSpeedAction
     | WaitAction
     | ConsultAdvisorAction
+    | RequestAffordanceAction
     | KeyAction
     | HotkeyAction
     | MoveCursorAction
@@ -1311,7 +1325,15 @@ def is_semantic_action(action: Action) -> bool:
 
 
 PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
-    {"noop", "stop", "pause", "set_speed", "wait", "consult_advisor"}
+    {
+        "noop",
+        "stop",
+        "pause",
+        "set_speed",
+        "wait",
+        "consult_advisor",
+        "request_affordance",
+    }
 )
 
 
@@ -1510,6 +1532,24 @@ class AdvisorConsultEvidence(StrictModel):
     brief: AdvisorBrief | None = None
 
 
+class AffordanceRequestStatus(StrEnum):
+    RETAINED = "retained"
+    DUPLICATE = "duplicate"
+
+
+class AffordanceRequestEvidence(StrictModel):
+    status: AffordanceRequestStatus
+    reason: str = Field(min_length=1, max_length=1000)
+    request_number: int = Field(ge=1)
+    normalized_capability: str = Field(min_length=1, max_length=120)
+
+
+class AffordanceRequestRecord(StrictModel):
+    request_number: int = Field(ge=1)
+    action: RequestAffordanceAction
+    based_on_revision: WorldStateRevision
+
+
 class CommandDispatchContext(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     based_on_revision: WorldStateRevision
@@ -1548,9 +1588,7 @@ class NativeCommandRequest(StrictModel):
             if self.target_id:
                 raise ValueError("a building-exit command must not name a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
-                raise ValueError(
-                    "a building-exit command must not carry direction fields"
-                )
+                raise ValueError("a building-exit command must not carry direction fields")
         else:
             if not self.target_id:
                 raise ValueError("this native command requires a target")
@@ -1710,9 +1748,7 @@ class Condition(StrictModel):
                 # the intent is unambiguous, so read it rather than refuse. More
                 # than one is genuinely ambiguous and still fails.
                 candidates = [
-                    name
-                    for name in self.required_capabilities
-                    if name in _ALLOWED_CAPABILITY_PATHS
+                    name for name in self.required_capabilities if name in _ALLOWED_CAPABILITY_PATHS
                 ]
                 if candidates:
                     # Every name here is enforced at evaluation regardless of
@@ -1751,9 +1787,7 @@ class Condition(StrictModel):
         # field path where a capability name goes despite the prompt saying not
         # to. When five independent models make one mistake the vocabulary is at
         # fault, so drop what we do not recognise and keep the plan.
-        recognised = [
-            name for name in self.required_capabilities if name in KNOWN_CAPABILITIES
-        ]
+        recognised = [name for name in self.required_capabilities if name in KNOWN_CAPABILITIES]
         if len(recognised) != len(self.required_capabilities):
             object.__setattr__(self, "required_capabilities", recognised)
         if self.expected is None:
@@ -1762,9 +1796,7 @@ class Condition(StrictModel):
                 f"there is nothing to compare the observation against. Set `expected` "
                 f"to the value this condition should hold"
             )
-        if self.operator == ConditionOperator.CONTAINS and not isinstance(
-            self.expected, str
-        ):
+        if self.operator == ConditionOperator.CONTAINS and not isinstance(self.expected, str):
             raise ValueError("contains conditions require a string expected value")
         return self
 
@@ -1818,12 +1850,13 @@ class PlanStep(StrictModel):
             (
                 RecoverCameraViewAction,
                 ConsultAdvisorAction,
+                RequestAffordanceAction,
                 ExitCurrentBuildingAction,
             ),
         ):
             raise ValueError(
                 "success_conditions may be empty only for recover_camera_view, "
-                "consult_advisor, or exit_current_building, whose owning "
+                "consult_advisor, request_affordance, or exit_current_building, whose owning "
                 "subsystem returns a typed terminal outcome"
             )
         return self
@@ -1946,6 +1979,10 @@ class Observation(StrictModel):
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
     advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
+    affordance_requests: list[AffordanceRequestRecord] = Field(
+        default_factory=list,
+        max_length=32,
+    )
 
     def travel_destination_digest(self) -> list[dict[str, Any]]:
         """Somewhere to walk that is not already somewhere to talk.
@@ -2108,9 +2145,7 @@ class Observation(StrictModel):
                 "role": control.role,
                 "window": control.window,
                 "ambiguous": (
-                    counts[
-                        (normalize_control_label(control.label), control.role, control.window)
-                    ]
+                    counts[(normalize_control_label(control.label), control.role, control.window)]
                     > 1
                 ),
             }
@@ -2183,6 +2218,9 @@ class Observation(StrictModel):
             "events": list(self.events),
             "objective": self.objective,
             "advisor": self.advisor.model_dump(mode="json"),
+            "affordance_requests": [
+                request.model_dump(mode="json") for request in self.affordance_requests
+            ],
             "digest": True,
         }
         if telemetry is None:
@@ -2497,6 +2535,7 @@ class ActionReceipt(StrictModel):
     calibration: CalibrationReport | None = None
     semantic: SemanticActionReceipt | None = None
     advisor: AdvisorConsultEvidence | None = None
+    affordance_request: AffordanceRequestEvidence | None = None
     accepted: bool
     executed: bool
     dry_run: bool

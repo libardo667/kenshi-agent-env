@@ -38,6 +38,10 @@ superseded milestones remain in `docs/ENGINEERING_LOOP_STATE.md` and
   cadence/repetition suggestion, cooldown, budget, and the latest attributed
   brief. Unknown source IDs fail closed, and unchanged-state requests are
   suppressed before the provider call.
+- `request_affordance` gives the playing model a retained, de-duplicated way to
+  report a grounded missing control. It emits no input and grants no capability;
+  subsequent observations carry the request so the run can take a safe
+  workaround while the engineering loop receives a concrete tool need.
 
 ## Planner-visible action surface
 
@@ -74,7 +78,8 @@ requirements are present:
   bounded follow/floor/zoom/orbit/tilt transaction and typed frame-scored verdict.
 
 Planner-layer control (`noop`, `wait`, `pause`, `set_speed`, whole-run `stop`,
-and read-only `consult_advisor`) remains separate from game-object contracts.
+read-only `consult_advisor`, and zero-input `request_affordance`) remains
+separate from game-object contracts.
 Raw keys, hotkeys, cursor moves, clicks, and scroll primitives are controller
 implementation details and are not planner-authorable on the generic live
 path.
@@ -155,6 +160,13 @@ path.
   near-term food constraint, not immediate danger. It retained source
   attribution, town-safety advice, and combat avoidance. A live multi-turn
   advisor-to-next-planner behavioral handoff remains separate open evidence.
+- Exact-target contextual world work is not yet planner-authorable. The owner
+  clarified that the immediate need is mining/operating an ore resource for
+  income, with animal hunting as a possible later guarded task—not an
+  enemy-attack primitive. Pinned KenshiLib exposes object queries, natural-mine
+  classification, task-probability checks, and exact task issuance; exporting
+  authoritative actionable targets and completing a monitored mining task is
+  the next implementation/live-proof slice.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps typed lifecycle evidence in `events.jsonl`. A selectable
   `transcript.log` is intended, but the 80-turn run did not produce one.

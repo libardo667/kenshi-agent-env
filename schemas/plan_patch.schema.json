@@ -52,6 +52,15 @@
       "title": "AdvisorFocus",
       "type": "string"
     },
+    "AffordanceUrgency": {
+      "enum": [
+        "survival_critical",
+        "blocks_current_goal",
+        "improves_fidelity"
+      ],
+      "title": "AffordanceUrgency",
+      "type": "string"
+    },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
       "description": "Initiate dialogue with one exact currently observed dialogue target.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nThe controller issues Kenshi's native talk-to order and owns the whole\nmonitored interaction, so there is no planner-visible \"continue\napproaching\" or prerequisite unpause command.",
@@ -601,6 +610,9 @@
               "$ref": "#/$defs/ConsultAdvisorAction"
             },
             {
+              "$ref": "#/$defs/RequestAffordanceAction"
+            },
+            {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
             },
             {
@@ -790,6 +802,67 @@
         }
       },
       "title": "RecoverCameraViewAction",
+      "type": "object"
+    },
+    "RequestAffordanceAction": {
+      "additionalProperties": false,
+      "description": "Retain a concrete capability gap without emitting game input.\n\nThis is a cognitive action, like consulting the advisor. It tells the\nengineering loop which intention the current action surface cannot express;\nit does not grant that capability or authorize an improvised substitute.",
+      "properties": {
+        "kind": {
+          "const": "request_affordance",
+          "default": "request_affordance",
+          "title": "Kind",
+          "type": "string"
+        },
+        "capability": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "blocked_goal": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Blocked Goal",
+          "type": "string"
+        },
+        "why_needed": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Why Needed",
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "available_workaround": {
+          "anyOf": [
+            {
+              "maxLength": 400,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available Workaround"
+        },
+        "urgency": {
+          "$ref": "#/$defs/AffordanceUrgency",
+          "default": "blocks_current_goal"
+        }
+      },
+      "required": [
+        "capability",
+        "blocked_goal",
+        "why_needed",
+        "evidence"
+      ],
+      "title": "RequestAffordanceAction",
       "type": "object"
     },
     "ScrollScreenAction": {

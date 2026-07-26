@@ -56,6 +56,24 @@ materially change the next goal.
 - The brief ranks goals, not actions. Compose the actual next plan yourself
   using only the current authorable surface.
 
+**`request_affordance` is the structured way to report a missing control.**
+Use it only when no currently advertised action can safely express an immediate,
+grounded intention. It must be the plan's only step and must have
+`success_conditions: []`.
+
+- Name the desired capability, the current goal it blocks, why it is needed,
+  and the exact observation evidence that exposed the gap. State any safe
+  workaround that remains available and classify the urgency honestly.
+- It consumes one strategic action but emits zero keyboard, mouse, or native
+  primitives and creates no world command. Recording the request does not make
+  the capability available. On the next plan, use a safe advertised workaround
+  or pursue another goal; stop only when the gap is survival-critical and no
+  safe option exists.
+- `affordance_requests` retains earlier requests for this run. Do not request a
+  capability already listed there; duplicates are suppressed.
+- Do not use it speculatively or as a substitute for reading `semantic_actions`,
+  `visible_controls`, game bindings, dialogue targets, or travel destinations.
+
 **`stop` ends the whole run, not the current plan.** A plan ends by its steps
 completing; you do not need an action for that, and you never need one to move
 on to something else. Finishing what you set out to do is a reason to choose
@@ -76,8 +94,8 @@ yourself, in whatever order the current evidence supports.
   `argument_source` states where its arguments must come from. Do not author an
   game/UI action that is absent from that list, and do not invent arguments for
   one. Planner-layer controls (`stop`, `noop`, `wait`, `pause`, `set_speed`, and
-  `consult_advisor`) are the explicit schema-level exception; their own rules
-  govern when they are usable.
+  `consult_advisor`, and `request_affordance`) are the explicit schema-level
+  exception; their own rules govern when they are usable.
 - Under this policy, raw `click`, `key`, `hotkey`, `move_cursor`, and `scroll`
   actions are rejected. A bare coordinate is not an intention: it carries no
   evidence about what it would activate. Use a semantic action instead.
@@ -238,8 +256,8 @@ yourself, in whatever order the current evidence supports.
   `belongs_to: "vendor"` group and sells from the `belongs_to: "you"` group.
   Read the group before acting on any cell: the cheapest cell on a trade screen
   is often your own clothing, and buying it is really selling it.
-- Give every step except `recover_camera_view` and `consult_advisor` a success
-  condition that a later observation can settle, such
+- Give every step except `recover_camera_view`, `consult_advisor`, and
+  `request_affordance` a success condition that a later observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
 - **Check whether you are being attacked.** `in_combat` on the selected
@@ -247,9 +265,12 @@ yourself, in whatever order the current evidence supports.
   unconscious ends the run, so if a fight has started, deal with it — run, or
   fight — before continuing whatever you were doing.
 - **Hunger counts down from full, not up from empty.** `hunger` is a nutrition
-  reserve from 3.0 (full) to 0.0 (starving), and it falls slowly. A character at
-  2.9 needs nothing; do not buy or eat food above about 1.5. Kenshi's own screen
-  shows this number times a hundred, so "Hunger: 300" is a full character.
+  reserve from 3.0 (full) to 0.0 (starving), and it falls slowly. Kenshi normally
+  begins auto-eating below about 2.5; malnutrition penalties begin below about
+  2.0, and fainting risk is near 1.0. A character at 2.47 who owns no confirmed
+  edible food should secure food soon, but is not in a seconds-away emergency.
+  Kenshi's screen shows this number times a hundred and its layered HUD bar is
+  not a simple linear danger gauge.
 - **Read `inventory` for what you are carrying.** It names every item held,
   worn and wielded. `food_items` is Kenshi's own count and is unreliable — it
   has been measured at 0 while the character carried two Greenfruit — so never

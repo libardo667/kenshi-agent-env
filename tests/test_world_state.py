@@ -12,6 +12,8 @@ from kenshi_agent.models import (
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionReceipt,
+    AffordanceRequestRecord,
+    AffordanceUrgency,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -20,6 +22,7 @@ from kenshi_agent.models import (
     GameState,
     NearbyEntity,
     Observation,
+    RequestAffordanceAction,
     StopAction,
     TelemetrySnapshot,
     Transition,
@@ -149,6 +152,19 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
         update={
             "objective": "Retain causal context.",
             "recent_action_outcomes": [outcome],
+            "affordance_requests": [
+                AffordanceRequestRecord(
+                    request_number=1,
+                    action=RequestAffordanceAction(
+                        capability="retreat to a safe anchor",
+                        blocked_goal="Survive an active fight.",
+                        why_needed="Movement lacks a safety-aware retreat intention.",
+                        evidence="The selected character is in combat.",
+                        urgency=AffordanceUrgency.SURVIVAL_CRITICAL,
+                    ),
+                    based_on_revision=first.world_revision,
+                )
+            ],
         }
     )
 
@@ -157,8 +173,11 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
     assert latest.objective == "Retain causal context."
     assert latest.recent_action_outcomes == [outcome]
     assert store.history()[-1].recent_action_outcomes == [outcome]
+    advanced = store.publish(observation(2)).observation
+    assert advanced.objective == "Retain causal context."
+    assert advanced.affordance_requests[0].action.capability == "retreat to a safe anchor"
     with pytest.raises(RevisionConflictError, match="current world-state revision"):
-        store.decorate_latest(observation(2))
+        store.decorate_latest(observation(1))
 
 
 def test_causal_wait_cannot_succeed_from_starting_revision_and_uses_fake_clock() -> None:
@@ -444,9 +463,7 @@ def test_validated_handle_lifetime_tombstones_and_session_changes_do_not_alias()
             identity_session_id="session-a",
         )
     )
-    old_lifetime = next(
-        item for item in store.entity_lifetimes() if item.stable_id == old_id
-    )
+    old_lifetime = next(item for item in store.entity_lifetimes() if item.stable_id == old_id)
     assert not old_lifetime.active
     assert old_lifetime.ended_revision is not None
     assert old_lifetime.ended_revision.telemetry_sequence == 2
@@ -463,8 +480,7 @@ def test_validated_handle_lifetime_tombstones_and_session_changes_do_not_alias()
     assert not lifetimes[old_id].active
     assert lifetimes[new_id].active
     assert any(
-        event.event_type == "entity_appeared"
-        and event.payload["stable_id"] == new_id
+        event.event_type == "entity_appeared" and event.payload["stable_id"] == new_id
         for event in update.events
     )
 
@@ -787,9 +803,7 @@ def test_recent_changes_carry_values_and_lead_with_what_matters() -> None:
     after = before.model_copy(
         update={
             "step_index": before.step_index + 1,
-            "world_revision": before.world_revision.model_copy(
-                update={"telemetry_sequence": 2}
-            ),
+            "world_revision": before.world_revision.model_copy(update={"telemetry_sequence": 2}),
             "telemetry": telemetry.model_copy(
                 update={
                     "sequence": 2,

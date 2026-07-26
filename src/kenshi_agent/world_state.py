@@ -76,9 +76,7 @@ def _state_changes(delta: StateDelta) -> list[StateChange]:
                 return (index, path)
         return (len(_CHANGE_PRIORITY), path)
 
-    world = [
-        change for change in delta.changes if change[0] not in _AGENT_BOOKKEEPING_PATHS
-    ]
+    world = [change for change in delta.changes if change[0] not in _AGENT_BOOKKEEPING_PATHS]
     ordered = sorted(world, key=lambda change: rank(change[0]))
     return [
         StateChange(path=path, before=_rendered(before), after=_rendered(after))
@@ -395,6 +393,7 @@ class WorldStateStore:
             "skill_specs",
             "memories",
             "advisor",
+            "affordance_requests",
         )
         decorated = self._latest.model_copy(
             update={
@@ -415,6 +414,29 @@ class WorldStateStore:
         self._validate_revision(canonical)
         status = self._sequence_status(canonical)
         previous = self._latest
+        if previous is not None:
+            # Environment observations own world facts. Planner context is
+            # runtime-owned and must survive the next telemetry publication;
+            # otherwise a hosted advisor brief, retained affordance request, or
+            # memory can disappear between two planner calls merely because the
+            # observation pump advanced first.
+            canonical = canonical.model_copy(
+                update={
+                    field_name: getattr(previous, field_name)
+                    for field_name in (
+                        "planning_mode",
+                        "live_execution_policy",
+                        "objective",
+                        "recent_action_outcomes",
+                        "available_skills",
+                        "skill_specs",
+                        "memories",
+                        "advisor",
+                        "affordance_requests",
+                    )
+                },
+                deep=True,
+            )
 
         emitted: list[WorldEvent] = []
         if capability_change is not None:
@@ -952,6 +974,7 @@ class WorldStateStore:
                 "world_revision",
                 "events",
                 "memories",
+                "affordance_requests",
                 "recent_action_outcomes",
                 "screenshot_path",
                 # Excluded or the delta would feed on itself: last tick's

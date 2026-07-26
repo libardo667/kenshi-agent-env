@@ -191,6 +191,7 @@ safety:
     - sell_item
     - equip_item
     - recover_camera_view
+    - request_affordance
   # The generic chain authors semantic actions, not macros. Only the transport
   # and native-approach macros remain allowlisted, because the semantic approach
   # reuses the latter's primitives.

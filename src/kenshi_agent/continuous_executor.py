@@ -29,6 +29,7 @@ from .models import (
     PlannerOutput,
     PlanPatch,
     PlanStep,
+    RequestAffordanceAction,
     SkillAction,
     Transition,
     WorldStateRevision,
@@ -75,6 +76,10 @@ AdvisorConsultant = Callable[
     [ConsultAdvisorAction, Observation, str, int, str, float | None],
     Coroutine[Any, Any, "AdvisorActionResult"],
 ]
+AffordanceRequester = Callable[
+    [RequestAffordanceAction, Observation, str, int, str],
+    Coroutine[Any, Any, "AffordanceRequestActionResult"],
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +95,12 @@ class PlanExecutionResult:
 
 @dataclass(frozen=True, slots=True)
 class AdvisorActionResult:
+    observation: Observation
+    receipt: ActionReceipt
+
+
+@dataclass(frozen=True, slots=True)
+class AffordanceRequestActionResult:
     observation: Observation
     receipt: ActionReceipt
 
@@ -157,6 +168,7 @@ class ContinuousPlanExecutor:
         planning_config: PlanningConfig,
         concurrent_planner: ConcurrentPlanner | None = None,
         consult_advisor: AdvisorConsultant | None = None,
+        request_affordance: AffordanceRequester | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -168,6 +180,7 @@ class ContinuousPlanExecutor:
         self.planning_config = planning_config
         self.concurrent_planner = concurrent_planner
         self.consult_advisor = consult_advisor
+        self.request_affordance = request_affordance
 
     async def execute(
         self,
@@ -607,6 +620,15 @@ class ContinuousPlanExecutor:
                 budget,
             )
 
+        if isinstance(action, RequestAffordanceAction):
+            return await self._execute_affordance_request_step(
+                action,
+                plan,
+                step,
+                observation,
+                budget,
+            )
+
         movement_option: StatefulMovementOption | None = None
         if (
             self.planning_config.stateful_movement_options_enabled
@@ -617,9 +639,7 @@ class ContinuousPlanExecutor:
                 option_id=(f"option-{plan.plan_id}-{plan.plan_version}-{step.step_id}"),
                 action=action,
                 environment=self.environment,
-                require_paused_start=(
-                    self.planning_config.require_paused_between_actions
-                ),
+                require_paused_start=(self.planning_config.require_paused_between_actions),
             )
             try:
                 prepared = movement_option.prepare(observation)
@@ -671,14 +691,10 @@ class ContinuousPlanExecutor:
             and contract.execution is ActionExecution.MONITORED_OPTION
         ):
             native_movement_option = StatefulNativeMovementOption(
-                option_id=(
-                    f"native-movement-{plan.plan_id}-{plan.plan_version}-{step.step_id}"
-                ),
+                option_id=(f"native-movement-{plan.plan_id}-{plan.plan_version}-{step.step_id}"),
                 action=action,
                 environment=self.environment,
-                require_paused_start=(
-                    self.planning_config.require_paused_between_actions
-                ),
+                require_paused_start=(self.planning_config.require_paused_between_actions),
             )
             try:
                 prepared = native_movement_option.prepare(observation)
@@ -732,9 +748,7 @@ class ContinuousPlanExecutor:
                 target_id=approach_params.target_id,
                 arrival_distance=approach_params.arrival_distance,
                 threat_distance=approach_params.threat_distance,
-                require_paused_start=(
-                    self.planning_config.require_paused_between_actions
-                ),
+                require_paused_start=(self.planning_config.require_paused_between_actions),
             )
             try:
                 prepared = approach_option.prepare(observation)
@@ -999,10 +1013,7 @@ class ContinuousPlanExecutor:
                 terminated=transition.terminated,
                 success=transition.success,
             )
-        if (
-            monitored_outcome is not None
-            and monitored_outcome.status is not OptionStatus.SUCCEEDED
-        ):
+        if monitored_outcome is not None and monitored_outcome.status is not OptionStatus.SUCCEEDED:
             # The monitored option is this action's authority on arrival. A lost
             # target or a hostile inside threat range is a terminal verdict, not
             # a hint to be overridden by a postcondition that happens to read
@@ -1020,19 +1031,13 @@ class ContinuousPlanExecutor:
             )
         contract = contract_for(step.action)
         if contract is not None and contract.controller_verified:
-            if (
-                isinstance(step.action, ExitCurrentBuildingAction)
-                and monitored_outcome is not None
-            ):
+            if isinstance(step.action, ExitCurrentBuildingAction) and monitored_outcome is not None:
                 self._event(
                     "plan_step_progress",
                     plan,
                     latest,
                     step=step,
-                    reason=(
-                        "Accepted the native building-exit option's keyed "
-                        "terminal verdict."
-                    ),
+                    reason=("Accepted the native building-exit option's keyed terminal verdict."),
                     evidence={
                         "controller_verified": True,
                         "option_status": monitored_outcome.status.value,
@@ -1043,10 +1048,7 @@ class ContinuousPlanExecutor:
                     observation=latest,
                     succeeded=True,
                     actions_completed=1,
-                    reason=(
-                        "Controller-owned building exit reached its native "
-                        "terminal success."
-                    ),
+                    reason=("Controller-owned building exit reached its native terminal success."),
                     terminated=transition.terminated,
                     success=transition.success,
                     staged_patch=staged_patch,
@@ -1089,10 +1091,7 @@ class ContinuousPlanExecutor:
                 observation=latest,
                 succeeded=succeeded,
                 actions_completed=1,
-                reason=(
-                    "Controller-owned camera recovery returned "
-                    f"{recovery.status.value!r}."
-                ),
+                reason=(f"Controller-owned camera recovery returned {recovery.status.value!r}."),
                 terminated=transition.terminated,
                 success=transition.success,
                 staged_patch=staged_patch if succeeded else None,
@@ -1313,6 +1312,86 @@ class ContinuousPlanExecutor:
             reason=reason,
             evidence={
                 "status": status,
+                "controller_primitives": 0,
+                "world_command_created": False,
+            },
+        )
+        return _StepResult(
+            observation=result.observation,
+            succeeded=succeeded,
+            actions_completed=1,
+            reason=reason,
+        )
+
+    async def _execute_affordance_request_step(
+        self,
+        action: RequestAffordanceAction,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        budget: PlanBudgetLedger,
+    ) -> _StepResult:
+        """Retain one capability gap without creating a world command."""
+
+        self._event(
+            "plan_step_started",
+            plan,
+            observation,
+            step=step,
+            reason="Affordance request passed the guard and reserved one plan action.",
+            evidence={
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "remaining_actions_before_commit": budget.remaining_actions,
+            },
+        )
+        if self.request_affordance is None:
+            budget.release((0, 0, 0))
+            reason = "No affordance-request sink is attached to this runtime."
+            self._event(
+                "plan_budget_released",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            return _StepResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=0,
+                reason=reason,
+            )
+
+        result = await self.request_affordance(
+            action,
+            observation,
+            plan.plan_id,
+            plan.plan_version,
+            step.step_id,
+        )
+        budget.commit()
+        evidence = result.receipt.affordance_request
+        succeeded = evidence is not None
+        reason = (
+            evidence.reason
+            if evidence is not None
+            else "Affordance request returned no typed evidence."
+        )
+        self._event(
+            "plan_budget_committed",
+            plan,
+            result.observation,
+            step=step,
+            reason="The cognitive request consumed one bounded plan action.",
+        )
+        self._event(
+            "affordance_request_completed" if succeeded else "affordance_request_failed",
+            plan,
+            result.observation,
+            step=step,
+            reason=reason,
+            evidence={
+                "status": (evidence.status.value if evidence is not None else "missing_evidence"),
                 "controller_primitives": 0,
                 "world_command_created": False,
             },
@@ -1643,8 +1722,7 @@ class ContinuousPlanExecutor:
 
             if timed_out:
                 await option.cancel(
-                    "Monitored native movement exceeded its step timeout before "
-                    "terminal success."
+                    "Monitored native movement exceeded its step timeout before terminal success."
                 )
 
             terminal = option.poll()
@@ -1738,8 +1816,7 @@ class ContinuousPlanExecutor:
                     self.state_store.latest or observation,
                     step=step,
                     reason=(
-                        "Monitored native option ended before the concurrent "
-                        "advisory completed."
+                        "Monitored native option ended before the concurrent advisory completed."
                     ),
                     evidence={"option_id": option.option_id},
                 )

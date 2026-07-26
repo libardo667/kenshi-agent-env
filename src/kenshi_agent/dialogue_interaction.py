@@ -29,6 +29,7 @@ from .models import (
     PauseAction,
     PlanEnvelope,
     PlanStep,
+    RequestAffordanceAction,
     RiskBudget,
     UseGameBindingAction,
     is_controller_primitive,
@@ -97,9 +98,7 @@ def _step_action_errors(
 
     contract: ActionContract | None = contract_for(action)
     if contract is None:
-        errors.append(
-            f"{label} action {action.kind!r} has no authoritative action contract"
-        )
+        errors.append(f"{label} action {action.kind!r} has no authoritative action contract")
         return errors
     if not contract.planner_visible:
         errors.append(f"{label} action {action.kind!r} is not planner-visible")
@@ -129,9 +128,7 @@ def _step_action_errors(
     if require_binding:
         binding = contract.bind(action, observation)
         if not binding.bound:
-            errors.append(
-                f"{label} reference does not bind to current state: {binding.reason}"
-            )
+            errors.append(f"{label} reference does not bind to current state: {binding.reason}")
 
     # Only a claim *weaker* than the contract is a problem. Declaring
     # `at_most_once` for an action the contract says is safe to retry is simply
@@ -211,9 +208,7 @@ def dialogue_interaction_rebase_errors(
     errors: list[str] = []
     if not plan.based_on_revision.same_snapshot_as(planner_observation.world_revision):
         errors.append("plan basis does not match its immutable planner snapshot")
-    if not current_observation.world_revision.is_later_than(
-        planner_observation.world_revision
-    ):
+    if not current_observation.world_revision.is_later_than(planner_observation.world_revision):
         errors.append("current world revision is not causally later than the planner snapshot")
 
     if current_observation.telemetry is None:
@@ -264,15 +259,12 @@ def dialogue_interaction_rebase_errors(
 
     assumptions = evaluate_conditions(plan.assumptions, current_observation)
     blocked = [
-        evaluation
-        for evaluation in assumptions
-        if evaluation.result is not ConditionResult.TRUE
+        evaluation for evaluation in assumptions if evaluation.result is not ConditionResult.TRUE
     ]
     if blocked:
         errors.append(
             "the plan's own assumptions stopped being true while the planner was "
-            "thinking: "
-            + "; ".join(f"{item.result.value}: {item.reason}" for item in blocked)
+            "thinking: " + "; ".join(f"{item.result.value}: {item.reason}" for item in blocked)
         )
     return errors
 
@@ -344,18 +336,23 @@ def dialogue_interaction_policy_errors(
             f"most {max_steps}"
         )
 
-    advisor_steps = [
-        step for step in plan.steps if isinstance(step.action, ConsultAdvisorAction)
-    ]
+    advisor_steps = [step for step in plan.steps if isinstance(step.action, ConsultAdvisorAction)]
     if advisor_steps and len(plan.steps) != 1:
         errors.append(
             "consult_advisor must be the plan's only step, because its brief is "
             "available only to the next strategic planner call"
         )
 
-    if not any(
-        condition.kind is ConditionKind.TELEMETRY_FRESH for condition in plan.assumptions
-    ):
+    affordance_request_steps = [
+        step for step in plan.steps if isinstance(step.action, RequestAffordanceAction)
+    ]
+    if affordance_request_steps and len(plan.steps) != 1:
+        errors.append(
+            "request_affordance must be the plan's only step, because recording a "
+            "missing control does not make that control available to later steps"
+        )
+
+    if not any(condition.kind is ConditionKind.TELEMETRY_FRESH for condition in plan.assumptions):
         errors.append(
             "the plan has no freshness assumption, so nothing establishes that the "
             "world it was built from is still current. Add one entry to "

@@ -18,7 +18,11 @@ from .advisor import (
     disabled_advisor_availability,
 )
 from .config import PlanningConfig
-from .continuous_executor import AdvisorActionResult, ContinuousPlanExecutor
+from .continuous_executor import (
+    AdvisorActionResult,
+    AffordanceRequestActionResult,
+    ContinuousPlanExecutor,
+)
 from .control_ownership import (
     ControlOwnershipEvent,
     ControlOwnershipMachine,
@@ -32,6 +36,9 @@ from .models import (
     ActionReceipt,
     AdvisorConsultEvidence,
     AdvisorConsultStatus,
+    AffordanceRequestEvidence,
+    AffordanceRequestRecord,
+    AffordanceRequestStatus,
     CameraRecoveryStatus,
     CharacterState,
     CommandDispatchContext,
@@ -49,6 +56,7 @@ from .models import (
     PlanPatch,
     PlanStep,
     RecoverCameraViewAction,
+    RequestAffordanceAction,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -135,6 +143,8 @@ class AgentRuntime:
         self.observation_clock = observation_clock or SystemPlanningClock()
         self.log_full_observations = log_full_observations
         self._state_store: WorldStateStore | None = None
+        self._affordance_requests: list[AffordanceRequestRecord] = []
+        self._affordance_request_index: dict[str, int] = {}
 
     def _log_observation(self, observation: Observation) -> None:
         """Record an observation at the configured level of detail."""
@@ -205,6 +215,8 @@ class AgentRuntime:
         observation: Observation | None = None
         try:
             self._action_outcomes.clear()
+            self._affordance_requests.clear()
+            self._affordance_request_index.clear()
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
             self.logger.write(
@@ -304,7 +316,7 @@ class AgentRuntime:
                     break
 
                 if isinstance(action, ConsultAdvisorAction):
-                    result = await self._execute_advisor_action(
+                    advisor_result = await self._execute_advisor_action(
                         action,
                         observation,
                         plan_id="single-step",
@@ -313,10 +325,25 @@ class AgentRuntime:
                         timeout_seconds=None,
                     )
                     steps_completed += 1
-                    observation = result.observation
+                    observation = advisor_result.observation
                     self._store_memories(decision)
                     self._log_observation(observation)
-                    stop_reason = result.receipt.message
+                    stop_reason = advisor_result.receipt.message
+                    continue
+
+                if isinstance(action, RequestAffordanceAction):
+                    affordance_result = await self._execute_affordance_request_action(
+                        action,
+                        observation,
+                        plan_id="single-step",
+                        plan_version=1,
+                        step_id=f"step-{observation.step_index}",
+                    )
+                    steps_completed += 1
+                    observation = affordance_result.observation
+                    self._store_memories(decision)
+                    self._log_observation(observation)
+                    stop_reason = affordance_result.receipt.message
                     continue
 
                 try:
@@ -488,6 +515,8 @@ class AgentRuntime:
 
         try:
             self._action_outcomes.clear()
+            self._affordance_requests.clear()
+            self._affordance_request_index.clear()
             observation = self._with_memories(await self.environment.reset(seed=seed))
             self.logger.write(
                 "run_started",
@@ -496,17 +525,14 @@ class AgentRuntime:
                     "seed": seed,
                     "control_mode": self.control_mode.value,
                     "planning_mode": self.planning_config.mode.value,
-                    "live_execution_policy": (
-                        self.planning_config.live_execution_policy.value
-                    ),
+                    "live_execution_policy": (self.planning_config.live_execution_policy.value),
                 },
             )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
             if (
                 observation.mode == "live"
-                and self.planning_config.live_execution_policy
-                == LiveContinuousPolicy.DISABLED
+                and self.planning_config.live_execution_policy == LiveContinuousPolicy.DISABLED
             ):
                 self._log_observation(observation)
                 return self._finish_continuous_summary(
@@ -514,9 +540,7 @@ class AgentRuntime:
                     steps_completed=0,
                     terminated=True,
                     success=None,
-                    stop_reason=(
-                        "Continuous live execution policy is disabled."
-                    ),
+                    stop_reason=("Continuous live execution policy is disabled."),
                     observation=observation,
                 )
 
@@ -651,8 +675,7 @@ class AgentRuntime:
                     # replan limit ends the run.
                     planner_feedback = (
                         "Your previous response could not be used. Fix exactly "
-                        "this and return the schema again: "
-                        + self._bounded_text(str(exc), 900)
+                        "this and return the schema again: " + self._bounded_text(str(exc), 900)
                     )
                     self._planner_failure_decision(
                         exc,
@@ -666,9 +689,7 @@ class AgentRuntime:
                         payload={
                             "source": planner_source,
                             "planner_latency_seconds": monotonic() - planning_started,
-                            "world_revision": observation.world_revision.model_dump(
-                                mode="json"
-                            ),
+                            "world_revision": observation.world_revision.model_dump(mode="json"),
                             "control_mode": observation.control_mode.value,
                             "output_type": type(exc).__name__,
                         },
@@ -679,18 +700,14 @@ class AgentRuntime:
                             "Stopped: the planner returned "
                             f"{identical_replan_failures} unusable responses in a "
                             "row because the same failure repeated: "
-                            + self._bounded_text(
-                                str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS
-                            )
+                            + self._bounded_text(str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS)
                         )
                         terminated = True
                     elif consecutive_replans > self.planning_config.max_consecutive_replans:
                         stop_reason = (
                             f"Stopped: the planner returned {consecutive_replans} "
                             "unusable responses in a row. The last was: "
-                            + self._bounded_text(
-                                str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS
-                            )
+                            + self._bounded_text(str(exc), self._PLANNER_ERROR_RATIONALE_MAX_CHARS)
                         )
                         terminated = True
                     continue
@@ -789,9 +806,7 @@ class AgentRuntime:
                     observation.mode == "live"
                     and self.planning_config.live_execution_policy
                     == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
-                    and not plan.based_on_revision.same_snapshot_as(
-                        observation.world_revision
-                    )
+                    and not plan.based_on_revision.same_snapshot_as(observation.world_revision)
                 ):
                     from .dialogue_interaction import dialogue_interaction_rebase_errors
 
@@ -956,6 +971,7 @@ class AgentRuntime:
                     planning_config=self.planning_config,
                     concurrent_planner=self.planner.decide,
                     consult_advisor=self._execute_advisor_action,
+                    request_affordance=self._execute_affordance_request_action,
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(
@@ -1099,9 +1115,7 @@ class AgentRuntime:
             minimum_live_stall_age_seconds=(
                 self.guard.config.supervisor_sequence_stall_min_age_seconds
             ),
-            require_paused_between_actions=(
-                self.guard.config.require_paused_between_actions
-            ),
+            require_paused_between_actions=(self.guard.config.require_paused_between_actions),
         )
 
     async def _finish_safety_supervisor(
@@ -1353,9 +1367,7 @@ class AgentRuntime:
             errors.append("game is not confirmed paused")
         if "game.pause" not in telemetry.capabilities:
             errors.append("game.pause capability is unavailable")
-        if not observation.world_revision.is_later_than(
-            preemption.observation.world_revision
-        ):
+        if not observation.world_revision.is_later_than(preemption.observation.world_revision):
             errors.append("world revision did not advance after human preemption")
         if state_store.active_command is not None:
             errors.append("a command is still active")
@@ -1374,9 +1386,7 @@ class AgentRuntime:
                     "state": event.state.value,
                     "reason": event.reason,
                     "seconds_remaining": event.seconds_remaining,
-                    "world_revision": observation.world_revision.model_dump(
-                        mode="json"
-                    ),
+                    "world_revision": observation.world_revision.model_dump(mode="json"),
                     "control_mode": observation.control_mode.value,
                 },
             )
@@ -1938,6 +1948,7 @@ class AgentRuntime:
                 if self.advisor is not None
                 else disabled_advisor_availability()
             ),
+            "affordance_requests": list(self._affordance_requests),
         }
         if self.memory is not None and self.memory_limit > 0:
             updates["memories"] = self.memory.recall(
@@ -1945,6 +1956,96 @@ class AgentRuntime:
                 minimum_salience=self.minimum_memory_salience,
             )
         return observation.model_copy(update=updates)
+
+    async def _execute_affordance_request_action(
+        self,
+        action: RequestAffordanceAction,
+        observation: Observation,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+    ) -> AffordanceRequestActionResult:
+        """Retain one planner-discovered control gap and decorate later context."""
+
+        started_at = datetime.now(UTC)
+        normalized = " ".join(action.capability.casefold().split())
+        existing_number = self._affordance_request_index.get(normalized)
+        if existing_number is None:
+            request_number = len(self._affordance_request_index) + 1
+            self._affordance_request_index[normalized] = request_number
+            self._affordance_requests.append(
+                AffordanceRequestRecord(
+                    request_number=request_number,
+                    action=action,
+                    based_on_revision=observation.world_revision,
+                )
+            )
+            self._affordance_requests = self._affordance_requests[-32:]
+            status = AffordanceRequestStatus.RETAINED
+            reason = (
+                f"Recorded affordance request #{request_number}: {action.capability}. "
+                "The capability is not available yet."
+            )
+        else:
+            request_number = existing_number
+            status = AffordanceRequestStatus.DUPLICATE
+            reason = (
+                f"Affordance request #{request_number} already records "
+                f"{action.capability}; duplicate suppressed."
+            )
+
+        evidence = AffordanceRequestEvidence(
+            status=status,
+            reason=reason,
+            request_number=request_number,
+            normalized_capability=normalized,
+        )
+        finished_at = datetime.now(UTC)
+        receipt = ActionReceipt(
+            action=action,
+            control_mode=self.control_mode,
+            affordance_request=evidence,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started_at,
+            finished_at=finished_at,
+            primitive_actions=0,
+            message=reason,
+        )
+        self.logger.write(
+            "action_receipt",
+            step_index=observation.step_index,
+            payload=receipt,
+        )
+        self.logger.write(
+            "affordance_request",
+            step_index=observation.step_index,
+            payload={
+                "plan_id": plan_id,
+                "plan_version": plan_version,
+                "step_id": step_id,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "evidence": evidence.model_dump(mode="json"),
+                "request": action.model_dump(mode="json"),
+            },
+        )
+        if self.reporter is not None:
+            self.reporter.action_receipt(
+                step_index=observation.step_index,
+                receipt=receipt,
+            )
+
+        current_store_observation = (
+            self._state_store.latest if self._state_store is not None else None
+        )
+        context_basis = current_store_observation or observation
+        latest = self._with_memories(context_basis)
+        if self._state_store is not None:
+            latest = self._state_store.decorate_latest(latest)
+        return AffordanceRequestActionResult(observation=latest, receipt=receipt)
 
     async def _execute_advisor_action(
         self,
@@ -2150,11 +2251,7 @@ class AgentRuntime:
             )
 
         if isinstance(receipt.action, RecoverCameraViewAction):
-            recovery = (
-                receipt.semantic.camera_recovery
-                if receipt.semantic is not None
-                else None
-            )
+            recovery = receipt.semantic.camera_recovery if receipt.semantic is not None else None
             if recovery is None:
                 return (
                     ActionOutcomeAssessment.UNKNOWN,

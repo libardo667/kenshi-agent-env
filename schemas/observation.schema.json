@@ -35,6 +35,9 @@
               "$ref": "#/$defs/ConsultAdvisorAction"
             },
             {
+              "$ref": "#/$defs/RequestAffordanceAction"
+            },
+            {
               "$ref": "#/$defs/KeyAction"
             },
             {
@@ -548,6 +551,38 @@
       ],
       "title": "AdvisorRecommendation",
       "type": "object"
+    },
+    "AffordanceRequestRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "request_number": {
+          "minimum": 1,
+          "title": "Request Number",
+          "type": "integer"
+        },
+        "action": {
+          "$ref": "#/$defs/RequestAffordanceAction"
+        },
+        "based_on_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        }
+      },
+      "required": [
+        "request_number",
+        "action",
+        "based_on_revision"
+      ],
+      "title": "AffordanceRequestRecord",
+      "type": "object"
+    },
+    "AffordanceUrgency": {
+      "enum": [
+        "survival_critical",
+        "blocks_current_goal",
+        "improves_fidelity"
+      ],
+      "title": "AffordanceUrgency",
+      "type": "string"
     },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
@@ -2203,6 +2238,67 @@
       "title": "RecoverCameraViewAction",
       "type": "object"
     },
+    "RequestAffordanceAction": {
+      "additionalProperties": false,
+      "description": "Retain a concrete capability gap without emitting game input.\n\nThis is a cognitive action, like consulting the advisor. It tells the\nengineering loop which intention the current action surface cannot express;\nit does not grant that capability or authorize an improvised substitute.",
+      "properties": {
+        "kind": {
+          "const": "request_affordance",
+          "default": "request_affordance",
+          "title": "Kind",
+          "type": "string"
+        },
+        "capability": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Capability",
+          "type": "string"
+        },
+        "blocked_goal": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Blocked Goal",
+          "type": "string"
+        },
+        "why_needed": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Why Needed",
+          "type": "string"
+        },
+        "evidence": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Evidence",
+          "type": "string"
+        },
+        "available_workaround": {
+          "anyOf": [
+            {
+              "maxLength": 400,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Available Workaround"
+        },
+        "urgency": {
+          "$ref": "#/$defs/AffordanceUrgency",
+          "default": "blocks_current_goal"
+        }
+      },
+      "required": [
+        "capability",
+        "blocked_goal",
+        "why_needed",
+        "evidence"
+      ],
+      "title": "RequestAffordanceAction",
+      "type": "object"
+    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -3295,6 +3391,14 @@
     },
     "advisor": {
       "$ref": "#/$defs/AdvisorAvailability"
+    },
+    "affordance_requests": {
+      "items": {
+        "$ref": "#/$defs/AffordanceRequestRecord"
+      },
+      "maxItems": 32,
+      "title": "Affordance Requests",
+      "type": "array"
     }
   },
   "required": [

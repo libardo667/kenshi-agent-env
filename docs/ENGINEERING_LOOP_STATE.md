@@ -5,6 +5,34 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Runtime affordance-request channel (2026-07-26)
+
+The playing model can now report a grounded missing control with the typed
+`request_affordance` cognitive action. It names the desired capability, blocked
+goal, need, evidence, workaround, and urgency. The action must be the plan's
+only step, creates no world command, emits zero controller primitives, and
+returns a typed `retained` or `duplicate` terminal receipt.
+
+Retained requests appear in later planner observations and survive advancing
+telemetry. Implementing this exposed a broader context-continuity defect:
+environment publications could overwrite runtime-owned advisor briefs,
+memories, action outcomes, and requests. `WorldStateStore` now carries those
+fields forward until the runtime deliberately decorates them.
+
+The owner clarified that "hit things" means Kenshi's general target-context
+interaction—especially working ore for income—not primarily attacking enemies.
+The next control candidate is therefore an exact-target semantic context task.
+It must bind a current native object and an explicitly advertised valid task;
+blind right-click coordinates remain controller implementation details.
+KenshiLib exposes the needed seams: nearby `BUILDING` queries,
+`Building::getSpecialFunction()` including `BF_MINE_NATURAL`,
+`PlayerInterface::getPlayerTaskProbability()`, and exact-target task issuance.
+
+Portable coverage proves retention, telemetry-pump continuity, duplicate
+suppression, zero primitives, no command ID, no world-command creation, metrics,
+strict schema export, and generic-policy sole-step enforcement. The durable
+boundary is in `docs/ADR_RUNTIME_AFFORDANCE_REQUESTS.md`.
+
 ## Live advisor hunger-semantics correction (2026-07-26)
 
 Visible run `20260726Tlive-survival-advisor-01` exercised the real

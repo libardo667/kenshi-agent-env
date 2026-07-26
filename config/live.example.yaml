@@ -134,6 +134,7 @@ safety:
     - move_cursor
     - skill
     - recover_camera_view
+    - request_affordance
   allow_skills:
     - pause_game
     - open_map

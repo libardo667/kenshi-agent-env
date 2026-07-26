@@ -17,6 +17,7 @@ from .models import (
     Observation,
     PauseAction,
     PurchaseItemAction,
+    RequestAffordanceAction,
     ScrollAction,
     SkillAction,
     WaitAction,
@@ -127,7 +128,7 @@ class ActionGuard:
             self.macros.primitive_count(action)
             if primitives is not None
             else 0
-            if isinstance(action, ConsultAdvisorAction)
+            if isinstance(action, (ConsultAdvisorAction, RequestAffordanceAction))
             else 1
         )
         if primitive_count > self.config.max_primitive_actions_per_step:
@@ -186,8 +187,7 @@ class ActionGuard:
         missing = contract.missing_capabilities(set(observation.telemetry.capabilities))
         if missing:
             raise SafetyViolation(
-                f"Action {contract.kind!r} lacks required capabilities: "
-                + ", ".join(missing)
+                f"Action {contract.kind!r} lacks required capabilities: " + ", ".join(missing)
             )
         # The reference must resolve against the state observed right now.
         # Absent, duplicated, or ambiguous references fail closed.
@@ -214,10 +214,7 @@ class ActionGuard:
 
         assert observation.telemetry is not None
         telemetry = observation.telemetry
-        if (
-            self.config.require_paused_between_actions
-            and telemetry.game.paused is not True
-        ):
+        if self.config.require_paused_between_actions and telemetry.game.paused is not True:
             # Only when the profile actually asks for it. A stream agent has to
             # unpause to walk anywhere, so an unconditional check here refuses
             # every purchase it could ever reach a shop to make. What protects
@@ -259,8 +256,7 @@ class ActionGuard:
         for marker in self.config.required_purchase_tooltip_markers:
             if marker not in (telemetry.ui.tooltip_text or ""):
                 raise SafetyViolation(
-                    f"Purchase blocked because the tooltip lacks the required marker "
-                    f"{marker!r}."
+                    f"Purchase blocked because the tooltip lacks the required marker {marker!r}."
                 )
 
     @staticmethod
@@ -269,9 +265,7 @@ class ActionGuard:
         telemetry = observation.telemetry
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
-            raise SafetyViolation(
-                f"Action {kind!r} requires one exact primary selected character."
-            )
+            raise SafetyViolation(f"Action {kind!r} requires one exact primary selected character.")
 
     @staticmethod
     def _validate_native_vendor_target(
@@ -341,8 +335,7 @@ class ActionGuard:
             acknowledgement is None
             or acknowledgement.status != NativeCommandStatus.ACCEPTED
             or acknowledgement.target_id != target_id
-            or acknowledgement.selected_character_ids
-            != telemetry.ui.selected_character_ids
+            or acknowledgement.selected_character_ids != telemetry.ui.selected_character_ids
         ):
             raise SafetyViolation(
                 "Native vendor continuation requires the exact active accepted "
@@ -386,13 +379,9 @@ class ActionGuard:
         missing = required_capabilities - set(telemetry.capabilities)
         if missing:
             raise SafetyViolation(
-                "Purchase lacks required authoritative capabilities: "
-                + ", ".join(sorted(missing))
+                "Purchase lacks required authoritative capabilities: " + ", ".join(sorted(missing))
             )
-        if (
-            self.config.require_paused_between_actions
-            and telemetry.game.paused is not True
-        ):
+        if self.config.require_paused_between_actions and telemetry.game.paused is not True:
             # Only when the profile actually asks for it. A stream agent has to
             # unpause to walk anywhere, so an unconditional check here refuses
             # every purchase it could ever reach a shop to make. What protects
@@ -463,11 +452,7 @@ class ActionGuard:
             raise SafetyViolation("Purchase requires the exact current tooltip item_name.")
         tooltip_text = telemetry.ui.tooltip_text
         tooltip_bounds = telemetry.ui.tooltip_source_bounds
-        if (
-            telemetry.ui.tooltip_visible is not True
-            or not tooltip_text
-            or tooltip_bounds is None
-        ):
+        if telemetry.ui.tooltip_visible is not True or not tooltip_text or tooltip_bounds is None:
             raise SafetyViolation(
                 "Purchase requires a visible authoritative tooltip and its source bounds."
             )
@@ -477,9 +462,7 @@ class ActionGuard:
             or "[Food]" not in tooltip_text
             or re.search(price_pattern, tooltip_text) is None
         ):
-            raise SafetyViolation(
-                "Purchase arguments do not match the current food tooltip."
-            )
+            raise SafetyViolation("Purchase arguments do not match the current food tooltip.")
         x = arguments.get("x")
         y = arguments.get("y")
         if (
@@ -489,9 +472,7 @@ class ActionGuard:
             or not isinstance(y, (int, float))
             or not tooltip_bounds.contains(float(x), float(y))
         ):
-            raise SafetyViolation(
-                "Purchase coordinates are outside the current tooltip source."
-            )
+            raise SafetyViolation("Purchase coordinates are outside the current tooltip source.")
 
     def _validate_action_constraints(
         self,
