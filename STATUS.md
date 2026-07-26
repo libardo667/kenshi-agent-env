@@ -107,6 +107,16 @@ planner-authorable on the generic live path.
   nonterminal native walk left movement poisoned until an explicit post-run
   safety pause cancelled it. The full report is
   `docs/LIVE_GPT41_80_TURN_REPORT_20260725.md`.
+- Run `20260725T80turn-camera-recovery-live-02` completed a second 80-step
+  GPT-4.1 live budget in 18m18.624s. It retained 5,595 fresh observations,
+  executed 77 actions, succeeded on 21/30 monitored options, moved Hep about
+  388.04 net x/z units into The Hub bar, and causally confirmed two 22-cat
+  Greenfruit purchases. Three no-argument camera requests returned live
+  `recovered` at scores 0.732, 0.724, and 0.784. Its strategic limitation was
+  equally clear: 13/20 dialogue approaches targeted the Mercenary Captain and
+  repeatedly revisited unaffordable hire branches. The full evidence and
+  bounded read-only advisor design signal are in
+  `docs/LIVE_GPT41_80_TURN_ADVISOR_REPORT_20260726.md`.
 - Run `20260725-camera-recovery-live-02` exercised the completed no-argument
   controller transaction against Hep's still-obstructed ruined Storm House
   view. It advanced fresh telemetry 24,999→25,041, established a zero-distance

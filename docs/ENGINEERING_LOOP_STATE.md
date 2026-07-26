@@ -5,6 +5,52 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Second GPT-4.1 80-turn live run and advisor signal (2026-07-26)
+
+Run `20260725T80turn-camera-recovery-live-02` completed all 80 authorized
+native-assisted continuous steps in 1,098.624 seconds. Its honest terminal is
+`success=null`, `terminated=false`, and `Maximum action count reached after
+plan completion.` It retained 5,595 fresh observations, 79 action receipts, 77
+executed actions, 73 accepted plans, and 67 memory writes with zero stale
+observations, input-boundary rejections, subscriber drops, pump errors, or
+safety preemptions.
+
+Monitored-option success improved from 3/30 in the preceding 80-turn run to
+21/30 here. Hep moved about 388.04 net x/z units from ruined Storm House into
+The Hub bar, stayed alive, conscious, out of combat, and bought two Greenfruit.
+Money and inventory causally confirmed both 22-cat purchases: 179 -> 135 cats
+and zero -> two Greenfruit.
+
+The controller-owned camera action obtained its first live `recovered`
+receipts. Three no-argument requests selected `angle_orbit_right` at scores
+0.732 and 0.784 and `portrait_follow` at 0.724, each above the 0.72 threshold
+with Hep's label visible and anchor distance 0. The planner no longer authored
+camera directions or success predicates. Three adjacent recovery requests are
+still strategically redundant, but the controller bounded them to 18 total
+primitives and retained candidate evidence.
+
+The main remaining behavioral signal is strategic repetition: 13 of 20
+dialogue approaches targeted the Mercenary Captain, repeatedly entering and
+leaving unaffordable bodyguard branches despite memory that the branch was not
+useful. The next candidate is a bounded read-only strategic advisor grounded
+in a curated guide corpus. It should return sourced goals and constraints, not
+actions; be planner-requestable; optionally surface on deterministic
+stall/cadence signals; and have cooldown, unchanged-state suppression,
+per-run budgets, typed events, and explicit advisory/world-truth separation.
+
+The run also retained one `OptionLifecycleError`, two recoverable hosted schema
+validation errors, one serializer warning, and 29 safely rejected regressing
+observations. Normal budget termination still left the world unpaused, though
+no native command was active. The existing production helper confirmed a
+post-run pause at telemetry sequence 28,208; sequence 28,228 remained fresh,
+loaded, paused, stationary, and command-free.
+
+The full narrative, metrics, action distribution, caveats, hashes, and advisor
+boundary are in
+`docs/LIVE_GPT41_80_TURN_ADVISOR_REPORT_20260726.md`. The 67 MiB event log
+SHA-256 is
+`05ecf3cfe16f9978e7eaa81349b50ddda63260679083ec43941a1bd027b73992`.
+
 ## Controller-owned camera recovery implementation (2026-07-25)
 
 The no-argument `recover_camera_view` semantic action now owns camera recovery

@@ -175,6 +175,39 @@ inspection alone.
       SHA-256 is
       `cea99292fba627ae137e8b2396b3dda215c85119974958410061fbb7ecb2df87`.
 
+### Second GPT-4.1 80-turn camera/advisor boundary
+
+- [x] Complete a second 80-step native-assisted continuous run after installing
+      controller-owned camera recovery.
+      `20260725T80turn-camera-recovery-live-02` completed 80 steps in
+      1,098.624 seconds with `terminated=false`, `success=null`, and an action
+      budget terminal. It retained 5,595 fresh observations, 79 receipts, 77
+      executed actions, and zero input-boundary rejections, subscriber drops,
+      pump errors, or safety preemptions.
+- [x] Obtain a live controller-verified `recovered` camera receipt rather than
+      only the bounded failure path. Three no-argument requests returned
+      `recovered`: `angle_orbit_right` at 0.732, `portrait_follow` at 0.724,
+      and `angle_orbit_right` at 0.784. Each retained Hep's label, anchor
+      distance 0, floor 0, and fresh candidate hashes.
+- [x] Confirm a material gameplay effect beyond camera motion. Hep moved about
+      388.04 net x/z units into The Hub bar. Two Greenfruit purchase gestures
+      were later confirmed by money 179 -> 135 and two inventory additions.
+- [x] Audit the run for strategic repetition. Thirteen of twenty dialogue
+      approaches targeted the Mercenary Captain and repeatedly revisited
+      unaffordable hire branches. This is the evidence basis for a separately
+      bounded, read-only, source-grounded advisor rather than another action
+      macro.
+- [x] Restore and verify the unattended post-run safe state. Normal budget
+      termination left the world running but no command active. The production
+      helper confirmed pause at telemetry 28,208; telemetry 28,228 remained
+      fresh, loaded, paused, stationary, and command-free. The post-cleanup
+      frame SHA-256 is
+      `21efa2945cd24c8bf2649e66c20012ce09c0b027f4f7420327b46864e4305a67`.
+- [x] Retain the exact report and event evidence. The report is
+      `docs/LIVE_GPT41_80_TURN_ADVISOR_REPORT_20260726.md`; the 67 MiB event
+      log SHA-256 is
+      `05ecf3cfe16f9978e7eaa81349b50ddda63260679083ec43941a1bd027b73992`.
+
 ### Protocol 0.5 title-screen semantic lifecycle
 
 - [x] First 1920x1080 load reached a responsive title screen without the
