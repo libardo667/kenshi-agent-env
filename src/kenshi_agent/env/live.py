@@ -1193,7 +1193,7 @@ class LiveEnvironment(AgentEnvironment):
         action: RecoverCameraViewAction,
         started: datetime,
     ) -> ActionReceipt:
-        """Run the fixed follow/floor/zoom/orbit recovery transaction."""
+        """Run the fixed follow/floor/zoom/orbit/tilt recovery transaction."""
 
         recovery = self.controls_config.camera_recovery
         candidates: list[CameraFrameScore] = []
@@ -1283,7 +1283,7 @@ class LiveEnvironment(AgentEnvironment):
             if len(pause_primitives) != 1:
                 raise RuntimeError(
                     "Camera recovery requires the configured pause control to "
-                    "expand to exactly one primitive so its eleven-primitive "
+                    "expand to exactly one primitive so its fifteen-primitive "
                     "transaction bound remains invariant."
                 )
             for pause_primitive in pause_primitives:
@@ -1446,8 +1446,70 @@ class LiveEnvironment(AgentEnvironment):
                 )
             )
 
+        final_angle, binding, _ = await self._capture_camera_candidate(
+            action, candidate=f"angle_{chosen_angle.candidate}"
+        )
+        candidates.append(final_angle)
+        if final_angle.clear:
+            return finish(
+                CameraRecoveryStatus.RECOVERED,
+                final_angle,
+                follow_method="portrait_double_click",
+            )
+
+        # The persistent camera-distance lock can make End intentionally inert.
+        # Tilt remains follow-preserving, so compare one symmetric comma/period
+        # sequence around the selected orbit without giving the planner a new
+        # adjustment loop.
+        primitive_count += await self._camera_recovery_primitive(
+            KeyAction(
+                key=recovery.tilt_up_key,
+                hold_seconds=recovery.tilt_hold_seconds,
+            )
+        )
+        tilt_up, binding, _ = await self._capture_camera_candidate(
+            action, candidate="tilt_up"
+        )
+        candidates.append(tilt_up)
+
+        primitive_count += await self._camera_recovery_primitive(
+            KeyAction(
+                key=recovery.tilt_down_key,
+                hold_seconds=recovery.tilt_hold_seconds * 2.0,
+            )
+        )
+        tilt_down, binding, _ = await self._capture_camera_candidate(
+            action, candidate="tilt_down"
+        )
+        candidates.append(tilt_down)
+
+        primitive_count += await self._camera_recovery_primitive(
+            KeyAction(
+                key=recovery.tilt_up_key,
+                hold_seconds=recovery.tilt_hold_seconds,
+            )
+        )
+        chosen_tilt = max(
+            (final_angle, tilt_up, tilt_down),
+            key=lambda item: (item.clear, item.score),
+        )
+        if chosen_tilt is tilt_up:
+            primitive_count += await self._camera_recovery_primitive(
+                KeyAction(
+                    key=recovery.tilt_up_key,
+                    hold_seconds=recovery.tilt_hold_seconds,
+                )
+            )
+        elif chosen_tilt is tilt_down:
+            primitive_count += await self._camera_recovery_primitive(
+                KeyAction(
+                    key=recovery.tilt_down_key,
+                    hold_seconds=recovery.tilt_hold_seconds,
+                )
+            )
+
         final_frame, binding, _ = await self._capture_camera_candidate(
-            action, candidate=f"final_{chosen_angle.candidate}"
+            action, candidate=f"final_{chosen_tilt.candidate}"
         )
         candidates.append(final_frame)
         status = (

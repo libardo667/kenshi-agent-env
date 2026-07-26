@@ -137,7 +137,7 @@ yourself, in whatever order the current evidence supports.
   `recover_camera_view` is advertised and the world view is unreadable, author
   exactly `{"kind":"recover_camera_view"}` once. Give that step
   `success_conditions: []`: the controller establishes selected-character
-  follow, searches bounded floors, applies its fixed zoom/orbit sequence,
+  follow, searches bounded floors, applies its fixed zoom/orbit/tilt sequence,
   scores retained frames, and returns `already_clear`, `recovered`, or
   `failed_after_bounded_attempts`. Do not supply directions, floor numbers,
   zoom values, or follow-up camera gestures. A bounded failure is terminal for

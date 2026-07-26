@@ -62,7 +62,7 @@ requirements are present:
   exact open window.
 - `recover_camera_view` — take no model-authored camera parameters; bind one
   selected character and the current world HUD, then let the controller own a
-  bounded follow/floor/zoom/orbit transaction and typed frame-scored verdict.
+  bounded follow/floor/zoom/orbit/tilt transaction and typed frame-scored verdict.
 
 Run control (`noop`, `wait`, `pause`, `set_speed`, and whole-run `stop`) remains
 separate from game-object contracts. Raw keys, hotkeys, cursor moves, clicks,
@@ -178,7 +178,7 @@ At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
 
 - Obtain one bounded live acceptance receipt for the new controller-owned
   `recover_camera_view`. Portable evidence now covers zero-input
-  `already_clear`, successful follow/floor/zoom/orbit selection, safe pause
+  `already_clear`, successful follow/floor/zoom/orbit/tilt selection, safe pause
   without unpause, human interruption, continuous controller-verdict handling,
   and terminal `failed_after_bounded_attempts`; live Kenshi evidence is still a
   separate gate.

@@ -72,8 +72,8 @@ When capture, fresh world telemetry, one selected character, its lower-HUD
 portrait, a single floor label, and both floor arrows bind, the controller
 scores the current retained frame. If needed it pauses without later
 unpausing, double-clicks the portrait to establish follow, searches at most two
-lower floors, restores the best floor, and applies a fixed zoom/Q/E orbit
-sequence. Its typed receipt returns `already_clear`, `recovered`, or
+lower floors, restores the best floor, and applies a fixed zoom/Q/E
+orbit/comma/period tilt sequence. Its typed receipt returns `already_clear`, `recovered`, or
 `failed_after_bounded_attempts` plus every retained candidate score.
 
 Run control (`noop`, `wait`, `pause`, `set_speed`, whole-run `stop`) is separate.

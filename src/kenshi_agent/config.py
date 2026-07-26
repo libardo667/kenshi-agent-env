@@ -178,6 +178,9 @@ class CameraRecoveryConfig(ConfigModel):
     rotate_left_key: str = Field(default="q", min_length=1, max_length=32)
     rotate_right_key: str = Field(default="e", min_length=1, max_length=32)
     orbit_hold_seconds: float = Field(default=0.35, gt=0.0, le=2.0)
+    tilt_up_key: str = Field(default="comma", min_length=1, max_length=32)
+    tilt_down_key: str = Field(default="period", min_length=1, max_length=32)
+    tilt_hold_seconds: float = Field(default=0.35, gt=0.0, le=2.0)
 
 
 class ControlsConfig(ConfigModel):
@@ -332,7 +335,7 @@ class SafetyConfig(ConfigModel):
     # terminal evidence. Keeping their ceiling separate avoids loosening the
     # primitive allowance for ordinary macros merely to admit camera recovery.
     max_controller_verified_primitive_actions_per_step: int = Field(
-        default=11, ge=1, le=100
+        default=15, ge=1, le=100
     )
     max_actions_per_minute: int = Field(default=90, ge=1, le=1000)
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)

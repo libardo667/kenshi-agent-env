@@ -230,7 +230,7 @@ current telemetry references through one catalog:
 - buy, sell, equip, or scroll one current window;
 - press one allowlisted reversible Kenshi game binding.
 - recover the selected-character camera through one bounded controller-owned,
-  frame-scored follow/floor/zoom/orbit transaction.
+  frame-scored follow/floor/zoom/orbit/tilt transaction.
 
 Each `ActionContract` owns planner visibility, capability/control-mode
 requirements, pointer class, native requirement, risk cost, idempotency,

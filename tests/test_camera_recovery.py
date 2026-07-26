@@ -67,6 +67,7 @@ class CameraTelemetry:
         self.followed = False
         self.zoomed = False
         self.angle = 0
+        self.tilt = 0
         self.sequence = 0
         self.path = Path("camera-telemetry.json")
 
@@ -164,6 +165,10 @@ class CameraController(InputController):
                 self.telemetry.angle += 1
             elif action.key == "q":
                 self.telemetry.angle -= 2 if action.hold_seconds > 0.5 else 1
+            elif action.key == "comma":
+                self.telemetry.tilt += 1
+            elif action.key == "period":
+                self.telemetry.tilt -= 2 if action.hold_seconds > 0.5 else 1
         elif isinstance(action, ClickAction):
             if action.y > 0.80:
                 self.telemetry.followed = True
@@ -216,6 +221,8 @@ class CameraCapture:
             )
         elif self.mode == "failure":
             clear = False
+        elif self.mode == "tilt":
+            clear = self.telemetry.followed and self.telemetry.tilt == 1
 
         image = Image.new("RGB", (640, 360), (115, 103, 84))
         if clear:
@@ -320,7 +327,7 @@ def test_contract_is_controller_verified_and_binds_current_hud(tmp_path: Path) -
         assert binding.floor == 0
         assert binding.resolved_bounds is not None
         assert RECOVER_CAMERA_VIEW_CONTRACT.controller_verified
-        assert RECOVER_CAMERA_VIEW_CONTRACT.max_primitive_actions == 11
+        assert RECOVER_CAMERA_VIEW_CONTRACT.max_primitive_actions == 15
 
     asyncio.run(scenario())
 
@@ -336,7 +343,7 @@ def test_controller_transaction_limit_does_not_loosen_ordinary_primitive_limit(
             SafetyConfig(
                 allow_action_kinds=[action.kind],
                 max_primitive_actions_per_step=4,
-                max_controller_verified_primitive_actions_per_step=11,
+                max_controller_verified_primitive_actions_per_step=15,
                 max_actions_per_minute=100,
             ),
             MacroRegistry({}),
@@ -348,13 +355,13 @@ def test_controller_transaction_limit_does_not_loosen_ordinary_primitive_limit(
             SafetyConfig(
                 allow_action_kinds=[action.kind],
                 max_primitive_actions_per_step=4,
-                max_controller_verified_primitive_actions_per_step=10,
+                max_controller_verified_primitive_actions_per_step=14,
                 max_actions_per_minute=100,
             ),
             MacroRegistry({}),
             control_mode=ControlMode.INTERFACE_ONLY,
         )
-        with pytest.raises(SafetyViolation, match="maximum is 10"):
+        with pytest.raises(SafetyViolation, match="maximum is 14"):
             too_tight.validate(action, observation)
 
     asyncio.run(scenario())
@@ -518,7 +525,7 @@ def test_fixed_floor_zoom_orbit_sequence_selects_best_scored_angle(
         evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
         assert evidence is not None
         assert evidence.status is CameraRecoveryStatus.RECOVERED
-        assert evidence.chosen_candidate == "final_orbit_right"
+        assert evidence.chosen_candidate == "angle_orbit_right"
         assert evidence.final_floor == 0
         assert evidence.primitive_actions == 10
         assert len(controller.actions) == 10
@@ -531,6 +538,35 @@ def test_fixed_floor_zoom_orbit_sequence_selects_best_scored_angle(
             0.735,
             0.675,
             0.675,
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_fixed_tilt_sequence_recovers_when_zoom_and_orbit_cannot(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _, controller = camera_environment(tmp_path, mode="tilt")
+        await environment.reset()
+        transition = await environment.step(RecoverCameraViewAction())
+
+        evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
+        assert evidence is not None
+        assert evidence.status is CameraRecoveryStatus.RECOVERED
+        assert evidence.chosen_candidate == "final_tilt_up"
+        assert evidence.final_floor == 0
+        assert evidence.primitive_actions == 13
+        keys = [action.key for action in controller.actions if isinstance(action, KeyAction)]
+        assert keys == [
+            "end",
+            "e",
+            "q",
+            "e",
+            "comma",
+            "period",
+            "comma",
+            "comma",
         ]
 
     asyncio.run(scenario())

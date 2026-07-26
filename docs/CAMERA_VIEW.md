@@ -40,7 +40,7 @@ When capture and the world HUD are available, the no-argument
 accepts an already clear selected-character-anchored frame without input.
 Otherwise it leaves the world paused, double-clicks the selected portrait,
 scores the character floor and at most two lower floors, restores the best
-floor, and compares one fixed End/Q/E candidate sequence. End may be inert
+floor, and compares one fixed End/Q/E/comma/period candidate sequence. End may be inert
 under the persistent zoom lock; it is still a bounded candidate and never a
 model-authored adjustment.
 

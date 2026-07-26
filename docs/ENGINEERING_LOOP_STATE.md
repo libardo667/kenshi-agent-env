@@ -19,8 +19,9 @@ selected-label-visible, character-anchored frame returns `already_clear` with
 zero input. Otherwise the handler safety-pauses a running world and never
 unpauses it, double-clicks the selected portrait, searches no more than two
 lower floors, restores the highest-scoring floor, holds the fixed End zoom, and
-compares fixed right/baseline/left Q/E orbit candidates before establishing the
-winning final angle. The full path is capped at eleven primitives. Every
+compares fixed right/baseline/left Q/E orbit and comma/period tilt candidates
+before establishing the winning final view. The full path is capped at fifteen
+primitives. Every
 candidate remains in the run directory and the receipt records its structural
 score, selected-label signal, anchor distance, floor, revisions, and hash.
 

@@ -118,7 +118,7 @@ safety:
   takeover_countdown_seconds: 5.0
   takeover_poll_seconds: 0.1
   max_primitive_actions_per_step: 10
-  max_controller_verified_primitive_actions_per_step: 11
+  max_controller_verified_primitive_actions_per_step: 15
   max_actions_per_minute: 60
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true

@@ -229,7 +229,8 @@ revision, deltas, memories, deterministic dialogue/travel targets, current
 semantic actions, window-grouped controls, and a base64 image when enabled.
 When `recover_camera_view` is advertised, the planner requests it with no
 arguments and no success conditions. The controller alone binds the selected
-character/HUD, establishes follow, searches bounded floors and fixed zoom/orbit
+character/HUD, establishes follow, searches bounded floors and fixed
+zoom/orbit/tilt
 candidates, scores retained frames, and returns `already_clear`, `recovered`,
 or `failed_after_bounded_attempts`; the model does not author recovery
 gestures.

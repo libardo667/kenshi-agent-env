@@ -1280,7 +1280,7 @@ RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
     risk=ActionRiskCost(pointer_actions=1),
-    max_primitive_actions=11,
+    max_primitive_actions=15,
     reference_fields=(),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,

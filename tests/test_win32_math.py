@@ -5,6 +5,7 @@ import pytest
 from kenshi_agent.control.base import WindowRect
 from kenshi_agent.control.win32 import (
     AmbiguousWindowError,
+    Win32InputController,
     enable_per_monitor_dpi_awareness,
     normalize_virtual_desktop_point,
     relative_pointer_delta,
@@ -71,6 +72,11 @@ def test_invalid_virtual_desktop_is_rejected() -> None:
 def test_wheel_delta_data_encodes_both_directions() -> None:
     assert wheel_delta_data(1) == 120
     assert wheel_delta_data(-1) == 0xFFFFFF88
+
+
+def test_camera_tilt_key_names_resolve_to_windows_oem_keys() -> None:
+    assert Win32InputController._vk("comma") == 0xBC
+    assert Win32InputController._vk("period") == 0xBE
 
 
 def test_relative_pointer_delta_is_bounded_and_converges() -> None:
