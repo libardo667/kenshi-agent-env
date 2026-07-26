@@ -32,9 +32,69 @@ runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
 limitation list before claiming anything generalizes.
 
 The long-term [game-affordance platform
-direction](docs/ADR_GAME_AFFORDANCE_PLATFORM.md) does not change the current
-Kenshi scope or priority queue. Generalization waits for evidence from a
-substantially different second game.
+direction](docs/ADR_GAME_AFFORDANCE_PLATFORM.md) is operationalized below. It
+does not widen the current Kenshi scope or justify speculative abstraction.
+Generalization waits for evidence from a substantially different second game.
+
+## Program trajectory
+
+The mission is to make Kenshi the strongest evidence-grounded reference
+implementation of an agent that can perceive a game faithfully, pursue
+meaningful goals safely, discover when its action vocabulary is insufficient,
+and turn those grounded gaps into proven semantic capabilities. Only after that
+flywheel works across materially different Kenshi situations should a second
+game test which substrate boundaries are genuinely reusable.
+
+`request_affordance` is the demand signal for capability growth, not authority
+to expose an internal method and not a substitute for the observation, safety,
+execution, memory, and evaluation baseline beneath it:
+
+```text
+play a meaningful scenario
+        ↓
+encounter a grounded blocked intention
+        ↓
+retain and aggregate a typed affordance request
+        ↓
+select the highest-value recurring or survival-critical gap
+        ↓
+implement one vertical observation → action → causal-proof capability
+        ↓
+promote it into the planner-visible catalog only after evidence
+        ↓
+replay the scenarios and measure what is blocked next
+```
+
+Advance through evidence-gated phases, never by date, aspiration, an empty
+hand-written queue, or declared UI coverage:
+
+1. **Trustworthy Kenshi substrate.** Close known observation/authority
+   conflations, unsafe exit ownership, weak causal terminals, identity gaps,
+   and unmeasured tests. Preserve supervised live evidence and failure artifacts.
+2. **Grounded capability flywheel.** Aggregate requests across diverse saves,
+   promote vertical capabilities through the full contract, and show that replay
+   converts prior blockers into causally proven actions without weakening safety.
+3. **Demonstrated game-playing competence.** Complete meaningful survival and
+   economy objectives across a deliberate scenario matrix. Measure outcomes,
+   recovery, and recurring capability gaps rather than merely counting controls.
+4. **Cross-game validation.** Apply the substrate to a substantially different
+   second game. Extract a general kit only from seams that recur with evidence;
+   leave game vocabulary and mechanics in adapters.
+
+Within the current phase, keep one bounded slice per invocation but make it
+compound. State which phase gate or flywheel edge the slice advances. A
+capability slice is vertical: truthful observation and identity, typed planner
+contract, current-state binding and input-boundary revalidation, bounded
+execution, causal terminal evidence, generated schemas/catalogs, adversarial
+tests, and the strongest safe runtime proof available. Horizontal
+infrastructure is justified only by a concrete failing invariant or a measured
+blocker to this flywheel.
+
+Affordance aggregation must preserve both a stable game-neutral intent class
+and a game-specific capability slug plus its grounded evidence and urgency.
+Do not pretend one game's nouns are universal, and do not automatically promote
+a frequent request: an engineer still owns observability, safety, semantics,
+and evidence review.
 
 ## Non-negotiable engineering rules
 
