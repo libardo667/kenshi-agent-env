@@ -104,7 +104,7 @@ inventory list.
 
 ## Build
 
-See the [Windows native setup guide](../../docs/WINDOWS_NATIVE_SETUP.md) for exact
+See the [Windows native setup guide](../../docs/GUIDE_WINDOWS_NATIVE_SETUP.md) for exact
 media hashes, Visual C++/SP1 installation, Git LFS dependency setup, and
 diagnostics.
 

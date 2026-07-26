@@ -72,5 +72,5 @@ reproduced the identical error during normal exit after a ten-minute baseline.
 With Low textures and water reflections disabled, this identity DLL then held
 fresh telemetry for more than ten minutes and exited cleanly. This rules out
 stable identity as a necessary cause of the observed reset, but it is not a
-broad stability claim. The full incident record is in
-`LIVE_STABILITY_INCIDENT_20260723.md`.
+broad stability claim. Host stability notes are in
+[`GUIDE_LIVE_RUNS.md`](GUIDE_LIVE_RUNS.md).

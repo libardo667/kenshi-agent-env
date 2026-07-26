@@ -1,7 +1,7 @@
 # Architecture
 
-The system separates observation, deliberation, action, memory, and evaluation
-so failures can be attributed instead of blurred together.
+The system separates observation, deliberation, action, memory, and evaluation so
+failures can be attributed instead of blurred together.
 
 ```text
 Kenshi process
@@ -38,306 +38,74 @@ Python runtime
 Every boundary ──> JSONL session log ──> lifecycle analysis and evaluation
 ```
 
-Full environment replay is a separate logging level. Default compact
-observation digests keep long live logs bounded and support lifecycle analysis,
-but `ReplayEnvironment` requires
-`runtime.log_full_observations: true`.
+Full environment replay is a separate logging level. Default compact observation
+digests keep long live logs bounded and support lifecycle analysis, but
+`ReplayEnvironment` requires `runtime.log_full_observations: true`.
 
 ## Environment contract
 
 `reset()` establishes an episode and returns an observation. `observe()` is
 side-effect free and requests a visual frame when capture exists.
-`observe_without_capture()` supplies telemetry without forcing a new visual
-frame. `dispatch(action, command=...)` is the causal execution seam: the runtime
-supplies one globally unique command ID and complete based-on revision, and the
-receipt binds the result to the later observation. `step(action)` remains the
-legacy primitive beneath that seam. `close()` releases resources without
-manipulating the game. Consequently, the safety supervisor's verified pause
-cleanup does not currently extend to normal stop, budget exhaustion,
-cancellation, exception, or objective-completion exits; a unified final-state
-owner remains open work.
-
-## Continuous world-state stream
-
-Only feature-flagged continuous mode creates the in-process
-`WorldStateStore`. One cancellable `ObservationPump` reads the environment on a
-configured cadence; consumers subscribe to the store rather than independently
-polling the telemetry file. Publishing is synchronous within the asyncio event
-loop, so validation, registry updates, journal writes, and subscriber fan-out
-are one ordered operation.
-
-The store:
-
-- rejects regressing or state-conflicting revisions and reports telemetry
-  sequence stalls;
-- carries forward the last validated screenshot on telemetry-only updates;
-- bounds snapshot history, semantic deltas, event journal, command history, and
-  subscriber queues;
-- retains transient observation events after the latest snapshot drops them;
-- tracks capability epochs without converting unavailable data into absence;
-- preserves validated native handle IDs exactly when
-  `identity.stable_handles` is present, and otherwise normalizes legacy nearby
-  ordinal IDs into process-local lifetime IDs using observed fingerprint and
-  position evidence while logging ambiguous matches;
-- owns active plan, step, command ID, and causal start/completion revisions;
-- provides `wait_for(..., after_revision=R)`, which cannot succeed from `R`.
-
-This is an authoritative Python state stream over the plugin's atomic
-latest-snapshot file, not a native event transport. Native protocol `0.8.0`
-supplies session-scoped validated-handle identity, bounded exact actionable
-world objects, keyed command acknowledgements, squad/inventory facts, game
-time, dialogue and management UI, tooltip/source bounds, named item cells, and
-visible controls. Older producers still use the portable ambiguity-aware
-registry. See
-`docs/ADR_WORLD_STATE_STREAM.md` and
-`docs/ADR_STABLE_NATIVE_IDENTITY.md`.
-
-The native layer is right-sized by faithful game coverage, not by a target line
-count. Semantic planner intent may delegate stable identity, geometry
-resolution, bounded recovery, and terminal evidence to reviewed native
-capabilities when ordinary UI input cannot expose them reliably. It remains a
-capability-gated integration layer rather than an arbitrary method dispatcher;
-see `docs/ADR_NATIVE_INTEGRATION_SCOPE.md`.
-
-Portable generic strategic output must match the current exact revision. The
-live `dialogue_interaction_v1` policy may rebase a plan that aged during a
-hosted call only while the immutable planner observation and latest
-observation still authorize every contracted reference, assumption, control
-mode, and capability. A successful rebase changes only the plan basis; each
-step still binds when reached, passes policy and budget validation, and is
-rebound inside the input lease. The policy name is historical: it now
-validates the generic semantic action catalog and prescribes no dialogue,
-vendor, or food sequence.
-
-## Read-only strategic advisor
-
-`AdvisorSession` is a planner-context service, not a second executor. The
-playing planner may author a sole-step `consult_advisor` plan when the
-observation says `advisor.may_request=true`. Runtime interception occurs after
-the normal allowlist guard and plan-action reservation but before
-`WorldStateStore.begin_command`; the environment is never dispatched and the
-typed receipt carries no command ID and zero primitives.
-
-The service builds a bounded strategic view from the current observation and
-an attributed fact corpus. Hosted output is limited to ranked goals,
-prerequisites, cautions, uncertainty, and corpus source IDs. Unknown IDs fail
-closed. A successful brief decorates the current planner context without
-claiming a new world revision, and only the next strategic call can use it.
-
-Per-run call budget, step cooldown, and a meaningful-state fingerprint suppress
-unchanged repeats. A deterministic cadence/repeated-action detector sets an
-availability suggestion but never calls the provider itself. Thus the playing
-model retains discretion, the advisor retains no physical authority, and
-current telemetry remains authoritative over general guide knowledge. See
-`docs/ADR_STRATEGIC_ADVISOR.md`.
-
-## Independent safety supervision
-
-Continuous mode starts one `SafetySupervisor` subscriber before the
-observation pump. It evaluates deterministic reflexes, telemetry staleness,
-consecutive sequence stalls, pause-capability withdrawal, resumed human input,
-F12 emergency stop, and unexpected unpause from immutable `StoreUpdate`
-snapshots. Live duplicate sequences begin counting only after the configured
-telemetry wall age, because the 2 Hz native producer is slower than the Python
-observation cadence. Each update carries the active plan and command state that
-existed when it was published, so delayed subscriber processing cannot
-retroactively reclassify an authorized action.
-
-The scheduler races strategic planning and plan execution against the
-supervisor's first latched preemption. A blocked task is canceled once. If
-action delivery was already attempted, the executor spends its reservation and
-records the command as inconclusive rather than risking an automatic duplicate.
-Cleanup uses only `PauseAction(paused=true)`, still passes control-mode and
-allowlist policy, and may bypass only the ordinary rate counter so exhaustion
-cannot prevent an emergency pause. A cleanup terminal is `safe_paused` only
-after a later capable world revision confirms pause; otherwise it is explicitly
-failed or unverified.
-
-The Windows controller now reports human input even between its short input
-leases and carries F12 into the same supervisor stream. Deterministic tests
-cover the preemption semantics, and supervised live runs have exercised human
-handback and confirmed pause. Repeated F12/focus/controller-latency trials
-remain open. See `docs/ADR_SAFETY_SUPERVISOR.md`.
-
-## Final input-boundary revalidation
-
-Executor validation happens before `LiveEnvironment` waits for a quiet input
-turn, and that polite wait is deliberately unbounded. Each continuous step
-therefore carries a bounded `ExecutionToken` (`input_boundary.py`) holding its
-plan/step/command identity, control mode, validated revision, plan assumptions,
-step preconditions, and a deferred accessor to the world-state store.
-
-Inside the acquired lease — after the calibration recheck and immediately before
-the first primitive — the environment re-reads the latest canonical observation
-and re-evaluates that authorization through the same `evaluate_conditions`
-machinery. A missing observation, regressed revision, changed control mode,
-human input, emergency stop, or any non-`true` assumption or precondition emits
-zero primitives and returns an `InputBoundaryRejected` receipt, which releases
-the reservation through the ordinary definitive-rejection path.
-
-Every token-bearing receipt carries an `InputBoundaryReport`, and the executor
-emits `input_boundary_revalidated` or `input_boundary_rejected` with the lease
-wait and both revisions. Native-assisted issue-time DLL fences are unchanged and
-the boundary is additive. See `docs/ADR_INPUT_BOUNDARY_AUTHORITY.md`.
-
-## Calibration identity
-
-A profile-calibrated pointer click depends on more than client size, so
-`CalibrationIdentity` models the full set of facts it needs — client size,
-window mode, UI scale, DPI transform, keymap, and profile/macro hashes — each
-nullable. `LiveEnvironment.classify_pointer_action` sorts each action into
-coordinate-independent, semantic-current, profile-calibrated, or unsupported;
-only profile-calibrated actions require a match. `evaluate_calibration_identity`
-compares the fields the profile declares against what the controller observes
-and returns `not_required`, `matched`, `mismatched`, or `unknown` — a declared
-field the host cannot read is `unknown` and blocks input, never a silent match.
-The report rides on every pointer receipt and, via the `ExecutionToken`, is
-re-checked inside the input lease by the P3 boundary. Only client width and
-height are observable today; the other fields are modelled and enforced but
-await controller support. See `docs/ADR_CALIBRATION_IDENTITY.md`.
-
-## Stateful movement options and concurrent patches
-
-Configured movement-pulse skills can be adapted into a
-`StatefulMovementOption` instead of remaining opaque executor awaits. Contracted
-`approach_dialogue_target` always routes through `StatefulApproachOption`, which
-owns one native order, progress monitoring, adoption of an already-active exact
-order, arrival/dialogue success, target/threat/timeout failure, and idempotent
-cancellation. In an unpaused continuous profile it monitors ordinary world
-progress; in stop-motion profiles it owns bounded unpause/re-pause pulses.
-
-`move_in_direction` uses the same `MONITORED_OPTION` execution kind through a
-dedicated `StatefulNativeMovementOption`. It binds the empty target, exact
-selected character, bearing, distance, and native command ID; acceptance alone
-remains running. Stop-motion profiles use bounded unpause/re-pause pulses until
-the exact keyed command reaches `walk_destination_reached` or another terminal
-state.
-
-While that option is active, the executor may give the strategic planner an
-immutable observation containing `ActivePlanContext`. Only a `PlanPatch`
-matching that plan ID, version, and exact start revision can be staged. The
-active or completed step IDs are protected. After the option succeeds, the
-executor rebases only the proposed future graph onto the latest revision and
-revalidates topology, assumptions, policy, and remaining action/risk/time
-budgets. The ordinary guard and precondition checks still run before every
-replacement action. Any stale, mismatched, wrong-type, invalid, or late advisory
-is logged and discarded.
-
-The long-form live profile enables concurrent option planning so useful
-movement can overlap one strategic future-plan advisory. Staging never changes
-the running option, and a patch still cannot execute until the option terminates
-and latest-state/budget validation passes.
-
-Both hosted planners select their structured output type mechanically:
-`PlannerDecision` for `single_step`, `PlanEnvelope` for an idle continuous
-scheduler, and `PlanPatch` whenever `ActivePlanContext` is present. The
-Responses planner also applies a configured base-plus-per-step output-token
-budget, capped independently of the strategic timeout. Condition paths are a
-closed schema enum; semantic shape, capabilities, revision binding, topology,
-and action policy remain application-validated after structured decoding.
-
-This remains a bounded adapter rather than a general option framework.
-Live-continuous execution is disabled in the default profiles and requires an
-implemented policy plus its separate acknowledgement. The current implemented
-live policy is `dialogue_interaction_v1`. See
-`docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md`.
-
-## Partial observability
-
-Telemetry carries an explicit capability list. The planner must not interpret a
-missing field as zero. Exact hidden faction values, distant entities, complete
-map data, and mechanical formulas should remain unavailable unless the player
-could reasonably observe them.
+`observe_without_capture()` supplies telemetry without forcing a new frame.
+`dispatch(action, command=...)` is the causal execution seam: the runtime supplies
+one globally unique command ID and complete based-on revision, and the receipt
+binds the result to the later observation. `step(action)` is the legacy primitive
+beneath that seam. `close()` releases resources without manipulating the game —
+so the supervisor's verified pause cleanup does not extend to normal stop, budget
+exhaustion, cancellation, exception, or completion exits. A unified final-state
+owner is open work.
 
 ## Action hierarchy
 
-Raw keys, hotkeys, cursor moves, clicks, and scrolls are controller primitives;
-the generic live planner cannot author them. Run control is separately typed as
-noop, wait, pause/speed, and whole-run stop. Reusable semantic actions bind
-current telemetry references through one catalog:
+Raw keys, hotkeys, cursor moves, clicks, and scrolls are controller primitives,
+and the generic live planner cannot author them. Run control is separately typed
+as noop, wait, pause/speed, and whole-run stop. Everything else is a reusable
+semantic action binding current telemetry references through one catalog — the
+[generated action catalog](docs/generated/ACTION_CATALOG.md) is the authoritative
+list.
 
-- approach a dialogue target;
-- perform one exact reviewed contextual task that a current world object
-  advertises;
-- move to a nearby character or a bounded bearing/distance;
-- activate a visible control or dismiss the current screen;
-- buy, sell, equip, or scroll one current window;
-- press one allowlisted reversible Kenshi game binding;
-- leave the selected character's current building without model-authored door
-  geometry;
-- recover the selected-character camera through one bounded controller-owned,
-  frame-scored follow/floor/zoom/orbit/tilt transaction.
-
-Each `ActionContract` owns planner visibility, capability/control-mode
+Each `ActionContract` owns planner visibility, capability and control-mode
 requirements, pointer class, native requirement, risk cost, idempotency,
 reference binding, execution route, receipt kind, and required verification
-paths. The planner may compose these actions in a bounded continuous plan; it
-never micromanages primitive timing or coordinates. Legacy skills still expand
-into bounded primitives for compatibility and calibrated transport.
+paths. The planner composes these in a bounded continuous plan; it never
+micromanages primitive timing or coordinates. Legacy skills still expand into
+bounded primitives for compatibility and calibrated transport.
 
 This is the intended single source of action truth, not yet complete executable
-truth. Camera recovery, current-building exit, and exact contextual operation
-are controller-verified contracts: their owning subsystems return typed
-terminal verdicts, so the planner supplies no success predicate.
-Most other contracts still name no controller-owned effect predicate:
-the generic policy requires a model-authored condition and evaluates it only on
-a causally later revision. That proves temporal ordering, not necessarily that
-the dispatched action caused the intended transition. The world-state store's
-before/after deltas and native acknowledgements are the substrate for the
-missing effect engine.
+truth. Contracts marked `controller_verified` — camera recovery, building exit,
+contextual operation — return a typed terminal verdict from their owning
+subsystem, so the planner supplies no success predicate. Extending that set is
+the ongoing work.
 
-Every run has a typed control mode. `interface_only` is the default and filters
-native command capabilities and marked skills before planning; the guard and
-environment reject them again at execution boundaries. `native_assisted`
-requires a configuration opt-in plus a dedicated CLI acknowledgement before
-live execution. Observations, receipts, lifecycle events, overlays, summaries,
-and metrics retain the mode.
+## Partial observability
 
-## Native boundary
-
-The plugin owns no model logic. Its observational path serializes a versioned,
-partial snapshot at a low fixed frequency. It hooks a known main/UI-thread
-update point, calls the original function, samples only validated fields, and
-writes an atomic file. The Python process never loads Kenshi memory directly.
-
-The plugin also contains five reviewed native-assisted commands behind one
-strict request bridge:
-
-- `approach_confirmed_vendor`, a legacy wire name that now accepts any exact
-  valid dialogue target and completes only on exact-target dialogue;
-- `move_to_character`, which follows one exact nearby character and completes
-  on arrival without opening dialogue;
-- `move_in_direction`, whose native handler walks a bounded bearing/distance
-  from the selected character and completes inside tolerance or after crossing
-  the intended destination plane;
-- `exit_current_building`, which takes no model geometry, resolves an unlocked
-  current-building door and outside point, and completes from stable outdoor
-  membership or tightly reaching that native destination after real movement;
-- `operate_natural_resource`, which re-resolves an exact advertised natural
-  resource, rechecks its reviewed default task and current availability, and
-  completes only when the selected character's AI goal matches that exact task
-  and subject.
-
-Python atomically writes one request before the private bridge hotkey. The
-plugin accepts only the exact caller command ID, current world-revision
-sequence, native mode, identity session, one-character selection, and the
-command-specific exact target or direction fields. Directional commands require
-an empty target plus bounded bearing/distance; building exit requires an empty
-target and zero vector; targeted commands require a stable target and zero
-direction fields. A bounded acknowledgement ring reports
-rejection, acceptance, completion/cancellation, and terminal sequences. These
-commands are unavailable in `interface_only`; the DLL is not described as
-globally read-only.
-See `docs/ADR_CONTROL_MODES.md` and
-`docs/ADR_CAUSAL_NATIVE_COMMANDS.md`.
-
-Documentation follows [the truth policy](docs/DOCUMENTATION_TRUTH.md): current
-state, enduring design, generated contracts, dated live evidence, and historical
-ledger entries have separate roles.
+Telemetry carries an explicit capability list. **The planner must not read a
+missing field as zero.** Hidden faction values, distant entities, complete map
+data, and mechanical formulas stay unavailable unless a player could reasonably
+observe them.
 
 ## Failure attribution
 
 Logs distinguish observation errors, planner errors, policy rejection, input
-execution, and observed outcome. A benchmark result should therefore say
-whether the agent misunderstood the world, chose poorly, failed to operate the
-UI, or lacked sufficient telemetry.
+execution, and observed outcome, so a benchmark result can say whether the agent
+misunderstood the world, chose poorly, failed to operate the UI, or lacked
+telemetry.
+
+## Where each boundary is decided
+
+| Boundary | Record |
+| --- | --- |
+| Control modes and what each permits | [ADR_CONTROL_MODES](docs/ADR_CONTROL_MODES.md) |
+| Scheduler contract and plan authority | [ADR_CONTINUOUS_PLANNING](docs/ADR_CONTINUOUS_PLANNING.md) |
+| Revision ownership and causal confirmation | [ADR_WORLD_STATE_STREAM](docs/ADR_WORLD_STATE_STREAM.md) |
+| Final in-lease authorization fence | [ADR_INPUT_BOUNDARY_AUTHORITY](docs/ADR_INPUT_BOUNDARY_AUTHORITY.md) |
+| Pointer calibration identity | [ADR_CALIBRATION_IDENTITY](docs/ADR_CALIBRATION_IDENTITY.md) |
+| Movement options and future-only patches | [ADR_STATEFUL_MOVEMENT_OPTIONS](docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md) |
+| Independent preemption and safe pause | [ADR_SAFETY_SUPERVISOR](docs/ADR_SAFETY_SUPERVISOR.md) |
+| Native handle identity and lifecycle | [ADR_STABLE_NATIVE_IDENTITY](docs/ADR_STABLE_NATIVE_IDENTITY.md) |
+| Native request/acknowledgement causality | [ADR_CAUSAL_NATIVE_COMMANDS](docs/ADR_CAUSAL_NATIVE_COMMANDS.md) |
+| How far the plug-in may go | [ADR_NATIVE_INTEGRATION_SCOPE](docs/ADR_NATIVE_INTEGRATION_SCOPE.md) |
+| Read-only advisor boundary | [ADR_STRATEGIC_ADVISOR](docs/ADR_STRATEGIC_ADVISOR.md) |
+| Reporting a missing capability | [ADR_RUNTIME_AFFORDANCE_REQUESTS](docs/ADR_RUNTIME_AFFORDANCE_REQUESTS.md) |
+| Action-outcome continuity between calls | [ADR_ACTION_LEDGER](docs/ADR_ACTION_LEDGER.md) |
+| Camera lock and bounded recovery | [ADR_CAMERA_VIEW](docs/ADR_CAMERA_VIEW.md) |

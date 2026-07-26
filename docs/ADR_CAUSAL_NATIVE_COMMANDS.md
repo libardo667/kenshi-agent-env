@@ -114,4 +114,4 @@ completed only when exact-target dialogue opened. Every boundary retained the
 same command ID and basis. Kenshi was paused after each pulse and at completion,
 then closed normally with no new plugin, renderer, or Application error. Exact
 IDs, revisions, intervention, and rollback path are recorded in
-`LIVE_VALIDATION_CHECKLIST.md`.
+the commit that landed the fix.
