@@ -875,9 +875,9 @@ class ApproachDialogueTargetAction(StrictModel):
     Reusable and target-generic: the target is any current non-hostile person
     the telemetry already reports as talkable, vendor or not. The action names
     only a stable observed identity, never a role, a scenario, or a coordinate.
-    The controller right-clicks a close visible target without unpausing and
-    otherwise owns the whole monitored walk, so there is no planner-visible
-    "continue approaching" or prerequisite unpause command.
+    The controller issues Kenshi's native talk-to order and owns the whole
+    monitored interaction, so there is no planner-visible "continue
+    approaching" or prerequisite unpause command.
     """
 
     kind: Literal["approach_dialogue_target"] = "approach_dialogue_target"

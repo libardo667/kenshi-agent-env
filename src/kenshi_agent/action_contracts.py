@@ -188,14 +188,6 @@ def bind_approach_dialogue_target(
             "an ambiguous reference fails closed."
         )
     target = matches[0]
-    resolved_bounds = None
-    if target.visible is True and target.screen_position is not None:
-        resolved_bounds = NormalizedPointerBounds(
-            min_x=target.screen_position.x,
-            max_x=target.screen_position.x,
-            min_y=target.screen_position.y,
-            max_y=target.screen_position.y,
-        )
     return ReferenceBinding(
         bound=True,
         reason=(
@@ -203,9 +195,6 @@ def bind_approach_dialogue_target(
             f"distance {target.distance if target.distance is not None else 'unknown'}."
         ),
         target_id=target.id,
-        resolved_label=target.name,
-        resolved_role="dialogue_target",
-        resolved_bounds=resolved_bounds,
         source_revision=observation.world_revision,
     )
 
@@ -1046,9 +1035,9 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     version="1.0",
     model=ApproachDialogueTargetAction,
     summary=(
-        "Initiate dialogue with one exact current target. A close visible target "
-        "is right-clicked directly without unpausing; otherwise one monitored "
-        "option owns the whole approach. Do not add a separate unpause step."
+        "Issue Kenshi's native talk-to order for one exact current target. The "
+        "native order may open nearby dialogue while paused and otherwise owns "
+        "the monitored pathing lifecycle. Do not add a separate unpause step."
     ),
     argument_source="target_id must be an exact id from the observation's dialogue_targets.",
     planner_visible=True,
@@ -1062,11 +1051,9 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
         }
     ),
     capability_aliases=NATIVE_APPROACH_CAPABILITY_ALIASES,
-    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    # The runtime chooses exactly one branch. Conservatively reserve both
-    # possible risks so either the semantic click or native fallback is covered.
-    risk=ActionRiskCost(pointer_actions=1, native_assisted_actions=1),
+    risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,

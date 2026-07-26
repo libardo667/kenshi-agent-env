@@ -1258,11 +1258,19 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
     asyncio.run(scenario())
 
 
-def test_close_visible_dialogue_target_is_right_clicked_without_unpausing(
+def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(tmp_path)
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        # These are the exact facts that used to trigger a projected world
+        # click. They must now be irrelevant to dispatch.
         telemetry.target_distance = 11.5
         telemetry.target_screen_position = Vec2(x=0.51, y=0.54)
         telemetry.target_visible = True
@@ -1276,17 +1284,20 @@ def test_close_visible_dialogue_target_is_right_clicked_without_unpausing(
             ),
         )
 
-        clicks = [action for action in controller.actions if isinstance(action, ClickAction)]
-        assert len(clicks) == 1
-        assert clicks[0].button is MouseButton.RIGHT
-        assert clicks[0].x == pytest.approx(0.51)
-        assert clicks[0].y == pytest.approx(0.54)
-        assert not [action for action in controller.actions if isinstance(action, HotkeyAction)]
-        assert controller.request is None
+        assert not [
+            action for action in controller.actions if isinstance(action, ClickAction)
+        ]
+        hotkeys = [
+            action for action in controller.actions if isinstance(action, HotkeyAction)
+        ]
+        assert len(hotkeys) == 1
+        assert controller.request is not None
+        assert controller.request.command == "approach_confirmed_vendor"
+        assert controller.request.target_id == "entity-vendor"
         assert telemetry.paused is True
-        assert transition.receipt.native_acknowledgement is None
+        assert transition.receipt.native_acknowledgement is not None
         assert transition.receipt.semantic is not None
-        assert "without changing pause" in transition.receipt.semantic.revalidation
+        assert "PLAYER_TALK_TO" in transition.receipt.semantic.revalidation
 
     asyncio.run(scenario())
 

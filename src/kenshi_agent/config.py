@@ -60,14 +60,6 @@ class PlanningConfig(ConfigModel):
     # feature flag.
     semantic_approach_arrival_distance: float = Field(default=5.0, gt=0.0, le=100.0)
     semantic_approach_threat_distance: float = Field(default=15.0, gt=0.0, le=500.0)
-    # A visible talkable target inside this radius is interacted with directly
-    # at its current screen position. Kenshi can open that dialogue while
-    # paused, so pathing and a direct unpause are unnecessary.
-    semantic_dialogue_direct_click_distance: float = Field(
-        default=15.0,
-        gt=0.0,
-        le=100.0,
-    )
     # Mirrors safety.require_paused_between_actions for the executor: with the
     # game running continuously, a per-plan game-time budget measures thinking
     # rather than acting.

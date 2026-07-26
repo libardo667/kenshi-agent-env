@@ -487,7 +487,6 @@ class StatefulApproachOption:
         target_id: str,
         arrival_distance: float = 5.0,
         threat_distance: float = 15.0,
-        direct_interaction_distance: float = 0.0,
         require_paused_start: bool = True,
     ) -> None:
         self.option_id = option_id
@@ -496,7 +495,6 @@ class StatefulApproachOption:
         # An agent playing continuously starts its walk from a running world;
         # demanding a paused start there means the approach can never begin.
         self.require_paused_start = require_paused_start
-        self.direct_interaction_distance = direct_interaction_distance
         self.monitor = ApproachMonitor(
             target_id=target_id,
             arrival_distance=arrival_distance,
@@ -527,23 +525,8 @@ class StatefulApproachOption:
             raise OptionLifecycleError(
                 "Approach option requires the target to be present at the start."
             )
-        target = next(
-            (
-                entity
-                for entity in telemetry.nearby_entities
-                if entity.id == self.monitor.target_id
-            ),
-            None,
-        )
-        direct_interaction_available = (
-            isinstance(self.action, ApproachDialogueTargetAction)
-            and target is not None
-            and target.visible is True
-            and target.screen_position is not None
-            and target.distance is not None
-            and target.distance <= self.direct_interaction_distance
-        )
-        if begin.arrived and not direct_interaction_available:
+        native_talk = isinstance(self.action, ApproachDialogueTargetAction)
+        if begin.arrived and not native_talk:
             raise OptionLifecycleError(
                 "Approach option must not dispatch after the target has already "
                 "been reached."
@@ -557,9 +540,9 @@ class StatefulApproachOption:
         self.latest_status = begin
         self.status = OptionStatus.PREPARED
         self.reason = (
-            "Close visible dialogue target will be interacted with directly "
-            "without unpausing."
-            if direct_interaction_available
+            "Target is already close; issue one native talk-to order and verify "
+            "that exact dialogue opens."
+            if begin.arrived
             else "Approach start state is capable, paused, and the target is present."
         )
         return self._poll_result()
@@ -622,7 +605,12 @@ class StatefulApproachOption:
         if update is not None:
             status = self.monitor.assess(update.observation)
             self.latest_status = status
-            if status.arrived:
+            exact_dialogue_required = isinstance(
+                self.action, ApproachDialogueTargetAction
+            )
+            if status.arrived and (
+                not exact_dialogue_required or status.dialogue_open_with_target
+            ):
                 # Success requires the order to have been accepted, so we do not
                 # claim arrival from a dispatch that never issued.
                 if self.transition is not None:
@@ -636,6 +624,11 @@ class StatefulApproachOption:
             elif status.should_abort:
                 self.status = OptionStatus.FAILED
                 self.reason = status.reason
+            elif status.arrived and exact_dialogue_required:
+                self.reason = (
+                    "Within talk range; waiting for Kenshi to open dialogue with "
+                    "the exact native target."
+                )
             else:
                 self.reason = status.reason
         return self._poll_result()

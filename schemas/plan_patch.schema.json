@@ -54,7 +54,7 @@
     },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
-      "description": "Initiate dialogue with one exact currently observed dialogue target.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nThe controller right-clicks a close visible target without unpausing and\notherwise owns the whole monitored walk, so there is no planner-visible\n\"continue approaching\" or prerequisite unpause command.",
+      "description": "Initiate dialogue with one exact currently observed dialogue target.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nThe controller issues Kenshi's native talk-to order and owns the whole\nmonitored interaction, so there is no planner-visible \"continue\napproaching\" or prerequisite unpause command.",
       "properties": {
         "kind": {
           "const": "approach_dialogue_target",

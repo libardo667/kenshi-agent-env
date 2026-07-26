@@ -107,7 +107,6 @@ class LiveEnvironment(AgentEnvironment):
         capture_config: CaptureConfig,
         execute_actions: bool,
         emergency_stop_key: str,
-        semantic_dialogue_direct_click_distance: float = 15.0,
         available_skills: list[str] | None = None,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     ) -> None:
@@ -121,9 +120,6 @@ class LiveEnvironment(AgentEnvironment):
         self.capture_config = capture_config
         self.execute_actions = execute_actions
         self.emergency_stop_key = emergency_stop_key
-        self.semantic_dialogue_direct_click_distance = (
-            semantic_dialogue_direct_click_distance
-        )
         self.control_mode = control_mode
         self.available_skills = macros.available_names(
             available_skills or macros.names(),
@@ -801,75 +797,13 @@ class LiveEnvironment(AgentEnvironment):
         started: datetime,
         command: CommandDispatchContext,
     ) -> ActionReceipt:
-        """Interact directly when close; otherwise issue one native approach.
+        """Issue one exact native talk-to order through the Kenshi bridge.
 
-        A human can right-click a close visible person and open dialogue while
-        Kenshi remains paused. Re-resolve that target inside the input lease and
-        preserve pause on the same semantic action. Only a target that is too
-        far away or not on screen falls back to the monitored native path.
+        The action never converts a projected world position into a pointer
+        click. Kenshi receives `PLAYER_TALK_TO` for the stable entity handle,
+        which can open nearby dialogue while paused and paths when movement is
+        actually necessary.
         """
-
-        result = self.telemetry_reader.read()
-        if result.stale:
-            raise RuntimeError(
-                "No input was sent: telemetry became stale inside the input lease."
-            )
-        observation = self._observation_from_snapshot(result.snapshot)
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(action, observation)
-        if not binding.bound:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
-        telemetry = observation.telemetry
-        assert telemetry is not None
-        matches = [
-            target
-            for target in telemetry.nearby_entities
-            if target.id == action.target_id
-        ]
-        if len(matches) != 1:
-            raise RuntimeError(
-                "No input was sent: the exact dialogue target could not be "
-                "re-resolved unambiguously inside the input lease."
-            )
-        target = matches[0]
-        if (
-            binding.resolved_bounds is not None
-            and target.distance is not None
-            and target.distance <= self.semantic_dialogue_direct_click_distance
-        ):
-            bounds = binding.resolved_bounds
-            primitive_receipt = await self.controller.execute(
-                ClickAction(
-                    x=(bounds.min_x + bounds.max_x) / 2.0,
-                    y=(bounds.min_y + bounds.max_y) / 2.0,
-                    button=MouseButton.RIGHT,
-                    hold_seconds=self.controls_config.control_activation_hold_seconds,
-                )
-            )
-            semantic = SemanticActionReceipt(
-                action_kind=action.kind,
-                contract_version=APPROACH_DIALOGUE_TARGET_CONTRACT.version,
-                target_id=action.target_id,
-                resolved_label=binding.resolved_label,
-                resolved_role=binding.resolved_role,
-                resolved_bounds=bounds,
-                source_revision=observation.world_revision,
-                revalidation=(
-                    "Re-bound the exact visible nearby dialogue target inside "
-                    "the input lease and right-clicked it without changing pause. "
-                    f"{binding.reason}"
-                ),
-            )
-            return primitive_receipt.model_copy(
-                update={
-                    "action": action,
-                    "semantic": semantic,
-                    "message": (
-                        f"Right-clicked nearby dialogue target "
-                        f"{binding.resolved_label!r} at its current screen position "
-                        "without unpausing. A later observation must confirm dialogue."
-                    ),
-                }
-            )
 
         skill_name = self.controls_config.native_approach_skill
         if skill_name is None or not self.macros.has(skill_name):
@@ -893,7 +827,7 @@ class LiveEnvironment(AgentEnvironment):
             source_revision=command.based_on_revision,
             revalidation=(
                 "Bound to the exact stable dialogue target and issued at most one "
-                "native pathing order for this option lifecycle."
+                "native PLAYER_TALK_TO order for this option lifecycle."
             ),
         )
         return await self._execute_native_approach(

@@ -21,7 +21,6 @@ planning:
   # are its arrival/threat radii, not a feature flag.
   semantic_approach_arrival_distance: 5.0
   semantic_approach_threat_distance: 15.0
-  semantic_dialogue_direct_click_distance: 15.0
   # Permit one future-plan advisory to overlap the monitored approach.
   concurrent_option_planning_enabled: true
   observation_pump_seconds: 0.1

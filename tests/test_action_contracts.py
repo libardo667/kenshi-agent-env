@@ -29,12 +29,12 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    PointerActionClass,
     PurchaseItemAction,
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
     UIState,
-    Vec2,
     VisibleUIControl,
     WorldStateRevision,
 )
@@ -113,6 +113,14 @@ def civilian(distance: float = 12.0) -> NearbyEntity:
 class TestApproachBindsAnyDialogueTarget:
     """The whole point: approach is not a commerce affordance."""
 
+    def test_contract_is_native_only_and_coordinate_independent(self) -> None:
+        assert (
+            APPROACH_DIALOGUE_TARGET_CONTRACT.pointer_class
+            is PointerActionClass.COORDINATE_INDEPENDENT
+        )
+        assert APPROACH_DIALOGUE_TARGET_CONTRACT.risk.pointer_actions == 0
+        assert APPROACH_DIALOGUE_TARGET_CONTRACT.risk.native_assisted_actions == 1
+
     def test_binds_a_vendor(self) -> None:
         binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
             ApproachDialogueTargetAction(target_id=VENDOR_ID),
@@ -128,29 +136,6 @@ class TestApproachBindsAnyDialogueTarget:
         )
         assert binding.bound
         assert binding.target_id == CIVILIAN_ID
-
-    def test_visible_target_binding_carries_current_interaction_point(self) -> None:
-        close_vendor = vendor(distance=11.5).model_copy(
-            update={
-                "visible": True,
-                "screen_position": Vec2(x=0.51, y=0.54),
-            }
-        )
-
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
-            ApproachDialogueTargetAction(target_id=VENDOR_ID),
-            observation(entities=[close_vendor]),
-        )
-
-        assert binding.bound
-        assert binding.resolved_label == "Barman"
-        assert binding.resolved_role == "dialogue_target"
-        assert binding.resolved_bounds == NormalizedPointerBounds(
-            min_x=0.51,
-            max_x=0.51,
-            min_y=0.54,
-            max_y=0.54,
-        )
 
     def test_rejects_a_target_absent_from_current_state(self) -> None:
         binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
