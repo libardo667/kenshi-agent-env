@@ -144,12 +144,17 @@ path.
   best frame, left Kenshi paused with no active command, and returned the
   truthful bounded terminal `failed_after_bounded_attempts` rather than
   exposing more camera gestures to the model.
-- The advisor implementation at `3d4670f` has portable end-to-end proof and one
-  real-provider smoke. A synthetic 135-Cat, zero-food observation reached
-  OpenRouter `openai/gpt-5.4`; the reply ranked four goals, treated Greenfruit
-  as an ingredient rather than edible food, and resolved every cited source ID
-  to its checked-in attribution. No Kenshi process was present afterward, so
-  this is hosted-adapter evidence, not an in-game advisor-action proof.
+- The advisor implementation has portable end-to-end proof, a synthetic
+  provider smoke, and a live in-game cognitive-action proof. Run
+  `20260726Tlive-survival-advisor-01` created no world command and zero
+  primitives, but exposed that the advisor did not know native hunger units and
+  called 2.47 urgent starvation. The runtime now supplies the authoritative
+  0.0-to-3.0 reserve and 2.5/2.0/1.0 eating, malnutrition, and fainting
+  thresholds; mock and heuristic producers use the same units. Repeated run
+  `...advisor-02` correctly interpreted 2.47 as about 247/300: a prudent
+  near-term food constraint, not immediate danger. It retained source
+  attribution, town-safety advice, and combat avoidance. A live multi-turn
+  advisor-to-next-planner behavioral handoff remains separate open evidence.
 - The decision overlay is capture-excluded and click-through. Each run also
   keeps typed lifecycle evidence in `events.jsonl`. A selectable
   `transcript.log` is intended, but the 80-turn run did not produce one.
@@ -207,7 +212,7 @@ requires configuration opt-in and a separate CLI acknowledgement.
 
 For the protocol `0.7.0` building-exit slice on 2026-07-26:
 
-- `pytest -q`: **531 passed**.
+- `pytest -q`: **532 passed**.
 - `ruff check .`: passed.
 - `mypy --strict src/kenshi_agent`: passed across **58 source files**.
 - Generated schemas were refreshed from the current strict models.

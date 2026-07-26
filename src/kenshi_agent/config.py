@@ -154,7 +154,8 @@ class MockConfig(ConfigModel):
     seed: int = 7
     start_location: str = "The Hub"
     start_cats: int = Field(default=180, ge=0)
-    start_hunger: float = Field(default=250.0, ge=0.0, le=300.0)
+    # Match native Kenshi telemetry: nutrition reserve, 3.0 full to 0 starving.
+    start_hunger: float = Field(default=2.5, ge=0.0, le=3.0)
     start_food_items: int = Field(default=1, ge=0)
     start_first_aid_kits: int = Field(default=1, ge=0)
     minutes_per_wait_second: float = Field(default=1.0, gt=0.0, le=120.0)

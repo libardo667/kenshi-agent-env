@@ -110,7 +110,7 @@ class HeuristicPlanner(Planner):
             )
         if (
             selected.hunger is not None
-            and selected.hunger < 155
+            and selected.hunger < 1.55
             and (selected.food_items or 0) > 0
             and "eat_food" in observation.available_skills
         ):
@@ -122,7 +122,7 @@ class HeuristicPlanner(Planner):
             )
         if (
             selected.hunger is not None
-            and selected.hunger < 185
+            and selected.hunger < 1.85
             and (selected.food_items or 0) == 0
             and (telemetry.game.money or 0) >= 50
             and "buy_food" in observation.available_skills

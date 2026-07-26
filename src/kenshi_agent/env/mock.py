@@ -455,7 +455,7 @@ class MockEnvironment(AgentEnvironment):
             if self.world.food_items <= 0:
                 return "No food item was available."
             self.world.food_items -= 1
-            self.world.hunger = min(300.0, self.world.hunger + 95.0)
+            self.world.hunger = min(3.0, self.world.hunger + 0.95)
             self._events.append("Ate one food item.")
             return "Ate food."
         if name == "first_aid":
@@ -502,7 +502,7 @@ class MockEnvironment(AgentEnvironment):
             return
         scaled = max(0.0, minutes * self.world.speed)
         self.world.elapsed_minutes += scaled
-        self.world.hunger = max(0.0, self.world.hunger - scaled * 0.075)
+        self.world.hunger = max(0.0, self.world.hunger - scaled * 0.00075)
         if self.world.bleeding_rate > 0:
             self.world.health -= self.world.bleeding_rate * scaled * 0.08
         if self.world.hunger <= 0:

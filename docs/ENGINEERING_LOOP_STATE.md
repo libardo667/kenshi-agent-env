@@ -5,6 +5,35 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Live advisor hunger-semantics correction (2026-07-26)
+
+Visible run `20260726Tlive-survival-advisor-01` exercised the real
+`consult_advisor` action against Hep's live paused state outside The Hub bar.
+The receipt carried no command ID and zero controller primitives, and the
+OpenRouter `openai/gpt-5.4` brief retained checked-in source attribution.
+
+The call also exposed a cross-producer semantics defect. Native Kenshi exports
+hunger as a 0.0-to-3.0 nutrition reserve, but the advisor had no scale metadata
+and described 2.47 as urgent starvation. The HUD is layered and may visually
+look below half at that value, but documented gameplay thresholds are numeric:
+2.47 corresponds to about 247/300; automatic eating starts below 250,
+malnutrition/stat penalties below 200, and fainting near 100. The mock and
+heuristic planner still used the older 0-to-300 units.
+
+The mock, sample producer, heuristic thresholds, and configuration now use the
+same 0.0-to-3.0 units as native telemetry. The advisor receives explicit
+telemetry semantics, including hunger thresholds, the fallible `food_items`
+scalar, the layered-HUD caveat, and lingering doorway indoor handles. The
+attributed guide corpus now includes the Guide to Health threshold source.
+
+Repeated visible run `20260726Tlive-survival-advisor-02` correctly classified
+2.47 as a near-term food-security concern rather than an immediate emergency.
+It still ranked confirmed edible food first because Hep has only 20 Cats and
+Greenfruit is not edible, then recommended remaining near guards, preserving
+medical supplies, avoiding unsupported combat, and pursuing guard-adjacent
+income only after food is stable. The full portable suite passed 532 tests,
+Ruff, and strict mypy over 58 source files.
+
 ## Protocol 0.7.0 native building exit (2026-07-26)
 
 Hep's repeated blind direction nudges exposed two missing controller

@@ -38,6 +38,12 @@
 - Added OpenRouter structured planning with provider routing and a local-schema
   fallback, mode-aware OpenAI output budgets, dynamic observation/control
   budgeting, and a fast non-reasoning long-form planner default.
+- Corrected hunger semantics across the mock, heuristic planner, sample
+  telemetry, and guide-grounded advisor to match native Kenshi's 0.0-to-3.0
+  nutrition reserve. The advisor now receives authoritative 2.5/2.0/1.0
+  eating, malnutrition, and fainting thresholds plus the layered-HUD caveat.
+  A repeated live consultation changed "urgent starvation" into a conservative
+  near-term food goal while preserving town-safety and combat-avoidance advice.
 - Added semantic launcher controls, reversible graphics-profile verification,
   duplicate-client/Steam/memory/renderer checks, relative-pointer
   synchronization, window-scoped controls, and exact close-box derivation.
@@ -48,7 +54,7 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 531 passing tests with
+- Added `uv.lock`. The current portable baseline is 532 passing tests with
   clean Ruff and strict mypy over 58 source files.
 
 ## 0.1.0 — scaffold

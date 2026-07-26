@@ -5,7 +5,12 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kenshi_agent.advisor import AdvisorDraft, AdvisorSession, GuideCorpus
+from kenshi_agent.advisor import (
+    AdvisorDraft,
+    AdvisorSession,
+    GuideCorpus,
+    advisor_world_payload,
+)
 from kenshi_agent.config import (
     AdvisorConfig,
     MockConfig,
@@ -195,6 +200,18 @@ def test_corpus_keeps_claims_and_attribution_together() -> None:
     assert "not an edible food" in greenfruit.claim
     assert source.creator == "r/Kenshi community"
     assert source.url.startswith("https://www.reddit.com/r/Kenshi/")
+
+
+def test_advisor_payload_defines_live_hunger_and_fallible_food_semantics() -> None:
+    payload = advisor_world_payload(observation())
+    semantics = payload["telemetry_semantics"]
+
+    assert "3.0 is full" in semantics["selected.hunger"]
+    assert "0.0 is starving" in semantics["selected.hunger"]
+    assert "below 2.0" in semantics["selected.hunger"]
+    assert "layered HUD bar" in semantics["selected.hunger"]
+    assert "fallible" in semantics["selected.food_items"]
+    assert "not authoritative visual containment" in semantics["selected.indoors"]
 
 
 def test_session_answers_with_validated_source_attribution_and_suppresses_repeats() -> None:

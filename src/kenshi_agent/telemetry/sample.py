@@ -47,7 +47,7 @@ def sample_snapshot() -> TelemetrySnapshot:
                 conscious=True,
                 position=Vec3(x=0, y=0, z=0),
                 movement_speed=18.0,
-                hunger=250.0,
+                hunger=2.5,
                 food_items=1,
                 first_aid_kits=1,
             )

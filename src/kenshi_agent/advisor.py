@@ -172,7 +172,10 @@ class OpenRouterStrategyAdvisor:
                     "Kenshi. Rank useful goals; do not author controller actions, "
                     "plans, keys, clicks, coordinates, or native commands. Treat the "
                     "observation as current world evidence and the attributed corpus "
-                    "as fallible general guidance. Never invent a source ID. Make "
+                    "as fallible general guidance. The current world's "
+                    "`telemetry_semantics` are authoritative definitions of exported "
+                    "fields; apply them before ranking urgency. Never invent a source "
+                    "ID. Make "
                     "uncertainty explicit, especially where community advice is "
                     "contested."
                 ),
@@ -453,6 +456,25 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
         "step_index": observation.step_index,
         "world_revision": observation.world_revision.model_dump(mode="json"),
         "telemetry": digest.get("telemetry"),
+        "telemetry_semantics": {
+            "selected.hunger": (
+                "Nutrition reserve on Kenshi's native 0.0-to-3.0 scale: 3.0 is "
+                "full and 0.0 is starving, corresponding to the HUD's 0-to-300 "
+                "number. It counts down as hunger worsens. Automatic eating begins "
+                "below 2.5, malnutrition/stat penalties below 2.0, and starvation "
+                "fainting below about 1.0. The layered HUD bar is not evidence of "
+                "a linear percentage; use these numeric thresholds for urgency."
+            ),
+            "selected.food_items": (
+                "A fallible native scalar that has disagreed with carried item "
+                "telemetry. Use named inventory plus guide facts to decide whether "
+                "a carried item is edible."
+            ),
+            "selected.indoors": (
+                "Current building-handle membership. It can remain true just "
+                "outside a doorway and is not authoritative visual containment."
+            ),
+        },
         "dialogue_targets": observation.dialogue_target_digest(),
         "travel_destinations": observation.travel_destination_digest(),
         "recent_action_outcomes": [
