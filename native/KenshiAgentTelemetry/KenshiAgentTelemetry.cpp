@@ -1134,6 +1134,20 @@ namespace
         if (!g_activeNativeCommand.active)
             return;
 
+        // PLAYER_TALK_TO can open a nearby conversation while the world stays
+        // paused. That exact target is success, not a pause stall. Check the
+        // native terminal before the generic movement-pause watchdog so a
+        // dialogue modal (which removes the pause control) can never turn a
+        // completed talk order into `world_paused`.
+        if (!g_activeNativeCommand.isWalk &&
+            IsExactDialogueTargetOpen(g_activeNativeCommand.targetHandle))
+        {
+            FinishActiveNativeCommand(
+                "completed",
+                "exact_dialogue_target_open");
+            return;
+        }
+
         if (KenshiAgentTelemetry::ObserveNativeMovementPause(
                 g_activeNativeCommand.pauseWindow,
                 ou != NULL && ou->isPaused(),

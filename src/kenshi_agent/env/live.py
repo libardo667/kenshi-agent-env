@@ -93,6 +93,7 @@ class LiveEnvironment(AgentEnvironment):
     _NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
     _NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
     _NATIVE_COMMAND_POLL_SECONDS = 0.025
+    _NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
 
     def __init__(
         self,
@@ -1888,6 +1889,35 @@ class LiveEnvironment(AgentEnvironment):
                 native_acknowledgement=acknowledgement,
                 semantic=semantic,
             )
+        if (
+            isinstance(action, ApproachDialogueTargetAction)
+            and self._fresh_pause_state() is True
+        ):
+            dialogue_open, current = await self._wait_for_exact_native_dialogue(
+                target_id=target_id,
+                command_id=acknowledgement.command_id,
+            )
+            if current is not None:
+                acknowledgement = current
+            if dialogue_open:
+                messages.append(
+                    "Kenshi opened dialogue with the exact native target while "
+                    "remaining paused; no movement pulse or pause toggle was sent."
+                )
+                return ActionReceipt(
+                    action=action,
+                    command_id=command.command_id,
+                    started_after_revision=command.based_on_revision,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    started_at=started,
+                    finished_at=datetime.now(UTC),
+                    primitive_actions=primitive_count,
+                    message=" ".join(messages),
+                    native_acknowledgement=acknowledgement,
+                    semantic=semantic,
+                )
         if not self.controls_config.require_paused_between_actions:
             # The world is already running: the pathing order is enough, and the
             # monitored option watches the character walk. Pulsing here would
@@ -2203,6 +2233,54 @@ class LiveEnvironment(AgentEnvironment):
             if remaining <= 0:
                 return False
             await asyncio.sleep(min(0.05, remaining))
+
+    async def _wait_for_exact_native_dialogue(
+        self,
+        *,
+        target_id: str,
+        command_id: str,
+    ) -> tuple[bool, NativeCommandAcknowledgement | None]:
+        """Give a paused native talk order one telemetry interval to finish.
+
+        Nearby `PLAYER_TALK_TO` opens dialogue without advancing world time.
+        The generic movement pulse must therefore wait for that exact terminal
+        before it tries to toggle pause, because Kenshi removes the pause
+        control while the dialogue modal is open.
+        """
+
+        deadline = time.monotonic() + self._NATIVE_DIALOGUE_SETTLE_SECONDS
+        latest_acknowledgement: NativeCommandAcknowledgement | None = None
+        while True:
+            try:
+                result = self.telemetry_reader.read()
+            except TelemetryReadError:
+                result = None
+            if result is not None and not result.stale:
+                snapshot = result.snapshot
+                current = snapshot.native_control.acknowledgement_for(command_id)
+                if current is not None:
+                    latest_acknowledgement = current
+                if (
+                    snapshot.ui.dialogue_open
+                    and snapshot.ui.dialogue_target_id == target_id
+                ):
+                    return True, latest_acknowledgement
+                if snapshot.game.paused is not True:
+                    return False, latest_acknowledgement
+                if (
+                    latest_acknowledgement is not None
+                    and latest_acknowledgement.status
+                    in {
+                        NativeCommandStatus.REJECTED,
+                        NativeCommandStatus.CANCELLED,
+                        NativeCommandStatus.COMPLETED,
+                    }
+                ):
+                    return False, latest_acknowledgement
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False, latest_acknowledgement
+            await asyncio.sleep(min(self._NATIVE_COMMAND_POLL_SECONDS, remaining))
 
     def _fresh_pause_state(self) -> bool | None:
         try:

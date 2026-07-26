@@ -586,6 +586,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.target_distance: float | None = None
         self.target_screen_position: Vec2 | None = None
         self.target_visible: bool | None = None
+        self.dialogue_target_id: str | None = None
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -600,6 +601,12 @@ class NativePulseTelemetry(PulseTelemetry):
                 ui=UIState(
                     selected_character_id="entity-selected",
                     selected_character_ids=["entity-selected"],
+                    active_screen=(
+                        "dialogue" if self.dialogue_target_id is not None else "world"
+                    ),
+                    modal_open=self.dialogue_target_id is not None,
+                    dialogue_open=self.dialogue_target_id is not None,
+                    dialogue_target_id=self.dialogue_target_id,
                 ),
                 native_control=self.native_control,
                 squad=[
@@ -639,11 +646,13 @@ class NativeAckController(PulseController):
         *,
         status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
         acknowledgement_command_id: str | None = None,
+        open_dialogue_on_hotkey: bool = False,
     ) -> None:
         super().__init__(telemetry)
         self.request_path = request_path
         self.status = status
         self.acknowledgement_command_id = acknowledgement_command_id
+        self.open_dialogue_on_hotkey = open_dialogue_on_hotkey
         self.request_seen_before_hotkey = False
         self.request: NativeCommandRequest | None = None
 
@@ -653,6 +662,8 @@ class NativeAckController(PulseController):
             self.request_seen_before_hotkey = True
             self.request = NativeCommandRequest.model_validate_json(self.request_path.read_bytes())
             request = self.request
+            if self.open_dialogue_on_hotkey:
+                self.telemetry.dialogue_target_id = request.target_id
             basis = request.based_on_revision.telemetry_sequence
             assert basis is not None
             acknowledgement_sequence = max(self.telemetry.sequence + 1, basis + 1)
@@ -700,6 +711,7 @@ def native_vendor_environment(
     *,
     status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
     acknowledgement_command_id: str | None = None,
+    open_dialogue_on_hotkey: bool = False,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
     telemetry_path = tmp_path / "telemetry.latest.json"
     request_path = tmp_path / "native_command.request.json"
@@ -709,6 +721,7 @@ def native_vendor_environment(
         request_path,
         status=status,
         acknowledgement_command_id=acknowledgement_command_id,
+        open_dialogue_on_hotkey=open_dialogue_on_hotkey,
     )
     registry = MacroRegistry(
         {
@@ -1298,6 +1311,42 @@ def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
         assert transition.receipt.native_acknowledgement is not None
         assert transition.receipt.semantic is not None
         assert "PLAYER_TALK_TO" in transition.receipt.semantic.revalidation
+
+    asyncio.run(scenario())
+
+
+def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            open_dialogue_on_hotkey=True,
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ApproachDialogueTargetAction(target_id="entity-vendor"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "f" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert telemetry.paused is True
+        assert telemetry.dialogue_target_id == "entity-vendor"
+        assert not [
+            action
+            for action in controller.actions
+            if isinstance(action, PauseAction)
+        ]
+        assert "no movement pulse or pause toggle" in transition.receipt.message
 
     asyncio.run(scenario())
 
