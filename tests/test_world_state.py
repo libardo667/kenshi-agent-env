@@ -162,6 +162,7 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
                         evidence="The selected character is in combat.",
                         urgency=AffordanceUrgency.SURVIVAL_CRITICAL,
                     ),
+                    normalized_capability="retreat to a safe anchor",
                     based_on_revision=first.world_revision,
                 )
             ],

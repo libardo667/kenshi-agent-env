@@ -63,6 +63,7 @@ from .models import (
     Transition,
     WorldStateRevision,
     new_command_id,
+    normalize_capability,
 )
 from .planners import Planner
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
@@ -82,6 +83,9 @@ from .world_state import (
 )
 
 _WorkResult = TypeVar("_WorkResult")
+
+# How many distinct capability gaps stay visible to the planner at once.
+MAX_RETAINED_AFFORDANCE_REQUESTS = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -144,7 +148,10 @@ class AgentRuntime:
         self.log_full_observations = log_full_observations
         self._state_store: WorldStateStore | None = None
         self._affordance_requests: list[AffordanceRequestRecord] = []
-        self._affordance_request_index: dict[str, int] = {}
+        # Numbering only. Membership is answered by the record list itself, so a
+        # request evicted by MAX_RETAINED_AFFORDANCE_REQUESTS can be raised again
+        # instead of being suppressed as a duplicate of something invisible.
+        self._affordance_requests_issued = 0
 
     def _log_observation(self, observation: Observation) -> None:
         """Record an observation at the configured level of detail."""
@@ -216,7 +223,7 @@ class AgentRuntime:
         try:
             self._action_outcomes.clear()
             self._affordance_requests.clear()
-            self._affordance_request_index.clear()
+            self._affordance_requests_issued = 0
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
             self.logger.write(
@@ -516,7 +523,7 @@ class AgentRuntime:
         try:
             self._action_outcomes.clear()
             self._affordance_requests.clear()
-            self._affordance_request_index.clear()
+            self._affordance_requests_issued = 0
             observation = self._with_memories(await self.environment.reset(seed=seed))
             self.logger.write(
                 "run_started",
@@ -1968,26 +1975,34 @@ class AgentRuntime:
         """Retain one planner-discovered control gap and decorate later context."""
 
         started_at = datetime.now(UTC)
-        normalized = " ".join(action.capability.casefold().split())
-        existing_number = self._affordance_request_index.get(normalized)
-        if existing_number is None:
-            request_number = len(self._affordance_request_index) + 1
-            self._affordance_request_index[normalized] = request_number
+        normalized = normalize_capability(action.capability)
+        existing = next(
+            (
+                record
+                for record in self._affordance_requests
+                if record.normalized_capability == normalized
+            ),
+            None,
+        )
+        if existing is None:
+            self._affordance_requests_issued += 1
+            request_number = self._affordance_requests_issued
             self._affordance_requests.append(
                 AffordanceRequestRecord(
                     request_number=request_number,
                     action=action,
                     based_on_revision=observation.world_revision,
+                    normalized_capability=normalized,
                 )
             )
-            self._affordance_requests = self._affordance_requests[-32:]
+            del self._affordance_requests[:-MAX_RETAINED_AFFORDANCE_REQUESTS]
             status = AffordanceRequestStatus.RETAINED
             reason = (
                 f"Recorded affordance request #{request_number}: {action.capability}. "
                 "The capability is not available yet."
             )
         else:
-            request_number = existing_number
+            request_number = existing.request_number
             status = AffordanceRequestStatus.DUPLICATE
             reason = (
                 f"Affordance request #{request_number} already records "

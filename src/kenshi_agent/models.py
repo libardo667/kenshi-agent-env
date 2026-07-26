@@ -1591,10 +1591,24 @@ class AffordanceRequestEvidence(StrictModel):
     normalized_capability: str = Field(min_length=1, max_length=120)
 
 
+def normalize_capability(capability: str) -> str:
+    """The one comparison form for a requested capability.
+
+    A second copy of this rule is a second answer to "is this a duplicate?", so
+    both the retained record and its receipt evidence derive from here.
+    """
+
+    return " ".join(capability.casefold().split())
+
+
 class AffordanceRequestRecord(StrictModel):
     request_number: int = Field(ge=1)
     action: RequestAffordanceAction
     based_on_revision: WorldStateRevision
+    # Stored beside the record so duplicate detection reads the same list the
+    # planner sees. A parallel index outlived this list once and made an evicted
+    # gap permanently unreportable.
+    normalized_capability: str = Field(min_length=1)
 
 
 class CommandDispatchContext(StrictModel):

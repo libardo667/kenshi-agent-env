@@ -568,12 +568,18 @@
         },
         "based_on_revision": {
           "$ref": "#/$defs/WorldStateRevision"
+        },
+        "normalized_capability": {
+          "minLength": 1,
+          "title": "Normalized Capability",
+          "type": "string"
         }
       },
       "required": [
         "request_number",
         "action",
-        "based_on_revision"
+        "based_on_revision",
+        "normalized_capability"
       ],
       "title": "AffordanceRequestRecord",
       "type": "object"
