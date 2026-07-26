@@ -21,6 +21,7 @@ def scene(
     target_distance: float | None = 40.0,
     target_present: bool = True,
     dialogue_target: str | None = None,
+    modal_open: bool | None = None,
     hostile_distance: float | None = None,
 ) -> Observation:
     entities: list[NearbyEntity] = []
@@ -53,6 +54,7 @@ def scene(
         telemetry=TelemetrySnapshot(
             nearby_entities=entities,
             ui=UIState(
+                modal_open=modal_open,
                 dialogue_open=dialogue_target is not None,
                 dialogue_target_id=dialogue_target,
             ),
@@ -104,6 +106,18 @@ def test_dialogue_with_a_different_target_is_not_arrival() -> None:
     status = m.assess(scene(target_distance=30.0, dialogue_target="entity-someone-else"))
     assert status.dialogue_open_with_target is False
     assert status.arrived is False
+    assert status.blocking_ui_open is True
+    assert status.should_abort is True
+    assert "blocked" in status.reason
+
+
+def test_unrelated_modal_opening_aborts_in_flight_approach() -> None:
+    m = monitor()
+    m.begin(scene(target_distance=40.0))
+    status = m.assess(scene(target_distance=40.0, modal_open=True))
+    assert status.blocking_ui_open is True
+    assert status.should_abort is True
+    assert status.is_terminal is True
 
 
 def test_target_loss_is_a_terminal_abort() -> None:

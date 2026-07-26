@@ -158,6 +158,21 @@ def bind_approach_dialogue_target(
         return _unbound("No telemetry is available to bind the approach target.")
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the target cannot be bound.")
+    ui = telemetry.ui
+    if ui.dialogue_open:
+        if ui.dialogue_target_id == action.target_id:
+            return _unbound(
+                "Dialogue with the requested target is already open; the approach "
+                "is already satisfied and must not be dispatched again."
+            )
+        return _unbound(
+            "A dialogue with a different target is open and blocks a new approach; "
+            "finish or close that dialogue first."
+        )
+    if ui.modal_open:
+        return _unbound(
+            "A modal interface is open and blocks a new approach; close it first."
+        )
     matches = [
         target
         for target in dialogue_targets(telemetry.nearby_entities)

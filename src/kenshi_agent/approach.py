@@ -25,6 +25,7 @@ class ApproachStatus:
     closed_distance: float | None
     arrived: bool
     dialogue_open_with_target: bool
+    blocking_ui_open: bool
     hostile_in_threat_range: bool
     reason: str
 
@@ -32,13 +33,17 @@ class ApproachStatus:
     def is_terminal(self) -> bool:
         """The approach cannot usefully continue: arrived, or the target is gone."""
 
-        return self.arrived or not self.target_present
+        return self.arrived or not self.target_present or self.blocking_ui_open
 
     @property
     def should_abort(self) -> bool:
         """A non-success terminal that safety/policy must react to."""
 
-        return (not self.arrived) and (not self.target_present or self.hostile_in_threat_range)
+        return (not self.arrived) and (
+            not self.target_present
+            or self.blocking_ui_open
+            or self.hostile_in_threat_range
+        )
 
 
 def _target_entity(observation: Observation, target_id: str) -> NearbyEntity | None:
@@ -112,6 +117,11 @@ class ApproachMonitor:
             and telemetry.ui.dialogue_open
             and telemetry.ui.dialogue_target_id == self.target_id
         )
+        blocking_ui_open = bool(
+            telemetry is not None
+            and not dialogue_open_with_target
+            and (telemetry.ui.dialogue_open or telemetry.ui.modal_open)
+        )
         arrived = dialogue_open_with_target or (
             current is not None and current <= self.arrival_distance
         )
@@ -127,6 +137,11 @@ class ApproachMonitor:
             reason = "The target is no longer among nearby entities."
         elif hostile:
             reason = "A hostile entity entered threat range during the approach."
+        elif blocking_ui_open:
+            reason = (
+                "A dialogue or modal interface unrelated to the target opened and "
+                "blocked the approach."
+            )
         elif closed is not None:
             direction = "closer" if closed >= 0 else "farther"
             reason = f"Approaching: {abs(closed):.1f} units {direction} so far."
@@ -141,6 +156,7 @@ class ApproachMonitor:
             closed_distance=closed,
             arrived=arrived,
             dialogue_open_with_target=dialogue_open_with_target,
+            blocking_ui_open=blocking_ui_open,
             hostile_in_threat_range=hostile,
             reason=reason,
         )

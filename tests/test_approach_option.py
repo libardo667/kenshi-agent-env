@@ -32,6 +32,7 @@ def observation(
     target_distance: float | None = 40.0,
     target_present: bool = True,
     dialogue_target: str | None = None,
+    modal_open: bool | None = None,
     hostile_distance: float | None = None,
 ) -> Observation:
     entities: list[NearbyEntity] = []
@@ -69,6 +70,7 @@ def observation(
             game=GameState(paused=paused, elapsed_minutes=0.0),
             nearby_entities=entities,
             ui=UIState(
+                modal_open=modal_open,
                 dialogue_open=dialogue_target is not None,
                 dialogue_target_id=dialogue_target,
             ),
@@ -193,6 +195,28 @@ def test_hostile_in_range_during_approach_fails() -> None:
         )
         assert threatened.status is OptionStatus.FAILED
         assert "hostile" in threatened.reason
+
+    asyncio.run(scenario())
+
+
+def test_blocking_dialogue_during_approach_fails_immediately() -> None:
+    async def scenario() -> None:
+        option = approach_option(InstantApproachEnvironment())
+        option.prepare(observation(1, target_distance=40.0))
+        await option.start()
+        await asyncio.sleep(0)
+        blocked = option.poll(
+            update(
+                observation(
+                    2,
+                    target_distance=40.0,
+                    dialogue_target="entity-someone-else",
+                    modal_open=True,
+                )
+            )
+        )
+        assert blocked.status is OptionStatus.FAILED
+        assert "blocked" in blocked.reason
 
     asyncio.run(scenario())
 

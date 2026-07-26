@@ -524,6 +524,15 @@ class StatefulApproachOption:
             raise OptionLifecycleError(
                 "Approach option requires the target to be present at the start."
             )
+        if begin.arrived:
+            raise OptionLifecycleError(
+                "Approach option must not dispatch after the target has already "
+                "been reached."
+            )
+        if begin.should_abort:
+            raise OptionLifecycleError(
+                f"Approach option start state is blocked: {begin.reason}"
+            )
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
         self.latest_status = begin

@@ -1952,7 +1952,15 @@ class AgentRuntime:
                 step_index=observation.step_index,
                 receipt=receipt,
             )
-        latest = self._with_memories(observation)
+        # A hosted advisor may take several seconds while the observation pump
+        # keeps publishing. The brief remains grounded in the revision supplied
+        # to `consult`, but planner context must be decorated onto the store's
+        # current revision rather than trying to overwrite that newer world.
+        current_store_observation = (
+            self._state_store.latest if self._state_store is not None else None
+        )
+        context_basis = current_store_observation or observation
+        latest = self._with_memories(context_basis)
         if self._state_store is not None:
             latest = self._state_store.decorate_latest(latest)
         return AdvisorActionResult(observation=latest, receipt=receipt)

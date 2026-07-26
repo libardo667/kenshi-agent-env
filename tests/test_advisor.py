@@ -42,6 +42,7 @@ from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
+from kenshi_agent.world_state import WorldStateStore
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -76,6 +77,33 @@ class FakeStrategyAdvisor:
                 )
             ],
             uncertainties=["The current shop inventory may not contain edible food."],
+        )
+
+
+class AdvancingStrategyAdvisor(FakeStrategyAdvisor):
+    """Simulate live telemetry publishing while a hosted advisor is thinking."""
+
+    def __init__(
+        self,
+        store: WorldStateStore,
+        later_observation: Observation,
+    ) -> None:
+        super().__init__()
+        self.store = store
+        self.later_observation = later_observation
+
+    async def advise(
+        self,
+        *,
+        action: ConsultAdvisorAction,
+        observation: Observation,
+        corpus: GuideCorpus,
+    ) -> AdvisorDraft:
+        self.store.publish(self.later_observation)
+        return await super().advise(
+            action=action,
+            observation=observation,
+            corpus=corpus,
         )
 
 
@@ -323,5 +351,85 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
         assert metrics.advisor_answers == 1
         assert metrics.advisor_suppressions == 0
         assert metrics.advisor_failures == 0
+
+    asyncio.run(scenario())
+
+
+def test_advisor_handoff_rebases_context_after_telemetry_advances(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        current = observation(step_index=20)
+        later = observation(step_index=20).model_copy(
+            update={
+                "world_revision": WorldStateRevision(
+                    telemetry_sequence=2,
+                    frame_sequence=20,
+                    capability_epoch=1,
+                    observed_at_monotonic=2.0,
+                ),
+                "telemetry": current.telemetry.model_copy(update={"sequence": 2})
+                if current.telemetry is not None
+                else None,
+            },
+            deep=True,
+        )
+        store = WorldStateStore()
+        store.publish(current)
+        corpus = GuideCorpus.load(ROOT / "knowledge" / "kenshi_strategy_v1.yaml")
+        session = AdvisorSession(
+            advisor_config(cooldown_steps=0),
+            corpus,
+            AdvancingStrategyAdvisor(store, later),
+        )
+        logger = SessionLogger(tmp_path / "events.jsonl", "advisor-rebase")
+        runtime = AgentRuntime(
+            run_id="advisor-rebase",
+            environment=MockEnvironment(
+                MockConfig(random_events=False),
+                tmp_path,
+                "advisor-rebase",
+            ),
+            planner=ConsultThenStopPlanner(),
+            advisor=session,
+            guard=ActionGuard(
+                SafetyConfig(
+                    supervisor_enabled=False,
+                    allow_action_kinds=["consult_advisor", "stop"],
+                    max_actions_per_minute=500,
+                ),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+            planning_config=PlanningConfig(mode=PlanningMode.CONTINUOUS),
+        )
+        runtime._state_store = store
+        try:
+            result = await runtime._execute_advisor_action(
+                ConsultAdvisorAction(
+                    question="What is the safest useful next goal?",
+                    focus=AdvisorFocus.NEXT_GOAL,
+                ),
+                current,
+                plan_id="advisor-race",
+                plan_version=1,
+                step_id="consult",
+                timeout_seconds=30.0,
+            )
+        finally:
+            logger.close()
+
+        assert result.observation.world_revision == later.world_revision
+        assert result.observation.advisor.latest_brief is not None
+        assert (
+            result.observation.advisor.latest_brief.based_on_revision
+            == current.world_revision
+        )
+        assert store.latest is not None
+        assert store.latest.advisor.latest_brief is not None
 
     asyncio.run(scenario())

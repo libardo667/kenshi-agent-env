@@ -57,6 +57,7 @@ def observation(
     *,
     entities: list[NearbyEntity] | None = None,
     controls: list[VisibleUIControl] | None = None,
+    ui: UIState | None = None,
     capabilities: list[str] | None = None,
     stale: bool = False,
     control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
@@ -72,7 +73,7 @@ def observation(
             identity_session_id="session-contract-test",
             capabilities=capabilities if capabilities is not None else APPROACH_CAPABILITIES,
             game=GameState(loaded=True, paused=True),
-            ui=UIState(visible_controls=controls),
+            ui=ui or UIState(visible_controls=controls),
             nearby_entities=entities or [],
         ),
         telemetry_stale=stale,
@@ -157,6 +158,39 @@ class TestApproachBindsAnyDialogueTarget:
         )
         assert not binding.bound
         assert "stale" in binding.reason
+
+    def test_rejects_approach_while_dialogue_with_another_target_is_open(self) -> None:
+        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+            ApproachDialogueTargetAction(target_id=CIVILIAN_ID),
+            observation(
+                entities=[vendor(), civilian()],
+                ui=UIState(
+                    active_screen="dialogue",
+                    modal_open=True,
+                    dialogue_open=True,
+                    dialogue_target_id=VENDOR_ID,
+                ),
+            ),
+        )
+        assert not binding.bound
+        assert "different target" in binding.reason
+        assert "close that dialogue" in binding.reason
+
+    def test_rejects_redundant_approach_to_active_dialogue_target(self) -> None:
+        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+            ApproachDialogueTargetAction(target_id=VENDOR_ID),
+            observation(
+                entities=[vendor()],
+                ui=UIState(
+                    active_screen="dialogue",
+                    modal_open=True,
+                    dialogue_open=True,
+                    dialogue_target_id=VENDOR_ID,
+                ),
+            ),
+        )
+        assert not binding.bound
+        assert "already open" in binding.reason
 
 
 class TestVisibleControlBinding:
