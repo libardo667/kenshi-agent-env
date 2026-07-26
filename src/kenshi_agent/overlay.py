@@ -2,11 +2,124 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from .models import PlannerDecision
 from .reporting import format_action
+
+OverlayFeedOperation = Literal["append", "replace", "skip"]
+OverlayLayout = Literal["companion", "overlay"]
+
+
+@dataclass(slots=True)
+class OverlayFeedState:
+    """Coalesce high-frequency progress samples into one visible feed row."""
+
+    progress_id: str | None = None
+    rendered_progress: str | None = None
+
+    def operation(
+        self,
+        record: dict[str, Any],
+        rendered: str,
+    ) -> OverlayFeedOperation:
+        if record.get("event_type") != "option_progress":
+            self.progress_id = None
+            self.rendered_progress = None
+            return "append"
+
+        payload = record.get("payload") or {}
+        evidence = payload.get("evidence") or {}
+        progress_id = str(
+            evidence.get("option_id")
+            or (
+                f"{payload.get('plan_id', '?')}:"
+                f"{payload.get('plan_version', '?')}:"
+                f"{payload.get('step_id', '?')}"
+            )
+        )
+        if progress_id != self.progress_id:
+            self.progress_id = progress_id
+            self.rendered_progress = rendered
+            return "append"
+        if rendered == self.rendered_progress:
+            return "skip"
+        self.rendered_progress = rendered
+        return "replace"
+
+
+@dataclass(frozen=True, slots=True)
+class WindowRect:
+    left: int
+    top: int
+    right: int
+    bottom: int
+
+    @property
+    def width(self) -> int:
+        return self.right - self.left
+
+    @property
+    def height(self) -> int:
+        return self.bottom - self.top
+
+
+@dataclass(frozen=True, slots=True)
+class CompanionLayout:
+    viewer: WindowRect
+    resized_anchor: WindowRect | None = None
+
+
+def companion_layout(
+    anchor: WindowRect,
+    work_area: WindowRect,
+    *,
+    preferred_width: int = 380,
+    gap: int = 8,
+) -> CompanionLayout:
+    """Place a narrow viewer beside a terminal, splitting it only when needed."""
+
+    width = min(preferred_width, max(280, work_area.width // 3))
+    if work_area.right - anchor.right >= width + gap:
+        return CompanionLayout(
+            viewer=WindowRect(
+                anchor.right + gap,
+                anchor.top,
+                anchor.right + gap + width,
+                anchor.bottom,
+            )
+        )
+    if anchor.left - work_area.left >= width + gap:
+        return CompanionLayout(
+            viewer=WindowRect(
+                anchor.left - gap - width,
+                anchor.top,
+                anchor.left - gap,
+                anchor.bottom,
+            )
+        )
+
+    anchor_width = max(640, anchor.width - width - gap)
+    anchor_width = min(anchor_width, max(anchor.width - 280 - gap, 1))
+    resized = WindowRect(
+        anchor.left,
+        anchor.top,
+        anchor.left + anchor_width,
+        anchor.bottom,
+    )
+    viewer_left = resized.right + gap
+    return CompanionLayout(
+        viewer=WindowRect(
+            viewer_left,
+            anchor.top,
+            min(viewer_left + width, work_area.right),
+            anchor.bottom,
+        ),
+        resized_anchor=resized,
+    )
 
 
 def ownership_banner(record: dict[str, Any]) -> tuple[str, str] | None:
@@ -210,9 +323,12 @@ def show_overlay(
     title: str = "Kenshi Agent",
     opacity: float = 0.82,
     auto_close_seconds: float = 0.0,
+    layout: OverlayLayout = "companion",
 ) -> None:
     if not 0.25 <= opacity <= 1.0:
         raise ValueError("opacity must be between 0.25 and 1.0")
+    if layout not in {"companion", "overlay"}:
+        raise ValueError("layout must be 'companion' or 'overlay'")
 
     import tkinter as tk
     from tkinter import font as tkfont
@@ -220,23 +336,33 @@ def show_overlay(
     root = tk.Tk()
     root.title(title)
     root.configure(bg="#101216")
-    root.attributes("-topmost", True)
-    root.attributes("-alpha", opacity)
+    root.attributes("-topmost", layout == "overlay")
+    root.attributes("-alpha", opacity if layout == "overlay" else 1.0)
     root.update_idletasks()
-    if not _exclude_from_capture(root.winfo_id()):
+    if layout == "overlay" and not _exclude_from_capture(root.winfo_id()):
         root.destroy()
         raise RuntimeError(
             "Windows could not exclude the decision overlay from screenshots; "
             "the viewer was closed so it cannot contaminate model input."
         )
-    width = 620
-    height = 520
-    x = max(0, root.winfo_screenwidth() - width - 24)
-    root.geometry(f"{width}x{height}+{x}+48")
+    def restore_anchor() -> None:
+        return None
+
+    if layout == "overlay":
+        width = 620
+        height = 520
+        x = max(0, root.winfo_screenwidth() - width - 24)
+        root.geometry(f"{width}x{height}+{x}+48")
+    else:
+        restore_anchor = _dock_beside_windows_terminal(root)
 
     heading = tk.Label(
         root,
-        text="KENSHI AGENT  |  LIVE DECISIONS",
+        text=(
+            "KENSHI AGENT  |  LIVE DECISIONS"
+            if layout == "overlay"
+            else "KENSHI AGENT  |  COMPANION FEED"
+        ),
         anchor="w",
         padx=14,
         pady=10,
@@ -264,18 +390,40 @@ def show_overlay(
 
     offset = 0
     close_scheduled = False
+    feed_state = OverlayFeedState()
+    progress_tag = "_coalesced_option_progress"
 
     for name, colour in EVENT_COLOURS.items():
         text.tag_configure(name, foreground=colour)
 
-    def append(value: str, category: str = "plain") -> None:
+    def append(
+        value: str,
+        category: str = "plain",
+        *,
+        replaceable_progress: bool = False,
+    ) -> None:
         text.configure(state="normal")
-        text.insert("end", value + "\n", category)
+        text.tag_remove(progress_tag, "1.0", "end")
+        tags = (category, progress_tag) if replaceable_progress else (category,)
+        text.insert("end-1c", value + "\n", tags)
         line_count = int(text.index("end-1c").split(".")[0])
         if line_count > 240:
             text.delete("1.0", f"{line_count - 200}.0")
         text.see("end")
         text.configure(state="disabled")
+
+    def replace_progress(value: str, category: str) -> None:
+        text.configure(state="normal")
+        ranges = text.tag_ranges(progress_tag)
+        if len(ranges) == 2:
+            start, end = str(ranges[0]), str(ranges[1])
+            text.delete(start, end)
+            text.insert(start, value + "\n", (category, progress_tag))
+            text.see("end")
+            text.configure(state="disabled")
+            return
+        text.configure(state="disabled")
+        append(value, category, replaceable_progress=True)
 
     append("Waiting for the agent run to begin...", "thinking")
 
@@ -292,7 +440,18 @@ def show_overlay(
                     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
                         continue
                     if rendered is not None:
-                        append(rendered, event_category(record))
+                        category = event_category(record)
+                        operation = feed_state.operation(record, rendered)
+                        if operation == "append":
+                            append(
+                                rendered,
+                                category,
+                                replaceable_progress=(
+                                    record.get("event_type") == "option_progress"
+                                ),
+                            )
+                        elif operation == "replace":
+                            replace_progress(rendered, category)
                     banner = ownership_banner(record)
                     if banner is not None:
                         banner_text, banner_colour = banner
@@ -306,20 +465,165 @@ def show_overlay(
                         root.after(int(auto_close_seconds * 1000), root.destroy)
         root.after(150, poll)
 
-    # Applied last, once the window is fully built, positioned and mapped.
-    # Applying it before Tk finishes arranging the toplevel left the bit set on
-    # a window Tk then re-framed, so the style read back correctly while the
-    # overlay carried on swallowing clicks.
-    root.update_idletasks()
-    if not _make_click_through(root.winfo_id()):
-        root.destroy()
-        raise RuntimeError(
-            "Windows could not make the decision overlay click-through; the "
-            "viewer was closed so it cannot swallow input meant for Kenshi."
-        )
+    if layout == "overlay":
+        # Applied last, once the window is fully built, positioned and mapped.
+        # Applying it before Tk finishes arranging the toplevel left the bit set on
+        # a window Tk then re-framed, so the style read back correctly while the
+        # overlay carried on swallowing clicks.
+        root.update_idletasks()
+        if not _make_click_through(root.winfo_id()):
+            root.destroy()
+            raise RuntimeError(
+                "Windows could not make the decision overlay click-through; the "
+                "viewer was closed so it cannot swallow input meant for Kenshi."
+            )
 
     root.after(50, poll)
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        restore_anchor()
+
+
+def _dock_beside_windows_terminal(root: Any) -> Callable[[], None]:
+    """Dock beside Windows Terminal and restore any temporary split on exit."""
+
+    fallback_width = 380
+    fallback_height = max(520, root.winfo_screenheight() - 96)
+    fallback_x = max(0, root.winfo_screenwidth() - fallback_width - 24)
+    root.geometry(f"{fallback_width}x{fallback_height}+{fallback_x}+48")
+    if sys.platform != "win32":
+        return lambda: None
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+
+    class Rect(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    class MonitorInfo(ctypes.Structure):
+        _fields_ = [
+            ("size", wintypes.DWORD),
+            ("monitor", Rect),
+            ("work", Rect),
+            ("flags", wintypes.DWORD),
+        ]
+
+    terminal_windows: list[int] = []
+    enum_callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.restype = ctypes.c_int
+    user32.EnumWindows.argtypes = [enum_callback_type, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(Rect)]
+    user32.GetWindowRect.restype = wintypes.BOOL
+    user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
+    user32.MonitorFromWindow.restype = wintypes.HMONITOR
+    user32.GetMonitorInfoW.argtypes = [
+        wintypes.HMONITOR,
+        ctypes.POINTER(MonitorInfo),
+    ]
+    user32.GetMonitorInfoW.restype = wintypes.BOOL
+    user32.IsZoomed.argtypes = [wintypes.HWND]
+    user32.IsZoomed.restype = wintypes.BOOL
+    user32.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.ShowWindow.restype = wintypes.BOOL
+    user32.SetWindowPos.argtypes = [
+        wintypes.HWND,
+        wintypes.HWND,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_int,
+        wintypes.UINT,
+    ]
+    user32.SetWindowPos.restype = wintypes.BOOL
+
+    @enum_callback_type
+    def collect_terminal(window: int, _: int) -> bool:
+        if not user32.IsWindowVisible(window):
+            return True
+        class_name = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(window, class_name, len(class_name))
+        if class_name.value == "CASCADIA_HOSTING_WINDOW_CLASS":
+            terminal_windows.append(int(window))
+        return True
+
+    user32.EnumWindows(collect_terminal, 0)
+    if not terminal_windows:
+        return lambda: None
+
+    foreground = int(user32.GetForegroundWindow())
+    terminal = foreground if foreground in terminal_windows else terminal_windows[0]
+    rect = Rect()
+    if not user32.GetWindowRect(terminal, ctypes.byref(rect)):
+        return lambda: None
+    monitor = user32.MonitorFromWindow(terminal, 2)
+    monitor_info = MonitorInfo(size=ctypes.sizeof(MonitorInfo))
+    if not user32.GetMonitorInfoW(monitor, ctypes.byref(monitor_info)):
+        return lambda: None
+
+    original = WindowRect(rect.left, rect.top, rect.right, rect.bottom)
+    work = WindowRect(
+        monitor_info.work.left,
+        monitor_info.work.top,
+        monitor_info.work.right,
+        monitor_info.work.bottom,
+    )
+    split = companion_layout(original, work)
+    was_maximized = bool(user32.IsZoomed(terminal))
+    swp_no_zorder = 0x0004
+    swp_no_activate = 0x0010
+    if split.resized_anchor is not None:
+        if was_maximized:
+            user32.ShowWindow(terminal, 9)
+        resized = split.resized_anchor
+        user32.SetWindowPos(
+            terminal,
+            0,
+            resized.left,
+            resized.top,
+            resized.width,
+            resized.height,
+            swp_no_zorder | swp_no_activate,
+        )
+
+    viewer = split.viewer
+    root.geometry(
+        f"{viewer.width}x{viewer.height}{viewer.left:+d}{viewer.top:+d}"
+    )
+
+    restored = False
+
+    def restore() -> None:
+        nonlocal restored
+        if restored or split.resized_anchor is None:
+            return
+        restored = True
+        if was_maximized:
+            user32.ShowWindow(terminal, 3)
+            return
+        user32.SetWindowPos(
+            terminal,
+            0,
+            original.left,
+            original.top,
+            original.width,
+            original.height,
+            swp_no_zorder | swp_no_activate,
+        )
+
+    return restore
 
 
 def _make_click_through(window_id: int) -> bool:

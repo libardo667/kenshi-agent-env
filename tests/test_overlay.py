@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from kenshi_agent.overlay import format_event, ownership_banner
+from kenshi_agent.overlay import (
+    OverlayFeedState,
+    WindowRect,
+    companion_layout,
+    format_event,
+    ownership_banner,
+)
 
 
 def test_format_event_renders_decision_for_overlay() -> None:
@@ -197,3 +203,52 @@ def test_events_are_colour_coded_by_what_the_operator_must_notice() -> None:
     # Every category names a real colour.
     for record in ({"event_type": "plan_proposed"}, {"event_type": "unknown_event"}):
         assert event_category(record) in EVENT_COLOURS
+
+
+def test_overlay_coalesces_progress_for_one_option_without_hiding_decisions() -> None:
+    feed = OverlayFeedState()
+
+    progress = {
+        "event_type": "option_progress",
+        "payload": {
+            "reason": "Approaching: 0.0 units closer so far.",
+            "evidence": {"option_id": "approach-metaru"},
+        },
+    }
+    assert feed.operation(progress, "step 12 | ... 0.0 closer") == "append"
+    assert feed.operation(progress, "step 12 | ... 0.0 closer") == "skip"
+
+    changed = {
+        "event_type": "option_progress",
+        "payload": {
+            "reason": "Approaching: 8.0 units closer so far.",
+            "evidence": {"option_id": "approach-metaru"},
+        },
+    }
+    assert feed.operation(changed, "step 12 | ... 8.0 closer") == "replace"
+
+    decision = {"event_type": "plan_proposed", "payload": {}}
+    assert feed.operation(decision, "step 13 | PLAN choose-food") == "append"
+    # Progress after a real feed event gets a new row rather than overwriting it.
+    assert feed.operation(changed, "step 13 | ... 8.0 closer") == "append"
+
+
+def test_companion_uses_free_space_beside_terminal_without_resizing_it() -> None:
+    layout = companion_layout(
+        WindowRect(0, 0, 1200, 900),
+        WindowRect(0, 0, 1920, 1040),
+    )
+    assert layout.resized_anchor is None
+    assert layout.viewer.left > 1200
+    assert layout.viewer.right <= 1920
+
+
+def test_companion_splits_maximized_terminal_into_a_narrow_side_column() -> None:
+    layout = companion_layout(
+        WindowRect(0, 0, 1920, 1040),
+        WindowRect(0, 0, 1920, 1040),
+    )
+    assert layout.resized_anchor is not None
+    assert layout.resized_anchor.right < layout.viewer.left
+    assert layout.viewer.right == 1920
+    assert layout.viewer.width == 380

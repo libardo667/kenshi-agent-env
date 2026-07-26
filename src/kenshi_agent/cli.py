@@ -455,6 +455,7 @@ def _show_overlay(args: argparse.Namespace) -> int:
         title=args.title,
         opacity=args.opacity,
         auto_close_seconds=args.auto_close_seconds,
+        layout=args.layout,
     )
     return 0
 
@@ -531,11 +532,17 @@ def build_parser() -> argparse.ArgumentParser:
     sample = subparsers.add_parser("write-sample-telemetry")
     sample.add_argument("--output", default="examples/telemetry.latest.json")
 
-    overlay = subparsers.add_parser("overlay", help="Show a translucent live decision feed.")
+    overlay = subparsers.add_parser("overlay", help="Show the live decision companion.")
     overlay.add_argument("--log", required=True, help="Session JSONL to follow.")
     overlay.add_argument("--title", default="Kenshi Agent")
     overlay.add_argument("--opacity", type=float, default=0.82)
     overlay.add_argument("--auto-close-seconds", type=float, default=0.0)
+    overlay.add_argument(
+        "--layout",
+        choices=["companion", "overlay"],
+        default="companion",
+        help="Dock beside Windows Terminal, or explicitly use the legacy game overlay.",
+    )
 
     return parser
 

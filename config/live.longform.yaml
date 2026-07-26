@@ -103,11 +103,14 @@ advisor:
   base_url: https://openrouter.ai/api/v1
   reasoning_effort: ${KENSHI_AGENT_ADVISOR_REASONING_EFFORT:-medium}
   timeout_seconds: 90
+  # A playing model should not need to estimate hosted-advisor latency. Its
+  # plan-step timeout is raised to at least this bounded floor.
+  minimum_step_timeout_seconds: 30
   max_output_tokens: 2500
   corpus_file: ../knowledge/kenshi_strategy_v1.yaml
   max_calls_per_run: 4
   cooldown_steps: 12
-  cadence_steps: 20
+  cadence_steps: ${KENSHI_AGENT_ADVISOR_CADENCE_STEPS:-20}
   stall_repeat_threshold: 3
   stall_window_actions: 12
   provider_sort: latency

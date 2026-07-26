@@ -860,6 +860,8 @@ def _journey(args: argparse.Namespace) -> int:
                 str(event_log),
                 "--title",
                 "Kenshi Control Ownership",
+                "--layout",
+                "companion",
                 "--auto-close-seconds",
                 "30",
             ],

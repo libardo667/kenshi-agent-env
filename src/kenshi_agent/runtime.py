@@ -1893,18 +1893,24 @@ class AgentRuntime:
                 state_fingerprint=advisor_state_fingerprint(observation),
             )
         else:
+            effective_timeout = timeout_seconds
+            if effective_timeout is not None:
+                effective_timeout = max(
+                    effective_timeout,
+                    self.advisor.config.minimum_step_timeout_seconds,
+                )
             try:
-                if timeout_seconds is None:
+                if effective_timeout is None:
                     evidence = await self.advisor.consult(action, observation)
                 else:
-                    async with asyncio.timeout(timeout_seconds):
+                    async with asyncio.timeout(effective_timeout):
                         evidence = await self.advisor.consult(action, observation)
             except TimeoutError:
                 evidence = AdvisorConsultEvidence(
                     status=AdvisorConsultStatus.FAILED,
                     reason=(
-                        f"Advisor call exceeded the plan step timeout of "
-                        f"{timeout_seconds:.2f} seconds."
+                        f"Advisor call exceeded the effective timeout of "
+                        f"{effective_timeout:.2f} seconds."
                     ),
                     calls_used=self.advisor.calls_used,
                     max_calls=self.advisor.config.max_calls_per_run,

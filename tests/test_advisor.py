@@ -107,6 +107,22 @@ class AdvancingStrategyAdvisor(FakeStrategyAdvisor):
         )
 
 
+class BrieflySlowStrategyAdvisor(FakeStrategyAdvisor):
+    async def advise(
+        self,
+        *,
+        action: ConsultAdvisorAction,
+        observation: Observation,
+        corpus: GuideCorpus,
+    ) -> AdvisorDraft:
+        await asyncio.sleep(0.02)
+        return await super().advise(
+            action=action,
+            observation=observation,
+            corpus=corpus,
+        )
+
+
 def observation(step_index: int = 0) -> Observation:
     return Observation(
         run_id="advisor-test",
@@ -431,5 +447,62 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
         )
         assert store.latest is not None
         assert store.latest.advisor.latest_brief is not None
+
+    asyncio.run(scenario())
+
+
+def test_runtime_applies_configured_advisor_timeout_floor(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        corpus = GuideCorpus.load(ROOT / "knowledge" / "kenshi_strategy_v1.yaml")
+        session = AdvisorSession(
+            advisor_config(
+                cooldown_steps=0,
+                timeout_seconds=1.0,
+                minimum_step_timeout_seconds=1.0,
+            ),
+            corpus,
+            BrieflySlowStrategyAdvisor(),
+        )
+        logger = SessionLogger(tmp_path / "events.jsonl", "advisor-timeout-floor")
+        runtime = AgentRuntime(
+            run_id="advisor-timeout-floor",
+            environment=MockEnvironment(
+                MockConfig(random_events=False),
+                tmp_path,
+                "advisor-timeout-floor",
+            ),
+            planner=ConsultThenStopPlanner(),
+            advisor=session,
+            guard=ActionGuard(
+                SafetyConfig(
+                    supervisor_enabled=False,
+                    allow_action_kinds=["consult_advisor", "stop"],
+                    max_actions_per_minute=500,
+                ),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+        )
+        try:
+            result = await runtime._execute_advisor_action(
+                ConsultAdvisorAction(
+                    question="What is the safest useful next goal?",
+                    focus=AdvisorFocus.NEXT_GOAL,
+                ),
+                observation(),
+                plan_id="advisor-timeout-floor",
+                plan_version=1,
+                step_id="consult",
+                timeout_seconds=0.001,
+            )
+        finally:
+            logger.close()
+
+        assert result.receipt.advisor is not None
+        assert result.receipt.advisor.status.value == "answered"
 
     asyncio.run(scenario())
