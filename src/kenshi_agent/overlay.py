@@ -334,6 +334,8 @@ def show_overlay(
     from tkinter import font as tkfont
 
     root = tk.Tk()
+    if layout == "companion":
+        root.withdraw()
     root.title(title)
     root.configure(bg="#101216")
     root.attributes("-topmost", layout == "overlay")
@@ -355,6 +357,12 @@ def show_overlay(
         root.geometry(f"{width}x{height}+{x}+48")
     else:
         restore_anchor = _dock_beside_windows_terminal(root)
+        # The companion is intentionally not topmost, but it must enter the
+        # normal window stack above the terminal it just split. Without this
+        # one-time lift Windows can resize Terminal while leaving the new Tk
+        # window hidden behind it. Kenshi will still cover both when focused.
+        root.deiconify()
+        root.lift()
 
     heading = tk.Label(
         root,
@@ -525,6 +533,8 @@ def _dock_beside_windows_terminal(root: Any) -> Callable[[], None]:
     user32.EnumWindows.argtypes = [enum_callback_type, wintypes.LPARAM]
     user32.EnumWindows.restype = wintypes.BOOL
     user32.GetForegroundWindow.restype = wintypes.HWND
+    user32.GetParent.argtypes = [wintypes.HWND]
+    user32.GetParent.restype = wintypes.HWND
     user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(Rect)]
     user32.GetWindowRect.restype = wintypes.BOOL
     user32.MonitorFromWindow.argtypes = [wintypes.HWND, wintypes.DWORD]
@@ -599,8 +609,26 @@ def _dock_beside_windows_terminal(root: Any) -> Callable[[], None]:
         )
 
     viewer = split.viewer
-    root.geometry(
-        f"{viewer.width}x{viewer.height}{viewer.left:+d}{viewer.top:+d}"
+    # Tk interprets negative geometry coordinates as offsets from the right or
+    # bottom edge, which places a left-monitor companion on the right monitor.
+    # Size through Tk, then place the actual top-level HWND in absolute virtual-
+    # desktop coordinates so negative X means the left display as intended.
+    root.geometry(f"{viewer.width}x{viewer.height}+0+0")
+    root.update_idletasks()
+    root.deiconify()
+    root.update_idletasks()
+    companion_window = wintypes.HWND(root.winfo_id())
+    while parent := user32.GetParent(companion_window):
+        companion_window = parent
+    swp_show_window = 0x0040
+    user32.SetWindowPos(
+        companion_window,
+        0,
+        viewer.left,
+        viewer.top,
+        viewer.width,
+        viewer.height,
+        swp_no_zorder | swp_no_activate | swp_show_window,
     )
 
     restored = False

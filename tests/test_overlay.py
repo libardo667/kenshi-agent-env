@@ -252,3 +252,13 @@ def test_companion_splits_maximized_terminal_into_a_narrow_side_column() -> None
     assert layout.resized_anchor.right < layout.viewer.left
     assert layout.viewer.right == 1920
     assert layout.viewer.width == 380
+
+
+def test_companion_preserves_absolute_coordinates_on_left_monitor() -> None:
+    layout = companion_layout(
+        WindowRect(-2496, 0, -832, 1061),
+        WindowRect(-2496, 0, -832, 1061),
+    )
+    assert layout.resized_anchor is not None
+    assert layout.viewer.left < 0
+    assert layout.viewer.right == -832
