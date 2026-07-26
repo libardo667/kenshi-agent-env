@@ -243,6 +243,7 @@ class TestContractCatalog:
             "scroll_screen",
             "sell_item",
             "equip_item",
+            "recover_camera_view",
         }
         assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
             APPROACH_DIALOGUE_TARGET_CONTRACT

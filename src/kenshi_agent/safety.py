@@ -159,10 +159,15 @@ class ActionGuard:
             raise SafetyViolation(
                 f"Action {contract.kind!r} requires native_assisted control mode."
             )
-        if contract.max_primitive_actions > self.config.max_primitive_actions_per_step:
+        primitive_limit = (
+            self.config.max_controller_verified_primitive_actions_per_step
+            if contract.controller_verified
+            else self.config.max_primitive_actions_per_step
+        )
+        if contract.max_primitive_actions > primitive_limit:
             raise SafetyViolation(
                 f"Action {contract.kind!r} may emit {contract.max_primitive_actions} "
-                f"primitives; maximum is {self.config.max_primitive_actions_per_step}."
+                f"primitives; maximum is {primitive_limit} for this contract class."
             )
         if observation.mode != "live":
             return

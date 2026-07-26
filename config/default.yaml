@@ -97,6 +97,11 @@ controls:
     - Continue
   startup_save_control_labels:
     - autosave1
+  camera_recovery:
+    candidate_settle_seconds: 0.30
+    clear_score_threshold: 0.72
+    anchor_max_distance: 30.0
+    max_lower_floors: 2
 
 safety:
   live_actions_enabled: false
@@ -126,6 +131,7 @@ safety:
     - click
     - move_cursor
     - skill
+    - recover_camera_view
   allow_skills:
     - pause_game
     - open_map

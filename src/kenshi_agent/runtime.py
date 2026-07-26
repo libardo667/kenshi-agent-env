@@ -25,6 +25,7 @@ from .models import (
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionReceipt,
+    CameraRecoveryStatus,
     CharacterState,
     CommandDispatchContext,
     ControlMode,
@@ -39,6 +40,7 @@ from .models import (
     PlanningMode,
     PlanPatch,
     PlanStep,
+    RecoverCameraViewAction,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -1940,6 +1942,35 @@ class AgentRuntime:
                 ActionOutcomeAssessment.UNKNOWN,
                 "The action has no causally later validated world revision. "
                 "Do not treat raw or pre-command state as progress.",
+            )
+
+        if isinstance(receipt.action, RecoverCameraViewAction):
+            recovery = (
+                receipt.semantic.camera_recovery
+                if receipt.semantic is not None
+                else None
+            )
+            if recovery is None:
+                return (
+                    ActionOutcomeAssessment.UNKNOWN,
+                    "Camera recovery returned no typed controller evidence. Do not "
+                    "assume the view is usable.",
+                )
+            if recovery.status in {
+                CameraRecoveryStatus.ALREADY_CLEAR,
+                CameraRecoveryStatus.RECOVERED,
+            }:
+                return (
+                    ActionOutcomeAssessment.CHANGED,
+                    "The controller verified a usable selected-character-following "
+                    f"view ({recovery.status.value}) on floor {recovery.final_floor}; "
+                    "camera recovery does not need model-authored follow-up gestures.",
+                )
+            return (
+                ActionOutcomeAssessment.NO_OP,
+                "The fixed camera transaction exhausted its bounded candidates "
+                "without a clear anchored frame. Do not finagle camera primitives "
+                "or repeat recovery on the same evidence.",
             )
 
         if isinstance(receipt.action, SkillAction):

@@ -1,0 +1,360 @@
+from __future__ import annotations
+
+import asyncio
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from kenshi_agent.config import PlanningConfig, SafetyConfig
+from kenshi_agent.continuous_executor import ContinuousPlanExecutor
+from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
+from kenshi_agent.env import AgentEnvironment
+from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.models import (
+    Action,
+    ActionReceipt,
+    CameraFrameScore,
+    CameraRecoveryEvidence,
+    CameraRecoveryStatus,
+    CameraState,
+    CharacterState,
+    CommandDispatchContext,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    ControlMode,
+    GameState,
+    IdempotencyPolicy,
+    NormalizedPointerBounds,
+    Observation,
+    PlanEnvelope,
+    PlanningMode,
+    PlanStep,
+    RecoverCameraViewAction,
+    RiskBudget,
+    SemanticActionReceipt,
+    TelemetrySnapshot,
+    Transition,
+    UIState,
+    Vec3,
+    VisibleUIControl,
+    WorldStateRevision,
+)
+from kenshi_agent.planning import PlanningClock
+from kenshi_agent.reflexes import ReflexEngine
+from kenshi_agent.safety import ActionGuard
+from kenshi_agent.session_log import SessionLogger
+from kenshi_agent.skills import MacroRegistry
+from kenshi_agent.world_state import WorldStateStore
+
+
+class FakeClock(PlanningClock):
+    def __init__(self) -> None:
+        self.now = 1.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class CameraVerdictEnvironment(AgentEnvironment):
+    def __init__(self, status: CameraRecoveryStatus, tmp_path: Path) -> None:
+        self.status = status
+        self.tmp_path = tmp_path
+        self.sequence = 1
+        self.step_index = 0
+        self.control_mode = ControlMode.INTERFACE_ONLY
+
+    def observation(self) -> Observation:
+        bounds = NormalizedPointerBounds(
+            min_x=0.30, min_y=0.84, max_x=0.38, max_y=0.95
+        )
+        return Observation(
+            run_id="camera-continuous",
+            step_index=self.step_index,
+            mode="live",
+            control_mode=self.control_mode,
+            planning_mode=PlanningMode.CONTINUOUS,
+            world_revision=WorldStateRevision(
+                telemetry_sequence=self.sequence,
+                frame_sequence=self.sequence,
+                capability_epoch=1,
+                observed_at_monotonic=float(self.sequence),
+            ),
+            telemetry=TelemetrySnapshot(
+                sequence=self.sequence,
+                captured_at=datetime.now(UTC),
+                capabilities=[
+                    "camera.position",
+                    "camera.recovery",
+                    "game.pause",
+                    "game.time",
+                    "squad.basic",
+                    "ui.visible_controls",
+                ],
+                game=GameState(loaded=True, paused=True, elapsed_minutes=0.0),
+                camera=CameraState(
+                    center=Vec3(x=0.0, y=0.0, z=0.0),
+                    position=Vec3(x=0.0, y=20.0, z=0.0),
+                ),
+                ui=UIState(
+                    active_screen="world",
+                    modal_open=False,
+                    dialogue_open=False,
+                    selected_character_id="char-hep",
+                    selected_character_ids=["char-hep"],
+                    visible_controls=[
+                        VisibleUIControl(label="Hep", role="text", bounds=bounds),
+                        VisibleUIControl(
+                            label="[Hep]",
+                            role="text",
+                            bounds=NormalizedPointerBounds(
+                                min_x=0.45, min_y=0.34, max_x=0.50, max_y=0.38
+                            ),
+                        ),
+                        VisibleUIControl(
+                            label="Floor 0",
+                            role="text",
+                            bounds=NormalizedPointerBounds(
+                                min_x=0.70, min_y=0.69, max_x=0.74, max_y=0.72
+                            ),
+                        ),
+                        VisibleUIControl(
+                            label="hud_FloorArrowUp",
+                            role="button",
+                            bounds=NormalizedPointerBounds(
+                                min_x=0.70, min_y=0.66, max_x=0.73, max_y=0.69
+                            ),
+                        ),
+                        VisibleUIControl(
+                            label="hud_FloorArrowDown",
+                            role="button",
+                            bounds=NormalizedPointerBounds(
+                                min_x=0.70, min_y=0.72, max_x=0.73, max_y=0.75
+                            ),
+                        ),
+                    ],
+                ),
+                squad=[
+                    CharacterState(
+                        id="char-hep",
+                        name="Hep",
+                        selected=True,
+                        position=Vec3(x=0.0, y=0.0, z=0.0),
+                    )
+                ],
+            ),
+            telemetry_stale=False,
+            telemetry_age_seconds=0.0,
+        )
+
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return self.observation()
+
+    async def observe(self) -> Observation:
+        return self.observation()
+
+    async def step(self, action: Action) -> Transition:
+        return await self.dispatch(
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + ("0" * 32),
+                based_on_revision=self.observation().world_revision,
+            ),
+        )
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
+    ) -> Transition:
+        del token
+        assert isinstance(action, RecoverCameraViewAction)
+        before = self.observation().world_revision
+        self.sequence += 1
+        self.step_index += 1
+        clear = self.status is not CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS
+        candidate = CameraFrameScore(
+            candidate="controller_candidate",
+            screenshot_path=self.tmp_path / "candidate.png",
+            screenshot_sha256="0" * 64,
+            telemetry_sequence=self.sequence,
+            frame_sequence=self.sequence,
+            floor=0,
+            score=0.90 if clear else 0.25,
+            edge_density=0.9 if clear else 0.1,
+            contrast=0.9 if clear else 0.1,
+            color_diversity=0.9 if clear else 0.1,
+            nonflat_fraction=0.9 if clear else 0.1,
+            inverse_dominant_color=0.9 if clear else 0.1,
+            selected_world_label_visible=True,
+            anchor_distance=0.0,
+            clear=clear,
+        )
+        evidence = CameraRecoveryEvidence(
+            status=self.status,
+            selected_character_id="char-hep",
+            selected_character_name="Hep",
+            initial_floor=0,
+            final_floor=0,
+            clear_score_threshold=0.72,
+            anchor_max_distance=30.0,
+            paused_for_recovery=False,
+            primitive_actions=0 if self.status is CameraRecoveryStatus.ALREADY_CLEAR else 4,
+            follow_method=(
+                "already_anchored"
+                if self.status is CameraRecoveryStatus.ALREADY_CLEAR
+                else "portrait_double_click"
+            ),
+            chosen_candidate=candidate.candidate,
+            candidates=[candidate],
+        )
+        after = self.observation()
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=self.control_mode,
+                command_id=command.command_id,
+                started_after_revision=before,
+                completed_at_revision=after.world_revision,
+                causal_revision_advanced=True,
+                semantic=SemanticActionReceipt(
+                    action_kind=action.kind,
+                    contract_version="1.0",
+                    target_id="char-hep",
+                    resolved_label="Hep",
+                    source_revision=before,
+                    revalidation="Controller test receipt.",
+                    camera_recovery=evidence,
+                ),
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                primitive_actions=evidence.primitive_actions,
+            ),
+            observation=after,
+        )
+
+    async def close(self) -> None:
+        return None
+
+
+def fresh() -> Condition:
+    return Condition(
+        kind=ConditionKind.TELEMETRY_FRESH,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=3.0,
+    )
+
+
+def camera_plan(observation: Observation) -> PlanEnvelope:
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="camera-controller-verdict",
+        plan_version=1,
+        objective="Recover the camera without model-authored gestures.",
+        control_mode=observation.control_mode,
+        based_on_revision=observation.world_revision,
+        assumptions=[fresh()],
+        steps=[
+            PlanStep(
+                step_id="recover",
+                action=RecoverCameraViewAction(),
+                preconditions=[fresh()],
+                success_conditions=[],
+                timeout_seconds=30.0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            )
+        ],
+        entry_step_id="recover",
+        max_actions=1,
+        max_wall_seconds=60.0,
+        max_game_seconds=60.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=1,
+            max_purchase_actions=0,
+            max_native_assisted_actions=0,
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_completed"),
+    [
+        (CameraRecoveryStatus.ALREADY_CLEAR, True),
+        (CameraRecoveryStatus.RECOVERED, True),
+        (CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS, False),
+    ],
+)
+def test_continuous_executor_uses_controller_verdict_without_postconditions(
+    tmp_path: Path,
+    status: CameraRecoveryStatus,
+    expected_completed: bool,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = CameraVerdictEnvironment(status, tmp_path)
+        observation = await environment.reset()
+        plan = camera_plan(observation)
+        assert dialogue_interaction_policy_errors(plan, observation) == []
+
+        store = WorldStateStore(clock=clock)
+        store.publish(observation)
+        logger = SessionLogger(tmp_path / f"{status.value}.jsonl", "camera-continuous")
+
+        def observe_transition(
+            plan: PlanEnvelope,
+            step: PlanStep,
+            before: Observation,
+            transition: Transition,
+            command_id: str,
+            action_start_revision: WorldStateRevision,
+        ) -> Observation:
+            del plan, step, before, command_id, action_start_revision
+            store.publish(transition.observation)
+            return transition.observation
+
+        executor = ContinuousPlanExecutor(
+            environment=environment,
+            guard=ActionGuard(
+                SafetyConfig(
+                    allow_action_kinds=["recover_camera_view"],
+                    max_actions_per_minute=100,
+                ),
+                MacroRegistry({}),
+                control_mode=ControlMode.INTERFACE_ONLY,
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            clock=clock,
+            state_store=store,
+            observe_transition=observe_transition,
+            planning_config=PlanningConfig(mode=PlanningMode.CONTINUOUS),
+        )
+        try:
+            result = await executor.execute(
+                plan,
+                observation,
+                remaining_run_actions=1,
+            )
+        finally:
+            logger.close()
+
+        assert result.actions_completed == 1
+        assert result.completed is expected_completed
+        if expected_completed:
+            assert result.reason == "Plan completed."
+            assert status.value in (tmp_path / f"{status.value}.jsonl").read_text(
+                encoding="utf-8"
+            )
+        else:
+            assert status.value in result.reason
+
+    asyncio.run(scenario())

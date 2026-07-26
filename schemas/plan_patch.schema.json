@@ -415,7 +415,7 @@
     },
     "MoveInDirectionAction": {
       "additionalProperties": false,
-      "description": "Walk a bearing and a distance from wherever the character is standing.\n\nThe intended destination is a point, not a person, so this action models\nmovement even when no nearby character can serve as a destination. The\ncurrent targetless request is not accepted end to end: the native parser,\nacknowledgement model, and monitored-option adapter still assume a nonempty\ntarget ID.\n\n`bearing_degrees` is clockwise from north, as read on the map: 0 north,\n90 east, 180 south, 270 west.",
+      "description": "Walk a bearing and a distance from wherever the character is standing.\n\nThe intended destination is a point, not a person, so this action models\nmovement even when no nearby character can serve as a destination. Its\nnative request and acknowledgement deliberately carry an empty target ID;\ncommand identity is the keyed command, selected character, bearing, and\ndistance.\n\n`bearing_degrees` is clockwise from north, as read on the map: 0 north,\n90 east, 180 south, 270 west.",
       "properties": {
         "kind": {
           "const": "move_in_direction",
@@ -573,6 +573,9 @@
               "$ref": "#/$defs/EquipItemAction"
             },
             {
+              "$ref": "#/$defs/RecoverCameraViewAction"
+            },
+            {
               "$ref": "#/$defs/SkillAction"
             }
           ],
@@ -592,7 +595,6 @@
             "$ref": "#/$defs/Condition"
           },
           "maxItems": 12,
-          "minItems": 1,
           "title": "Success Conditions",
           "type": "array"
         },
@@ -660,7 +662,6 @@
         "step_id",
         "action",
         "preconditions",
-        "success_conditions",
         "timeout_seconds"
       ],
       "title": "PlanStep",
@@ -714,6 +715,20 @@
         "seller_id"
       ],
       "title": "PurchaseItemAction",
+      "type": "object"
+    },
+    "RecoverCameraViewAction": {
+      "additionalProperties": false,
+      "description": "Ask the controller to restore a usable character-following world view.\n\nThis action intentionally has no camera parameters. The caller identifies\nthe problem; the controller owns the bounded follow, floor, zoom, orbit,\ncapture, and scoring transaction and reports its terminal outcome.",
+      "properties": {
+        "kind": {
+          "const": "recover_camera_view",
+          "default": "recover_camera_view",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "RecoverCameraViewAction",
       "type": "object"
     },
     "ScrollScreenAction": {

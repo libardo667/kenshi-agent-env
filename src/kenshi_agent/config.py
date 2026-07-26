@@ -163,6 +163,23 @@ class LaunchConfig(ConfigModel):
         return self
 
 
+class CameraRecoveryConfig(ConfigModel):
+    """Fixed, bounded controller policy for ``recover_camera_view``."""
+
+    candidate_settle_seconds: float = Field(default=0.30, ge=0.0, le=3.0)
+    clear_score_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
+    anchor_max_distance: float = Field(default=30.0, gt=0.0, le=1000.0)
+    max_lower_floors: int = Field(default=2, ge=0, le=2)
+    portrait_click_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
+    portrait_click_interval_seconds: float = Field(default=0.08, ge=0.0, le=1.0)
+    floor_click_hold_seconds: float = Field(default=0.12, ge=0.0, le=1.0)
+    zoom_out_key: str = Field(default="end", min_length=1, max_length=32)
+    zoom_out_hold_seconds: float = Field(default=0.30, ge=0.0, le=2.0)
+    rotate_left_key: str = Field(default="q", min_length=1, max_length=32)
+    rotate_right_key: str = Field(default="e", min_length=1, max_length=32)
+    orbit_hold_seconds: float = Field(default=0.35, gt=0.0, le=2.0)
+
+
 class ControlsConfig(ConfigModel):
     pause_key: str = "space"
     pause_skill: str | None = Field(default=None, min_length=1, max_length=80)
@@ -231,6 +248,7 @@ class ControlsConfig(ConfigModel):
     # Key that backs out of an open screen. Coordinate-independent, so it works
     # regardless of resolution or calibration.
     dismiss_screen_key: str = Field(default="escape", min_length=1, max_length=32)
+    camera_recovery: CameraRecoveryConfig = Field(default_factory=CameraRecoveryConfig)
 
     def expected_calibration_identity(self) -> CalibrationIdentity:
         return CalibrationIdentity(
@@ -310,6 +328,12 @@ class SafetyConfig(ConfigModel):
     takeover_countdown_seconds: float = Field(default=5.0, gt=0.0, le=300.0)
     takeover_poll_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     max_primitive_actions_per_step: int = Field(default=12, ge=1, le=100)
+    # Controller-verified transactions own their full bounded sequence and
+    # terminal evidence. Keeping their ceiling separate avoids loosening the
+    # primitive allowance for ordinary macros merely to admit camera recovery.
+    max_controller_verified_primitive_actions_per_step: int = Field(
+        default=11, ge=1, le=100
+    )
     max_actions_per_minute: int = Field(default=90, ge=1, le=1000)
     max_wait_seconds: float = Field(default=10.0, ge=0.0, le=60.0)
     block_clicks_when_telemetry_stale: bool = True

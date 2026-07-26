@@ -49,6 +49,7 @@ from .models import (
     PlanEnvelope,
     PointerActionClass,
     PurchaseItemAction,
+    RecoverCameraViewAction,
     ScrollScreenAction,
     SellItemAction,
     SkillAction,
@@ -77,6 +78,7 @@ NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
 NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
+CAMERA_RECOVERY_CAPABILITY = "camera.recovery"
 
 
 class ActionExecution(StrEnum):
@@ -116,6 +118,11 @@ class ReferenceBinding:
     # For item cells: what the game itself says the cell holds and is worth.
     item_name: str | None = None
     item_value: int | None = None
+    # Camera-recovery-only facts resolved from the current world HUD.
+    selected_character_name: str | None = None
+    floor: int | None = None
+    floor_up_bounds: NormalizedPointerBounds | None = None
+    floor_down_bounds: NormalizedPointerBounds | None = None
 
 
 def _unbound(reason: str) -> ReferenceBinding:
@@ -795,6 +802,113 @@ def bind_use_game_binding(
     )
 
 
+def bind_recover_camera_view(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind recovery to one selected character and the current world HUD.
+
+    The model names no coordinates. The controller resolves the selected
+    character's portrait, current floor, and both floor arrows from fresh
+    visible-control telemetry. Any ambiguity fails closed before input.
+    """
+
+    if not isinstance(action, RecoverCameraViewAction):
+        return _unbound("Action is not a recover_camera_view action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind camera recovery.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so camera recovery cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("Kenshi has no loaded game whose camera can be recovered.")
+    if telemetry.ui.active_screen != "world":
+        return _unbound(
+            "Camera recovery is allowed only on the world screen; current screen is "
+            f"{telemetry.ui.active_screen!r}."
+        )
+    if telemetry.ui.modal_open is not False:
+        return _unbound("Camera recovery requires a confirmed closed modal.")
+    if telemetry.ui.dialogue_open is not False:
+        return _unbound("Camera recovery requires dialogue to be closed.")
+    if VISIBLE_CONTROLS_CAPABILITY not in telemetry.capabilities:
+        return _unbound("Visible-control telemetry is unavailable.")
+    if CAMERA_RECOVERY_CAPABILITY not in telemetry.capabilities:
+        return _unbound("Window capture/scoring is unavailable.")
+
+    selected = [character for character in telemetry.squad if character.selected]
+    if len(selected) != 1:
+        return _unbound(
+            f"{len(selected)} characters are selected; camera recovery requires "
+            "exactly one unambiguous follow target."
+        )
+    character = selected[0]
+    controls = telemetry.ui.visible_controls or []
+    portrait_matches = [
+        control
+        for control in controls
+        if control.role == "text"
+        and normalize_control_label(control.label)
+        == normalize_control_label(character.name)
+        and control.bounds.min_y >= 0.75
+    ]
+    if len(portrait_matches) != 1:
+        return _unbound(
+            f"Selected character {character.name!r} has {len(portrait_matches)} "
+            "unambiguous lower-HUD portrait labels; exactly one is required."
+        )
+
+    floor_matches: list[tuple[int, NormalizedPointerBounds]] = []
+    for control in controls:
+        if control.role != "text":
+            continue
+        match = re.fullmatch(r"\s*Floor\s+(-?\d+)\s*", control.label, re.IGNORECASE)
+        if match is not None:
+            floor_matches.append((int(match.group(1)), control.bounds))
+    if len(floor_matches) != 1:
+        return _unbound(
+            f"The HUD exposes {len(floor_matches)} current floor labels; exactly "
+            "one is required."
+        )
+
+    up_matches = [
+        control
+        for control in controls
+        if control.role == "button"
+        and control.label.casefold().endswith("_floorarrowup")
+    ]
+    down_matches = [
+        control
+        for control in controls
+        if control.role == "button"
+        and control.label.casefold().endswith("_floorarrowdown")
+    ]
+    if len(up_matches) != 1 or len(down_matches) != 1:
+        return _unbound(
+            "The HUD must expose exactly one floor-up and one floor-down button; "
+            f"found {len(up_matches)} up and {len(down_matches)} down."
+        )
+
+    portrait = portrait_matches[0]
+    floor = floor_matches[0][0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound camera recovery to selected character {character.name!r} "
+            f"({character.id}), portrait {portrait.label!r}, and floor {floor}."
+        ),
+        target_id=character.id,
+        resolved_label=portrait.label,
+        resolved_role=portrait.role,
+        resolved_bounds=portrait.bounds.model_copy(deep=True),
+        source_revision=observation.world_revision,
+        selected_character_name=character.name,
+        floor=floor,
+        floor_up_bounds=up_matches[0].bounds.model_copy(deep=True),
+        floor_down_bounds=down_matches[0].bounds.model_copy(deep=True),
+    )
+
+
 def bind_scroll_screen(
     action: Action,
     observation: Observation,
@@ -875,6 +989,9 @@ class ActionContract:
     # purchases moved no money, each reported DONE, and the agent looped because
     # nothing it could see said otherwise.
     verification_paths: frozenset[str] = frozenset()
+    # The handler itself returns a typed terminal verdict based on evidence it
+    # owns, so the planner must not invent a redundant postcondition.
+    controller_verified: bool = False
 
     def missing_capabilities(self, capabilities: set[str] | frozenset[str]) -> list[str]:
         """Required capabilities absent from an observation, alias-aware.
@@ -1131,6 +1248,47 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     bind=bind_use_game_binding,
 )
 
+RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
+    kind="recover_camera_view",
+    version="1.0",
+    model=RecoverCameraViewAction,
+    summary=(
+        "Restore a usable selected-character-following world view through one "
+        "bounded controller-owned transaction. The caller supplies no camera "
+        "parameters and receives already_clear, recovered, or "
+        "failed_after_bounded_attempts."
+    ),
+    argument_source=(
+        "No arguments. The controller resolves the one selected character, its "
+        "lower-HUD portrait, the current floor, and floor arrows from fresh "
+        "telemetry, then scores retained frames."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset(
+        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
+    ),
+    required_capabilities=frozenset(
+        {
+            CAMERA_RECOVERY_CAPABILITY,
+            "camera.position",
+            "game.pause",
+            "squad.basic",
+            VISIBLE_CONTROLS_CAPABILITY,
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=11,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_camera_recovery",
+    bind=bind_recover_camera_view,
+    controller_verified=True,
+)
+
 
 
 
@@ -1249,6 +1407,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         DISMISS_SCREEN_CONTRACT,
         PURCHASE_ITEM_CONTRACT,
         USE_GAME_BINDING_CONTRACT,
+        RECOVER_CAMERA_VIEW_CONTRACT,
         SCROLL_SCREEN_CONTRACT,
         SELL_ITEM_CONTRACT,
         EQUIP_ITEM_CONTRACT,

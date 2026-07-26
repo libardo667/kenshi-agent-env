@@ -13,6 +13,7 @@ from .input_boundary import ExecutionToken
 from .models import (
     Action,
     ActivePlanContext,
+    CameraRecoveryStatus,
     CommandDispatchContext,
     ConditionEvaluation,
     ConditionResult,
@@ -992,6 +993,54 @@ class ContinuousPlanExecutor:
                 ),
                 terminated=transition.terminated,
                 success=transition.success,
+            )
+        contract = contract_for(step.action)
+        if contract is not None and contract.controller_verified:
+            recovery = (
+                transition.receipt.semantic.camera_recovery
+                if transition.receipt.semantic is not None
+                else None
+            )
+            if recovery is None:
+                return _StepResult(
+                    observation=latest,
+                    succeeded=False,
+                    actions_completed=1,
+                    reason=(
+                        "The controller-verified action returned no typed terminal "
+                        "evidence, so its result cannot be assumed."
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                )
+            succeeded = recovery.status in {
+                CameraRecoveryStatus.ALREADY_CLEAR,
+                CameraRecoveryStatus.RECOVERED,
+            }
+            self._event(
+                "plan_step_progress",
+                plan,
+                latest,
+                step=step,
+                reason="Accepted the controller-owned terminal camera-recovery verdict.",
+                evidence={
+                    "controller_verified": True,
+                    "status": recovery.status.value,
+                    "chosen_candidate": recovery.chosen_candidate,
+                    "candidate_count": len(recovery.candidates),
+                },
+            )
+            return _StepResult(
+                observation=latest,
+                succeeded=succeeded,
+                actions_completed=1,
+                reason=(
+                    "Controller-owned camera recovery returned "
+                    f"{recovery.status.value!r}."
+                ),
+                terminated=transition.terminated,
+                success=transition.success,
+                staged_patch=staged_patch if succeeded else None,
             )
         while True:
             success_evaluations = evaluate_conditions(

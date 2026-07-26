@@ -265,6 +265,215 @@
       "title": "CalibrationStatus",
       "type": "string"
     },
+    "CameraFrameScore": {
+      "additionalProperties": false,
+      "description": "One retained frame and the deterministic signals used to rank it.",
+      "properties": {
+        "candidate": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Candidate",
+          "type": "string"
+        },
+        "screenshot_path": {
+          "format": "path",
+          "title": "Screenshot Path",
+          "type": "string"
+        },
+        "screenshot_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Screenshot Sha256",
+          "type": "string"
+        },
+        "telemetry_sequence": {
+          "minimum": 0,
+          "title": "Telemetry Sequence",
+          "type": "integer"
+        },
+        "frame_sequence": {
+          "minimum": 0,
+          "title": "Frame Sequence",
+          "type": "integer"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "integer"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "edge_density": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Edge Density",
+          "type": "number"
+        },
+        "contrast": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Contrast",
+          "type": "number"
+        },
+        "color_diversity": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Color Diversity",
+          "type": "number"
+        },
+        "nonflat_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Nonflat Fraction",
+          "type": "number"
+        },
+        "inverse_dominant_color": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Inverse Dominant Color",
+          "type": "number"
+        },
+        "selected_world_label_visible": {
+          "title": "Selected World Label Visible",
+          "type": "boolean"
+        },
+        "anchor_distance": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Distance"
+        },
+        "clear": {
+          "title": "Clear",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidate",
+        "screenshot_path",
+        "screenshot_sha256",
+        "telemetry_sequence",
+        "frame_sequence",
+        "floor",
+        "score",
+        "edge_density",
+        "contrast",
+        "color_diversity",
+        "nonflat_fraction",
+        "inverse_dominant_color",
+        "selected_world_label_visible",
+        "clear"
+      ],
+      "title": "CameraFrameScore",
+      "type": "object"
+    },
+    "CameraRecoveryEvidence": {
+      "additionalProperties": false,
+      "description": "Controller-owned proof for a complete bounded recovery transaction.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CameraRecoveryStatus"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "selected_character_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Name",
+          "type": "string"
+        },
+        "initial_floor": {
+          "title": "Initial Floor",
+          "type": "integer"
+        },
+        "final_floor": {
+          "title": "Final Floor",
+          "type": "integer"
+        },
+        "clear_score_threshold": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Clear Score Threshold",
+          "type": "number"
+        },
+        "anchor_max_distance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Anchor Max Distance",
+          "type": "number"
+        },
+        "paused_for_recovery": {
+          "title": "Paused For Recovery",
+          "type": "boolean"
+        },
+        "primitive_actions": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Primitive Actions",
+          "type": "integer"
+        },
+        "follow_method": {
+          "enum": [
+            "already_anchored",
+            "portrait_double_click"
+          ],
+          "title": "Follow Method",
+          "type": "string"
+        },
+        "chosen_candidate": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Chosen Candidate",
+          "type": "string"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/CameraFrameScore"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Candidates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "selected_character_id",
+        "selected_character_name",
+        "initial_floor",
+        "final_floor",
+        "clear_score_threshold",
+        "anchor_max_distance",
+        "paused_for_recovery",
+        "primitive_actions",
+        "follow_method",
+        "chosen_candidate",
+        "candidates"
+      ],
+      "title": "CameraRecoveryEvidence",
+      "type": "object"
+    },
+    "CameraRecoveryStatus": {
+      "enum": [
+        "already_clear",
+        "recovered",
+        "failed_after_bounded_attempts"
+      ],
+      "title": "CameraRecoveryStatus",
+      "type": "string"
+    },
     "ClickAction": {
       "additionalProperties": false,
       "properties": {
@@ -885,7 +1094,7 @@
     },
     "MoveInDirectionAction": {
       "additionalProperties": false,
-      "description": "Walk a bearing and a distance from wherever the character is standing.\n\nThe intended destination is a point, not a person, so this action models\nmovement even when no nearby character can serve as a destination. The\ncurrent targetless request is not accepted end to end: the native parser,\nacknowledgement model, and monitored-option adapter still assume a nonempty\ntarget ID.\n\n`bearing_degrees` is clockwise from north, as read on the map: 0 north,\n90 east, 180 south, 270 west.",
+      "description": "Walk a bearing and a distance from wherever the character is standing.\n\nThe intended destination is a point, not a person, so this action models\nmovement even when no nearby character can serve as a destination. Its\nnative request and acknowledgement deliberately carry an empty target ID;\ncommand identity is the keyed command, selected character, bearing, and\ndistance.\n\n`bearing_degrees` is clockwise from north, as read on the map: 0 north,\n90 east, 180 south, 270 west.",
       "properties": {
         "kind": {
           "const": "move_in_direction",
@@ -1191,6 +1400,20 @@
       "title": "PurchaseItemAction",
       "type": "object"
     },
+    "RecoverCameraViewAction": {
+      "additionalProperties": false,
+      "description": "Ask the controller to restore a usable character-following world view.\n\nThis action intentionally has no camera parameters. The caller identifies\nthe problem; the controller owns the bounded follow, floor, zoom, orbit,\ncapture, and scoring transaction and reports its terminal outcome.",
+      "properties": {
+        "kind": {
+          "const": "recover_camera_view",
+          "default": "recover_camera_view",
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "title": "RecoverCameraViewAction",
+      "type": "object"
+    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -1401,6 +1624,17 @@
           "default": false,
           "title": "Legacy Compatibility",
           "type": "boolean"
+        },
+        "camera_recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CameraRecoveryEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1684,6 +1918,9 @@
         },
         {
           "$ref": "#/$defs/EquipItemAction"
+        },
+        {
+          "$ref": "#/$defs/RecoverCameraViewAction"
         }
       ],
       "title": "Action"

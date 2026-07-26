@@ -1048,6 +1048,17 @@ class ScrollScreenAction(StrictModel):
         return value
 
 
+class RecoverCameraViewAction(StrictModel):
+    """Ask the controller to restore a usable character-following world view.
+
+    This action intentionally has no camera parameters. The caller identifies
+    the problem; the controller owns the bounded follow, floor, zoom, orbit,
+    capture, and scoring transaction and reports its terminal outcome.
+    """
+
+    kind: Literal["recover_camera_view"] = "recover_camera_view"
+
+
 class GameBinding(StrEnum):
     """Kenshi's named control intentions under the shipped default keymap.
 
@@ -1180,6 +1191,7 @@ SemanticAction: TypeAlias = (
     | ScrollScreenAction
     | SellItemAction
     | EquipItemAction
+    | RecoverCameraViewAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
 
@@ -1208,6 +1220,7 @@ Action: TypeAlias = (
     | ScrollScreenAction
     | SellItemAction
     | EquipItemAction
+    | RecoverCameraViewAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 
@@ -1223,6 +1236,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "scroll_screen",
         "sell_item",
         "equip_item",
+        "recover_camera_view",
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
@@ -1647,7 +1661,11 @@ class PlanStep(StrictModel):
     # the response schema the planner is never allowed to choose.
     action: PlannerAction
     preconditions: list[Condition] = Field(min_length=1, max_length=12)
-    success_conditions: list[Condition] = Field(min_length=1, max_length=12)
+    # Controller-verified actions return their own typed terminal verdict and
+    # therefore need no model-authored condition. Every other action still
+    # requires at least one condition; the validator below enforces that
+    # conditional rule.
+    success_conditions: list[Condition] = Field(default_factory=list, max_length=12)
     failure_conditions: list[Condition] = Field(default_factory=list, max_length=12)
     timeout_seconds: float = Field(gt=0.0, le=60.0)
     retry_budget: int = Field(default=0, ge=0, le=2)
@@ -1667,6 +1685,13 @@ class PlanStep(StrictModel):
     def retry_requires_idempotency(self) -> PlanStep:
         if self.retry_budget and self.idempotency != IdempotencyPolicy.SAFE_TO_RETRY:
             raise ValueError("retry_budget requires idempotency=safe_to_retry")
+        if not self.success_conditions and not isinstance(
+            self.action, RecoverCameraViewAction
+        ):
+            raise ValueError(
+                "success_conditions may be empty only for recover_camera_view, "
+                "whose controller returns a typed terminal outcome"
+            )
         return self
 
 
@@ -2256,6 +2281,49 @@ class InputBoundaryReport(StrictModel):
     evaluations: list[ConditionEvaluation] = Field(default_factory=list, max_length=24)
 
 
+class CameraRecoveryStatus(StrEnum):
+    ALREADY_CLEAR = "already_clear"
+    RECOVERED = "recovered"
+    FAILED_AFTER_BOUNDED_ATTEMPTS = "failed_after_bounded_attempts"
+
+
+class CameraFrameScore(StrictModel):
+    """One retained frame and the deterministic signals used to rank it."""
+
+    candidate: str = Field(min_length=1, max_length=80)
+    screenshot_path: Path
+    screenshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    telemetry_sequence: int = Field(ge=0)
+    frame_sequence: int = Field(ge=0)
+    floor: int
+    score: float = Field(ge=0.0, le=1.0)
+    edge_density: float = Field(ge=0.0, le=1.0)
+    contrast: float = Field(ge=0.0, le=1.0)
+    color_diversity: float = Field(ge=0.0, le=1.0)
+    nonflat_fraction: float = Field(ge=0.0, le=1.0)
+    inverse_dominant_color: float = Field(ge=0.0, le=1.0)
+    selected_world_label_visible: bool
+    anchor_distance: float | None = Field(default=None, ge=0.0)
+    clear: bool
+
+
+class CameraRecoveryEvidence(StrictModel):
+    """Controller-owned proof for a complete bounded recovery transaction."""
+
+    status: CameraRecoveryStatus
+    selected_character_id: str = Field(min_length=1, max_length=200)
+    selected_character_name: str = Field(min_length=1, max_length=200)
+    initial_floor: int
+    final_floor: int
+    clear_score_threshold: float = Field(ge=0.0, le=1.0)
+    anchor_max_distance: float = Field(gt=0.0)
+    paused_for_recovery: bool
+    primitive_actions: int = Field(ge=0, le=100)
+    follow_method: Literal["already_anchored", "portrait_double_click"]
+    chosen_candidate: str = Field(min_length=1, max_length=80)
+    candidates: list[CameraFrameScore] = Field(min_length=1, max_length=16)
+
+
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -2274,6 +2342,7 @@ class SemanticActionReceipt(StrictModel):
     option_id: str | None = Field(default=None, max_length=128)
     revalidation: str = Field(min_length=1, max_length=1000)
     legacy_compatibility: bool = False
+    camera_recovery: CameraRecoveryEvidence | None = None
 
 
 class ActionReceipt(StrictModel):

@@ -133,10 +133,20 @@ yourself, in whatever order the current evidence supports.
   `allow_live_unpause_actions` to `use_game_binding(pause)`, so do not use that
   binding to bypass a blocked direct unpause. The physical keys are shipped
   defaults, not a parsed customized `controls.cfg`.
+- **Camera recovery is one controller action, not a camera plan.** When
+  `recover_camera_view` is advertised and the world view is unreadable, author
+  exactly `{"kind":"recover_camera_view"}` once. Give that step
+  `success_conditions: []`: the controller establishes selected-character
+  follow, searches bounded floors, applies its fixed zoom/orbit sequence,
+  scores retained frames, and returns `already_clear`, `recovered`, or
+  `failed_after_bounded_attempts`. Do not supply directions, floor numbers,
+  zoom values, or follow-up camera gestures. A bounded failure is terminal for
+  that recovery request; do not retry it on the same evidence.
 - The camera is a binding: `camera_forward`, `camera_back`, `camera_left`,
   `camera_right`, `camera_rotate_left`, `camera_rotate_right`,
   `camera_zoom_in`, `camera_zoom_out`, and `focus_char` to centre on the
-  selected character. These are the only way to look somewhere else.
+  selected character. These remain available for an intentional survey after
+  the view is usable; they are not the recovery mechanism.
 - Bindings whose name starts with `toggle_`, plus `pause` and `change_squad`,
   flip state: pressing twice returns to where you started. Never give those a
   `retry_budget`, and to *close* a screen you opened this way, press the same
@@ -202,7 +212,8 @@ yourself, in whatever order the current evidence supports.
   `belongs_to: "vendor"` group and sells from the `belongs_to: "you"` group.
   Read the group before acting on any cell: the cheapest cell on a trade screen
   is often your own clothing, and buying it is really selling it.
-- Give every step a success condition that a later observation can settle, such
+- Give every step except `recover_camera_view` a success condition that a later
+  observation can settle, such
   as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
 - **Check whether you are being attacked.** `in_combat` on the selected
@@ -346,10 +357,10 @@ Control rules:
   paths to an occluded or indoor person. `shop_inventory_owner` is created only
   once trade inventory is requested, so its being false does not disqualify a
   pre-interaction vendor.
-- The live 3D camera has a fixed follow distance. World zoom is not available.
-  If it is clipped into geometry, use `recenter_camera`, then one bounded pan or
-  orbit to seek a clear angle; moving the selected squad member through clearly visible terrain may
-  also recover the view.
+- If the live 3D camera is clipped into geometry and `recover_camera_view` is
+  advertised, request it once and accept its typed verdict. Do not compose
+  `recenter_camera`, pan, orbit, zoom, pause, or floor-control steps to recover
+  the view yourself.
 - A nearby entity's `camera_bearing_degrees` remains available while it is
   off-screen: zero is ahead, negative is left, positive is right, and values
   near either -180 or 180 are behind. Kenshi's camera orbits around the selected character while
@@ -394,7 +405,8 @@ Control rules:
 - Roofs and walls in a town view do not by themselves mean the camera is
   clipped. Once the settlement layout and selected-character label are visible,
   treat the survey view as clear.
-- For local 3D survey, use one `pan_camera_forward`, `pan_camera_backward`,
+- For an intentional local 3D survey after recovery, use one
+  `pan_camera_forward`, `pan_camera_backward`,
   `pan_camera_left`, or `pan_camera_right` step, or one
   `orbit_camera_left`/`orbit_camera_right` step to inspect a different angle.
   Each compound skill first presses F to recenter on the selected character, then

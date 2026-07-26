@@ -165,6 +165,15 @@ controls:
   native_approach_max_seconds: 40.0
   # The world runs; the character just walks.
   require_paused_between_actions: false
+  # One model request owns no gestures. The controller follows the selected
+  # portrait, searches at most two lower floors, applies its fixed zoom/orbit
+  # sequence, scores retained frames, and leaves a running world paused if it
+  # had to intervene.
+  camera_recovery:
+    candidate_settle_seconds: 0.30
+    clear_score_threshold: 0.72
+    anchor_max_distance: 30.0
+    max_lower_floors: 2
 
 safety:
   # This profile permits only the audited surface below. The CLI must still
@@ -190,6 +199,8 @@ safety:
   takeover_countdown_seconds: 5.0
   takeover_poll_seconds: 0.1
   max_primitive_actions_per_step: 4
+  # Does not loosen the four-primitive cap for ordinary macros.
+  max_controller_verified_primitive_actions_per_step: 11
   max_actions_per_minute: 120
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
@@ -214,6 +225,7 @@ safety:
     - scroll_screen
     - sell_item
     - equip_item
+    - recover_camera_view
   # The generic chain authors semantic actions, not macros. Only the transport
   # and native-approach macros remain allowlisted, because the semantic approach
   # reuses the latter's primitives.

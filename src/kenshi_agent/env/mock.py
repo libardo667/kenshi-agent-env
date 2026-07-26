@@ -10,12 +10,15 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from ..action_contracts import contract_for
+from ..camera_recovery import score_camera_observation
 from ..config import MockConfig
 from ..models import (
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    CameraRecoveryEvidence,
+    CameraRecoveryStatus,
     CameraState,
     CharacterState,
     ControlMode,
@@ -23,8 +26,10 @@ from ..models import (
     GameState,
     InventoryItem,
     NearbyEntity,
+    NormalizedPointerBounds,
     Observation,
     PauseAction,
+    RecoverCameraViewAction,
     SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
@@ -33,6 +38,7 @@ from ..models import (
     Transition,
     UIState,
     Vec3,
+    VisibleUIControl,
     WaitAction,
     WorldStateRevision,
 )
@@ -138,6 +144,8 @@ class MockEnvironment(AgentEnvironment):
             captured_at=datetime.now(UTC),
             source="mock",
             capabilities=[
+                "camera.position",
+                "camera.recovery",
                 "game.pause",
                 "game.speed",
                 "game.time",
@@ -147,6 +155,7 @@ class MockEnvironment(AgentEnvironment):
                 "squad.hunger",
                 "squad.health",
                 "nearby.visible_entities",
+                "ui.visible_controls",
             ],
             game=GameState(
                 loaded=True,
@@ -161,15 +170,53 @@ class MockEnvironment(AgentEnvironment):
             ),
             camera=CameraState(
                 position=Vec3(x=0.0, y=22.0, z=0.0),
-                center=Vec3(x=0.0, y=0.0, z=0.0),
+                center=Vec3(x=self.world.travel_progress, y=0.0, z=0.0),
             ),
             ui=UIState(
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
                 selected_character_id="mock:wanderer",
+                selected_character_ids=["mock:wanderer"],
                 client_width=1280,
                 client_height=720,
+                visible_controls=[
+                    VisibleUIControl(
+                        label="Wanderer",
+                        role="text",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.30, min_y=0.84, max_x=0.38, max_y=0.95
+                        ),
+                    ),
+                    VisibleUIControl(
+                        label="[Wanderer]",
+                        role="text",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.47, min_y=0.45, max_x=0.55, max_y=0.49
+                        ),
+                    ),
+                    VisibleUIControl(
+                        label="Floor 0",
+                        role="text",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.70, min_y=0.69, max_x=0.74, max_y=0.72
+                        ),
+                    ),
+                    VisibleUIControl(
+                        label="mock_FloorArrowUp",
+                        role="button",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.70, min_y=0.66, max_x=0.73, max_y=0.69
+                        ),
+                    ),
+                    VisibleUIControl(
+                        label="mock_FloorArrowDown",
+                        role="button",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.70, min_y=0.72, max_x=0.73, max_y=0.75
+                        ),
+                    ),
+                ],
             ),
             squad=[
                 CharacterState(
@@ -262,8 +309,17 @@ class MockEnvironment(AgentEnvironment):
             message = f"Advanced mock time by {action.seconds:.2f} minutes."
         elif isinstance(action, SkillAction):
             message = self._apply_skill(action)
-        elif isinstance(action, (ApproachDialogueTargetAction, ActivateVisibleControlAction)):
+        elif isinstance(
+            action,
+            (
+                ApproachDialogueTargetAction,
+                ActivateVisibleControlAction,
+                RecoverCameraViewAction,
+            ),
+        ):
             message, semantic = self._apply_semantic_action(action)
+            if isinstance(action, RecoverCameraViewAction):
+                primitive_actions = 0
         else:
             message = f"Recorded UI primitive {action.kind}; mock world state did not change."
 
@@ -301,7 +357,11 @@ class MockEnvironment(AgentEnvironment):
 
     def _apply_semantic_action(
         self,
-        action: ApproachDialogueTargetAction | ActivateVisibleControlAction,
+        action: (
+            ApproachDialogueTargetAction
+            | ActivateVisibleControlAction
+            | RecoverCameraViewAction
+        ),
     ) -> tuple[str, SemanticActionReceipt | None]:
         """Bind a semantic action against mock state and record what it resolved to.
 
@@ -318,6 +378,47 @@ class MockEnvironment(AgentEnvironment):
         if observation is None:
             return (f"Mock {action.kind} had no current observation to bind against.", None)
         binding = contract.bind(action, observation)
+        if isinstance(action, RecoverCameraViewAction) and binding.bound:
+            score = score_camera_observation(
+                observation,
+                candidate="mock_initial",
+                floor=binding.floor or 0,
+                clear_score_threshold=0.72,
+                anchor_max_distance=30.0,
+            )
+            status = (
+                CameraRecoveryStatus.ALREADY_CLEAR
+                if score.clear
+                else CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS
+            )
+            semantic = SemanticActionReceipt(
+                action_kind=action.kind,
+                contract_version=contract.version,
+                target_id=binding.target_id,
+                resolved_label=binding.resolved_label,
+                resolved_role=binding.resolved_role,
+                resolved_bounds=binding.resolved_bounds,
+                source_revision=binding.source_revision,
+                revalidation=binding.reason,
+                camera_recovery=CameraRecoveryEvidence(
+                    status=status,
+                    selected_character_id=binding.target_id or "mock:wanderer",
+                    selected_character_name=binding.selected_character_name or "Wanderer",
+                    initial_floor=binding.floor or 0,
+                    final_floor=binding.floor or 0,
+                    clear_score_threshold=0.72,
+                    anchor_max_distance=30.0,
+                    paused_for_recovery=False,
+                    primitive_actions=0,
+                    follow_method="already_anchored",
+                    chosen_candidate=score.candidate,
+                    candidates=[score],
+                ),
+            )
+            return (
+                f"Mock camera recovery returned {status.value}: {binding.reason}",
+                semantic,
+            )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=contract.version,

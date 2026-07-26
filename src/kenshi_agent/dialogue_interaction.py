@@ -150,7 +150,7 @@ def _step_action_errors(
             "permission to act twice"
         )
 
-    if not any(
+    if not contract.controller_verified and not any(
         _is_causal_condition(condition.kind, condition.path)
         for condition in step.success_conditions
     ):
