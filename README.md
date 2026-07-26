@@ -227,6 +227,12 @@ prompt and validates it locally rather than ending the run.
 The planner receives a JSON observation with planning/control mode, world
 revision, deltas, memories, deterministic dialogue/travel targets, current
 semantic actions, window-grouped controls, and a base64 image when enabled.
+When `recover_camera_view` is advertised, the planner requests it with no
+arguments and no success conditions. The controller alone binds the selected
+character/HUD, establishes follow, searches bounded floors and fixed zoom/orbit
+candidates, scores retained frames, and returns `already_clear`, `recovered`,
+or `failed_after_bounded_attempts`; the model does not author recovery
+gestures.
 Optional telemetry is reduced semantically to the configured spending budget.
 The action/control envelope is preserved even when it exceeds that preference;
 only the model's real context ceiling may truncate it, and truncation is stated

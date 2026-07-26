@@ -60,6 +60,9 @@ requirements are present:
   time, camera, selection, or stopping movement.
 - `scroll_screen` — reveal contents beyond the currently rendered part of one
   exact open window.
+- `recover_camera_view` — take no model-authored camera parameters; bind one
+  selected character and the current world HUD, then let the controller own a
+  bounded follow/floor/zoom/orbit transaction and typed frame-scored verdict.
 
 Run control (`noop`, `wait`, `pause`, `set_speed`, and whole-run `stop`) remains
 separate from game-object contracts. Raw keys, hotkeys, cursor moves, clicks,
@@ -173,12 +176,12 @@ At implementation commits `309f100`, `b3543ec`, and `53f9f42`:
 
 ## Open work
 
-- Camera recovery is not a model-planning problem. Add a single controller-owned
-  `recover_camera_view` action that establishes tested character follow, sets
-  the selected character's building floor, applies a fixed zoom/orbit search,
-  scores resulting frames for readability/occlusion, and returns a bounded
-  typed outcome. The model should not author recovery directions or success
-  predicates.
+- Obtain one bounded live acceptance receipt for the new controller-owned
+  `recover_camera_view`. Portable evidence now covers zero-input
+  `already_clear`, successful follow/floor/zoom/orbit selection, safe pause
+  without unpause, human interruption, continuous controller-verdict handling,
+  and terminal `failed_after_bounded_attempts`; live Kenshi evidence is still a
+  separate gate.
 - A native movement option can time out while its exact command remains
   accepted. Later direction options then fail or are rejected with
   `command_already_active`; failed options have no successful terminalization

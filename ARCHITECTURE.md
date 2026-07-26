@@ -229,6 +229,8 @@ current telemetry references through one catalog:
 - activate a visible control or dismiss the current screen;
 - buy, sell, equip, or scroll one current window;
 - press one allowlisted reversible Kenshi game binding.
+- recover the selected-character camera through one bounded controller-owned,
+  frame-scored follow/floor/zoom/orbit transaction.
 
 Each `ActionContract` owns planner visibility, capability/control-mode
 requirements, pointer class, native requirement, risk cost, idempotency,
@@ -238,7 +240,9 @@ never micromanages primitive timing or coordinates. Legacy skills still expand
 into bounded primitives for compatibility and calibrated transport.
 
 This is the intended single source of action truth, not yet complete executable
-truth. In particular, most contracts name no controller-owned effect predicate:
+truth. Camera recovery is the first controller-verified contract: its receipt
+owns a typed terminal verdict, so the planner supplies no success predicate.
+Most other contracts still name no controller-owned effect predicate:
 the generic policy requires a model-authored condition and evaluates it only on
 a causally later revision. That proves temporal ordering, not necessarily that
 the dispatched action caused the intended transition. The world-state store's

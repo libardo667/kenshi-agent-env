@@ -158,6 +158,16 @@ inspection alone.
       `docs/LIVE_GPT41_80_TURN_REPORT_20260725.md`. The observed result supports
       a controller-owned, bounded, frame-scored `recover_camera_view`; it does
       not support asking the model to keep composing camera key presses.
+- [x] Implement the portable controller contract. The no-argument semantic
+      action binds one selected character, portrait, floor label, both floor
+      arrows, fresh telemetry, and capture; returns typed `already_clear`,
+      `recovered`, or `failed_after_bounded_attempts` evidence; owns an
+      eleven-primitive ceiling; and allows empty model-authored success
+      conditions only for this controller-verified action.
+- [ ] Retain one live Kenshi receipt with advancing fresh telemetry, resulting
+      candidate frames, final pause state, selected-character anchor evidence,
+      and a terminal camera-recovery status. Portable scoring/mock receipts do
+      not satisfy this box.
 
 ### Protocol 0.5 title-screen semantic lifecycle
 

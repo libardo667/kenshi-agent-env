@@ -26,10 +26,28 @@ coordinate delta: `camera.position` is a capability name, and a field condition
 using it is silently normalized to "the capability still exists." A later tick
 can therefore satisfy that condition without camera motion. Receipts and
 `recent_action_outcomes` may expose before/after camera facts, but a camera
-binding must not be described as semantically proven until a real coordinate
-condition or controller-owned effect predicate exists. To recalibrate distance,
+binding must not be described as semantically proven. The
+`recover_camera_view` action now supplies a separate controller-owned effect
+predicate for recovery; it does not make individual binding presses provable.
+To recalibrate distance,
 exit, restore `camera zoom=125`, relaunch, choose a new distance, then repeat
 the lock step.
+
+## Runtime recovery
+
+When capture and the world HUD are available, the no-argument
+`recover_camera_view` action owns the complete best-effort transaction. It
+accepts an already clear selected-character-anchored frame without input.
+Otherwise it leaves the world paused, double-clicks the selected portrait,
+scores the character floor and at most two lower floors, restores the best
+floor, and compares one fixed End/Q/E candidate sequence. End may be inert
+under the persistent zoom lock; it is still a bounded candidate and never a
+model-authored adjustment.
+
+The receipt retains all scored frame paths/hashes and returns exactly
+`already_clear`, `recovered`, or `failed_after_bounded_attempts`. A failure
+means the bounded controller policy exhausted its options; the model must not
+start composing camera keys to continue the same recovery.
 
 Community references:
 

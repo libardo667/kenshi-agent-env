@@ -5,6 +5,33 @@ as "active", "current", "next", and "known limitation" inside an older section
 describe that checkpoint and may be superseded by a newer entry. Use
 `STATUS.md` for current behavior and this file for the evidence trail.
 
+## Controller-owned camera recovery implementation (2026-07-25)
+
+The no-argument `recover_camera_view` semantic action now owns camera recovery
+end to end. Its contract binds a fresh loaded world, one selected character,
+that character's unambiguous lower-HUD portrait, one floor label, both floor
+arrows, camera position, pause state, visible controls, and an enabled capture
+backend. The planner supplies no directions and, uniquely for this
+controller-verified action, an empty `success_conditions` list.
+
+The live handler first scores a newly retained current frame. A clear,
+selected-label-visible, character-anchored frame returns `already_clear` with
+zero input. Otherwise the handler safety-pauses a running world and never
+unpauses it, double-clicks the selected portrait, searches no more than two
+lower floors, restores the highest-scoring floor, holds the fixed End zoom, and
+compares fixed right/baseline/left Q/E orbit candidates before establishing the
+winning final angle. The full path is capped at eleven primitives. Every
+candidate remains in the run directory and the receipt records its structural
+score, selected-label signal, anchor distance, floor, revisions, and hash.
+
+Portable tests cover the three terminal statuses, zero-input already-clear,
+pause-without-unpause, exact floor restoration, fixed orbit selection, human
+interruption before the next primitive, capability/binding gates, and
+continuous-executor acceptance of the controller verdict without
+model-authored postconditions. Mock mode exposes the same typed action and
+receipt. This is declared and portable evidence only until the separate live
+acceptance box in `docs/LIVE_VALIDATION_CHECKLIST.md` is completed.
+
 ## GPT-4.1 80-turn live endurance run (2026-07-25)
 
 Run `20260725T80turn-gpt41-live-01` completed the requested 80-step live action
