@@ -9,6 +9,7 @@ from .config import SafetyConfig
 from .models import (
     Action,
     ClickAction,
+    ConsultAdvisorAction,
     ControlMode,
     CoordinateSpace,
     MoveCursorAction,
@@ -122,7 +123,13 @@ class ActionGuard:
                                 f"({primitive.x:.3f}, {primitive.y:.3f}) is outside its "
                                 "calibrated safety envelope."
                             )
-        primitive_count = self.macros.primitive_count(action) if primitives is not None else 1
+        primitive_count = (
+            self.macros.primitive_count(action)
+            if primitives is not None
+            else 0
+            if isinstance(action, ConsultAdvisorAction)
+            else 1
+        )
         if primitive_count > self.config.max_primitive_actions_per_step:
             raise SafetyViolation(
                 f"Action expands to {primitive_count} primitives; maximum is "

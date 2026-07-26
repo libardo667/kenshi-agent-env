@@ -39,6 +39,269 @@
       "title": "ActivateVisibleControlAction",
       "type": "object"
     },
+    "AdvisorAttribution": {
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$",
+          "title": "Source Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "creator": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Creator"
+        },
+        "url": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source_id",
+        "title",
+        "url"
+      ],
+      "title": "AdvisorAttribution",
+      "type": "object"
+    },
+    "AdvisorBrief": {
+      "additionalProperties": false,
+      "properties": {
+        "brief_id": {
+          "pattern": "^advisor-[0-9a-f]{32}$",
+          "title": "Brief Id",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "focus": {
+          "$ref": "#/$defs/AdvisorFocus"
+        },
+        "based_on_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "summary": {
+          "maxLength": 1200,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "recommendations": {
+          "items": {
+            "$ref": "#/$defs/AdvisorRecommendation"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Recommendations",
+          "type": "array"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Uncertainties",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/AdvisorAttribution"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "corpus_version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Corpus Version",
+          "type": "string"
+        },
+        "provider": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_id",
+        "question",
+        "focus",
+        "based_on_revision",
+        "summary",
+        "recommendations",
+        "sources",
+        "corpus_version",
+        "provider",
+        "model"
+      ],
+      "title": "AdvisorBrief",
+      "type": "object"
+    },
+    "AdvisorConsultEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/AdvisorConsultStatus"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "calls_used": {
+          "minimum": 0,
+          "title": "Calls Used",
+          "type": "integer"
+        },
+        "max_calls": {
+          "minimum": 0,
+          "title": "Max Calls",
+          "type": "integer"
+        },
+        "state_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "State Fingerprint",
+          "type": "string"
+        },
+        "brief": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdvisorBrief"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "calls_used",
+        "max_calls",
+        "state_fingerprint"
+      ],
+      "title": "AdvisorConsultEvidence",
+      "type": "object"
+    },
+    "AdvisorConsultStatus": {
+      "enum": [
+        "answered",
+        "disabled",
+        "cooldown",
+        "unchanged_state",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "AdvisorConsultStatus",
+      "type": "string"
+    },
+    "AdvisorFocus": {
+      "enum": [
+        "next_goal",
+        "survival",
+        "food",
+        "economy",
+        "recruitment",
+        "travel",
+        "recovery"
+      ],
+      "title": "AdvisorFocus",
+      "type": "string"
+    },
+    "AdvisorRecommendation": {
+      "additionalProperties": false,
+      "properties": {
+        "rank": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "goal": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Goal",
+          "type": "string"
+        },
+        "why_now": {
+          "maxLength": 800,
+          "minLength": 1,
+          "title": "Why Now",
+          "type": "string"
+        },
+        "prerequisites": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Prerequisites",
+          "type": "array"
+        },
+        "cautions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Cautions",
+          "type": "array"
+        },
+        "source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Source Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "rank",
+        "goal",
+        "why_now",
+        "source_ids"
+      ],
+      "title": "AdvisorRecommendation",
+      "type": "object"
+    },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
       "description": "Walk to one exact currently observed dialogue target and open dialogue.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nOne monitored option owns the whole walk, so there is no planner-visible\n\"continue approaching\" command.",
@@ -769,6 +1032,33 @@
       ],
       "title": "ConditionResult",
       "type": "string"
+    },
+    "ConsultAdvisorAction": {
+      "additionalProperties": false,
+      "description": "Ask a read-only guide-grounded model for strategic advice.\n\nThis is a cognitive action. It emits no controller primitives, never enters\nthe environment dispatch path, and cannot directly change Kenshi state.",
+      "properties": {
+        "kind": {
+          "const": "consult_advisor",
+          "default": "consult_advisor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "focus": {
+          "$ref": "#/$defs/AdvisorFocus",
+          "default": "next_goal"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "ConsultAdvisorAction",
+      "type": "object"
     },
     "ControlMode": {
       "enum": [
@@ -1872,6 +2162,9 @@
           "$ref": "#/$defs/WaitAction"
         },
         {
+          "$ref": "#/$defs/ConsultAdvisorAction"
+        },
+        {
           "$ref": "#/$defs/KeyAction"
         },
         {
@@ -2013,6 +2306,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/SemanticActionReceipt"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "advisor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AdvisorConsultEvidence"
         },
         {
           "type": "null"

@@ -119,6 +119,28 @@ class PlannerConfig(ConfigModel):
         return self
 
 
+class AdvisorConfig(ConfigModel):
+    """Bounded, read-only strategic-advisor configuration."""
+
+    enabled: bool = False
+    provider: Literal["openrouter"] = "openrouter"
+    model: str = "openai/gpt-5.4"
+    base_url: str = "https://openrouter.ai/api/v1"
+    reasoning_effort: Literal[
+        "none", "minimal", "low", "medium", "high", "xhigh", "max"
+    ] = "medium"
+    timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
+    max_output_tokens: int = Field(default=2500, ge=512, le=20000)
+    corpus_file: Path = Path("../knowledge/kenshi_strategy_v1.yaml")
+    max_calls_per_run: int = Field(default=4, ge=0, le=100)
+    cooldown_steps: int = Field(default=12, ge=0, le=1000)
+    cadence_steps: int = Field(default=20, ge=1, le=1000)
+    stall_repeat_threshold: int = Field(default=3, ge=2, le=20)
+    stall_window_actions: int = Field(default=12, ge=2, le=100)
+    provider_sort: Literal["latency", "throughput", "price"] = "latency"
+    require_parameters: bool = False
+
+
 class MockConfig(ConfigModel):
     seed: int = 7
     start_location: str = "The Hub"
@@ -426,6 +448,7 @@ class AppConfig(ConfigModel):
     paths: PathsConfig
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     planner: PlannerConfig = Field(default_factory=PlannerConfig)
+    advisor: AdvisorConfig = Field(default_factory=AdvisorConfig)
     mock: MockConfig = Field(default_factory=MockConfig)
     telemetry: TelemetryConfig
     capture: CaptureConfig = Field(default_factory=CaptureConfig)
@@ -498,6 +521,9 @@ def load_config(path: str | Path) -> AppConfig:
                         else None
                     )
                 }
+            ),
+            "advisor": config.advisor.model_copy(
+                update={"corpus_file": _resolve_path(config.advisor.corpus_file, base)}
             ),
         }
     )

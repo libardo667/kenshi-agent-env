@@ -13,6 +13,7 @@ from typing import TypedDict
 
 from dotenv import load_dotenv
 
+from .advisor import AdvisorSession, GuideCorpus, OpenRouterStrategyAdvisor
 from .config import AppConfig, load_config
 from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
@@ -75,6 +76,17 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
     if kind == "openrouter":
         return OpenRouterPlanner(config.planner, config.paths.prompt_file)
     raise SystemExit(f"Unsupported planner kind: {kind}")
+
+
+def _build_advisor(config: AppConfig) -> AdvisorSession | None:
+    if not config.advisor.enabled:
+        return None
+    corpus = GuideCorpus.load(config.advisor.corpus_file)
+    if config.advisor.provider == "openrouter":
+        client = OpenRouterStrategyAdvisor(config.advisor)
+    else:  # pragma: no cover - strict config validation owns this branch
+        raise SystemExit(f"Unsupported advisor provider: {config.advisor.provider}")
+    return AdvisorSession(config.advisor, corpus, client)
 
 
 class _ControllerKwargs(TypedDict):
@@ -242,6 +254,7 @@ async def _run_command(args: argparse.Namespace) -> int:
     try:
         planner_kind = args.planner or config.planner.kind
         planner = _build_planner(config, args)
+        advisor = _build_advisor(config)
         environment = _build_environment(
             config,
             args,
@@ -258,6 +271,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             run_id=run_id,
             environment=environment,
             planner=planner,
+            advisor=advisor,
             guard=ActionGuard(
                 config.safety,
                 macros,
@@ -320,6 +334,29 @@ def _doctor(args: argparse.Namespace) -> int:
     checks.append(("mode", True, args.mode or config.mode))
     checks.append(("control_mode", True, config.control.mode.value))
     checks.append(("planning_mode", True, config.planning.mode.value))
+    if config.advisor.enabled:
+        checks.append(
+            (
+                "advisor_corpus",
+                config.advisor.corpus_file.exists(),
+                str(config.advisor.corpus_file),
+            )
+        )
+        checks.append(
+            (
+                "advisor_openrouter_api_key",
+                bool(os.environ.get("OPENROUTER_API_KEY")),
+                "environment",
+            )
+        )
+        try:
+            import openai  # noqa: F401
+
+            checks.append(("advisor_openai_package", True, "installed"))
+        except ImportError:
+            checks.append(
+                ("advisor_openai_package", False, "pip install -e '.[openai]'")
+            )
     if (args.mode or config.mode) == "live":
         checks.append(("windows", os.name == "nt", platform.platform()))
         checks.append(

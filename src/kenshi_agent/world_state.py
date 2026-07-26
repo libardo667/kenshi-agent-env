@@ -394,6 +394,7 @@ class WorldStateStore:
             "available_skills",
             "skill_specs",
             "memories",
+            "advisor",
         )
         decorated = self._latest.model_copy(
             update={

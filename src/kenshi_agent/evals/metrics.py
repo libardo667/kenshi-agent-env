@@ -55,6 +55,11 @@ class _MetricValues(TypedDict):
     native_commands_cancelled: int
     safety_supervisor_preemptions: int
     strategic_planner_cancellations: int
+    advisor_requests: int
+    advisor_hosted_calls: int
+    advisor_answers: int
+    advisor_suppressions: int
+    advisor_failures: int
     plan_execution_cancellations: int
     safety_cleanups_started: int
     safety_cleanups_completed: int
@@ -124,6 +129,11 @@ class LogMetrics:
     native_commands_cancelled: int = 0
     safety_supervisor_preemptions: int = 0
     strategic_planner_cancellations: int = 0
+    advisor_requests: int = 0
+    advisor_hosted_calls: int = 0
+    advisor_answers: int = 0
+    advisor_suppressions: int = 0
+    advisor_failures: int = 0
     plan_execution_cancellations: int = 0
     safety_cleanups_started: int = 0
     safety_cleanups_completed: int = 0
@@ -214,6 +224,11 @@ def evaluate_log(path: Path) -> LogMetrics:
         "native_commands_cancelled": 0,
         "safety_supervisor_preemptions": 0,
         "strategic_planner_cancellations": 0,
+        "advisor_requests": 0,
+        "advisor_hosted_calls": 0,
+        "advisor_answers": 0,
+        "advisor_suppressions": 0,
+        "advisor_failures": 0,
         "plan_execution_cancellations": 0,
         "safety_cleanups_started": 0,
         "safety_cleanups_completed": 0,
@@ -317,6 +332,18 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["safety_supervisor_preemptions"] += 1
             elif event_type == "strategic_planner_cancelled":
                 values["strategic_planner_cancellations"] += 1
+            elif event_type == "advisor_result":
+                values["advisor_requests"] += 1
+                evidence = payload.get("evidence")
+                status = evidence.get("status") if isinstance(evidence, dict) else None
+                if status in {"answered", "failed"}:
+                    values["advisor_hosted_calls"] += 1
+                if status == "answered":
+                    values["advisor_answers"] += 1
+                elif status == "failed":
+                    values["advisor_failures"] += 1
+                else:
+                    values["advisor_suppressions"] += 1
             elif event_type == "plan_execution_cancelled":
                 values["plan_execution_cancellations"] += 1
             elif event_type == "safety_cleanup_started":

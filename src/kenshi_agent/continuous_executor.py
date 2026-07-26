@@ -12,11 +12,13 @@ from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
 from .models import (
     Action,
+    ActionReceipt,
     ActivePlanContext,
     CameraRecoveryStatus,
     CommandDispatchContext,
     ConditionEvaluation,
     ConditionResult,
+    ConsultAdvisorAction,
     InputBoundaryDecision,
     MoveInDirectionAction,
     Observation,
@@ -68,6 +70,10 @@ ConcurrentPlanner = Callable[
     [Observation],
     Coroutine[Any, Any, PlannerOutput],
 ]
+AdvisorConsultant = Callable[
+    [ConsultAdvisorAction, Observation, str, int, str, float | None],
+    Coroutine[Any, Any, "AdvisorActionResult"],
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +85,12 @@ class PlanExecutionResult:
     success: bool | None
     reason: str
     reflex_decision: PlannerDecision | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AdvisorActionResult:
+    observation: Observation
+    receipt: ActionReceipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,6 +155,7 @@ class ContinuousPlanExecutor:
         observe_transition: TransitionObserver,
         planning_config: PlanningConfig,
         concurrent_planner: ConcurrentPlanner | None = None,
+        consult_advisor: AdvisorConsultant | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -153,6 +166,7 @@ class ContinuousPlanExecutor:
         self.observe_transition = observe_transition
         self.planning_config = planning_config
         self.concurrent_planner = concurrent_planner
+        self.consult_advisor = consult_advisor
 
     async def execute(
         self,
@@ -582,6 +596,15 @@ class ContinuousPlanExecutor:
                 "native_assisted_actions": reserved_risk[2],
             },
         )
+
+        if isinstance(action, ConsultAdvisorAction):
+            return await self._execute_advisor_step(
+                action,
+                plan,
+                step,
+                observation,
+                budget,
+            )
 
         movement_option: StatefulMovementOption | None = None
         if (
@@ -1158,6 +1181,116 @@ class ContinuousPlanExecutor:
                         step_deadline_seconds=step.timeout_seconds,
                     ),
                 )
+
+    async def _execute_advisor_step(
+        self,
+        action: ConsultAdvisorAction,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        budget: PlanBudgetLedger,
+    ) -> _StepResult:
+        """Run one cognitive action without creating a world command."""
+
+        self._event(
+            "plan_step_started",
+            plan,
+            observation,
+            step=step,
+            reason="Advisor request passed the guard and reserved one plan action.",
+            evidence={
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "remaining_actions_before_commit": budget.remaining_actions,
+            },
+        )
+        self._event(
+            "advisor_requested",
+            plan,
+            observation,
+            step=step,
+            reason=action.question,
+            evidence={"focus": action.focus.value},
+        )
+        if self.consult_advisor is None:
+            budget.release((0, 0, 0))
+            reason = "No strategic advisor is attached to this runtime."
+            self._event(
+                "plan_budget_released",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            return _StepResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=0,
+                reason=reason,
+            )
+
+        try:
+            result = await self.consult_advisor(
+                action,
+                observation,
+                plan.plan_id,
+                plan.plan_version,
+                step.step_id,
+                step.timeout_seconds,
+            )
+        except asyncio.CancelledError:
+            budget.commit()
+            self._event(
+                "plan_budget_committed",
+                plan,
+                observation,
+                step=step,
+                reason="The advisor request was cancelled after it may have reached the provider.",
+            )
+            raise
+
+        budget.commit()
+        evidence = result.receipt.advisor
+        if evidence is None:
+            reason = "Advisor execution returned no typed evidence."
+            succeeded = False
+            status = "missing_evidence"
+        else:
+            reason = evidence.reason
+            succeeded = evidence.status.value == "answered"
+            status = evidence.status.value
+        terminal_event = (
+            "advisor_completed"
+            if succeeded
+            else "advisor_failed"
+            if status == "failed"
+            else "advisor_suppressed"
+        )
+        self._event(
+            "plan_budget_committed",
+            plan,
+            result.observation,
+            step=step,
+            reason="The cognitive request consumed one bounded plan action.",
+        )
+        self._event(
+            terminal_event,
+            plan,
+            result.observation,
+            step=step,
+            reason=reason,
+            evidence={
+                "status": status,
+                "controller_primitives": 0,
+                "world_command_created": False,
+            },
+        )
+        return _StepResult(
+            observation=result.observation,
+            succeeded=succeeded,
+            actions_completed=1,
+            reason=reason,
+        )
 
     async def _execute_movement_option(
         self,

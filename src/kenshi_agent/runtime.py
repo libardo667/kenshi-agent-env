@@ -12,8 +12,13 @@ from typing import Any, TypeVar
 from PIL import Image, ImageChops
 
 from .action_contracts import translate_legacy_plan_actions
+from .advisor import (
+    AdvisorSession,
+    advisor_state_fingerprint,
+    disabled_advisor_availability,
+)
 from .config import PlanningConfig
-from .continuous_executor import ContinuousPlanExecutor
+from .continuous_executor import AdvisorActionResult, ContinuousPlanExecutor
 from .control_ownership import (
     ControlOwnershipEvent,
     ControlOwnershipMachine,
@@ -25,9 +30,12 @@ from .models import (
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionReceipt,
+    AdvisorConsultEvidence,
+    AdvisorConsultStatus,
     CameraRecoveryStatus,
     CharacterState,
     CommandDispatchContext,
+    ConsultAdvisorAction,
     ControlMode,
     LiveContinuousPolicy,
     MemoryKind,
@@ -92,6 +100,7 @@ class AgentRuntime:
         run_id: str,
         environment: AgentEnvironment,
         planner: Planner,
+        advisor: AdvisorSession | None = None,
         guard: ActionGuard,
         reflexes: ReflexEngine,
         logger: SessionLogger,
@@ -109,6 +118,7 @@ class AgentRuntime:
         self.run_id = run_id
         self.environment = environment
         self.planner = planner
+        self.advisor = advisor
         self.guard = guard
         self.reflexes = reflexes
         self.logger = logger
@@ -291,6 +301,22 @@ class AgentRuntime:
                     stop_reason = f"Safety policy rejected action: {exc}"
                     terminated = True
                     break
+
+                if isinstance(action, ConsultAdvisorAction):
+                    result = await self._execute_advisor_action(
+                        action,
+                        observation,
+                        plan_id="single-step",
+                        plan_version=1,
+                        step_id=f"step-{observation.step_index}",
+                        timeout_seconds=None,
+                    )
+                    steps_completed += 1
+                    observation = result.observation
+                    self._store_memories(decision)
+                    self._log_observation(observation)
+                    stop_reason = result.receipt.message
+                    continue
 
                 try:
                     dispatch_context = CommandDispatchContext(
@@ -867,6 +893,7 @@ class AgentRuntime:
                     observe_transition=self._observe_plan_transition,
                     planning_config=self.planning_config,
                     concurrent_planner=self.planner.decide,
+                    consult_advisor=self._execute_advisor_action,
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(
@@ -1832,6 +1859,11 @@ class AgentRuntime:
             "recent_action_outcomes": self._action_outcomes[-self.action_outcome_limit :]
             if self.action_outcome_limit > 0
             else [],
+            "advisor": (
+                self.advisor.availability(observation)
+                if self.advisor is not None
+                else disabled_advisor_availability()
+            ),
         }
         if self.memory is not None and self.memory_limit > 0:
             updates["memories"] = self.memory.recall(
@@ -1839,6 +1871,91 @@ class AgentRuntime:
                 minimum_salience=self.minimum_memory_salience,
             )
         return observation.model_copy(update=updates)
+
+    async def _execute_advisor_action(
+        self,
+        action: ConsultAdvisorAction,
+        observation: Observation,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+        timeout_seconds: float | None,
+    ) -> AdvisorActionResult:
+        """Execute a cognitive request and decorate planner context only."""
+
+        started_at = datetime.now(UTC)
+        if self.advisor is None:
+            evidence = AdvisorConsultEvidence(
+                status=AdvisorConsultStatus.DISABLED,
+                reason="The strategic advisor is disabled for this run.",
+                calls_used=0,
+                max_calls=0,
+                state_fingerprint=advisor_state_fingerprint(observation),
+            )
+        else:
+            try:
+                if timeout_seconds is None:
+                    evidence = await self.advisor.consult(action, observation)
+                else:
+                    async with asyncio.timeout(timeout_seconds):
+                        evidence = await self.advisor.consult(action, observation)
+            except TimeoutError:
+                evidence = AdvisorConsultEvidence(
+                    status=AdvisorConsultStatus.FAILED,
+                    reason=(
+                        f"Advisor call exceeded the plan step timeout of "
+                        f"{timeout_seconds:.2f} seconds."
+                    ),
+                    calls_used=self.advisor.calls_used,
+                    max_calls=self.advisor.config.max_calls_per_run,
+                    state_fingerprint=advisor_state_fingerprint(observation),
+                )
+        finished_at = datetime.now(UTC)
+        answered = evidence.status is AdvisorConsultStatus.ANSWERED
+        attempted = evidence.status in {
+            AdvisorConsultStatus.ANSWERED,
+            AdvisorConsultStatus.FAILED,
+        }
+        receipt = ActionReceipt(
+            action=action,
+            control_mode=self.control_mode,
+            advisor=evidence,
+            accepted=answered,
+            executed=attempted,
+            dry_run=False,
+            started_at=started_at,
+            finished_at=finished_at,
+            primitive_actions=0,
+            message=evidence.reason,
+            error_type=None if answered else evidence.status.value,
+        )
+        self.logger.write(
+            "action_receipt",
+            step_index=observation.step_index,
+            payload=receipt,
+        )
+        self.logger.write(
+            "advisor_result",
+            step_index=observation.step_index,
+            payload={
+                "plan_id": plan_id,
+                "plan_version": plan_version,
+                "step_id": step_id,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "evidence": evidence.model_dump(mode="json"),
+            },
+        )
+        if self.reporter is not None:
+            self.reporter.action_receipt(
+                step_index=observation.step_index,
+                receipt=receipt,
+            )
+        latest = self._with_memories(observation)
+        if self._state_store is not None:
+            latest = self._state_store.decorate_latest(latest)
+        return AdvisorActionResult(observation=latest, receipt=receipt)
 
     def _remember_plan(self, plan: PlanEnvelope) -> None:
         """Record what this plan was for, and anything it asked to remember.

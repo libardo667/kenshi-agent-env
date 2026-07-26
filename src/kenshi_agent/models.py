@@ -802,6 +802,28 @@ class WaitAction(StrictModel):
     seconds: float = Field(ge=0.0, le=60.0)
 
 
+class AdvisorFocus(StrEnum):
+    NEXT_GOAL = "next_goal"
+    SURVIVAL = "survival"
+    FOOD = "food"
+    ECONOMY = "economy"
+    RECRUITMENT = "recruitment"
+    TRAVEL = "travel"
+    RECOVERY = "recovery"
+
+
+class ConsultAdvisorAction(StrictModel):
+    """Ask a read-only guide-grounded model for strategic advice.
+
+    This is a cognitive action. It emits no controller primitives, never enters
+    the environment dispatch path, and cannot directly change Kenshi state.
+    """
+
+    kind: Literal["consult_advisor"] = "consult_advisor"
+    question: str = Field(min_length=1, max_length=600)
+    focus: AdvisorFocus = AdvisorFocus.NEXT_GOAL
+
+
 class KeyAction(StrictModel):
     kind: Literal["key"] = "key"
     key: str = Field(min_length=1, max_length=32)
@@ -1176,9 +1198,14 @@ it would activate. The generic live planner surface never advertises them.
 """
 
 PlannerControlAction: TypeAlias = (
-    NoopAction | StopAction | PauseAction | SetSpeedAction | WaitAction
+    NoopAction
+    | StopAction
+    | PauseAction
+    | SetSpeedAction
+    | WaitAction
+    | ConsultAdvisorAction
 )
-"""Run-control intentions that touch no game object and bind to no reference."""
+"""Planner-layer intentions that touch no game object and bind to no reference."""
 
 SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
@@ -1204,6 +1231,7 @@ Action: TypeAlias = (
     | PauseAction
     | SetSpeedAction
     | WaitAction
+    | ConsultAdvisorAction
     | KeyAction
     | HotkeyAction
     | MoveCursorAction
@@ -1253,12 +1281,12 @@ def is_semantic_action(action: Action) -> bool:
 
 
 PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
-    {"noop", "stop", "pause", "set_speed", "wait"}
+    {"noop", "stop", "pause", "set_speed", "wait", "consult_advisor"}
 )
 
 
 def is_planner_control_action(action: Action) -> bool:
-    """Run control that touches no game object and binds to no reference."""
+    """Planner-layer control that touches no game object and binds to no reference."""
 
     return action.kind in PLANNER_CONTROL_ACTION_KINDS
 
@@ -1389,6 +1417,67 @@ class WorldStateRevision(StrictModel):
             and (telemetry_advanced or frame_advanced or capability_advanced)
             and self.observed_at_monotonic >= other.observed_at_monotonic
         )
+
+
+class AdvisorConsultStatus(StrEnum):
+    ANSWERED = "answered"
+    DISABLED = "disabled"
+    COOLDOWN = "cooldown"
+    UNCHANGED_STATE = "unchanged_state"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    FAILED = "failed"
+
+
+class AdvisorAttribution(StrictModel):
+    source_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]{0,79}$")
+    title: str = Field(min_length=1, max_length=300)
+    creator: str | None = Field(default=None, max_length=200)
+    url: str = Field(min_length=1, max_length=1000)
+
+
+class AdvisorRecommendation(StrictModel):
+    rank: int = Field(ge=1, le=5)
+    goal: str = Field(min_length=1, max_length=500)
+    why_now: str = Field(min_length=1, max_length=800)
+    prerequisites: list[str] = Field(default_factory=list, max_length=6)
+    cautions: list[str] = Field(default_factory=list, max_length=6)
+    source_ids: list[str] = Field(min_length=1, max_length=8)
+
+
+class AdvisorBrief(StrictModel):
+    brief_id: str = Field(pattern=r"^advisor-[0-9a-f]{32}$")
+    question: str = Field(min_length=1, max_length=600)
+    focus: AdvisorFocus
+    based_on_revision: WorldStateRevision
+    summary: str = Field(min_length=1, max_length=1200)
+    recommendations: list[AdvisorRecommendation] = Field(min_length=1, max_length=4)
+    uncertainties: list[str] = Field(default_factory=list, max_length=8)
+    sources: list[AdvisorAttribution] = Field(min_length=1, max_length=12)
+    corpus_version: str = Field(min_length=1, max_length=80)
+    provider: str = Field(min_length=1, max_length=40)
+    model: str = Field(min_length=1, max_length=200)
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AdvisorAvailability(StrictModel):
+    enabled: bool = False
+    may_request: bool = False
+    suggested: bool = False
+    reason: str = Field(default="The strategic advisor is disabled.", max_length=600)
+    calls_used: int = Field(default=0, ge=0)
+    max_calls: int = Field(default=0, ge=0)
+    cooldown_steps_remaining: int = Field(default=0, ge=0)
+    corpus_version: str | None = Field(default=None, max_length=80)
+    latest_brief: AdvisorBrief | None = None
+
+
+class AdvisorConsultEvidence(StrictModel):
+    status: AdvisorConsultStatus
+    reason: str = Field(min_length=1, max_length=1000)
+    calls_used: int = Field(ge=0)
+    max_calls: int = Field(ge=0)
+    state_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    brief: AdvisorBrief | None = None
 
 
 class CommandDispatchContext(StrictModel):
@@ -1686,11 +1775,12 @@ class PlanStep(StrictModel):
         if self.retry_budget and self.idempotency != IdempotencyPolicy.SAFE_TO_RETRY:
             raise ValueError("retry_budget requires idempotency=safe_to_retry")
         if not self.success_conditions and not isinstance(
-            self.action, RecoverCameraViewAction
+            self.action, (RecoverCameraViewAction, ConsultAdvisorAction)
         ):
             raise ValueError(
-                "success_conditions may be empty only for recover_camera_view, "
-                "whose controller returns a typed terminal outcome"
+                "success_conditions may be empty only for recover_camera_view "
+                "or consult_advisor, whose owning subsystem returns a typed "
+                "terminal outcome"
             )
         return self
 
@@ -1811,6 +1901,7 @@ class Observation(StrictModel):
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
+    advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
 
     def travel_destination_digest(self) -> list[dict[str, Any]]:
         """Somewhere to walk that is not already somewhere to talk.
@@ -2047,6 +2138,7 @@ class Observation(StrictModel):
             "telemetry_age_seconds": self.telemetry_age_seconds,
             "events": list(self.events),
             "objective": self.objective,
+            "advisor": self.advisor.model_dump(mode="json"),
             "digest": True,
         }
         if telemetry is None:
@@ -2359,6 +2451,7 @@ class ActionReceipt(StrictModel):
     input_boundary: InputBoundaryReport | None = None
     calibration: CalibrationReport | None = None
     semantic: SemanticActionReceipt | None = None
+    advisor: AdvisorConsultEvidence | None = None
     accepted: bool
     executed: bool
     dry_run: bool

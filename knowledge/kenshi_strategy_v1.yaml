@@ -1,0 +1,117 @@
+corpus_version: kenshi-strategy-v1
+updated_on: 2026-07-26
+
+sources:
+  - source_id: steam_objective_guide_reignswolf
+    title: Kenshi Objective Guide (WIP)
+    creator: Reignswolf
+    url: https://steamcommunity.com/sharedfiles/filedetails/?id=1721071917
+    source_type: attributed community guide
+    accessed_on: 2026-07-26
+
+  - source_id: fandom_getting_started
+    title: Getting Started
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.fandom.com/wiki/Getting_Started
+    source_type: community wiki guide
+    accessed_on: 2026-07-26
+
+  - source_id: fandom_the_hub
+    title: The Hub
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.fandom.com/wiki/The_Hub
+    source_type: community wiki reference
+    accessed_on: 2026-07-26
+
+  - source_id: kenshi_wiki_food
+    title: Food
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.wiki/w/Food
+    source_type: community wiki reference
+    accessed_on: 2026-07-26
+
+  - source_id: fandom_mercenary_captain
+    title: Mercenary Captain
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.fandom.com/wiki/Mercenary_Captain
+    source_type: community wiki reference
+    accessed_on: 2026-07-26
+
+  - source_id: reddit_greenfruit_not_food
+    title: Why isnt my character eating
+    creator: r/Kenshi community
+    url: https://www.reddit.com/r/Kenshi/comments/1u6dxsa/why_isnt_my_character_eating/
+    source_type: attributed community discussion
+    accessed_on: 2026-07-26
+
+facts:
+  - fact_id: greenfruit_is_ingredient
+    claim: Greenfruit is a cooking ingredient, not an edible food item by itself.
+    source_ids:
+      - reddit_greenfruit_not_food
+    tags: [food, survival, economy]
+    confidence: high
+    note: This matters because an inventory can contain Greenfruit while the character still has no edible food.
+
+  - fact_id: food_should_be_verified_as_edible
+    claim: Hunger is addressed by items classified as food; ingredient names alone do not establish that an item can be eaten.
+    source_ids:
+      - kenshi_wiki_food
+      - reddit_greenfruit_not_food
+    tags: [food, survival, general]
+    confidence: high
+
+  - fact_id: hub_has_nearby_ore
+    claim: The Hub has nearby copper and iron resources, making mining and selling ore one available early-money route.
+    source_ids:
+      - fandom_the_hub
+      - steam_objective_guide_reignswolf
+    tags: [economy, next_goal]
+    confidence: high
+
+  - fact_id: mining_is_one_route_not_a_mandate
+    claim: Mining copper is a common beginner income route, but the guide also lists scavenging, bounties, crafting, trade, and other alternatives.
+    source_ids:
+      - steam_objective_guide_reignswolf
+    tags: [economy, next_goal, general]
+    confidence: medium
+    note: Present mining as an option whose safety and control affordances must fit the current world, not as universal consensus.
+
+  - fact_id: early_combat_is_dangerous
+    claim: Weak early characters can use town guards as protection and scavenge defeated attackers rather than taking unsupported fights.
+    source_ids:
+      - steam_objective_guide_reignswolf
+      - fandom_getting_started
+    tags: [survival, economy, next_goal]
+    confidence: medium
+
+  - fact_id: medical_supplies_matter
+    claim: Early squads should carry medical supplies because untreated bleeding can turn a recoverable defeat into death.
+    source_ids:
+      - steam_objective_guide_reignswolf
+      - fandom_getting_started
+    tags: [survival, recruitment, next_goal]
+    confidence: high
+
+  - fact_id: mercenary_cost_scale
+    claim: Mercenary Captains commonly offer bodyguard contracts around 2,000 Cats per day and outpost protection around 1,000 Cats per day.
+    source_ids:
+      - fandom_mercenary_captain
+    tags: [survival, recruitment, economy]
+    confidence: medium
+    note: Treat prices as guide-scale estimates and verify the current dialogue and money before committing.
+
+  - fact_id: more_people_tradeoffs
+    claim: Additional recruits can improve work capacity and group safety, but they also increase food needs and require enough cash to recruit and equip.
+    source_ids:
+      - steam_objective_guide_reignswolf
+      - fandom_getting_started
+    tags: [recruitment, food, survival, next_goal]
+    confidence: medium
+
+  - fact_id: delay_base_building
+    claim: A permanent base is a later progression goal after income, supplies, research, and enough people to defend and operate it.
+    source_ids:
+      - steam_objective_guide_reignswolf
+    tags: [next_goal, economy, survival]
+    confidence: medium

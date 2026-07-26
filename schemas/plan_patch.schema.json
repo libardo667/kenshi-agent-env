@@ -39,6 +39,19 @@
       "title": "ActivateVisibleControlAction",
       "type": "object"
     },
+    "AdvisorFocus": {
+      "enum": [
+        "next_goal",
+        "survival",
+        "food",
+        "economy",
+        "recruitment",
+        "travel",
+        "recovery"
+      ],
+      "title": "AdvisorFocus",
+      "type": "string"
+    },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
       "description": "Walk to one exact currently observed dialogue target and open dialogue.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nOne monitored option owns the whole walk, so there is no planner-visible\n\"continue approaching\" command.",
@@ -247,6 +260,33 @@
       ],
       "title": "ConditionPath",
       "type": "string"
+    },
+    "ConsultAdvisorAction": {
+      "additionalProperties": false,
+      "description": "Ask a read-only guide-grounded model for strategic advice.\n\nThis is a cognitive action. It emits no controller primitives, never enters\nthe environment dispatch path, and cannot directly change Kenshi state.",
+      "properties": {
+        "kind": {
+          "const": "consult_advisor",
+          "default": "consult_advisor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "focus": {
+          "$ref": "#/$defs/AdvisorFocus",
+          "default": "next_goal"
+        }
+      },
+      "required": [
+        "question"
+      ],
+      "title": "ConsultAdvisorAction",
+      "type": "object"
     },
     "DismissScreenAction": {
       "additionalProperties": false,
@@ -541,6 +581,9 @@
             },
             {
               "$ref": "#/$defs/WaitAction"
+            },
+            {
+              "$ref": "#/$defs/ConsultAdvisorAction"
             },
             {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
