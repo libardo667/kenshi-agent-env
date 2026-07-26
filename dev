@@ -16,5 +16,21 @@ if [[ $# -eq 0 ]]; then
   exit 2
 fi
 
+# WSL does not forward arbitrary per-command variables to Windows executables.
+# Keep the live override surface explicit, and pass only variables the checked-in
+# profiles intentionally consume. Values stay out of command lines and logs.
+runtime_overrides=(
+  KENSHI_AGENT_OPENROUTER_MODEL
+  KENSHI_AGENT_REASONING_EFFORT
+  KENSHI_AGENT_ADVISOR_MODEL
+  KENSHI_AGENT_ADVISOR_REASONING_EFFORT
+  KENSHI_AGENT_ADVISOR_CADENCE_STEPS
+)
+for variable_name in "${runtime_overrides[@]}"; do
+  if [[ -n "${!variable_name+x}" ]]; then
+    export WSLENV="${WSLENV:+${WSLENV}:}${variable_name}/w"
+  fi
+done
+
 cd "$repo_dir"
 exec "$windows_python" -m kenshi_agent.live_dev "$1" --config "$windows_config" "${@:2}"
