@@ -19,6 +19,7 @@ from kenshi_agent.live_dev import (
     _journey_argv,
     _observe_loaded_paused_health,
     _plugin_ready,
+    _record_run_finished_safety,
     _steam_connection_state,
     _unique_visible_control,
     _validate_calibrated_client_rect,
@@ -710,6 +711,118 @@ def test_journey_acknowledgement_without_continuous_is_harmless_passthrough() ->
     argv = _journey_argv(_journey_args("--acknowledge-continuous-live"), "run-5")
     assert "--planning-mode" not in argv
     assert "--acknowledge-continuous-live" in argv
+
+
+def test_finished_executing_journey_causally_confirms_pause(
+    monkeypatch: object,
+    capsys: object,
+) -> None:
+    controller = LaunchController()
+    reader = LaunchTelemetry(
+        launch_snapshot(30, paused=False),
+        launch_snapshot(31, paused=True),
+    )
+    monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)  # type: ignore[attr-defined]
+    monkeypatch.setattr(live_dev, "_controller", lambda _: controller)  # type: ignore[attr-defined]
+    monkeypatch.setattr(live_dev, "_telemetry_read", lambda _: reader)  # type: ignore[attr-defined]
+    recorded: list[dict[str, object]] = []
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_record_run_finished_safety",
+        lambda event_log, run_id, **payload: recorded.append(
+            {"event_log": event_log, "run_id": run_id, **payload}
+        ),
+    )
+
+    result = live_dev._journey(
+        _journey_args(
+            "--execute",
+            "--no-ownership-overlay",
+            "--run-id",
+            "finished-paused",
+        )
+    )
+
+    assert result == 0
+    assert controller.safety_actions == [KeyAction(key="space")]
+    assert recorded == [
+        {
+            "event_log": Path("runs/finished-paused/events.jsonl").resolve(),
+            "run_id": "finished-paused",
+            "pause_confirmed": True,
+            "reason": "confirmed paused at telemetry sequence 31",
+            "run_result": 0,
+        }
+    ]
+    assert "Run-finished safety: confirmed paused at telemetry sequence 31." in (
+        capsys.readouterr().out  # type: ignore[attr-defined]
+    )
+
+
+def test_finished_journey_fails_closed_when_pause_cannot_be_verified(
+    monkeypatch: object,
+) -> None:
+    async def unavailable(*args: object, **kwargs: object) -> str:
+        del args, kwargs
+        return "pause state unavailable; no cleanup input sent"
+
+    monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)  # type: ignore[attr-defined]
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_ensure_interrupted_safe_state",
+        unavailable,
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_controller",
+        lambda _: LaunchController(),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_telemetry_read",
+        lambda _: LaunchTelemetry(launch_snapshot(30, paused=False)),
+    )
+    recorded: list[dict[str, object]] = []
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_record_run_finished_safety",
+        lambda event_log, run_id, **payload: recorded.append(payload),
+    )
+
+    assert (
+        live_dev._journey(
+            _journey_args("--execute", "--no-ownership-overlay")
+        )
+        == 6
+    )
+    assert recorded == [
+        {
+            "pause_confirmed": False,
+            "reason": "pause state unavailable; no cleanup input sent",
+            "run_result": 0,
+        }
+    ]
+
+
+def test_run_finished_safety_event_is_durable(tmp_path: Path) -> None:
+    event_log = tmp_path / "run-finished" / "events.jsonl"
+
+    _record_run_finished_safety(
+        event_log,
+        "run-finished",
+        pause_confirmed=True,
+        reason="confirmed paused at telemetry sequence 44",
+        run_result=0,
+    )
+
+    record = json.loads(event_log.read_text(encoding="utf-8"))
+    assert record["event_type"] == "run_finished_safety"
+    assert record["run_id"] == "run-finished"
+    assert record["payload"] == {
+        "status": "pause_confirmed",
+        "reason": "confirmed paused at telemetry sequence 44",
+        "run_result": 0,
+    }
 
 
 def test_startup_clicks_hold_long_enough_for_mygui() -> None:

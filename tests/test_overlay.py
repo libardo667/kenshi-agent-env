@@ -64,6 +64,30 @@ def test_format_event_labels_control_mode_in_run_lifecycle() -> None:
     assert finished is not None and "CONTROL native_assisted" in finished
 
 
+def test_run_finished_safety_is_prominent_and_failure_is_a_safety_event() -> None:
+    from kenshi_agent.overlay import event_category
+
+    confirmed = {
+        "event_type": "run_finished_safety",
+        "payload": {
+            "status": "pause_confirmed",
+            "reason": "confirmed paused at telemetry sequence 44",
+        },
+    }
+    unverified = {
+        "event_type": "run_finished_safety",
+        "payload": {
+            "status": "pause_unverified",
+            "reason": "pause state unavailable",
+        },
+    }
+
+    rendered = format_event(confirmed)
+    assert rendered is not None and "FINAL CONTROL | PAUSE CONFIRMED" in rendered
+    assert event_category(confirmed) == "control"
+    assert event_category(unverified) == "safety"
+
+
 def test_takeover_countdown_is_prominent_in_feed_and_banner() -> None:
     record = {
         "event_type": "agent_takeover_countdown",

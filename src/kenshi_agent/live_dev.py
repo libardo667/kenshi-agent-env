@@ -29,6 +29,7 @@ from .graphics_profile import (
     verify_graphics_profile,
 )
 from .models import ClickAction, KeyAction, TelemetrySnapshot, VisibleUIControl
+from .session_log import SessionLogger
 from .telemetry import TelemetryReader, TelemetryReadError
 
 
@@ -842,6 +843,7 @@ def _journey(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     argv = _journey_argv(args, run_id)
+    event_log = config.paths.runs_dir / run_id / "events.jsonl"
 
     overlay: subprocess.Popen[bytes] | None = None
     if (
@@ -849,7 +851,6 @@ def _journey(args: argparse.Namespace) -> int:
         and config.safety.automatic_takeover_enabled
         and not args.no_ownership_overlay
     ):
-        event_log = config.paths.runs_dir / run_id / "events.jsonl"
         overlay = subprocess.Popen(
             [
                 sys.executable,
@@ -867,10 +868,77 @@ def _journey(args: argparse.Namespace) -> int:
             ],
             cwd=Path.cwd(),
         )
-    result = agent_main(argv)
-    if result != 0 and overlay is not None and overlay.poll() is None:
-        overlay.terminate()
+    result: int | None = None
+    terminal_safety = "not requested"
+    try:
+        result = agent_main(argv)
+    finally:
+        if args.execute:
+            try:
+                terminal_safety = asyncio.run(
+                    _ensure_interrupted_safe_state(
+                        _controller(config),
+                        _telemetry_read(config),
+                        pause_key=config.controls.pause_key,
+                        timeout_seconds=(
+                            config.safety.supervisor_pause_timeout_seconds
+                        ),
+                    )
+                )
+            except Exception as exc:
+                terminal_safety = (
+                    f"run-finished safety cleanup failed "
+                    f"({type(exc).__name__}: {exc})"
+                )
+            print(f"Run-finished safety: {terminal_safety}.")
+            try:
+                _record_run_finished_safety(
+                    event_log,
+                    run_id,
+                    pause_confirmed=_safe_state_confirmed(terminal_safety),
+                    reason=terminal_safety,
+                    run_result=result,
+                )
+            except Exception as exc:
+                print(
+                    "Run-finished safety event could not be recorded "
+                    f"({type(exc).__name__}: {exc})."
+                )
+        if (
+            (result is None or result != 0 or not _safe_state_confirmed(terminal_safety))
+            and overlay is not None
+            and overlay.poll() is None
+        ):
+            overlay.terminate()
+    assert result is not None
+    if args.execute and result == 0 and not _safe_state_confirmed(terminal_safety):
+        return 6
     return result
+
+
+def _safe_state_confirmed(outcome: str) -> bool:
+    return outcome.startswith(("already confirmed paused", "confirmed paused"))
+
+
+def _record_run_finished_safety(
+    event_log: Path,
+    run_id: str,
+    *,
+    pause_confirmed: bool,
+    reason: str,
+    run_result: int | None,
+) -> None:
+    with SessionLogger(event_log, run_id) as logger:
+        logger.write(
+            "run_finished_safety",
+            payload={
+                "status": (
+                    "pause_confirmed" if pause_confirmed else "pause_unverified"
+                ),
+                "reason": reason,
+                "run_result": run_result,
+            },
+        )
 
 
 def build_parser() -> argparse.ArgumentParser:

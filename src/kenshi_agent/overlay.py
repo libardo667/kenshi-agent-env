@@ -262,6 +262,13 @@ def format_event(record: dict[str, Any]) -> str | None:
             f"CONTROL {payload.get('control_mode', 'unknown')}\n"
             f"{payload.get('stop_reason', 'Episode ended.')}\n"
         )
+    if event_type == "run_finished_safety":
+        confirmed = payload.get("status") == "pause_confirmed"
+        state = "PAUSE CONFIRMED" if confirmed else "PAUSE UNVERIFIED"
+        return (
+            f"FINAL CONTROL | {state}\n"
+            f"{payload.get('reason', 'No terminal safety result was recorded.')}\n"
+        )
     return None
 
 
@@ -301,6 +308,7 @@ _EVENT_CATEGORIES: dict[str, str] = {
     "agent_takeover_cancelled": "control",
     "agent_takeover_ready": "control",
     "run_finished": "goal",
+    "run_finished_safety": "control",
 }
 
 
@@ -314,6 +322,10 @@ def event_category(record: dict[str, Any]) -> str:
         payload = record.get("payload") or {}
         if payload.get("error_type") or not payload.get("accepted"):
             return "error"
+    if event_type == "run_finished_safety":
+        payload = record.get("payload") or {}
+        if payload.get("status") != "pause_confirmed":
+            return "safety"
     return category
 
 
