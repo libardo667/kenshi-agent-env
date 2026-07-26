@@ -30,6 +30,11 @@ Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
 limitation list before claiming anything generalizes.
 
+The long-term [game-affordance platform
+direction](docs/ADR_GAME_AFFORDANCE_PLATFORM.md) does not change the current
+Kenshi scope or priority queue. Generalization waits for evidence from a
+substantially different second game.
+
 ## Non-negotiable engineering rules
 
 ### 1. Truthful control modes

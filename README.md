@@ -8,10 +8,11 @@ contracts, analyzable lifecycle logs, and explicitly labelled control modes.
 `native_assisted` additionally permits a small set of reviewed native command
 bridges, and is never merged silently into interface-only evidence.
 
-The project supports a supervised open-ended live loop over a bounded,
-town-local, single-selected-character surface. That is not a claim of broad
-Kenshi competence — the machinery exists to keep perception, planning, input,
-native, and safety failures separately attributable.
+Today the project supports a supervised, open-ended but bounded town-local,
+single-character live loop—not broad Kenshi competence. Its long-term direction
+is a reusable agent substrate with causally verified game-specific affordance
+adapters. The [platform ADR](docs/ADR_GAME_AFFORDANCE_PLATFORM.md) records that
+direction without changing current Kenshi scope.
 
 ## Where things are written down
 
