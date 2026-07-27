@@ -44,7 +44,7 @@ new human input is terminal for that launch attempt.
 
 Because the lease wait is unbounded by design, every ordinary planner-authored
 live action in both schedulers carries a bounded `ExecutionToken` into dispatch.
-Details in [ADR_UNIFIED_INPUT_BOUNDARY_AUTHORITY](docs/ADR_UNIFIED_INPUT_BOUNDARY_AUTHORITY.md) and
+Details in [ADR_INPUT_BOUNDARY_AUTHORITY_V2](docs/ADR_INPUT_BOUNDARY_AUTHORITY_V2.md) and
 [ADR_CALIBRATION_IDENTITY](docs/ADR_CALIBRATION_IDENTITY.md); the operator-facing
 guarantee is that stale telemetry, a regressed revision, changed control mode,
 withdrawn capability or reference, human input, emergency stop, calibration

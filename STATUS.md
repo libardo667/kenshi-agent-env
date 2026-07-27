@@ -22,9 +22,9 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
   distinct failure code unless fresh telemetry confirms pause; cleanup input
   requires a causally later confirmation.
 - A final in-lease authorization fence covers ordinary planner-authored actions
-  in both schedulers: just before the first primitive, current state, action and
-  reference safety, plan conditions, control mode, calibration, human input, and
-  emergency-stop evidence are revalidated. Lost authority emits zero input.
+  in both schedulers: current action/reference safety, plan conditions, control
+  mode, calibration, input ownership, and freshness are revalidated just before
+  input. Stale, unknown-age, or over-age authority emits zero primitives.
 - Human input cancels the active plan and hands control over visibly. The
   long-form profile may restore a running world after a quiet, resettable
   takeover countdown; F12 disarms automatic takeover for the run.
@@ -59,7 +59,9 @@ supports exact characters, bounded direction, and no-argument exits; a shared
 ten-second no-progress terminal prevents poisoning later movement. Native camera
 follow has one obstructed-move proof. Exact contextual operation is live-proven on
 one Copper Resource through `context_task_started`, the visible `Operating machine`
-goal, and a safe final pause. Retained production reached output and opened its inventory.
+goal, and a safe final pause. Production reached output and opened its inventory;
+a later post-run snapshot showed five Copper in selected inventory, without
+causal or simultaneous source-loss proof.
 
 ## Native protocol 1.1.0 (supervised live-loaded)
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
@@ -73,7 +75,8 @@ ownership and normalized bounds; nearest-first structurally reviewed mining
 resources combined from bounded local and outer queries; completeness markers
 for bounded squad/control inventories; exact contextual-inventory ownership; and
 a keyed acknowledgement ring for seven declared commands. Its production and
-inventory-opening path has supervised live evidence; conserved transfer does not.
+inventory-opening path has live evidence; matching later destination quantity
+does not prove conserved or autonomous transfer.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities before planning and rejects native actions again at the
@@ -87,9 +90,8 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. One live call returned truncated invalid
   JSON; synthetic proofs do not satisfy the requirement.
-- Conserved output transfer has portable tests and a native conformance build,
-  but no supervised Kenshi proof. Production and inventory opening are proven;
-  collection or income claims still require equal source loss and inventory gain.
+- Conserved output transfer has portable tests and native conformance; production
+  and inventory opening are live-proven, but collection and income are not.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
@@ -106,15 +108,13 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   postcondition, but most success conditions are still planner-authored. Only
   `controller_verified` contracts carry controller-owned effect proof, so later
   correlated state can still be mistaken for the intended effect.
-- Game bindings use a hard-coded key map rather than parsing the active
-  `controls.cfg`.
+- Game bindings use a hard-coded key map rather than parsing active `controls.cfg`.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name,
   internal task stacks, trader money, occlusion, and distant world state are
   unavailable or unvalidated; source-scan capacity still makes absence unknown.
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
-- Exact entity memories deliberately do not transfer by display name across a
-  native process or game-session identity change.
+- Exact entity memories do not transfer by name across process or game-session identity changes.
 - Renderer stability remains open on this Intel Iris Xe host: the 30 fps
   external-only path passed startup and rejects Event 141s, but has no long soak.
 - The mock world tests orchestration, not Kenshi strategy competence.

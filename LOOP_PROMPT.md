@@ -160,9 +160,9 @@ Validation before entering a polite input lease is necessary but not sufficient 
 a delayed lease can make UI, target, capability, or calibration evidence
 obsolete. Ordinary planner-authored actions in both schedulers carry an execution
 token that runs after the lease is acquired and immediately before the first
-primitive; if action, reference, or plan authority changed, release the lease and
-emit zero input. Never paper over this by shortening the lease timeout or
-disabling polite handoff.
+primitive. Stale, unknown-age, or configured over-age telemetry and any changed
+action, reference, or plan authority release the lease with zero input. Never
+paper over this by shortening the lease timeout or disabling polite handoff.
 
 ### 7. Plans are bounded data, not programs
 
@@ -268,9 +268,10 @@ Work top-down. Verify each is still open before starting it.
 1. **Live-prove the resource-production option.** Portable and native-build
    evidence now retain the exact job through actual output, adopt unchanged
    matching work without reissue, open that target's contextual inventory, and
-   require equal source loss/destination gain for collection. Prove that whole
-   chain through the supported launcher; no production or income claim passes
-   without causal inventory or money evidence.
+   require equal source loss/destination gain for collection. A matching later
+   destination quantity lacked simultaneous source-loss and planner-causality
+   proof. Prove the whole autonomous chain through the supported launcher; no
+   collection or income claim passes without causal inventory or money evidence.
 2. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
    create source saves; capture dynamic states; use `./dev scenario`, `launch
    --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,
