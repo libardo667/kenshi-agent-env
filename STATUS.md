@@ -57,11 +57,11 @@ world and ended safely paused, but proved no income or task persistence. Selling
 and equipping have guarded portable coverage but no live proof. Native walking
 supports exact characters, bounded direction, and no-argument exits; a shared
 ten-second no-progress terminal prevents poisoning later movement. Native camera
-follow has one obstructed-move proof. Exact contextual operation is live-proven
-on one Copper Resource through `context_task_started`,
-the visible `Operating machine` goal, and a safe final pause.
+follow has one obstructed-move proof. Exact contextual operation is live-proven on
+one Copper Resource through `context_task_started`, the visible `Operating machine`
+goal, and a safe final pause. Retained production reached output and opened its inventory.
 
-## Native protocol 1.1.0 (build-validated; not live-loaded)
+## Native protocol 1.1.0 (supervised live-loaded)
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
 replaces a complete snapshot at roughly 2 Hz. Telemetry covers pause, speed,
 money, game time, camera position and bearings; stable session-scoped squad,
@@ -72,8 +72,8 @@ stats and management window state; up to 224 visible controls with window
 ownership and normalized bounds; nearest-first structurally reviewed mining
 resources combined from bounded local and outer queries; completeness markers
 for bounded squad/control inventories; exact contextual-inventory ownership; and
-a keyed acknowledgement ring for seven declared commands. Protocol `1.0.0`
-remains the latest supervised live-loaded evidence.
+a keyed acknowledgement ring for seven declared commands. Its production and
+inventory-opening path has supervised live evidence; conserved transfer does not.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities before planning and rejects native actions again at the
@@ -87,9 +87,9 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. One live call returned truncated invalid
   JSON; synthetic proofs do not satisfy the requirement.
-- Resource production, exact contextual-inventory opening, and conserved output
-  transfer now have portable tests and a native conformance build. They have no
-  loaded-DLL or supervised Kenshi proof, so no production or income claim passes.
+- Conserved output transfer has portable tests and a native conformance build,
+  but no supervised Kenshi proof. Production and inventory opening are proven;
+  collection or income claims still require equal source loss and inventory gain.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from .action_contracts import ActionContract, contract_for
 from .models import (
+    GAME_BINDING_SUCCESS_CONDITIONS,
     TOGGLE_GAME_BINDINGS,
     Action,
     ConditionKind,
@@ -55,7 +56,7 @@ _CAUSAL_CONDITION_PREFIXES = ("telemetry.", "selected.", "target.", "camera.")
 
 
 def _is_causal_condition(kind: ConditionKind, path: str | None) -> bool:
-    if kind is ConditionKind.TELEMETRY_FRESH:
+    if kind is not ConditionKind.FIELD:
         return False
     if path is None:
         return False
@@ -157,6 +158,21 @@ def _step_action_errors(
             f"{label} retries an at-most-once action; a delayed confirmation is not "
             "permission to act twice"
         )
+
+    if isinstance(action, UseGameBindingAction):
+        required_effect = GAME_BINDING_SUCCESS_CONDITIONS.get(action.binding)
+        if required_effect is not None and not any(
+            condition.kind is required_effect.kind
+            and condition.path == required_effect.path
+            and condition.operator is required_effect.operator
+            and condition.expected == required_effect.expected
+            for condition in step.success_conditions
+        ):
+            errors.append(
+                f"{label} binding {action.binding.value!r} must verify "
+                f"{required_effect.path} equals {required_effect.expected!r}; the "
+                "gear ordinal is not its multiplier"
+            )
 
     if not contract.controller_verified and not any(
         _is_causal_condition(condition.kind, condition.path)

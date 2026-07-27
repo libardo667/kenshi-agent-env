@@ -75,6 +75,46 @@ def test_the_binding_action_is_contracted_and_planner_visible() -> None:
     assert ACTION_CONTRACTS["use_game_binding"].planner_visible
 
 
+def test_speed_gears_advertise_their_exact_telemetry_effects() -> None:
+    """A gear ordinal is not its multiplier: Kenshi's third gear is 5x."""
+
+    binding_action = next(
+        action
+        for action in observation().semantic_action_digest()
+        if action["kind"] == "use_game_binding"
+    )
+
+    assert binding_action["binding_success_conditions"] == {
+        "speed_1": {
+            "kind": "field",
+            "path": "telemetry.game.speed_multiplier",
+            "operator": "equals",
+            "expected": 1.0,
+            "target_id": None,
+            "max_age_seconds": 3.0,
+            "required_capabilities": ["game.speed"],
+        },
+        "speed_2": {
+            "kind": "field",
+            "path": "telemetry.game.speed_multiplier",
+            "operator": "equals",
+            "expected": 2.0,
+            "target_id": None,
+            "max_age_seconds": 3.0,
+            "required_capabilities": ["game.speed"],
+        },
+        "speed_3": {
+            "kind": "field",
+            "path": "telemetry.game.speed_multiplier",
+            "operator": "equals",
+            "expected": 5.0,
+            "target_id": None,
+            "max_age_seconds": 3.0,
+            "required_capabilities": ["game.speed"],
+        },
+    }
+
+
 def test_a_binding_binds_on_a_loaded_game() -> None:
     action = UseGameBindingAction(
         binding=GameBinding.TOGGLE_MAP,

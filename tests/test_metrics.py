@@ -194,6 +194,7 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
     """
 
     from kenshi_agent.models import (
+        CharacterState,
         GameState,
         NativeCommandAcknowledgement,
         NativeCommandStatus,
@@ -215,7 +216,21 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
             identity_session_id="session-digest",
             capabilities=["game.pause", "identity.stable_handles"],
             game=GameState(loaded=True, paused=True, money=1000),
-            ui=UIState(active_screen="trade"),
+            ui=UIState(
+                active_screen="trade",
+                context_inventory_target_id="entity-copper",
+                visible_controls_complete=True,
+                selected_character_id="entity-hep",
+                selected_character_ids=["entity-hep"],
+            ),
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    inventory_complete=True,
+                )
+            ],
             native_control=NativeControlState(
                 available=True,
                 acknowledgements=[
@@ -245,6 +260,9 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
 
     # Enough to orient a human reading the log.
     assert digest["telemetry"]["ui"]["active_screen"] == "trade"
+    assert digest["telemetry"]["ui"]["context_inventory_target_id"] == "entity-copper"
+    assert digest["telemetry"]["ui"]["visible_controls_complete"] is True
+    assert digest["telemetry"]["selected"]["inventory_complete"] is True
     assert digest["telemetry"]["game"]["money"] == 1000
     assert digest["world_revision"]["telemetry_sequence"] == 12
 

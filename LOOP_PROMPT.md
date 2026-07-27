@@ -26,12 +26,11 @@ advisor and a typed, cross-run aggregable `request_affordance` channel exist;
 both emit zero game input and grant no authority.
 
 The native plug-in exports telemetry at ~2 Hz and accepts seven reviewed
-commands. Protocol `1.0.0` is live-loaded: nearest mining-resource observation,
-the UI-facing current goal, and exact contextual operation are proven on one
-Copper Resource. Protocol `1.1.0` is build-validated but not live-loaded; it
-adds retained resource production through actual output, exact contextual
-inventory opening, and conservation-proved collection. Hidden task scores grant
-no authority, and unresolved stale indoor handles fail closed.
+commands. Protocol `1.1.0` is live-loaded: nearest mining-resource observation,
+the UI-facing current goal, exact contextual operation, retained production
+through actual Copper output, and exact contextual-inventory opening are proven
+on one resource. Conservation-proved collection still lacks live proof. Hidden
+task scores grant no authority, and unresolved stale indoor handles fail closed.
 
 Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest

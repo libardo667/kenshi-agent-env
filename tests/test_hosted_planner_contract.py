@@ -301,6 +301,46 @@ def test_a_discriminator_stays_required_and_fully_specified() -> None:
         assert "kind" in definition["required"], name
 
 
+def test_condition_schema_cannot_author_comparisons_the_runtime_must_reject() -> None:
+    """Every condition admitted by hosted decoding must have executable meaning.
+
+    A live collection turn spent 17 hosted calls emitting combinations the flat
+    schema advertised but runtime validation rejected: null comparison values,
+    field paths used as capabilities, and capability names used as fields.
+    """
+    from kenshi_agent.planners.schema_dialect import portable_response_format
+
+    schema = portable_response_format(PlanEnvelope)["json_schema"]["schema"]
+    condition = schema["$defs"]["Condition"]
+    branches = [schema["$defs"][item["$ref"].rsplit("/", 1)[-1]] for item in condition["anyOf"]]
+    by_kind = {
+        branch["properties"]["kind"]["enum"][0]: branch
+        for branch in branches
+    }
+
+    assert set(by_kind) == {"field", "capability", "telemetry_fresh"}
+
+    for kind, branch in by_kind.items():
+        expected = branch["properties"]["expected"]
+        assert "expected" in branch["required"], kind
+        assert {"type": "null"} not in expected.get("anyOf", []), kind
+
+    field_path = by_kind["field"]["properties"]["path"]
+    field_values = set(schema["$defs"][field_path["$ref"].rsplit("/", 1)[-1]]["enum"])
+    assert field_values
+    assert all(
+        value in {"control_mode", "telemetry_stale"}
+        or value.startswith(("telemetry.", "selected.", "target."))
+        for value in field_values
+    )
+
+    capability_path = by_kind["capability"]["properties"]["path"]
+    assert capability_path["type"] == "string"
+    assert "null" not in json.dumps(capability_path)
+
+    assert "path" not in by_kind["telemetry_fresh"]["properties"]
+
+
 def test_a_dropped_bound_is_still_described_to_the_model() -> None:
     from kenshi_agent.planners.schema_dialect import _sanitize
 

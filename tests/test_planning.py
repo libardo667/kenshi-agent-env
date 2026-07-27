@@ -622,7 +622,7 @@ def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
 
 def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
     schema = to_strict_json_schema(PlanEnvelope)
-    condition_paths = schema["$defs"]["ConditionPath"]["enum"]
+    condition_paths = schema["$defs"]["FieldConditionPath"]["enum"]
 
     def assert_supported_nodes(value: object) -> None:
         if isinstance(value, dict):

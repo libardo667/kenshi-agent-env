@@ -26,6 +26,7 @@ from kenshi_agent.models import (
     ConditionResult,
     ControlMode,
     Disposition,
+    GameBinding,
     GameState,
     IdempotencyPolicy,
     NearbyEntity,
@@ -38,6 +39,7 @@ from kenshi_agent.models import (
     SkillAction,
     TelemetrySnapshot,
     UIState,
+    UseGameBindingAction,
     VisibleUIControl,
     WorldStateRevision,
 )
@@ -1046,17 +1048,57 @@ class TestDerivedRiskBudget:
         assert errors, "an unbindable purchase must still be refused"
 
 
-def test_camera_capability_path_is_counted_as_causal_by_current_policy() -> None:
-    """Record the current policy behavior without calling it effect proof.
-
-    `camera.position` is a capability path. Condition normalization converts a
-    field condition using it into capability presence, so a later tick can pass
-    without a coordinate delta. This assertion preserves that known limitation
-    until the condition/effect model is fixed.
-    """
+def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
+    """A capability says a fact is observable, not that the intended effect occurred."""
     from kenshi_agent.dialogue_interaction import _is_causal_condition
-    from kenshi_agent.models import ConditionKind, ConditionPath
+    from kenshi_agent.models import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
 
-    assert _is_causal_condition(ConditionKind.FIELD, ConditionPath.CAMERA_POSITION_CAPABILITY.value)
+    condition = Condition(
+        kind=ConditionKind.FIELD,
+        path="camera.position",
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=2.0,
+    )
+    assert condition.kind is ConditionKind.CAPABILITY
+    assert not _is_causal_condition(condition.kind, condition.path)
     # Run bookkeeping still is not evidence the world moved.
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
+
+
+def test_speed_gear_plan_must_check_the_gears_actual_multiplier() -> None:
+    """A successful F4 press reports 5x; checking for literal 3x is not proof."""
+
+    wrong_multiplier = Condition(
+        kind=ConditionKind.FIELD,
+        path=ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
+        operator=ConditionOperator.EQUALS,
+        expected=3.0,
+        max_age_seconds=3.0,
+        required_capabilities=["game.speed"],
+    )
+    composed = plan(
+        [
+            step(
+                "accelerate",
+                UseGameBindingAction(
+                    binding=GameBinding.SPEED_3,
+                    expected_effect="set the third speed gear",
+                ),
+                success=[wrong_multiplier],
+            )
+        ],
+        pointer=0,
+        native=0,
+    )
+
+    errors = dialogue_interaction_policy_errors(
+        composed,
+        observation(capabilities=[*CAPABILITIES, "game.speed"]),
+    )
+
+    assert any("speed_3" in error and "5.0" in error for error in errors)

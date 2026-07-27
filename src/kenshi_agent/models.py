@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal, TypeAlias
+from typing import Any, Literal, TypeAlias, cast
 from uuid import uuid4
 
 from pydantic import (
@@ -14,6 +14,7 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
+    RootModel,
     TypeAdapter,
     field_validator,
     model_validator,
@@ -1761,10 +1762,11 @@ class NativeCommandRequest(StrictModel):
         return self
 
 
-ConditionScalar: TypeAlias = str | int | float | bool | None
+ExpectedConditionScalar: TypeAlias = str | int | float | bool
+ConditionScalar: TypeAlias = ExpectedConditionScalar | None
 
 
-class ConditionPath(StrEnum):
+class FieldConditionPath(StrEnum):
     CONTROL_MODE = "control_mode"
     TELEMETRY_STALE = "telemetry_stale"
     TELEMETRY_GAME_LOADED = "telemetry.game.loaded"
@@ -1824,146 +1826,198 @@ class ConditionPath(StrEnum):
     TARGET_IS_SQUAD_LEADER = "target.is_squad_leader"
     TARGET_HAS_DIALOGUE = "target.has_dialogue"
     TARGET_SHOP_INVENTORY_OWNER = "target.shop_inventory_owner"
-    GAME_PAUSE_CAPABILITY = "game.pause"
-    GAME_SPEED_CAPABILITY = "game.speed"
-    GAME_TIME_CAPABILITY = "game.time"
-    GAME_MONEY_CAPABILITY = "game.money"
-    GAME_LOCATION_CAPABILITY = "game.location"
-    CAMERA_POSITION_CAPABILITY = "camera.position"
-    SQUAD_BASIC_CAPABILITY = "squad.basic"
-    SQUAD_HUNGER_CAPABILITY = "squad.hunger"
-    SQUAD_HEALTH_CAPABILITY = "squad.health"
-    SQUAD_INVENTORY_CAPABILITY = "squad.inventory"
-    SQUAD_CURRENT_GOAL_CAPABILITY = "squad.current_goal"
-    UI_MODAL_CAPABILITY = "ui.modal"
-    UI_INVENTORY_CAPABILITY = "ui.inventory"
-    UI_DIALOGUE_CAPABILITY = "ui.dialogue"
-    UI_DIALOGUE_TARGET_CAPABILITY = "ui.dialogue.target"
-    UI_DIALOGUE_OPTIONS_CAPABILITY = "ui.dialogue.options"
-    UI_VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
-    UI_TOOLTIP_CAPABILITY = "ui.tooltip"
-    NEARBY_CHARACTERS_CAPABILITY = "nearby.characters"
-    NEARBY_VISIBLE_ENTITIES_CAPABILITY = "nearby.visible_entities"
-    NEARBY_ROLES_CAPABILITY = "nearby.roles"
-    NEARBY_SHOP_OWNERS_CAPABILITY = "nearby.shop_owners"
-    # The authorization fact is "this is a valid current dialogue target", not
-    # "this is a vendor". The legacy name remains the wire capability the
-    # installed plug-in emits; the generic name is the contract vocabulary.
-    CONTROL_APPROACH_VENDOR_CAPABILITY = "control.approach_vendor"
-    CONTROL_APPROACH_DIALOGUE_TARGET_CAPABILITY = "control.approach_dialogue_target"
-    IDENTITY_STABLE_HANDLES_CAPABILITY = "identity.stable_handles"
 
 
-_ALLOWED_CONDITION_PATHS = {
-    path.value
-    for path in ConditionPath
-    if path.value.startswith(("telemetry.", "selected.", "target."))
-    or path in {ConditionPath.CONTROL_MODE, ConditionPath.TELEMETRY_STALE}
-}
-_ALLOWED_CAPABILITY_PATHS = {
-    path.value for path in ConditionPath if path.value not in _ALLOWED_CONDITION_PATHS
-}
-# Capability names a condition may require. `required_capabilities` used to be
-# free-form, so a planner could put a *field path* like "ui.active_screen" there
-# and only find out much later, as an opaque "capabilities are unavailable".
-# Checking here turns that into an immediate, nameable mistake.
-KNOWN_CAPABILITIES: frozenset[str] = frozenset(_ALLOWED_CAPABILITY_PATHS)
+# Kept as the Python import name used by existing deterministic planners. The
+# hosted schema names the narrower vocabulary honestly as FieldConditionPath.
+ConditionPath = FieldConditionPath
+_ALLOWED_CONDITION_PATHS = frozenset(path.value for path in FieldConditionPath)
 
 
-class Condition(StrictModel):
-    kind: ConditionKind
-    path: ConditionPath | None = None
+def _is_field_condition_path(value: object) -> bool:
+    return isinstance(value, str) and value in _ALLOWED_CONDITION_PATHS
+
+
+class _ConditionBase(StrictModel):
     operator: ConditionOperator
-    expected: ConditionScalar = None
-    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    expected: ExpectedConditionScalar
     max_age_seconds: float = Field(gt=0.0, le=300.0)
-    required_capabilities: list[str] = Field(default_factory=list, max_length=20)
+    required_capabilities: list[str] = Field(
+        default_factory=list,
+        max_length=20,
+        description=(
+            "Additional capability names copied exactly from the current observation. "
+            "Field paths do not belong here."
+        ),
+    )
 
     @model_validator(mode="after")
-    def validate_shape(self) -> Condition:
-        if self.kind == ConditionKind.FIELD and self.path in _ALLOWED_CAPABILITY_PATHS:
-            # `ConditionPath` is one flat enum of 80 values, 24 of which are only
-            # ever legal as capability names and 56 only as field paths, with
-            # nothing in the schema saying which is which. A model reading it
-            # picks `squad.inventory` as a field path - entirely reasonable - and
-            # is refused. The intent is unambiguous, so read it as the capability
-            # condition it can only have meant.
-            object.__setattr__(self, "kind", ConditionKind.CAPABILITY)
-
-        if self.kind == ConditionKind.FIELD:
-            if self.path not in _ALLOWED_CONDITION_PATHS:
-                raise ValueError(f"Unsupported condition path: {self.path!r}")
-            if self.path is not None and self.path.startswith("target.") and not self.target_id:
-                raise ValueError("target.* conditions require target_id")
-            if (
-                self.path is not None
-                and not self.path.startswith("target.")
-                and self.target_id is not None
-            ):
-                # A redundant entity annotation cannot narrow a global scalar.
-                # Normalize it away so policy matching and evaluation share one
-                # canonical condition shape.
-                object.__setattr__(self, "target_id", None)
-        elif self.kind == ConditionKind.CAPABILITY:
-            if self.path is None:
-                # The commonest single failure in the model benchmark, across
-                # both models and intermittently rather than always: a capability
-                # condition whose subject is stated in `required_capabilities`
-                # instead of `path`. When exactly one capability is named there
-                # the intent is unambiguous, so read it rather than refuse. More
-                # than one is genuinely ambiguous and still fails.
-                candidates = [
-                    name for name in self.required_capabilities if name in _ALLOWED_CAPABILITY_PATHS
-                ]
-                if candidates:
-                    # Every name here is enforced at evaluation regardless of
-                    # which one `path` names - a missing one withholds the
-                    # verdict - so taking the first loses nothing and asserts
-                    # exactly what was meant.
-                    object.__setattr__(self, "path", candidates[0])
-            if self.path is None:
-                raise ValueError(
-                    "Capability conditions require path: name the capability in "
-                    "`path`, not only in `required_capabilities`."
-                )
-            if self.path not in _ALLOWED_CAPABILITY_PATHS:
-                raise ValueError(f"Unsupported capability path: {self.path!r}")
-            if self.target_id is not None:
-                # Inert here for the same reason as on a global field: evaluation
-                # never reads it. Normalize rather than refuse.
-                object.__setattr__(self, "target_id", None)
-        else:
-            # `telemetry_fresh` asks one question - is telemetry current - and
-            # evaluation consults neither path nor target_id when answering it.
-            # Rejecting a plan over fields that cannot change its meaning threw
-            # away every plan six different models produced, each of which
-            # annotated the condition with the field it was about. Normalize to
-            # the canonical shape, as the field branch above already does.
-            if self.path is not None:
-                object.__setattr__(self, "path", None)
-            if self.target_id is not None:
-                object.__setattr__(self, "target_id", None)
-        # `required_capabilities` is a belt over braces: evaluation independently
-        # looks up the capability a condition's own field path depends on and
-        # withholds a verdict when Kenshi is not reporting it. So an entry here
-        # can only ever *add* strictness, and a wrong one cannot let an unsafe
-        # condition through - it can only destroy an otherwise sound plan, which
-        # is what it did to three of five models in one benchmark, each naming a
-        # field path where a capability name goes despite the prompt saying not
-        # to. When five independent models make one mistake the vocabulary is at
-        # fault, so drop what we do not recognise and keep the plan.
-        recognised = [name for name in self.required_capabilities if name in KNOWN_CAPABILITIES]
-        if len(recognised) != len(self.required_capabilities):
-            object.__setattr__(self, "required_capabilities", recognised)
-        if self.expected is None:
+    def validate_common_shape(self) -> _ConditionBase:
+        if any(_is_field_condition_path(name) for name in self.required_capabilities):
             raise ValueError(
-                f"an '{self.operator.value}' condition has no `expected` value, so "
-                f"there is nothing to compare the observation against. Set `expected` "
-                f"to the value this condition should hold"
+                "required_capabilities accepts capability names, not field paths"
             )
         if self.operator == ConditionOperator.CONTAINS and not isinstance(self.expected, str):
             raise ValueError("contains conditions require a string expected value")
         return self
+
+
+class FieldCondition(_ConditionBase):
+    kind: Literal[ConditionKind.FIELD] = ConditionKind.FIELD
+    path: FieldConditionPath
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def validate_target_shape(self) -> FieldCondition:
+        if self.path.startswith("target.") and not self.target_id:
+            raise ValueError("target.* conditions require target_id")
+        if not self.path.startswith("target.") and self.target_id is not None:
+            object.__setattr__(self, "target_id", None)
+        return self
+
+
+class CapabilityCondition(_ConditionBase):
+    kind: Literal[ConditionKind.CAPABILITY] = ConditionKind.CAPABILITY
+    path: str = Field(
+        min_length=1,
+        max_length=200,
+        description=(
+            "One capability name copied exactly from the current observation's "
+            "telemetry.capabilities list; never a telemetry, selected, or target field path."
+        ),
+    )
+    operator: Literal[ConditionOperator.EQUALS] = ConditionOperator.EQUALS
+    expected: Literal[True] = True
+
+    @model_validator(mode="after")
+    def validate_capability_path(self) -> CapabilityCondition:
+        if _is_field_condition_path(self.path):
+            raise ValueError(
+                f"Capability conditions require a capability name, not field path {self.path!r}"
+            )
+        return self
+
+
+class TelemetryFreshCondition(StrictModel):
+    kind: Literal[ConditionKind.TELEMETRY_FRESH] = ConditionKind.TELEMETRY_FRESH
+    operator: Literal[ConditionOperator.EQUALS] = ConditionOperator.EQUALS
+    expected: Literal[True] = True
+    max_age_seconds: float = Field(gt=0.0, le=300.0)
+
+
+ConditionValue: TypeAlias = FieldCondition | CapabilityCondition | TelemetryFreshCondition
+
+
+class Condition(RootModel[ConditionValue]):
+    """One schema branch whose fields can only express that condition's meaning."""
+
+    def __init__(self, **data: Any) -> None:
+        payload = data["root"] if set(data) == {"root"} else data
+        super().__init__(root=cast(ConditionValue, payload))
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_unambiguous_model_noise(cls, value: Any) -> Any:
+        if isinstance(value, Condition):
+            return value.root
+        if isinstance(value, (FieldCondition, CapabilityCondition, TelemetryFreshCondition)):
+            return value
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        if set(data) == {"root"} and isinstance(data["root"], Mapping):
+            data = dict(data["root"])
+
+        kind = data.get("kind")
+        required = [
+            item
+            for item in data.get("required_capabilities", [])
+            if isinstance(item, str) and not _is_field_condition_path(item)
+        ]
+
+        if kind == ConditionKind.TELEMETRY_FRESH:
+            return {
+                "kind": ConditionKind.TELEMETRY_FRESH,
+                "operator": ConditionOperator.EQUALS,
+                "expected": True,
+                "max_age_seconds": data.get("max_age_seconds"),
+            }
+
+        path = data.get("path")
+        if kind == ConditionKind.CAPABILITY:
+            if path is None or _is_field_condition_path(path):
+                if required:
+                    path = required[0]
+            return {
+                "kind": ConditionKind.CAPABILITY,
+                "path": path,
+                "operator": ConditionOperator.EQUALS,
+                "expected": True,
+                "max_age_seconds": data.get("max_age_seconds"),
+                "required_capabilities": required,
+            }
+
+        if kind == ConditionKind.FIELD and not _is_field_condition_path(path):
+            return {
+                "kind": ConditionKind.CAPABILITY,
+                "path": path,
+                "operator": ConditionOperator.EQUALS,
+                "expected": True,
+                "max_age_seconds": data.get("max_age_seconds"),
+                "required_capabilities": required,
+            }
+
+        if kind == ConditionKind.FIELD:
+            data["required_capabilities"] = required
+        return data
+
+    @property
+    def kind(self) -> ConditionKind:
+        return self.root.kind
+
+    @property
+    def path(self) -> FieldConditionPath | str | None:
+        return getattr(self.root, "path", None)
+
+    @property
+    def operator(self) -> ConditionOperator:
+        return self.root.operator
+
+    @property
+    def expected(self) -> ExpectedConditionScalar:
+        return self.root.expected
+
+    @property
+    def target_id(self) -> str | None:
+        return getattr(self.root, "target_id", None)
+
+    @property
+    def max_age_seconds(self) -> float:
+        return self.root.max_age_seconds
+
+    @property
+    def required_capabilities(self) -> list[str]:
+        return getattr(self.root, "required_capabilities", [])
+
+
+# Gear names identify Kenshi's ordinal controls, not literal multipliers. This
+# typed map is both planner guidance and the policy's verification source, so a
+# third-gear plan cannot "prove" itself by waiting for a multiplier of 3.
+GAME_BINDING_SUCCESS_CONDITIONS: dict[GameBinding, Condition] = {
+    binding: Condition(
+        kind=ConditionKind.FIELD,
+        path=FieldConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
+        operator=ConditionOperator.EQUALS,
+        expected=multiplier,
+        max_age_seconds=3.0,
+        required_capabilities=["game.speed"],
+    )
+    for binding, multiplier in (
+        (GameBinding.SPEED_1, 1.0),
+        (GameBinding.SPEED_2, 2.0),
+        (GameBinding.SPEED_3, 5.0),
+    )
+}
 
 
 class ConditionEvaluation(StrictModel):
@@ -2411,17 +2465,23 @@ class Observation(StrictModel):
         # cannot get anywhere else is *which* actions are authorable now and
         # where their arguments come from; the prose description of each lives
         # in the system prompt, and the contract enforces the rest regardless.
-        return [
-            {
+        digest: list[dict[str, Any]] = []
+        for contract in planner_visible_contracts(
+            control_mode=self.control_mode,
+            capabilities=capabilities,
+            observation=self,
+        ):
+            entry: dict[str, Any] = {
                 "kind": contract.kind,
                 "argument_source": contract.argument_source,
             }
-            for contract in planner_visible_contracts(
-                control_mode=self.control_mode,
-                capabilities=capabilities,
-                observation=self,
-            )
-        ]
+            if contract.kind == "use_game_binding":
+                entry["binding_success_conditions"] = {
+                    binding.value: condition.model_dump(mode="json")
+                    for binding, condition in GAME_BINDING_SUCCESS_CONDITIONS.items()
+                }
+            digest.append(entry)
+        return digest
 
     def log_digest(self) -> dict[str, Any]:
         """A compact record of this observation for the session log.
@@ -2483,6 +2543,10 @@ class Observation(StrictModel):
                 "management_screen_open": telemetry.ui.management_screen_open,
                 "management_tab": telemetry.ui.management_tab,
                 "selected_character_id": telemetry.ui.selected_character_id,
+                # These are not bulk UI detail: together they are the authority
+                # boundary for binding an output cell to one exact resource.
+                "context_inventory_target_id": telemetry.ui.context_inventory_target_id,
+                "visible_controls_complete": telemetry.ui.visible_controls_complete,
                 "visible_control_count": (
                     len(telemetry.ui.visible_controls)
                     if telemetry.ui.visible_controls is not None
@@ -2523,6 +2587,7 @@ class Observation(StrictModel):
                     "food_items": selected.food_items,
                     "in_combat": selected.in_combat,
                     "indoors": selected.indoors,
+                    "inventory_complete": selected.inventory_complete,
                     # Kept so a post-mortem can tell a healthy run from one
                     # where the character was quietly being beaten.
                     "blood": selected.blood,

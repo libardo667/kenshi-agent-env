@@ -189,12 +189,13 @@ yourself, in whatever order the current evidence supports.
   `toggle_stats` the stats window. There is no widget to hunt for, but a
   customized keymap is not currently supported.
 - Time is a binding too. `pause` toggles pause; `speed_1`, `speed_2` and
-  `speed_3` set the speed. Direct unpause and a pause binding that would unpause
-  share the profile's explicit `allow_live_unpause_actions` gate. The physical
-  keys are shipped defaults, not a parsed customized `controls.cfg`.
-- **Resource work is an owned three-stage transaction.** If safe and the current
-  speed is below 3, first author `use_game_binding` with binding `speed_3` and
-  prove the later speed. Then author `produce_resource_output` with one exact
+  `speed_3` select ordinal gears, not same-numbered multipliers. Copy the exact
+  typed check from `semantic_actions[].binding_success_conditions`. Direct
+  unpause and a pause binding that would unpause share the profile's explicit
+  gate. The physical keys are shipped defaults, not a parsed customized keymap.
+- **Resource work is an owned three-stage transaction.** If safe and useful,
+  first author `use_game_binding` with binding `speed_3` and its advertised
+  success condition. Then author `produce_resource_output` with one exact
   `context_targets[].id`; the monitored option adopts already matching
   `Operating machine` work, never reissues it, and succeeds only on native
   `resource_output_ready`. Give it `success_conditions: []`.

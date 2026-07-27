@@ -96,6 +96,57 @@
       "title": "ApproachDialogueTargetAction",
       "type": "object"
     },
+    "CapabilityCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "const": "equals",
+          "default": "equals",
+          "title": "Operator",
+          "type": "string"
+        },
+        "expected": {
+          "const": true,
+          "default": true,
+          "title": "Expected",
+          "type": "boolean"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        },
+        "required_capabilities": {
+          "description": "Additional capability names copied exactly from the current observation. Field paths do not belong here.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "kind": {
+          "const": "capability",
+          "default": "capability",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "description": "One capability name copied exactly from the current observation's telemetry.capabilities list; never a telemetry, selected, or target field path.",
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_age_seconds",
+        "path"
+      ],
+      "title": "CapabilityCondition",
+      "type": "object"
+    },
     "CollectResourceOutputAction": {
       "additionalProperties": false,
       "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
@@ -153,91 +204,19 @@
       "type": "object"
     },
     "Condition": {
-      "additionalProperties": false,
-      "properties": {
-        "kind": {
-          "$ref": "#/$defs/ConditionKind"
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FieldCondition"
         },
-        "path": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ConditionPath"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        {
+          "$ref": "#/$defs/CapabilityCondition"
         },
-        "operator": {
-          "$ref": "#/$defs/ConditionOperator"
-        },
-        "expected": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "integer"
-            },
-            {
-              "type": "number"
-            },
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Expected"
-        },
-        "target_id": {
-          "anyOf": [
-            {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Target Id"
-        },
-        "max_age_seconds": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 300.0,
-          "title": "Max Age Seconds",
-          "type": "number"
-        },
-        "required_capabilities": {
-          "items": {
-            "type": "string"
-          },
-          "maxItems": 20,
-          "title": "Required Capabilities",
-          "type": "array"
+        {
+          "$ref": "#/$defs/TelemetryFreshCondition"
         }
-      },
-      "required": [
-        "kind",
-        "operator",
-        "max_age_seconds"
       ],
-      "title": "Condition",
-      "type": "object"
-    },
-    "ConditionKind": {
-      "enum": [
-        "field",
-        "capability",
-        "telemetry_fresh"
-      ],
-      "title": "ConditionKind",
-      "type": "string"
+      "description": "One schema branch whose fields can only express that condition's meaning.",
+      "title": "Condition"
     },
     "ConditionOperator": {
       "enum": [
@@ -250,94 +229,6 @@
         "contains"
       ],
       "title": "ConditionOperator",
-      "type": "string"
-    },
-    "ConditionPath": {
-      "enum": [
-        "control_mode",
-        "telemetry_stale",
-        "telemetry.game.loaded",
-        "telemetry.game.paused",
-        "telemetry.game.speed_multiplier",
-        "telemetry.game.elapsed_minutes",
-        "telemetry.game.money",
-        "selected.indoors",
-        "telemetry.game.location_name",
-        "telemetry.game.day",
-        "telemetry.game.hour",
-        "telemetry.game.minute",
-        "telemetry.ui.active_screen",
-        "telemetry.ui.modal_open",
-        "telemetry.ui.dialogue_open",
-        "telemetry.ui.dialogue_target_id",
-        "telemetry.ui.dialogue_option_count",
-        "telemetry.ui.dialogue_option_0",
-        "telemetry.ui.visible_control_count",
-        "telemetry.ui.stats_window_open",
-        "telemetry.ui.open_inventory_windows",
-        "telemetry.ui.management_screen_open",
-        "telemetry.ui.management_tab",
-        "telemetry.ui.tooltip_visible",
-        "telemetry.ui.tooltip_text",
-        "telemetry.ui.context_menu_open",
-        "telemetry.ui.selected_character_id",
-        "telemetry.ui.selected_character_count",
-        "telemetry.active_shop_trader_count",
-        "telemetry.native_control.available",
-        "telemetry.native_control.command_active",
-        "telemetry.native_control.last_command_sequence",
-        "telemetry.native_control.last_command",
-        "telemetry.native_control.last_result",
-        "telemetry.native_control.last_target",
-        "telemetry.native_control.last_target_id",
-        "selected.alive",
-        "selected.conscious",
-        "selected.down",
-        "selected.in_combat",
-        "selected.position.x",
-        "selected.position.y",
-        "selected.position.z",
-        "selected.movement_speed",
-        "selected.hunger",
-        "selected.bleeding_rate",
-        "selected.food_items",
-        "selected.first_aid_kits",
-        "selected.current_goal",
-        "target.disposition",
-        "target.distance",
-        "target.visible",
-        "target.conscious",
-        "target.has_vendor_list",
-        "target.is_squad_leader",
-        "target.has_dialogue",
-        "target.shop_inventory_owner",
-        "game.pause",
-        "game.speed",
-        "game.time",
-        "game.money",
-        "game.location",
-        "camera.position",
-        "squad.basic",
-        "squad.hunger",
-        "squad.health",
-        "squad.inventory",
-        "squad.current_goal",
-        "ui.modal",
-        "ui.inventory",
-        "ui.dialogue",
-        "ui.dialogue.target",
-        "ui.dialogue.options",
-        "ui.visible_controls",
-        "ui.tooltip",
-        "nearby.characters",
-        "nearby.visible_entities",
-        "nearby.roles",
-        "nearby.shop_owners",
-        "control.approach_vendor",
-        "control.approach_dialogue_target",
-        "identity.stable_handles"
-      ],
-      "title": "ConditionPath",
       "type": "string"
     },
     "ConsultAdvisorAction": {
@@ -457,6 +348,140 @@
       },
       "title": "ExitCurrentBuildingAction",
       "type": "object"
+    },
+    "FieldCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "$ref": "#/$defs/ConditionOperator"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Expected"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        },
+        "required_capabilities": {
+          "description": "Additional capability names copied exactly from the current observation. Field paths do not belong here.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "kind": {
+          "const": "field",
+          "default": "field",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/FieldConditionPath"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        }
+      },
+      "required": [
+        "operator",
+        "expected",
+        "max_age_seconds",
+        "path"
+      ],
+      "title": "FieldCondition",
+      "type": "object"
+    },
+    "FieldConditionPath": {
+      "enum": [
+        "control_mode",
+        "telemetry_stale",
+        "telemetry.game.loaded",
+        "telemetry.game.paused",
+        "telemetry.game.speed_multiplier",
+        "telemetry.game.elapsed_minutes",
+        "telemetry.game.money",
+        "selected.indoors",
+        "telemetry.game.location_name",
+        "telemetry.game.day",
+        "telemetry.game.hour",
+        "telemetry.game.minute",
+        "telemetry.ui.active_screen",
+        "telemetry.ui.modal_open",
+        "telemetry.ui.dialogue_open",
+        "telemetry.ui.dialogue_target_id",
+        "telemetry.ui.dialogue_option_count",
+        "telemetry.ui.dialogue_option_0",
+        "telemetry.ui.visible_control_count",
+        "telemetry.ui.stats_window_open",
+        "telemetry.ui.open_inventory_windows",
+        "telemetry.ui.management_screen_open",
+        "telemetry.ui.management_tab",
+        "telemetry.ui.tooltip_visible",
+        "telemetry.ui.tooltip_text",
+        "telemetry.ui.context_menu_open",
+        "telemetry.ui.selected_character_id",
+        "telemetry.ui.selected_character_count",
+        "telemetry.active_shop_trader_count",
+        "telemetry.native_control.available",
+        "telemetry.native_control.command_active",
+        "telemetry.native_control.last_command_sequence",
+        "telemetry.native_control.last_command",
+        "telemetry.native_control.last_result",
+        "telemetry.native_control.last_target",
+        "telemetry.native_control.last_target_id",
+        "selected.alive",
+        "selected.conscious",
+        "selected.down",
+        "selected.in_combat",
+        "selected.position.x",
+        "selected.position.y",
+        "selected.position.z",
+        "selected.movement_speed",
+        "selected.hunger",
+        "selected.bleeding_rate",
+        "selected.food_items",
+        "selected.first_aid_kits",
+        "selected.current_goal",
+        "target.disposition",
+        "target.distance",
+        "target.visible",
+        "target.conscious",
+        "target.has_vendor_list",
+        "target.is_squad_leader",
+        "target.has_dialogue",
+        "target.shop_inventory_owner"
+      ],
+      "title": "FieldConditionPath",
+      "type": "string"
     },
     "GameBinding": {
       "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Only the\nreversible ones are here: `quicksave`, `quickload`, `editor_toggle`,\n`rebuild_navmesh` and `reload_biomes` all exist in that file and are all\ndeliberately absent from this enum, because an agent running unattended on a\nstream must not be one keystroke away from overwriting a save.",
@@ -1245,6 +1270,40 @@
         "reason"
       ],
       "title": "StopAction",
+      "type": "object"
+    },
+    "TelemetryFreshCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "telemetry_fresh",
+          "default": "telemetry_fresh",
+          "title": "Kind",
+          "type": "string"
+        },
+        "operator": {
+          "const": "equals",
+          "default": "equals",
+          "title": "Operator",
+          "type": "string"
+        },
+        "expected": {
+          "const": true,
+          "default": true,
+          "title": "Expected",
+          "type": "boolean"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "max_age_seconds"
+      ],
+      "title": "TelemetryFreshCondition",
       "type": "object"
     },
     "UseGameBindingAction": {
