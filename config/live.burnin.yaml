@@ -89,6 +89,8 @@ launch:
   # installs this reversible profile; launch only verifies an exact match.
   require_graphics_profile: true
   graphics_profile_file: graphics/iris-xe-stability-v3.yaml
+  external_display_only: true
+  monitor_gpu_tdr: true
   # Intel Iris Xe shares system RAM. Refuse a test while host headroom is
   # already below a conservative four-GiB boundary.
   min_free_physical_memory_mib: 4096

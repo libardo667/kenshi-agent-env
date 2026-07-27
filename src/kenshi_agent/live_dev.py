@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable
+from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,7 +23,18 @@ from .control.base import InputController, PrimitiveInputAction, WindowRect
 from .control.calibration import validate_expected_client_size
 from .control.capture import WindowCapture
 from .control.win32 import Win32InputController
+from .display_lease import (
+    DisplayLeaseError,
+    DisplayTopologyController,
+    external_display_lease,
+)
 from .final_safe_state import ensure_final_safe_state
+from .gpu_events import (
+    GpuTdrDetected,
+    GpuTdrEvent,
+    GpuTdrMonitor,
+    query_windows_gpu_tdr_events,
+)
 from .graphics_profile import (
     GraphicsMismatch,
     GraphicsProfile,
@@ -110,9 +122,12 @@ async def _wait_until(
     description: str,
     *,
     controller: InputController,
+    health_check: Callable[[], None] | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if health_check is not None:
+            health_check()
         try:
             title = _terminal_window_title(controller)
         except (OSError, RuntimeError, ValueError):
@@ -204,6 +219,22 @@ def _kenshi_settings_path() -> Path:
     )
 
 
+def _kenshi_renderer_path() -> Path:
+    override = os.environ.get("KENSHI_AGENT_RENDERER_SETTINGS")
+    candidates = [Path(override)] if override else []
+    try:
+        candidates.append(_kenshi_settings_path().with_name("kenshi.cfg"))
+    except FileNotFoundError:
+        pass
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "Kenshi kenshi.cfg was not found. Set KENSHI_AGENT_RENDERER_SETTINGS "
+        "to its full path."
+    )
+
+
 def _steam_connection_log_path() -> Path:
     override = os.environ.get("KENSHI_AGENT_STEAM_CONNECTION_LOG")
     candidates = [Path(override)] if override else []
@@ -284,7 +315,8 @@ def _format_graphics_mismatches(
     for mismatch in mismatches:
         actual_text = "<missing>" if mismatch.actual is None else repr(mismatch.actual)
         details.append(
-            f"{mismatch.key} expected {mismatch.expected!r}, found {actual_text}"
+            f"{mismatch.document}:{mismatch.key} expected "
+            f"{mismatch.expected!r}, found {actual_text}"
         )
     return "; ".join(details)
 
@@ -296,6 +328,7 @@ def _validate_launch_preconditions(
     terminal_window_title: str | None = None,
     available_physical_memory_mib: int | None = None,
     settings_path: Path | None = None,
+    renderer_path: Path | None = None,
     steam_connection_log_path: Path | None = None,
 ) -> None:
     if terminal_window_title is not None:
@@ -335,7 +368,12 @@ def _validate_launch_preconditions(
     if config.launch.require_graphics_profile:
         profile = _configured_graphics_profile(config)
         installed = settings_path or _kenshi_settings_path()
-        verification = verify_graphics_profile(installed, profile)
+        installed_renderer = renderer_path or _kenshi_renderer_path()
+        verification = verify_graphics_profile(
+            installed,
+            profile,
+            renderer_path=installed_renderer,
+        )
         if not verification.matches:
             details = _format_graphics_mismatches(verification.mismatches)
             raise LaunchFailed(
@@ -464,9 +502,12 @@ async def _wait_for_loaded_or_semantic_control(
     *,
     timeout: float,
     controller: InputController,
+    health_check: Callable[[], None] | None = None,
 ) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if health_check is not None:
+            health_check()
         _abort_if_human_input(controller)
         try:
             result = reader.read()
@@ -520,6 +561,7 @@ async def _observe_loaded_paused_health(
     controller: InputController,
     *,
     duration_seconds: float,
+    health_check: Callable[[], None] | None = None,
 ) -> None:
     if duration_seconds <= 0:
         return
@@ -530,6 +572,8 @@ async def _observe_loaded_paused_health(
     last_sequence = initial_sequence
     deadline = time.monotonic() + duration_seconds
     while time.monotonic() < deadline:
+        if health_check is not None:
+            health_check()
         try:
             title = _terminal_window_title(controller)
         except (OSError, RuntimeError, ValueError):
@@ -563,10 +607,146 @@ async def _observe_loaded_paused_health(
         )
 
 
+async def _perform_launch(
+    args: argparse.Namespace,
+    config: AppConfig,
+    controller: InputController,
+    monitor: GpuTdrMonitor | None,
+) -> None:
+    health_check = monitor.raise_if_new if monitor is not None else None
+    _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
+    launched_at = datetime.now(UTC)
+    os.startfile(_shortcut())  # type: ignore[attr-defined]
+    await _wait_until(
+        lambda: controller.client_rect().width > 0,
+        args.timeout,
+        "Kenshi launcher",
+        controller=controller,
+        health_check=health_check,
+    )
+    launcher_rect = controller.client_rect()
+    if launcher_rect.width < 1200:
+        await _execute_primitive(controller, KeyAction(key="enter"))
+
+    status_path = config.telemetry.file.parent / "plugin_status.json"
+    await _wait_until(
+        lambda: _plugin_ready(status_path, launched_at),
+        args.timeout,
+        "fresh telemetry plugin startup",
+        controller=controller,
+        health_check=health_check,
+    )
+    await _wait_until(
+        lambda: controller.client_rect().width >= 1200,
+        args.timeout,
+        "full-size Kenshi window",
+        controller=controller,
+        health_check=health_check,
+    )
+    await asyncio.sleep(2.0)
+    if monitor is not None:
+        monitor.raise_if_new(force=True)
+    _abort_if_human_input(controller)
+
+    if args.continue_game:
+        reader = _telemetry_read(config)
+        await _wait_until(
+            lambda: (
+                not (result := reader.read()).stale
+                and _unique_visible_control(
+                    result.snapshot,
+                    config.controls.startup_continue_control_labels,
+                )
+                is not None
+            ),
+            args.timeout,
+            "semantic Continue control",
+            controller=controller,
+            health_check=health_check,
+        )
+        await _click_semantic_control(
+            controller,
+            reader,
+            config.controls.startup_continue_control_labels,
+        )
+        loaded = await _wait_for_loaded_or_semantic_control(
+            reader,
+            config.controls.startup_save_control_labels,
+            timeout=args.timeout,
+            controller=controller,
+            health_check=health_check,
+        )
+        if not loaded:
+            await _click_semantic_control(
+                controller,
+                reader,
+                config.controls.startup_save_control_labels,
+            )
+
+        def game_loaded() -> bool:
+            try:
+                result = reader.read()
+            except TelemetryReadError:
+                return False
+            return (
+                not result.stale
+                and result.snapshot.game.loaded
+                and bool(result.snapshot.squad)
+            )
+
+        await _wait_until(
+            game_loaded,
+            args.timeout,
+            "loaded player squad",
+            controller=controller,
+            health_check=health_check,
+        )
+        snapshot = reader.read().snapshot
+        if snapshot.game.paused is False:
+            await _execute_primitive(
+                controller,
+                KeyAction(key=config.controls.pause_key),
+            )
+
+        def game_paused() -> bool:
+            try:
+                result = reader.read()
+            except TelemetryReadError:
+                return False
+            return (
+                not result.stale
+                and result.snapshot.game.loaded
+                and bool(result.snapshot.squad)
+                and result.snapshot.game.paused is True
+            )
+
+        await _wait_until(
+            game_paused,
+            args.timeout,
+            "causally confirmed paused game",
+            controller=controller,
+            health_check=health_check,
+        )
+        await _observe_loaded_paused_health(
+            reader,
+            controller,
+            duration_seconds=config.launch.post_load_health_seconds,
+            health_check=health_check,
+        )
+    if monitor is not None:
+        monitor.raise_if_new(force=True)
+
+
 async def _launch(args: argparse.Namespace) -> int:
     if os.name != "nt":
         raise SystemExit("The live developer launcher must run with Windows Python.")
     config = load_config(args.config)
+    display_controller = (
+        DisplayTopologyController()
+        if config.launch.external_display_only
+        else None
+    )
+    monitor = GpuTdrMonitor() if config.launch.monitor_gpu_tdr else None
     try:
         controller = _controller(config)
         try:
@@ -577,139 +757,49 @@ async def _launch(args: argparse.Namespace) -> int:
             config,
             terminal_window_title=terminal_window_title,
         )
-    except (FileNotFoundError, LaunchFailed, OSError, ValueError) as exc:
+        if display_controller is not None:
+            display_controller.validate_ready()
+        if monitor is not None:
+            monitor.start()
+    except (FileNotFoundError, LaunchFailed, OSError, RuntimeError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 4
     if args.preflight_only:
         print(
-            "Launch preflight passed: Steam is logged on, the graphics profile "
-            "matches, and physical-memory headroom is sufficient."
+            "Launch preflight passed: all configured Steam, memory, graphics, "
+            "display, and Windows GPU-event checks are ready."
         )
         return 0
 
+    display_context: AbstractContextManager[None] = (
+        external_display_lease(display_controller)
+        if display_controller is not None
+        else nullcontext()
+    )
     try:
-        _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
-        launched_at = datetime.now(UTC)
-        os.startfile(_shortcut())  # type: ignore[attr-defined]
-        await _wait_until(
-            lambda: controller.client_rect().width > 0,
-            args.timeout,
-            "Kenshi launcher",
-            controller=controller,
-        )
-        launcher_rect = controller.client_rect()
-        if launcher_rect.width < 1200:
-            await _execute_primitive(controller, KeyAction(key="enter"))
-
-        status_path = config.telemetry.file.parent / "plugin_status.json"
-
-        await _wait_until(
-            lambda: _plugin_ready(status_path, launched_at),
-            args.timeout,
-            "fresh telemetry plugin startup",
-            controller=controller,
-        )
-        await _wait_until(
-            lambda: controller.client_rect().width >= 1200,
-            args.timeout,
-            "full-size Kenshi window",
-            controller=controller,
-        )
-        await asyncio.sleep(2.0)
-        _abort_if_human_input(controller)
-
-        if args.continue_game:
-            reader = _telemetry_read(config)
-            await _wait_until(
-                lambda: (
-                    not (result := reader.read()).stale
-                    and _unique_visible_control(
-                        result.snapshot,
-                        config.controls.startup_continue_control_labels,
-                    )
-                    is not None
-                ),
-                args.timeout,
-                "semantic Continue control",
-                controller=controller,
-            )
-            await _click_semantic_control(
-                controller,
-                reader,
-                config.controls.startup_continue_control_labels,
-            )
-            loaded = await _wait_for_loaded_or_semantic_control(
-                reader,
-                config.controls.startup_save_control_labels,
-                timeout=args.timeout,
-                controller=controller,
-            )
-            if not loaded:
-                await _click_semantic_control(
+        with display_context:
+            try:
+                await _perform_launch(args, config, controller, monitor)
+            except LaunchInterrupted as exc:
+                safe_state = await _ensure_interrupted_safe_state(
                     controller,
-                    reader,
-                    config.controls.startup_save_control_labels,
+                    _telemetry_read(config),
+                    pause_key=config.controls.pause_key,
+                    timeout_seconds=min(2.0, args.timeout),
                 )
-
-            def game_loaded() -> bool:
-                try:
-                    result = reader.read()
-                except TelemetryReadError:
-                    return False
-                return (
-                    not result.stale
-                    and result.snapshot.game.loaded
-                    and bool(result.snapshot.squad)
-                )
-
-            await _wait_until(
-                game_loaded,
-                args.timeout,
-                "loaded player squad",
-                controller=controller,
-            )
-            snapshot = reader.read().snapshot
-            if snapshot.game.paused is False:
-                await _execute_primitive(
-                    controller,
-                    KeyAction(key=config.controls.pause_key),
-                )
-
-            def game_paused() -> bool:
-                try:
-                    result = reader.read()
-                except TelemetryReadError:
-                    return False
-                return (
-                    not result.stale
-                    and result.snapshot.game.loaded
-                    and bool(result.snapshot.squad)
-                    and result.snapshot.game.paused is True
-                )
-
-            await _wait_until(
-                game_paused,
-                args.timeout,
-                "causally confirmed paused game",
-                controller=controller,
-            )
-            await _observe_loaded_paused_health(
-                reader,
-                controller,
-                duration_seconds=config.launch.post_load_health_seconds,
-            )
-    except LaunchFailed as exc:
+                print(f"{exc} Terminal safety: {safe_state}.", file=sys.stderr)
+                return 3
+    except (
+        DisplayLeaseError,
+        FileNotFoundError,
+        GpuTdrDetected,
+        LaunchFailed,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         print(str(exc), file=sys.stderr)
         return 4
-    except LaunchInterrupted as exc:
-        safe_state = await _ensure_interrupted_safe_state(
-            controller,
-            _telemetry_read(config),
-            pause_key=config.controls.pause_key,
-            timeout_seconds=min(2.0, args.timeout),
-        )
-        print(f"{exc} Terminal safety: {safe_state}.", file=sys.stderr)
-        return 3
 
     print("Kenshi launched" + (", loaded, and paused." if args.continue_game else "."))
     return 0
@@ -750,6 +840,8 @@ def _collect_crash_evidence(
     *,
     terminal_window_title: str,
     captured_at: datetime | None = None,
+    gpu_tdr_events: tuple[GpuTdrEvent, ...] | None = None,
+    gpu_event_error: str | None = None,
 ) -> Path:
     observed_at = captured_at or datetime.now(UTC)
     stamp = observed_at.strftime("%Y%m%dT%H%M%S.%fZ")
@@ -781,6 +873,21 @@ def _collect_crash_evidence(
         copied_names.add(source.name)
 
     warnings: list[str] = []
+    if gpu_tdr_events is not None:
+        gpu_events_path = evidence_dir / "windows_gpu_events.json"
+        gpu_events_path.write_text(
+            json.dumps(
+                [event.as_json() for event in gpu_tdr_events],
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        artifacts.append(
+            _crash_artifact_record(gpu_events_path, source=gpu_events_path)
+        )
+    if gpu_event_error is not None:
+        warnings.append(f"Windows GPU-event query failed ({gpu_event_error}).")
     try:
         frame = WindowCapture(
             controller,
@@ -878,10 +985,18 @@ async def _crash(args: argparse.Namespace) -> int:
                 "No terminal Kenshi crash window is visible; no evidence or input "
                 "was produced."
             )
+        try:
+            gpu_tdr_events = query_windows_gpu_tdr_events()
+            gpu_event_error = None
+        except (OSError, RuntimeError, ValueError) as exc:
+            gpu_tdr_events = None
+            gpu_event_error = f"{type(exc).__name__}: {exc}"
         evidence_dir = _collect_crash_evidence(
             config,
             probe,
             terminal_window_title=title,
+            gpu_tdr_events=gpu_tdr_events,
+            gpu_event_error=gpu_event_error,
         )
         print(f"Crash evidence archived at {evidence_dir}", flush=True)
         if not args.dismiss:
@@ -919,20 +1034,29 @@ def _graphics(args: argparse.Namespace) -> int:
             )
         profile = _configured_graphics_profile(config)
         settings_path = _kenshi_settings_path()
+        renderer_path = _kenshi_renderer_path()
         if args.graphics_action == "apply":
-            result = apply_graphics_profile(settings_path, profile)
-            verification = result.verification
+            result = apply_graphics_profile(
+                settings_path,
+                profile,
+                renderer_path=renderer_path,
+            )
             if result.changed:
-                assert result.backup_path is not None
+                assert result.backup_paths
                 print(
                     f"Installed graphics profile {profile.profile_id!r}; "
-                    f"backup: {result.backup_path}"
+                    "backups: "
+                    + ", ".join(str(path) for path in result.backup_paths)
                 )
             else:
                 print(f"Graphics profile {profile.profile_id!r} already matches exactly.")
             return 0
 
-        verification = verify_graphics_profile(settings_path, profile)
+        verification = verify_graphics_profile(
+            settings_path,
+            profile,
+            renderer_path=renderer_path,
+        )
         if verification.matches:
             print(f"Graphics profile {profile.profile_id!r} matches exactly.")
             return 0
@@ -1048,40 +1172,71 @@ def _journey(args: argparse.Namespace) -> int:
     run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     argv = _journey_argv(args, run_id)
     event_log = config.paths.runs_dir / run_id / "events.jsonl"
+    display_controller: DisplayTopologyController | None = None
+    monitor: GpuTdrMonitor | None = None
+    try:
+        if args.execute and os.name == "nt":
+            if config.launch.external_display_only:
+                display_controller = DisplayTopologyController()
+                display_controller.validate_ready()
+            if config.launch.monitor_gpu_tdr:
+                monitor = GpuTdrMonitor()
+                monitor.start()
+    except (DisplayLeaseError, OSError, RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
 
-    overlay: subprocess.Popen[bytes] | None = None
-    if (
-        args.execute
-        and config.safety.automatic_takeover_enabled
-        and not args.no_ownership_overlay
-    ):
-        overlay = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "kenshi_agent",
-                "overlay",
-                "--log",
-                str(event_log),
-                "--title",
-                "Kenshi Control Ownership",
-                "--layout",
-                "companion",
-                "--auto-close-seconds",
-                "30",
-            ],
-            cwd=Path.cwd(),
-        )
+    display_context: AbstractContextManager[None] = (
+        external_display_lease(display_controller)
+        if display_controller is not None
+        else nullcontext()
+    )
     result: int | None = None
     try:
-        result = agent_main(argv)
-    finally:
-        if (
-            (result is None or result != 0)
-            and overlay is not None
-            and overlay.poll() is None
-        ):
-            overlay.terminate()
+        with display_context:
+            overlay: subprocess.Popen[bytes] | None = None
+            if (
+                args.execute
+                and config.safety.automatic_takeover_enabled
+                and args.ownership_overlay
+            ):
+                overlay = subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-m",
+                        "kenshi_agent",
+                        "overlay",
+                        "--log",
+                        str(event_log),
+                        "--title",
+                        "Kenshi Control Ownership",
+                        "--layout",
+                        "companion",
+                        "--auto-close-seconds",
+                        "30",
+                    ],
+                    cwd=Path.cwd(),
+                )
+            try:
+                result = agent_main(argv)
+                if monitor is not None:
+                    monitor.raise_if_new(force=True)
+            finally:
+                if (
+                    (result is None or result != 0)
+                    and overlay is not None
+                    and overlay.poll() is None
+                ):
+                    overlay.terminate()
+    except (
+        DisplayLeaseError,
+        GpuTdrDetected,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
     assert result is not None
     return result
 
@@ -1174,9 +1329,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     journey.add_argument("--exclusive", action="store_true")
     journey.add_argument(
-        "--no-ownership-overlay",
+        "--ownership-overlay",
         action="store_true",
-        help="Do not open the visible human/agent ownership and countdown window.",
+        help="Open the visible human/agent ownership and countdown window.",
     )
 
     return parser

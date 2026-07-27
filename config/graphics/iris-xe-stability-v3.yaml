@@ -30,3 +30,11 @@ settings:
   Decal Range: "0"
   FXAA: "0"
   HeatHaze: "0"
+renderer:
+  section: Direct3D11 Rendering Subsystem
+  settings:
+    VSync: "Yes"
+    # The calibrated external panel runs at 60 Hz; interval 2 caps presentation
+    # at 30 frames per second without adding an unowned limiter process.
+    VSync Interval: "2"
+    Video Mode: 1920 x 1080 @ 32-bit colour [0]

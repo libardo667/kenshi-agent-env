@@ -6,6 +6,7 @@ import pytest
 from kenshi_agent.config import load_config
 from kenshi_agent.graphics_profile import (
     GraphicsProfile,
+    RendererProfile,
     apply_graphics_profile,
     load_graphics_profile,
     verify_graphics_profile,
@@ -44,6 +45,14 @@ def test_live_profiles_share_a_strictly_lower_workload_than_v2() -> None:
     active_path = active_paths.pop()
     assert active_path is not None
     active = load_graphics_profile(active_path)
+    assert active.renderer == RendererProfile(
+        section="Direct3D11 Rendering Subsystem",
+        settings={
+            "VSync": "Yes",
+            "VSync Interval": "2",
+            "Video Mode": "1920 x 1080 @ 32-bit colour [0]",
+        },
+    )
 
     lower_is_cheaper = {
         "terrain hi-res distance",
@@ -173,6 +182,95 @@ def test_apply_exact_profile_is_idempotent_and_makes_no_backup(tmp_path: Path) -
     assert not result.changed
     assert result.backup_path is None
     assert list(tmp_path.iterdir()) == [settings]
+
+
+def test_apply_updates_settings_and_renderer_as_one_recoverable_bundle(
+    tmp_path: Path,
+) -> None:
+    settings = tmp_path / "settings.cfg"
+    renderer = tmp_path / "kenshi.cfg"
+    original_settings = "view distance=2500\r\nlanguage=en_GB\r\n"
+    original_renderer = (
+        "Render System=Direct3D11 Rendering Subsystem\r\n"
+        "[Direct3D11 Rendering Subsystem]\r\n"
+        "VSync=Yes\r\n"
+        "VSync Interval=1\r\n"
+        "Video Mode=1920 x 1080 @ 32-bit colour [0]\r\n"
+        "[Unrelated]\r\n"
+        "VSync Interval=9\r\n"
+    )
+    settings.write_text(original_settings, encoding="utf-8", newline="")
+    renderer.write_text(original_renderer, encoding="utf-8", newline="")
+    expected = GraphicsProfile(
+        profile_id="test-profile",
+        settings={"view distance": "1000"},
+        renderer=RendererProfile(
+            section="Direct3D11 Rendering Subsystem",
+            settings={"VSync": "Yes", "VSync Interval": "2"},
+        ),
+    )
+
+    result = apply_graphics_profile(
+        settings,
+        expected,
+        renderer_path=renderer,
+        now=datetime(2026, 7, 26, 23, 59, tzinfo=UTC),
+    )
+
+    assert result.changed
+    assert result.verification.matches
+    assert len(result.backup_paths) == 2
+    assert {
+        path.read_text(encoding="utf-8")
+        for path in result.backup_paths
+    } == {
+        original_settings.replace("\r\n", "\n"),
+        original_renderer.replace("\r\n", "\n"),
+    }
+    with settings.open("r", encoding="utf-8", newline="") as handle:
+        installed_settings = handle.read()
+    with renderer.open("r", encoding="utf-8", newline="") as handle:
+        installed_renderer = handle.read()
+    assert installed_settings == "view distance=1000\r\nlanguage=en_GB\r\n"
+    assert "VSync Interval=2\r\n" in installed_renderer
+    assert "[Unrelated]\r\nVSync Interval=9\r\n" in installed_renderer
+
+
+def test_bundle_apply_restores_first_file_when_second_replace_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    settings = tmp_path / "settings.cfg"
+    renderer = tmp_path / "kenshi.cfg"
+    original_settings = "view distance=2500\n"
+    original_renderer = (
+        "[Direct3D11 Rendering Subsystem]\n"
+        "VSync Interval=1\n"
+    )
+    settings.write_text(original_settings, encoding="utf-8")
+    renderer.write_text(original_renderer, encoding="utf-8")
+    expected = GraphicsProfile(
+        profile_id="test-profile",
+        settings={"view distance": "1000"},
+        renderer=RendererProfile(
+            section="Direct3D11 Rendering Subsystem",
+            settings={"VSync Interval": "2"},
+        ),
+    )
+    real_replace = __import__("os").replace
+
+    def fail_renderer_replace(source: Path | str, destination: Path | str) -> None:
+        if Path(destination) == renderer:
+            raise OSError("simulated renderer replace failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr("kenshi_agent.graphics_profile.os.replace", fail_renderer_replace)
+
+    with pytest.raises(OSError, match="renderer replace failure"):
+        apply_graphics_profile(settings, expected, renderer_path=renderer)
+
+    assert settings.read_text(encoding="utf-8") == original_settings
+    assert renderer.read_text(encoding="utf-8") == original_renderer
 
 
 def test_malformed_or_duplicate_settings_fail_closed(tmp_path: Path) -> None:

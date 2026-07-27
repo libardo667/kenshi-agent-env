@@ -132,6 +132,8 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.launch.graphics_profile_file == (
         root / "config" / "graphics" / "iris-xe-stability-v3.yaml"
     ).resolve()
+    assert config.launch.external_display_only
+    assert config.launch.monitor_gpu_tdr
     assert config.launch.min_free_physical_memory_mib == 4096
     assert config.launch.post_load_health_seconds == 45
     assert config.runtime.objective is not None

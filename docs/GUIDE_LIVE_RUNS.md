@@ -47,6 +47,13 @@ manually written native request files, ad-hoc input snippets, or PTY launch
 attempts. If `./dev` cannot express or complete the run, repair that supported
 path before treating a workaround as evidence.
 
+The live profiles require the checked-in 30 fps renderer profile and an active
+1920x1080 external display. Actual `launch` and executing `journey` commands
+switch to external-only mode, verify the laptop panel is off, and restore
+extended mode on every handled exit, including Ctrl-C. A hard process kill or
+power loss still requires `Win+P`, then **Extend**. The ownership overlay is off
+by default; add `--ownership-overlay` only when its extra window is wanted.
+
 If preflight reports a terminal crash, `./dev crash` first archives the newest
 dump plus current logs, telemetry, settings, and frame under `runs/crashes/`.
 `--dismiss` is explicit because it closes an unsent report; it archives first,
@@ -93,11 +100,12 @@ Record evidence for each. **Do not mark one complete from code inspection.**
 
 ## Host stability
 
-A live run is only as stable as the GPU driver. Repeated `BAD STUFF` /
-`DXGI_ERROR_DRIVER_INTERNAL_ERROR` device resets on this host were **not** fixed
-by lowering graphics settings; they stopped after the Intel Iris Xe driver went
-from `32.0.101.6737` to `32.0.101.7088`. Treat a device-reset symptom as a driver
-question first.
+A live run is only as stable as the GPU driver. This host has produced Windows
+`LiveKernelEvent 141` display-driver timeouts on both tested Intel Iris Xe
+drivers, including recovered hangs that fresh telemetry alone would miss.
+Launch health and journeys therefore reject any new Event 141 after their
+baseline; crash archives include the matching WER metadata and watchdog-dump
+identity when Windows exposes them.
 
 A clean soak proves only the scene it ran in. A quiet paused town does not clear
 water- or effects-heavy locations.

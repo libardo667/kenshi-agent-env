@@ -183,6 +183,8 @@ class LaunchConfig(ConfigModel):
     require_steam_logged_on: bool = False
     require_graphics_profile: bool = False
     graphics_profile_file: Path | None = None
+    external_display_only: bool = False
+    monitor_gpu_tdr: bool = False
     min_free_physical_memory_mib: int = Field(default=0, ge=0, le=1048576)
     post_load_health_seconds: float = Field(default=0.0, ge=0.0, le=600.0)
 

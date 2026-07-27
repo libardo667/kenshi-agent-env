@@ -407,6 +407,16 @@ def test_launch_preflight_accepts_logged_on_exact_profile_and_memory(
         "".join(f"{key}={value}\n" for key, value in loaded_profile.settings.items()),
         encoding="utf-8",
     )
+    assert loaded_profile.renderer is not None
+    renderer = tmp_path / "kenshi.cfg"
+    renderer.write_text(
+        f"[{loaded_profile.renderer.section}]\n"
+        + "".join(
+            f"{key}={value}\n"
+            for key, value in loaded_profile.renderer.settings.items()
+        ),
+        encoding="utf-8",
+    )
     steam_log = tmp_path / "connection_log.txt"
     steam_log.write_text(
         "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
@@ -418,6 +428,7 @@ def test_launch_preflight_accepts_logged_on_exact_profile_and_memory(
         process_names={"steam.exe"},
         available_physical_memory_mib=8192,
         settings_path=settings,
+        renderer_path=renderer,
         steam_connection_log_path=steam_log,
     )
 
@@ -542,6 +553,17 @@ def test_crash_evidence_archives_latest_dump_logs_telemetry_and_frame(
         LaunchController(title="RE_Kenshi Crash Reporter"),
         terminal_window_title="RE_Kenshi Crash Reporter",
         captured_at=captured_at,
+        gpu_tdr_events=(
+            live_dev.GpuTdrEvent(
+                record_id=9798,
+                observed_at=captured_at,
+                bucket="LKD_0x141_Tdr:6_IMAGE_igdkmdn64.sys_GEN12LP_DX10_BBHANG",
+                watchdog_dump=(
+                    r"\\?\C:\WINDOWS\LiveKernelReports\WATCHDOG"
+                    r"\WATCHDOG-20260726-1901.dmp"
+                ),
+            ),
+        ),
     )
 
     manifest = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
@@ -553,6 +575,7 @@ def test_crash_evidence_archives_latest_dump_logs_telemetry_and_frame(
         "crashDump-new.zip",
         "telemetry.latest.json",
         "plugin_status.json",
+        "windows_gpu_events.json",
         "live_frame_000000.png",
     } <= artifact_names
     assert "crashDump-old.zip" not in artifact_names
@@ -719,6 +742,17 @@ def test_launch_preflight_rejects_profile_drift_with_recovery_command(
     )
     settings = tmp_path / "settings.cfg"
     settings.write_text("view distance=2500\n", encoding="utf-8")
+    profile = live_dev._configured_graphics_profile(config)
+    assert profile.renderer is not None
+    renderer = tmp_path / "kenshi.cfg"
+    renderer.write_text(
+        f"[{profile.renderer.section}]\n"
+        + "".join(
+            f"{key}={value}\n"
+            for key, value in profile.renderer.settings.items()
+        ),
+        encoding="utf-8",
+    )
 
     with pytest.raises(LaunchFailed, match=r"view distance.*graphics apply"):
         _validate_launch_preconditions(
@@ -726,6 +760,7 @@ def test_launch_preflight_rejects_profile_drift_with_recovery_command(
             process_names={"steam.exe"},
             available_physical_memory_mib=8192,
             settings_path=settings,
+            renderer_path=renderer,
             steam_connection_log_path=steam_log,
         )
 
@@ -798,6 +833,48 @@ def test_post_load_health_fails_when_telemetry_does_not_advance() -> None:
                 reader,  # type: ignore[arg-type]
                 controller,
                 duration_seconds=0.01,
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_post_load_health_rejects_recovered_kernel_gpu_timeout() -> None:
+    async def scenario() -> None:
+        controller = LaunchController(
+            title="Kenshi 1.0.65 - x64",
+            visible_titles=["Kenshi 1.0.65 - x64"],
+        )
+        reader = LaunchTelemetry(
+            launch_snapshot(60, paused=True),
+            launch_snapshot(61, paused=True),
+        )
+        snapshots = iter(
+            (
+                (),
+                (
+                    live_dev.GpuTdrEvent(
+                        record_id=100,
+                        observed_at=datetime.now(UTC),
+                        bucket="LKD_0x141_Tdr:6_IMAGE_igdkmdn64.sys_BBHANG",
+                        watchdog_dump="WATCHDOG.dmp",
+                    ),
+                ),
+            )
+        )
+        monitor = live_dev.GpuTdrMonitor(
+            query_events=lambda: next(snapshots),
+            min_query_interval_seconds=0,
+        )
+        monitor.start()
+
+        with pytest.raises(live_dev.GpuTdrDetected, match="record 100"):
+            await _observe_loaded_paused_health(
+                reader,  # type: ignore[arg-type]
+                controller,
+                duration_seconds=0.01,
+                health_check=monitor.raise_if_new,
             )
 
     import asyncio
@@ -985,12 +1062,43 @@ def test_journey_delegates_final_safety_to_the_core_run(
     )
 
     result = live_dev._journey(
-        _journey_args("--execute", "--no-ownership-overlay")
+        _journey_args("--execute")
     )
 
     assert result == 6
     assert len(captured) == 1
     assert "--execute-live-actions" in captured[0]
+
+
+def test_journey_ownership_overlay_is_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    opened: list[list[str]] = []
+
+    class OverlayProcess:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            raise AssertionError("a successful journey leaves an opted-in overlay to auto-close")
+
+    monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)
+    monkeypatch.setattr(
+        live_dev.subprocess,
+        "Popen",
+        lambda argv, **_: opened.append(argv) or OverlayProcess(),
+    )
+
+    assert live_dev._journey(_journey_args("--execute")) == 0
+    assert opened == []
+
+    assert (
+        live_dev._journey(
+            _journey_args("--execute", "--ownership-overlay")
+        )
+        == 0
+    )
+    assert len(opened) == 1
 
 
 def test_startup_clicks_hold_long_enough_for_mygui() -> None:

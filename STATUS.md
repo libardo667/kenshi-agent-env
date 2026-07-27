@@ -113,8 +113,7 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   unavailable or unvalidated.
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
-- Renderer stability remains open on this Intel Iris Xe host. Driver
-  `32.0.101.7088` passed two dissimilar 20-minute soaks, but later paused runs
-  still hit DXGI device-removal and driver-internal failures across unrelated
-  materials; a short health window does not establish stability.
+- Renderer stability remains open on this Intel Iris Xe host: later paused runs
+  still failed after two clean soaks. The unproved lower-load path enforces
+  30 fps, external-only 1080p, and rejection of recovered Windows Event 141s.
 - The mock world tests orchestration, not Kenshi strategy competence.
