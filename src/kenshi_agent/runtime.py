@@ -66,8 +66,8 @@ from .models import (
     TelemetrySnapshot,
     Transition,
     WorldStateRevision,
+    affordance_aggregation_key,
     new_command_id,
-    normalize_capability,
 )
 from .planners import Planner
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
@@ -2001,12 +2001,12 @@ class AgentRuntime:
         """Retain one planner-discovered control gap and decorate later context."""
 
         started_at = datetime.now(UTC)
-        normalized = normalize_capability(action.capability)
+        aggregation_key = affordance_aggregation_key(action)
         existing = next(
             (
                 record
                 for record in self._affordance_requests
-                if record.normalized_capability == normalized
+                if record.aggregation_key == aggregation_key
             ),
             None,
         )
@@ -2018,28 +2018,29 @@ class AgentRuntime:
                     request_number=request_number,
                     action=action,
                     based_on_revision=observation.world_revision,
-                    normalized_capability=normalized,
+                    aggregation_key=aggregation_key,
                 )
             )
             del self._affordance_requests[:-MAX_RETAINED_AFFORDANCE_REQUESTS]
             status = AffordanceRequestStatus.RETAINED
             reason = (
-                f"Recorded affordance request #{request_number}: {action.capability}. "
-                "The capability is not available yet."
+                f"Recorded affordance request #{request_number} "
+                f"({aggregation_key}): {action.capability_description} "
+                "The capability is not available yet and requires engineering review."
             )
         else:
             request_number = existing.request_number
             status = AffordanceRequestStatus.DUPLICATE
             reason = (
                 f"Affordance request #{request_number} already records "
-                f"{action.capability}; duplicate suppressed."
+                f"{aggregation_key}; duplicate suppressed."
             )
 
         evidence = AffordanceRequestEvidence(
             status=status,
             reason=reason,
             request_number=request_number,
-            normalized_capability=normalized,
+            aggregation_key=aggregation_key,
         )
         finished_at = datetime.now(UTC)
         receipt = ActionReceipt(

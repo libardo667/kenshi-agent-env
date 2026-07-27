@@ -12,6 +12,7 @@ from kenshi_agent.models import (
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionReceipt,
+    AffordanceIntentClass,
     AffordanceRequestRecord,
     AffordanceUrgency,
     Condition,
@@ -156,13 +157,15 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
                 AffordanceRequestRecord(
                     request_number=1,
                     action=RequestAffordanceAction(
-                        capability="retreat to a safe anchor",
+                        intent_class=AffordanceIntentClass.MOVE,
+                        capability_slug="retreat_to_safe_anchor",
+                        capability_description="Retreat to a safe anchor.",
                         blocked_goal="Survive an active fight.",
                         why_needed="Movement lacks a safety-aware retreat intention.",
                         evidence="The selected character is in combat.",
                         urgency=AffordanceUrgency.SURVIVAL_CRITICAL,
                     ),
-                    normalized_capability="retreat to a safe anchor",
+                    aggregation_key="kenshi:move:retreat_to_safe_anchor",
                     based_on_revision=first.world_revision,
                 )
             ],
@@ -176,7 +179,10 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
     assert store.history()[-1].recent_action_outcomes == [outcome]
     advanced = store.publish(observation(2)).observation
     assert advanced.objective == "Retain causal context."
-    assert advanced.affordance_requests[0].action.capability == "retreat to a safe anchor"
+    assert (
+        advanced.affordance_requests[0].aggregation_key
+        == "kenshi:move:retreat_to_safe_anchor"
+    )
     with pytest.raises(RevisionConflictError, match="current world-state revision"):
         store.decorate_latest(observation(1))
 

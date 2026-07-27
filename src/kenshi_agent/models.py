@@ -863,6 +863,16 @@ class AffordanceUrgency(StrEnum):
     IMPROVES_FIDELITY = "improves_fidelity"
 
 
+class AffordanceIntentClass(StrEnum):
+    """Small game-neutral classes for grouping missing player intentions."""
+
+    OBSERVE = "observe"
+    MOVE = "move"
+    INTERACT = "interact"
+    COMMUNICATE = "communicate"
+    MANAGE = "manage"
+
+
 class RequestAffordanceAction(StrictModel):
     """Retain a concrete capability gap without emitting game input.
 
@@ -872,7 +882,14 @@ class RequestAffordanceAction(StrictModel):
     """
 
     kind: Literal["request_affordance"] = "request_affordance"
-    capability: str = Field(min_length=1, max_length=120)
+    game: Literal["kenshi"] = "kenshi"
+    intent_class: AffordanceIntentClass
+    capability_slug: str = Field(
+        min_length=3,
+        max_length=80,
+        pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
+    )
+    capability_description: str = Field(min_length=1, max_length=300)
     blocked_goal: str = Field(min_length=1, max_length=300)
     why_needed: str = Field(min_length=1, max_length=600)
     evidence: str = Field(min_length=1, max_length=600)
@@ -1588,17 +1605,22 @@ class AffordanceRequestEvidence(StrictModel):
     status: AffordanceRequestStatus
     reason: str = Field(min_length=1, max_length=1000)
     request_number: int = Field(ge=1)
-    normalized_capability: str = Field(min_length=1, max_length=120)
+    aggregation_key: str = Field(
+        min_length=1,
+        max_length=120,
+        pattern=r"^kenshi:(?:observe|move|interact|communicate|manage):"
+        r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
+    )
 
 
-def normalize_capability(capability: str) -> str:
-    """The one comparison form for a requested capability.
+def affordance_aggregation_key(action: RequestAffordanceAction) -> str:
+    """Return the one stable cross-run identity for a grounded capability gap.
 
     A second copy of this rule is a second answer to "is this a duplicate?", so
-    both the retained record and its receipt evidence derive from here.
+    retained records, receipts, and offline aggregation all derive from here.
     """
 
-    return " ".join(capability.casefold().split())
+    return f"{action.game}:{action.intent_class.value}:{action.capability_slug}"
 
 
 class AffordanceRequestRecord(StrictModel):
@@ -1608,7 +1630,16 @@ class AffordanceRequestRecord(StrictModel):
     # Stored beside the record so duplicate detection reads the same list the
     # planner sees. A parallel index outlived this list once and made an evicted
     # gap permanently unreportable.
-    normalized_capability: str = Field(min_length=1)
+    aggregation_key: str = Field(min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def key_matches_action(self) -> AffordanceRequestRecord:
+        expected = affordance_aggregation_key(self.action)
+        if self.aggregation_key != expected:
+            raise ValueError(
+                "Affordance request aggregation_key must match its typed action."
+            )
+        return self
 
 
 class CommandDispatchContext(StrictModel):

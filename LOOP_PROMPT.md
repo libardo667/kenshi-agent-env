@@ -22,7 +22,8 @@ Live work runs through one observation pump, a bounded `WorldStateStore`, an
 independent safety supervisor, and a final in-lease authorization fence. The
 planner-visible surface is a contracted action catalog
 (`docs/generated/ACTION_CATALOG.md`), not a fixed recipe. A read-only strategic
-advisor and a `request_affordance` channel exist and emit zero game input.
+advisor and a typed, cross-run aggregable `request_affordance` channel exist;
+both emit zero game input and grant no authority.
 
 The native plug-in exports telemetry at ~2 Hz and accepts five reviewed
 commands. Protocol `1.0.0` is live-loaded: nearest mining-resource observation,
@@ -262,31 +263,27 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Make affordance requests aggregable.** `capability` is free text, so
-   requests from different runs cannot be counted or ranked. A controlled
-   vocabulary (or a clustering pass) is required before fanning out across
-   saves.
-2. **Make learned constraints recallable by target.** Salience-only top-N recall
+1. **Make learned constraints recallable by target.** Salience-only top-N recall
    can bury a correct entity-specific negative constraint after later writes.
    Bind memories to stable target IDs and union entity-scoped matches with the
    bounded general recall; measure whether repeated approaches fall.
-3. **Multi-save robustness.** Deliberate scenario matrix — indoor/outdoor,
+2. **Multi-save robustness.** Deliberate scenario matrix — indoor/outdoor,
    hostile/safe, broke/funded, solo/squad, day/night — rather than repeated runs
    of one town. The affordance-request stream is the instrument; treat its
    output as the backlog.
-4. **Expand controller-verified contracts.** Most success conditions are still
+3. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one
    class of false success.
-5. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
+4. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
    guards only direct `PauseAction`. Bindings also use a hard-coded key map
    rather than the active `controls.cfg`.
-6. **Add mutation testing.** Test count is not coverage; `mutmut` or
+5. **Add mutation testing.** Test count is not coverage; `mutmut` or
    `cosmic-ray` over `src/kenshi_agent/` is the only cheap answer to whether the
    suite would notice broken code.
-7. **Remote map travel.** No semantic action exists at all; `move_to_character`
+6. **Remote map travel.** No semantic action exists at all; `move_to_character`
    is bounded to the nearby-character query.
-8. **Native identity validation** across recruit, dismiss, reorder, KO, death,
+7. **Native identity validation** across recruit, dismiss, reorder, KO, death,
    save/load, and zone transitions.
 
 ## Continuous-planning semantics

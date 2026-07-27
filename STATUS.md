@@ -32,9 +32,9 @@ the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md
 - A read-only guide-grounded strategic advisor. `consult_advisor` consumes a
   strategic turn, creates no world command, and emits zero primitives. Unknown
   source IDs fail closed; unchanged-state requests are suppressed before the call.
-- `request_affordance` lets the playing model report a grounded missing control.
-  It emits no input and grants no capability; later observations carry the
-  request so the run can take a safe workaround meanwhile.
+- `request_affordance` records a typed intent class plus Kenshi capability slug,
+  grounded evidence, and urgency without granting authority or emitting input.
+  `kenshi-agent aggregate-affordances` ranks those keys across run logs for review.
 
 ## Live profiles
 
@@ -85,9 +85,6 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
-- `request_affordance` carries a free-text `capability`, so requests from
-  different runs cannot be aggregated or ranked. A controlled vocabulary is
-  needed before fanning out across multiple saves.
 - Persistent recall is salience-only and not entity-scoped, so a learned
   constraint can disappear when later writes fill the recall budget.
 

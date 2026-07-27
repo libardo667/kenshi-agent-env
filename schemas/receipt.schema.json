@@ -302,6 +302,18 @@
       "title": "AdvisorRecommendation",
       "type": "object"
     },
+    "AffordanceIntentClass": {
+      "description": "Small game-neutral classes for grouping missing player intentions.",
+      "enum": [
+        "observe",
+        "move",
+        "interact",
+        "communicate",
+        "manage"
+      ],
+      "title": "AffordanceIntentClass",
+      "type": "string"
+    },
     "AffordanceRequestEvidence": {
       "additionalProperties": false,
       "properties": {
@@ -319,10 +331,11 @@
           "title": "Request Number",
           "type": "integer"
         },
-        "normalized_capability": {
+        "aggregation_key": {
           "maxLength": 120,
           "minLength": 1,
-          "title": "Normalized Capability",
+          "pattern": "^kenshi:(?:observe|move|interact|communicate|manage):[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
+          "title": "Aggregation Key",
           "type": "string"
         }
       },
@@ -330,7 +343,7 @@
         "status",
         "reason",
         "request_number",
-        "normalized_capability"
+        "aggregation_key"
       ],
       "title": "AffordanceRequestEvidence",
       "type": "object"
@@ -1817,10 +1830,26 @@
           "title": "Kind",
           "type": "string"
         },
-        "capability": {
-          "maxLength": 120,
+        "game": {
+          "const": "kenshi",
+          "default": "kenshi",
+          "title": "Game",
+          "type": "string"
+        },
+        "intent_class": {
+          "$ref": "#/$defs/AffordanceIntentClass"
+        },
+        "capability_slug": {
+          "maxLength": 80,
+          "minLength": 3,
+          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
+          "title": "Capability Slug",
+          "type": "string"
+        },
+        "capability_description": {
+          "maxLength": 300,
           "minLength": 1,
-          "title": "Capability",
+          "title": "Capability Description",
           "type": "string"
         },
         "blocked_goal": {
@@ -1860,7 +1889,9 @@
         }
       },
       "required": [
-        "capability",
+        "intent_class",
+        "capability_slug",
+        "capability_description",
         "blocked_goal",
         "why_needed",
         "evidence"

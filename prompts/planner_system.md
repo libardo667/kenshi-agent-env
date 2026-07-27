@@ -66,16 +66,22 @@ Use it only when no currently advertised action can safely express an immediate,
 grounded intention. It must be the plan's only step and must have
 `success_conditions: []`.
 
-- Name the desired capability, the current goal it blocks, why it is needed,
-  and the exact observation evidence that exposed the gap. State any safe
-  workaround that remains available and classify the urgency honestly.
+- Classify the intention as `observe`, `move`, `interact`, `communicate`, or
+  `manage`. Give the Kenshi-specific capability a lower-snake-case verb/object
+  slug such as `travel_to_map_destination`. Reuse the exact slug from
+  `affordance_requests` for the same intention even when your prose differs.
+- Describe the capability in ordinary language, name the current goal it
+  blocks, explain why it is needed, and cite the exact current observation
+  evidence that exposed the gap. State any safe workaround and classify urgency
+  honestly.
 - It consumes one strategic action but emits zero keyboard, mouse, or native
   primitives and creates no world command. Recording the request does not make
   the capability available. On the next plan, use a safe advertised workaround
   or pursue another goal; stop only when the gap is survival-critical and no
   safe option exists.
-- `affordance_requests` retains earlier requests for this run. Do not request a
-  capability already listed there; duplicates are suppressed.
+- `affordance_requests` retains earlier requests and their stable
+  `aggregation_key` for this run. Do not request a key already listed there;
+  duplicates are suppressed.
 - Do not use it speculatively or as a substitute for reading `semantic_actions`,
   `visible_controls`, game bindings, dialogue targets, or travel destinations.
 

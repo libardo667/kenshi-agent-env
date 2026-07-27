@@ -4,11 +4,17 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+from pydantic import ValidationError
+
+from kenshi_agent.affordance_requests import aggregate_affordance_requests
 from kenshi_agent.config import MockConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env import MockEnvironment
 from kenshi_agent.evals import evaluate_log
 from kenshi_agent.models import (
+    AffordanceIntentClass,
+    AffordanceRequestRecord,
     AffordanceRequestStatus,
     AffordanceUrgency,
     Condition,
@@ -24,6 +30,7 @@ from kenshi_agent.models import (
     RequestAffordanceAction,
     RiskBudget,
     StopAction,
+    WorldStateRevision,
 )
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
@@ -42,7 +49,43 @@ def fresh() -> Condition:
     )
 
 
-def request_plan(current: Observation, *, plan_id: str) -> PlanEnvelope:
+def request_action(
+    *,
+    capability_slug: str = "operate_world_target",
+    capability_description: str = (
+        "Perform the contextual task on an exact world target."
+    ),
+    blocked_goal: str = "Work an ore resource to earn something sellable.",
+    why_needed: str = (
+        "The authorable surface has movement and interaction controls "
+        "but no exact-target world-task intention."
+    ),
+    evidence: str = (
+        "Kenshi exposes mining and other object tasks through "
+        "targeted right-click interaction."
+    ),
+    urgency: AffordanceUrgency = AffordanceUrgency.BLOCKS_CURRENT_GOAL,
+) -> RequestAffordanceAction:
+    return RequestAffordanceAction(
+        intent_class=AffordanceIntentClass.INTERACT,
+        capability_slug=capability_slug,
+        capability_description=capability_description,
+        blocked_goal=blocked_goal,
+        why_needed=why_needed,
+        evidence=evidence,
+        available_workaround="Trade existing inventory near town.",
+        urgency=urgency,
+    )
+
+
+def request_plan(
+    current: Observation,
+    *,
+    plan_id: str,
+    capability_description: str = (
+        "Perform the contextual task on an exact world target."
+    ),
+) -> PlanEnvelope:
     return PlanEnvelope(
         schema_version="1.0",
         plan_id=plan_id,
@@ -54,19 +97,8 @@ def request_plan(current: Observation, *, plan_id: str) -> PlanEnvelope:
         steps=[
             PlanStep(
                 step_id="request",
-                action=RequestAffordanceAction(
-                    capability="perform the contextual task on an exact world target",
-                    blocked_goal="Work an ore resource to earn something sellable.",
-                    why_needed=(
-                        "The authorable surface has movement and interaction controls "
-                        "but no exact-target world-task intention."
-                    ),
-                    evidence=(
-                        "Kenshi exposes mining and other object tasks through "
-                        "targeted right-click interaction."
-                    ),
-                    available_workaround="Trade existing inventory near town.",
-                    urgency=AffordanceUrgency.BLOCKS_CURRENT_GOAL,
+                action=request_action(
+                    capability_description=capability_description,
                 ),
                 preconditions=[fresh()],
                 success_conditions=[],
@@ -95,7 +127,16 @@ class RequestTwiceThenStopPlanner(Planner):
         self.calls += 1
         self.observations.append(current)
         if self.calls <= 2:
-            return request_plan(current, plan_id=f"request-tool-{self.calls}")
+            description = (
+                "Perform the contextual task on an exact world target."
+                if self.calls == 1
+                else "Work a selected world object through its contextual action."
+            )
+            return request_plan(
+                current,
+                plan_id=f"request-tool-{self.calls}",
+                capability_description=description,
+            )
         return PlannerDecision(
             intent="End the bounded affordance-request proof.",
             rationale="The request is retained and its duplicate was suppressed.",
@@ -178,8 +219,8 @@ def test_runtime_retains_and_deduplicates_affordance_requests_without_dispatch(
         assert len(planner.observations[1].affordance_requests) == 1
         assert len(planner.observations[2].affordance_requests) == 1
         assert (
-            planner.observations[2].affordance_requests[0].action.capability
-            == "perform the contextual task on an exact world target"
+            planner.observations[2].affordance_requests[0].aggregation_key
+            == "kenshi:interact:operate_world_target"
         )
 
         events = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
@@ -203,8 +244,36 @@ def test_runtime_retains_and_deduplicates_affordance_requests_without_dispatch(
         metrics = evaluate_log(log_path)
         assert metrics.affordance_requests == 2
         assert metrics.affordance_request_duplicates == 1
+        aggregate = aggregate_affordance_requests([log_path])
+        assert aggregate.classified_events == 2
+        assert len(aggregate.candidates) == 1
+        assert (
+            aggregate.candidates[0].aggregation_key
+            == "kenshi:interact:operate_world_target"
+        )
 
     asyncio.run(scenario())
+
+
+def test_capability_slug_refuses_free_prose_or_unstable_case() -> None:
+    for invalid in (
+        "Operate world target",
+        "operate-world-target",
+        "OPERATE_WORLD_TARGET",
+        "operate",
+    ):
+        with pytest.raises(ValidationError):
+            request_action(capability_slug=invalid)
+
+
+def test_retained_aggregation_key_cannot_drift_from_its_typed_action() -> None:
+    with pytest.raises(ValidationError, match="must match its typed action"):
+        AffordanceRequestRecord(
+            request_number=1,
+            action=request_action(),
+            based_on_revision=WorldStateRevision(),
+            aggregation_key="kenshi:move:operate_world_target",
+        )
 
 
 def test_duplicate_suppression_only_ever_cites_a_visible_request(tmp_path: Path) -> None:
@@ -244,8 +313,9 @@ def test_duplicate_suppression_only_ever_cites_a_visible_request(tmp_path: Path)
             overflow = MAX_RETAINED_AFFORDANCE_REQUESTS + 8
             for index in range(overflow):
                 await runtime._execute_affordance_request_action(
-                    RequestAffordanceAction(
-                        capability=f"missing control {index}",
+                    request_action(
+                        capability_slug=f"missing_control_{index}",
+                        capability_description=f"Missing control {index}.",
                         blocked_goal=f"goal {index}",
                         why_needed=f"why {index}",
                         evidence=f"evidence {index}",
@@ -260,8 +330,9 @@ def test_duplicate_suppression_only_ever_cites_a_visible_request(tmp_path: Path)
                 # Re-raise every gap so far and hold the invariant on each verdict.
                 for earlier in range(index + 1):
                     result = await runtime._execute_affordance_request_action(
-                        RequestAffordanceAction(
-                            capability=f"MISSING Control  {earlier}",
+                        request_action(
+                            capability_slug=f"missing_control_{earlier}",
+                            capability_description=f"Alternative prose {earlier}.",
                             blocked_goal=f"goal {earlier}",
                             why_needed=f"why {earlier}",
                             evidence=f"evidence {earlier}",
@@ -274,7 +345,7 @@ def test_duplicate_suppression_only_ever_cites_a_visible_request(tmp_path: Path)
                     evidence = result.receipt.affordance_request
                     assert evidence is not None
                     visible = {
-                        record.request_number: record.normalized_capability
+                        record.request_number: record.aggregation_key
                         for record in runtime._affordance_requests
                     }
                     if evidence.status is AffordanceRequestStatus.DUPLICATE:
@@ -282,9 +353,9 @@ def test_duplicate_suppression_only_ever_cites_a_visible_request(tmp_path: Path)
                             f"suppressed request #{evidence.request_number} as a "
                             "duplicate of a record the planner cannot see"
                         )
-                        assert visible[evidence.request_number] == evidence.normalized_capability
+                        assert visible[evidence.request_number] == evidence.aggregation_key
                     else:
-                        assert evidence.normalized_capability in visible.values()
+                        assert evidence.aggregation_key in visible.values()
         finally:
             logger.close()
 
