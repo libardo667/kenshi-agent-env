@@ -21,6 +21,7 @@ from kenshi_agent.live_dev import (
     _observe_loaded_paused_health,
     _plugin_ready,
     _steam_connection_state,
+    _telemetry_payload,
     _unique_visible_control,
     _validate_calibrated_client_rect,
     _validate_launch_preconditions,
@@ -36,7 +37,9 @@ from kenshi_agent.models import (
     NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
+    Vec3,
     VisibleUIControl,
+    WorldTarget,
 )
 from kenshi_agent.telemetry import TelemetryRead
 
@@ -472,6 +475,35 @@ def test_launch_preflight_rejects_second_kenshi_client(
         )
 
 
+def test_non_launching_preflight_can_validate_an_existing_kenshi_client(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+    config = config.model_copy(
+        update={
+            "launch": config.launch.model_copy(
+                update={"require_graphics_profile": False}
+            )
+        }
+    )
+    steam_log = tmp_path / "connection_log.txt"
+    steam_log.write_text(
+        "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
+        encoding="utf-8",
+    )
+
+    _validate_launch_preconditions(
+        config,
+        process_names={"steam.exe", "kenshi_x64.exe"},
+        available_physical_memory_mib=8192,
+        steam_connection_log_path=steam_log,
+        allow_existing_client=True,
+    )
+
+
 def test_resume_launcher_requires_the_exact_small_pre_game_window() -> None:
     _validate_resumable_launcher_rect(WindowRect(0, 0, 900, 700))
 
@@ -797,6 +829,61 @@ def test_launch_parser_accepts_explicit_existing_launcher_resume() -> None:
     )
 
     assert args.resume_launcher is True
+
+
+def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sample() -> None:
+    unavailable = [
+        WorldTarget(
+            id=f"resource-{index}",
+            name=f"Iron Resource {index}",
+            kind="natural_resource",
+            position=Vec3(x=float(index), y=0.0, z=0.0),
+            distance=float(index),
+            context_actions=["operate"],
+            default_task="operate_machinery",
+            task_available=False,
+            task_probability=0.0,
+        )
+        for index in range(14)
+    ]
+    actionable = WorldTarget(
+        id="resource-actionable",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=100.0, y=0.0, z=0.0),
+        distance=100.0,
+        context_actions=["operate"],
+        default_task="operate_machinery",
+        task_available=True,
+        task_probability=1.0,
+    )
+    snapshot = launch_snapshot(70, paused=True).model_copy(
+        update={
+            "world_targets": [*unavailable, actionable],
+            "warnings": ["world target query reached capacity"],
+        }
+    )
+
+    payload = _telemetry_payload(
+        TelemetryRead(
+            snapshot=snapshot,
+            age_seconds=0.25,
+            stale=False,
+            path=Path("telemetry.latest.json"),
+        )
+    )
+
+    assert payload["world_target_count"] == 15
+    assert [
+        target["id"]  # type: ignore[index]
+        for target in payload["context_targets"]  # type: ignore[union-attr]
+    ] == ["resource-actionable"]
+    assert len(payload["nearest_world_targets"]) == 12  # type: ignore[arg-type]
+    assert "resource-actionable" not in {
+        target["id"]  # type: ignore[index]
+        for target in payload["nearest_world_targets"]  # type: ignore[union-attr]
+    }
+    assert payload["warnings"] == ["world target query reached capacity"]
 
 
 def test_post_load_health_requires_advancing_loaded_paused_telemetry() -> None:

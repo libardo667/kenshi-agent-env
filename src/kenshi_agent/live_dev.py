@@ -49,7 +49,7 @@ from .models import (
     TelemetrySnapshot,
     VisibleUIControl,
 )
-from .telemetry import TelemetryReader, TelemetryReadError
+from .telemetry import TelemetryRead, TelemetryReader, TelemetryReadError
 
 
 class LaunchInterrupted(RuntimeError):
@@ -331,6 +331,7 @@ def _validate_launch_preconditions(
     renderer_path: Path | None = None,
     steam_connection_log_path: Path | None = None,
     resume_launcher: bool = False,
+    allow_existing_client: bool = False,
 ) -> None:
     if terminal_window_title is not None:
         raise LaunchFailed(
@@ -339,7 +340,11 @@ def _validate_launch_preconditions(
             "closing the unsent report."
         )
     names = process_names if process_names is not None else _running_process_names()
-    if "kenshi_x64.exe" in names and not resume_launcher:
+    if (
+        "kenshi_x64.exe" in names
+        and not resume_launcher
+        and not allow_existing_client
+    ):
         raise LaunchFailed("Kenshi is already running; refusing to start a second client.")
     if "kenshi_x64.exe" not in names and resume_launcher:
         raise LaunchFailed(
@@ -773,6 +778,7 @@ async def _launch(args: argparse.Namespace) -> int:
             config,
             terminal_window_title=terminal_window_title,
             resume_launcher=args.resume_launcher,
+            allow_existing_client=args.preflight_only,
         )
         if args.resume_launcher:
             _validate_resumable_launcher_rect(controller.client_rect())
@@ -1108,13 +1114,20 @@ def _shot(args: argparse.Namespace) -> int:
     return 0
 
 
-def _telemetry(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    result = _telemetry_read(config).read()
+def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
     snapshot = result.snapshot
     selected = next((character for character in snapshot.squad if character.selected), None)
     barman = next((entity for entity in snapshot.nearby_entities if entity.name == "Barman"), None)
-    payload = {
+    context_targets = [
+        target
+        for target in snapshot.world_targets
+        if target.task_available and target.context_actions
+    ]
+    nearest_targets = sorted(
+        snapshot.world_targets,
+        key=lambda target: target.distance,
+    )[:12]
+    return {
         "sequence": snapshot.sequence,
         "age_seconds": round(result.age_seconds, 3),
         "stale": result.stale,
@@ -1126,7 +1139,23 @@ def _telemetry(args: argparse.Namespace) -> int:
         "native_control": snapshot.native_control.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json") if selected else None,
         "barman": barman.model_dump(mode="json") if barman else None,
+        "world_target_count": len(snapshot.world_targets),
+        "context_targets": [
+            target.model_dump(mode="json")
+            for target in context_targets
+        ],
+        "nearest_world_targets": [
+            target.model_dump(mode="json")
+            for target in nearest_targets
+        ],
+        "warnings": list(snapshot.warnings),
     }
+
+
+def _telemetry(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    result = _telemetry_read(config).read()
+    payload = _telemetry_payload(result)
     print(json.dumps(payload, indent=2))
     return 1 if result.stale else 0
 
