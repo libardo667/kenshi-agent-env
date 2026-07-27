@@ -442,17 +442,49 @@ class Win32InputController(InputController):
         now = int(self.kernel32.GetTickCount())
         return ((now - self._last_input_tick()) & 0xFFFFFFFF) / 1000.0
 
-    def _any_input_down(self) -> bool:
-        return any(self.user32.GetAsyncKeyState(vk) & 0x8000 for vk in range(1, 256))
+    def _pressed_input_vks(self) -> tuple[int, ...]:
+        return tuple(
+            vk
+            for vk in range(1, 256)
+            if self.user32.GetAsyncKeyState(vk) & 0x8000
+        )
+
+    @staticmethod
+    def _pressed_input_description(pressed: tuple[int, ...]) -> str:
+        labels = {
+            0x01: "left mouse",
+            0x02: "right mouse",
+            0x04: "middle mouse",
+            0x10: "shift",
+            0x11: "ctrl",
+            0x12: "alt",
+            0xA0: "left shift",
+            0xA1: "right shift",
+            0xA2: "left ctrl",
+            0xA3: "right ctrl",
+            0xA4: "left alt",
+            0xA5: "right alt",
+        }
+        return ", ".join(
+            f"0x{vk:02X}" + (f" ({labels[vk]})" if vk in labels else "")
+            for vk in pressed
+        )
 
     async def _wait_for_input_turn(self) -> None:
         deadline = time.monotonic() + self.max_wait_for_input_turn_seconds
-        while self._idle_seconds() < self.idle_seconds_before_input or self._any_input_down():
+        while True:
+            pressed = self._pressed_input_vks()
+            if (
+                self._idle_seconds() >= self.idle_seconds_before_input
+                and not pressed
+            ):
+                return
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise RuntimeError(
                     "Timed out waiting for a quiet keyboard/mouse interval; "
-                    "the planned input was not sent."
+                    "the planned input was not sent. Held virtual keys: "
+                    f"{self._pressed_input_description(pressed) or '<none>'}."
                 )
             await asyncio.sleep(min(0.1, remaining))
 

@@ -43,18 +43,18 @@ def test_external_display_lease_restores_panel_after_body_failure(
         (
             DisplayTopology(
                 screens=(_screen("internal", 2496, 1664), _screen("external", 1920, 1080)),
-                internal_active=True,
-                external_active=True,
+                internal_connected=True,
+                external_connected=True,
             ),
             DisplayTopology(
                 screens=(_screen("external", 1920, 1080),),
-                internal_active=False,
-                external_active=True,
+                internal_connected=True,
+                external_connected=True,
             ),
             DisplayTopology(
                 screens=(_screen("internal", 2496, 1664), _screen("external", 1920, 1080)),
-                internal_active=True,
-                external_active=True,
+                internal_connected=True,
+                external_connected=True,
             ),
         )
     )
@@ -74,8 +74,8 @@ def test_external_display_lease_fails_before_switch_without_1080p_external() -> 
             (
                 DisplayTopology(
                     screens=(_screen("internal", 2496, 1664),),
-                    internal_active=True,
-                    external_active=False,
+                    internal_connected=True,
+                    external_connected=False,
                 ),
             )
         ),
@@ -93,8 +93,8 @@ def test_external_display_lease_reports_restore_failure() -> None:
     switches: list[str] = []
     external_only = DisplayTopology(
         screens=(_screen("external", 1920, 1080),),
-        internal_active=False,
-        external_active=True,
+        internal_connected=True,
+        external_connected=True,
     )
     controller = _controller(
         iter(
@@ -104,8 +104,8 @@ def test_external_display_lease_reports_restore_failure() -> None:
                         _screen("internal", 2496, 1664),
                         _screen("external", 1920, 1080),
                     ),
-                    internal_active=True,
-                    external_active=True,
+                    internal_connected=True,
+                    external_connected=True,
                 ),
                 external_only,
                 external_only,

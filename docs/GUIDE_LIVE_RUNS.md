@@ -59,6 +59,7 @@ dump plus current logs, telemetry, settings, and frame under `runs/crashes/`.
 `--dismiss` is explicit because it closes an unsent report; it archives first,
 dismisses each exact terminal layer with bounded ordinary input, aborts on human
 input, and never force-terminates a process that fails to exit.
+After a guarded input refusal, `./dev launch --resume-launcher` accepts only the exact small pre-game window.
 
 ## Before a run
 

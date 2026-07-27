@@ -330,6 +330,7 @@ def _validate_launch_preconditions(
     settings_path: Path | None = None,
     renderer_path: Path | None = None,
     steam_connection_log_path: Path | None = None,
+    resume_launcher: bool = False,
 ) -> None:
     if terminal_window_title is not None:
         raise LaunchFailed(
@@ -338,8 +339,12 @@ def _validate_launch_preconditions(
             "closing the unsent report."
         )
     names = process_names if process_names is not None else _running_process_names()
-    if "kenshi_x64.exe" in names:
+    if "kenshi_x64.exe" in names and not resume_launcher:
         raise LaunchFailed("Kenshi is already running; refusing to start a second client.")
+    if "kenshi_x64.exe" not in names and resume_launcher:
+        raise LaunchFailed(
+            "No existing Kenshi launcher process is available to resume."
+        )
 
     if config.launch.require_steam_logged_on:
         if "steam.exe" not in names:
@@ -380,6 +385,14 @@ def _validate_launch_preconditions(
                 f"Graphics profile {profile.profile_id!r} is not installed exactly: "
                 f"{details}. Run './dev graphics apply' while Kenshi is stopped."
             )
+
+
+def _validate_resumable_launcher_rect(rect: WindowRect) -> None:
+    if rect.width <= 0 or rect.height <= 0 or rect.width >= 1200:
+        raise LaunchFailed(
+            "--resume-launcher requires the exact small RE_Kenshi pre-game "
+            "launcher window; no input was sent."
+        )
 
 
 def _disable_re_kenshi_startup_panel(path: Path) -> bool:
@@ -616,7 +629,10 @@ async def _perform_launch(
     health_check = monitor.raise_if_new if monitor is not None else None
     _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
     launched_at = datetime.now(UTC)
-    os.startfile(_shortcut())  # type: ignore[attr-defined]
+    if not args.resume_launcher:
+        os.startfile(_shortcut())  # type: ignore[attr-defined]
+    else:
+        print("Resuming the existing verified RE_Kenshi pre-game launcher.")
     await _wait_until(
         lambda: controller.client_rect().width > 0,
         args.timeout,
@@ -756,7 +772,10 @@ async def _launch(args: argparse.Namespace) -> int:
         _validate_launch_preconditions(
             config,
             terminal_window_title=terminal_window_title,
+            resume_launcher=args.resume_launcher,
         )
+        if args.resume_launcher:
+            _validate_resumable_launcher_rect(controller.client_rect())
         if display_controller is not None:
             display_controller.validate_ready()
         if monitor is not None:
@@ -1249,6 +1268,14 @@ def build_parser() -> argparse.ArgumentParser:
     launch.add_argument("--config", required=True)
     launch.add_argument("--timeout", type=float, default=60.0)
     launch.add_argument("--no-continue", dest="continue_game", action="store_false")
+    launch.add_argument(
+        "--resume-launcher",
+        action="store_true",
+        help=(
+            "Resume one already-running small RE_Kenshi pre-game launcher "
+            "without starting a second process."
+        ),
+    )
     launch.add_argument(
         "--preflight-only",
         action="store_true",

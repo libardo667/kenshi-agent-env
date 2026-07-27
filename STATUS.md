@@ -114,6 +114,6 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
 - Renderer stability remains open on this Intel Iris Xe host: later paused runs
-  still failed after two clean soaks. The unproved lower-load path enforces
-  30 fps, external-only 1080p, and rejection of recovered Windows Event 141s.
+  still failed after two clean soaks. The 30 fps external-only path passed its
+  45-second startup window and rejects recovered Event 141s, but has no long soak.
 - The mock world tests orchestration, not Kenshi strategy competence.

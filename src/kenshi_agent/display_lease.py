@@ -24,8 +24,8 @@ class DisplayScreen:
 @dataclass(frozen=True, slots=True)
 class DisplayTopology:
     screens: tuple[DisplayScreen, ...]
-    internal_active: bool
-    external_active: bool
+    internal_connected: bool
+    external_connected: bool
 
 
 _INTERNAL_OUTPUT_TECHNOLOGIES = {
@@ -101,18 +101,18 @@ def query_windows_display_topology() -> DisplayTopology:
         for screen in raw_screens
     )
     technologies = tuple(int(value) for value in raw_technologies)
-    internal_active = any(
+    internal_connected = any(
         technology in _INTERNAL_OUTPUT_TECHNOLOGIES
         for technology in technologies
     )
-    external_active = any(
+    external_connected = any(
         technology not in _INTERNAL_OUTPUT_TECHNOLOGIES
         for technology in technologies
     )
     return DisplayTopology(
         screens=screens,
-        internal_active=internal_active,
-        external_active=external_active,
+        internal_connected=internal_connected,
+        external_connected=external_connected,
     )
 
 
@@ -155,8 +155,8 @@ class DisplayTopologyController:
         state = self._query_state()
         if (
             len(state.screens) < 2
-            or not state.internal_active
-            or not state.external_active
+            or not state.internal_connected
+            or not state.external_connected
             or not self._has_1080p_screen(state)
         ):
             raise DisplayLeaseError(
@@ -185,8 +185,7 @@ class DisplayTopologyController:
         return self._wait_for(
             lambda state: (
                 len(state.screens) == 1
-                and not state.internal_active
-                and state.external_active
+                and state.external_connected
                 and self._has_1080p_screen(state)
             ),
             (
@@ -200,8 +199,8 @@ class DisplayTopologyController:
         return self._wait_for(
             lambda state: (
                 len(state.screens) >= 2
-                and state.internal_active
-                and state.external_active
+                and state.internal_connected
+                and state.external_connected
                 and self._has_1080p_screen(state)
             ),
             (

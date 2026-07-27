@@ -24,6 +24,7 @@ from kenshi_agent.live_dev import (
     _unique_visible_control,
     _validate_calibrated_client_rect,
     _validate_launch_preconditions,
+    _validate_resumable_launcher_rect,
     _wait_until,
 )
 from kenshi_agent.models import (
@@ -471,6 +472,13 @@ def test_launch_preflight_rejects_second_kenshi_client(
         )
 
 
+def test_resume_launcher_requires_the_exact_small_pre_game_window() -> None:
+    _validate_resumable_launcher_rect(WindowRect(0, 0, 900, 700))
+
+    with pytest.raises(LaunchFailed, match="exact small RE_Kenshi"):
+        _validate_resumable_launcher_rect(WindowRect(0, 0, 1920, 1080))
+
+
 def test_launch_preflight_prioritizes_terminal_crash_over_duplicate_process(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -776,6 +784,19 @@ def test_launch_parser_accepts_non_launching_preflight() -> None:
     )
 
     assert args.preflight_only is True
+
+
+def test_launch_parser_accepts_explicit_existing_launcher_resume() -> None:
+    args = live_dev.build_parser().parse_args(
+        [
+            "launch",
+            "--config",
+            "config/live.burnin.yaml",
+            "--resume-launcher",
+        ]
+    )
+
+    assert args.resume_launcher is True
 
 
 def test_post_load_health_requires_advancing_loaded_paused_telemetry() -> None:

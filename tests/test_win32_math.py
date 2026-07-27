@@ -87,6 +87,28 @@ def test_safety_input_lease_bypasses_only_the_polite_wait() -> None:
     asyncio.run(scenario())
 
 
+def test_polite_wait_names_a_stuck_alt_without_sending_input() -> None:
+    class HeldAltController(Win32InputController):
+        def __init__(self) -> None:
+            self.idle_seconds_before_input = 0.0
+            self.max_wait_for_input_turn_seconds = 0.0
+
+        def _idle_seconds(self) -> float:
+            return 10.0
+
+        def _pressed_input_vks(self) -> tuple[int, ...]:
+            return (0x12, 0xA4)
+
+    async def scenario() -> None:
+        with pytest.raises(
+            RuntimeError,
+            match=r"0x12 \(alt\).*0xA4 \(left alt\)",
+        ):
+            await HeldAltController()._wait_for_input_turn()
+
+    asyncio.run(scenario())
+
+
 def test_normalized_client_point_resolves_to_window_bounds() -> None:
     rect = WindowRect(left=100, top=200, right=1100, bottom=700)
     assert resolve_screen_point(0.0, 0.0, CoordinateSpace.NORMALIZED, rect) == (100, 200)
