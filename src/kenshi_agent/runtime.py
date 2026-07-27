@@ -29,6 +29,10 @@ from .control_ownership import (
     ControlOwnershipState,
 )
 from .env import AgentEnvironment
+from .final_safe_state import (
+    FinalSafeStateOutcome,
+    FinalSafeStateStatus,
+)
 from .memory import MemoryStore
 from .models import (
     ActionOutcome,
@@ -152,6 +156,7 @@ class AgentRuntime:
         # request evicted by MAX_RETAINED_AFFORDANCE_REQUESTS can be raised again
         # instead of being suppressed as a duplicate of something invisible.
         self._affordance_requests_issued = 0
+        self.final_safe_state: FinalSafeStateOutcome | None = None
 
     def _log_observation(self, observation: Observation) -> None:
         """Record an observation at the configured level of detail."""
@@ -472,7 +477,7 @@ class AgentRuntime:
                 )
             return summary
         finally:
-            await self.environment.close()
+            await self._close_environment()
 
     async def _run_continuous(
         self,
@@ -1078,7 +1083,25 @@ class AgentRuntime:
                     payload=asdict(state_store.metrics),
                 )
             self._state_store = None
-            await self.environment.close()
+            await self._close_environment()
+
+    async def _close_environment(self) -> None:
+        try:
+            outcome = await self.environment.close()
+        except Exception as exc:
+            outcome = FinalSafeStateOutcome(
+                status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
+                reason=(
+                    "Environment final-state cleanup failed "
+                    f"({type(exc).__name__}: {exc})."
+                ),
+            )
+        self.final_safe_state = outcome
+        if outcome is not None:
+            self.logger.write(
+                "run_finished_safety",
+                payload=outcome,
+            )
 
     async def _race_with_safety_supervisor(
         self,

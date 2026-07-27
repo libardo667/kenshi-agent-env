@@ -18,6 +18,7 @@ from .config import AppConfig, load_config
 from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
+from .final_safe_state import FinalSafeStateOutcome, FinalSafeStateStatus
 from .memory import MemoryStore
 from .models import ControlMode, PlanningMode
 from .overlay import show_overlay
@@ -64,9 +65,27 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
             raise SystemExit("--script is required for the scripted planner.")
         return ScriptedPlanner(Path(args.script).expanduser().resolve())
     if kind == "subprocess":
-        if not args.command:
-            raise SystemExit("--command is required for the subprocess planner.")
-        return SubprocessPlanner(args.command, timeout_seconds=config.planner.timeout_seconds)
+        command = getattr(args, "command", None)
+        command_args = getattr(args, "command_args", None)
+        if command and command_args:
+            raise SystemExit(
+                "Use either --command or repeated --command-arg, not both."
+            )
+        if not command and not command_args:
+            raise SystemExit(
+                "--command or repeated --command-arg is required for the "
+                "subprocess planner."
+            )
+        selected_command: str | list[str]
+        if command_args:
+            selected_command = list(command_args)
+        else:
+            assert isinstance(command, str)
+            selected_command = command
+        return SubprocessPlanner(
+            selected_command,
+            timeout_seconds=config.planner.timeout_seconds,
+        )
     if kind == "openai":
         return OpenAIPlanner(
             config.planner,
@@ -187,6 +206,26 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
     return True
 
 
+def _validate_run_platform(config: AppConfig, args: argparse.Namespace) -> None:
+    if (args.mode or config.mode) == "live" and os.name != "nt":
+        raise SystemExit(
+            "Live mode requires Windows. From WSL, use the supported ./dev journey "
+            "launcher."
+        )
+
+
+def _run_exit_code(
+    summary_success: bool | None,
+    final_safe_state: FinalSafeStateOutcome | None,
+) -> int:
+    if (
+        final_safe_state is not None
+        and final_safe_state.status is FinalSafeStateStatus.PAUSE_UNVERIFIED
+    ):
+        return 6
+    return 0 if summary_success is not False else 2
+
+
 def _build_environment(
     config: AppConfig,
     args: argparse.Namespace,
@@ -233,6 +272,9 @@ def _build_environment(
             capture_config=config.capture,
             execute_actions=execute_actions,
             emergency_stop_key=config.safety.emergency_stop_key,
+            final_pause_timeout_seconds=(
+                config.safety.supervisor_pause_timeout_seconds
+            ),
             available_skills=config.safety.allow_skills,
             control_mode=config.control.mode,
         )
@@ -241,6 +283,7 @@ def _build_environment(
 
 async def _run_command(args: argparse.Namespace) -> int:
     config = _apply_run_overrides(load_config(args.config), args)
+    _validate_run_platform(config, args)
     run_id = args.run_id or _new_run_id()
     run_dir = config.paths.runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -285,7 +328,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             action_outcome_limit=config.runtime.observation_memory_limit,
             control_mode=run_control_mode,
             planning_config=config.planning,
-        log_full_observations=config.runtime.log_full_observations,
+            log_full_observations=config.runtime.log_full_observations,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,
@@ -316,9 +359,14 @@ async def _run_command(args: argparse.Namespace) -> int:
             "terminated": summary.terminated,
             "success": summary.success,
             "stop_reason": summary.stop_reason,
+            "final_safe_state": (
+                runtime.final_safe_state.model_dump(mode="json")
+                if runtime.final_safe_state is not None
+                else None
+            ),
         }
         print(json.dumps(output, indent=2))
-        return 0 if summary.success is not False else 2
+        return _run_exit_code(summary.success, runtime.final_safe_state)
     finally:
         logger.close()
         if memory is not None:
@@ -483,6 +531,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument("--script", help="JSONL decisions for scripted planner.")
     run.add_argument("--command", help="External planner command for subprocess planner.")
+    run.add_argument(
+        "--command-arg",
+        dest="command_args",
+        action="append",
+        help=(
+            "One exact subprocess argv item. Repeat to avoid shell or UNC path "
+            "reparsing; values beginning with '-' use --command-arg=VALUE."
+        ),
+    )
     run.add_argument("--log", help="Session JSONL for replay mode.")
     run.add_argument(
         "--execute-live-actions",

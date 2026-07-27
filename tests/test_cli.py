@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -9,6 +10,10 @@ import pytest
 
 from kenshi_agent import cli
 from kenshi_agent.config import load_config
+from kenshi_agent.final_safe_state import (
+    FinalSafeStateOutcome,
+    FinalSafeStateStatus,
+)
 from kenshi_agent.models import (
     ControlMode,
     LiveContinuousPolicy,
@@ -63,6 +68,94 @@ def test_console_safe_escapes_characters_missing_from_stdout_encoding(monkeypatc
     monkeypatch.setattr(cli.sys, "stdout", SimpleNamespace(encoding="cp1252"))
 
     assert cli._console_safe("spinner ⠸") == r"spinner \u2838"
+
+
+def test_subprocess_planner_preserves_explicit_argv_without_shell_reparsing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    sentinel = object()
+
+    def fake_subprocess_planner(
+        command: str | list[str],
+        *,
+        timeout_seconds: float,
+    ) -> object:
+        captured["command"] = command
+        captured["timeout_seconds"] = timeout_seconds
+        return sentinel
+
+    monkeypatch.setattr(cli, "SubprocessPlanner", fake_subprocess_planner)
+    config = load_config(Path(__file__).resolve().parents[1] / "config" / "default.yaml")
+    command = [
+        r"C:\Users\levib\AppData\Local\KenshiAgent\python.exe",
+        r"\\wsl.localhost\Ubuntu-22.04\home\levib\planner.py",
+        "--bearing",
+        "99.828",
+    ]
+
+    planner = cli._build_planner(
+        config,
+        SimpleNamespace(
+            planner="subprocess",
+            command=None,
+            command_args=command,
+        ),
+    )
+
+    assert planner is sentinel
+    assert captured == {
+        "command": command,
+        "timeout_seconds": config.planner.timeout_seconds,
+    }
+
+
+@pytest.mark.skipif(os.name == "nt", reason="exercises the WSL/Linux rejection path")
+def test_live_run_rejects_unsupported_platform_before_persisting_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+    runs_dir = tmp_path / "runs"
+    memory_db = tmp_path / "state" / "live-memory.sqlite3"
+    config = config.model_copy(
+        update={
+            "paths": config.paths.model_copy(
+                update={"runs_dir": runs_dir, "memory_db": memory_db}
+            )
+        }
+    )
+    monkeypatch.setattr(cli, "load_config", lambda _: config)
+    args = cli.build_parser().parse_args(
+        [
+            "run",
+            "--config",
+            "unused",
+            "--mode",
+            "live",
+            "--run-id",
+            "unsupported-platform",
+        ]
+    )
+
+    with pytest.raises(SystemExit, match="requires Windows"):
+        asyncio.run(cli._run_command(args))
+
+    assert not runs_dir.exists()
+    assert not memory_db.exists()
+
+
+@pytest.mark.parametrize("summary_success", [None, False, True])
+def test_unverified_final_pause_dominates_episode_exit_code(
+    summary_success: bool | None,
+) -> None:
+    outcome = FinalSafeStateOutcome(
+        status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
+        reason="Causal pause confirmation was unavailable.",
+    )
+
+    assert cli._run_exit_code(summary_success, outcome) == 6
 
 
 def test_run_objective_override_is_ephemeral() -> None:

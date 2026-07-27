@@ -576,13 +576,19 @@ class Win32InputController(InputController):
                 self._mark_agent_input()
 
     @asynccontextmanager
-    async def input_lease(self, *, alt_tab_on_restore: bool = False) -> AsyncIterator[None]:
+    async def _input_lease(
+        self,
+        *,
+        alt_tab_on_restore: bool,
+        wait_for_input_turn: bool,
+    ) -> AsyncIterator[None]:
         if not self.polite_input_enabled or self._lease_active:
             self._last_lease_wait_seconds = 0.0
             yield
             return
         wait_started = time.monotonic()
-        await self._wait_for_input_turn()
+        if wait_for_input_turn:
+            await self._wait_for_input_turn()
         self._last_lease_wait_seconds = time.monotonic() - wait_started
         self._lease_active = True
         self._lease_alt_tab_on_restore = alt_tab_on_restore
@@ -606,6 +612,26 @@ class Win32InputController(InputController):
             self._last_agent_input_tick = None
             self._lease_alt_tab_on_restore = False
             self._lease_kenshi_foreground = None
+
+    @asynccontextmanager
+    async def input_lease(self, *, alt_tab_on_restore: bool = False) -> AsyncIterator[None]:
+        async with self._input_lease(
+            alt_tab_on_restore=alt_tab_on_restore,
+            wait_for_input_turn=True,
+        ):
+            yield
+
+    @asynccontextmanager
+    async def safety_input_lease(
+        self,
+        *,
+        alt_tab_on_restore: bool = False,
+    ) -> AsyncIterator[None]:
+        async with self._input_lease(
+            alt_tab_on_restore=alt_tab_on_restore,
+            wait_for_input_turn=False,
+        ):
+            yield
 
     def input_lease_wait_seconds(self) -> float:
         return self._last_lease_wait_seconds
@@ -761,11 +787,12 @@ class Win32InputController(InputController):
         return await self._execute(action, safety_override=False)
 
     async def execute_safety(self, action: PrimitiveInputAction) -> ActionReceipt:
+        previous_override = self._safety_override_active
         self._safety_override_active = True
         try:
             return await self._execute(action, safety_override=True)
         finally:
-            self._safety_override_active = False
+            self._safety_override_active = previous_override
 
     async def _execute(
         self,

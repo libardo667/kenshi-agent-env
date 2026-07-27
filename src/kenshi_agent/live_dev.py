@@ -21,6 +21,7 @@ from .control.base import InputController, PrimitiveInputAction, WindowRect
 from .control.calibration import validate_expected_client_size
 from .control.capture import WindowCapture
 from .control.win32 import Win32InputController
+from .final_safe_state import ensure_final_safe_state
 from .graphics_profile import (
     GraphicsMismatch,
     GraphicsProfile,
@@ -29,7 +30,6 @@ from .graphics_profile import (
     verify_graphics_profile,
 )
 from .models import ClickAction, KeyAction, TelemetrySnapshot, VisibleUIControl
-from .session_log import SessionLogger
 from .telemetry import TelemetryReader, TelemetryReadError
 
 
@@ -487,44 +487,14 @@ async def _ensure_interrupted_safe_state(
     pause_key: str,
     timeout_seconds: float,
 ) -> str:
-    try:
-        initial = reader.read()
-    except TelemetryReadError as exc:
-        return f"pause state unavailable; no cleanup input sent ({exc})"
-    snapshot = initial.snapshot
-    if initial.stale or not snapshot.game.loaded:
-        return "game not freshly loaded; no cleanup input sent"
-    if snapshot.game.paused is True:
-        return f"already confirmed paused at telemetry sequence {snapshot.sequence}"
-    if snapshot.game.paused is not False or "game.pause" not in snapshot.capabilities:
-        return "pause state or capability unavailable; no cleanup input sent"
-
-    try:
-        async with controller.input_lease():
-            receipt = await controller.execute_safety(KeyAction(key=pause_key))
-    except Exception as exc:
-        return f"single safety-pause attempt failed ({type(exc).__name__}: {exc})"
-    if not receipt.executed:
-        return f"single safety-pause attempt was not executed ({receipt.message})"
-
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        try:
-            result = reader.read()
-        except TelemetryReadError:
-            await asyncio.sleep(0.05)
-            continue
-        current = result.snapshot
-        if (
-            not result.stale
-            and current.sequence > snapshot.sequence
-            and current.game.loaded
-            and current.game.paused is True
-            and "game.pause" in current.capabilities
-        ):
-            return f"confirmed paused at telemetry sequence {current.sequence}"
-        await asyncio.sleep(0.05)
-    return "single safety-pause attempt was not confirmed on a later telemetry sequence"
+    outcome = await ensure_final_safe_state(
+        controller=controller,
+        telemetry=reader,
+        pause_primitives=[KeyAction(key=pause_key)],
+        timeout_seconds=timeout_seconds,
+        input_authorized=True,
+    )
+    return outcome.reason
 
 
 async def _observe_loaded_paused_health(
@@ -826,6 +796,24 @@ def _journey_argv(args: argparse.Namespace, run_id: str) -> list[str]:
     ]
     if args.objective:
         argv.extend(["--objective", args.objective])
+    if args.planner == "subprocess":
+        if not args.planner_script:
+            raise SystemExit(
+                "--planner subprocess requires --planner-script."
+            )
+        script = Path(args.planner_script).expanduser().resolve()
+        if not script.is_file():
+            raise SystemExit(f"Subprocess planner script does not exist: {script}")
+        command_args = [
+            sys.executable,
+            str(script),
+            *args.planner_arg,
+        ]
+        argv.extend(f"--command-arg={value}" for value in command_args)
+    elif args.planner_script or args.planner_arg:
+        raise SystemExit(
+            "--planner-script and --planner-arg require --planner subprocess."
+        )
     if getattr(args, "continuous", False):
         argv.extend(["--planning-mode", "continuous"])
     if args.execute:
@@ -869,76 +857,17 @@ def _journey(args: argparse.Namespace) -> int:
             cwd=Path.cwd(),
         )
     result: int | None = None
-    terminal_safety = "not requested"
     try:
         result = agent_main(argv)
     finally:
-        if args.execute:
-            try:
-                terminal_safety = asyncio.run(
-                    _ensure_interrupted_safe_state(
-                        _controller(config),
-                        _telemetry_read(config),
-                        pause_key=config.controls.pause_key,
-                        timeout_seconds=(
-                            config.safety.supervisor_pause_timeout_seconds
-                        ),
-                    )
-                )
-            except Exception as exc:
-                terminal_safety = (
-                    f"run-finished safety cleanup failed "
-                    f"({type(exc).__name__}: {exc})"
-                )
-            print(f"Run-finished safety: {terminal_safety}.")
-            try:
-                _record_run_finished_safety(
-                    event_log,
-                    run_id,
-                    pause_confirmed=_safe_state_confirmed(terminal_safety),
-                    reason=terminal_safety,
-                    run_result=result,
-                )
-            except Exception as exc:
-                print(
-                    "Run-finished safety event could not be recorded "
-                    f"({type(exc).__name__}: {exc})."
-                )
         if (
-            (result is None or result != 0 or not _safe_state_confirmed(terminal_safety))
+            (result is None or result != 0)
             and overlay is not None
             and overlay.poll() is None
         ):
             overlay.terminate()
     assert result is not None
-    if args.execute and result == 0 and not _safe_state_confirmed(terminal_safety):
-        return 6
     return result
-
-
-def _safe_state_confirmed(outcome: str) -> bool:
-    return outcome.startswith(("already confirmed paused", "confirmed paused"))
-
-
-def _record_run_finished_safety(
-    event_log: Path,
-    run_id: str,
-    *,
-    pause_confirmed: bool,
-    reason: str,
-    run_result: int | None,
-) -> None:
-    with SessionLogger(event_log, run_id) as logger:
-        logger.write(
-            "run_finished_safety",
-            payload={
-                "status": (
-                    "pause_confirmed" if pause_confirmed else "pause_unverified"
-                ),
-                "reason": reason,
-                "run_result": run_result,
-            },
-        )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -973,7 +902,27 @@ def build_parser() -> argparse.ArgumentParser:
     journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
     journey.add_argument("--config", required=True)
     journey.add_argument("--objective")
-    journey.add_argument("--planner", choices=["openai", "openrouter"], default="openai")
+    journey.add_argument(
+        "--planner",
+        choices=["openai", "openrouter", "subprocess"],
+        default="openai",
+    )
+    journey.add_argument(
+        "--planner-script",
+        help=(
+            "Repository-relative Python planner script used with "
+            "--planner subprocess."
+        ),
+    )
+    journey.add_argument(
+        "--planner-arg",
+        action="append",
+        default=[],
+        help=(
+            "Exact argument for --planner-script. Repeat it; values beginning "
+            "with '-' use --planner-arg=VALUE."
+        ),
+    )
     journey.add_argument("--steps", type=int, default=8)
     journey.add_argument("--run-id")
     journey.add_argument(

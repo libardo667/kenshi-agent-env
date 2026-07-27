@@ -47,10 +47,16 @@ from kenshi_agent.telemetry import TelemetryRead
 
 
 class PulseTelemetry:
-    def __init__(self, *, auto_pause_after_reads: int | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        auto_pause_after_reads: int | None = None,
+        stale: bool = False,
+    ) -> None:
         self.paused = True
         self.sequence = 0
         self.auto_pause_after_reads = auto_pause_after_reads
+        self.stale = stale
         self.capabilities: list[str] = []
         self.native_control = NativeControlState()
         self.path = Path("telemetry.json")
@@ -72,7 +78,7 @@ class PulseTelemetry:
                 native_control=self.native_control,
             ),
             age_seconds=0.0,
-            stale=False,
+            stale=self.stale,
             path=Path("telemetry.json"),
         )
 
@@ -254,6 +260,115 @@ def movement_action(*, duration_seconds: float | None = None) -> SkillAction:
             "args": arguments,
         }
     )
+
+
+def test_live_close_causally_pauses_once_and_is_idempotent(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.paused = False
+        telemetry.capabilities = ["game.pause"]
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        outcome = await environment.close()
+        repeated = await environment.close()
+
+        assert outcome.status == "pause_confirmed"
+        assert outcome.initial_sequence is not None
+        assert outcome.confirmed_sequence is not None
+        assert outcome.confirmed_sequence > outcome.initial_sequence
+        assert outcome.input_attempted is True
+        assert outcome.input_executed is True
+        assert repeated == outcome
+        assert controller.actions == [KeyAction(key="space")]
+        assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_live_close_emits_no_input_without_fresh_pause_authority(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry(stale=True)
+        telemetry.paused = False
+        telemetry.capabilities = ["game.pause"]
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        outcome = await environment.close()
+
+        assert outcome.status == "pause_unverified"
+        assert outcome.input_attempted is False
+        assert outcome.input_executed is False
+        assert controller.actions == []
+        assert telemetry.paused is False
+
+    asyncio.run(scenario())
+
+
+def test_live_close_does_not_trust_paused_without_pause_capability(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.paused = True
+        telemetry.capabilities = []
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        outcome = await environment.close()
+
+        assert outcome.status == "pause_unverified"
+        assert outcome.input_attempted is False
+        assert controller.actions == []
+
+    asyncio.run(scenario())
+
+
+def test_live_close_reports_unverified_when_pause_has_no_causal_effect(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.paused = False
+        telemetry.capabilities = ["game.pause"]
+        # The controller receives the safety key, but the authoritative
+        # telemetry source never observes an effect from it.
+        controller = PulseController(PulseTelemetry())
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+        environment.final_pause_timeout_seconds = 0.01
+
+        outcome = await environment.close()
+
+        assert outcome.status == "pause_unverified"
+        assert outcome.input_attempted is True
+        assert outcome.input_executed is True
+        assert outcome.confirmed_sequence is None
+        assert controller.actions == [KeyAction(key="space")]
+        assert telemetry.paused is False
+
+    asyncio.run(scenario())
 
 
 def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:

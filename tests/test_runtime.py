@@ -2,10 +2,15 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from kenshi_agent.config import MacroConfig, MockConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment, MockEnvironment
+from kenshi_agent.final_safe_state import (
+    FinalSafeStateOutcome,
+    FinalSafeStateStatus,
+)
 from kenshi_agent.memory import MemoryStore
 from kenshi_agent.models import (
     Action,
@@ -13,6 +18,7 @@ from kenshi_agent.models import (
     Observation,
     PlannerDecision,
     SkillAction,
+    StopAction,
     TelemetrySnapshot,
     Transition,
     WorldStateRevision,
@@ -24,6 +30,133 @@ from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
+
+
+@pytest.mark.parametrize(
+    "exit_kind",
+    [
+        "budget",
+        "stop",
+        "environment_error",
+        "reset_exception",
+        "cancellation",
+    ],
+)
+def test_every_runtime_exit_has_one_durable_final_state_owner(
+    tmp_path: Path,
+    exit_kind: str,
+) -> None:
+    class ExitEnvironment(AgentEnvironment):
+        def __init__(self) -> None:
+            self.close_calls = 0
+
+        def observation(self) -> Observation:
+            return Observation(
+                run_id=exit_kind,
+                step_index=0,
+                mode="mock",
+            )
+
+        async def reset(self, *, seed: int | None = None) -> Observation:
+            del seed
+            if exit_kind == "reset_exception":
+                raise RuntimeError("reset failed")
+            return self.observation()
+
+        async def observe(self) -> Observation:
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            if exit_kind == "environment_error":
+                raise RuntimeError("dispatch failed")
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    accepted=True,
+                    executed=False,
+                    dry_run=True,
+                ),
+                observation=self.observation(),
+                terminated=isinstance(action, StopAction),
+            )
+
+        async def close(self) -> FinalSafeStateOutcome:
+            self.close_calls += 1
+            return FinalSafeStateOutcome(
+                status=FinalSafeStateStatus.PAUSE_CONFIRMED,
+                reason="Confirmed by the exit invariant.",
+                initial_sequence=10,
+                confirmed_sequence=11,
+            )
+
+    class ExitPlanner(Planner):
+        def __init__(self) -> None:
+            self.entered = asyncio.Event()
+
+        async def decide(self, observation: Observation) -> PlannerDecision:
+            del observation
+            if exit_kind == "cancellation":
+                self.entered.set()
+                await asyncio.Event().wait()
+            return PlannerDecision(
+                intent="Stop.",
+                rationale="Exercise the selected runtime exit.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        environment = ExitEnvironment()
+        planner = ExitPlanner()
+        logger = SessionLogger(tmp_path / f"{exit_kind}.jsonl", exit_kind)
+        runtime = AgentRuntime(
+            run_id=exit_kind,
+            environment=environment,
+            planner=planner,
+            guard=ActionGuard(
+                SafetyConfig(
+                    allow_action_kinds=["stop"],
+                    max_actions_per_minute=500,
+                ),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+        )
+        try:
+            if exit_kind == "cancellation":
+                task = asyncio.create_task(runtime.run(max_steps=1))
+                await planner.entered.wait()
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+            elif exit_kind == "budget":
+                await runtime.run(max_steps=0)
+            elif exit_kind == "reset_exception":
+                with pytest.raises(RuntimeError, match="reset failed"):
+                    await runtime.run(max_steps=1)
+            else:
+                await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert environment.close_calls == 1
+        events = [
+            json.loads(line)
+            for line in (tmp_path / f"{exit_kind}.jsonl").read_text().splitlines()
+        ]
+        final_events = [
+            event
+            for event in events
+            if event["event_type"] == "run_finished_safety"
+        ]
+        assert len(final_events) == 1
+        assert final_events[0]["payload"]["status"] == "pause_confirmed"
+
+    asyncio.run(scenario())
 
 
 def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:

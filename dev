@@ -2,18 +2,86 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-windows_config="$(wslpath -w "$repo_dir/config/live.burnin.yaml")"
+
+if [[ $# -eq 0 ]]; then
+  echo "usage: ./dev {launch|graphics|shot|telemetry|journey} [options]" >&2
+  exit 2
+fi
+
+command_name="$1"
+shift
+case "$command_name" in
+  launch|graphics|shot|telemetry)
+    config_path="$repo_dir/config/live.burnin.yaml"
+    ;;
+  journey)
+    config_path="$repo_dir/config/live.longform.yaml"
+    ;;
+  *)
+    echo "unknown ./dev command: $command_name" >&2
+    exit 2
+    ;;
+esac
+
+to_windows_path() {
+  local candidate="$1"
+  case "$candidate" in
+    [A-Za-z]:[\\/]*|\\\\*)
+      printf '%s\n' "$candidate"
+      ;;
+    /*)
+      wslpath -w "$candidate"
+      ;;
+    *)
+      wslpath -w "$repo_dir/$candidate"
+      ;;
+  esac
+}
+
+forward_args=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --config)
+      if [[ $# -lt 2 ]]; then
+        echo "--config requires a path" >&2
+        exit 2
+      fi
+      config_path="$2"
+      shift 2
+      ;;
+    --config=*)
+      config_path="${1#--config=}"
+      shift
+      ;;
+    --planner-script)
+      if [[ $# -lt 2 ]]; then
+        echo "--planner-script requires a path" >&2
+        exit 2
+      fi
+      forward_args+=("--planner-script" "$(to_windows_path "$2")")
+      shift 2
+      ;;
+    --planner-script=*)
+      forward_args+=(
+        "--planner-script"
+        "$(to_windows_path "${1#--planner-script=}")"
+      )
+      shift
+      ;;
+    *)
+      forward_args+=("$1")
+      shift
+      ;;
+  esac
+done
+
+windows_config="$(to_windows_path "$config_path")"
 windows_local_app_data="$(powershell.exe -NoProfile -Command '[Environment]::GetFolderPath("LocalApplicationData")' | tr -d '\r')"
 windows_python="$(wslpath "$windows_local_app_data")/KenshiAgent/venvs/kenshi-agent-env/Scripts/python.exe"
 
 if [[ ! -x "$windows_python" ]]; then
   echo "Windows live Python was not found at $windows_python" >&2
   exit 1
-fi
-
-if [[ $# -eq 0 ]]; then
-  echo "usage: ./dev {launch|graphics|shot|telemetry|journey} [options]" >&2
-  exit 2
 fi
 
 # WSL does not forward arbitrary per-command variables to Windows executables.
@@ -33,4 +101,7 @@ for variable_name in "${runtime_overrides[@]}"; do
 done
 
 cd "$repo_dir"
-exec "$windows_python" -m kenshi_agent.live_dev "$1" --config "$windows_config" "${@:2}"
+exec "$windows_python" -m kenshi_agent.live_dev \
+  "$command_name" \
+  --config "$windows_config" \
+  "${forward_args[@]}"

@@ -1,3 +1,4 @@
+import asyncio
 import ctypes
 
 import pytest
@@ -32,6 +33,58 @@ class FakeLegacyUser32:
     def SetProcessDPIAware(self) -> int:
         self.calls += 1
         return 1
+
+
+class LeaseProbeUser32:
+    @staticmethod
+    def GetForegroundWindow() -> int:
+        return 0
+
+
+class LeaseProbeController(Win32InputController):
+    def __init__(self) -> None:
+        self.polite_input_enabled = True
+        self._lease_active = False
+        self.pointer_mode = "absolute"
+        self._last_lease_wait_seconds = -1.0
+        self._lease_alt_tab_on_restore = False
+        self._lease_kenshi_foreground = None
+        self.wait_calls = 0
+        self.user32 = LeaseProbeUser32()
+
+    async def _wait_for_input_turn(self) -> None:
+        self.wait_calls += 1
+        raise RuntimeError("polite wait invoked")
+
+    def _cursor_position(self) -> tuple[int, int]:
+        return (0, 0)
+
+    def _last_input_tick(self) -> int:
+        return 1
+
+    def user_input_detected(self) -> bool:
+        return False
+
+    def _restore_desktop_state(self) -> None:
+        return None
+
+
+def test_safety_input_lease_bypasses_only_the_polite_wait() -> None:
+    async def scenario() -> None:
+        controller = LeaseProbeController()
+
+        with pytest.raises(RuntimeError, match="polite wait invoked"):
+            async with controller.input_lease():
+                pass
+        assert controller.wait_calls == 1
+
+        async with controller.safety_input_lease():
+            assert controller._lease_active is True
+
+        assert controller.wait_calls == 1
+        assert controller._lease_active is False
+
+    asyncio.run(scenario())
 
 
 def test_normalized_client_point_resolves_to_window_bounds() -> None:

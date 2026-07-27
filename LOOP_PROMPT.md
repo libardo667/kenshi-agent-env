@@ -129,6 +129,9 @@ unexpected unpause, budget exhaustion, target loss, and dangerous screen
 transitions are handled by deterministic code that never waits for an LLM. A
 slow, blocked, or obsolete planner must not delay preemption. Repeated
 cancellation is idempotent. Cleanup succeeds on causal evidence, not intent.
+Any safety defect discovered while pursuing another queue item preempts that
+item: first establish the safest observable state, then fix the whole exit or
+authority class with a failing invariant before resuming the original proof.
 
 ### 4. Missing information stays unknown
 
@@ -202,6 +205,17 @@ Label every claim as one of: automated portable evidence; deterministic
 live-shaped simulation; Windows integration evidence; native build/load
 evidence; supervised live Kenshi evidence; historical evidence; proposed design.
 
+### 12. The supported launcher is part of the capability
+
+Live evidence must travel through `./dev launch` and `./dev journey`, including
+deterministic subprocess planners. The wrapper owns WSL-to-Windows Python,
+configuration and planner-path translation, execution gates, logs, and final
+safe-state reporting. Direct Windows-Python commands, hand-written native request
+files, ad-hoc SendInput snippets, and PTY launcher attempts are diagnostics only
+and never accepted planner capability evidence. If the supported path cannot
+express or safely finish a test, fix it in the current slice; do not normalize a
+workaround into the procedure.
+
 ## Standing supervised live-test authorization
 
 Standing authorization for **bounded, non-destructive Kenshi interaction while
@@ -242,6 +256,8 @@ is unmodelled.
    `uv run mypy src`. A red baseline is the slice.
 5. **Select exactly one slice** and state its problem, scope, non-goals, and
    acceptance criteria before writing code.
+6. Before live work, run `./dev launch --preflight-only`; launch and journey
+   commands use ordinary captured pipes, never a pseudo-terminal.
 
 ## Current priority queue
 
@@ -260,23 +276,19 @@ Work top-down. Verify each is still open before starting it.
    hostile/safe, broke/funded, solo/squad, day/night — rather than repeated runs
    of one town. The affordance-request stream is the instrument; treat its
    output as the backlog.
-4. **Unify final safe-state ownership.** Only supervisor preemption owns a
-   verified pause cleanup. Normal stop, budget exhaustion, cancellation,
-   exception, and completion exits share no policy, and
-   `LiveEnvironment.close()` is a no-op.
-5. **Expand controller-verified contracts.** Most success conditions are still
+4. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one
    class of false success.
-6. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
+5. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
    guards only direct `PauseAction`. Bindings also use a hard-coded key map
    rather than the active `controls.cfg`.
-7. **Add mutation testing.** Test count is not coverage; `mutmut` or
+6. **Add mutation testing.** Test count is not coverage; `mutmut` or
    `cosmic-ray` over `src/kenshi_agent/` is the only cheap answer to whether the
    suite would notice broken code.
-8. **Remote map travel.** No semantic action exists at all; `move_to_character`
+7. **Remote map travel.** No semantic action exists at all; `move_to_character`
    is bounded to the nearby-character query.
-9. **Native identity validation** across recruit, dismiss, reorder, KO, death,
+8. **Native identity validation** across recruit, dismiss, reorder, KO, death,
    save/load, and zone transitions.
 
 ## Continuous-planning semantics
@@ -364,8 +376,9 @@ mechanically; do not argue with them.
 10. Stop when the slice is complete. Do not start the next one.
 
 When a slice reveals a deeper flaw, do not hide it behind compatibility code.
-Solve it inside the declared scope or record a precise next item naming the
-failing invariant.
+A safety or supported-launcher defect joins the current slice and preempts its
+original acceptance run. Otherwise solve the flaw inside the declared scope or
+record a precise next item naming the failing invariant.
 
 ## Required final report
 

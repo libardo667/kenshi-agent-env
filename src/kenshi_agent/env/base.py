@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from ..final_safe_state import FinalSafeStateOutcome
 from ..models import Action, CommandDispatchContext, Observation, Transition
 
 if TYPE_CHECKING:
@@ -60,5 +61,5 @@ class AgentEnvironment(ABC):
         return transition.model_copy(update={"receipt": receipt})
 
     @abstractmethod
-    async def close(self) -> None:
+    async def close(self) -> FinalSafeStateOutcome | None:
         raise NotImplementedError

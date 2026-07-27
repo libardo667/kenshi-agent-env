@@ -19,7 +19,6 @@ from kenshi_agent.live_dev import (
     _journey_argv,
     _observe_loaded_paused_health,
     _plugin_ready,
-    _record_run_finished_safety,
     _steam_connection_state,
     _unique_visible_control,
     _validate_calibrated_client_rect,
@@ -327,7 +326,7 @@ def test_interrupted_loaded_game_gets_one_causally_confirmed_safety_pause() -> N
             timeout_seconds=0.2,
         )
 
-        assert outcome == "confirmed paused at telemetry sequence 11"
+        assert outcome == "Confirmed paused at telemetry sequence 11."
         assert controller.actions == []
         assert controller.safety_actions == [KeyAction(key="space")]
         assert controller.lease_entries == 1
@@ -349,7 +348,7 @@ def test_interrupted_already_paused_game_emits_no_cleanup_input() -> None:
             timeout_seconds=0.2,
         )
 
-        assert outcome == "already confirmed paused at telemetry sequence 20"
+        assert outcome == "Already confirmed paused at telemetry sequence 20."
         assert controller.actions == []
         assert controller.safety_actions == []
         assert controller.lease_entries == 0
@@ -705,6 +704,36 @@ def test_journey_full_continuous_live_invocation_passes_every_gate() -> None:
     assert "--acknowledge-continuous-live" in argv
 
 
+def test_journey_subprocess_planner_uses_lossless_windows_argv() -> None:
+    args = _journey_args(
+        "--planner",
+        "subprocess",
+        "--planner-script",
+        "scripts/live_direction_smoke_planner.py",
+        "--planner-arg=--bearing",
+        "--planner-arg=99.828",
+        "--planner-arg=--distance",
+        "--planner-arg=350",
+    )
+
+    argv = _journey_argv(args, "subprocess-run")
+
+    command_args = [
+        value.removeprefix("--command-arg=")
+        for value in argv
+        if value.startswith("--command-arg=")
+    ]
+    assert command_args[0] == live_dev.sys.executable
+    assert Path(command_args[1]).name == "live_direction_smoke_planner.py"
+    assert command_args[2:] == [
+        "--bearing",
+        "99.828",
+        "--distance",
+        "350",
+    ]
+    assert "--command" not in argv
+
+
 def test_journey_acknowledgement_without_continuous_is_harmless_passthrough() -> None:
     # The ack can be present without --continuous; run stays single-step, so the
     # continuous-live gate is simply not reached.
@@ -713,116 +742,30 @@ def test_journey_acknowledgement_without_continuous_is_harmless_passthrough() ->
     assert "--acknowledge-continuous-live" in argv
 
 
-def test_finished_executing_journey_causally_confirms_pause(
-    monkeypatch: object,
-    capsys: object,
-) -> None:
-    controller = LaunchController()
-    reader = LaunchTelemetry(
-        launch_snapshot(30, paused=False),
-        launch_snapshot(31, paused=True),
-    )
-    monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)  # type: ignore[attr-defined]
-    monkeypatch.setattr(live_dev, "_controller", lambda _: controller)  # type: ignore[attr-defined]
-    monkeypatch.setattr(live_dev, "_telemetry_read", lambda _: reader)  # type: ignore[attr-defined]
-    recorded: list[dict[str, object]] = []
-    monkeypatch.setattr(  # type: ignore[attr-defined]
-        live_dev,
-        "_record_run_finished_safety",
-        lambda event_log, run_id, **payload: recorded.append(
-            {"event_log": event_log, "run_id": run_id, **payload}
-        ),
-    )
-
-    result = live_dev._journey(
-        _journey_args(
-            "--execute",
-            "--no-ownership-overlay",
-            "--run-id",
-            "finished-paused",
-        )
-    )
-
-    assert result == 0
-    assert controller.safety_actions == [KeyAction(key="space")]
-    assert recorded == [
-        {
-            "event_log": Path("runs/finished-paused/events.jsonl").resolve(),
-            "run_id": "finished-paused",
-            "pause_confirmed": True,
-            "reason": "confirmed paused at telemetry sequence 31",
-            "run_result": 0,
-        }
-    ]
-    assert "Run-finished safety: confirmed paused at telemetry sequence 31." in (
-        capsys.readouterr().out  # type: ignore[attr-defined]
-    )
-
-
-def test_finished_journey_fails_closed_when_pause_cannot_be_verified(
+def test_journey_delegates_final_safety_to_the_core_run(
     monkeypatch: object,
 ) -> None:
-    async def unavailable(*args: object, **kwargs: object) -> str:
-        del args, kwargs
-        return "pause state unavailable; no cleanup input sent"
-
-    monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)  # type: ignore[attr-defined]
+    captured: list[list[str]] = []
     monkeypatch.setattr(  # type: ignore[attr-defined]
         live_dev,
-        "_ensure_interrupted_safe_state",
-        unavailable,
+        "agent_main",
+        lambda argv: captured.append(argv) or 6,
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
         live_dev,
         "_controller",
-        lambda _: LaunchController(),
-    )
-    monkeypatch.setattr(  # type: ignore[attr-defined]
-        live_dev,
-        "_telemetry_read",
-        lambda _: LaunchTelemetry(launch_snapshot(30, paused=False)),
-    )
-    recorded: list[dict[str, object]] = []
-    monkeypatch.setattr(  # type: ignore[attr-defined]
-        live_dev,
-        "_record_run_finished_safety",
-        lambda event_log, run_id, **payload: recorded.append(payload),
+        lambda _: (_ for _ in ()).throw(
+            AssertionError("journey must not create a second cleanup owner")
+        ),
     )
 
-    assert (
-        live_dev._journey(
-            _journey_args("--execute", "--no-ownership-overlay")
-        )
-        == 6
-    )
-    assert recorded == [
-        {
-            "pause_confirmed": False,
-            "reason": "pause state unavailable; no cleanup input sent",
-            "run_result": 0,
-        }
-    ]
-
-
-def test_run_finished_safety_event_is_durable(tmp_path: Path) -> None:
-    event_log = tmp_path / "run-finished" / "events.jsonl"
-
-    _record_run_finished_safety(
-        event_log,
-        "run-finished",
-        pause_confirmed=True,
-        reason="confirmed paused at telemetry sequence 44",
-        run_result=0,
+    result = live_dev._journey(
+        _journey_args("--execute", "--no-ownership-overlay")
     )
 
-    record = json.loads(event_log.read_text(encoding="utf-8"))
-    assert record["event_type"] == "run_finished_safety"
-    assert record["run_id"] == "run-finished"
-    assert record["payload"] == {
-        "status": "pause_confirmed",
-        "reason": "confirmed paused at telemetry sequence 44",
-        "run_result": 0,
-    }
+    assert result == 6
+    assert len(captured) == 1
+    assert "--execute-live-actions" in captured[0]
 
 
 def test_startup_clicks_hold_long_enough_for_mygui() -> None:

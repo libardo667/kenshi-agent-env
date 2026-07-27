@@ -38,6 +38,11 @@ from ..control.calibration import (
     validate_expected_client_size,
 )
 from ..control.capture import WindowCapture
+from ..final_safe_state import (
+    FinalSafeStateOutcome,
+    FinalSafeStateStatus,
+    ensure_final_safe_state,
+)
 from ..input_boundary import ExecutionToken
 from ..models import (
     GAME_BINDING_KEYS,
@@ -114,6 +119,7 @@ class LiveEnvironment(AgentEnvironment):
         capture_config: CaptureConfig,
         execute_actions: bool,
         emergency_stop_key: str,
+        final_pause_timeout_seconds: float = 2.0,
         available_skills: list[str] | None = None,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     ) -> None:
@@ -127,6 +133,7 @@ class LiveEnvironment(AgentEnvironment):
         self.capture_config = capture_config
         self.execute_actions = execute_actions
         self.emergency_stop_key = emergency_stop_key
+        self.final_pause_timeout_seconds = final_pause_timeout_seconds
         self.control_mode = control_mode
         self.available_skills = macros.available_names(
             available_skills or macros.names(),
@@ -137,6 +144,8 @@ class LiveEnvironment(AgentEnvironment):
         self._last_observation: Observation | None = None
         self._capability_epoch = 0
         self._last_capability_signature: tuple[str, ...] | None = None
+        self._close_outcome: FinalSafeStateOutcome | None = None
+        self._close_lock = asyncio.Lock()
         self._capture = (
             WindowCapture(
                 controller,
@@ -2494,5 +2503,35 @@ class LiveEnvironment(AgentEnvironment):
             return None
         return result.snapshot.game.paused
 
-    async def close(self) -> None:
-        return None
+    async def close(self) -> FinalSafeStateOutcome:
+        async with self._close_lock:
+            if self._close_outcome is not None:
+                return self._close_outcome
+            if not self.execute_actions:
+                self._close_outcome = await ensure_final_safe_state(
+                    controller=self.controller,
+                    telemetry=self.telemetry_reader,
+                    pause_primitives=[],
+                    timeout_seconds=self.final_pause_timeout_seconds,
+                    input_authorized=False,
+                )
+                return self._close_outcome
+            try:
+                pause_primitives, _ = self._pause_primitives(True)
+            except Exception as exc:
+                self._close_outcome = FinalSafeStateOutcome(
+                    status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
+                    reason=(
+                        "Final-pause control could not be resolved "
+                        f"({type(exc).__name__}: {exc})."
+                    ),
+                )
+                return self._close_outcome
+            self._close_outcome = await ensure_final_safe_state(
+                controller=self.controller,
+                telemetry=self.telemetry_reader,
+                pause_primitives=pause_primitives,
+                timeout_seconds=self.final_pause_timeout_seconds,
+                input_authorized=True,
+            )
+            return self._close_outcome

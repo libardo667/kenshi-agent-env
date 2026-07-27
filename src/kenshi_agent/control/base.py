@@ -40,6 +40,17 @@ class InputController(ABC):
         del alt_tab_on_restore
         yield
 
+    @asynccontextmanager
+    async def safety_input_lease(
+        self,
+        *,
+        alt_tab_on_restore: bool = False,
+    ) -> AsyncIterator[None]:
+        """Acquire the input boundary without delaying deterministic cleanup."""
+
+        async with self.input_lease(alt_tab_on_restore=alt_tab_on_restore):
+            yield
+
     def user_input_detected(self) -> bool:
         return False
 

@@ -21,6 +21,30 @@ foreground and cursor.
 
 F12 disarms automatic takeover for the remainder of the run.
 
+## One supported entrypoint
+
+From WSL, use `./dev`; it selects the prepared Windows Python, translates
+configuration and planner-script paths once, and invokes the checked-in live
+launcher without a pseudo-terminal:
+
+```bash
+./dev launch --preflight-only
+./dev launch
+./dev journey --planner subprocess \
+  --planner-script scripts/live_direction_smoke_planner.py \
+  --planner-arg=--bearing --planner-arg=100 \
+  --planner-arg=--distance --planner-arg=350 \
+  --continuous --execute --native-assisted \
+  --acknowledge-continuous-live --exclusive
+```
+
+`journey` defaults to `config/live.longform.yaml`; the other commands default to
+`config/live.burnin.yaml`. An explicit repository-relative `--config` is
+translated by the wrapper. Do not substitute direct Windows-Python invocations,
+manually written native request files, ad-hoc input snippets, or PTY launch
+attempts. If `./dev` cannot express or complete the run, repair that supported
+path before treating a workaround as evidence.
+
 ## Before a run
 
 - Toolchain and host versions match [`GUIDE_UPSTREAM_LOCK.md`](GUIDE_UPSTREAM_LOCK.md).

@@ -1,9 +1,8 @@
 # Implementation status
 
 Current-state snapshot. Dated evidence lives in `git log` and `runs/<run-id>/`;
-the action surface itself is in the [generated
-catalog](docs/generated/ACTION_CATALOG.md) and [affordance
-coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
+the action surface lives in the generated [catalog](docs/generated/ACTION_CATALOG.md)
+and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
 
 ## What works
 
@@ -20,6 +19,10 @@ coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
 - An independent deterministic supervisor that preempts on stale or stalled
   telemetry, capability loss, threats, human input, F12, or unauthorized unpause.
   Cleanup succeeds only after a later observation confirms the safe state.
+- One idempotent final-state owner runs for normal completion, stop, budget,
+  failure, cancellation, and exception exits. Executed live runs return a
+  distinct failure code unless fresh telemetry confirms pause; cleanup input
+  requires a causally later confirmation.
 - A final in-lease authorization fence: after the lease is acquired and just
   before the first primitive, canonical state is re-read and plan assumptions,
   preconditions, control mode, calibration, and human-input and emergency-stop
@@ -44,6 +47,7 @@ coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
   `food_procurement_v1` policy is retired and its continuous policy is
   `disabled`.
 
+From WSL, `./dev journey` selects Windows Python, translates paths once, and passes subprocess planners as exact argv.
 Supervised runs have demonstrated generic approach and dialogue activation,
 semantic startup, inventory and trade navigation, one-step purchases with
 confirmed debits, readable world deltas, persistent continuous memory, and
@@ -104,9 +108,6 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   `allow_live_unpause_actions=false`, because that guard applies only to direct
   `PauseAction`. Game bindings use a hard-coded key map rather than parsing the
   active `controls.cfg`.
-- Ordinary stop, budget, failure, cancellation, and exception exits share no
-  final-state owner; only safety preemption owns a verified pause cleanup, and
-  `LiveEnvironment.close()` does not manipulate Kenshi.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name,
   current tasks, trader money, occlusion, and distant world state are
   unavailable or unvalidated.
