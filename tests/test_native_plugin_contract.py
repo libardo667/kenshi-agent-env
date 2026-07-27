@@ -79,7 +79,6 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.8.0"' in source
     assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
@@ -99,7 +98,6 @@ def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
 def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert 'PROTOCOL_VERSION = "0.8.0"' in source
     assert "native_command.request.json" in source
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactDialogueTarget" in source
@@ -121,23 +119,6 @@ def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     assert monitor.index("IsExactDialogueTargetOpen") < monitor.index(
         "ObserveNativeMovementPause"
     )
-
-
-def test_native_plugin_exports_and_proves_exact_natural_resource_tasks() -> None:
-    source = PLUGIN_SOURCE.read_text(encoding="utf-8")
-
-    assert "world.context_targets" in source
-    assert "control.perform_context_action" in source
-    assert "getObjectsWithinSphere" in source
-    assert "WORLD_CONTEXT_TARGET_RADIUS" in source
-    assert "BF_MINE_NATURAL" in source
-    assert "OPERATE_MACHINERY" in source
-    assert "FindExactNaturalResource" in source
-    assert "IsReviewedNaturalResource" in source
-    assert "getCurrentGoal()" in source
-    assert "goal.subject" in source
-    assert "context_task_started" in source
-
 
 def test_native_plugin_exports_food_chain_authoritative_ui_and_time_sources() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")

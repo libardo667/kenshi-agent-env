@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -218,6 +219,38 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     assert '"objective": "Explore nearby."' in payload
     assert '"name": "move_on_map"' in payload
     assert '"visual_precondition": "The map is open."' in payload
+
+
+def test_unavailable_world_target_remains_observed_but_not_actionable() -> None:
+    target = WorldTarget(
+        id="entity-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10.0, y=0.0, z=20.0),
+        distance=30.0,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        task_available=False,
+        task_probability=0.0,
+        mining_resource_level=0.8,
+    )
+    observation = Observation(
+        run_id="resource-perception",
+        step_index=0,
+        mode="mock",
+        telemetry=TelemetrySnapshot(
+            protocol_version="0.8.1",
+            capabilities=["world.context_targets"],
+            world_targets=[target],
+        ),
+    )
+
+    payload = json.loads(observation.planner_payload())
+
+    assert payload["telemetry"]["world_targets"] == [
+        target.model_dump(mode="json")
+    ]
+    assert payload["context_targets"] == []
 
 
 def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> None:

@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from kenshi_agent.models import (
     NativeCommandAcknowledgement,
     NativeCommandRequest,
+    WorldTarget,
 )
 
 FIXTURES = Path(__file__).parent / "fixtures" / "native_commands"
@@ -55,6 +56,17 @@ def test_python_accepts_exact_context_action_request_fixture() -> None:
     assert request.target_id == "entity-natural-resource"
     assert request.bearing_degrees == 0.0
     assert request.distance_units == 0.0
+
+
+def test_python_accepts_structurally_present_unavailable_resource_fixture() -> None:
+    target = WorldTarget.model_validate_json(
+        (FIXTURES / "valid_unavailable_natural_resource.json").read_bytes()
+    )
+
+    assert target.id == "entity-natural-resource"
+    assert target.context_actions == ["operate"]
+    assert target.task_available is False
+    assert target.task_probability == 0.0
 
 
 def test_python_rejects_direction_request_that_smuggles_a_target() -> None:

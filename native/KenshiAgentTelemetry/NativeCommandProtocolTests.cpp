@@ -13,6 +13,7 @@
 #include "NativeCommandProtocol.cpp"
 #include "NativeCommandTiming.cpp"
 #include "NativeMovementSemantics.cpp"
+#include "WorldTargetProtocol.cpp"
 
 namespace
 {
@@ -322,6 +323,45 @@ namespace
             return Fail("a mismatched selection maintained camera follow");
         return 0;
     }
+
+    int TestNaturalResourceAssessment()
+    {
+        using KenshiAgentTelemetry::AssessNaturalResource;
+        using KenshiAgentTelemetry::NaturalResourceAssessment;
+
+        const NaturalResourceAssessment unavailable =
+            AssessNaturalResource(true, true, true, false, 0.0);
+        if (!unavailable.structurallyRecognized)
+            return Fail("an unavailable natural resource disappeared");
+        if (unavailable.taskAvailable)
+            return Fail("an unavailable natural resource became actionable");
+
+        const NaturalResourceAssessment available =
+            AssessNaturalResource(true, true, true, true, 0.75);
+        if (!available.structurallyRecognized ||
+            !available.taskAvailable ||
+            !EqualDouble(available.taskProbability, 0.75))
+        {
+            return Fail("an available natural resource lost task eligibility");
+        }
+
+        if (AssessNaturalResource(false, true, true, true, 1.0)
+                .structurallyRecognized ||
+            AssessNaturalResource(true, false, true, true, 1.0)
+                .structurallyRecognized ||
+            AssessNaturalResource(true, true, false, true, 1.0)
+                .structurallyRecognized)
+        {
+            return Fail("a structurally invalid resource was recognized");
+        }
+
+        if (!KenshiAgentTelemetry::IsWorldTargetScanAtCapacity(128, 128) ||
+            KenshiAgentTelemetry::IsWorldTargetScanAtCapacity(127, 128))
+        {
+            return Fail("world-target scan capacity was reported incorrectly");
+        }
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
@@ -346,6 +386,9 @@ int main(int argc, char** argv)
     const int cameraFollowResult = TestNativeCameraFollowPolicy();
     if (cameraFollowResult != 0)
         return cameraFollowResult;
+    const int naturalResourceResult = TestNaturalResourceAssessment();
+    if (naturalResourceResult != 0)
+        return naturalResourceResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =
@@ -440,6 +483,39 @@ int main(int argc, char** argv)
         return Fail("valid context action did not retain its exact target");
     }
 
+    const std::string unavailableTargetPayload =
+        ReadFile(prefix + "valid_unavailable_natural_resource.json");
+    if (unavailableTargetPayload.empty())
+    {
+        return Fail(
+            "could not read valid_unavailable_natural_resource.json");
+    }
+    KenshiAgentTelemetry::NaturalResourceTargetSnapshot unavailableTarget;
+    unavailableTarget.id = "entity-natural-resource";
+    unavailableTarget.name = "Copper Resource";
+    unavailableTarget.positionX = 10.0;
+    unavailableTarget.positionY = 0.0;
+    unavailableTarget.positionZ = 20.0;
+    unavailableTarget.distance = 30.0;
+    unavailableTarget.taskAvailable = false;
+    unavailableTarget.taskProbability = 0.0;
+    unavailableTarget.miningResourceLevel = 0.8;
+    const std::string unavailableSerialized =
+        KenshiAgentTelemetry::SerializeNaturalResourceTarget(
+            unavailableTarget);
+    std::string unavailableExpected = unavailableTargetPayload;
+    while (!unavailableExpected.empty() &&
+           (unavailableExpected[unavailableExpected.size() - 1] == '\r' ||
+            unavailableExpected[unavailableExpected.size() - 1] == '\n'))
+    {
+        unavailableExpected.erase(unavailableExpected.size() - 1);
+    }
+    if (unavailableSerialized != unavailableExpected)
+    {
+        return Fail(
+            "serialized unavailable natural resource diverged from fixture");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest invalid;
     const std::string invalidPayload =
         ReadFile(prefix + "invalid_direction_target_request.json");
@@ -511,7 +587,7 @@ int main(int argc, char** argv)
     }
 
     std::cout
-        << "Native command protocol fixtures and movement semantics passed."
+        << "Native protocol fixtures and semantics passed."
         << std::endl;
     return 0;
 }

@@ -63,6 +63,23 @@ Squad `selected` flags must match the set exactly, which makes an
 exactly-one-selection precondition mechanically checkable instead of inferred
 from a portrait name.
 
+## World targets and current authority
+
+`world_targets` reports structurally recognized non-character objects inside
+the current bounded native query. A natural mine remains present when the
+selected character cannot currently operate it. `context_actions` names its
+reviewed semantic affordance; `task_available` and `task_probability` report
+current Kenshi task eligibility separately.
+
+Only targets with a current advertised action and `task_available: true` enter
+the planner's actionable `context_targets` digest. Binding and native dispatch
+recheck availability, exact identity, and structural role. Perception therefore
+does not grant action authority.
+
+If the native query reaches its maximum result count, `warnings` says
+`world_targets` may be incomplete. Kenshi does not document that bounded query
+as nearest-first, so omission at capacity must not be interpreted as absence.
+
 ## Partial and unknown values
 
 Omit or null what is unavailable. Do not serialize unknown health as zero, an

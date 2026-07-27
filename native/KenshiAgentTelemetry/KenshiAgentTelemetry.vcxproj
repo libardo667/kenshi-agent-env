@@ -91,12 +91,14 @@
     <ClCompile Include="NativeCommandProtocol.cpp" />
     <ClCompile Include="NativeCommandTiming.cpp" />
     <ClCompile Include="NativeMovementSemantics.cpp" />
+    <ClCompile Include="WorldTargetProtocol.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AtomicJsonWriter.h" />
     <ClInclude Include="NativeCommandProtocol.h" />
     <ClInclude Include="NativeCommandTiming.h" />
     <ClInclude Include="NativeMovementSemantics.h" />
+    <ClInclude Include="WorldTargetProtocol.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

@@ -79,14 +79,20 @@
 #include "NativeCommandProtocol.h"
 #include "NativeCommandTiming.h"
 #include "NativeMovementSemantics.h"
+#include "WorldTargetProtocol.h"
 
 namespace
 {
     using KenshiAgentTelemetry::IsValidCommandId;
     using KenshiAgentTelemetry::NativeCommandAcknowledgement;
     using KenshiAgentTelemetry::NativeCommandRequest;
+    using KenshiAgentTelemetry::NaturalResourceAssessment;
+    using KenshiAgentTelemetry::NaturalResourceTargetSnapshot;
     using KenshiAgentTelemetry::ParseNativeCommandRequest;
+    using KenshiAgentTelemetry::AssessNaturalResource;
+    using KenshiAgentTelemetry::IsWorldTargetScanAtCapacity;
     using KenshiAgentTelemetry::SerializeNativeCommandAcknowledgement;
+    using KenshiAgentTelemetry::SerializeNaturalResourceTarget;
 
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
@@ -105,7 +111,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.8.0";
+    const char* PROTOCOL_VERSION = "0.8.1";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -746,32 +752,38 @@ namespace
         return NULL;
     }
 
-    bool IsReviewedNaturalResource(
+    NaturalResourceAssessment InspectNaturalResource(
         PlayerInterface* player,
-        Building* candidate,
-        float& probability)
+        Building* candidate)
     {
-        probability = 0.0f;
-        if (player == NULL ||
-            candidate == NULL ||
-            !candidate->isValid() ||
-            candidate->getSpecialFunction() != BF_MINE_NATURAL ||
-            candidate->getDefaultTask() != OPERATE_MACHINERY)
-        {
-            return false;
-        }
-        return player->getPlayerTaskProbability(
-            OPERATE_MACHINERY,
-            candidate,
+        const bool candidateValid =
+            candidate != NULL && candidate->isValid();
+        const bool isNaturalMine =
+            candidateValid &&
+            candidate->getSpecialFunction() == BF_MINE_NATURAL;
+        const bool defaultTaskOperatesMachinery =
+            isNaturalMine &&
+            candidate->getDefaultTask() == OPERATE_MACHINERY;
+        float probability = 0.0f;
+        const bool taskAvailable =
+            player != NULL &&
+            defaultTaskOperatesMachinery &&
+            player->getPlayerTaskProbability(
+                OPERATE_MACHINERY,
+                candidate,
+                probability);
+        return AssessNaturalResource(
+            candidateValid,
+            isNaturalMine,
+            defaultTaskOperatesMachinery,
+            taskAvailable,
             probability);
     }
 
     Building* FindExactNaturalResource(
         PlayerInterface* player,
-        const std::string& targetId,
-        bool& exactIdentityFound)
+        const std::string& targetId)
     {
-        exactIdentityFound = false;
         Character* selected =
             player != NULL ? player->selectedCharacter.getCharacter() : NULL;
         if (ou == NULL ||
@@ -799,11 +811,7 @@ namespace
                 continue;
             if (StableEntityId(candidate->getHandle()) != targetId)
                 continue;
-            exactIdentityFound = true;
-            float probability = 0.0f;
-            return IsReviewedNaturalResource(player, candidate, probability)
-                ? candidate
-                : NULL;
+            return candidate;
         }
         return NULL;
     }
@@ -1655,22 +1663,24 @@ namespace
 
         if (isContextAction)
         {
-            bool exactIdentityFound = false;
             Building* target = FindExactNaturalResource(
                 player,
-                request.targetId,
-                exactIdentityFound);
+                request.targetId);
             if (target == NULL)
             {
                 RejectNativeCommand(
                     request,
-                    exactIdentityFound
-                        ? "target_role_invalid"
-                        : "target_lifetime_changed");
+                    "target_lifetime_changed");
                 return;
             }
-            float taskProbability = 0.0f;
-            if (!IsReviewedNaturalResource(player, target, taskProbability))
+            const NaturalResourceAssessment resource =
+                InspectNaturalResource(player, target);
+            if (!resource.structurallyRecognized)
+            {
+                RejectNativeCommand(request, "target_role_invalid");
+                return;
+            }
+            if (!resource.taskAvailable)
             {
                 RejectNativeCommand(request, "context_task_unavailable");
                 return;
@@ -2412,6 +2422,7 @@ namespace
             }
         }
         json << "],";
+        bool worldTargetScanAtCapacity = false;
         json << "\"world_targets\":[";
         if (ou != NULL && selected != NULL && selected->isValid())
         {
@@ -2424,17 +2435,20 @@ namespace
                 BUILDING,
                 MAX_WORLD_CONTEXT_TARGETS,
                 selected);
+            worldTargetScanAtCapacity =
+                IsWorldTargetScanAtCapacity(
+                    static_cast<unsigned int>(nearbyBuildings.size()),
+                    static_cast<unsigned int>(
+                        MAX_WORLD_CONTEXT_TARGETS));
             bool first = true;
             for (lektor<RootObject*>::iterator it = nearbyBuildings.begin();
                  it != nearbyBuildings.end();
                  ++it)
             {
                 Building* target = reinterpret_cast<Building*>(*it);
-                float taskProbability = 0.0f;
-                if (!IsReviewedNaturalResource(
-                        player,
-                        target,
-                        taskProbability))
+                const NaturalResourceAssessment resource =
+                    InspectNaturalResource(player, target);
+                if (!resource.structurallyRecognized)
                 {
                     continue;
                 }
@@ -2446,24 +2460,19 @@ namespace
                     json << ",";
                 first = false;
                 const Ogre::Vector3 targetPosition = target->getPosition();
-                json << "{";
-                json << "\"id\":\"" << targetId << "\",";
-                json << "\"name\":\""
-                     << JsonEscape(target->getName()) << "\",";
-                json << "\"kind\":\"natural_resource\",";
-                json << "\"position\":";
-                AppendVector3(json, targetPosition);
-                json << ",";
-                json << "\"distance\":"
-                     << Distance(targetPosition, selectedPosition) << ",";
-                json << "\"context_actions\":[\"operate\"],";
-                json << "\"default_task\":\"operate_machinery\",";
-                json << "\"task_available\":true,";
-                json << "\"task_probability\":"
-                     << taskProbability << ",";
-                json << "\"mining_resource_level\":"
-                     << target->getMiningResourceLevel();
-                json << "}";
+                NaturalResourceTargetSnapshot snapshot;
+                snapshot.id = targetId;
+                snapshot.name = target->getName();
+                snapshot.positionX = targetPosition.x;
+                snapshot.positionY = targetPosition.y;
+                snapshot.positionZ = targetPosition.z;
+                snapshot.distance =
+                    Distance(targetPosition, selectedPosition);
+                snapshot.taskAvailable = resource.taskAvailable;
+                snapshot.taskProbability = resource.taskProbability;
+                snapshot.miningResourceLevel =
+                    target->getMiningResourceLevel();
+                json << SerializeNaturalResourceTarget(snapshot);
             }
         }
         json << "],";
@@ -2479,6 +2488,11 @@ namespace
         {
             json << ",\"The live ShopTrader registry exceeded its bounded capacity; "
                  << "shop_inventory_owner is incomplete.\"";
+        }
+        if (worldTargetScanAtCapacity)
+        {
+            json << ",\"The nearby building scan reached its bounded capacity; "
+                 << "world_targets may be incomplete.\"";
         }
         json
              << "]";

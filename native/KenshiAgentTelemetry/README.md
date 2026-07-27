@@ -31,7 +31,7 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.8.0` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.8.1` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 and world-target list reordering and distinguish duplicate names without
 serializing addresses.
@@ -219,11 +219,12 @@ installed DLL has SHA-256
 run `20260726Tnative-building-exit-live-04` completed the exact keyed exit with
 `outside_door_destination_reached` and a safe final pause.
 
-Protocol `0.8.0` adds bounded reviewed natural-resource targets and the exact
-`operate_natural_resource` command. The pinned native build and shared
-conformance fixtures pass. Built, staged, and installed 210,944-byte DLLs are
-byte-identical at SHA-256
-`e6e7189f5e62af529d6c400cce6e0ce331cdc1cdb52297045f1b236beb083168`.
-This version has not yet been live-loaded or exercised in Kenshi; target
-discovery, native task acceptance, visible behavior, and final safe-state proof
-remain open.
+Protocol `0.8.0` added bounded natural-resource targets and the exact
+`operate_natural_resource` command. Protocol `0.8.1` corrects the observation
+contract: structural identity determines presence, while current Kenshi task
+eligibility is exported separately and rechecked at dispatch. A query that
+reaches its result bound emits a warning because its omissions are not known to
+be distance-ordered. The corrected DLL and shared conformance target build and
+pass, and the byte-identical staged DLL is installed with a reversible backup.
+Load, target discovery, task acceptance, visible behavior, and final safe-state
+proof remain open.

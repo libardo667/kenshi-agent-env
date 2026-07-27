@@ -39,7 +39,10 @@
   `OPERATE_MACHINERY` to that exact handle, and completes only when Kenshi's AI
   reports the exact task/subject pair. Python/C++ fixtures, the pinned native
   build, and the byte-identical installed DLL pass; live target discovery and
-  effect remain deliberately unclaimed.
+  effect remain deliberately unclaimed. Protocol `0.8.1` keeps structurally
+  recognized mines observable when their current task is unavailable, preserves
+  fail-closed binding and dispatch, and warns when the bounded building scan may
+  be incomplete.
 - Adopted a right-sized native-integration boundary: faithful semantic Kenshi
   coverage, truthful capabilities, and reviewable evidence determine plugin
   scope rather than a small/medium/large size target.

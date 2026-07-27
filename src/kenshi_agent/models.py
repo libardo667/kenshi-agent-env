@@ -2116,7 +2116,11 @@ class Observation(StrictModel):
         if self.telemetry is None:
             return []
         targets = sorted(
-            self.telemetry.world_targets,
+            (
+                target
+                for target in self.telemetry.world_targets
+                if target.task_available and target.context_actions
+            ),
             key=lambda target: (target.distance, target.name, target.id),
         )
         return [

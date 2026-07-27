@@ -55,7 +55,7 @@ continuous-unpaused no-progress terminal, so a blocked order cannot poison later
 movement. During exact native commands, engine-native camera follow is reasserted
 each frame and live-proven through one short obstructed move.
 
-## Native protocol 0.8.0
+## Native protocol 0.8.1
 
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
 replaces a complete snapshot at roughly 2 Hz. Telemetry covers pause, speed,
@@ -64,8 +64,9 @@ selection, nearby-character, dialogue-target, world-target and command
 identities; squad life/consciousness/combat state, position, indoor membership,
 nutrition reserve, blood, and bounded inventory; dialogue, trade, inventory,
 stats and management window state; up to 224 visible controls with window
-ownership and normalized bounds; up to 128 reviewed natural resources from a
-2,000-unit query; and a keyed acknowledgement ring for five declared commands.
+ownership and normalized bounds; up to 128 structurally reviewed natural
+resources from a 2,000-unit query with current task eligibility reported
+separately; and a keyed acknowledgement ring for five declared commands.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities before planning and rejects native actions again at the
@@ -75,10 +76,9 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 ## Open work
 
-- **Protocol `0.8.0` is live-loaded; contextual operation is not live-proven.**
-  Resource discovery returned no target in the tested terrain. Completion still
-  requires an exact target, keyed `context_task_started`, a plausible resulting
-  frame, fresh advancing telemetry, and a safe final pause.
+- **Protocol `0.8.0` was live-loaded; corrected `0.8.1` is built and installed
+  but not loaded.** Contextual operation remains unproven and still requires an
+  exact target, keyed terminal, frame, advancing telemetry, and safe pause.
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
