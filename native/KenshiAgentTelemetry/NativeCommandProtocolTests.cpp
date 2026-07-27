@@ -14,6 +14,7 @@
 #include "NativeCommandTiming.cpp"
 #include "NativeMovementSemantics.cpp"
 #include "WorldTargetProtocol.cpp"
+#include "GameplayCapabilities.generated.h"
 
 namespace
 {
@@ -109,6 +110,42 @@ namespace
             return Fail("abandoned pause did not cancel at its limit");
         }
 
+        return 0;
+    }
+
+    int TestGameplayCapabilities()
+    {
+        std::ostringstream withoutConditional;
+        KenshiAgentTelemetry::AppendGameplayCapabilities(
+            withoutConditional,
+            false);
+        const std::string baseline = withoutConditional.str();
+        if (baseline.empty() ||
+            baseline[0] != '[' ||
+            baseline[baseline.size() - 1] != ']')
+        {
+            return Fail("gameplay capabilities were not serialized as an array");
+        }
+        if (baseline.find("\"game.pause\"") == std::string::npos ||
+            baseline.find("\"control.perform_context_action\"") ==
+                std::string::npos)
+        {
+            return Fail("required gameplay capabilities were not serialized");
+        }
+        if (baseline.find("\"nearby.shop_owners\"") != std::string::npos)
+        {
+            return Fail("conditional capability leaked into the baseline set");
+        }
+
+        std::ostringstream withConditional;
+        KenshiAgentTelemetry::AppendGameplayCapabilities(
+            withConditional,
+            true);
+        if (withConditional.str().find("\"nearby.shop_owners\"") ==
+            std::string::npos)
+        {
+            return Fail("conditional gameplay capability was not serialized");
+        }
         return 0;
     }
 
@@ -386,6 +423,9 @@ int main(int argc, char** argv)
 {
     if (argc != 2)
         return Fail("expected the native fixture directory as one argument");
+    const int capabilityResult = TestGameplayCapabilities();
+    if (capabilityResult != 0)
+        return capabilityResult;
     const int timingResult = TestNativeMovementPauseTiming();
     if (timingResult != 0)
         return timingResult;
@@ -460,6 +500,26 @@ int main(int argc, char** argv)
         targeted.distanceUnits != 0.0)
     {
         return Fail("targeted request did not retain its exact identity");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest approach;
+    const std::string approachPayload =
+        ReadFile(prefix + "valid_approach_request.json");
+    if (approachPayload.empty())
+        return Fail("could not read valid_approach_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            approachPayload,
+            approach,
+            rejectionReason))
+    {
+        return Fail("valid approach request was rejected as " + rejectionReason);
+    }
+    if (approach.command != "approach_confirmed_vendor" ||
+        approach.targetId != "entity-dialogue-target" ||
+        approach.bearingDegrees != 0.0 ||
+        approach.distanceUnits != 0.0)
+    {
+        return Fail("approach request did not retain its exact target");
     }
 
     KenshiAgentTelemetry::NativeCommandRequest buildingExit;

@@ -76,6 +76,7 @@
 #include <string>
 
 #include "AtomicJsonWriter.h"
+#include "GameplayCapabilities.generated.h"
 #include "NativeCommandProtocol.h"
 #include "NativeCommandTiming.h"
 #include "NativeMovementSemantics.h"
@@ -2046,27 +2047,11 @@ namespace
         json << "\"source\":\"kenshilib-plugin\",";
         json << "\"identity_session_id\":\""
              << IdentitySessionId() << "\",";
-        json << "\"capabilities\":["
-             << "\"game.pause\",\"game.speed\",\"game.money\",\"game.time\","
-             << "\"camera.position\",\"squad.basic\","
-             // Now genuinely emitted, so advertise them: a capability the
-             // agent cannot rely on is worse than one it knows is absent.
-             << "\"squad.hunger\",\"squad.health\",\"squad.inventory\","
-             << "\"squad.indoors\","
-             << "\"ui.inventory\",\"ui.dialogue\","
-             << "\"ui.dialogue.target\",\"ui.dialogue.options\","
-             << "\"ui.tooltip\",\"ui.visible_controls\","
-             << "\"nearby.characters\",\"nearby.roles\","
-             << "\"control.approach_vendor\","
-             << "\"control.move_to_character\","
-             << "\"control.move_in_direction\","
-             << "\"control.exit_current_building\","
-             << "\"world.context_targets\","
-             << "\"control.perform_context_action\","
-             << "\"identity.stable_handles\"";
-        if (g_shopTraderRegistryReady)
-            json << ",\"nearby.shop_owners\"";
-        json << "],";
+        json << "\"capabilities\":";
+        KenshiAgentTelemetry::AppendGameplayCapabilities(
+            json,
+            g_shopTraderRegistryReady);
+        json << ",";
 
         json << "\"game\":{";
         json << "\"loaded\":" << JsonBool(ou != NULL && ou->initialized) << ",";

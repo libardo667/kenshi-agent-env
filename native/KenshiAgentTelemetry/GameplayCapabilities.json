@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "always": [
+    "game.pause",
+    "game.speed",
+    "game.money",
+    "game.time",
+    "camera.position",
+    "squad.basic",
+    "squad.hunger",
+    "squad.health",
+    "squad.inventory",
+    "squad.indoors",
+    "ui.inventory",
+    "ui.dialogue",
+    "ui.dialogue.target",
+    "ui.dialogue.options",
+    "ui.tooltip",
+    "ui.visible_controls",
+    "nearby.characters",
+    "nearby.roles",
+    "control.approach_vendor",
+    "control.move_to_character",
+    "control.move_in_direction",
+    "control.exit_current_building",
+    "world.context_targets",
+    "control.perform_context_action",
+    "identity.stable_handles"
+  ],
+  "conditional": [
+    "nearby.shop_owners"
+  ]
+}

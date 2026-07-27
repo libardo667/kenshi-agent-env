@@ -36,6 +36,17 @@ def test_python_accepts_targeted_request_fixture_with_no_direction_payload() -> 
     assert request.distance_units == 0.0
 
 
+def test_python_accepts_exact_dialogue_approach_request_fixture() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_approach_request.json").read_bytes()
+    )
+
+    assert request.command == "approach_confirmed_vendor"
+    assert request.target_id == "entity-dialogue-target"
+    assert request.bearing_degrees == 0.0
+    assert request.distance_units == 0.0
+
+
 def test_python_accepts_parameterless_building_exit_request_fixture() -> None:
     request = NativeCommandRequest.model_validate_json(
         (FIXTURES / "valid_exit_building_request.json").read_bytes()

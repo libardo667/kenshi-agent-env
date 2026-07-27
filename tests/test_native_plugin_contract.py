@@ -58,9 +58,7 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "PLAYER_TALK_TO" in source
     assert "ProcessNativeCommandRequest" in source
     assert "newPlayerTaskSelectedCharacters" in source
-    assert "control.approach_vendor" in source
     assert "VK_F10" in source
-    assert "nearby.roles" in source
     assert "AppendVector3(json, targetPosition)" in source
     assert "target->isOnScreen" in source
     assert "target->getVisible()" in source
@@ -69,7 +67,6 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "camera_bearing_degrees" in source
     assert "std::atan2(cameraX, -cameraZ)" in source
     assert "screen_position" in source
-    assert "nearby.characters" in source
     assert "gui->isAnyInventoryWindowOpen()" in source
     assert "gui->dialogue->isVisible()" in source
     assert '"trade"' in source
@@ -79,7 +76,6 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
 def test_native_plugin_uses_session_scoped_validated_handle_identity() -> None:
     source = PLUGIN_SOURCE.read_text(encoding="utf-8")
 
-    assert "identity.stable_handles" in source
     assert "identity_session_id" in source
     assert "CreateProcessGeneration()" in source
     assert "++g_sessionGeneration;" in source
@@ -125,10 +121,6 @@ def test_native_plugin_exports_food_chain_authoritative_ui_and_time_sources() ->
 
     assert "#include <kenshi/gui/ToolTip.h>" in source
     assert "getTimeStamp_inGameHours().getTotalMinutes()" in source
-    assert "game.time" in source
-    assert "ui.dialogue.target" in source
-    assert "ui.dialogue.options" in source
-    assert "ui.tooltip" in source
     assert "TryGetDialogueTargetId" in source
     assert "replyTexts" in source
     assert "getCaption().asUTF8()" in source
@@ -283,7 +275,6 @@ def test_parameterless_building_exit_resolves_a_native_outdoor_door_point() -> N
     protocol = PROTOCOL_SOURCE.read_text(encoding="utf-8")
 
     assert 'request.command == "exit_current_building"' in protocol
-    assert "control.exit_current_building" in plugin
     assert "walker->isIndoors()" in plugin
     assert "building->doors.begin()" in plugin
     assert "door->isLocked()" in plugin

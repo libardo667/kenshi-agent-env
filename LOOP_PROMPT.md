@@ -245,20 +245,17 @@ is unmodelled.
 
 ## Startup procedure
 
-1. **Establish state.** `git status`, `git log`, current branch, working tree
-   cleanliness. Never edit a tree another agent is mid-way through.
-2. **Read what is current.** `STATUS.md` for capability and limits;
+1. **Read what is current.** `STATUS.md` for capability and limits;
    `docs/generated/` for the action surface; `docs/ADR_*.md` for why a boundary
-   exists; `docs/GUIDE_*.md` for procedures; `git log` and `runs/<run-id>/` for
-   what happened. There is no prose ledger, and you must not create one.
-3. **Also inspect** `README.md`, `ARCHITECTURE.md`, `SECURITY_AND_SAFETY.md`,
+   exists; `docs/GUIDE_*.md` for procedures; `docs/REPORT_*.md` for analysis
+   across runs; `git log` and `runs/<run-id>/` for what happened. There is no
+   prose ledger, and you must not create one.
+2. **Also inspect** `README.md`, `ARCHITECTURE.md`, `SECURITY_AND_SAFETY.md`,
    `pyproject.toml`, `config/default.yaml`, the active live profile, and
    `prompts/planner_system.md` when relevant.
-4. **Run the baseline before editing**: `uv run pytest -q`, `uv run ruff check .`,
+3. **Run the baseline before editing**: `uv run pytest -q`, `uv run ruff check .`,
    `uv run mypy src`. A red baseline is the slice.
-5. **Select exactly one slice** and state its problem, scope, non-goals, and
-   acceptance criteria before writing code.
-6. Before live work, run `./dev launch --preflight-only`; launch and journey
+4. Before live work, run `./dev launch --preflight-only`; launch and journey
    commands use ordinary captured pipes, never a pseudo-terminal.
 
 ## Current priority queue
@@ -315,12 +312,8 @@ interruptible option/plan executor ← strict bounded plan or typed patch
 asynchronous strategic planner
 ```
 
-Strategic planning may overlap execution, but a returning response is advisory
-until revalidated. The executor owns plan state, budgets, retries, cancellation,
-and terminal reasons. Patches use optimistic concurrency. They may revise future
-steps, or an exact opt-in monitored movement step may request a guarded
-pause-before-replacement handoff. A deterministic reflex layer stays beneath all
-of it.
+Rules 5 through 8 govern the edges of that diagram; the ADRs govern the rest.
+A deterministic reflex layer stays beneath all of it.
 
 ## Testing requirements
 
@@ -352,13 +345,18 @@ over making it detectable.
 ## Documentation discipline
 
 `tests/test_docs_hygiene.py` and `.githooks/pre-commit` enforce this
-mechanically; do not argue with them.
+mechanically; do not argue with them. This file carries its own recorded
+ceiling and may only ratchet downward.
 
 - Every document is ≤120 lines and is one of: `docs/ADR_*.md` (a durable
   decision, written once, superseded not edited), `docs/GUIDE_*.md` (a procedure
-  or wire contract restating no code), or `docs/generated/*` (emitted from code).
+  or wire contract restating no code), `docs/REPORT_<YYYYMMDD>_<topic>.md` (a
+  dated analysis record, written once — supersede it by writing a later report,
+  never by editing an earlier one), or `docs/generated/*` (emitted from code).
 - Anything restating code must be generated and staleness-gated.
-- Anything restating history belongs in `git log` and `runs/<run-id>/`.
+- Anything restating history belongs in `git log` and `runs/<run-id>/`. A report
+  is for reasoning *across* runs — comparison, attribution, the argument behind
+  a design change — which no single commit body can hold.
 - **Do not create a running engineering narrative.** One was deleted at 2,300
   lines after drifting inside a week.
 - Commit subjects stay short. A commit body is warranted when the commit lands
@@ -367,7 +365,9 @@ mechanically; do not argue with them.
 
 ## Per-invocation method
 
-1. Establish state; confirm the live authorization boundary.
+1. Establish state — `git status`, `git log`, branch, working-tree cleanliness —
+   and confirm the live authorization boundary. Never edit a tree another agent
+   is mid-way through.
 2. Choose one slice; state problem, scope, non-goals, acceptance criteria.
 3. Write failing tests first, including a failure path and a safety path.
 4. Implement the smallest complete design. Reuse current boundaries; never build

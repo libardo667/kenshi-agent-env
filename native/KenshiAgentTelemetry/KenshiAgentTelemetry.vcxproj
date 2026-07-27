@@ -95,6 +95,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AtomicJsonWriter.h" />
+    <ClInclude Include="GameplayCapabilities.generated.h" />
     <ClInclude Include="NativeCommandProtocol.h" />
     <ClInclude Include="NativeCommandTiming.h" />
     <ClInclude Include="NativeMovementSemantics.h" />

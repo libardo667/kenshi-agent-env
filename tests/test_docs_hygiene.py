@@ -1,7 +1,7 @@
 """Mechanical gates against documentation drift and sprawl.
 
 Prose asking agents to be concise loses to the next loop's instincts. These
-checks do not ask. Every document must be one of three shapes, must stay under a
+checks do not ask. Every document must be one of four shapes, must stay under a
 hard line cap, and must fail the build rather than quietly lie when the thing it
 describes has moved.
 
@@ -10,18 +10,25 @@ A document is legitimate only if it is:
 * `docs/ADR_*.md` — a durable decision, written once, superseded not edited;
 * `docs/GUIDE_*.md` — a procedure or wire contract an implementer needs, which
   restates no code and has no other home;
+* `docs/REPORT_<YYYYMMDD>_<topic>.md` — a dated analysis record, written once,
+  superseded by a later report and never by editing an earlier one;
 * `docs/generated/*` — emitted from the code that is its source of truth.
 
 Anything else is either restating code (generate it) or restating history (the
 commit log and `runs/` already hold it). `LEGACY_DOCS` is deliberately empty: the
 2026-07-26 cleanup deleted or converted all 25 grandfathered files. Re-adding an
 entry is admitting a new exception, so do it loudly or not at all.
+
+The shape rules are pure functions of a path so the suite can prove they reject
+what they claim to reject, by running a real temporary file through the same
+gate rather than by restating the pattern in an assertion.
 """
 
 from __future__ import annotations
 
 import filecmp
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -32,15 +39,35 @@ from kenshi_agent.schema_export import export_schemas
 ROOT = Path(__file__).resolve().parents[1]
 DOC_LINE_CAP = 120
 GENERATED_DOCS = ROOT / "docs" / "generated"
+PRE_COMMIT_HOOK = ROOT / ".githooks" / "pre-commit"
 
-# Root-level documents that are not `docs/` shapes but still must stay short.
-# `CHANGELOG.md` is absent on purpose: an append-only history is meant to grow.
-ROOT_DOCS = (
-    "README.md",
-    "ARCHITECTURE.md",
-    "STATUS.md",
-    "SECURITY_AND_SAFETY.md",
-)
+# A report is dated and slugged so ordering is filename-visible and two reports
+# written on one day cannot collide. `_` separates the fields; the topic uses
+# `-` so the split is unambiguous.
+REPORT_NAME = re.compile(r"^REPORT_\d{8}_[a-z0-9-]+\.md$")
+
+# Root-level prose. Every file here is either capped or listed as exempt with a
+# reason, and `test_every_root_prose_file_is_capped_or_exempt` fails on any root
+# document that is in neither — being uncapped must be a decision, not an
+# omission. Lower a ceiling freely; raising one is the loud part.
+ROOT_DOC_CAPS: dict[str, int] = {
+    "README.md": DOC_LINE_CAP,
+    "ARCHITECTURE.md": DOC_LINE_CAP,
+    "STATUS.md": DOC_LINE_CAP,
+    "SECURITY_AND_SAFETY.md": DOC_LINE_CAP,
+    # `LOOP_PROMPT.md` is the file that steers the loop, so it is the file most
+    # able to grow unnoticed: for a while it was longer than the four documents
+    # above combined and no gate saw it. It does not fit `DOC_LINE_CAP` and
+    # splitting it would defeat its purpose — it is copied whole into an agent.
+    # So it gets its own ceiling, set at its measured length on the day it was
+    # capped. Ratchet downward only: growing it means raising this number in a
+    # test, deliberately, where a reviewer sees it.
+    "LOOP_PROMPT.md": 421,
+}
+
+ROOT_DOC_EXEMPTIONS: dict[str, str] = {
+    "CHANGELOG.md": "an append-only history is meant to grow",
+}
 
 LEGACY_DOCS: dict[str, int] = {}
 
@@ -49,10 +76,53 @@ def _line_count(path: Path) -> int:
     return len(path.read_text(encoding="utf-8").splitlines())
 
 
-def _capped_docs() -> list[Path]:
-    paths = sorted(ROOT.glob("docs/**/*.md"))
-    paths += [ROOT / name for name in ROOT_DOCS]
-    return [path for path in paths if path.is_file()]
+def _document_shape_error(relative: str) -> str | None:
+    """Why `relative` is not an accepted document shape, or `None` if it is.
+
+    The single source of the rule. `.githooks/pre-commit` is its other encoding
+    and `test_the_hook_and_the_suite_accept_the_same_paths` holds them together.
+    """
+
+    name = relative.rsplit("/", 1)[-1]
+    if relative.startswith("docs/generated/"):
+        return None
+    if name.startswith(("ADR_", "GUIDE_")):
+        return None
+    if name.startswith("REPORT_"):
+        if REPORT_NAME.match(name):
+            return None
+        return f"{relative} is not REPORT_<YYYYMMDD>_<lowercase-topic>.md"
+    return f"{relative} is not a decision record, report, guide, or generated output"
+
+
+def _rejected_documents(root: Path) -> list[str]:
+    return sorted(
+        error
+        for path in root.glob("docs/**/*.md")
+        if path.is_file() and path.relative_to(root).as_posix() not in LEGACY_DOCS
+        for error in [_document_shape_error(path.relative_to(root).as_posix())]
+        if error is not None
+    )
+
+
+def _ceiling(relative: str) -> int:
+    return ROOT_DOC_CAPS.get(relative, DOC_LINE_CAP)
+
+
+def _oversized_documents(root: Path) -> dict[str, int]:
+    paths = sorted(root.glob("docs/**/*.md"))
+    paths += [root / name for name in ROOT_DOC_CAPS]
+    oversized: dict[str, int] = {}
+    for path in paths:
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix()
+        if relative in LEGACY_DOCS:
+            continue
+        lines = _line_count(path)
+        if lines > _ceiling(relative):
+            oversized[relative] = lines
+    return oversized
 
 
 @pytest.mark.parametrize("relative", sorted(LEGACY_DOCS) or ["<none>"])
@@ -70,31 +140,172 @@ def test_legacy_docs_may_only_shrink(relative: str) -> None:
 
 
 def test_documents_stay_under_the_line_cap() -> None:
-    oversized = {
-        path.relative_to(ROOT).as_posix(): _line_count(path)
-        for path in _capped_docs()
-        if path.relative_to(ROOT).as_posix() not in LEGACY_DOCS
-        and _line_count(path) > DOC_LINE_CAP
-    }
+    oversized = _oversized_documents(ROOT)
     assert not oversized, (
-        f"documentation over {DOC_LINE_CAP} lines: {oversized}. Split it, cut it, "
-        "or move the narrative into the commit message that carries the evidence."
+        f"documentation over its ceiling: {oversized}. Split it, cut it, or move "
+        "the narrative into the commit message that carries the evidence."
     )
 
 
-def test_docs_are_decision_records_guides_or_generated() -> None:
-    """A new doc has exactly three legitimate shapes; everything else is sprawl."""
+def test_every_root_prose_file_is_capped_or_exempt() -> None:
+    """An uncapped root document must be a stated decision, not an omission.
 
-    stray = sorted(
-        path.relative_to(ROOT).as_posix()
-        for path in ROOT.glob("docs/*.md")
-        if not path.name.startswith(("ADR_", "GUIDE_"))
-        and path.relative_to(ROOT).as_posix() not in LEGACY_DOCS
+    `LOOP_PROMPT.md` was uncapped for exactly this reason: the ceiling list named
+    four files and nobody noticed the fifth was missing from it.
+    """
+
+    unaccounted = sorted(
+        path.name
+        for path in ROOT.glob("*.md")
+        if path.name not in ROOT_DOC_CAPS and path.name not in ROOT_DOC_EXEMPTIONS
     )
-    assert not stray, (
-        f"unclassified docs: {stray}. A doc must be a durable decision record "
-        "(docs/ADR_*.md), a procedure or wire contract (docs/GUIDE_*.md), or "
-        "generated output (docs/generated/), or it will drift."
+    assert not unaccounted, (
+        f"root documents with neither a ceiling nor a stated exemption: "
+        f"{unaccounted}. Add it to ROOT_DOC_CAPS, or to ROOT_DOC_EXEMPTIONS with "
+        "the reason it is allowed to grow."
+    )
+    unexplained = sorted(name for name, why in ROOT_DOC_EXEMPTIONS.items() if not why.strip())
+    assert not unexplained, f"exemptions without a stated reason: {unexplained}"
+
+
+def test_docs_are_decision_records_reports_guides_or_generated() -> None:
+    """A new doc has exactly four legitimate shapes; everything else is sprawl."""
+
+    rejected = _rejected_documents(ROOT)
+    assert not rejected, (
+        f"unclassified docs: {rejected}. A doc must be a durable decision record "
+        "(docs/ADR_*.md), a dated analysis record "
+        "(docs/REPORT_<YYYYMMDD>_<topic>.md), a procedure or wire contract "
+        "(docs/GUIDE_*.md), or generated output (docs/generated/), or it will "
+        "drift."
+    )
+
+
+def test_a_malformed_report_filename_is_rejected(tmp_path: Path) -> None:
+    """Prove the shape gate rejects, by running real files through it.
+
+    An assertion restating `REPORT_NAME` would pass even if nothing called it.
+    """
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    accepted = "REPORT_20260727_external-review.md"
+    malformed = (
+        "REPORT_2026-07-27_dashes.md",  # dated, but not YYYYMMDD
+        "REPORT_20260727_Mixed_Case.md",  # topic is not a lowercase slug
+        "REPORT_20260727.md",  # no topic at all
+        "REPORT_external_review.md",  # no date at all
+        "NOTES.md",  # not a shape at all
+    )
+    for name in (accepted, *malformed):
+        (docs / name).write_text("# x\n", encoding="utf-8")
+
+    rejected = _rejected_documents(tmp_path)
+
+    assert len(rejected) == len(malformed), rejected
+    for name in malformed:
+        assert any(name in error for error in rejected), f"{name} was accepted"
+    assert not any(accepted in error for error in rejected), (
+        f"{accepted} is well formed but was rejected"
+    )
+
+
+def test_an_oversized_report_is_rejected(tmp_path: Path) -> None:
+    """A report is prose like any other and gets no cap relief."""
+
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "REPORT_20260727_at-the-cap.md").write_text(
+        "\n".join("x" for _ in range(DOC_LINE_CAP)) + "\n", encoding="utf-8"
+    )
+    (docs / "REPORT_20260727_over-the-cap.md").write_text(
+        "\n".join("x" for _ in range(DOC_LINE_CAP + 1)) + "\n", encoding="utf-8"
+    )
+
+    oversized = _oversized_documents(tmp_path)
+
+    assert oversized == {"docs/REPORT_20260727_over-the-cap.md": DOC_LINE_CAP + 1}
+
+
+def _hook_rejects(tmp_path: Path, relative: str) -> bool:
+    """Stage one added document in a scratch repo and run the real hook on it."""
+
+    repo = tmp_path / relative.replace("/", "_")
+    repo.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
+    document = repo / relative
+    document.parent.mkdir(parents=True, exist_ok=True)
+    document.write_text("# scratch\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", relative], cwd=repo, check=True)
+    completed = subprocess.run(
+        ["bash", str(PRE_COMMIT_HOOK)], cwd=repo, capture_output=True, text=True
+    )
+    return completed.returncode != 0
+
+
+def _hook_rejects_report_edit(tmp_path: Path) -> bool:
+    """Commit, modify, and stage one report before running the real hook."""
+
+    repo = tmp_path / "report-edit"
+    repo.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=repo, check=True)
+    relative = "docs/REPORT_20260727_write-once.md"
+    document = repo / relative
+    document.parent.mkdir(parents=True)
+    document.write_text("# original\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", relative], cwd=repo, check=True)
+    subprocess.run(
+        [
+            "git",
+            "-c",
+            "user.name=Doc Gate",
+            "-c",
+            "user.email=doc-gate@example.invalid",
+            "commit",
+            "--quiet",
+            "-m",
+            "seed report",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    document.write_text("# edited\n", encoding="utf-8")
+    subprocess.run(["git", "add", "--", relative], cwd=repo, check=True)
+    completed = subprocess.run(
+        ["bash", str(PRE_COMMIT_HOOK)], cwd=repo, capture_output=True, text=True
+    )
+    return completed.returncode != 0
+
+
+def test_reports_are_write_once_in_the_real_hook(tmp_path: Path) -> None:
+    assert _hook_rejects_report_edit(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "relative",
+    [
+        "docs/ADR_SOMETHING.md",
+        "docs/GUIDE_SOMETHING.md",
+        "docs/generated/SOMETHING.md",
+        "docs/REPORT_20260727_external-review.md",
+        "docs/REPORT_20260727_a.md",
+        "docs/REPORT_2026-07-27_dashes.md",
+        "docs/REPORT_20260727_Mixed_Case.md",
+        "docs/REPORT_20260727.md",
+        "docs/REPORT_external_review.md",
+        "docs/REPORTING_STANDARDS.md",
+        "docs/NOTES.md",
+    ],
+)
+def test_the_hook_and_the_suite_accept_the_same_paths(tmp_path: Path, relative: str) -> None:
+    """Two encodings of one rule must not drift apart.
+
+    The hook exists to give an agent the verdict before it writes 400 lines. A
+    hook that is more permissive than CI teaches the agent the wrong rule.
+    """
+
+    assert _hook_rejects(tmp_path, relative) == (_document_shape_error(relative) is not None), (
+        f"{relative}: .githooks/pre-commit and _document_shape_error disagree"
     )
 
 
@@ -109,7 +320,7 @@ def test_relative_document_links_resolve() -> None:
     link = re.compile(r"\[[^\]]*\]\(([^)#]+?)(?:#[^)]*)?\)")
     broken: list[str] = []
     sources = sorted(ROOT.glob("docs/**/*.md"))
-    sources += [ROOT / name for name in (*ROOT_DOCS, "LOOP_PROMPT.md")]
+    sources += [ROOT / name for name in (*ROOT_DOC_CAPS, *ROOT_DOC_EXEMPTIONS)]
     sources.append(ROOT / "native" / "KenshiAgentTelemetry" / "README.md")
     for source in sources:
         if not source.is_file():
