@@ -7,6 +7,7 @@ from kenshi_agent.models import (
     ControlMode,
     CoordinateSpace,
     Disposition,
+    GameBinding,
     GameState,
     KeyAction,
     MoveCursorAction,
@@ -18,6 +19,7 @@ from kenshi_agent.models import (
     SkillArgument,
     TelemetrySnapshot,
     UIState,
+    UseGameBindingAction,
     WaitAction,
 )
 from kenshi_agent.safety import ActionGuard, SafetyViolation
@@ -126,6 +128,66 @@ def test_live_pause_requires_known_current_state() -> None:
         guard.validate(PauseAction(paused=False), known)
 
 
+def test_pause_binding_cannot_bypass_unpause_policy() -> None:
+    guard = ActionGuard(
+        safety_config().model_copy(
+            update={"allow_action_kinds": [*safety_config().allow_action_kinds, "use_game_binding"]}
+        ),
+        MacroRegistry({}),
+    )
+    action = UseGameBindingAction(
+        binding=GameBinding.PAUSE,
+        expected_effect="toggle the current pause state",
+    )
+    base = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(game=GameState(loaded=True)),
+    )
+
+    with pytest.raises(SafetyViolation, match="pause state is unknown"):
+        guard.validate(action, base)
+    with pytest.raises(SafetyViolation, match="unpause"):
+        guard.validate(
+            action,
+            base.model_copy(
+                update={"telemetry": TelemetrySnapshot(game=GameState(loaded=True, paused=True))}
+            ),
+        )
+    assert (
+        guard.validate(
+            action,
+            base.model_copy(
+                update={"telemetry": TelemetrySnapshot(game=GameState(loaded=True, paused=False))}
+            ),
+        )
+        == action
+    )
+
+
+def test_pause_binding_unpause_requires_explicit_profile_authority() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_action_kinds": [*safety_config().allow_action_kinds, "use_game_binding"],
+            "allow_live_unpause_actions": True,
+        }
+    )
+    guard = ActionGuard(config, MacroRegistry({}))
+    action = UseGameBindingAction(
+        binding=GameBinding.PAUSE,
+        expected_effect="unpause the loaded game",
+    )
+    observation = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(game=GameState(loaded=True, paused=True)),
+    )
+
+    assert guard.validate(action, observation) == action
+
+
 def test_safety_pause_bypasses_only_the_rate_budget() -> None:
     config = safety_config().model_copy(update={"max_actions_per_minute": 1})
     guard = ActionGuard(config, MacroRegistry({}))
@@ -148,6 +210,19 @@ def test_safety_pause_bypasses_only_the_rate_budget() -> None:
     )
     with pytest.raises(SafetyViolation, match="does not match"):
         guard.validate_safety_pause(PauseAction(paused=True), mismatched)
+
+
+def test_revalidation_does_not_spend_rate_authority_twice() -> None:
+    config = safety_config().model_copy(update={"max_actions_per_minute": 1})
+    guard = ActionGuard(config, MacroRegistry({}))
+    observation = Observation(run_id="run", step_index=0, mode="mock")
+    action = PauseAction(paused=True)
+
+    assert guard.validate(action, observation) == action
+    for _ in range(5):
+        assert guard.revalidate(action, observation) == action
+    with pytest.raises(SafetyViolation, match="rate limit"):
+        guard.validate(action, observation)
 
 
 def test_live_skill_must_be_configured_and_allowlisted() -> None:
@@ -450,9 +525,7 @@ def purchase_observation(*, include_tooltip: bool = True) -> Observation:
                 ],
                 "game": {"paused": True, "money": 1000},
                 "ui": ui,
-                "squad": [
-                    {"id": "player:1", "name": "Green", "selected": True}
-                ],
+                "squad": [{"id": "player:1", "name": "Green", "selected": True}],
                 "active_shop_trader_count": 1,
                 "nearby_entities": [
                     {
@@ -510,6 +583,52 @@ def test_purchase_requires_verified_owner_budget_and_one_per_run() -> None:
         guard.validate(action, purchase_observation())
 
 
+def test_purchase_revalidation_does_not_spend_purchase_authority_twice() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_skills": ["buy_inspected_shop_item"],
+            "max_purchase_price": 750,
+            "min_money_after_purchase": 250,
+            "max_purchases_per_run": 1,
+        }
+    )
+    macros = MacroRegistry(
+        {
+            "buy_inspected_shop_item": MacroConfig(
+                actions=[
+                    {
+                        "kind": "click",
+                        "x": "{{x}}",
+                        "y": "{{y}}",
+                        "space": "normalized",
+                        "button": "right",
+                    }
+                ]
+            )
+        }
+    )
+    action = SkillAction.model_validate(
+        {
+            "name": "buy_inspected_shop_item",
+            "args": {
+                "target_id": "nearby:0",
+                "item_name": "Dried Meat",
+                "x": 0.316,
+                "y": 0.357,
+                "expected_price": 649,
+            },
+        }
+    )
+    guard = ActionGuard(config, macros)
+    observation = purchase_observation()
+
+    assert guard.validate(action, observation) == action
+    for _ in range(5):
+        assert guard.revalidate(action, observation) == action
+    with pytest.raises(SafetyViolation, match="purchase limit"):
+        guard.validate(action, observation)
+
+
 @pytest.mark.parametrize(
     ("expected_price", "message"),
     [
@@ -537,9 +656,7 @@ def test_purchase_rejects_missing_or_excessive_expected_price(
     }
     if expected_price is not None:
         args["expected_price"] = expected_price
-    action = SkillAction.model_validate(
-        {"name": "buy_inspected_shop_item", "args": args}
-    )
+    action = SkillAction.model_validate({"name": "buy_inspected_shop_item", "args": args})
 
     with pytest.raises(SafetyViolation, match=message):
         ActionGuard(config, macros).validate(action, purchase_observation())

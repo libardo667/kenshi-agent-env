@@ -48,6 +48,7 @@ class ExecutionToken:
     control_mode: ControlMode
     validated_revision: WorldStateRevision
     latest_observation: Callable[[], Observation | None]
+    authority_validator: Callable[[Observation], str | None] | None = None
     assumptions: tuple[Condition, ...] = ()
     preconditions: tuple[Condition, ...] = ()
     _reports: list[InputBoundaryReport] = field(default_factory=list, compare=False)
@@ -133,6 +134,12 @@ class ExecutionToken:
             )
 
         boundary_revision = observation.world_revision
+        if observation.telemetry_stale:
+            return self._reject(
+                "The canonical telemetry is stale at the input boundary.",
+                lease_wait_seconds=lease_wait_seconds,
+                boundary_revision=boundary_revision,
+            )
         if self.validated_revision.is_later_than(boundary_revision):
             return self._reject(
                 "The canonical revision regressed while the input lease was pending.",
@@ -155,6 +162,16 @@ class ExecutionToken:
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
+
+        if self.authority_validator is not None:
+            authority_error = self.authority_validator(observation)
+            if authority_error is not None:
+                return self._reject(
+                    "The action no longer passes its safety and reference checks "
+                    f"at the input boundary: {authority_error}",
+                    lease_wait_seconds=lease_wait_seconds,
+                    boundary_revision=boundary_revision,
+                )
 
         evaluations = evaluate_conditions(
             [*self.assumptions, *self.preconditions],

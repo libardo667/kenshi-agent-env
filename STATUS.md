@@ -21,10 +21,10 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
   failure, cancellation, and exception exits. Executed live runs return a
   distinct failure code unless fresh telemetry confirms pause; cleanup input
   requires a causally later confirmation.
-- A final in-lease authorization fence: after the lease is acquired and just
-  before the first primitive, canonical state is re-read and plan assumptions,
-  preconditions, control mode, calibration, and human-input and emergency-stop
-  evidence are revalidated. Lost authority emits zero input.
+- A final in-lease authorization fence covers ordinary planner-authored actions
+  in both schedulers: just before the first primitive, current state, action and
+  reference safety, plan conditions, control mode, calibration, human input, and
+  emergency-stop evidence are revalidated. Lost authority emits zero input.
 - Human input cancels the active plan and hands control over visibly. The
   long-form profile may restore a running world after a quiet, resettable
   takeover countdown; F12 disarms automatic takeover for the run.
@@ -41,27 +41,24 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
 
 ## Live profiles
 
-- `config/live.longform.yaml` — open-ended supervised profile: `native_assisted`,
-  `continuous`, `dialogue_interaction_v1`, unpaused world, persistent plan
-  memory, the contracted catalog, the bounded advisor, explicit acknowledgements.
+- `config/live.longform.yaml` — open-ended supervised `native_assisted`,
+  continuous, unpaused profile with dialogue, memory, advisor, and acknowledgements.
 - `config/live.dialogue.yaml` — shorter stop-motion proof profile.
-- `config/live.burnin.yaml` — legacy single-step calibrated profile; its former
-  `food_procurement_v1` policy is retired and its continuous policy is
-  `disabled`.
+- `config/live.burnin.yaml` — legacy single-step calibrated profile; its
+  continuous and former food-procurement policies are retired.
 
-From WSL, `./dev journey` preserves exact planner argv; `./dev close` performs
-a guarded `WM_CLOSE`; `./dev crash` archives evidence before bounded dismissal.
+From WSL, `./dev journey` preserves exact planner argv; `./dev close` confirms pause
+then guards `WM_CLOSE`; `./dev crash` archives evidence before bounded dismissal.
 Supervised runs have demonstrated generic approach and dialogue activation,
 semantic startup, inventory and trade navigation, one-step purchases with
 confirmed debits, readable world deltas, persistent continuous memory, and
-human-control handback. Selling and equipping have guarded implementations and
-portable coverage but no completed live proof. Native walking supports
-exact-character destinations, a targetless bounded direction order, and a
-no-argument building exit; all movement orders share a ten-second
-continuous-unpaused no-progress terminal, so a blocked order cannot poison later
-movement. During exact native commands, engine-native camera follow is reasserted
-each frame and live-proven through one short obstructed move. Exact contextual
-operation is live-proven on one Copper Resource through `context_task_started`,
+human-control handback. One run planned during native options in an unpaused
+world and ended safely paused, but proved no income or task persistence. Selling
+and equipping have guarded portable coverage but no live proof. Native walking
+supports exact characters, bounded direction, and no-argument exits; a shared
+ten-second no-progress terminal prevents poisoning later movement. Native camera
+follow has one obstructed-move proof. Exact contextual operation is live-proven
+on one Copper Resource through `context_task_started`,
 the visible `Operating machine` goal, and a safe final pause.
 
 ## Native protocol 1.0.0
@@ -87,7 +84,12 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
-  brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
+  brief and current Kenshi evidence. One live call returned truncated invalid
+  JSON; synthetic proofs do not satisfy the requirement.
+- Resource output cells are observable with owner window, section, item, and
+  bounds once a human opens the target inventory, but no action opens that exact
+  contextual inventory or transfers its output. Ongoing tasks also lack retained
+  option ownership, so a planner can reissue `operate` instead of waiting.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
@@ -104,10 +106,8 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   postcondition, but most success conditions are still planner-authored. Only
   `controller_verified` contracts carry controller-owned effect proof, so later
   correlated state can still be mistaken for the intended effect.
-- `use_game_binding(pause)` can toggle an unpaused game even when
-  `allow_live_unpause_actions=false`, because that guard applies only to direct
-  `PauseAction`. Game bindings use a hard-coded key map rather than parsing the
-  active `controls.cfg`.
+- Game bindings use a hard-coded key map rather than parsing the active
+  `controls.cfg`.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name,
   internal task stacks, trader money, occlusion, and distant world state are
   unavailable or unvalidated; source-scan capacity still makes absence unknown.

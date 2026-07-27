@@ -42,16 +42,21 @@ authorized quiet interval the agent observes and replans rather than replaying
 interrupted intent. The `./dev launch` path uses the same bounded lease, and any
 new human input is terminal for that launch attempt.
 
-Because the lease wait is unbounded by design, every continuous step carries a
-bounded `ExecutionToken` into dispatch. Details in
-[ADR_INPUT_BOUNDARY_AUTHORITY](docs/ADR_INPUT_BOUNDARY_AUTHORITY.md) and
+Because the lease wait is unbounded by design, every ordinary planner-authored
+live action in both schedulers carries a bounded `ExecutionToken` into dispatch.
+Details in [ADR_UNIFIED_INPUT_BOUNDARY_AUTHORITY](docs/ADR_UNIFIED_INPUT_BOUNDARY_AUTHORITY.md) and
 [ADR_CALIBRATION_IDENTITY](docs/ADR_CALIBRATION_IDENTITY.md); the operator-facing
-guarantee is that a regressed revision, changed control mode, withdrawn
-capability, human input, emergency stop, calibration mismatch, or any assumption
-or precondition no longer `true` emits **zero input** and returns an explicit
-`InputBoundaryRejected` receipt. `unknown`, `unavailable`, and `stale` block
-input exactly as `false` does. This window is never closed by shortening the
-lease timeout or disabling polite handoff.
+guarantee is that stale telemetry, a regressed revision, changed control mode,
+withdrawn capability or reference, human input, emergency stop, calibration
+mismatch, or any plan condition no longer `true` emits **zero input** and returns
+an explicit `InputBoundaryRejected` receipt. `unknown`, `unavailable`, and
+`stale` block input exactly as `false` does. This window is never closed by
+shortening the lease timeout or disabling polite handoff.
+
+The supported `./dev close` path owns pause-before-close: an unpaused loaded
+world must advance to a causally confirmed pause before `WM_CLOSE`. It then
+re-reads telemetry and still refuses an active native command, modal, or
+dialogue. Failure never falls through to force termination or ad-hoc input.
 
 ## What the native bridge may do
 
@@ -94,12 +99,6 @@ local action. Cleanup is not successful until a causally later revision with
 
 ## Explicit gaps
 
-- `allow_live_unpause_actions=false` is enforced only for direct
-  `PauseAction(paused=false)`. The allowlisted `UseGameBindingAction(pause)` can
-  still toggle an unpaused game.
-- The verified cleanup above belongs to supervisor preemption alone. Normal stop,
-  budget exhaustion, cancellation, exception, and completion exits share no
-  final-state policy; `LiveEnvironment.close()` is intentionally a no-op.
 - Requiring a success condition on a causally later revision does not make it an
   authoritative effect. Most conditions are planner-authored and do not derive an
   operator, expected value, and baseline from bound pre-action state, so later

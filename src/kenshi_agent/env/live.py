@@ -170,6 +170,41 @@ class LiveEnvironment(AgentEnvironment):
     async def observe_without_capture(self) -> Observation:
         return await self._observe(capture=False)
 
+    def input_boundary_observation(self) -> Observation:
+        """Read telemetry and ownership again inside the acquired input lease."""
+
+        events: list[str] = []
+        if self.execute_actions and self.controller.continuous_user_input_detected():
+            events.append("human_input_detected")
+            diagnostic = self.controller.continuous_user_input_diagnostic()
+            if diagnostic is not None:
+                events.append(diagnostic)
+        if self.controller.emergency_stop_pressed(self.emergency_stop_key):
+            events.append("emergency_stop_detected")
+        try:
+            result = self.telemetry_reader.read()
+        except TelemetryReadError as exc:
+            return Observation(
+                run_id=self.run_id,
+                step_index=self._step_index,
+                mode="live",
+                control_mode=self.control_mode,
+                world_revision=WorldStateRevision(
+                    capability_epoch=self._capability_epoch,
+                    observed_at_monotonic=time.monotonic(),
+                ),
+                telemetry_stale=True,
+                events=[*events, str(exc)],
+            )
+        if result.stale:
+            events.append(f"Telemetry is stale by {result.age_seconds:.2f} seconds.")
+        return self._observation_from_snapshot(
+            result.snapshot,
+            telemetry_stale=result.stale,
+            telemetry_age_seconds=result.age_seconds,
+            events=events,
+        )
+
     async def _observe(self, *, capture: bool) -> Observation:
         events: list[str] = []
         if self.execute_actions and self.controller.continuous_user_input_detected():
@@ -268,7 +303,14 @@ class LiveEnvironment(AgentEnvironment):
             }
         )
 
-    def _observation_from_snapshot(self, snapshot: TelemetrySnapshot) -> Observation:
+    def _observation_from_snapshot(
+        self,
+        snapshot: TelemetrySnapshot,
+        *,
+        telemetry_stale: bool = False,
+        telemetry_age_seconds: float = 0.0,
+        events: list[str] | None = None,
+    ) -> Observation:
         """A minimal current observation for in-lease reference re-resolution.
 
         Deliberately not a full `observe()`: no capture, no event collection, no
@@ -278,6 +320,12 @@ class LiveEnvironment(AgentEnvironment):
         """
 
         telemetry = self._apply_control_mode(snapshot)
+        capability_signature = tuple(sorted(telemetry.capabilities))
+        capability_epoch = self._capability_epoch + (
+            1
+            if capability_signature != self._last_capability_signature
+            else 0
+        )
         return Observation(
             run_id=self.run_id,
             step_index=self._step_index,
@@ -285,12 +333,13 @@ class LiveEnvironment(AgentEnvironment):
             control_mode=self.control_mode,
             world_revision=WorldStateRevision(
                 telemetry_sequence=telemetry.sequence,
-                capability_epoch=self._capability_epoch,
+                capability_epoch=capability_epoch,
                 observed_at_monotonic=time.monotonic(),
             ),
             telemetry=telemetry,
-            telemetry_stale=False,
-            telemetry_age_seconds=0.0,
+            telemetry_stale=telemetry_stale,
+            telemetry_age_seconds=telemetry_age_seconds,
+            events=events or [],
         )
 
     async def step(self, action: Action) -> Transition:

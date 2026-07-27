@@ -189,10 +189,9 @@ yourself, in whatever order the current evidence supports.
   `toggle_stats` the stats window. There is no widget to hunt for, but a
   customized keymap is not currently supported.
 - Time is a binding too. `pause` toggles pause; `speed_1`, `speed_2` and
-  `speed_3` set the speed. Current policy does not apply
-  `allow_live_unpause_actions` to `use_game_binding(pause)`, so do not use that
-  binding to bypass a blocked direct unpause. The physical keys are shipped
-  defaults, not a parsed customized `controls.cfg`.
+  `speed_3` set the speed. Direct unpause and a pause binding that would unpause
+  share the profile's explicit `allow_live_unpause_actions` gate. The physical
+  keys are shipped defaults, not a parsed customized `controls.cfg`.
 - **Camera recovery is one controller action, not a camera plan.** When
   `recover_camera_view` is advertised and the world view is unreadable, author
   exactly `{"kind":"recover_camera_view"}` once. Give that step

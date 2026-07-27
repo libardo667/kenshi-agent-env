@@ -5,6 +5,7 @@ from collections.abc import Coroutine
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from functools import partial
 from math import dist
 from time import monotonic
 from typing import Any, TypeVar
@@ -33,8 +34,10 @@ from .final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
 )
+from .input_boundary import ExecutionToken
 from .memory import MemoryStore
 from .models import (
+    Action,
     ActionOutcome,
     ActionOutcomeAssessment,
     ActionReceipt,
@@ -48,6 +51,7 @@ from .models import (
     CommandDispatchContext,
     ConsultAdvisorAction,
     ControlMode,
+    InputBoundaryDecision,
     LiveContinuousPolicy,
     MemoryKind,
     MemoryWrite,
@@ -223,6 +227,19 @@ class AgentRuntime:
             confidence=1.0,
         )
 
+    def _action_authority_error(
+        self,
+        action: Action,
+        observation: Observation,
+    ) -> str | None:
+        """Return why an ordinary action lost authority, without spending twice."""
+
+        try:
+            self.guard.revalidate(action, observation)
+        except SafetyViolation as exc:
+            return str(exc)
+        return None
+
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
         if self.planning_config.mode == PlanningMode.CONTINUOUS:
             return await self._run_continuous(max_steps=max_steps, seed=seed)
@@ -387,9 +404,23 @@ class AgentRuntime:
                         command_id=new_command_id(),
                         based_on_revision=observation.world_revision,
                     )
+                    token = ExecutionToken(
+                        plan_id="single-step",
+                        plan_version=1,
+                        step_id=f"step-{observation.step_index}",
+                        command_id=dispatch_context.command_id,
+                        control_mode=self.control_mode,
+                        validated_revision=observation.world_revision,
+                        latest_observation=self.environment.input_boundary_observation,
+                        authority_validator=partial(
+                            self._action_authority_error,
+                            action,
+                        ),
+                    )
                     transition = await self.environment.dispatch(
                         action,
                         command=dispatch_context,
+                        token=token,
                     )
                     if transition.receipt.command_id not in {
                         None,
@@ -417,6 +448,17 @@ class AgentRuntime:
                             )
                         }
                     )
+                    boundary = transition.receipt.input_boundary
+                    if boundary is not None:
+                        self.logger.write(
+                            (
+                                "input_boundary_rejected"
+                                if boundary.decision is InputBoundaryDecision.REJECTED
+                                else "input_boundary_revalidated"
+                            ),
+                            step_index=observation.step_index,
+                            payload=boundary,
+                        )
                 except Exception as exc:
                     self.logger.write(
                         "environment_error",

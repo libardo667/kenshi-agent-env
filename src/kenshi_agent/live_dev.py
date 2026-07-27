@@ -38,7 +38,7 @@ from .display_lease import (
     DisplayTopologyController,
     external_display_lease,
 )
-from .final_safe_state import ensure_final_safe_state
+from .final_safe_state import FinalSafeStateStatus, ensure_final_safe_state
 from .gpu_events import (
     GpuTdrDetected,
     GpuTdrEvent,
@@ -1343,32 +1343,71 @@ async def _launch(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _close_kenshi_safely(
+    config: AppConfig,
+    controller: Win32InputController,
+    telemetry: TelemetryReader,
+    *,
+    timeout_seconds: float,
+    process_names: Callable[[], set[str]],
+) -> Literal["loaded_paused", "title"]:
+    """Own pause-before-close and refuse to close through unresolved UI state."""
+
+    if "kenshi_x64.exe" not in process_names():
+        raise LaunchFailed("Kenshi is not running.")
+
+    initial = telemetry.read()
+    if initial.stale:
+        raise LaunchFailed("Safe close requires fresh telemetry.")
+    if initial.snapshot.game.loaded and initial.snapshot.game.paused is not True:
+        outcome = await ensure_final_safe_state(
+            controller=controller,
+            telemetry=telemetry,
+            pause_primitives=[KeyAction(key=config.controls.pause_key)],
+            timeout_seconds=timeout_seconds,
+            input_authorized=True,
+        )
+        if outcome.status is not FinalSafeStateStatus.PAUSE_CONFIRMED:
+            raise LaunchFailed(
+                "Safe close could not causally confirm a pause; "
+                f"WM_CLOSE was not sent. {outcome.reason}"
+            )
+
+    current = telemetry.read()
+    if current.stale:
+        raise LaunchFailed("Safe close requires fresh telemetry.")
+    safe_state = _validate_safe_close_snapshot(
+        current.snapshot.model_dump(mode="json"),
+        max_age_seconds=config.telemetry.max_age_seconds,
+    )
+    controller.request_close()
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if "kenshi_x64.exe" not in process_names():
+            return safe_state
+        await asyncio.sleep(0.25)
+    raise LaunchFailed(
+        "Kenshi did not close before timeout; no force-termination was attempted."
+    )
+
+
 async def _close(args: argparse.Namespace) -> int:
     if os.name != "nt":
         raise SystemExit("The live developer close command must run with Windows Python.")
     config = load_config(args.config)
     try:
-        if "kenshi_x64.exe" not in _running_process_names():
-            raise LaunchFailed("Kenshi is not running.")
-        payload = json.loads(config.telemetry.file.read_text(encoding="utf-8"))
-        safe_state = _validate_safe_close_snapshot(
-            payload,
-            max_age_seconds=config.telemetry.max_age_seconds,
+        safe_state = await _close_kenshi_safely(
+            config,
+            _controller(config),
+            _telemetry_read(config),
+            timeout_seconds=args.timeout,
+            process_names=_running_process_names,
         )
-        controller = _controller(config)
-        controller.request_close()
-        deadline = time.monotonic() + args.timeout
-        while time.monotonic() < deadline:
-            if "kenshi_x64.exe" not in _running_process_names():
-                if safe_state == "title":
-                    print("Kenshi closed from a fresh idle title screen.")
-                else:
-                    print("Kenshi closed from a fresh paused idle state.")
-                return 0
-            await asyncio.sleep(0.25)
-        raise LaunchFailed(
-            "Kenshi did not close before timeout; no force-termination was attempted."
-        )
+        if safe_state == "title":
+            print("Kenshi closed from a fresh idle title screen.")
+        else:
+            print("Kenshi closed from a fresh paused idle state.")
+        return 0
     except (
         FileNotFoundError,
         json.JSONDecodeError,

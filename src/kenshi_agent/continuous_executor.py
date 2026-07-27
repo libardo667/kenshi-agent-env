@@ -191,6 +191,19 @@ class ContinuousPlanExecutor:
         self.consult_advisor = consult_advisor
         self.request_affordance = request_affordance
 
+    def _action_authority_error(
+        self,
+        action: Action,
+        observation: Observation,
+    ) -> str | None:
+        """Return why an action lost authority, without spending its budget twice."""
+
+        try:
+            self.guard.revalidate(action, observation)
+        except SafetyViolation as exc:
+            return str(exc)
+        return None
+
     async def execute(
         self,
         plan: PlanEnvelope,
@@ -940,6 +953,9 @@ class ContinuousPlanExecutor:
             # Deferred: the boundary must read the store when the lease is
             # acquired, not the snapshot that existed at validation time.
             latest_observation=lambda: self.state_store.latest,
+            authority_validator=lambda current: (
+                self._action_authority_error(action, current)
+            ),
             assumptions=tuple(plan.assumptions),
             preconditions=tuple(step.preconditions),
         )

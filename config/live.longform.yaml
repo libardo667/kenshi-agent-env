@@ -237,7 +237,10 @@ safety:
   max_actions_per_minute: 120
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
-  allow_live_unpause_actions: false
+  # This continuous profile explicitly authorizes a running world. Direct
+  # unpause and the pause toggle share this gate; the latter derives its effect
+  # from current fresh pause state and cannot bypass the policy.
+  allow_live_unpause_actions: true
   # Unset: the agent trades freely on this profile. Exact current cell, item,
   # owner-window and seller binding prevents the wrong-item click. The exported
   # item_value is base worth, not an authoritative shop charge, so no preventive

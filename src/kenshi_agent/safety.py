@@ -12,6 +12,7 @@ from .models import (
     ConsultAdvisorAction,
     ControlMode,
     CoordinateSpace,
+    GameBinding,
     MoveCursorAction,
     NativeCommandStatus,
     Observation,
@@ -20,6 +21,7 @@ from .models import (
     RequestAffordanceAction,
     ScrollAction,
     SkillAction,
+    UseGameBindingAction,
     WaitAction,
 )
 from .skills import MacroRegistry
@@ -44,16 +46,37 @@ class ActionGuard:
         self._purchase_count = 0
 
     def validate(self, action: Action, observation: Observation) -> Action:
+        """Validate and reserve the configured per-run/rate authority."""
+
+        return self._validate(action, observation, consume_budget=True)
+
+    def revalidate(self, action: Action, observation: Observation) -> Action:
+        """Re-check current authority without spending the same budget twice."""
+
+        return self._validate(action, observation, consume_budget=False)
+
+    def _validate(
+        self,
+        action: Action,
+        observation: Observation,
+        *,
+        consume_budget: bool,
+    ) -> Action:
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
         contract = contract_for(action)
         if contract is not None:
             self._validate_contracted_action(action, contract, observation)
             if isinstance(action, PurchaseItemAction) and observation.mode == "live":
-                self._validate_generic_purchase(action, observation)
-            self._consume_rate_budget(contract.max_primitive_actions)
-            if isinstance(action, PurchaseItemAction) and observation.mode == "live":
-                self._purchase_count += 1
+                self._validate_generic_purchase(
+                    action,
+                    observation,
+                    check_purchase_limit=consume_budget,
+                )
+            if consume_budget:
+                self._consume_rate_budget(contract.max_primitive_actions)
+                if isinstance(action, PurchaseItemAction) and observation.mode == "live":
+                    self._purchase_count += 1
             return action
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
@@ -93,7 +116,11 @@ class ActionGuard:
                 if action.name == "continue_confirmed_vendor_approach":
                     self._validate_native_vendor_continuation(action, observation)
                 if action.name == "buy_inspected_shop_item":
-                    self._validate_purchase(action, observation)
+                    self._validate_purchase(
+                        action,
+                        observation,
+                        check_purchase_limit=consume_budget,
+                    )
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
                 for primitive in primitives:
                     if primitive.kind not in {
@@ -136,13 +163,14 @@ class ActionGuard:
                 f"Action expands to {primitive_count} primitives; maximum is "
                 f"{self.config.max_primitive_actions_per_step}."
             )
-        self._consume_rate_budget(primitive_count)
-        if (
-            isinstance(action, SkillAction)
-            and action.name == "buy_inspected_shop_item"
-            and observation.mode == "live"
-        ):
-            self._purchase_count += 1
+        if consume_budget:
+            self._consume_rate_budget(primitive_count)
+            if (
+                isinstance(action, SkillAction)
+                and action.name == "buy_inspected_shop_item"
+                and observation.mode == "live"
+            ):
+                self._purchase_count += 1
         return action
 
     def _validate_contracted_action(
@@ -203,6 +231,8 @@ class ActionGuard:
         self,
         action: PurchaseItemAction,
         observation: Observation,
+        *,
+        check_purchase_limit: bool,
     ) -> None:
         """Spending limits for the generic purchase.
 
@@ -230,7 +260,8 @@ class ActionGuard:
         self._validate_exact_selection(action.kind, observation)
         # Each of these is enforced only when the profile actually asks for it.
         if (
-            self.config.max_purchases_per_run is not None
+            check_purchase_limit
+            and self.config.max_purchases_per_run is not None
             and self._purchase_count >= self.config.max_purchases_per_run
         ):
             raise SafetyViolation("Per-run purchase limit has already been reached.")
@@ -362,7 +393,13 @@ class ActionGuard:
                 f"guard control mode {self.control_mode.value!r}."
             )
 
-    def _validate_purchase(self, action: SkillAction, observation: Observation) -> None:
+    def _validate_purchase(
+        self,
+        action: SkillAction,
+        observation: Observation,
+        *,
+        check_purchase_limit: bool,
+    ) -> None:
         if observation.telemetry_stale or observation.telemetry is None:
             raise SafetyViolation("Purchase blocked because live telemetry is stale or absent.")
         telemetry = observation.telemetry
@@ -416,7 +453,8 @@ class ActionGuard:
                 "non-hostile shop owner."
             )
         if (
-            self.config.max_purchases_per_run is not None
+            check_purchase_limit
+            and self.config.max_purchases_per_run is not None
             and self._purchase_count >= self.config.max_purchases_per_run
         ):
             raise SafetyViolation("Per-run purchase limit has already been reached.")
@@ -495,6 +533,22 @@ class ActionGuard:
             if not action.paused and not self.config.allow_live_unpause_actions:
                 raise SafetyViolation(
                     "Direct live unpause is blocked; use a bounded movement pulse."
+                )
+        if (
+            isinstance(action, UseGameBindingAction)
+            and action.binding is GameBinding.PAUSE
+            and observation.mode == "live"
+        ):
+            paused = (
+                observation.telemetry.game.paused if observation.telemetry is not None else None
+            )
+            if paused is None:
+                raise SafetyViolation(
+                    "Pause binding blocked because the current live pause state is unknown."
+                )
+            if paused and not self.config.allow_live_unpause_actions:
+                raise SafetyViolation(
+                    "Live unpause through the pause binding is blocked by policy."
                 )
         if isinstance(action, (ClickAction, MoveCursorAction, ScrollAction)):
             self._validate_pointer_target(action, observation)

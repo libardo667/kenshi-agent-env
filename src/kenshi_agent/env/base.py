@@ -24,6 +24,11 @@ class AgentEnvironment(ABC):
 
         return await self.observe()
 
+    def input_boundary_observation(self) -> Observation | None:
+        """Return current synchronous authority for a real input lease, if any."""
+
+        return None
+
     @abstractmethod
     async def step(self, action: Action) -> Transition:
         raise NotImplementedError

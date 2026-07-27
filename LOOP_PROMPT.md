@@ -157,10 +157,11 @@ an ambiguous or at-most-once action.
 
 Validation before entering a polite input lease is necessary but not sufficient —
 a delayed lease can make UI, target, capability, or calibration evidence
-obsolete. Sensitive actions carry an execution token that runs after the lease is
-acquired and immediately before the first primitive; if the relevant facts
-changed, release the lease and emit zero input. Never paper over this by
-shortening the lease timeout or disabling polite handoff.
+obsolete. Ordinary planner-authored actions in both schedulers carry an execution
+token that runs after the lease is acquired and immediately before the first
+primitive; if action, reference, or plan authority changed, release the lease and
+emit zero input. Never paper over this by shortening the lease timeout or
+disabling polite handoff.
 
 ### 7. Plans are bounded data, not programs
 
@@ -263,18 +264,21 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
+1. **Complete the resource-production option.** `context_task_started` proves
+   issue, not production. Retain the job while the selected character reports
+   its matching goal; use bounded speed/wait policy; then open the exact target's
+   contextual inventory and transfer an exact observed output cell into the
+   selected character. Unchanged work state must not reissue `operate`, and no
+   income claim passes without causal inventory or money evidence.
+2. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
    create source saves; capture dynamic states; use `./dev scenario`, `launch
    --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,
    broke/funded, solo/squad, and day/night. Manual labels and raw reruns are not
    recurrence evidence. Select the first gap supported across verified situations.
-2. **Expand controller-verified contracts.** Most success conditions are still
+3. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one
    class of false success.
-3. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
-   guards only direct `PauseAction`. Bindings also use a hard-coded key map
-   rather than the active `controls.cfg`.
 4. **Add mutation testing.** Test count is not coverage; `mutmut` or
    `cosmic-ray` over `src/kenshi_agent/` is the only cheap answer to whether the
    suite would notice broken code.
@@ -282,6 +286,9 @@ Work top-down. Verify each is still open before starting it.
    is bounded to the nearby-character query.
 6. **Native identity validation** across recruit, dismiss, reorder, KO, death,
    save/load, and zone transitions.
+7. **Harden hosted structured-output truncation.** The advisor can return an
+   EOF-truncated JSON string within its wall-time allowance; make that failure
+   attributable and recoverable without inventing a brief.
 
 ## Continuous-planning semantics
 

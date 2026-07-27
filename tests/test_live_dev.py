@@ -65,6 +65,7 @@ class LaunchController(InputController):
         self.lease_entries = 0
         self.title = title
         self.visible_titles = visible_titles
+        self.close_requested = False
 
     @asynccontextmanager
     async def input_lease(self, *, alt_tab_on_restore: bool = False):
@@ -112,6 +113,9 @@ class LaunchController(InputController):
 
     def client_rect(self) -> WindowRect:
         return self.rect
+
+    def request_close(self) -> None:
+        self.close_requested = True
 
 
 def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
@@ -198,6 +202,80 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
             max_age_seconds=3.0,
             now=observed_at,
         )
+
+
+def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+
+        def idle_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
+            return launch_snapshot(sequence, paused=paused).model_copy(
+                update={
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                    )
+                }
+            )
+
+        telemetry = LaunchTelemetry(
+            idle_snapshot(40, paused=False),
+            idle_snapshot(40, paused=False),
+            idle_snapshot(41, paused=True),
+            idle_snapshot(41, paused=True),
+        )
+
+        await live_dev._close_kenshi_safely(
+            config,
+            controller,
+            telemetry,
+            timeout_seconds=0.1,
+            process_names=lambda: (
+                set() if controller.close_requested else {"kenshi_x64.exe"}
+            ),
+        )
+
+        assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
+        assert controller.close_requested is True
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_supported_close_never_closes_an_unresolved_modal() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+        modal = launch_snapshot(51, paused=True).model_copy(
+            update={
+                "ui": UIState(
+                    active_screen="inventory",
+                    modal_open=True,
+                    dialogue_open=False,
+                )
+            }
+        )
+
+        with pytest.raises(LaunchFailed, match="modal or dialogue"):
+            await live_dev._close_kenshi_safely(
+                config,
+                controller,
+                LaunchTelemetry(modal),
+                timeout_seconds=0.1,
+                process_names=lambda: {"kenshi_x64.exe"},
+            )
+
+        assert controller.safety_actions == []
+        assert controller.close_requested is False
+
+    import asyncio
+
+    asyncio.run(scenario())
 
 
 class LaunchTelemetry:

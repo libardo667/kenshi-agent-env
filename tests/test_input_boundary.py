@@ -10,6 +10,7 @@ fake lease, publish conflicting state, and prove zero input escapes.
 from __future__ import annotations
 
 import asyncio
+import json
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,7 +22,12 @@ from test_live_env import (
     movement_registry,
 )
 
-from kenshi_agent.config import CaptureConfig, ControlsConfig, RuntimeConfig
+from kenshi_agent.config import (
+    CaptureConfig,
+    ControlsConfig,
+    RuntimeConfig,
+    SafetyConfig,
+)
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.models import (
@@ -35,9 +41,15 @@ from kenshi_agent.models import (
     ControlMode,
     InputBoundaryDecision,
     Observation,
+    PlannerDecision,
     SkillAction,
     WorldStateRevision,
 )
+from kenshi_agent.planners.base import Planner
+from kenshi_agent.reflexes import ReflexEngine
+from kenshi_agent.runtime import AgentRuntime
+from kenshi_agent.safety import ActionGuard
+from kenshi_agent.session_log import SessionLogger
 
 
 def environment(
@@ -84,6 +96,7 @@ def observation(
     capabilities: tuple[str, ...] = ("game.pause", "squad.basic"),
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     events: tuple[str, ...] = (),
+    telemetry_stale: bool = False,
 ) -> Observation:
     from kenshi_agent.models import GameState, TelemetrySnapshot, UIState
 
@@ -101,7 +114,7 @@ def observation(
             ui=UIState(selected_character_id=selected_id),
             squad=[CharacterState(id=selected_id, name="Hep", selected=True, alive=True)],
         ),
-        telemetry_stale=False,
+        telemetry_stale=telemetry_stale,
         telemetry_age_seconds=0.0,
         events=list(events),
         objective="Explore nearby.",
@@ -155,7 +168,8 @@ def token_for(
     *,
     validated: WorldStateRevision | None = None,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
-    preconditions: tuple[Condition, ...] = (),
+    assumptions: tuple[Condition, ...] | None = None,
+    preconditions: tuple[Condition, ...] | None = None,
 ) -> ExecutionToken:
     return ExecutionToken(
         plan_id="boundary-plan",
@@ -165,8 +179,16 @@ def token_for(
         control_mode=control_mode,
         validated_revision=validated or revision(10),
         latest_observation=lambda: latest[0],
-        assumptions=(paused_condition(),),
-        preconditions=preconditions or (selection_condition(),),
+        assumptions=(
+            assumptions
+            if assumptions is not None
+            else (paused_condition(),)
+        ),
+        preconditions=(
+            preconditions
+            if preconditions is not None
+            else (selection_condition(),)
+        ),
     )
 
 
@@ -176,7 +198,7 @@ async def dispatch_with_blocking_lease(
     conflict: Observation | None,
     validated: WorldStateRevision | None = None,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
-    preconditions: tuple[Condition, ...] = (),
+    preconditions: tuple[Condition, ...] | None = None,
     action: object | None = None,
 ) -> tuple[BlockingLeaseController, object]:
     """Start a dispatch, swap canonical state while the lease waits, release it."""
@@ -341,6 +363,134 @@ def test_revision_regression_at_boundary_blocks_input(tmp_path: Path) -> None:
         boundary = transition.receipt.input_boundary  # type: ignore[attr-defined]
         assert boundary.decision is InputBoundaryDecision.REJECTED
         assert "regressed" in boundary.reason
+
+    asyncio.run(scenario())
+
+
+def test_stale_canonical_observation_at_boundary_blocks_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = BlockingLeaseController(telemetry)
+        live = environment(tmp_path, telemetry, controller)
+        await live.reset()
+        latest: list[Observation | None] = [observation()]
+        token = token_for(latest, assumptions=(), preconditions=())
+        task = asyncio.create_task(
+            live.dispatch(
+                movement_action(),
+                command=CommandDispatchContext(
+                    command_id=token.command_id,
+                    based_on_revision=token.validated_revision,
+                ),
+                token=token,
+            )
+        )
+        await controller.lease_entered.wait()
+        latest[0] = observation(sequence=11, telemetry_stale=True)
+        controller.release_lease.set()
+        transition = await task
+
+        assert controller.actions == []
+        boundary = transition.receipt.input_boundary  # type: ignore[attr-defined]
+        assert boundary.decision is InputBoundaryDecision.REJECTED
+        assert "stale" in boundary.reason
+
+    asyncio.run(scenario())
+
+
+def test_action_authority_change_at_boundary_blocks_input() -> None:
+    latest: list[Observation | None] = [observation(sequence=11)]
+    token = ExecutionToken(
+        plan_id="boundary-plan",
+        plan_version=1,
+        step_id="operate",
+        command_id="cmd-" + "0" * 32,
+        control_mode=ControlMode.INTERFACE_ONLY,
+        validated_revision=revision(10),
+        latest_observation=lambda: latest[0],
+        authority_validator=lambda current: (
+            "the exact target disappeared" if current.telemetry is not None else None
+        ),
+    )
+
+    boundary = token.revalidate()
+
+    assert boundary.decision is InputBoundaryDecision.REJECTED
+    assert "exact target disappeared" in boundary.reason
+
+
+def test_single_step_live_dispatch_carries_boundary_authority(
+    tmp_path: Path,
+) -> None:
+    class StaleOnceTelemetry(PulseTelemetry):
+        stale_once = False
+
+        def read(self):  # type: ignore[no-untyped-def]
+            if not self.stale_once:
+                return super().read()
+            self.stale = True
+            result = super().read()
+            self.stale = False
+            self.stale_once = False
+            return result
+
+    class OneMovePlanner(Planner):
+        async def decide(self, current: Observation) -> PlannerDecision:
+            del current
+            return PlannerDecision(
+                intent="Move once.",
+                rationale="Exercise single-step boundary authority.",
+                action=movement_action(),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        telemetry = StaleOnceTelemetry()
+        controller = BlockingLeaseController(telemetry)
+        live = environment(tmp_path, telemetry, controller)
+        macros = movement_registry()
+        logger = SessionLogger(tmp_path / "single-step-boundary.jsonl", "boundary-test")
+        runtime = AgentRuntime(
+            run_id="boundary-test",
+            environment=live,
+            planner=OneMovePlanner(),
+            guard=ActionGuard(
+                SafetyConfig(
+                    allow_action_kinds=["skill"],
+                    allow_skills=["move_visible_terrain"],
+                    max_actions_per_minute=500,
+                ),
+                macros,
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+        )
+        try:
+            task = asyncio.create_task(runtime.run(max_steps=1))
+            await asyncio.wait_for(controller.lease_entered.wait(), timeout=1.0)
+            telemetry.stale_once = True
+            controller.release_lease.set()
+            await task
+        finally:
+            logger.close()
+
+        assert controller.actions == []
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "single-step-boundary.jsonl").read_text().splitlines()
+        ]
+        boundary = next(
+            event for event in events if event["event_type"] == "input_boundary_rejected"
+        )
+        assert boundary["payload"]["decision"] == "rejected"
+        receipt = next(event for event in events if event["event_type"] == "action_receipt")
+        assert receipt["payload"]["accepted"] is False
+        assert receipt["payload"]["primitive_actions"] == 0
 
     asyncio.run(scenario())
 
