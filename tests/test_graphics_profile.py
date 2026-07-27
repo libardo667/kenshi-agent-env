@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from kenshi_agent.config import load_config
 from kenshi_agent.graphics_profile import (
     GraphicsProfile,
     apply_graphics_profile,
@@ -18,20 +19,82 @@ def profile(**settings: str) -> GraphicsProfile:
     )
 
 
-def test_repository_stability_profile_is_strict_and_versioned() -> None:
+def test_live_profiles_share_a_strictly_lower_workload_than_v2() -> None:
     root = Path(__file__).resolve().parents[1]
-
-    loaded = load_graphics_profile(
+    baseline = load_graphics_profile(
         root / "config" / "graphics" / "iris-xe-stability-v2.yaml"
     )
+    live_configs = (
+        root / "config" / "live.burnin.yaml",
+        root / "config" / "live.dialogue.yaml",
+        root / "config" / "live.longform.yaml",
+    )
+    loaded_configs = tuple(load_config(config_path) for config_path in live_configs)
+    active_paths = {
+        config.launch.graphics_profile_file
+        for config in loaded_configs
+    }
+    assert None not in active_paths
+    assert len(active_paths) == 1
+    assert all(
+        (config.controls.calibrated_client_width, config.controls.calibrated_client_height)
+        == (1920, 1080)
+        for config in loaded_configs
+    )
+    active_path = active_paths.pop()
+    assert active_path is not None
+    active = load_graphics_profile(active_path)
 
-    assert loaded.format_version == 1
-    assert loaded.profile_id == "iris-xe-stability-v2"
-    assert loaded.settings["texture resolution gimping"] == "3"
-    assert loaded.settings["view distance"] == "1500"
-    assert loaded.settings["water reflection"] == "0"
-    assert loaded.settings["FXAA"] == "0"
-    assert loaded.settings["HeatHaze"] == "0"
+    lower_is_cheaper = {
+        "terrain hi-res distance",
+        "view distance",
+        "water reflection",
+        "shadow mode",
+        "terrain detail",
+        "terrain distant",
+        "grass range",
+        "grass density",
+        "foliage range",
+        "npc range",
+        "objects view range",
+        "feature range",
+        "distant town range",
+        "generate distant towns",
+        "reflection range",
+        "shadow quality",
+        "Shadow Range",
+        "Decal Resolution",
+        "Decal Range",
+        "FXAA",
+        "HeatHaze",
+    }
+    higher_is_cheaper = {"texture resolution gimping"}
+    assert active.settings.keys() == baseline.settings.keys()
+    workload_deltas = {
+        key: (
+            float(active.settings[key]),
+            float(baseline.settings[key]),
+        )
+        for key in lower_is_cheaper
+    }
+
+    assert all(
+        active_value <= baseline_value
+        for active_value, baseline_value in workload_deltas.values()
+    )
+    assert any(
+        active_value < baseline_value
+        for active_value, baseline_value in workload_deltas.values()
+    )
+    assert all(
+        float(active.settings[key]) >= float(baseline.settings[key])
+        for key in higher_is_cheaper
+    )
+    unchanged = active.settings.keys() - lower_is_cheaper - higher_is_cheaper
+    assert all(
+        active.settings[key] == baseline.settings[key]
+        for key in unchanged
+    )
 
 
 def test_verify_reports_missing_and_different_settings_case_insensitively(

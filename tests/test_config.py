@@ -130,7 +130,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.launch.require_steam_logged_on
     assert config.launch.require_graphics_profile
     assert config.launch.graphics_profile_file == (
-        root / "config" / "graphics" / "iris-xe-stability-v2.yaml"
+        root / "config" / "graphics" / "iris-xe-stability-v3.yaml"
     ).resolve()
     assert config.launch.min_free_physical_memory_mib == 4096
     assert config.launch.post_load_health_seconds == 45

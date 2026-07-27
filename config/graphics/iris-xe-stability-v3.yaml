@@ -1,0 +1,32 @@
+format_version: 1
+profile_id: iris-xe-stability-v3
+description: >-
+  Harsher renderer-stability candidate for the 16 GiB Surface Laptop 5 with
+  integrated Intel Iris Xe graphics. It preserves the calibrated 1920x1080
+  client and gameplay population while cutting the remaining world, entity,
+  feature, distant-town, and decal ranges below the v2 candidate.
+settings:
+  camera zoom: "0"
+  terrain hi-res distance: "200"
+  view distance: "1000"
+  Fast zone hopping: "0"
+  texture resolution gimping: "3"
+  water reflection: "0"
+  shadow mode: "0"
+  terrain detail: "0"
+  terrain distant: "0"
+  grass range: "0"
+  grass density: "0"
+  foliage range: "0"
+  npc range: "1500"
+  objects view range: "1000"
+  feature range: "0"
+  distant town range: "0"
+  generate distant towns: "0"
+  reflection range: "0"
+  shadow quality: "0"
+  Shadow Range: "1000"
+  Decal Resolution: "512"
+  Decal Range: "0"
+  FXAA: "0"
+  HeatHaze: "0"
