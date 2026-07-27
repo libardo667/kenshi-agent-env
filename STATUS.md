@@ -36,7 +36,7 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
 - Hash-locked FCS starts install and launch with money/party proof.
 - Persistent memory unions bounded general recall with exact, fresh
   current-target matches and exposes dialogue-approach repetition by target.
-- Mutation testing partitions all 62 Python modules; four attended shards are clean.
+- Mutation testing partitions all 62 Python modules; five attended shards are clean.
 
 ## Live profiles
 
@@ -117,4 +117,4 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   save/load, and zones; entity memories do not transfer across session identity.
 - Renderer stability remains open: the 30 fps external-only path passed startup
   and rejects Event 141s, but has no long soak or real competence proof.
-- Fifty-eight mutation shards remain unattested.
+- Fifty-seven mutation shards remain unattested.

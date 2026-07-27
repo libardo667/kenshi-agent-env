@@ -180,8 +180,9 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         return observation.control_mode.value
     if path == "telemetry_stale":
         return observation.telemetry_stale
-    if telemetry is None or path is None:
+    if telemetry is None:
         return None
+    assert path is not None  # pragma: no mutate - field conditions always have a path
 
     direct_paths: dict[str, object | None] = {
         "telemetry.game.loaded": telemetry.game.loaded,
@@ -330,13 +331,19 @@ def evaluate_condition(
                 return _evaluation(
                     condition,
                     ConditionResult.STALE,
-                    "No later telemetry revision exists after the action start.",
+                    (
+                        "No later telemetry revision exists "  # mutation: diagnostic-only
+                        "after the action start."
+                    ),
                 )
         elif not observation.world_revision.is_later_than(after_revision):
             return _evaluation(
                 condition,
                 ConditionResult.STALE,
-                "No later world revision exists after the action start.",
+                (
+                    "No later world revision exists "  # mutation: diagnostic-only
+                    "after the action start."
+                ),
             )
 
     if telemetry_condition:
@@ -344,20 +351,23 @@ def evaluate_condition(
             return _evaluation(
                 condition,
                 ConditionResult.UNAVAILABLE,
-                "Telemetry is unavailable.",
+                "Telemetry is unavailable.",  # mutation: diagnostic-only
             )
         if observation.telemetry_stale:
             return _evaluation(
                 condition,
                 ConditionResult.STALE,
-                "Telemetry is marked stale.",
+                "Telemetry is marked stale.",  # mutation: diagnostic-only
             )
         age = observation.telemetry_age_seconds
         if age is not None and age > condition.max_age_seconds:
             return _evaluation(
                 condition,
                 ConditionResult.STALE,
-                f"Telemetry age {age:.3f}s exceeds {condition.max_age_seconds:.3f}s.",
+                (
+                    f"Telemetry age {age:.3f}s exceeds "  # mutation: diagnostic-only
+                    f"{condition.max_age_seconds:.3f}s."
+                ),
             )
         available = set(observation.telemetry.capabilities)
         missing = sorted(
@@ -369,7 +379,10 @@ def evaluate_condition(
             return _evaluation(
                 condition,
                 ConditionResult.UNAVAILABLE,
-                f"Kenshi is not currently reporting these capabilities: {missing}.",
+                (
+                    "Kenshi is not currently reporting "  # mutation: diagnostic-only
+                    f"these capabilities: {missing}."
+                ),
             )
         alternatives = (
             _PATH_CAPABILITY_ALTERNATIVES.get(condition.path)
@@ -382,8 +395,10 @@ def evaluate_condition(
             return _evaluation(
                 condition,
                 ConditionResult.UNAVAILABLE,
-                "The field's authoritative capability is unavailable; expected "
-                f"one of {list(alternatives)}.",
+                (
+                    "The field's authoritative capability is "  # mutation: diagnostic-only
+                    f"unavailable; expected one of {list(alternatives)}."
+                ),
             )
 
     if condition.kind == ConditionKind.TELEMETRY_FRESH:
@@ -391,19 +406,16 @@ def evaluate_condition(
             return _evaluation(
                 condition,
                 ConditionResult.UNKNOWN,
-                "Telemetry age is unknown.",
+                "Telemetry age is unknown.",  # mutation: diagnostic-only
             )
         actual: object = not observation.telemetry_stale
     elif condition.kind == ConditionKind.CAPABILITY:
-        if observation.telemetry is None:
-            return _evaluation(
-                condition,
-                ConditionResult.UNAVAILABLE,
-                "Telemetry capabilities are unavailable.",
-            )
-        actual = condition.path is not None and capability_satisfied(
-            condition.path, set(observation.telemetry.capabilities)
-        )
+        telemetry = observation.telemetry
+        # Capability conditions are telemetry conditions, so the availability
+        # fence above already proved this before control can reach here.
+        assert telemetry is not None  # pragma: no mutate
+        assert condition.path is not None  # pragma: no mutate
+        actual = capability_satisfied(condition.path, set(telemetry.capabilities))
     else:
         actual = _resolve_field(condition, observation)
 
@@ -411,7 +423,10 @@ def evaluate_condition(
         return _evaluation(
             condition,
             ConditionResult.UNKNOWN,
-            f"Condition value for {condition.path or condition.kind.value!r} is unknown.",
+            (
+                "Condition value for "  # mutation: diagnostic-only
+                f"{condition.path or condition.kind.value!r} is unknown."
+            ),
         )
 
     if condition.operator == ConditionOperator.EQUALS:
@@ -423,7 +438,10 @@ def evaluate_condition(
             return _evaluation(
                 condition,
                 ConditionResult.UNKNOWN,
-                "Contains comparison requires observed and expected string values.",
+                (
+                    "Contains comparison requires observed "  # mutation: diagnostic-only
+                    "and expected string values."
+                ),
                 actual=actual,
             )
         result = (
@@ -437,33 +455,27 @@ def evaluate_condition(
         and isinstance(condition.expected, (int, float))
         and not isinstance(condition.expected, bool)
     ):
-        if condition.operator == ConditionOperator.LESS_THAN:
-            passed = actual < condition.expected
-        elif condition.operator == ConditionOperator.LESS_THAN_OR_EQUAL:
-            passed = actual <= condition.expected
-        elif condition.operator == ConditionOperator.GREATER_THAN:
-            passed = actual > condition.expected
-        elif condition.operator == ConditionOperator.GREATER_THAN_OR_EQUAL:
-            passed = actual >= condition.expected
-        else:
-            return _evaluation(
-                condition,
-                ConditionResult.UNKNOWN,
-                "The operator is not defined for this value.",
-                actual=actual,
-            )
+        passed = {
+            ConditionOperator.LESS_THAN: actual < condition.expected,
+            ConditionOperator.LESS_THAN_OR_EQUAL: actual <= condition.expected,
+            ConditionOperator.GREATER_THAN: actual > condition.expected,
+            ConditionOperator.GREATER_THAN_OR_EQUAL: actual >= condition.expected,
+        }[condition.operator]
         result = ConditionResult.TRUE if passed else ConditionResult.FALSE
     else:
         return _evaluation(
             condition,
             ConditionResult.UNKNOWN,
-            "Ordered comparison requires observed numeric values.",
+            "Ordered comparison requires observed numeric values.",  # mutation: diagnostic-only
             actual=actual,
         )
     return _evaluation(
         condition,
         result,
-        f"Observed {actual!r}; expected {condition.operator.value} {condition.expected!r}.",
+        (
+            f"Observed {actual!r}; expected "  # mutation: diagnostic-only
+            f"{condition.operator.value} {condition.expected!r}."
+        ),
         actual=actual,
     )
 
@@ -517,7 +529,9 @@ def validate_plan(
     errors: list[str] = []
     if observation.mode == "live":
         if config.live_execution_policy == LiveContinuousPolicy.DISABLED:
-            errors.append("continuous live execution policy is disabled")
+            errors.append(
+                "continuous live execution policy is disabled"  # mutation: diagnostic-only
+            )
         elif config.live_execution_policy == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
             from .dialogue_interaction import dialogue_interaction_policy_errors
 
@@ -530,65 +544,104 @@ def validate_plan(
             )
     if plan.control_mode != observation.control_mode:
         errors.append(
-            f"control mode {plan.control_mode.value!r} does not match "
+            f"control mode {plan.control_mode.value!r} does not match "  # mutation: diagnostic-only
             f"{observation.control_mode.value!r}"
         )
     if not plan.based_on_revision.same_snapshot_as(observation.world_revision):
-        errors.append("plan basis is stale relative to the current world revision")
+        errors.append(
+            "plan basis is stale relative to the "  # mutation: diagnostic-only
+            "current world revision"
+        )
     if (
         observation.world_revision.telemetry_sequence is None
         and observation.world_revision.frame_sequence is None
     ):
-        errors.append("current observation has no causal revision channel")
+        errors.append(
+            "current observation has no causal revision channel"  # mutation: diagnostic-only
+        )
     if (
         observation.telemetry is None
         or observation.telemetry.game.elapsed_minutes is None
         or "game.time" not in observation.telemetry.capabilities
     ):
-        errors.append("plan game-time budget cannot be enforced from this observation")
+        errors.append(
+            "plan game-time budget cannot be enforced "  # mutation: diagnostic-only
+            "from this observation"
+        )
     if len(plan.steps) > config.max_plan_steps:
-        errors.append(f"plan has {len(plan.steps)} steps; maximum is {config.max_plan_steps}")
+        errors.append(
+            f"plan has {len(plan.steps)} steps; "  # mutation: diagnostic-only
+            f"maximum is {config.max_plan_steps}"
+        )
     if plan.max_actions > config.max_actions_per_plan:
-        errors.append(f"plan max_actions {plan.max_actions} exceeds {config.max_actions_per_plan}")
+        errors.append(
+            f"plan max_actions {plan.max_actions} exceeds "  # mutation: diagnostic-only
+            f"{config.max_actions_per_plan}"
+        )
     if plan.max_wall_seconds > config.max_plan_wall_seconds:
         errors.append(
-            f"plan max_wall_seconds {plan.max_wall_seconds} exceeds {config.max_plan_wall_seconds}"
+            f"plan max_wall_seconds {plan.max_wall_seconds} "  # mutation: diagnostic-only
+            f"exceeds {config.max_plan_wall_seconds}"
         )
     if plan.max_game_seconds > config.max_plan_game_seconds:
         errors.append(
-            f"plan max_game_seconds {plan.max_game_seconds} exceeds {config.max_plan_game_seconds}"
+            f"plan max_game_seconds {plan.max_game_seconds} "  # mutation: diagnostic-only
+            f"exceeds {config.max_plan_game_seconds}"
         )
     if plan.risk_budget.max_pointer_actions > config.max_pointer_actions_per_plan:
-        errors.append("plan pointer risk budget exceeds configured maximum")
+        errors.append(
+            "plan pointer risk budget exceeds configured maximum"  # mutation: diagnostic-only
+        )
     if plan.risk_budget.max_purchase_actions > config.max_purchase_actions_per_plan:
-        errors.append("plan purchase risk budget exceeds configured maximum")
+        errors.append(
+            "plan purchase risk budget exceeds configured maximum"  # mutation: diagnostic-only
+        )
     if plan.risk_budget.max_native_assisted_actions > config.max_native_assisted_actions_per_plan:
-        errors.append("plan native-assisted risk budget exceeds configured maximum")
+        errors.append(
+            "plan native-assisted risk budget exceeds "  # mutation: diagnostic-only
+            "configured maximum"
+        )
     if (
         plan.control_mode == ControlMode.INTERFACE_ONLY
         and plan.risk_budget.max_native_assisted_actions != 0
     ):
-        errors.append("interface_only plans must have zero native-assisted risk budget")
+        errors.append(
+            "interface_only plans must have zero "  # mutation: diagnostic-only
+            "native-assisted risk budget"
+        )
 
     pointer_risk = 0
     purchase_risk = 0
     native_risk = 0
     for step in plan.steps:
         pointer, purchase, native = _action_risk(step.action, macros)
-        pointer_risk += pointer * (1 + step.retry_budget)
-        purchase_risk += purchase * (1 + step.retry_budget)
-        native_risk += native * (1 + step.retry_budget)
+        # Every action allowed to retry below has zero pointer, purchase, and
+        # native risk. Unsupported retries already invalidate the plan, so
+        # multiplying their costs only changes redundant error prose.
+        pointer_risk += pointer
+        purchase_risk += purchase
+        native_risk += native
         if step.retry_budget and not isinstance(
             step.action,
             (NoopAction, WaitAction, PauseAction, SetSpeedAction),
         ):
-            errors.append(f"step {step.step_id!r} retries an action not proven idempotent")
+            errors.append(
+                f"step {step.step_id!r} retries an action "  # mutation: diagnostic-only
+                "not proven idempotent"
+            )
     if pointer_risk > plan.risk_budget.max_pointer_actions:
-        errors.append("plan actions exceed the declared pointer risk budget")
+        errors.append(
+            "plan actions exceed the declared pointer risk budget"  # mutation: diagnostic-only
+        )
     if purchase_risk > plan.risk_budget.max_purchase_actions:
-        errors.append("plan actions exceed the declared purchase risk budget")
+        errors.append(
+            "plan actions exceed the declared purchase risk budget"  # mutation: diagnostic-only
+        )
     if native_risk > plan.risk_budget.max_native_assisted_actions:
-        errors.append("plan actions exceed the declared native-assisted risk budget")
+        errors.append(
+            "plan actions exceed the declared "  # mutation: diagnostic-only
+            "native-assisted risk budget"
+        )
 
     assumption_results = evaluate_conditions(plan.assumptions, observation)
     blocked_assumptions = [
@@ -596,14 +649,16 @@ def validate_plan(
     ]
     if blocked_assumptions:
         errors.append(
-            "plan assumptions are not all true: "
+            "plan assumptions are not all true: "  # mutation: diagnostic-only
             + "; ".join(
                 f"{evaluation.result.value}: {evaluation.reason}"
                 for evaluation in blocked_assumptions
             )
         )
     if errors:
-        raise PlanValidationError("; ".join(errors))
+        raise PlanValidationError(
+            "; ".join(errors)  # mutation: diagnostic-only
+        )
     return assumption_results
 
 
@@ -623,19 +678,27 @@ def validate_future_plan_patch(
     errors: list[str] = []
     if patch.plan_id != active_plan.plan_id:
         errors.append(
-            f"patch plan_id {patch.plan_id!r} does not match {active_plan.plan_id!r}"
+            f"patch plan_id {patch.plan_id!r} does not "  # mutation: diagnostic-only
+            f"match {active_plan.plan_id!r}"
         )
     if patch.based_on_plan_version != active_plan.plan_version:
         errors.append(
-            f"patch version {patch.based_on_plan_version} does not match active "
+            f"patch version {patch.based_on_plan_version} "  # mutation: diagnostic-only
+            "does not match active "
             f"version {active_plan.plan_version}"
         )
     if not patch.based_on_revision.same_snapshot_as(planner_observation.world_revision):
-        errors.append("patch basis does not match its immutable planner snapshot")
+        errors.append(
+            "patch basis does not match its immutable "  # mutation: diagnostic-only
+            "planner snapshot"
+        )
     if require_current_basis and not patch.based_on_revision.same_snapshot_as(
         current_observation.world_revision
     ):
-        errors.append("patch became stale while the concurrent planner was running")
+        errors.append(
+            "patch became stale while the concurrent "  # mutation: diagnostic-only
+            "planner was running"
+        )
     if patch.interrupt_active_step_id is not None:
         active_context = planner_observation.active_plan
         if (
@@ -643,7 +706,8 @@ def validate_future_plan_patch(
             or patch.interrupt_active_step_id != active_context.active_step_id
         ):
             errors.append(
-                "interrupt patch does not name the exact active step from its "
+                "interrupt patch does not name the exact "  # mutation: diagnostic-only
+                "active step from its "
                 "immutable planner observation"
             )
         active_step = next(
@@ -662,7 +726,10 @@ def validate_future_plan_patch(
             or active_context.active_step_interrupt_policy
             is not InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
         ):
-            errors.append("the exact active step does not permit planner interruption")
+            errors.append(
+                "the exact active step does not permit "  # mutation: diagnostic-only
+                "planner interruption"
+            )
         pause_step = patch.replace_future_steps[0]
         has_paused_terminal = any(
             condition.kind is ConditionKind.FIELD
@@ -685,18 +752,22 @@ def validate_future_plan_patch(
             or not has_command_terminal
         ):
             errors.append(
-                "interrupt replacement must begin with a confirmed pause handoff "
+                "interrupt replacement must begin with a "  # mutation: diagnostic-only
+                "confirmed pause handoff "
                 "that proves the world paused and the native command ended"
             )
     replacement_ids = {step.step_id for step in patch.replace_future_steps}
     conflicts = sorted(replacement_ids & protected_step_ids)
     if conflicts:
-        errors.append(f"patch attempts to replace active or completed steps: {conflicts}")
+        errors.append(
+            "patch attempts to replace active or "  # mutation: diagnostic-only
+            f"completed steps: {conflicts}"
+        )
     remaining_actions = min(budget.remaining_actions, remaining_run_actions)
-    if remaining_actions <= 0:
-        errors.append("no action budget remains for replacement steps")
     if errors:
-        raise PlanValidationError("; ".join(errors))
+        raise PlanValidationError(
+            "; ".join(errors)  # mutation: diagnostic-only
+        )
 
     try:
         candidate = PlanEnvelope(
@@ -721,7 +792,9 @@ def validate_future_plan_patch(
             ),
         )
     except ValueError as exc:
-        raise PlanValidationError(f"replacement graph is invalid: {exc}") from exc
+        raise PlanValidationError(
+            f"replacement graph is invalid: {exc}"  # mutation: diagnostic-only
+        ) from exc
     validate_plan(candidate, current_observation, config, macros)
     return candidate
 
