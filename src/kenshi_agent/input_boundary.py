@@ -48,6 +48,7 @@ class ExecutionToken:
     control_mode: ControlMode
     validated_revision: WorldStateRevision
     latest_observation: Callable[[], Observation | None]
+    max_telemetry_age_seconds: float | None
     authority_validator: Callable[[Observation], str | None] | None = None
     assumptions: tuple[Condition, ...] = ()
     preconditions: tuple[Condition, ...] = ()
@@ -137,6 +138,28 @@ class ExecutionToken:
         if observation.telemetry_stale:
             return self._reject(
                 "The canonical telemetry is stale at the input boundary.",
+                lease_wait_seconds=lease_wait_seconds,
+                boundary_revision=boundary_revision,
+            )
+        if self.max_telemetry_age_seconds is None:
+            return self._reject(
+                "The telemetry age ceiling is unknown at the input boundary, so "
+                "fresh authority cannot be proven.",
+                lease_wait_seconds=lease_wait_seconds,
+                boundary_revision=boundary_revision,
+            )
+        if observation.telemetry_age_seconds is None:
+            return self._reject(
+                "The canonical telemetry age is unknown at the input boundary, so "
+                "fresh authority cannot be proven.",
+                lease_wait_seconds=lease_wait_seconds,
+                boundary_revision=boundary_revision,
+            )
+        if observation.telemetry_age_seconds > self.max_telemetry_age_seconds:
+            return self._reject(
+                "The canonical telemetry age at the input boundary "
+                f"({observation.telemetry_age_seconds:.3f}s) exceeds the configured "
+                f"maximum ({self.max_telemetry_age_seconds:.3f}s).",
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )

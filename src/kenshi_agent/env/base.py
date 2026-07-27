@@ -29,6 +29,11 @@ class AgentEnvironment(ABC):
 
         return None
 
+    def input_boundary_max_telemetry_age_seconds(self) -> float | None:
+        """Return the freshness ceiling enforced by a real input lease, if any."""
+
+        return None
+
     @abstractmethod
     async def step(self, action: Action) -> Transition:
         raise NotImplementedError

@@ -961,6 +961,9 @@ class ContinuousPlanExecutor:
             # Deferred: the boundary must read the store when the lease is
             # acquired, not the snapshot that existed at validation time.
             latest_observation=lambda: self.state_store.latest,
+            max_telemetry_age_seconds=(
+                self.environment.input_boundary_max_telemetry_age_seconds()
+            ),
             authority_validator=lambda current: (
                 self._action_authority_error(action, current)
             ),

@@ -219,6 +219,11 @@ class LiveEnvironment(AgentEnvironment):
             events=events,
         )
 
+    def input_boundary_max_telemetry_age_seconds(self) -> float:
+        """Use the same configured freshness ceiling as the telemetry reader."""
+
+        return self.telemetry_reader.max_age_seconds
+
     async def _observe(self, *, capture: bool) -> Observation:
         events: list[str] = []
         if self.execute_actions and self.controller.continuous_user_input_detected():

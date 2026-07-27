@@ -412,6 +412,9 @@ class AgentRuntime:
                         control_mode=self.control_mode,
                         validated_revision=observation.world_revision,
                         latest_observation=self.environment.input_boundary_observation,
+                        max_telemetry_age_seconds=(
+                            self.environment.input_boundary_max_telemetry_age_seconds()
+                        ),
                         authority_validator=partial(
                             self._action_authority_error,
                             action,

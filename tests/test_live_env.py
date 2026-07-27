@@ -65,6 +65,7 @@ class PulseTelemetry:
         self.capabilities: list[str] = []
         self.native_control = NativeControlState()
         self.path = Path("telemetry.json")
+        self.max_age_seconds = 3.0
 
     def read(self) -> TelemetryRead:
         self.sequence += 1

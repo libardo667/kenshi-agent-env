@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -97,6 +98,7 @@ def observation(
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     events: tuple[str, ...] = (),
     telemetry_stale: bool = False,
+    telemetry_age_seconds: float | None = 0.0,
 ) -> Observation:
     from kenshi_agent.models import GameState, TelemetrySnapshot, UIState
 
@@ -115,7 +117,7 @@ def observation(
             squad=[CharacterState(id=selected_id, name="Hep", selected=True, alive=True)],
         ),
         telemetry_stale=telemetry_stale,
-        telemetry_age_seconds=0.0,
+        telemetry_age_seconds=telemetry_age_seconds,
         events=list(events),
         objective="Explore nearby.",
     )
@@ -179,6 +181,7 @@ def token_for(
         control_mode=control_mode,
         validated_revision=validated or revision(10),
         latest_observation=lambda: latest[0],
+        max_telemetry_age_seconds=3.0,
         assumptions=(
             assumptions
             if assumptions is not None
@@ -198,6 +201,7 @@ async def dispatch_with_blocking_lease(
     conflict: Observation | None,
     validated: WorldStateRevision | None = None,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+    assumptions: tuple[Condition, ...] | None = None,
     preconditions: tuple[Condition, ...] | None = None,
     action: object | None = None,
 ) -> tuple[BlockingLeaseController, object]:
@@ -213,6 +217,7 @@ async def dispatch_with_blocking_lease(
         latest,
         validated=validated,
         control_mode=control_mode,
+        assumptions=assumptions,
         preconditions=preconditions,
     )
 
@@ -400,6 +405,29 @@ def test_stale_canonical_observation_at_boundary_blocks_input(
     asyncio.run(scenario())
 
 
+def test_unknown_or_overage_canonical_observation_at_boundary_blocks_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        for age_seconds in (None, 3.001):
+            controller, transition = await dispatch_with_blocking_lease(
+                tmp_path,
+                conflict=observation(
+                    sequence=11,
+                    telemetry_age_seconds=age_seconds,
+                ),
+                assumptions=(),
+                preconditions=(),
+            )
+
+            assert controller.actions == []
+            boundary = transition.receipt.input_boundary  # type: ignore[attr-defined]
+            assert boundary.decision is InputBoundaryDecision.REJECTED
+            assert "age" in boundary.reason
+
+    asyncio.run(scenario())
+
+
 def test_action_authority_change_at_boundary_blocks_input() -> None:
     latest: list[Observation | None] = [observation(sequence=11)]
     token = ExecutionToken(
@@ -410,6 +438,7 @@ def test_action_authority_change_at_boundary_blocks_input() -> None:
         control_mode=ControlMode.INTERFACE_ONLY,
         validated_revision=revision(10),
         latest_observation=lambda: latest[0],
+        max_telemetry_age_seconds=3.0,
         authority_validator=lambda current: (
             "the exact target disappeared" if current.telemetry is not None else None
         ),
@@ -424,17 +453,19 @@ def test_action_authority_change_at_boundary_blocks_input() -> None:
 def test_single_step_live_dispatch_carries_boundary_authority(
     tmp_path: Path,
 ) -> None:
-    class StaleOnceTelemetry(PulseTelemetry):
-        stale_once = False
+    class OverageOnceTelemetry(PulseTelemetry):
+        overage_once = False
 
         def read(self):  # type: ignore[no-untyped-def]
-            if not self.stale_once:
-                return super().read()
-            self.stale = True
             result = super().read()
-            self.stale = False
-            self.stale_once = False
-            return result
+            if not self.overage_once:
+                return result
+            self.overage_once = False
+            return replace(
+                result,
+                age_seconds=self.max_age_seconds + 0.001,
+                stale=False,
+            )
 
     class OneMovePlanner(Planner):
         async def decide(self, current: Observation) -> PlannerDecision:
@@ -447,7 +478,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
             )
 
     async def scenario() -> None:
-        telemetry = StaleOnceTelemetry()
+        telemetry = OverageOnceTelemetry()
         controller = BlockingLeaseController(telemetry)
         live = environment(tmp_path, telemetry, controller)
         macros = movement_registry()
@@ -473,7 +504,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         try:
             task = asyncio.create_task(runtime.run(max_steps=1))
             await asyncio.wait_for(controller.lease_entered.wait(), timeout=1.0)
-            telemetry.stale_once = True
+            telemetry.overage_once = True
             controller.release_lease.set()
             await task
         finally:

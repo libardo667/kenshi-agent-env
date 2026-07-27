@@ -357,6 +357,7 @@ def test_calibration_drift_inside_lease_is_caught_by_the_boundary(tmp_path: Path
                 observed_at_monotonic=10.0,
             ),
             latest_observation=lambda: latest[0],
+            max_telemetry_age_seconds=3.0,
             assumptions=(paused_condition(),),
             preconditions=(selection_condition(),),
         )
