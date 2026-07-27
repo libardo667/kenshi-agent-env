@@ -383,31 +383,54 @@ namespace
     {
         using KenshiAgentTelemetry::AssessNaturalResource;
         using KenshiAgentTelemetry::NaturalResourceAssessment;
+        using KenshiAgentTelemetry::NaturalResourceTargetSnapshot;
+        using KenshiAgentTelemetry::SelectNearestNaturalResourceTargets;
 
-        const NaturalResourceAssessment unavailable =
-            AssessNaturalResource(true, true, true, false, 0.0);
-        if (!unavailable.structurallyRecognized)
-            return Fail("an unavailable natural resource disappeared");
-        if (unavailable.taskAvailable)
-            return Fail("an unavailable natural resource became actionable");
-
-        const NaturalResourceAssessment available =
-            AssessNaturalResource(true, true, true, true, 0.75);
-        if (!available.structurallyRecognized ||
-            !available.taskAvailable ||
-            !EqualDouble(available.taskProbability, 0.75))
+        const NaturalResourceAssessment constructedMine =
+            AssessNaturalResource(true, true, false, true);
+        const NaturalResourceAssessment naturalMine =
+            AssessNaturalResource(true, false, true, true);
+        if (!constructedMine.structurallyRecognized ||
+            !naturalMine.structurallyRecognized)
         {
-            return Fail("an available natural resource lost task eligibility");
+            return Fail("a reviewed mining resource disappeared");
         }
 
-        if (AssessNaturalResource(false, true, true, true, 1.0)
+        if (AssessNaturalResource(false, true, true, true)
                 .structurallyRecognized ||
-            AssessNaturalResource(true, false, true, true, 1.0)
+            AssessNaturalResource(true, false, false, true)
                 .structurallyRecognized ||
-            AssessNaturalResource(true, true, false, true, 1.0)
+            AssessNaturalResource(true, true, false, false)
                 .structurallyRecognized)
         {
             return Fail("a structurally invalid resource was recognized");
+        }
+
+        std::vector<NaturalResourceTargetSnapshot> candidates;
+        NaturalResourceTargetSnapshot far;
+        far.id = "far";
+        far.distance = 300.0;
+        candidates.push_back(far);
+        NaturalResourceTargetSnapshot nearest;
+        nearest.id = "nearest";
+        nearest.distance = 10.0;
+        candidates.push_back(nearest);
+        NaturalResourceTargetSnapshot duplicateNearest = nearest;
+        duplicateNearest.distance = 20.0;
+        candidates.push_back(duplicateNearest);
+        NaturalResourceTargetSnapshot middle;
+        middle.id = "middle";
+        middle.distance = 100.0;
+        candidates.push_back(middle);
+
+        const std::vector<NaturalResourceTargetSnapshot> selected =
+            SelectNearestNaturalResourceTargets(candidates, 2);
+        if (selected.size() != 2 ||
+            selected[0].id != "nearest" ||
+            selected[1].id != "middle")
+        {
+            return Fail(
+                "world targets were not deduplicated and retained nearest-first");
         }
 
         if (!KenshiAgentTelemetry::IsWorldTargetScanAtCapacity(128, 128) ||
@@ -564,37 +587,35 @@ int main(int argc, char** argv)
         return Fail("valid context action did not retain its exact target");
     }
 
-    const std::string unavailableTargetPayload =
-        ReadFile(prefix + "valid_unavailable_natural_resource.json");
-    if (unavailableTargetPayload.empty())
+    const std::string naturalResourcePayload =
+        ReadFile(prefix + "valid_natural_resource.json");
+    if (naturalResourcePayload.empty())
     {
         return Fail(
-            "could not read valid_unavailable_natural_resource.json");
+            "could not read valid_natural_resource.json");
     }
-    KenshiAgentTelemetry::NaturalResourceTargetSnapshot unavailableTarget;
-    unavailableTarget.id = "entity-natural-resource";
-    unavailableTarget.name = "Copper Resource";
-    unavailableTarget.positionX = 10.0;
-    unavailableTarget.positionY = 0.0;
-    unavailableTarget.positionZ = 20.0;
-    unavailableTarget.distance = 30.0;
-    unavailableTarget.taskAvailable = false;
-    unavailableTarget.taskProbability = 0.0;
-    unavailableTarget.miningResourceLevel = 0.8;
-    const std::string unavailableSerialized =
+    KenshiAgentTelemetry::NaturalResourceTargetSnapshot naturalResource;
+    naturalResource.id = "entity-natural-resource";
+    naturalResource.name = "Copper Resource";
+    naturalResource.positionX = 10.0;
+    naturalResource.positionY = 0.0;
+    naturalResource.positionZ = 20.0;
+    naturalResource.distance = 30.0;
+    naturalResource.miningResourceLevel = 0.8;
+    const std::string naturalResourceSerialized =
         KenshiAgentTelemetry::SerializeNaturalResourceTarget(
-            unavailableTarget);
-    std::string unavailableExpected = unavailableTargetPayload;
-    while (!unavailableExpected.empty() &&
-           (unavailableExpected[unavailableExpected.size() - 1] == '\r' ||
-            unavailableExpected[unavailableExpected.size() - 1] == '\n'))
+            naturalResource);
+    std::string naturalResourceExpected = naturalResourcePayload;
+    while (!naturalResourceExpected.empty() &&
+           (naturalResourceExpected[naturalResourceExpected.size() - 1] == '\r' ||
+            naturalResourceExpected[naturalResourceExpected.size() - 1] == '\n'))
     {
-        unavailableExpected.erase(unavailableExpected.size() - 1);
+        naturalResourceExpected.erase(naturalResourceExpected.size() - 1);
     }
-    if (unavailableSerialized != unavailableExpected)
+    if (naturalResourceSerialized != naturalResourceExpected)
     {
         return Fail(
-            "serialized unavailable natural resource diverged from fixture");
+            "serialized natural resource diverged from fixture");
     }
 
     KenshiAgentTelemetry::NativeCommandRequest invalid;

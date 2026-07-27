@@ -271,8 +271,6 @@ class NearbyEntity(StrictModel):
     is_squad_leader: bool | None = None
     has_dialogue: bool | None = None
     shop_inventory_owner: bool | None = None
-    talk_task_available: bool | None = None
-    talk_task_probability: float | None = None
     faction: str | None = None
     disposition: Disposition = Disposition.UNKNOWN
     distance: float | None = None
@@ -290,9 +288,9 @@ class NearbyEntity(StrictModel):
         vendor or not. Whether someone is talkable is a fact the telemetry
         already carries, not a judgment for the model to re-derive. Every flag
         must be explicitly set; a missing value is never assumed favorable.
-        `visible`, `distance`, and `talk_task_available` are deliberately
-        excluded: they gate when to act, not whether the person is a talk
-        target, and the native approach paths to an occluded/indoor target.
+        `visible` and `distance` are deliberately excluded: they gate when to
+        act, not whether the person is a talk target, and the native approach
+        paths to an occluded/indoor target.
         """
 
         return (
@@ -318,18 +316,19 @@ class NearbyEntity(StrictModel):
 
 
 class ContextActionKind(StrEnum):
-    """A reviewed Kenshi task an exact world object currently advertises."""
+    """A reviewed semantic action an exact world object accepts as an attempt."""
 
     OPERATE = "operate"
 
 
 class WorldTarget(StrictModel):
-    """A non-character object with exact native contextual affordances.
+    """A non-character object with exact reviewed contextual affordances.
 
     This is the semantic equivalent of what a player learns by right-clicking
-    an object. It carries only tasks the native plug-in has positively
-    identified and reviewed; absence means unsupported, never permission to
-    improvise a screen-coordinate click.
+    an object. A listed action authorizes an exact bounded attempt, not a
+    prediction that Kenshi will accept or complete it. The native controller
+    proves acceptance causally from the selected character's exact AI goal.
+    Absence means unsupported, never permission to improvise a click.
     """
 
     id: str
@@ -339,8 +338,6 @@ class WorldTarget(StrictModel):
     distance: float = Field(ge=0.0)
     context_actions: list[ContextActionKind] = Field(default_factory=list)
     default_task: str
-    task_available: bool
-    task_probability: float
     mining_resource_level: float | None = None
 
 
@@ -740,7 +737,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "0.1.0"
+    protocol_version: str = "1.0.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1725,7 +1722,6 @@ class ConditionPath(StrEnum):
     TARGET_IS_SQUAD_LEADER = "target.is_squad_leader"
     TARGET_HAS_DIALOGUE = "target.has_dialogue"
     TARGET_SHOP_INVENTORY_OWNER = "target.shop_inventory_owner"
-    TARGET_TALK_TASK_AVAILABLE = "target.talk_task_available"
     GAME_PAUSE_CAPABILITY = "game.pause"
     GAME_SPEED_CAPABILITY = "game.speed"
     GAME_TIME_CAPABILITY = "game.time"
@@ -1736,6 +1732,7 @@ class ConditionPath(StrEnum):
     SQUAD_HUNGER_CAPABILITY = "squad.hunger"
     SQUAD_HEALTH_CAPABILITY = "squad.health"
     SQUAD_INVENTORY_CAPABILITY = "squad.inventory"
+    SQUAD_CURRENT_GOAL_CAPABILITY = "squad.current_goal"
     UI_MODAL_CAPABILITY = "ui.modal"
     UI_INVENTORY_CAPABILITY = "ui.inventory"
     UI_DIALOGUE_CAPABILITY = "ui.dialogue"
@@ -2130,7 +2127,7 @@ class Observation(StrictModel):
             (
                 target
                 for target in self.telemetry.world_targets
-                if target.task_available and target.context_actions
+                if target.context_actions
             ),
             key=lambda target: (target.distance, target.name, target.id),
         )

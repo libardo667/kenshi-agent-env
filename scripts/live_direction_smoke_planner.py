@@ -9,8 +9,8 @@ import sys
 from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
 from kenshi_agent.live_smoke_planner import (
     interrupt_with_pause_handoff_patch,
-    pause_handoff_step,
     preserve_pause_handoff_patch,
+    smoke_handoff_steps,
 )
 from kenshi_agent.models import (
     Condition,
@@ -109,10 +109,10 @@ def main() -> None:
                 interrupt_policy=InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH,
                 on_success="pause-after-smoke",
             ),
-            pause_handoff_step(),
+            *smoke_handoff_steps(),
         ],
         entry_step_id="direction-smoke",
-        max_actions=2,
+        max_actions=3,
         max_wall_seconds=65.0,
         max_game_seconds=540.0,
         risk_budget=RiskBudget(

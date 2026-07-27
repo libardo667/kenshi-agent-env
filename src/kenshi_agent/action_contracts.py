@@ -292,10 +292,6 @@ def bind_perform_context_action(
             f"Target {target.name!r} does not currently advertise context action "
             f"{action.context_action.value!r}."
         )
-    if not target.task_available:
-        return _unbound(
-            f"Target {target.name!r} currently reports its contextual task unavailable."
-        )
     return ReferenceBinding(
         bound=True,
         reason=(
@@ -1167,10 +1163,10 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     version="1.0",
     model=PerformContextAction,
     summary=(
-        "Perform one exact contextual task advertised by a current world object. "
+        "Attempt one exact contextual action advertised by a current world object. "
         "The native controller rechecks the object and reviewed default task, then "
-        "owns pathing until the selected character's AI reports that exact task and "
-        "subject. Natural-resource operation is the first supported task."
+        "owns execution until the selected character's AI reports that exact task "
+        "and subject. Natural-resource operation is the first supported action."
     ),
     argument_source=(
         "target_id and context_action must be copied as an exact pair from the "

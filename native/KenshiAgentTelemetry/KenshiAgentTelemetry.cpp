@@ -72,8 +72,10 @@
 #include <exception>
 #include <iomanip>
 #include <locale>
+#include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "AtomicJsonWriter.h"
 #include "GameplayCapabilities.generated.h"
@@ -92,14 +94,18 @@ namespace
     using KenshiAgentTelemetry::ParseNativeCommandRequest;
     using KenshiAgentTelemetry::AssessNaturalResource;
     using KenshiAgentTelemetry::IsWorldTargetScanAtCapacity;
+    using KenshiAgentTelemetry::SelectNearestNaturalResourceTargets;
     using KenshiAgentTelemetry::SerializeNativeCommandAcknowledgement;
     using KenshiAgentTelemetry::SerializeNaturalResourceTarget;
 
     const unsigned int MAX_TRACKED_SHOP_TRADERS = 256;
     const float NEARBY_CHARACTER_RADIUS = 400.0f;
     const int MAX_NEARBY_CHARACTERS = 64;
+    const float NEAR_WORLD_CONTEXT_TARGET_RADIUS = 400.0f;
     const float WORLD_CONTEXT_TARGET_RADIUS = 2000.0f;
-    const int MAX_WORLD_CONTEXT_TARGETS = 128;
+    const int MAX_NEAR_WORLD_CONTEXT_BUILDINGS = 128;
+    const int MAX_OUTER_WORLD_CONTEXT_BUILDINGS = 256;
+    const unsigned int MAX_WORLD_CONTEXT_TARGETS = 128;
     // Raised from 64 after button-priority passes pushed dialogue options -
     // which are TextBox widgets, walked last - out of the export entirely.
     // Prioritizing one role only helps if the cap is not the binding
@@ -112,7 +118,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.8.2";
+    const char* PROTOCOL_VERSION = "1.0.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -753,32 +759,58 @@ namespace
         return NULL;
     }
 
-    NaturalResourceAssessment InspectNaturalResource(
-        PlayerInterface* player,
-        Building* candidate)
+    NaturalResourceAssessment InspectNaturalResource(Building* candidate)
     {
         const bool candidateValid =
             candidate != NULL && candidate->isValid();
+        const bool isMine =
+            candidateValid &&
+            candidate->getSpecialFunction() == BF_MINE;
         const bool isNaturalMine =
             candidateValid &&
             candidate->getSpecialFunction() == BF_MINE_NATURAL;
         const bool defaultTaskOperatesMachinery =
-            isNaturalMine &&
+            (isMine || isNaturalMine) &&
             candidate->getDefaultTask() == OPERATE_MACHINERY;
-        float probability = 0.0f;
-        const bool taskAvailable =
-            player != NULL &&
-            defaultTaskOperatesMachinery &&
-            player->getPlayerTaskProbability(
-                OPERATE_MACHINERY,
-                candidate,
-                probability);
         return AssessNaturalResource(
             candidateValid,
+            isMine,
             isNaturalMine,
-            defaultTaskOperatesMachinery,
-            taskAvailable,
-            probability);
+            defaultTaskOperatesMachinery);
+    }
+
+    void AppendNaturalResourceCandidates(
+        lektor<RootObject*>& buildings,
+        const Ogre::Vector3& selectedPosition,
+        std::vector<NaturalResourceTargetSnapshot>& candidates)
+    {
+        for (lektor<RootObject*>::iterator it = buildings.begin();
+             it != buildings.end();
+             ++it)
+        {
+            Building* target = reinterpret_cast<Building*>(*it);
+            const NaturalResourceAssessment resource =
+                InspectNaturalResource(target);
+            if (!resource.structurallyRecognized)
+                continue;
+            const std::string targetId =
+                StableEntityId(target->getHandle());
+            if (targetId.empty())
+                continue;
+
+            const Ogre::Vector3 targetPosition = target->getPosition();
+            NaturalResourceTargetSnapshot snapshot;
+            snapshot.id = targetId;
+            snapshot.name = target->getName();
+            snapshot.positionX = targetPosition.x;
+            snapshot.positionY = targetPosition.y;
+            snapshot.positionZ = targetPosition.z;
+            snapshot.distance =
+                Distance(targetPosition, selectedPosition);
+            snapshot.miningResourceLevel =
+                target->getMiningResourceLevel();
+            candidates.push_back(snapshot);
+        }
     }
 
     Building* FindExactNaturalResource(
@@ -795,16 +827,35 @@ namespace
             return NULL;
         }
 
-        lektor<RootObject*> nearbyBuildings;
+        lektor<RootObject*> nearBuildings;
         ou->getObjectsWithinSphere(
-            nearbyBuildings,
+            nearBuildings,
+            selected->getPosition(),
+            NEAR_WORLD_CONTEXT_TARGET_RADIUS,
+            BUILDING,
+            MAX_NEAR_WORLD_CONTEXT_BUILDINGS,
+            selected);
+        for (lektor<RootObject*>::iterator it = nearBuildings.begin();
+             it != nearBuildings.end();
+             ++it)
+        {
+            Building* candidate = reinterpret_cast<Building*>(*it);
+            if (candidate == NULL || !candidate->isValid())
+                continue;
+            if (StableEntityId(candidate->getHandle()) == targetId)
+                return candidate;
+        }
+
+        lektor<RootObject*> outerBuildings;
+        ou->getObjectsWithinSphere(
+            outerBuildings,
             selected->getPosition(),
             WORLD_CONTEXT_TARGET_RADIUS,
             BUILDING,
-            MAX_WORLD_CONTEXT_TARGETS,
+            MAX_OUTER_WORLD_CONTEXT_BUILDINGS,
             selected);
-        for (lektor<RootObject*>::iterator it = nearbyBuildings.begin();
-             it != nearbyBuildings.end();
+        for (lektor<RootObject*>::iterator it = outerBuildings.begin();
+             it != outerBuildings.end();
              ++it)
         {
             Building* candidate = reinterpret_cast<Building*>(*it);
@@ -1349,7 +1400,8 @@ namespace
                     "target_lifetime_changed");
                 return;
             }
-            if (contextTarget->getSpecialFunction() != BF_MINE_NATURAL ||
+            if (!InspectNaturalResource(contextTarget)
+                    .structurallyRecognized ||
                 contextTarget->getDefaultTask() !=
                     g_activeNativeCommand.expectedTask)
             {
@@ -1681,15 +1733,10 @@ namespace
                 return;
             }
             const NaturalResourceAssessment resource =
-                InspectNaturalResource(player, target);
+                InspectNaturalResource(target);
             if (!resource.structurallyRecognized)
             {
                 RejectNativeCommand(request, "target_role_invalid");
-                return;
-            }
-            if (!resource.taskAvailable)
-            {
-                RejectNativeCommand(request, "context_task_unavailable");
                 return;
             }
             const hand& targetHandle = target->getHandle();
@@ -2033,6 +2080,19 @@ namespace
         const lektor<Character*>* characters = NULL;
         if (player != NULL)
             characters = &player->getAllPlayerCharacters();
+        std::set<std::string> currentSquadIds;
+        if (characters != NULL)
+        {
+            for (unsigned int index = 0; index < characters->size(); ++index)
+            {
+                Character* character = (*characters)[index];
+                if (character == NULL || !character->isValid())
+                    continue;
+                const std::string id = StableEntityId(character);
+                if (!id.empty())
+                    currentSquadIds.insert(id);
+            }
+        }
 
         int money = 0;
         if (selected != NULL)
@@ -2140,6 +2200,7 @@ namespace
         json << ",";
         const std::string selectedId = StableEntityId(selected);
         if (!selectedId.empty() &&
+            currentSquadIds.find(selectedId) != currentSquadIds.end() &&
             IsSelected(player, selected->getHandle()))
         {
             json << "\"selected_character_id\":\""
@@ -2156,7 +2217,9 @@ namespace
             {
                 Character* selectedCharacter = it->getCharacter();
                 const std::string id = StableEntityId(selectedCharacter);
-                if (id.empty() || !selectedCharacter->isPlayerCharacter())
+                if (id.empty() ||
+                    !selectedCharacter->isPlayerCharacter() ||
+                    currentSquadIds.find(id) == currentSquadIds.end())
                     continue;
                 if (!firstSelected)
                     json << ",";
@@ -2262,6 +2325,21 @@ namespace
                 // single observation saying a fight had started.
                 json << "\"in_combat\":"
                      << JsonBool(character->isInCombatMode(true, true)) << ",";
+                AI* characterAI = character->getAI();
+                AITaskSytem* characterTasks =
+                    characterAI != NULL
+                        ? characterAI->getTaskSystem()
+                        : NULL;
+                if (characterTasks != NULL)
+                {
+                    const std::string currentGoal =
+                        characterTasks->getCurrentGoalString();
+                    if (!currentGoal.empty())
+                    {
+                        json << "\"current_goal\":\""
+                             << JsonEscape(currentGoal) << "\",";
+                    }
+                }
                 // The agent set itself the goal of feeding this character while
                 // unable to read whether it was hungry. Hunger and blood are
                 // the two numbers the survival loop actually turns on.
@@ -2361,12 +2439,6 @@ namespace
                     platoon != NULL && platoon->getSquadLeader() == target;
                 const bool isShopInventoryOwner =
                     IsTrackedShopOwner(target);
-                float talkTaskProbability = 0.0f;
-                const bool talkTaskAvailable =
-                    player->getPlayerTaskProbability(
-                        PLAYER_TALK_TO,
-                        target,
-                        talkTaskProbability);
                 float screenX = 0.0f;
                 float screenY = 0.0f;
                 float cameraBearingDegrees = 0.0f;
@@ -2395,10 +2467,6 @@ namespace
                 else
                     json << "null";
                 json << ",";
-                json << "\"talk_task_available\":"
-                     << JsonBool(talkTaskAvailable) << ",";
-                json << "\"talk_task_probability\":"
-                     << talkTaskProbability << ",";
                 if (faction != NULL)
                     json << "\"faction\":\"" << JsonEscape(const_cast<Faction*>(faction)->getName()) << "\",";
                 json << "\"disposition\":\"" << GetDisposition(selected, target) << "\",";
@@ -2426,59 +2494,59 @@ namespace
         json << "\"world_targets\":[";
         if (ou != NULL && selected != NULL && selected->isValid())
         {
-            lektor<RootObject*> nearbyBuildings;
+            lektor<RootObject*> nearBuildings;
+            lektor<RootObject*> outerBuildings;
             const Ogre::Vector3 selectedPosition = selected->getPosition();
             ou->getObjectsWithinSphere(
-                nearbyBuildings,
+                nearBuildings,
+                selectedPosition,
+                NEAR_WORLD_CONTEXT_TARGET_RADIUS,
+                BUILDING,
+                MAX_NEAR_WORLD_CONTEXT_BUILDINGS,
+                selected);
+            ou->getObjectsWithinSphere(
+                outerBuildings,
                 selectedPosition,
                 WORLD_CONTEXT_TARGET_RADIUS,
                 BUILDING,
-                MAX_WORLD_CONTEXT_TARGETS,
+                MAX_OUTER_WORLD_CONTEXT_BUILDINGS,
                 selected);
             worldTargetScanAtCapacity =
                 IsWorldTargetScanAtCapacity(
-                    static_cast<unsigned int>(nearbyBuildings.size()),
+                    static_cast<unsigned int>(nearBuildings.size()),
                     static_cast<unsigned int>(
-                        MAX_WORLD_CONTEXT_TARGETS));
-            bool first = true;
-            for (lektor<RootObject*>::iterator it = nearbyBuildings.begin();
-                 it != nearbyBuildings.end();
+                        MAX_NEAR_WORLD_CONTEXT_BUILDINGS)) ||
+                IsWorldTargetScanAtCapacity(
+                    static_cast<unsigned int>(outerBuildings.size()),
+                    static_cast<unsigned int>(
+                        MAX_OUTER_WORLD_CONTEXT_BUILDINGS));
+            std::vector<NaturalResourceTargetSnapshot> candidates;
+            AppendNaturalResourceCandidates(
+                nearBuildings,
+                selectedPosition,
+                candidates);
+            AppendNaturalResourceCandidates(
+                outerBuildings,
+                selectedPosition,
+                candidates);
+            const std::vector<NaturalResourceTargetSnapshot> targets =
+                SelectNearestNaturalResourceTargets(
+                    candidates,
+                    MAX_WORLD_CONTEXT_TARGETS);
+            for (std::vector<NaturalResourceTargetSnapshot>::const_iterator it =
+                     targets.begin();
+                 it != targets.end();
                  ++it)
             {
-                Building* target = reinterpret_cast<Building*>(*it);
-                const NaturalResourceAssessment resource =
-                    InspectNaturalResource(player, target);
-                if (!resource.structurallyRecognized)
-                {
-                    continue;
-                }
-                const std::string targetId =
-                    StableEntityId(target->getHandle());
-                if (targetId.empty())
-                    continue;
-                if (!first)
+                if (it != targets.begin())
                     json << ",";
-                first = false;
-                const Ogre::Vector3 targetPosition = target->getPosition();
-                NaturalResourceTargetSnapshot snapshot;
-                snapshot.id = targetId;
-                snapshot.name = target->getName();
-                snapshot.positionX = targetPosition.x;
-                snapshot.positionY = targetPosition.y;
-                snapshot.positionZ = targetPosition.z;
-                snapshot.distance =
-                    Distance(targetPosition, selectedPosition);
-                snapshot.taskAvailable = resource.taskAvailable;
-                snapshot.taskProbability = resource.taskProbability;
-                snapshot.miningResourceLevel =
-                    target->getMiningResourceLevel();
-                json << SerializeNaturalResourceTarget(snapshot);
+                json << SerializeNaturalResourceTarget(*it);
             }
         }
         json << "],";
         json << "\"warnings\":["
              << "\"Partial telemetry only: body-part wounds, bleeding rate, "
-             << "getting-eaten state, imprisonment/enslavement, current tasks, "
+             << "getting-eaten state, imprisonment/enslavement, "
              << "location name, distant world state, and click-target occlusion "
              << "are not exported or validated. "
              << "The food_items scalar is not authoritative over the named inventory list. "

@@ -141,7 +141,7 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "selected.bleeding_rate": ("squad.health",),
     "selected.food_items": ("squad.hunger", "squad.inventory", "squad.basic"),
     "selected.first_aid_kits": ("squad.inventory",),
-    "selected.current_goal": ("squad.basic",),
+    "selected.current_goal": ("squad.current_goal",),
     "target.disposition": ("nearby.characters", "nearby.visible_entities"),
     "target.distance": ("nearby.characters", "nearby.visible_entities"),
     "target.visible": ("nearby.characters", "nearby.visible_entities"),
@@ -150,7 +150,6 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     "target.is_squad_leader": ("nearby.roles",),
     "target.has_dialogue": ("nearby.roles",),
     "target.shop_inventory_owner": ("nearby.shop_owners",),
-    "target.talk_task_available": ("nearby.roles",),
 }
 
 
@@ -274,7 +273,6 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
             "target.is_squad_leader": target.is_squad_leader,
             "target.has_dialogue": target.has_dialogue,
             "target.shop_inventory_owner": target.shop_inventory_owner,
-            "target.talk_task_available": target.talk_task_available,
         }
         return target_paths[path]
     return None

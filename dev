@@ -4,14 +4,14 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $# -eq 0 ]]; then
-  echo "usage: ./dev {launch|crash|graphics|shot|telemetry|journey} [options]" >&2
+  echo "usage: ./dev {launch|close|crash|graphics|shot|telemetry|journey} [options]" >&2
   exit 2
 fi
 
 command_name="$1"
 shift
 case "$command_name" in
-  launch|crash|graphics|shot|telemetry)
+  launch|close|crash|graphics|shot|telemetry)
     config_path="$repo_dir/config/live.burnin.yaml"
     ;;
   journey)

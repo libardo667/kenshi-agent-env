@@ -2,6 +2,7 @@
 #define KENSHI_AGENT_WORLD_TARGET_PROTOCOL_H
 
 #include <string>
+#include <vector>
 
 namespace KenshiAgentTelemetry
 {
@@ -10,8 +11,6 @@ namespace KenshiAgentTelemetry
         NaturalResourceAssessment();
 
         bool structurallyRecognized;
-        bool taskAvailable;
-        double taskProbability;
     };
 
     struct NaturalResourceTargetSnapshot
@@ -24,17 +23,19 @@ namespace KenshiAgentTelemetry
         double positionY;
         double positionZ;
         double distance;
-        bool taskAvailable;
-        double taskProbability;
         double miningResourceLevel;
     };
 
     NaturalResourceAssessment AssessNaturalResource(
         bool candidateValid,
+        bool isMine,
         bool isNaturalMine,
-        bool defaultTaskOperatesMachinery,
-        bool currentTaskAvailable,
-        double currentTaskProbability);
+        bool defaultTaskOperatesMachinery);
+
+    std::vector<NaturalResourceTargetSnapshot>
+        SelectNearestNaturalResourceTargets(
+            const std::vector<NaturalResourceTargetSnapshot>& candidates,
+            unsigned int maximumResults);
 
     bool IsWorldTargetScanAtCapacity(
         unsigned int resultCount,

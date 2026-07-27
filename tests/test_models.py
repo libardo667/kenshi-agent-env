@@ -104,8 +104,6 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
                     distance=10.0,
                     context_actions=[ContextActionKind.OPERATE],
                     default_task="operate_machinery",
-                    task_available=True,
-                    task_probability=1.0,
                 )
             ],
         )
@@ -221,7 +219,7 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     assert '"visual_precondition": "The map is open."' in payload
 
 
-def test_unavailable_world_target_remains_observed_but_not_actionable() -> None:
+def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
     target = WorldTarget(
         id="entity-copper",
         name="Copper Resource",
@@ -230,8 +228,6 @@ def test_unavailable_world_target_remains_observed_but_not_actionable() -> None:
         distance=30.0,
         context_actions=[ContextActionKind.OPERATE],
         default_task="operate_machinery",
-        task_available=False,
-        task_probability=0.0,
         mining_resource_level=0.8,
     )
     observation = Observation(
@@ -239,7 +235,7 @@ def test_unavailable_world_target_remains_observed_but_not_actionable() -> None:
         step_index=0,
         mode="mock",
         telemetry=TelemetrySnapshot(
-            protocol_version="0.8.1",
+            protocol_version="1.0.0",
             capabilities=["world.context_targets"],
             world_targets=[target],
         ),
@@ -250,7 +246,16 @@ def test_unavailable_world_target_remains_observed_but_not_actionable() -> None:
     assert payload["telemetry"]["world_targets"] == [
         target.model_dump(mode="json")
     ]
-    assert payload["context_targets"] == []
+    assert payload["context_targets"] == [
+        {
+            "id": target.id,
+            "name": target.name,
+            "kind": target.kind,
+            "distance": target.distance,
+            "context_actions": ["operate"],
+            "mining_resource_level": target.mining_resource_level,
+        }
+    ]
 
 
 def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> None:

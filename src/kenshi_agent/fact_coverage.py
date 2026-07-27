@@ -128,7 +128,10 @@ FACTS: tuple[Fact, ...] = (
         "What Kenshi itself thinks the character is doing.",
         0,
         "",
-        _selected_field("current_goal"),
+        lambda s: (
+            "squad.current_goal" in s.capabilities
+            and _selected_field("current_goal")(s)
+        ),
     ),
     # --- where and when ---------------------------------------------------
     Fact(

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -30,7 +31,7 @@ class TelemetryReader:
         max_age_seconds: float = 3.0,
         retries: int = 3,
         retry_delay_seconds: float = 0.03,
-        require_protocol_major: int = 0,
+        require_protocol_major: int = 1,
     ) -> None:
         self.path = path
         self.max_age_seconds = max_age_seconds
@@ -43,8 +44,20 @@ class TelemetryReader:
         for attempt in range(self.retries):
             try:
                 raw = self.path.read_bytes()
+                envelope = json.loads(raw)
+                if not isinstance(envelope, dict):
+                    raise ValueError("Telemetry payload must be a JSON object.")
+                protocol_version = envelope.get("protocol_version")
+                if not isinstance(protocol_version, str):
+                    raise ValueError(
+                        "Telemetry payload has no string protocol_version."
+                    )
+                # Major-version rejection belongs before strict payload
+                # validation. During a deliberate wire migration, removed
+                # fields from the previous producer must report the actionable
+                # version mismatch instead of masquerading as schema damage.
+                self._check_protocol(protocol_version)
                 snapshot = TelemetrySnapshot.model_validate_json(raw)
-                self._check_protocol(snapshot.protocol_version)
                 captured = snapshot.captured_at
                 if captured.tzinfo is None:
                     captured = captured.replace(tzinfo=UTC)

@@ -1082,7 +1082,7 @@
       "type": "object"
     },
     "ContextActionKind": {
-      "description": "A reviewed Kenshi task an exact world object currently advertises.",
+      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
       "enum": [
         "operate"
       ],
@@ -2003,30 +2003,6 @@
           "default": null,
           "title": "Shop Inventory Owner"
         },
-        "talk_task_available": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Talk Task Available"
-        },
-        "talk_task_probability": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Talk Task Probability"
-        },
         "faction": {
           "anyOf": [
             {
@@ -2726,7 +2702,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "0.1.0",
+          "default": "1.0.0",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -3280,7 +3256,7 @@
     },
     "WorldTarget": {
       "additionalProperties": false,
-      "description": "A non-character object with exact native contextual affordances.\n\nThis is the semantic equivalent of what a player learns by right-clicking\nan object. It carries only tasks the native plug-in has positively\nidentified and reviewed; absence means unsupported, never permission to\nimprovise a screen-coordinate click.",
+      "description": "A non-character object with exact reviewed contextual affordances.\n\nThis is the semantic equivalent of what a player learns by right-clicking\nan object. A listed action authorizes an exact bounded attempt, not a\nprediction that Kenshi will accept or complete it. The native controller\nproves acceptance causally from the selected character's exact AI goal.\nAbsence means unsupported, never permission to improvise a click.",
       "properties": {
         "id": {
           "title": "Id",
@@ -3313,14 +3289,6 @@
           "title": "Default Task",
           "type": "string"
         },
-        "task_available": {
-          "title": "Task Available",
-          "type": "boolean"
-        },
-        "task_probability": {
-          "title": "Task Probability",
-          "type": "number"
-        },
         "mining_resource_level": {
           "anyOf": [
             {
@@ -3340,9 +3308,7 @@
         "kind",
         "position",
         "distance",
-        "default_task",
-        "task_available",
-        "task_probability"
+        "default_task"
       ],
       "title": "WorldTarget",
       "type": "object"

@@ -20,6 +20,7 @@ def snapshot(
     dialogue_open: bool = False,
     controls: list[VisibleUIControl] | None = None,
     hunger: float | None = None,
+    current_goal: str | None = None,
     location: str | None = None,
 ) -> TelemetrySnapshot:
     return TelemetrySnapshot(
@@ -31,7 +32,15 @@ def snapshot(
             dialogue_open=dialogue_open,
             visible_controls=controls,
         ),
-        squad=[CharacterState(id="hep", name="Hep", selected=True, hunger=hunger)],
+        squad=[
+            CharacterState(
+                id="hep",
+                name="Hep",
+                selected=True,
+                hunger=hunger,
+                current_goal=current_goal,
+            )
+        ],
     )
 
 
@@ -42,6 +51,17 @@ def _state(report_snapshot: TelemetrySnapshot, key: str) -> FactState:
 
 def test_a_fact_the_snapshot_carries_is_exported() -> None:
     assert _state(snapshot(), "world.money") is FactState.EXPORTED
+
+
+def test_current_goal_requires_its_truthfulness_capability() -> None:
+    unadvertised = snapshot(current_goal="Operating machine")
+    advertised = snapshot(
+        capabilities=["squad.current_goal"],
+        current_goal="Operating machine",
+    )
+
+    assert _state(unadvertised, "self.current_goal") is FactState.DARK
+    assert _state(advertised, "self.current_goal") is FactState.EXPORTED
 
 
 def test_a_fact_reachable_only_by_acting_is_discoverable() -> None:

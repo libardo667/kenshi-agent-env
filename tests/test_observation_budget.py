@@ -203,8 +203,6 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
                 distance=30.0,
                 context_actions=[ContextActionKind.OPERATE],
                 default_task="operate_machinery",
-                task_available=True,
-                task_probability=1.0,
                 mining_resource_level=0.8,
             )
         ],

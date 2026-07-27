@@ -68,6 +68,52 @@ _TERMINAL_WINDOW_MARKERS = (
 )
 
 
+def _validate_safe_close_snapshot(
+    payload: object,
+    *,
+    max_age_seconds: float,
+    now: datetime | None = None,
+) -> None:
+    """Require current controller-idle evidence before closing the game window."""
+
+    if not isinstance(payload, dict):
+        raise LaunchFailed("Safe close requires a telemetry JSON object.")
+    captured_raw = payload.get("captured_at")
+    if not isinstance(captured_raw, str):
+        raise LaunchFailed("Safe close requires a telemetry captured_at timestamp.")
+    try:
+        captured_at = datetime.fromisoformat(
+            captured_raw.replace("Z", "+00:00")
+        )
+    except ValueError as exc:
+        raise LaunchFailed(
+            "Safe close requires a valid telemetry captured_at timestamp."
+        ) from exc
+    if captured_at.tzinfo is None:
+        captured_at = captured_at.replace(tzinfo=UTC)
+    observed_at = now or datetime.now(UTC)
+    age_seconds = (observed_at - captured_at).total_seconds()
+    if age_seconds < -1.0 or age_seconds > max_age_seconds:
+        raise LaunchFailed(
+            f"Safe close requires telemetry no older than {max_age_seconds:g}s; "
+            f"the snapshot age is {age_seconds:.3f}s."
+        )
+
+    game = payload.get("game")
+    ui = payload.get("ui")
+    native_control = payload.get("native_control")
+    if not isinstance(game, dict) or not isinstance(ui, dict):
+        raise LaunchFailed("Safe close requires game and UI telemetry.")
+    if not isinstance(native_control, dict):
+        raise LaunchFailed("Safe close requires native-control telemetry.")
+    if game.get("loaded") is not True or game.get("paused") is not True:
+        raise LaunchFailed("Safe close requires a loaded, explicitly paused game.")
+    if ui.get("modal_open") is not False or ui.get("dialogue_open") is not False:
+        raise LaunchFailed("Safe close refuses while a modal or dialogue is open.")
+    if native_control.get("active_command_id") not in (None, ""):
+        raise LaunchFailed("Safe close refuses while a native command is active.")
+
+
 def _controller(
     config: AppConfig,
     *,
@@ -830,6 +876,41 @@ async def _launch(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _close(args: argparse.Namespace) -> int:
+    if os.name != "nt":
+        raise SystemExit("The live developer close command must run with Windows Python.")
+    config = load_config(args.config)
+    try:
+        if "kenshi_x64.exe" not in _running_process_names():
+            raise LaunchFailed("Kenshi is not running.")
+        payload = json.loads(config.telemetry.file.read_text(encoding="utf-8"))
+        _validate_safe_close_snapshot(
+            payload,
+            max_age_seconds=config.telemetry.max_age_seconds,
+        )
+        controller = _controller(config)
+        controller.request_close()
+        deadline = time.monotonic() + args.timeout
+        while time.monotonic() < deadline:
+            if "kenshi_x64.exe" not in _running_process_names():
+                print("Kenshi closed from a fresh paused idle state.")
+                return 0
+            await asyncio.sleep(0.25)
+        raise LaunchFailed(
+            "Kenshi did not close before timeout; no force-termination was attempted."
+        )
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        LaunchFailed,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
+
+
 _CRASH_LOG_NAMES = (
     "RE_Kenshi_log.txt",
     "kenshi.log",
@@ -1121,7 +1202,7 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
     context_targets = [
         target
         for target in snapshot.world_targets
-        if target.task_available and target.context_actions
+        if target.context_actions
     ]
     nearest_targets = sorted(
         snapshot.world_targets,
@@ -1312,6 +1393,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     launch.set_defaults(continue_game=True)
 
+    close = subparsers.add_parser(
+        "close",
+        help="Close one loaded Kenshi client only from a fresh paused idle state.",
+    )
+    close.add_argument("--config", required=True)
+    close.add_argument("--timeout", type=float, default=15.0)
+
     graphics = subparsers.add_parser(
         "graphics",
         help="Verify or reversibly install the configured Kenshi graphics profile.",
@@ -1397,6 +1485,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "launch":
         return asyncio.run(_launch(args))
+    if args.command == "close":
+        return asyncio.run(_close(args))
     if args.command == "graphics":
         return _graphics(args)
     if args.command == "shot":

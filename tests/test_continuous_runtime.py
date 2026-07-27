@@ -567,6 +567,36 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
     asyncio.run(scenario())
 
 
+def test_continuous_actions_reach_the_next_planner_outcome_ledger(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = PlanThenStopPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            await runtime.run(max_steps=3)
+        finally:
+            logger.close()
+
+        assert planner.calls == 2
+        outcome_kinds = [
+            outcome.action.kind
+            for outcome in planner.observations[1].recent_action_outcomes
+        ]
+        assert outcome_kinds == [
+            "pause",
+            "set_speed",
+        ]
+        assert all(
+            outcome.executed
+            for outcome in planner.observations[1].recent_action_outcomes
+        )
+
+    asyncio.run(scenario())
+
+
 class BoundaryRejectingEnvironment(RevisionEnvironment):
     """Reproduce a live post-lease rejection without a real input lease.
 

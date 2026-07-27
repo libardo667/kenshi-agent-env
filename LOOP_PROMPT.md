@@ -9,7 +9,7 @@ One invocation delivers **one bounded slice**, fully finished and green.
 
 ## Where the project actually is
 
-Verify this; do not assume it. It was accurate at protocol `0.8.2`.
+Verify this; do not assume it. It was accurate at protocol `1.0.0`.
 
 The portable core is a deterministic Kenshi-like mock with strict Pydantic
 models, JSONL lifecycle logs, SQLite memory, generated schemas, and
@@ -25,10 +25,10 @@ planner-visible surface is a contracted action catalog
 advisor and a `request_affordance` channel exist and emit zero game input.
 
 The native plug-in exports telemetry at ~2 Hz and accepts five reviewed
-commands. Protocol `0.8.2` is live-loaded: natural-resource presence stays
-separate from current task eligibility, and unresolved stale indoor handles fail
-closed. Contextual operation remains unproven: the eligibility API's meaning is
-unresolved, and a saturated building scan can omit the nearest active mine.
+commands. Protocol `1.0.0` is live-loaded: nearest mining-resource observation,
+the UI-facing current goal, and exact contextual operation are proven on one
+Copper Resource. Hidden task scores grant no authority, and unresolved stale
+indoor handles fail closed.
 
 Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
@@ -262,18 +262,14 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Make resource observation truthful, then complete contextual operation.**
-   A manual mine showed Kenshi's visible `Operating machine` goal while
-   `current_goal` stayed null and the nearest copper node vanished from a
-   saturated building scan. Fix nearest-resource discovery, determine what
-   `getPlayerTaskProbability` actually means, and expose only player-observable
-   task state. Then dispatch an exact reviewed `operate` pair, require the keyed
-   `context_task_started` terminal plus a plausible resulting frame and
-   advancing telemetry, and leave the run safely paused.
-2. **Make affordance requests aggregable.** `capability` is free text, so
+1. **Make affordance requests aggregable.** `capability` is free text, so
    requests from different runs cannot be counted or ranked. A controlled
    vocabulary (or a clustering pass) is required before fanning out across
    saves.
+2. **Make learned constraints recallable by target.** Salience-only top-N recall
+   can bury a correct entity-specific negative constraint after later writes.
+   Bind memories to stable target IDs and union entity-scoped matches with the
+   bounded general recall; measure whether repeated approaches fall.
 3. **Multi-save robustness.** Deliberate scenario matrix — indoor/outdoor,
    hostile/safe, broke/funded, solo/squad, day/night — rather than repeated runs
    of one town. The affordance-request stream is the instrument; treat its

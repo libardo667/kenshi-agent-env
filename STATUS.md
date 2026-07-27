@@ -46,7 +46,8 @@ the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md
   `food_procurement_v1` policy is retired and its continuous policy is
   `disabled`.
 
-From WSL, `./dev journey` preserves exact planner argv; `./dev crash` archives terminal evidence before optional bounded dismissal.
+From WSL, `./dev journey` preserves exact planner argv; `./dev close` performs
+a guarded `WM_CLOSE`; `./dev crash` archives evidence before bounded dismissal.
 Supervised runs have demonstrated generic approach and dialogue activation,
 semantic startup, inventory and trade navigation, one-step purchases with
 confirmed debits, readable world deltas, persistent continuous memory, and
@@ -56,20 +57,22 @@ exact-character destinations, a targetless bounded direction order, and a
 no-argument building exit; all movement orders share a ten-second
 continuous-unpaused no-progress terminal, so a blocked order cannot poison later
 movement. During exact native commands, engine-native camera follow is reasserted
-each frame and live-proven through one short obstructed move.
+each frame and live-proven through one short obstructed move. Exact contextual
+operation is live-proven on one Copper Resource through `context_task_started`,
+the visible `Operating machine` goal, and a safe final pause.
 
-## Native protocol 0.8.2
+## Native protocol 1.0.0
 
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
 replaces a complete snapshot at roughly 2 Hz. Telemetry covers pause, speed,
 money, game time, camera position and bearings; stable session-scoped squad,
 selection, nearby-character, dialogue-target, world-target and command
 identities; squad life/consciousness/combat state, position, resolved indoor membership,
-nutrition reserve, blood, and bounded inventory; dialogue, trade, inventory,
+nutrition reserve, blood, UI-facing current goal, and bounded inventory; dialogue, trade, inventory,
 stats and management window state; up to 224 visible controls with window
-ownership and normalized bounds; structurally reviewed natural resources surfaced
-through a bounded nearby-building query with the sampled task predicate reported
-separately; and a keyed acknowledgement ring for five declared commands.
+ownership and normalized bounds; nearest-first structurally reviewed mining
+resources combined from bounded local and outer queries; and a keyed
+acknowledgement ring for five declared commands.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities before planning and rejects native actions again at the
@@ -79,17 +82,14 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 ## Open work
 
-- **Protocol `0.8.2` is live-loaded with advancing telemetry, honest outdoor
-  state, and structural resource targets.** Contextual operation remains unproven:
-  its predicate was false before a manual mine, while the visible `Operating
-  machine` goal was not exported and the saturated scan omitted that active node,
-  so no `operate` order was authorized.
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
 - `request_affordance` carries a free-text `capability`, so requests from
   different runs cannot be aggregated or ranked. A controlled vocabulary is
   needed before fanning out across multiple saves.
+- Persistent recall is salience-only and not entity-scoped, so a learned
+  constraint can disappear when later writes fill the recall budget.
 
 ## Known limitations
 
@@ -110,8 +110,8 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   `PauseAction`. Game bindings use a hard-coded key map rather than parsing the
   active `controls.cfg`.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name,
-  current tasks, trader money, occlusion, and distant world state are
-  unavailable or unvalidated; saturated building scans can omit nearby targets.
+  internal task stacks, trader money, occlusion, and distant world state are
+  unavailable or unvalidated; source-scan capacity still makes absence unknown.
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
 - Renderer stability remains open on this Intel Iris Xe host: later paused runs

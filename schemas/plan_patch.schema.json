@@ -243,7 +243,6 @@
         "target.is_squad_leader",
         "target.has_dialogue",
         "target.shop_inventory_owner",
-        "target.talk_task_available",
         "game.pause",
         "game.speed",
         "game.time",
@@ -254,6 +253,7 @@
         "squad.hunger",
         "squad.health",
         "squad.inventory",
+        "squad.current_goal",
         "ui.modal",
         "ui.inventory",
         "ui.dialogue",
@@ -300,7 +300,7 @@
       "type": "object"
     },
     "ContextActionKind": {
-      "description": "A reviewed Kenshi task an exact world object currently advertises.",
+      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
       "enum": [
         "operate"
       ],

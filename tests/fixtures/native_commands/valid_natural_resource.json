@@ -1,0 +1,1 @@
+{"id":"entity-natural-resource","name":"Copper Resource","kind":"natural_resource","position":{"x":10,"y":0,"z":20},"distance":30,"context_actions":["operate"],"default_task":"operate_machinery","mining_resource_level":0.8}

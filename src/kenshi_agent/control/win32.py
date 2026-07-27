@@ -322,6 +322,13 @@ class Win32InputController(InputController):
         self.user32.SetForegroundWindow.restype = wintypes.BOOL
         self.user32.BringWindowToTop.argtypes = [wintypes.HWND]
         self.user32.BringWindowToTop.restype = wintypes.BOOL
+        self.user32.PostMessageW.argtypes = [
+            wintypes.HWND,
+            wintypes.UINT,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
+        self.user32.PostMessageW.restype = wintypes.BOOL
         self.kernel32.GetCurrentThreadId.restype = wintypes.DWORD
         self.kernel32.GetTickCount.restype = wintypes.DWORD
 
@@ -365,6 +372,13 @@ class Win32InputController(InputController):
         buffer = ctypes.create_unicode_buffer(length + 1)
         self.user32.GetWindowTextW(hwnd, buffer, length + 1)
         return buffer.value
+
+    def request_close(self) -> None:
+        """Ask the one exact target window to close without synthesizing keys."""
+
+        hwnd = self._find_window()
+        if not self.user32.PostMessageW(hwnd, 0x0010, 0, 0):  # WM_CLOSE
+            raise getattr(ctypes, "WinError")()  # noqa: B009 - Windows-only
 
     def client_rect(self) -> WindowRect:
         hwnd = self._find_window()

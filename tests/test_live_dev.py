@@ -26,6 +26,7 @@ from kenshi_agent.live_dev import (
     _validate_calibrated_client_rect,
     _validate_launch_preconditions,
     _validate_resumable_launcher_rect,
+    _validate_safe_close_snapshot,
     _wait_until,
 )
 from kenshi_agent.models import (
@@ -109,6 +110,50 @@ class LaunchController(InputController):
 
     def client_rect(self) -> WindowRect:
         return self.rect
+
+
+def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
+    observed_at = datetime(2026, 7, 27, tzinfo=UTC)
+    payload = {
+        "captured_at": observed_at.isoformat(),
+        "game": {"loaded": True, "paused": True},
+        "ui": {
+            "modal_open": False,
+            "dialogue_open": False,
+        },
+        "native_control": {"active_command_id": None},
+    }
+
+    _validate_safe_close_snapshot(
+        payload,
+        max_age_seconds=3.0,
+        now=observed_at,
+    )
+
+    for path, value in (
+        (("game", "loaded"), False),
+        (("game", "paused"), False),
+        (("native_control", "active_command_id"), "command-active"),
+        (("ui", "modal_open"), True),
+        (("ui", "dialogue_open"), True),
+    ):
+        unsafe = json.loads(json.dumps(payload))
+        unsafe[path[0]][path[1]] = value
+        with pytest.raises(LaunchFailed):
+            _validate_safe_close_snapshot(
+                unsafe,
+                max_age_seconds=3.0,
+                now=observed_at,
+            )
+
+    stale = json.loads(json.dumps(payload))
+    stale["captured_at"] = "2026-07-26T23:59:50+00:00"
+    with pytest.raises(LaunchFailed, match="no older than"):
+        _validate_safe_close_snapshot(
+            stale,
+            max_age_seconds=3.0,
+            now=observed_at,
+        )
 
 
 class LaunchTelemetry:
@@ -832,17 +877,15 @@ def test_launch_parser_accepts_explicit_existing_launcher_resume() -> None:
 
 
 def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sample() -> None:
-    unavailable = [
+    unadvertised = [
         WorldTarget(
             id=f"resource-{index}",
             name=f"Iron Resource {index}",
             kind="natural_resource",
             position=Vec3(x=float(index), y=0.0, z=0.0),
             distance=float(index),
-            context_actions=["operate"],
+            context_actions=[],
             default_task="operate_machinery",
-            task_available=False,
-            task_probability=0.0,
         )
         for index in range(14)
     ]
@@ -854,12 +897,10 @@ def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sampl
         distance=100.0,
         context_actions=["operate"],
         default_task="operate_machinery",
-        task_available=True,
-        task_probability=1.0,
     )
     snapshot = launch_snapshot(70, paused=True).model_copy(
         update={
-            "world_targets": [*unavailable, actionable],
+            "world_targets": [*unadvertised, actionable],
             "warnings": ["world target query reached capacity"],
         }
     )

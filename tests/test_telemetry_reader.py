@@ -33,6 +33,32 @@ def test_invalid_protocol_raises(tmp_path: Path) -> None:
         TelemetryReader(path, require_protocol_major=0, retries=1).read()
 
 
+def test_protocol_mismatch_precedes_removed_field_validation(tmp_path: Path) -> None:
+    path = tmp_path / "telemetry.json"
+    payload = TelemetrySnapshot().model_dump(mode="json")
+    payload["protocol_version"] = "0.8.2"
+    payload["world_targets"] = [
+        {
+            "id": "entity-copper",
+            "name": "Copper Resource",
+            "kind": "natural_resource",
+            "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+            "distance": 10.0,
+            "context_actions": ["operate"],
+            "default_task": "operate_machinery",
+            "task_available": False,
+            "task_probability": 0.0,
+        }
+    ]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(
+        TelemetryReadError,
+        match="Telemetry protocol major 0 does not match required major 1",
+    ):
+        TelemetryReader(path, retries=1).read()
+
+
 def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -> None:
     path = tmp_path / "telemetry.json"
     payload = TelemetrySnapshot(
@@ -56,8 +82,6 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "is_squad_leader": True,
             "has_dialogue": True,
             "shop_inventory_owner": True,
-            "talk_task_available": True,
-            "talk_task_probability": 1.0,
             "faction": "Holy Nation Outlaws",
             "disposition": "neutral",
             "distance": 12.5,
@@ -76,8 +100,6 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "distance": 31.5,
             "context_actions": ["operate"],
             "default_task": "operate_machinery",
-            "task_available": True,
-            "task_probability": 1.0,
             "mining_resource_level": 0.8,
         }
     ]
@@ -97,7 +119,6 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
     assert result.snapshot.nearby_entities[0].kind == "character"
     assert result.snapshot.nearby_entities[0].shop_inventory_owner is True
     assert result.snapshot.nearby_entities[0].is_squad_leader is True
-    assert result.snapshot.nearby_entities[0].talk_task_available is True
     assert result.snapshot.active_shop_trader_count == 1
     assert result.snapshot.native_control.last_result == "issued"
     assert result.snapshot.native_control.last_target == "Bar Trader"

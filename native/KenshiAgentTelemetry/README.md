@@ -16,22 +16,22 @@ target/options, tooltip evidence, and bounded visible buttons/text plus named
 item cells with owner windows and current bounds. Nearby telemetry carries
 stable identity, roles, disposition, distance, position, viewport state, and
 camera-relative bearing. Bounded world-target telemetry separately carries
-exact reviewed natural-resource identities, positions, distances, task
-availability/probability, and resource levels.
+exact reviewed mining-resource identities, positions, distances, supported
+context actions, and resource levels. Squad telemetry includes Kenshi's
+UI-facing current goal when available.
 
 An item cell's `item_value` is base worth, not the shop's authoritative asking
 price or sale offer. Transaction effect must be established from later money
 telemetry.
 
-Nearby roles keep anatomy, platoon commerce, leadership, dialogue, Kenshi's
-native talk-task probability, and exact `ShopTrader::getTrader()` ownership
-separate. Exact ownership comes from a bounded registry maintained by
+Nearby roles keep anatomy, platoon commerce, leadership, dialogue, and exact
+`ShopTrader::getTrader()` ownership separate. Exact ownership comes from a bounded registry maintained by
 `ShopTrader` constructor/destructor hooks installed before save load; Kenshi's
 spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.8.2` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `1.0.0` retains the opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 and world-target list reordering and distinguish duplicate names without
 serializing addresses.
@@ -77,9 +77,9 @@ arguments:
   resolve to a valid building, then resolves its current unlocked exit and
   outside point without accepting model-authored geometry.
 - `operate_natural_resource` re-resolves one exact current natural resource,
-  rechecks `BF_MINE_NATURAL`, `OPERATE_MACHINERY`, and native task
-  availability, issues Kenshi's own task, and completes only when the selected
-  character's AI reports that exact task and subject.
+  rechecks Kenshi's mining role and `OPERATE_MACHINERY` default task, issues
+  Kenshi's own task, and completes only when the selected character's AI
+  reports that exact task and subject.
 
 The plugin rechecks all shared and command-specific facts and never substitutes
 a nearer target. `native_control` exposes a bounded ring of keyed
@@ -96,12 +96,13 @@ plugin. The Python runtime exposes these commands only in `native_assisted`
 mode; `interface_only` filters their capabilities/state and rejects the marked
 actions. The bounded nearby query uses a 400-world-unit town-local radius,
 which covers most of the Hub from the default Wanderer spawn without encoding
-a person or coordinate. The separate world-target query is bounded to 128
-objects within 2,000 world units.
+a person or coordinate. World targets combine a 400-unit local scan and a
+2,000-unit outer scan, deduplicate stable IDs, retain the nearest 128 recognized
+objects, and warn if either source scan reaches capacity.
 
 It explicitly leaves body-part wounds, bleeding rate, getting-eaten state,
-imprisonment/enslavement, current tasks, location name, distant world state,
-and geometry occlusion unavailable or unvalidated. KenshiLib's raw
+imprisonment/enslavement, the internal task stack, location name, distant world
+state, and geometry occlusion unavailable or unvalidated. KenshiLib's raw
 `isGettingEaten` byte is not exported because live validation found it set on a
 healthy new character. The `food_items` scalar remains for compatibility but
 has disagreed with named inventory in live evidence; consumers must prefer the
@@ -220,13 +221,9 @@ installed DLL has SHA-256
 run `20260726Tnative-building-exit-live-04` completed the exact keyed exit with
 `outside_door_destination_reached` and a safe final pause.
 
-Protocol `0.8.0` added bounded natural-resource targets and the exact
-`operate_natural_resource` command. Protocol `0.8.1` corrects the observation
-contract: structural identity determines presence, while current Kenshi task
-eligibility is exported separately and rechecked at dispatch. A query that
-reaches its result bound emits a warning because its omissions are not known to
-be distance-ordered. Protocol `0.8.2` makes `squad[].indoors` and exit dispatch
-share the same resolved-building predicate. Its byte-identical staged and
-installed DLL is live-loaded with advancing telemetry; structural resource
-presence and stale-handle rejection are live-proven, while task acceptance
-remains open because every observed target was unavailable.
+Protocol `1.0.0` removes undocumented task-probability fields from the wire.
+Structural mining identity determines presence; an advertised context action
+authorizes only a bounded exact-target attempt. The bridge revalidates the
+target and completes only on the exact AI task and subject. See
+[`ADR_CONTEXT_ACTION_AUTHORITY`](../../docs/ADR_CONTEXT_ACTION_AUTHORITY.md) for
+the observability and prospecting boundary.

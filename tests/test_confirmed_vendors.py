@@ -99,10 +99,9 @@ def test_hostile_or_animal_dialogue_holder_is_not_a_talk_target() -> None:
     assert beast.is_dialogue_target() is False
 
 
-def test_visibility_and_talk_availability_do_not_affect_confirmation() -> None:
-    # The live bug: an off-screen, not-talk-available Barman is still a vendor.
-    occluded = barman(visible=False, talk_task_available=False,
-                      talk_task_probability=0.0, distance=366.0)
+def test_visibility_does_not_affect_confirmation() -> None:
+    # The live bug: an off-screen Barman is still a vendor.
+    occluded = barman(visible=False, distance=366.0)
     assert occluded.is_confirmed_vendor() is True
     assert [v.name for v in confirmed_vendor_candidates([occluded])] == ["Barman"]
 

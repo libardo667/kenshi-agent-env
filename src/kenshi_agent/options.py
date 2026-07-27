@@ -267,7 +267,6 @@ class StatefulNativeMovementOption:
                 for target in telemetry.world_targets
                 if target.id == self.action.target_id
                 and self.action.context_action in target.context_actions
-                and target.task_available
             ]
             if len(targets) != 1:
                 raise OptionLifecycleError(

@@ -262,8 +262,6 @@ def context_observation(
                     distance=20.0,
                     context_actions=[ContextActionKind.OPERATE],
                     default_task="operate_machinery",
-                    task_available=True,
-                    task_probability=1.0,
                 )
             ],
             native_control=NativeControlState(

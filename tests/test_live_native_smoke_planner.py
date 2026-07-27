@@ -22,8 +22,10 @@ from kenshi_agent.models import (
     Observation,
     PauseAction,
     PerformContextAction,
+    PlanEnvelope,
     PlanningMode,
     PlanPatch,
+    StopAction,
     TelemetrySnapshot,
     UIState,
     Vec3,
@@ -35,17 +37,19 @@ from kenshi_agent.planners import SubprocessPlanner
 TARGET_ID = "entity-copper"
 
 
-def observation(*, indoors: bool, task_available: bool = False) -> Observation:
+def observation(*, indoors: bool, advertise_operate: bool = True) -> Observation:
     target = WorldTarget(
         id=TARGET_ID,
         name="Copper Resource",
         kind="natural_resource",
         position=Vec3(x=10.0, y=0.0, z=20.0),
         distance=40.0,
-        context_actions=[ContextActionKind.OPERATE],
+        context_actions=(
+            [ContextActionKind.OPERATE]
+            if advertise_operate
+            else []
+        ),
         default_task="operate_machinery",
-        task_available=task_available,
-        task_probability=1.0 if task_available else 0.0,
         mining_resource_level=0.8,
     )
     return Observation(
@@ -97,7 +101,10 @@ def test_exit_plan_requires_and_preserves_the_observed_indoor_state() -> None:
     assert plan.based_on_revision == state.world_revision
     assert isinstance(plan.steps[0].action, ExitCurrentBuildingAction)
     assert isinstance(plan.steps[1].action, PauseAction)
+    assert plan.steps[1].preconditions[0].kind.value == "telemetry_fresh"
     assert plan.steps[0].on_success == plan.steps[1].step_id
+    assert plan.steps[1].on_success == plan.steps[2].step_id
+    assert isinstance(plan.steps[2].action, StopAction)
     with pytest.raises(ValueError, match="confirmed indoors"):
         build_plan(
             observation(indoors=False),
@@ -105,16 +112,16 @@ def test_exit_plan_requires_and_preserves_the_observed_indoor_state() -> None:
         )
 
 
-def test_context_plan_never_emits_an_unavailable_target() -> None:
+def test_context_plan_requires_the_exact_advertised_action() -> None:
     with pytest.raises(ValueError, match="not currently actionable"):
         build_plan(
-            observation(indoors=False),
+            observation(indoors=False, advertise_operate=False),
             action_kind="perform_context_action",
             target_id=TARGET_ID,
         )
 
     plan = build_plan(
-        observation(indoors=False, task_available=True),
+        observation(indoors=False),
         action_kind="perform_context_action",
         target_id=TARGET_ID,
     )
@@ -125,16 +132,16 @@ def test_context_plan_never_emits_an_unavailable_target() -> None:
     )
 
 
-def test_single_step_decision_uses_the_same_context_eligibility_fence() -> None:
+def test_single_step_decision_uses_the_same_advertised_action_fence() -> None:
     with pytest.raises(ValueError, match="not currently actionable"):
         build_decision(
-            observation(indoors=False),
+            observation(indoors=False, advertise_operate=False),
             action_kind="perform_context_action",
             target_id=TARGET_ID,
         )
 
     decision = build_decision(
-        observation(indoors=False, task_available=True),
+        observation(indoors=False),
         action_kind="perform_context_action",
         target_id=TARGET_ID,
     )
@@ -146,7 +153,7 @@ def test_single_step_decision_uses_the_same_context_eligibility_fence() -> None:
 
 
 def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
-    state = observation(indoors=False, task_available=True).model_copy(
+    state = observation(indoors=False).model_copy(
         update={
             "planning_mode": PlanningMode.CONTINUOUS,
             "active_plan": ActivePlanContext(
@@ -154,7 +161,7 @@ def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
                 plan_version=1,
                 objective="Operate the exact advertised target.",
                 active_step_id="native-smoke",
-                remaining_actions=1,
+                remaining_actions=2,
             ),
         }
     )
@@ -170,8 +177,40 @@ def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
     assert output.based_on_plan_version == state.active_plan.plan_version
     assert output.interrupt_active_step_id is None
     assert [type(step.action) for step in output.replace_future_steps] == [
-        PauseAction
+        PauseAction,
+        StopAction,
     ]
+
+
+def test_context_smoke_runs_through_the_subprocess_entrypoint() -> None:
+    state = observation(indoors=False).model_copy(
+        update={"planning_mode": PlanningMode.CONTINUOUS}
+    )
+    script = (
+        Path(__file__).parents[1]
+        / "src"
+        / "kenshi_agent"
+        / "live_native_smoke_planner.py"
+    )
+
+    output = asyncio.run(
+        SubprocessPlanner(
+            [
+                sys.executable,
+                str(script),
+                "--action",
+                "perform_context_action",
+                "--target-id",
+                TARGET_ID,
+            ]
+        ).decide(state)
+    )
+
+    assert isinstance(output, PlanEnvelope)
+    assert output.steps[0].action == PerformContextAction(
+        target_id=TARGET_ID,
+        context_action=ContextActionKind.OPERATE,
+    )
 
 
 def test_direction_subprocess_returns_a_patch_instead_of_a_second_move() -> None:
@@ -183,7 +222,7 @@ def test_direction_subprocess_returns_a_patch_instead_of_a_second_move() -> None
                 plan_version=1,
                 objective="Continue the exact bounded directional move.",
                 active_step_id="direction-smoke",
-                remaining_actions=1,
+                remaining_actions=2,
             ),
         }
     )
@@ -223,7 +262,7 @@ def test_direction_subprocess_can_explicitly_interrupt_the_active_move() -> None
                 active_step_interrupt_policy=(
                     InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
                 ),
-                remaining_actions=1,
+                remaining_actions=2,
             ),
         }
     )
@@ -246,5 +285,6 @@ def test_direction_subprocess_can_explicitly_interrupt_the_active_move() -> None
     assert isinstance(output, PlanPatch)
     assert output.interrupt_active_step_id == "direction-smoke"
     assert [type(step.action) for step in output.replace_future_steps] == [
-        PauseAction
+        PauseAction,
+        StopAction,
     ]

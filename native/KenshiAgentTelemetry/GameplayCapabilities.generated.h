@@ -21,6 +21,7 @@ namespace KenshiAgentTelemetry
             "squad.health",
             "squad.inventory",
             "squad.indoors",
+            "squad.current_goal",
             "ui.inventory",
             "ui.dialogue",
             "ui.dialogue.target",

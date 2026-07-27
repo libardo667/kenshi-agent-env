@@ -2335,7 +2335,6 @@ class LiveEnvironment(AgentEnvironment):
                 target
                 for target in telemetry.world_targets
                 if target.id == target_id
-                and target.task_available
                 and "operate" in target.context_actions
             ]
             if len(matches) != 1:

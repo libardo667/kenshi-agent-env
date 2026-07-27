@@ -1,7 +1,9 @@
 #include "WorldTargetProtocol.h"
 
+#include <algorithm>
 #include <iomanip>
 #include <locale>
+#include <set>
 #include <sstream>
 
 namespace
@@ -59,18 +61,22 @@ namespace
         return escaped.str();
     }
 
-    const char* WorldTargetJsonBool(bool value)
+    bool NaturalResourceTargetLess(
+        const KenshiAgentTelemetry::NaturalResourceTargetSnapshot& left,
+        const KenshiAgentTelemetry::NaturalResourceTargetSnapshot& right)
     {
-        return value ? "true" : "false";
+        if (left.distance != right.distance)
+            return left.distance < right.distance;
+        if (left.name != right.name)
+            return left.name < right.name;
+        return left.id < right.id;
     }
 }
 
 namespace KenshiAgentTelemetry
 {
     NaturalResourceAssessment::NaturalResourceAssessment()
-        : structurallyRecognized(false),
-          taskAvailable(false),
-          taskProbability(0.0)
+        : structurallyRecognized(false)
     {
     }
 
@@ -79,30 +85,48 @@ namespace KenshiAgentTelemetry
           positionY(0.0),
           positionZ(0.0),
           distance(0.0),
-          taskAvailable(false),
-          taskProbability(0.0),
           miningResourceLevel(0.0)
     {
     }
 
     NaturalResourceAssessment AssessNaturalResource(
         bool candidateValid,
+        bool isMine,
         bool isNaturalMine,
-        bool defaultTaskOperatesMachinery,
-        bool currentTaskAvailable,
-        double currentTaskProbability)
+        bool defaultTaskOperatesMachinery)
     {
         NaturalResourceAssessment assessment;
         assessment.structurallyRecognized =
             candidateValid &&
-            isNaturalMine &&
+            (isMine || isNaturalMine) &&
             defaultTaskOperatesMachinery;
-        if (!assessment.structurallyRecognized)
-            return assessment;
-
-        assessment.taskAvailable = currentTaskAvailable;
-        assessment.taskProbability = currentTaskProbability;
         return assessment;
+    }
+
+    std::vector<NaturalResourceTargetSnapshot>
+        SelectNearestNaturalResourceTargets(
+            const std::vector<NaturalResourceTargetSnapshot>& candidates,
+            unsigned int maximumResults)
+    {
+        std::vector<NaturalResourceTargetSnapshot> ordered(candidates);
+        std::sort(
+            ordered.begin(),
+            ordered.end(),
+            NaturalResourceTargetLess);
+
+        std::vector<NaturalResourceTargetSnapshot> selected;
+        std::set<std::string> seenIds;
+        for (std::vector<NaturalResourceTargetSnapshot>::const_iterator it =
+                 ordered.begin();
+             it != ordered.end() &&
+                 selected.size() < maximumResults;
+             ++it)
+        {
+            if (it->id.empty() || !seenIds.insert(it->id).second)
+                continue;
+            selected.push_back(*it);
+        }
+        return selected;
     }
 
     bool IsWorldTargetScanAtCapacity(
@@ -132,10 +156,6 @@ namespace KenshiAgentTelemetry
         json << "\"distance\":" << target.distance << ",";
         json << "\"context_actions\":[\"operate\"],";
         json << "\"default_task\":\"operate_machinery\",";
-        json << "\"task_available\":"
-             << WorldTargetJsonBool(target.taskAvailable) << ",";
-        json << "\"task_probability\":"
-             << target.taskProbability << ",";
         json << "\"mining_resource_level\":"
              << target.miningResourceLevel;
         json << "}";

@@ -152,6 +152,7 @@ class MockEnvironment(AgentEnvironment):
                 "game.money",
                 "game.location",
                 "squad.basic",
+                "squad.current_goal",
                 "squad.hunger",
                 "squad.health",
                 "nearby.visible_entities",

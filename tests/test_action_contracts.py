@@ -379,8 +379,6 @@ class TestPerformContextAction:
             distance=40.0,
             context_actions=[ContextActionKind.OPERATE],
             default_task="operate_machinery",
-            task_available=True,
-            task_probability=1.0,
             mining_resource_level=0.8,
         )
         state = observation(
@@ -414,8 +412,6 @@ class TestPerformContextAction:
             distance=40.0,
             context_actions=[],
             default_task="operate_machinery",
-            task_available=True,
-            task_probability=1.0,
         )
         state = observation(world_targets=[target])
 
@@ -430,7 +426,7 @@ class TestPerformContextAction:
         assert not binding.bound
         assert "does not currently advertise" in binding.reason
 
-    def test_rejects_structurally_present_target_when_task_is_unavailable(self) -> None:
+    def test_binds_without_an_undocumented_engine_probability(self) -> None:
         target = WorldTarget(
             id="entity-copper",
             name="Copper Resource",
@@ -439,8 +435,6 @@ class TestPerformContextAction:
             distance=40.0,
             context_actions=[ContextActionKind.OPERATE],
             default_task="operate_machinery",
-            task_available=False,
-            task_probability=0.0,
         )
         state = observation(world_targets=[target])
 
@@ -452,8 +446,8 @@ class TestPerformContextAction:
             state,
         )
 
-        assert not binding.bound
-        assert "currently reports its contextual task unavailable" in binding.reason
+        assert binding.bound
+        assert binding.target_id == target.id
 
 
 class TestContractCatalog:

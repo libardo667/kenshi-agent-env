@@ -54,8 +54,6 @@ def test_native_plugin_exports_nearby_character_and_ui_signals() -> None:
     assert "platoon->getHasVendorList()" in source
     assert "platoon->getSquadLeader() == target" in source
     assert "target->hasDialogue()" in source
-    assert "getPlayerTaskProbability" in source
-    assert "PLAYER_TALK_TO" in source
     assert "ProcessNativeCommandRequest" in source
     assert "newPlayerTaskSelectedCharacters" in source
     assert "VK_F10" in source

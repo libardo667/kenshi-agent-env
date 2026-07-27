@@ -66,19 +66,21 @@ from a portrait name.
 ## World targets and current authority
 
 `world_targets` reports structurally recognized non-character objects inside
-the current bounded native query. A natural mine remains present when the
-selected character cannot currently operate it. `context_actions` names its
-reviewed semantic affordance; `task_available` and `task_probability` report
-current Kenshi task eligibility separately.
+the current bounded native query. Mining targets are collected from a
+town-local scan and a larger outer scan, deduplicated by stable identity, sorted
+nearest-first, and then truncated. `context_actions` names a reviewed bounded
+attempt on that exact target; it is not a prediction of task success.
 
-Only targets with a current advertised action and `task_available: true` enter
-the planner's actionable `context_targets` digest. Binding and native dispatch
-recheck availability, exact identity, and structural role. Perception therefore
-does not grant action authority.
+Targets with a current advertised action enter the planner's `context_targets`
+digest. Binding requires the exact current target and action. Native dispatch
+then re-resolves identity and structural role and accepts success only when the
+selected character's AI reports the exact task and subject. Perception
+therefore does not grant unchecked native authority.
 
-If the native query reaches its maximum result count, `warnings` says
-`world_targets` may be incomplete. Kenshi does not document that bounded query
-as nearest-first, so omission at capacity must not be interpreted as absence.
+If either source query reaches its maximum result count, `warnings` says
+`world_targets` may be incomplete. Kenshi does not document those bounded
+queries as nearest-first, so absence at source capacity remains unknown even
+though the retained recognized targets are sorted.
 
 ## Partial and unknown values
 
@@ -95,6 +97,10 @@ not make `bleeding_rate` or body-part wounds authoritative.
 
 `squad[].indoors` is true only when the native handle resolves to a valid current
 building. A valid-looking stale handle fails closed, matching exit authority.
+
+`squad[].current_goal` is the same UI-facing goal text Kenshi presents to the
+player and is authoritative only with `squad.current_goal`. It does not expose
+the internal task stack or hidden task-scoring mechanics.
 
 ## Threading
 
