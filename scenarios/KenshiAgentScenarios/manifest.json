@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "mod": {
+    "directory": "KenshiAgentScenarios",
+    "filename": "KenshiAgentScenarios.mod",
+    "size_bytes": 3349,
+    "sha256": "05c7a711b9e7b6e58b531013bc3072ef274e165e3dca7961d0f4cfa0f70b8634"
+  },
+  "starts": [
+    {
+      "start_id": "kae-01-broke-solo",
+      "label": "KAE 01 - Broke Solo",
+      "money": 20,
+      "party_size": 1
+    },
+    {
+      "start_id": "kae-02-funded-solo",
+      "label": "KAE 02 - Funded Solo",
+      "money": 20000,
+      "party_size": 1
+    },
+    {
+      "start_id": "kae-03-broke-pair",
+      "label": "KAE 03 - Broke Pair",
+      "money": 20,
+      "party_size": 2
+    },
+    {
+      "start_id": "kae-04-funded-pair",
+      "label": "KAE 04 - Funded Pair",
+      "money": 20000,
+      "party_size": 2
+    }
+  ]
+}

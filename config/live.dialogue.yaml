@@ -138,6 +138,13 @@ controls:
   # These are not fixed coordinates and remain valid across client sizes.
   startup_continue_control_labels:
     - Continue
+  startup_new_game_control_labels:
+    - New Game
+  startup_begin_control_labels:
+    - Begin
+  startup_confirm_control_labels:
+    - Confirm
+  startup_game_start_max_carousel_steps: 64
   startup_load_control_labels:
     - Load Game
     - Load

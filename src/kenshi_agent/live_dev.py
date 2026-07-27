@@ -15,8 +15,18 @@ import time
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
+from typing import Literal
 
+from .authored_starts import (
+    AuthoredGameStart,
+    install_authored_starts,
+    load_authored_starts_bundle,
+    resolve_authored_game_start,
+    verify_authored_game_start_snapshot,
+    verify_installed_authored_starts,
+)
 from .cli import main as agent_main
 from .config import AppConfig, ControlsConfig, load_config
 from .control.base import InputController, PrimitiveInputAction, WindowRect
@@ -88,7 +98,7 @@ def _validate_safe_close_snapshot(
     *,
     max_age_seconds: float,
     now: datetime | None = None,
-) -> None:
+) -> Literal["loaded_paused", "title"]:
     """Require current controller-idle evidence before closing the game window."""
 
     if not isinstance(payload, dict):
@@ -121,12 +131,24 @@ def _validate_safe_close_snapshot(
         raise LaunchFailed("Safe close requires game and UI telemetry.")
     if not isinstance(native_control, dict):
         raise LaunchFailed("Safe close requires native-control telemetry.")
-    if game.get("loaded") is not True or game.get("paused") is not True:
-        raise LaunchFailed("Safe close requires a loaded, explicitly paused game.")
-    if ui.get("modal_open") is not False or ui.get("dialogue_open") is not False:
-        raise LaunchFailed("Safe close refuses while a modal or dialogue is open.")
     if native_control.get("active_command_id") not in (None, ""):
         raise LaunchFailed("Safe close refuses while a native command is active.")
+    if game.get("loaded") is True and game.get("paused") is True:
+        if ui.get("modal_open") is not False or ui.get("dialogue_open") is not False:
+            raise LaunchFailed(
+                "Safe close refuses a loaded world while a modal or dialogue is open."
+            )
+        return "loaded_paused"
+    if (
+        game.get("loaded") is False
+        and ui.get("active_screen") == "title"
+        and ui.get("modal_open") in (None, True, False)
+        and ui.get("dialogue_open") in (None, False)
+    ):
+        return "title"
+    raise LaunchFailed(
+        "Safe close requires a fresh loaded paused world or the title screen."
+    )
 
 
 def _controller(
@@ -306,6 +328,11 @@ def _local_app_data() -> Path:
 def _kenshi_save_root() -> Path:
     override = os.environ.get("KENSHI_AGENT_SAVE_ROOT")
     return Path(override) if override else _local_app_data() / "kenshi" / "save"
+
+
+def _kenshi_root() -> Path:
+    override = os.environ.get("KENSHI_AGENT_KENSHI_ROOT")
+    return Path(override) if override else _kenshi_settings_path().parent
 
 
 def _scenario_store() -> Path:
@@ -569,6 +596,160 @@ def _unique_visible_control(
     return matches[0] if len(matches) == 1 else None
 
 
+def _fresh_semantic_control_visible(
+    reader: TelemetryReader,
+    labels: list[str],
+) -> bool:
+    result = reader.read()
+    return (
+        not result.stale
+        and _unique_visible_control(result.snapshot, labels) is not None
+    )
+
+
+def _game_start_carousel_state(
+    snapshot: TelemetrySnapshot,
+) -> tuple[VisibleUIControl, str] | None:
+    """Resolve the carousel's left arrow and current label by their geometry."""
+
+    if "ui.visible_controls" not in snapshot.capabilities:
+        return None
+    controls = snapshot.ui.visible_controls or []
+    left_matches = [
+        control
+        for control in controls
+        if control.role == "button"
+        and _normalize_control_label(control.label).endswith("_leftbutton")
+    ]
+    right_matches = [
+        control
+        for control in controls
+        if control.role == "button"
+        and _normalize_control_label(control.label).endswith("_rightbutton")
+    ]
+    if len(left_matches) != 1 or len(right_matches) != 1:
+        return None
+    left = left_matches[0]
+    right = right_matches[0]
+    left_x, _ = left.center
+    right_x, _ = right.center
+    if left_x >= right_x:
+        return None
+
+    min_arrow_y = min(left.bounds.min_y, right.bounds.min_y)
+    max_arrow_y = max(left.bounds.max_y, right.bounds.max_y)
+    labels = [
+        control
+        for control in controls
+        if control.role == "text"
+        and left_x < control.center[0] < right_x
+        and min_arrow_y <= control.center[1] <= max_arrow_y
+    ]
+    if len(labels) != 1:
+        return None
+    label = " ".join(labels[0].label.split())
+    if not label:
+        return None
+    return left, label
+
+
+async def _wait_for_game_start_carousel(
+    reader: TelemetryReader,
+    *,
+    timeout: float,
+    controller: InputController,
+    description: str,
+    health_check: Callable[[], None] | None = None,
+    previous_label: str | None = None,
+    minimum_sequence: int | None = None,
+) -> tuple[VisibleUIControl, str, int]:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if health_check is not None:
+            health_check()
+        try:
+            title = _terminal_window_title(controller)
+        except (OSError, RuntimeError, ValueError):
+            title = None
+        if title is not None:
+            raise LaunchFailed(
+                f"Kenshi startup stopped because the terminal window {title!r} appeared."
+            )
+        _abort_if_human_input(controller)
+        try:
+            result = reader.read()
+        except TelemetryReadError:
+            await asyncio.sleep(0.1)
+            continue
+        state = _game_start_carousel_state(result.snapshot)
+        changed = (
+            previous_label is None
+            or (
+                minimum_sequence is not None
+                and result.snapshot.sequence > minimum_sequence
+                and state is not None
+                and _normalize_control_label(state[1]) != previous_label
+            )
+        )
+        if not result.stale and state is not None and changed:
+            return state[0], state[1], result.snapshot.sequence
+        await asyncio.sleep(0.1)
+    raise TimeoutError(f"Timed out waiting for {description}.")
+
+
+async def _click_game_start_left(
+    controller: InputController,
+    reader: TelemetryReader,
+    *,
+    expected_left: VisibleUIControl,
+    expected_label: str,
+) -> int:
+    """Click left only while the exact observed carousel state remains current."""
+
+    expected_normalized = _normalize_control_label(expected_label)
+    _abort_if_human_input(controller)
+    initial = reader.read()
+    initial_state = (
+        None
+        if initial.stale
+        else _game_start_carousel_state(initial.snapshot)
+    )
+    if (
+        initial_state is None
+        or initial_state[0] != expected_left
+        or _normalize_control_label(initial_state[1]) != expected_normalized
+    ):
+        raise RuntimeError(
+            "Authored Game Start carousel changed before the input lease; "
+            "no pointer input was sent."
+        )
+
+    async with controller.input_lease():
+        _abort_if_human_input(controller)
+        current = reader.read()
+        current_state = (
+            None
+            if current.stale
+            else _game_start_carousel_state(current.snapshot)
+        )
+        if (
+            current_state is None
+            or current_state[0] != expected_left
+            or _normalize_control_label(current_state[1]) != expected_normalized
+        ):
+            raise RuntimeError(
+                "Authored Game Start carousel changed inside the input lease; "
+                "no pointer input was sent."
+            )
+        x, y = current_state[0].center
+        receipt = await controller.execute(
+            ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
+        )
+    if not receipt.executed:
+        raise RuntimeError(receipt.message)
+    return current.snapshot.sequence
+
+
 async def _click_semantic_control(
     controller: InputController,
     reader: TelemetryReader,
@@ -659,6 +840,86 @@ async def _open_exact_scenario_save(
         reader,
         [save_control_label],
     )
+
+
+async def _open_exact_authored_game_start(
+    controller: InputController,
+    reader: TelemetryReader,
+    *,
+    new_game_control_labels: list[str],
+    game_start_label: str,
+    begin_control_labels: list[str],
+    confirm_control_labels: list[str],
+    max_carousel_steps: int,
+    timeout: float,
+    health_check: Callable[[], None] | None = None,
+) -> None:
+    """Select one bundled Game Start through exact semantic controls."""
+
+    await _wait_until(
+        partial(_fresh_semantic_control_visible, reader, new_game_control_labels),
+        timeout,
+        "semantic New Game control",
+        controller=controller,
+        health_check=health_check,
+    )
+    await _click_semantic_control(controller, reader, new_game_control_labels)
+
+    description = f"exact authored Game Start {game_start_label!r} carousel"
+    left, current_label, sequence = await _wait_for_game_start_carousel(
+        reader,
+        timeout=timeout,
+        controller=controller,
+        description=description,
+        health_check=health_check,
+    )
+    target = _normalize_control_label(game_start_label)
+    seen = {_normalize_control_label(current_label)}
+    steps = 0
+    while _normalize_control_label(current_label) != target:
+        if steps >= max_carousel_steps:
+            raise LaunchFailed(
+                f"Authored Game Start {game_start_label!r} was not found within "
+                f"{max_carousel_steps} carousel transitions."
+            )
+        click_sequence = await _click_game_start_left(
+            controller,
+            reader,
+            expected_left=left,
+            expected_label=current_label,
+        )
+        left, current_label, sequence = await _wait_for_game_start_carousel(
+            reader,
+            timeout=timeout,
+            controller=controller,
+            description=(
+                f"Game Start carousel to advance from {current_label!r}"
+            ),
+            health_check=health_check,
+            previous_label=_normalize_control_label(current_label),
+            minimum_sequence=max(sequence, click_sequence),
+        )
+        steps += 1
+        normalized = _normalize_control_label(current_label)
+        if normalized in seen:
+            raise LaunchFailed(
+                f"Authored Game Start carousel cycled after {steps} transitions "
+                f"without reaching {game_start_label!r}."
+            )
+        seen.add(normalized)
+
+    for labels, stage_description in (
+        (begin_control_labels, "semantic Begin control"),
+        (confirm_control_labels, "semantic character Confirm control"),
+    ):
+        await _wait_until(
+            partial(_fresh_semantic_control_visible, reader, labels),
+            timeout,
+            stage_description,
+            controller=controller,
+            health_check=health_check,
+        )
+        await _click_semantic_control(controller, reader, labels)
 
 
 async def _wait_for_loaded_or_semantic_control(
@@ -778,6 +1039,7 @@ async def _perform_launch(
     controller: InputController,
     monitor: GpuTdrMonitor | None,
     scenario_manifest: ScenarioFixtureManifest | None = None,
+    game_start: AuthoredGameStart | None = None,
 ) -> None:
     health_check = monitor.raise_if_new if monitor is not None else None
     _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
@@ -825,6 +1087,20 @@ async def _perform_launch(
                 reader,
                 load_control_labels=config.controls.startup_load_control_labels,
                 save_control_label=scenario_manifest.managed_save_name,
+                timeout=args.timeout,
+                health_check=health_check,
+            )
+        elif game_start is not None:
+            await _open_exact_authored_game_start(
+                controller,
+                reader,
+                new_game_control_labels=config.controls.startup_new_game_control_labels,
+                game_start_label=game_start.label,
+                begin_control_labels=config.controls.startup_begin_control_labels,
+                confirm_control_labels=config.controls.startup_confirm_control_labels,
+                max_carousel_steps=(
+                    config.controls.startup_game_start_max_carousel_steps
+                ),
                 timeout=args.timeout,
                 health_check=health_check,
             )
@@ -913,6 +1189,13 @@ async def _perform_launch(
             duration_seconds=config.launch.post_load_health_seconds,
             health_check=health_check,
         )
+        if game_start is not None:
+            result = reader.read()
+            if result.stale:
+                raise LaunchFailed(
+                    "Authored Game Start proof requires fresh post-load telemetry."
+                )
+            verify_authored_game_start_snapshot(result.snapshot, game_start)
         if scenario_manifest is not None:
             result = reader.read()
             if result.stale:
@@ -942,6 +1225,7 @@ async def _launch(args: argparse.Namespace) -> int:
     )
     monitor = GpuTdrMonitor() if config.launch.monitor_gpu_tdr else None
     scenario_manifest: ScenarioFixtureManifest | None = None
+    game_start: AuthoredGameStart | None = None
     try:
         if args.scenario is not None:
             if not args.continue_game:
@@ -951,6 +1235,17 @@ async def _launch(args: argparse.Namespace) -> int:
                 args.scenario,
                 _kenshi_save_root(),
             )
+        if args.game_start is not None:
+            if not args.continue_game:
+                raise LaunchFailed(
+                    "--game-start cannot be combined with --no-continue."
+                )
+            authored_bundle = load_authored_starts_bundle()
+            game_start = resolve_authored_game_start(
+                authored_bundle,
+                args.game_start,
+            )
+            verify_installed_authored_starts(authored_bundle, _kenshi_root())
         controller = _controller(config)
         try:
             terminal_window_title = _terminal_window_title(controller)
@@ -977,10 +1272,16 @@ async def _launch(args: argparse.Namespace) -> int:
             if scenario_manifest is not None
             else ""
         )
+        start_suffix = (
+            f" Authored Game Start {game_start.start_id!r} is installed exactly."
+            if game_start is not None
+            else ""
+        )
         print(
             "Launch preflight passed: all configured Steam, memory, graphics, "
             "display, and Windows GPU-event checks are ready."
             + scenario_suffix
+            + start_suffix
         )
         return 0
 
@@ -1000,6 +1301,7 @@ async def _launch(args: argparse.Namespace) -> int:
                     controller,
                     monitor,
                     scenario_manifest,
+                    game_start,
                 )
             except LaunchInterrupted as exc:
                 safe_state = await _ensure_interrupted_safe_state(
@@ -1027,10 +1329,16 @@ async def _launch(args: argparse.Namespace) -> int:
         if scenario_manifest is not None
         else ""
     )
+    start_suffix = (
+        f" Authored Game Start {game_start.start_id!r} was telemetry-proven."
+        if game_start is not None
+        else ""
+    )
     print(
         "Kenshi launched"
         + (", loaded, and paused." if args.continue_game else ".")
         + scenario_suffix
+        + start_suffix
     )
     return 0
 
@@ -1043,7 +1351,7 @@ async def _close(args: argparse.Namespace) -> int:
         if "kenshi_x64.exe" not in _running_process_names():
             raise LaunchFailed("Kenshi is not running.")
         payload = json.loads(config.telemetry.file.read_text(encoding="utf-8"))
-        _validate_safe_close_snapshot(
+        safe_state = _validate_safe_close_snapshot(
             payload,
             max_age_seconds=config.telemetry.max_age_seconds,
         )
@@ -1052,7 +1360,10 @@ async def _close(args: argparse.Namespace) -> int:
         deadline = time.monotonic() + args.timeout
         while time.monotonic() < deadline:
             if "kenshi_x64.exe" not in _running_process_names():
-                print("Kenshi closed from a fresh paused idle state.")
+                if safe_state == "title":
+                    print("Kenshi closed from a fresh idle title screen.")
+                else:
+                    print("Kenshi closed from a fresh paused idle state.")
                 return 0
             await asyncio.sleep(0.25)
         raise LaunchFailed(
@@ -1413,9 +1724,9 @@ def _scenario_identity_from_args(args: argparse.Namespace) -> ScenarioIdentity:
 
 
 def _scenario_command(args: argparse.Namespace) -> int:
-    store = _scenario_store()
     try:
         if args.scenario_action == "list":
+            store = _scenario_store()
             fixtures_root = store / "fixtures"
             manifests = (
                 [
@@ -1441,12 +1752,43 @@ def _scenario_command(args: argparse.Namespace) -> int:
                 )
             )
             return 0
-
-        if "kenshi_x64.exe" in _running_process_names():
-            raise ScenarioFixtureError(
-                "Kenshi must be closed before capturing or restoring a scenario save."
+        if args.scenario_action == "verify-starts":
+            bundle = load_authored_starts_bundle()
+            path = verify_installed_authored_starts(bundle, _kenshi_root())
+            print(
+                f"Authored Game Starts are installed and enabled exactly at {path}."
             )
+            return 0
+
+        running = _running_process_names()
+        if {
+            "kenshi_x64.exe",
+            "forgotten construction set.exe",
+        } & running:
+            raise ScenarioFixtureError(
+                "Kenshi and FCS must be closed before changing scenario artifacts "
+                "or saves."
+            )
+        if args.scenario_action == "install-starts":
+            install_result = install_authored_starts(
+                load_authored_starts_bundle(),
+                _kenshi_root(),
+            )
+            changes: list[str] = []
+            if install_result.mod_changed:
+                changes.append("installed exact mod bytes")
+            if install_result.enabled_changed:
+                changes.append("enabled the mod")
+            summary = ", ".join(changes) if changes else "already exact"
+            recovery = (
+                f" Enabled-mod backup: {install_result.backup_path}."
+                if install_result.backup_path is not None
+                else ""
+            )
+            print(f"Authored Game Starts: {summary}.{recovery}")
+            return 0
         if args.scenario_action == "capture":
+            store = _scenario_store()
             scenario = _scenario_identity_from_args(args)
             source = _named_save(_kenshi_save_root(), args.source_save)
             manifest = capture_scenario_fixture(source, store, scenario)
@@ -1456,24 +1798,26 @@ def _scenario_command(args: argparse.Namespace) -> int:
             )
             return 0
         if args.scenario_action == "restore":
-            result = restore_scenario_fixture(
+            store = _scenario_store()
+            restore_result = restore_scenario_fixture(
                 store,
                 args.scenario_id,
                 _kenshi_save_root(),
             )
-            if result.changed:
+            if restore_result.changed:
                 recovery = (
-                    f" Prior managed state is recoverable at {result.recovery_path}."
-                    if result.recovery_path is not None
+                    " Prior managed state is recoverable at "
+                    f"{restore_result.recovery_path}."
+                    if restore_result.recovery_path is not None
                     else ""
                 )
                 print(
-                    f"Restored {result.scenario.scenario_id!r} into "
+                    f"Restored {restore_result.scenario.scenario_id!r} into "
                     f"{MANAGED_SAVE_NAME!r}.{recovery}"
                 )
             else:
                 print(
-                    f"Scenario {result.scenario.scenario_id!r} is already restored "
+                    f"Scenario {restore_result.scenario.scenario_id!r} is already restored "
                     f"exactly in {MANAGED_SAVE_NAME!r}."
                 )
             return 0
@@ -1685,12 +2029,24 @@ def build_parser() -> argparse.ArgumentParser:
     launch = subparsers.add_parser("launch", help="Launch RE_Kenshi through the launcher.")
     launch.add_argument("--config", required=True)
     launch.add_argument("--timeout", type=float, default=60.0)
-    launch.add_argument("--no-continue", dest="continue_game", action="store_false")
-    launch.add_argument(
+    startup_source = launch.add_mutually_exclusive_group()
+    startup_source.add_argument(
+        "--no-continue",
+        dest="continue_game",
+        action="store_false",
+    )
+    startup_source.add_argument(
         "--scenario",
         help=(
             "Load the exact project-owned save slot already restored for this "
             "fixture ID, then attest all matrix axes."
+        ),
+    )
+    startup_source.add_argument(
+        "--game-start",
+        help=(
+            "Start one exact bundled FCS scenario by catalog ID and prove its "
+            "money and party size after loading."
         ),
     )
     launch.add_argument(
@@ -1710,7 +2066,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     close = subparsers.add_parser(
         "close",
-        help="Close one loaded Kenshi client only from a fresh paused idle state.",
+        help="Close Kenshi only from a verified title or paused idle state.",
     )
     close.add_argument("--config", required=True)
     close.add_argument("--timeout", type=float, default=15.0)
@@ -1751,6 +2107,17 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     scenario_actions.add_parser("list", help="List and verify captured fixtures.")
+    scenario_actions.add_parser(
+        "verify-starts",
+        help="Verify the exact bundled FCS Game Starts are installed and enabled.",
+    )
+    scenario_actions.add_parser(
+        "install-starts",
+        help=(
+            "Install and enable the exact bundled FCS Game Starts without "
+            "overwriting a different artifact."
+        ),
+    )
     capture_scenario = scenario_actions.add_parser(
         "capture",
         help="Copy one closed save into the immutable fixture store.",

@@ -11,9 +11,35 @@ Start**. It can reference starting squad templates and set money, town or world
 coordinates, relations, research, and race limits. Character templates carry
 stats, health, equipment, inventory, and initial slave state.
 
-Start the game through that mod. Stage anything the Game Start cannot express,
-such as an interior position, active combat, or exact time. Save under a clear
-temporary name, pause, and close Kenshi normally.
+The reviewed `KenshiAgentScenarios` bytes and their stable catalog IDs are
+checked in under `scenarios/`. Install and verify them only while Kenshi and FCS
+are closed:
+
+```bash
+./dev scenario install-starts
+./dev scenario verify-starts
+```
+
+Installation refuses to replace different mod bytes, appends one exact enabled
+entry without reordering other mods, and backs up `data/mods.cfg` before change.
+
+## Create a source save
+
+Launch one exact catalog entry:
+
+```bash
+./dev launch --game-start kae-01-broke-solo
+```
+
+The launcher uses fresh semantic controls for **New Game**, traverses the
+unordered Game Start carousel by its currently rendered labels until the exact
+FCS label is visible, then selects **Begin** and **Confirm**. It pauses, observes
+the normal health window, and proves the catalog's exact cats and party size
+from fresh telemetry. It never uses Continue for this path.
+
+Stage anything the Game Start cannot express, such as an interior position,
+active combat, or exact time. Save under a clear temporary name, pause, and
+close Kenshi normally.
 
 ## Capture without changing the source
 

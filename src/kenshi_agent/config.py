@@ -303,6 +303,24 @@ class ControlsConfig(ConfigModel):
         min_length=1,
         max_length=8,
     )
+    startup_new_game_control_labels: list[str] = Field(
+        default_factory=lambda: ["New Game"],
+        min_length=1,
+        max_length=8,
+    )
+    startup_begin_control_labels: list[str] = Field(
+        default_factory=lambda: ["Begin"],
+        min_length=1,
+        max_length=8,
+    )
+    startup_confirm_control_labels: list[str] = Field(
+        default_factory=lambda: ["Confirm"],
+        min_length=1,
+        max_length=8,
+    )
+    # The Game Start picker is a carousel with no stable ordering contract.
+    # Traverse by the currently rendered label and stop if the carousel cycles.
+    startup_game_start_max_carousel_steps: int = Field(default=64, ge=1, le=256)
     startup_load_control_labels: list[str] = Field(
         default_factory=lambda: ["Load Game", "Load"],
         min_length=1,
@@ -334,6 +352,9 @@ class ControlsConfig(ConfigModel):
 
     @field_validator(
         "startup_continue_control_labels",
+        "startup_new_game_control_labels",
+        "startup_begin_control_labels",
+        "startup_confirm_control_labels",
         "startup_load_control_labels",
         "startup_save_control_labels",
     )

@@ -263,8 +263,8 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Execute the fixture-attested scenario matrix.** Author FCS Game Starts,
-   capture dynamic saves where needed, then use `./dev scenario`, `launch
+1. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
+   create source saves; capture dynamic states; use `./dev scenario`, `launch
    --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,
    broke/funded, solo/squad, and day/night. Manual labels and raw reruns are not
    recurrence evidence. Select the first gap supported across verified situations.

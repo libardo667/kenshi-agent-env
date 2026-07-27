@@ -19,6 +19,7 @@ from kenshi_agent.live_dev import (
     _ensure_interrupted_safe_state,
     _journey_argv,
     _observe_loaded_paused_health,
+    _open_exact_authored_game_start,
     _open_exact_scenario_save,
     _plugin_ready,
     _steam_connection_state,
@@ -119,6 +120,7 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
         "captured_at": observed_at.isoformat(),
         "game": {"loaded": True, "paused": True},
         "ui": {
+            "active_screen": "world",
             "modal_open": False,
             "dialogue_open": False,
         },
@@ -152,6 +154,47 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
     with pytest.raises(LaunchFailed, match="no older than"):
         _validate_safe_close_snapshot(
             stale,
+            max_age_seconds=3.0,
+            now=observed_at,
+        )
+
+    title = json.loads(json.dumps(payload))
+    title["game"] = {"loaded": False, "paused": False}
+    title["ui"]["active_screen"] = "title"
+    assert (
+        _validate_safe_close_snapshot(
+            title,
+            max_age_seconds=3.0,
+            now=observed_at,
+        )
+        == "title"
+    )
+
+    title["ui"]["modal_open"] = True
+    assert (
+        _validate_safe_close_snapshot(
+            title,
+            max_age_seconds=3.0,
+            now=observed_at,
+        )
+        == "title"
+    )
+
+    del title["ui"]["modal_open"]
+    del title["ui"]["dialogue_open"]
+    assert (
+        _validate_safe_close_snapshot(
+            title,
+            max_age_seconds=3.0,
+            now=observed_at,
+        )
+        == "title"
+    )
+
+    title["ui"]["active_screen"] = "loading"
+    with pytest.raises(LaunchFailed, match="loaded paused world or the title screen"):
+        _validate_safe_close_snapshot(
+            title,
             max_age_seconds=3.0,
             now=observed_at,
         )
@@ -207,6 +250,53 @@ def semantic_snapshot(
                 )
             ]
         ),
+    )
+
+
+def carousel_snapshot(
+    sequence: int,
+    *,
+    label: str,
+    duplicate_left: bool = False,
+) -> TelemetrySnapshot:
+    left = VisibleUIControl(
+        label="session_LeftButton",
+        role="button",
+        bounds=NormalizedPointerBounds(
+            min_x=0.55,
+            max_x=0.57,
+            min_y=0.08,
+            max_y=0.13,
+        ),
+    )
+    controls = [
+        left,
+        *([left.model_copy(deep=True)] if duplicate_left else []),
+        VisibleUIControl(
+            label="session_RightButton",
+            role="button",
+            bounds=NormalizedPointerBounds(
+                min_x=0.73,
+                max_x=0.75,
+                min_y=0.08,
+                max_y=0.13,
+            ),
+        ),
+        VisibleUIControl(
+            label=label,
+            role="text",
+            bounds=NormalizedPointerBounds(
+                min_x=0.57,
+                max_x=0.73,
+                min_y=0.078,
+                max_y=0.134,
+            ),
+        ),
+    ]
+    return TelemetrySnapshot(
+        sequence=sequence,
+        capabilities=["ui.visible_controls"],
+        ui=UIState(visible_controls=controls),
     )
 
 
@@ -877,6 +967,33 @@ def test_launch_parser_accepts_explicit_existing_launcher_resume() -> None:
     assert args.resume_launcher is True
 
 
+def test_launch_parser_accepts_only_one_exact_startup_source() -> None:
+    args = live_dev.build_parser().parse_args(
+        [
+            "launch",
+            "--config",
+            "config/live.burnin.yaml",
+            "--game-start",
+            "kae-03-broke-pair",
+        ]
+    )
+
+    assert args.game_start == "kae-03-broke-pair"
+
+    with pytest.raises(SystemExit):
+        live_dev.build_parser().parse_args(
+            [
+                "launch",
+                "--config",
+                "config/live.burnin.yaml",
+                "--scenario",
+                "fixture-a",
+                "--game-start",
+                "kae-03-broke-pair",
+            ]
+        )
+
+
 def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sample() -> None:
     unadvertised = [
         WorldTarget(
@@ -1158,6 +1275,149 @@ def test_scenario_start_uses_load_game_then_exact_managed_save() -> None:
     asyncio.run(scenario())
 
 
+def test_authored_start_traverses_carousel_then_begins_and_confirms() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        snapshots = [
+            semantic_snapshot(1, label="New Game"),
+            semantic_snapshot(2, label="New Game"),
+            semantic_snapshot(3, label="New Game"),
+            carousel_snapshot(4, label="Wanderer"),
+            carousel_snapshot(5, label="Wanderer"),
+            carousel_snapshot(6, label="Wanderer"),
+            carousel_snapshot(7, label="Freedom Seekers"),
+            carousel_snapshot(8, label="Freedom Seekers"),
+            carousel_snapshot(9, label="Freedom Seekers"),
+            carousel_snapshot(10, label="Freedom Seekers"),
+            carousel_snapshot(11, label="KAE 03 - Broke Pair"),
+            semantic_snapshot(12, label="Begin"),
+            semantic_snapshot(13, label="Begin"),
+            semantic_snapshot(14, label="Begin"),
+            semantic_snapshot(15, label="Confirm"),
+            semantic_snapshot(16, label="Confirm"),
+            semantic_snapshot(17, label="Confirm"),
+        ]
+        reader = LaunchTelemetry(*snapshots)
+
+        await _open_exact_authored_game_start(
+            controller,
+            reader,  # type: ignore[arg-type]
+            new_game_control_labels=["New Game"],
+            game_start_label="KAE 03 - Broke Pair",
+            begin_control_labels=["Begin"],
+            confirm_control_labels=["Confirm"],
+            max_carousel_steps=16,
+            timeout=0.5,
+        )
+
+        assert len(controller.actions) == 5
+        assert all(isinstance(action, live_dev.ClickAction) for action in controller.actions)
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_authored_start_ambiguity_emits_no_start_selection_input() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        new_game = semantic_snapshot(1, label="New Game")
+        ambiguous = carousel_snapshot(
+            4,
+            label="Wanderer",
+            duplicate_left=True,
+        )
+        reader = LaunchTelemetry(new_game, new_game, new_game, ambiguous)
+
+        with pytest.raises(TimeoutError, match="exact authored Game Start"):
+            await _open_exact_authored_game_start(
+                controller,
+                reader,  # type: ignore[arg-type]
+                new_game_control_labels=["New Game"],
+                game_start_label="KAE 03 - Broke Pair",
+                begin_control_labels=["Begin"],
+                confirm_control_labels=["Confirm"],
+                max_carousel_steps=16,
+                timeout=0.01,
+            )
+
+        assert len(controller.actions) == 1
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_authored_start_carousel_cycle_stops_before_begin() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        snapshots = [
+            semantic_snapshot(1, label="New Game"),
+            semantic_snapshot(2, label="New Game"),
+            semantic_snapshot(3, label="New Game"),
+            carousel_snapshot(4, label="Wanderer"),
+            carousel_snapshot(5, label="Wanderer"),
+            carousel_snapshot(6, label="Wanderer"),
+            carousel_snapshot(7, label="Nobodies"),
+            carousel_snapshot(8, label="Nobodies"),
+            carousel_snapshot(9, label="Nobodies"),
+            carousel_snapshot(10, label="Nobodies"),
+            carousel_snapshot(11, label="Wanderer"),
+        ]
+        reader = LaunchTelemetry(*snapshots)
+
+        with pytest.raises(LaunchFailed, match="cycled"):
+            await _open_exact_authored_game_start(
+                controller,
+                reader,  # type: ignore[arg-type]
+                new_game_control_labels=["New Game"],
+                game_start_label="KAE 03 - Broke Pair",
+                begin_control_labels=["Begin"],
+                confirm_control_labels=["Confirm"],
+                max_carousel_steps=16,
+                timeout=0.5,
+            )
+
+        assert len(controller.actions) == 3
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_authored_start_carousel_requires_causally_later_label_change() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        snapshots = [
+            semantic_snapshot(1, label="New Game"),
+            semantic_snapshot(2, label="New Game"),
+            semantic_snapshot(3, label="New Game"),
+            carousel_snapshot(4, label="Wanderer"),
+            carousel_snapshot(5, label="Wanderer"),
+            carousel_snapshot(6, label="Wanderer"),
+            carousel_snapshot(6, label="KAE 03 - Broke Pair"),
+        ]
+        reader = LaunchTelemetry(*snapshots)
+
+        with pytest.raises(TimeoutError, match="advance from 'Wanderer'"):
+            await _open_exact_authored_game_start(
+                controller,
+                reader,  # type: ignore[arg-type]
+                new_game_control_labels=["New Game"],
+                game_start_label="KAE 03 - Broke Pair",
+                begin_control_labels=["Begin"],
+                confirm_control_labels=["Confirm"],
+                max_carousel_steps=16,
+                timeout=0.01,
+            )
+
+        assert len(controller.actions) == 2
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
 def test_duplicate_semantic_label_is_ambiguous_and_emits_no_match() -> None:
     control = semantic_snapshot(4, label="Continue").ui.visible_controls
     assert control is not None
@@ -1380,6 +1640,62 @@ def test_supported_scenario_command_captures_and_restores_reserved_slot(
     output = capsys.readouterr().out
     assert "Captured" in output
     assert "Restored" in output
+
+
+def test_supported_scenario_command_installs_and_verifies_authored_starts(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    data = tmp_path / "data"
+    data.mkdir()
+    (data / "mods.cfg").write_bytes(b"KenshiAgentTelemetry.mod\r\n")
+    monkeypatch.setattr(live_dev, "_running_process_names", lambda: set())
+    monkeypatch.setattr(live_dev, "_kenshi_root", lambda: tmp_path)
+    install = live_dev.build_parser().parse_args(
+        [
+            "scenario",
+            "--config",
+            "config/live.burnin.yaml",
+            "install-starts",
+        ]
+    )
+    verify = live_dev.build_parser().parse_args(
+        [
+            "scenario",
+            "--config",
+            "config/live.burnin.yaml",
+            "verify-starts",
+        ]
+    )
+
+    assert live_dev._scenario_command(install) == 0
+    assert live_dev._scenario_command(verify) == 0
+    output = capsys.readouterr().out
+    assert "installed exact mod bytes" in output
+    assert "installed and enabled exactly" in output
+
+
+def test_scenario_install_refuses_while_fcs_is_open(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        live_dev,
+        "_running_process_names",
+        lambda: {"forgotten construction set.exe"},
+    )
+    args = live_dev.build_parser().parse_args(
+        [
+            "scenario",
+            "--config",
+            "config/live.burnin.yaml",
+            "install-starts",
+        ]
+    )
+
+    assert live_dev._scenario_command(args) == 4
+    assert "Kenshi and FCS must be closed" in capsys.readouterr().err
 
 
 def test_journey_subprocess_planner_uses_lossless_windows_argv() -> None:

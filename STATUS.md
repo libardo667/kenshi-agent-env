@@ -34,8 +34,8 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
 - `request_affordance` records a typed intent class plus Kenshi capability slug,
   evidence, and urgency without granting authority or input. Aggregation separates
   raw reruns from fixture-attested save/scenario recurrence across five matrix axes.
-- Closed saves become hashed fixtures restored to a collision-safe managed slot,
-  loaded through exact controls, and attested against fresh matrix predicates.
+- Hash-locked FCS Game Starts install without overwrite and launch through exact
+  controls with money/party proof; closed saves become fixture-attested.
 - Persistent memory unions bounded general recall with exact, fresh
   current-target matches and exposes dialogue-approach repetition by target.
 
@@ -88,7 +88,7 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
-- No FCS Game Start or fixture-attested matrix run is live-proven yet.
+- FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
 
