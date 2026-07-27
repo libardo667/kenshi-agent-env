@@ -703,7 +703,11 @@ class ContinuousPlanExecutor:
             )
 
         try:
-            action = self.guard.validate(step.action, observation)
+            guard_reservation = self.guard.reserve(
+                step.action,
+                observation,
+            )
+            action = guard_reservation.action
         except SafetyViolation as exc:
             self.logger.write(
                 "action_rejected",
@@ -729,6 +733,7 @@ class ContinuousPlanExecutor:
         try:
             reserved_risk = budget.reserve(action, self.guard.macros)
         except PlanBudgetError as exc:
+            self.guard.release(guard_reservation)
             return _StepResult(
                 observation=observation,
                 succeeded=False,
@@ -749,6 +754,7 @@ class ContinuousPlanExecutor:
         )
 
         if isinstance(action, ConsultAdvisorAction):
+            self.guard.commit(guard_reservation)
             return await self._execute_advisor_step(
                 action,
                 plan,
@@ -758,6 +764,7 @@ class ContinuousPlanExecutor:
             )
 
         if isinstance(action, RequestAffordanceAction):
+            self.guard.commit(guard_reservation)
             return await self._execute_affordance_request_step(
                 action,
                 plan,
@@ -782,6 +789,7 @@ class ContinuousPlanExecutor:
                 prepared = movement_option.prepare(observation)
             except OptionLifecycleError as exc:
                 budget.release(reserved_risk)
+                self.guard.release(guard_reservation)
                 reason = f"Stateful movement option preparation failed: {exc}"
                 self._event(
                     "plan_budget_released",
@@ -845,6 +853,7 @@ class ContinuousPlanExecutor:
                 prepared = native_movement_option.prepare(observation)
             except OptionLifecycleError as exc:
                 budget.release(reserved_risk)
+                self.guard.release(guard_reservation)
                 reason = f"Native movement option preparation failed: {exc}"
                 self._event(
                     "plan_budget_released",
@@ -899,6 +908,7 @@ class ContinuousPlanExecutor:
                 prepared = approach_option.prepare(observation)
             except OptionLifecycleError as exc:
                 budget.release(reserved_risk)
+                self.guard.release(guard_reservation)
                 reason = f"Approach option preparation failed: {exc}"
                 self._event(
                     "plan_budget_released",
@@ -1026,6 +1036,7 @@ class ContinuousPlanExecutor:
                 )
         except asyncio.CancelledError:
             budget.commit()
+            self.guard.commit(guard_reservation)
             reason = (
                 "Independent safety supervision cancelled the in-flight action; "
                 "delivery is uncertain and the reservation remains spent."
@@ -1057,6 +1068,7 @@ class ContinuousPlanExecutor:
             # An environment error leaves command delivery uncertain. Commit the
             # reservation conservatively so an at-most-once action is not duplicated.
             budget.commit()
+            self.guard.commit(guard_reservation)
             self.state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
             self._event(
                 "plan_budget_committed",
@@ -1105,23 +1117,32 @@ class ContinuousPlanExecutor:
                 },
             )
 
-        if not transition.receipt.accepted and not transition.receipt.executed:
+        receipt_is_compatible = transition.receipt.command_id in {
+            None,
+            command.command_id,
+        }
+        receipt_matches_command = transition.receipt.command_id == command.command_id
+        definitely_rejected = (
+            receipt_matches_command
+            and not transition.receipt.accepted
+            and not transition.receipt.executed
+        )
+        if definitely_rejected:
             budget.release(reserved_risk)
+            self.guard.release(guard_reservation)
             budget_event = "plan_budget_released"
             reservation_reason = (
                 "The environment definitively rejected the action without execution."
             )
         else:
             budget.commit()
+            self.guard.commit(guard_reservation)
             budget_event = "plan_budget_committed"
             reservation_reason = (
                 "The environment accepted or may have executed the dispatched action."
             )
         try:
-            if transition.receipt.command_id not in {
-                None,
-                command.command_id,
-            }:
+            if not receipt_is_compatible:
                 raise CommandCausalityError(
                     "Environment acknowledgement command ID does not match "
                     f"active command {command.command_id!r}."
@@ -1139,11 +1160,23 @@ class ContinuousPlanExecutor:
                 latest.world_revision,
             )
         except CommandCausalityError as exc:
+            reason = f"Command causality validation failed: {exc}"
+            self.state_store.fail_active_command(reason)
+            self._event(
+                "plan_budget_committed",
+                plan,
+                observation,
+                step=step,
+                reason=(
+                    "The rejection receipt did not belong to the active command, "
+                    "so delivery remains ambiguous and both reservations stay spent."
+                ),
+            )
             return _StepResult(
                 observation=observation,
                 succeeded=False,
                 actions_completed=1,
-                reason=f"Command causality validation failed: {exc}",
+                reason=reason,
             )
         self._event(
             budget_event,

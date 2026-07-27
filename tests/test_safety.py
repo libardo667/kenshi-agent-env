@@ -629,6 +629,55 @@ def test_purchase_revalidation_does_not_spend_purchase_authority_twice() -> None
         guard.validate(action, observation)
 
 
+def test_released_purchase_reservation_does_not_spend_per_run_authority() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_skills": ["buy_inspected_shop_item"],
+            "max_purchase_price": 750,
+            "min_money_after_purchase": 250,
+            "max_purchases_per_run": 1,
+        }
+    )
+    macros = MacroRegistry(
+        {
+            "buy_inspected_shop_item": MacroConfig(
+                actions=[
+                    {
+                        "kind": "click",
+                        "x": "{{x}}",
+                        "y": "{{y}}",
+                        "space": "normalized",
+                        "button": "right",
+                    }
+                ]
+            )
+        }
+    )
+    action = SkillAction.model_validate(
+        {
+            "name": "buy_inspected_shop_item",
+            "args": {
+                "target_id": "nearby:0",
+                "item_name": "Dried Meat",
+                "x": 0.316,
+                "y": 0.357,
+                "expected_price": 649,
+            },
+        }
+    )
+    guard = ActionGuard(config, macros)
+    observation = purchase_observation()
+
+    reservation = guard.reserve(action, observation)
+    with pytest.raises(SafetyViolation, match="purchase limit"):
+        guard.reserve(action, observation)
+    guard.release(reservation)
+
+    assert guard.validate(action, observation) == action
+    with pytest.raises(SafetyViolation, match="purchase limit"):
+        guard.validate(action, observation)
+
+
 @pytest.mark.parametrize(
     ("expected_price", "message"),
     [

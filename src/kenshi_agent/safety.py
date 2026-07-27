@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import time
 from collections import deque
+from dataclasses import dataclass
 
 from .action_contracts import ActionContract, contract_for
 from .config import SafetyConfig
@@ -31,6 +32,16 @@ class SafetyViolation(RuntimeError):
     pass
 
 
+@dataclass(frozen=True, slots=True)
+class ActionBudgetReservation:
+    """Exact pending global authority for one validated action."""
+
+    action: Action
+    primitive_actions: int
+    purchase_actions: int
+    token: int
+
+
 class ActionGuard:
     def __init__(
         self,
@@ -44,24 +55,82 @@ class ActionGuard:
         self.control_mode = control_mode
         self._action_times: deque[float] = deque()
         self._purchase_count = 0
+        self._pending_primitive_count = 0
+        self._pending_purchase_count = 0
+        self._next_reservation_token = 1
+        self._reservations: dict[int, ActionBudgetReservation] = {}
 
     def validate(self, action: Action, observation: Observation) -> Action:
-        """Validate and reserve the configured per-run/rate authority."""
+        """Validate and immediately commit authority for a direct caller."""
 
-        return self._validate(action, observation, consume_budget=True)
+        reservation = self.reserve(action, observation)
+        self.commit(reservation)
+        return reservation.action
 
     def revalidate(self, action: Action, observation: Observation) -> Action:
         """Re-check current authority without spending the same budget twice."""
 
-        return self._validate(action, observation, consume_budget=False)
+        validated, _, _ = self._validate(action, observation, check_budget=False)
+        return validated
+
+    def reserve(
+        self,
+        action: Action,
+        observation: Observation,
+    ) -> ActionBudgetReservation:
+        """Validate and hold rate/purchase capacity until delivery is known."""
+
+        validated, primitive_actions, purchase_actions = self._validate(
+            action,
+            observation,
+            check_budget=True,
+        )
+        self._reserve_rate_budget(primitive_actions)
+        self._pending_purchase_count += purchase_actions
+        token = self._next_reservation_token
+        self._next_reservation_token += 1
+        reservation = ActionBudgetReservation(
+            action=validated,
+            primitive_actions=primitive_actions,
+            purchase_actions=purchase_actions,
+            token=token,
+        )
+        self._reservations[token] = reservation
+        return reservation
+
+    def commit(self, reservation: ActionBudgetReservation) -> None:
+        """Spend a reservation after accepted, executed, or ambiguous delivery."""
+
+        self._take_reservation(reservation)
+        self._pending_primitive_count -= reservation.primitive_actions
+        self._pending_purchase_count -= reservation.purchase_actions
+        self._purchase_count += reservation.purchase_actions
+        now = time.monotonic()
+        self._prune_rate_budget(now)
+        self._action_times.extend([now] * reservation.primitive_actions)
+
+    def release(self, reservation: ActionBudgetReservation) -> None:
+        """Return a reservation only after delivery is proven not to have occurred."""
+
+        self._take_reservation(reservation)
+        self._pending_primitive_count -= reservation.primitive_actions
+        self._pending_purchase_count -= reservation.purchase_actions
+
+    def _take_reservation(
+        self,
+        reservation: ActionBudgetReservation,
+    ) -> None:
+        active = self._reservations.pop(reservation.token, None)
+        if active is not reservation:
+            raise RuntimeError("Action budget reservation is foreign or already finalized.")
 
     def _validate(
         self,
         action: Action,
         observation: Observation,
         *,
-        consume_budget: bool,
-    ) -> Action:
+        check_budget: bool,
+    ) -> tuple[Action, int, int]:
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
         contract = contract_for(action)
@@ -71,13 +140,12 @@ class ActionGuard:
                 self._validate_generic_purchase(
                     action,
                     observation,
-                    check_purchase_limit=consume_budget,
+                    check_purchase_limit=check_budget,
                 )
-            if consume_budget:
-                self._consume_rate_budget(contract.max_primitive_actions)
-                if isinstance(action, PurchaseItemAction) and observation.mode == "live":
-                    self._purchase_count += 1
-            return action
+            purchase_actions = int(
+                isinstance(action, PurchaseItemAction) and observation.mode == "live"
+            )
+            return action, contract.max_primitive_actions, purchase_actions
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
             if (
@@ -119,7 +187,7 @@ class ActionGuard:
                     self._validate_purchase(
                         action,
                         observation,
-                        check_purchase_limit=consume_budget,
+                        check_purchase_limit=check_budget,
                     )
                 pointer_bounds = self.macros.normalized_pointer_bounds(action.name)
                 for primitive in primitives:
@@ -163,15 +231,12 @@ class ActionGuard:
                 f"Action expands to {primitive_count} primitives; maximum is "
                 f"{self.config.max_primitive_actions_per_step}."
             )
-        if consume_budget:
-            self._consume_rate_budget(primitive_count)
-            if (
-                isinstance(action, SkillAction)
-                and action.name == "buy_inspected_shop_item"
-                and observation.mode == "live"
-            ):
-                self._purchase_count += 1
-        return action
+        purchase_actions = int(
+            isinstance(action, SkillAction)
+            and action.name == "buy_inspected_shop_item"
+            and observation.mode == "live"
+        )
+        return action, primitive_count, purchase_actions
 
     def _validate_contracted_action(
         self,
@@ -262,7 +327,8 @@ class ActionGuard:
         if (
             check_purchase_limit
             and self.config.max_purchases_per_run is not None
-            and self._purchase_count >= self.config.max_purchases_per_run
+            and self._purchase_count + self._pending_purchase_count
+            >= self.config.max_purchases_per_run
         ):
             raise SafetyViolation("Per-run purchase limit has already been reached.")
         if (
@@ -455,7 +521,8 @@ class ActionGuard:
         if (
             check_purchase_limit
             and self.config.max_purchases_per_run is not None
-            and self._purchase_count >= self.config.max_purchases_per_run
+            and self._purchase_count + self._pending_purchase_count
+            >= self.config.max_purchases_per_run
         ):
             raise SafetyViolation("Per-run purchase limit has already been reached.")
 
@@ -592,11 +659,17 @@ class ActionGuard:
             if ui.client_height is not None and action.y >= ui.client_height:
                 raise SafetyViolation("Pointer y-coordinate is outside the Kenshi window.")
 
-    def _consume_rate_budget(self, count: int) -> None:
-        now = time.monotonic()
+    def _prune_rate_budget(self, now: float) -> None:
         cutoff = now - 60.0
         while self._action_times and self._action_times[0] < cutoff:
             self._action_times.popleft()
-        if len(self._action_times) + count > self.config.max_actions_per_minute:
+
+    def _reserve_rate_budget(self, count: int) -> None:
+        now = time.monotonic()
+        self._prune_rate_budget(now)
+        if (
+            len(self._action_times) + self._pending_primitive_count + count
+            > self.config.max_actions_per_minute
+        ):
             raise SafetyViolation("Per-minute primitive action rate limit would be exceeded.")
-        self._action_times.extend([now] * count)
+        self._pending_primitive_count += count

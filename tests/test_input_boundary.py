@@ -483,18 +483,19 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         live = environment(tmp_path, telemetry, controller)
         macros = movement_registry()
         logger = SessionLogger(tmp_path / "single-step-boundary.jsonl", "boundary-test")
+        guard = ActionGuard(
+            SafetyConfig(
+                allow_action_kinds=["skill"],
+                allow_skills=["move_visible_terrain"],
+                max_actions_per_minute=3,
+            ),
+            macros,
+        )
         runtime = AgentRuntime(
             run_id="boundary-test",
             environment=live,
             planner=OneMovePlanner(),
-            guard=ActionGuard(
-                SafetyConfig(
-                    allow_action_kinds=["skill"],
-                    allow_skills=["move_visible_terrain"],
-                    max_actions_per_minute=500,
-                ),
-                macros,
-            ),
+            guard=guard,
             reflexes=ReflexEngine(),
             logger=logger,
             memory=None,
@@ -522,6 +523,9 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         receipt = next(event for event in events if event["event_type"] == "action_receipt")
         assert receipt["payload"]["accepted"] is False
         assert receipt["payload"]["primitive_actions"] == 0
+        # The boundary proved that none of the three reserved primitives were
+        # emitted, so all three must still be available to a later action.
+        assert guard.validate(movement_action(), observation()) == movement_action()
 
     asyncio.run(scenario())
 

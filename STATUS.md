@@ -7,10 +7,10 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
 - A deterministic Kenshi-like mock environment with strict Pydantic models, JSONL
   lifecycle logs, optional full-observation replay, SQLite memory, and
   heuristic/scripted/subprocess/OpenAI/OpenRouter planners.
-- `single_step` is the default scheduler. Feature-flagged `continuous` planning
-  accepts bounded typed plans and future patches plus exact opt-in movement
-  interruption, owns action and risk budgets, and rechecks typed conditions
-  before every step. See [bounded continuous planning](docs/ADR_CONTINUOUS_PLANNING.md).
+- `single_step` is default; feature-flagged `continuous` accepts bounded plans,
+  future patches, and guarded interruption. Both schedulers transactionally
+  reserve global rate/purchase authority; continuous also owns plan risk budgets.
+  See [bounded continuous planning](docs/ADR_CONTINUOUS_PLANNING.md).
 - One authoritative observation pump and bounded `WorldStateStore` preserving
   revisions, semantic old/new deltas, transient events, entity lifetimes, active
   plan/command state, and isolated subscriber queues.

@@ -435,6 +435,7 @@ def runtime_for(
     stateful_approach_options_enabled: bool = False,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     max_native_assisted_actions_per_plan: int = 0,
+    max_actions_per_minute: int = 500,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry(
         {
@@ -462,7 +463,7 @@ def runtime_for(
             "move_in_direction",
             "activate_visible_control",
         ],
-        max_actions_per_minute=500,
+        max_actions_per_minute=max_actions_per_minute,
         automatic_takeover_enabled=automatic_takeover_enabled,
         human_control_quiet_seconds=0.1,
         takeover_countdown_seconds=0.3,
@@ -646,8 +647,35 @@ class BoundaryRejectingEnvironment(RevisionEnvironment):
                 message="No input was emitted at the boundary.",
                 error_type="InputBoundaryRejected",
                 input_boundary=report,
+                command_id=command.command_id,
             ),
             observation=self.observation(),
+        )
+
+
+class MismatchedRejectingEnvironment(BoundaryRejectingEnvironment):
+    """Return a zero-input receipt that belongs to a different command."""
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
+    ) -> Transition:
+        transition = await super().dispatch(
+            action,
+            command=command,
+            token=token,
+        )
+        if transition.receipt.accepted or transition.receipt.executed:
+            return transition
+        return transition.model_copy(
+            update={
+                "receipt": transition.receipt.model_copy(
+                    update={"command_id": "cmd-" + ("f" * 32)}
+                )
+            }
         )
 
 
@@ -695,7 +723,13 @@ def test_post_lease_boundary_rejection_releases_budget_and_is_attributable(
         clock = FakeClock()
         environment = BoundaryRejectingEnvironment(clock=clock, reject_after=1)
         planner = PlanThenStopPlanner()
-        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            max_actions_per_minute=1,
+        )
         try:
             await runtime.run(max_steps=2)
         finally:
@@ -729,6 +763,39 @@ def test_post_lease_boundary_rejection_releases_budget_and_is_attributable(
         assert metrics.input_boundary_revalidations == 0
         assert metrics.budget_releases == 1
         assert metrics.plan_steps_succeeded == 0
+
+    asyncio.run(scenario())
+
+
+def test_mismatched_rejection_receipt_keeps_budgets_spent(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = MismatchedRejectingEnvironment(clock=clock, reject_after=1)
+        planner = PlanThenStopPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            max_actions_per_minute=1,
+        )
+        try:
+            summary = await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        # A receipt for another command cannot prove this command emitted
+        # nothing. The rate slot therefore remains spent and blocks the later
+        # Stop instead of treating the mismatched rejection as authority.
+        assert environment.actions == []
+        assert "rate limit" in summary.stop_reason
+        event_types = [
+            event["event_type"] for event in read_events(tmp_path / "events.jsonl")
+        ]
+        assert "plan_budget_committed" in event_types
+        assert "plan_budget_released" not in event_types
 
     asyncio.run(scenario())
 

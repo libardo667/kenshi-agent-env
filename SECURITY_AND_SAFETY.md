@@ -53,6 +53,10 @@ an explicit `InputBoundaryRejected` receipt. `unknown`, `unavailable`, and
 `stale` block input exactly as `false` does. This window is never closed by
 shortening the lease timeout or disabling polite handoff.
 
+Global rate and purchase authority follows the same delivery verdict as plan
+risk: a command-matched zero-input rejection releases both reservations;
+accepted or ambiguous delivery commits both.
+
 The supported `./dev close` path owns pause-before-close: an unpaused loaded
 world must advance to a causally confirmed pause before `WM_CLOSE`. It then
 re-reads telemetry and still refuses an active native command, modal, or

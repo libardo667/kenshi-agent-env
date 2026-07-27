@@ -175,10 +175,10 @@ rechecked.
 
 ### 8. Budgets are transactional and conservative
 
-Reserve, commit, release. A validation failure releases; a proven rejected
-dispatch may release; success commits. Ambiguous delivery of an at-most-once
-action stays spent. A purchase must never become executable twice because a
-timeout was mistaken for rejection.
+Reserve, commit, release at both plan-risk and global rate/purchase layers. A
+proven command-matched non-dispatch releases both; accepted or ambiguous delivery
+commits both. A purchase must never become executable twice because a timeout or
+foreign receipt was mistaken for rejection.
 
 ### 9. Preserve the safe regression path
 

@@ -339,7 +339,11 @@ class AgentRuntime:
                     )
 
                 try:
-                    action = self.guard.validate(decision.action, observation)
+                    guard_reservation = self.guard.reserve(
+                        decision.action,
+                        observation,
+                    )
+                    action = guard_reservation.action
                 except SafetyViolation as exc:
                     now = datetime.now(UTC)
                     rejected = ActionReceipt(
@@ -370,6 +374,7 @@ class AgentRuntime:
                     break
 
                 if isinstance(action, ConsultAdvisorAction):
+                    self.guard.commit(guard_reservation)
                     advisor_result = await self._execute_advisor_action(
                         action,
                         observation,
@@ -385,6 +390,7 @@ class AgentRuntime:
                     continue
 
                 if isinstance(action, RequestAffordanceAction):
+                    self.guard.commit(guard_reservation)
                     affordance_result = await self._execute_affordance_request_action(
                         action,
                         observation,
@@ -399,6 +405,8 @@ class AgentRuntime:
                     stop_reason = affordance_result.receipt.message
                     continue
 
+                guard_reservation_finalized = False
+                dispatch_attempted = False
                 try:
                     dispatch_context = CommandDispatchContext(
                         command_id=new_command_id(),
@@ -420,15 +428,19 @@ class AgentRuntime:
                             action,
                         ),
                     )
+                    dispatch_attempted = True
                     transition = await self.environment.dispatch(
                         action,
                         command=dispatch_context,
                         token=token,
                     )
-                    if transition.receipt.command_id not in {
+                    receipt_command_id = transition.receipt.command_id
+                    if receipt_command_id not in {
                         None,
                         dispatch_context.command_id,
                     }:
+                        guard_reservation_finalized = True
+                        self.guard.commit(guard_reservation)
                         raise CommandCausalityError(
                             "Environment acknowledgement command ID does not match "
                             f"dispatched command {dispatch_context.command_id!r}."
@@ -451,6 +463,16 @@ class AgentRuntime:
                             )
                         }
                     )
+                    definitely_rejected = (
+                        receipt_command_id == dispatch_context.command_id
+                        and not transition.receipt.accepted
+                        and not transition.receipt.executed
+                    )
+                    guard_reservation_finalized = True
+                    if definitely_rejected:
+                        self.guard.release(guard_reservation)
+                    else:
+                        self.guard.commit(guard_reservation)
                     boundary = transition.receipt.input_boundary
                     if boundary is not None:
                         self.logger.write(
@@ -463,6 +485,14 @@ class AgentRuntime:
                             payload=boundary,
                         )
                 except Exception as exc:
+                    if not guard_reservation_finalized:
+                        guard_reservation_finalized = True
+                        if dispatch_attempted:
+                            # Once dispatch has begun, an exception cannot prove
+                            # that input was absent. Keep the authority spent.
+                            self.guard.commit(guard_reservation)
+                        else:
+                            self.guard.release(guard_reservation)
                     self.logger.write(
                         "environment_error",
                         step_index=observation.step_index,
@@ -1780,7 +1810,11 @@ class AgentRuntime:
                 latency_seconds=planner_latency_seconds,
             )
         try:
-            action = self.guard.validate(decision.action, observation)
+            guard_reservation = self.guard.reserve(
+                decision.action,
+                observation,
+            )
+            action = guard_reservation.action
         except SafetyViolation as exc:
             now = datetime.now(UTC)
             rejected = ActionReceipt(
@@ -1810,6 +1844,8 @@ class AgentRuntime:
         try:
             transition = await self.environment.step(action)
         except Exception as exc:
+            # Delivery is ambiguous once the environment call has begun.
+            self.guard.commit(guard_reservation)
             self.logger.write(
                 "environment_error",
                 step_index=observation.step_index,
@@ -1823,6 +1859,10 @@ class AgentRuntime:
                 f"Environment error: {type(exc).__name__}: {exc}",
             )
 
+        if not transition.receipt.accepted and not transition.receipt.executed:
+            self.guard.release(guard_reservation)
+        else:
+            self.guard.commit(guard_reservation)
         latest = self._record_transition(decision, observation, transition)
         is_terminated = transition.terminated or isinstance(action, StopAction)
         reason = (

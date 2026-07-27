@@ -98,6 +98,7 @@ telemetry.
 | Scheduler contract and plan authority | [ADR_CONTINUOUS_PLANNING](docs/ADR_CONTINUOUS_PLANNING.md) |
 | Revision ownership and causal confirmation | [ADR_WORLD_STATE_STREAM](docs/ADR_WORLD_STATE_STREAM.md) |
 | Final in-lease authorization fence | [ADR_INPUT_BOUNDARY_AUTHORITY_V2](docs/ADR_INPUT_BOUNDARY_AUTHORITY_V2.md) |
+| Transactional global and plan budgets | [ADR_TRANSACTIONAL_ACTION_BUDGETS](docs/ADR_TRANSACTIONAL_ACTION_BUDGETS.md) |
 | Pointer calibration identity | [ADR_CALIBRATION_IDENTITY](docs/ADR_CALIBRATION_IDENTITY.md) |
 | Movement options and active-step interruption | [ADR_ACTIVE_OPTION_INTERRUPTION](docs/ADR_ACTIVE_OPTION_INTERRUPTION.md) |
 | Independent preemption and safe pause | [ADR_SAFETY_SUPERVISOR](docs/ADR_SAFETY_SUPERVISOR.md) |
