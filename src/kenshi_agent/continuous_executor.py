@@ -22,8 +22,10 @@ from .models import (
     ExitCurrentBuildingAction,
     InputBoundaryDecision,
     MoveInDirectionAction,
+    NativeCommandStatus,
     Observation,
     ObservationPolicy,
+    OpenContextInventoryAction,
     PauseAction,
     PerformContextAction,
     PlanEnvelope,
@@ -31,7 +33,9 @@ from .models import (
     PlannerOutput,
     PlanPatch,
     PlanStep,
+    ProduceResourceOutputAction,
     RequestAffordanceAction,
+    ResourceTransferStatus,
     SkillAction,
     StopAction,
     Transition,
@@ -657,7 +661,10 @@ class ContinuousPlanExecutor:
         if contract is not None:
             if contract.execution is not ActionExecution.MONITORED_OPTION:
                 return None
-            if isinstance(action, PerformContextAction):
+            if isinstance(
+                action,
+                (PerformContextAction, ProduceResourceOutputAction),
+            ):
                 return None
             target_id = getattr(action, "target_id", None)
             if not isinstance(target_id, str) or not target_id:
@@ -822,6 +829,7 @@ class ContinuousPlanExecutor:
                     MoveInDirectionAction,
                     ExitCurrentBuildingAction,
                     PerformContextAction,
+                    ProduceResourceOutputAction,
                 ),
             )
             and contract is not None
@@ -1224,6 +1232,94 @@ class ContinuousPlanExecutor:
                 if transition.receipt.semantic is not None
                 else None
             )
+            transfer = (
+                transition.receipt.semantic.resource_transfer
+                if transition.receipt.semantic is not None
+                else None
+            )
+            if transfer is not None:
+                succeeded = (
+                    transfer.status is ResourceTransferStatus.TRANSFERRED
+                )
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Accepted the controller-owned resource-transfer "
+                        "conservation verdict."
+                    ),
+                    evidence={
+                        "controller_verified": True,
+                        "status": transfer.status.value,
+                        "source_quantity_before": transfer.source_quantity_before,
+                        "source_quantity_after": transfer.source_quantity_after,
+                        "destination_quantity_before": (
+                            transfer.destination_quantity_before
+                        ),
+                        "destination_quantity_after": (
+                            transfer.destination_quantity_after
+                        ),
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        "Controller-owned resource transfer returned "
+                        f"{transfer.status.value!r}: {transfer.reason}"
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
+            if isinstance(step.action, OpenContextInventoryAction):
+                acknowledgement = transition.receipt.native_acknowledgement
+                succeeded = bool(
+                    acknowledgement is not None
+                    and acknowledgement.status is NativeCommandStatus.COMPLETED
+                    and acknowledgement.reason == "exact_context_inventory_open"
+                )
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Checked the exact native contextual-inventory terminal."
+                    ),
+                    evidence={
+                        "controller_verified": True,
+                        "status": (
+                            acknowledgement.status.value
+                            if acknowledgement is not None
+                            else "missing"
+                        ),
+                        "terminal_reason": (
+                            acknowledgement.reason
+                            if acknowledgement is not None
+                            else "missing"
+                        ),
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        "Native contextual inventory "
+                        + (
+                            "opened for the exact target."
+                            if succeeded
+                            else "lacked exact terminal proof."
+                        )
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
             if recovery is None:
                 return _StepResult(
                     observation=latest,

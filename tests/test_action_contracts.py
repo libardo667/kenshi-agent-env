@@ -13,7 +13,9 @@ from kenshi_agent.action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     EXIT_CURRENT_BUILDING_CONTRACT,
+    OPEN_CONTEXT_INVENTORY_CONTRACT,
     PERFORM_CONTEXT_ACTION_CONTRACT,
+    PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
     LegacyCompatibilityLedger,
     contract_for,
@@ -25,6 +27,7 @@ from kenshi_agent.models import (
     ApproachDialogueTargetAction,
     CharacterState,
     ClickAction,
+    CollectResourceOutputAction,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -37,9 +40,11 @@ from kenshi_agent.models import (
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
+    OpenContextInventoryAction,
     PerformContextAction,
     PlanStep,
     PointerActionClass,
+    ProduceResourceOutputAction,
     PurchaseItemAction,
     SkillAction,
     SkillArgument,
@@ -507,6 +512,254 @@ class TestPerformContextAction:
         assert "perform_context_action" not in digest_kinds
 
 
+def natural_resource(
+    *,
+    target_id: str = "entity-copper",
+    name: str = "Copper Resource",
+    actions: list[ContextActionKind] | None = None,
+) -> WorldTarget:
+    return WorldTarget(
+        id=target_id,
+        name=name,
+        kind="natural_resource",
+        position=Vec3(x=1.0, y=0.0, z=2.0),
+        distance=40.0,
+        context_actions=(
+            [ContextActionKind.OPERATE] if actions is None else actions
+        ),
+        default_task="operate_machinery",
+    )
+
+
+class TestResourceProductionContracts:
+    def test_production_binds_one_exact_advertised_natural_resource(self) -> None:
+        target = natural_resource()
+        state = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
+            capabilities=[
+                "control.produce_resource_output",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[target],
+        )
+
+        binding = PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(
+            ProduceResourceOutputAction(target_id=target.id),
+            state,
+        )
+
+        assert binding.bound
+        assert binding.target_id == target.id
+
+    def test_production_rejects_absent_unadvertised_and_ambiguous_targets(self) -> None:
+        action = ProduceResourceOutputAction(target_id="entity-copper")
+        clear_ui = UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+        )
+        absent = observation(ui=clear_ui, world_targets=[])
+        unadvertised = observation(
+            ui=clear_ui,
+            world_targets=[natural_resource(actions=[])],
+        )
+        # Duplicate identity is malformed whenever the stable-identity
+        # capability is present. Remove it here to exercise the binder's own
+        # fail-closed ambiguity rule independently.
+        ambiguous = observation(
+            ui=clear_ui,
+            capabilities=[
+                "control.produce_resource_output",
+                "world.context_targets",
+                "game.pause",
+            ],
+            world_targets=[natural_resource(), natural_resource()],
+        )
+
+        assert not PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(action, absent).bound
+        assert not PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(action, unadvertised).bound
+        ambiguous_binding = PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(action, ambiguous)
+        assert not ambiguous_binding.bound
+        assert "ambiguous" in ambiguous_binding.reason
+
+    def test_open_inventory_binds_the_exact_target_and_fails_closed_on_a_modal(
+        self,
+    ) -> None:
+        target = natural_resource()
+        clear = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
+            capabilities=[
+                "control.open_context_inventory",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[target],
+        )
+        blocked = clear.model_copy(
+            update={
+                "telemetry": clear.telemetry.model_copy(
+                    update={
+                        "ui": UIState(
+                            active_screen="world",
+                            modal_open=True,
+                            dialogue_open=False,
+                        )
+                    }
+                )
+            },
+            deep=True,
+        )
+        action = OpenContextInventoryAction(target_id=target.id)
+
+        assert OPEN_CONTEXT_INVENTORY_CONTRACT.bind(action, clear).bound
+        assert not OPEN_CONTEXT_INVENTORY_CONTRACT.bind(action, blocked).bound
+
+
+class TestCollectResourceOutput:
+    @staticmethod
+    def _state(
+        *,
+        context_target_id: str = "entity-copper",
+        section: str = "out",
+        active_screen: str = "inventory",
+        source_quantity: int = 2,
+    ) -> Observation:
+        target = natural_resource()
+        return observation(
+            ui=UIState(
+                active_screen=active_screen,
+                modal_open=True,
+                dialogue_open=False,
+                open_inventory_windows=2,
+                context_inventory_target_id=context_target_id,
+                visible_controls_complete=True,
+                selected_character_id="entity-hep",
+                selected_character_ids=["entity-hep"],
+                visible_controls=[
+                    VisibleUIControl(
+                        label="Raw Iron",
+                        window="COPPER RESOURCE",
+                        role="item",
+                        item_name="Raw Iron",
+                        item_quantity=source_quantity,
+                        section=section,
+                        bounds=_bounds(0.5),
+                    ),
+                    VisibleUIControl(
+                        label="Wooden Backpack",
+                        window="HEP",
+                        role="item",
+                        item_name="Wooden Backpack",
+                        item_quantity=1,
+                        section="main",
+                        bounds=_bounds(0.7),
+                    ),
+                ],
+            ),
+            capabilities=[
+                "ui.visible_controls",
+                "ui.context_inventory_target",
+                "squad.inventory",
+                "world.context_targets",
+                "identity.stable_handles",
+            ],
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    inventory_complete=True,
+                )
+            ],
+            world_targets=[target],
+        )
+
+    @staticmethod
+    def _action(*, source_quantity: int = 2) -> CollectResourceOutputAction:
+        return CollectResourceOutputAction(
+            target_id="entity-copper",
+            cell_label="Raw Iron",
+            item_name="Raw Iron",
+            source_quantity=source_quantity,
+            window="COPPER RESOURCE",
+        )
+
+    def test_binds_exact_output_cell_to_exact_context_target(self) -> None:
+        binding = ACTION_CONTRACTS["collect_resource_output"].bind(
+            self._action(),
+            self._state(),
+        )
+
+        assert binding.bound
+        assert binding.target_id == "entity-copper"
+        assert binding.item_name == "Raw Iron"
+        assert binding.resolved_bounds == _bounds(0.5)
+
+    def test_rejects_wrong_target_section_quantity_and_trade_context(self) -> None:
+        contract = ACTION_CONTRACTS["collect_resource_output"]
+        wrong_target = self._state(context_target_id="entity-other")
+
+        assert not contract.bind(self._action(), wrong_target).bound
+        assert "collect_resource_output" not in {
+            entry["kind"] for entry in wrong_target.semantic_action_digest()
+        }
+        assert not contract.bind(
+            self._action(), self._state(section="main")
+        ).bound
+        assert not contract.bind(
+            self._action(source_quantity=2),
+            self._state(source_quantity=1),
+        ).bound
+        assert not contract.bind(
+            self._action(), self._state(active_screen="trade")
+        ).bound
+
+    def test_rejects_incomplete_source_or_destination_observation(self) -> None:
+        state = self._state()
+        assert state.telemetry is not None
+        incomplete_controls = state.model_copy(
+            update={
+                "telemetry": state.telemetry.model_copy(
+                    update={
+                        "ui": state.telemetry.ui.model_copy(
+                            update={"visible_controls_complete": False}
+                        )
+                    }
+                )
+            },
+            deep=True,
+        )
+        incomplete_inventory = state.model_copy(
+            update={
+                "telemetry": state.telemetry.model_copy(
+                    update={
+                        "squad": [
+                            state.telemetry.squad[0].model_copy(
+                                update={"inventory_complete": False}
+                            )
+                        ]
+                    }
+                )
+            },
+            deep=True,
+        )
+
+        contract = ACTION_CONTRACTS["collect_resource_output"]
+        assert not contract.bind(self._action(), incomplete_controls).bound
+        assert not contract.bind(self._action(), incomplete_inventory).bound
+
+
 class TestContractCatalog:
     def test_contracts_are_registered_by_kind(self) -> None:
         assert set(ACTION_CONTRACTS) == {
@@ -515,6 +768,9 @@ class TestContractCatalog:
             "move_in_direction",
             "exit_current_building",
             "perform_context_action",
+            "produce_resource_output",
+            "open_context_inventory",
+            "collect_resource_output",
             "activate_visible_control",
             "dismiss_screen",
             "purchase_item",
@@ -621,7 +877,7 @@ class TestSemanticActionsAreAdvertised:
             default_task="operate_machinery",
         )
         capabilities = [
-            "control.perform_context_action",
+            "control.produce_resource_output",
             "world.context_targets",
             "game.pause",
             "identity.stable_handles",
@@ -650,8 +906,9 @@ class TestSemanticActionsAreAdvertised:
             entry["kind"] for entry in inventory.semantic_action_digest()
         }
 
-        assert "perform_context_action" in world_kinds
-        assert "perform_context_action" not in inventory_kinds
+        assert "produce_resource_output" in world_kinds
+        assert "produce_resource_output" not in inventory_kinds
+        assert "perform_context_action" not in world_kinds
         assert "dismiss_screen" in inventory_kinds
 
     def test_visible_control_digest_marks_ambiguity(self) -> None:

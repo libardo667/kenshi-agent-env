@@ -150,6 +150,62 @@
       "title": "ClickAction",
       "type": "object"
     },
+    "CollectResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
+      "properties": {
+        "kind": {
+          "const": "collect_resource_output",
+          "default": "collect_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity": {
+          "exclusiveMinimum": 0,
+          "title": "Source Quantity",
+          "type": "integer"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "section": {
+          "const": "out",
+          "default": "out",
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "cell_label",
+        "item_name",
+        "source_quantity",
+        "window"
+      ],
+      "title": "CollectResourceOutputAction",
+      "type": "object"
+    },
     "ConsultAdvisorAction": {
       "additionalProperties": false,
       "description": "Ask a read-only guide-grounded model for strategic advice.\n\nThis is a cognitive action. It emits no controller primitives, never enters\nthe environment dispatch path, and cannot directly change Kenshi state.",
@@ -485,6 +541,29 @@
       "title": "NoopAction",
       "type": "object"
     },
+    "OpenContextInventoryAction": {
+      "additionalProperties": false,
+      "description": "Open the ordinary inventory UI for one exact observed world target.",
+      "properties": {
+        "kind": {
+          "const": "open_context_inventory",
+          "default": "open_context_inventory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "OpenContextInventoryAction",
+      "type": "object"
+    },
     "PauseAction": {
       "additionalProperties": false,
       "properties": {
@@ -528,6 +607,29 @@
         "context_action"
       ],
       "title": "PerformContextAction",
+      "type": "object"
+    },
+    "ProduceResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Operate one exact natural resource until its output inventory gains stock.",
+      "properties": {
+        "kind": {
+          "const": "produce_resource_output",
+          "default": "produce_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ProduceResourceOutputAction",
       "type": "object"
     },
     "PurchaseItemAction": {
@@ -993,6 +1095,12 @@
       "$ref": "#/$defs/PerformContextAction"
     },
     {
+      "$ref": "#/$defs/ProduceResourceOutputAction"
+    },
+    {
+      "$ref": "#/$defs/OpenContextInventoryAction"
+    },
+    {
       "$ref": "#/$defs/MoveToCharacterAction"
     },
     {
@@ -1021,6 +1129,9 @@
     },
     {
       "$ref": "#/$defs/EquipItemAction"
+    },
+    {
+      "$ref": "#/$defs/CollectResourceOutputAction"
     },
     {
       "$ref": "#/$defs/RecoverCameraViewAction"

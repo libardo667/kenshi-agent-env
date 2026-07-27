@@ -195,7 +195,8 @@ safety:
     - move_to_character
     - move_in_direction
     - exit_current_building
-    - perform_context_action
+    - produce_resource_output
+    - open_context_inventory
     - activate_visible_control
     - dismiss_screen
     - purchase_item
@@ -203,6 +204,7 @@ safety:
     - scroll_screen
     - sell_item
     - equip_item
+    - collect_resource_output
     - recover_camera_view
     - request_affordance
   # The generic chain authors semantic actions, not macros. Only the transport

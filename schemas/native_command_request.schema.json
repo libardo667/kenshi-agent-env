@@ -63,7 +63,9 @@
         "move_to_character",
         "move_in_direction",
         "exit_current_building",
-        "operate_natural_resource"
+        "operate_natural_resource",
+        "produce_resource_output",
+        "open_context_inventory"
       ],
       "title": "Command",
       "type": "string"

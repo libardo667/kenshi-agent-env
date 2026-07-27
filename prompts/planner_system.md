@@ -192,6 +192,22 @@ yourself, in whatever order the current evidence supports.
   `speed_3` set the speed. Direct unpause and a pause binding that would unpause
   share the profile's explicit `allow_live_unpause_actions` gate. The physical
   keys are shipped defaults, not a parsed customized `controls.cfg`.
+- **Resource work is an owned three-stage transaction.** If safe and the current
+  speed is below 3, first author `use_game_binding` with binding `speed_3` and
+  prove the later speed. Then author `produce_resource_output` with one exact
+  `context_targets[].id`; the monitored option adopts already matching
+  `Operating machine` work, never reissues it, and succeeds only on native
+  `resource_output_ready`. Give it `success_conditions: []`.
+- After output is ready, author `open_context_inventory` for that same exact
+  target with `success_conditions: []`. It succeeds only on the keyed native
+  terminal `exact_context_inventory_open`; an accepted request is not success.
+- Then copy `target_id`, `cell_label`, `item_name`, `item_quantity` as
+  `source_quantity`, `window`, and `section: "out"` from one current output
+  cell into `collect_resource_output`. Give it `success_conditions: []`; the
+  controller proves equal source loss and selected-character inventory gain on
+  a later complete observation. A right-click receipt alone is failure, and an
+  incomplete source or destination remains unknown. Never claim income until
+  later inventory or money evidence establishes it.
 - **Camera recovery is one controller action, not a camera plan.** When
   `recover_camera_view` is advertised and the world view is unreadable, author
   exactly `{"kind":"recover_camera_view"}` once. Give that step
@@ -271,9 +287,10 @@ yourself, in whatever order the current evidence supports.
   `belongs_to: "vendor"` group and sells from the `belongs_to: "you"` group.
   Read the group before acting on any cell: the cheapest cell on a trade screen
   is often your own clothing, and buying it is really selling it.
-- Give every step except `recover_camera_view`, `consult_advisor`, and
-  `request_affordance` a success condition that a later observation can settle, such
-  as `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
+- Give every step except `recover_camera_view`, the three controller-verified
+  resource actions, `consult_advisor`, and `request_affordance` a success
+  condition that a later observation can settle, such as
+  `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
 - **Check whether you are being attacked.** `in_combat` on the selected
   character, and `blood` falling, are the only warnings you get. Getting beaten
@@ -310,7 +327,8 @@ yourself, in whatever order the current evidence supports.
   is slow. The `scroll_screen` contract is intrinsically retry-safe, but the
   current general plan validator still requires another explicit step rather
   than a retry budget. Declare risk budgets that cover the plan: approach and
-  movement each cost one native-assisted action; activate/equip each cost one
+  movement, resource production, and resource inventory opening each cost one
+  native-assisted action; activate/equip/resource collection each cost one
   pointer action; purchase and sale each cost one pointer plus one
   purchase-budget action; dismissal, bindings, and scrolling add no
   risk-budget unit.

@@ -19,6 +19,7 @@ from kenshi_agent.models import (
     CameraRecoveryStatus,
     CameraState,
     CharacterState,
+    CollectResourceOutputAction,
     CommandDispatchContext,
     Condition,
     ConditionKind,
@@ -26,12 +27,18 @@ from kenshi_agent.models import (
     ControlMode,
     GameState,
     IdempotencyPolicy,
+    InventoryItem,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
     NormalizedPointerBounds,
     Observation,
+    OpenContextInventoryAction,
     PlanEnvelope,
     PlanningMode,
     PlanStep,
     RecoverCameraViewAction,
+    ResourceTransferEvidence,
+    ResourceTransferStatus,
     RiskBudget,
     SemanticActionReceipt,
     TelemetrySnapshot,
@@ -40,6 +47,7 @@ from kenshi_agent.models import (
     Vec3,
     VisibleUIControl,
     WorldStateRevision,
+    WorldTarget,
 )
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
@@ -285,6 +293,205 @@ def camera_plan(observation: Observation) -> PlanEnvelope:
     )
 
 
+class ResourceVerdictEnvironment(CameraVerdictEnvironment):
+    def __init__(
+        self,
+        action: OpenContextInventoryAction | CollectResourceOutputAction,
+        *,
+        native_reason: str = "exact_context_inventory_open",
+        transfer_status: ResourceTransferStatus = ResourceTransferStatus.TRANSFERRED,
+        tmp_path: Path,
+    ) -> None:
+        super().__init__(CameraRecoveryStatus.ALREADY_CLEAR, tmp_path)
+        self.action = action
+        self.native_reason = native_reason
+        self.transfer_status = transfer_status
+        self.control_mode = ControlMode.NATIVE_ASSISTED
+
+    def observation(self) -> Observation:
+        observation = super().observation()
+        assert observation.telemetry is not None
+        collecting = isinstance(self.action, CollectResourceOutputAction)
+        ui = observation.telemetry.ui.model_copy(
+            update={
+                "active_screen": "inventory" if collecting else "world",
+                "modal_open": collecting,
+                "context_inventory_target_id": (
+                    "entity-copper" if collecting else None
+                ),
+                "visible_controls_complete": True,
+                "visible_controls": (
+                    [
+                        VisibleUIControl(
+                            label="Raw Iron 0",
+                            window="COPPER RESOURCE",
+                            role="item",
+                            item_name="Raw Iron",
+                            item_quantity=2,
+                            section="out",
+                            bounds=NormalizedPointerBounds(
+                                min_x=0.30,
+                                max_x=0.36,
+                                min_y=0.40,
+                                max_y=0.48,
+                            ),
+                        )
+                    ]
+                    if collecting
+                    else []
+                ),
+            }
+        )
+        telemetry = observation.telemetry.model_copy(
+            update={
+                "capabilities": [
+                    "control.open_context_inventory",
+                    "identity.stable_handles",
+                    "squad.inventory",
+                    "ui.context_inventory_target",
+                    "ui.visible_controls",
+                    "world.context_targets",
+                ],
+                "ui": ui,
+                "squad": [
+                    CharacterState(
+                        id="char-hep",
+                        name="Hep",
+                        selected=True,
+                        inventory_complete=True,
+                        inventory=[
+                            InventoryItem(
+                                name="Raw Iron",
+                                item_name="Raw Iron",
+                                item_quantity=2,
+                                section="main",
+                            )
+                        ],
+                    )
+                ],
+                "world_targets": [
+                    WorldTarget(
+                        id="entity-copper",
+                        name="Copper Resource",
+                        kind="natural_resource",
+                        position=Vec3(x=10.0, y=0.0, z=20.0),
+                        distance=30.0,
+                        context_actions=["operate"],
+                        default_task="operate_machinery",
+                    )
+                ],
+            }
+        )
+        return observation.model_copy(
+            update={
+                "control_mode": self.control_mode,
+                "telemetry": telemetry,
+            },
+            deep=True,
+        )
+
+    async def dispatch(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None = None,
+    ) -> Transition:
+        del token
+        assert action == self.action
+        before = self.observation()
+        self.sequence += 1
+        after = self.observation()
+        acknowledgement = None
+        transfer = None
+        if isinstance(action, OpenContextInventoryAction):
+            acknowledgement = NativeCommandAcknowledgement(
+                command_id=command.command_id,
+                command="open_context_inventory",
+                status=NativeCommandStatus.COMPLETED,
+                reason=self.native_reason,
+                target_id=action.target_id,
+                selected_character_ids=["char-hep"],
+                based_on_telemetry_sequence=before.world_revision.telemetry_sequence,
+                acknowledged_at_telemetry_sequence=after.world_revision.telemetry_sequence
+                or 0,
+                accepted_at_telemetry_sequence=after.world_revision.telemetry_sequence,
+                terminal_at_telemetry_sequence=after.world_revision.telemetry_sequence,
+            )
+        else:
+            transfer = ResourceTransferEvidence(
+                status=self.transfer_status,
+                target_id=action.target_id,
+                selected_character_id="char-hep",
+                item_name=action.item_name,
+                source_quantity_before=2,
+                source_quantity_after=0,
+                destination_quantity_before=0,
+                destination_quantity_after=(
+                    2 if self.transfer_status is ResourceTransferStatus.TRANSFERRED else 0
+                ),
+                observed_after_sequence=after.world_revision.telemetry_sequence,
+                reason="Test controller verdict.",
+            )
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=self.control_mode,
+                command_id=command.command_id,
+                started_after_revision=before.world_revision,
+                completed_at_revision=after.world_revision,
+                causal_revision_advanced=True,
+                semantic=SemanticActionReceipt(
+                    action_kind=action.kind,
+                    contract_version="1.0",
+                    target_id=action.target_id,
+                    revalidation="Test receipt.",
+                    resource_transfer=transfer,
+                ),
+                native_acknowledgement=acknowledgement,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                primitive_actions=1,
+            ),
+            observation=after,
+        )
+
+
+def resource_plan(
+    observation: Observation,
+    action: OpenContextInventoryAction | CollectResourceOutputAction,
+) -> PlanEnvelope:
+    return PlanEnvelope(
+        schema_version="1.0",
+        plan_id="resource-controller-verdict",
+        plan_version=1,
+        objective="Accept only typed resource terminals.",
+        control_mode=observation.control_mode,
+        based_on_revision=observation.world_revision,
+        assumptions=[fresh()],
+        steps=[
+            PlanStep(
+                step_id="resource",
+                action=action,
+                preconditions=[fresh()],
+                success_conditions=[],
+                timeout_seconds=30.0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            )
+        ],
+        entry_step_id="resource",
+        max_actions=1,
+        max_wall_seconds=60.0,
+        max_game_seconds=60.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=1,
+            max_purchase_actions=0,
+            max_native_assisted_actions=1,
+        ),
+    )
+
+
 @pytest.mark.parametrize(
     ("status", "expected_completed"),
     [
@@ -356,5 +563,117 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
             )
         else:
             assert status.value in result.reason
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("action", "native_reason", "transfer_status", "expected_completed"),
+    [
+        (
+            OpenContextInventoryAction(target_id="entity-copper"),
+            "exact_context_inventory_open",
+            ResourceTransferStatus.TRANSFERRED,
+            True,
+        ),
+        (
+            OpenContextInventoryAction(target_id="entity-copper"),
+            "completed_without_exact_target",
+            ResourceTransferStatus.TRANSFERRED,
+            False,
+        ),
+        (
+            CollectResourceOutputAction(
+                target_id="entity-copper",
+                cell_label="Raw Iron 0",
+                item_name="Raw Iron",
+                source_quantity=2,
+                window="COPPER RESOURCE",
+            ),
+            "exact_context_inventory_open",
+            ResourceTransferStatus.TRANSFERRED,
+            True,
+        ),
+        (
+            CollectResourceOutputAction(
+                target_id="entity-copper",
+                cell_label="Raw Iron 0",
+                item_name="Raw Iron",
+                source_quantity=2,
+                window="COPPER RESOURCE",
+            ),
+            "exact_context_inventory_open",
+            ResourceTransferStatus.NOT_TRANSFERRED,
+            False,
+        ),
+    ],
+)
+def test_continuous_executor_fails_closed_on_resource_controller_verdicts(
+    tmp_path: Path,
+    action: OpenContextInventoryAction | CollectResourceOutputAction,
+    native_reason: str,
+    transfer_status: ResourceTransferStatus,
+    expected_completed: bool,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = ResourceVerdictEnvironment(
+            action,
+            native_reason=native_reason,
+            transfer_status=transfer_status,
+            tmp_path=tmp_path,
+        )
+        observation = await environment.reset()
+        plan = resource_plan(observation, action)
+        assert dialogue_interaction_policy_errors(plan, observation) == []
+
+        store = WorldStateStore(clock=clock)
+        store.publish(observation)
+        logger = SessionLogger(tmp_path / "resource.jsonl", "resource-continuous")
+
+        def observe_transition(
+            plan: PlanEnvelope,
+            step: PlanStep,
+            before: Observation,
+            transition: Transition,
+            command_id: str,
+            action_start_revision: WorldStateRevision,
+        ) -> Observation:
+            del plan, step, before, command_id, action_start_revision
+            store.publish(transition.observation)
+            return transition.observation
+
+        executor = ContinuousPlanExecutor(
+            environment=environment,
+            guard=ActionGuard(
+                SafetyConfig(
+                    allow_action_kinds=[action.kind],
+                    max_actions_per_minute=100,
+                ),
+                MacroRegistry({}),
+                control_mode=ControlMode.NATIVE_ASSISTED,
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            clock=clock,
+            state_store=store,
+            observe_transition=observe_transition,
+            planning_config=PlanningConfig(mode=PlanningMode.CONTINUOUS),
+        )
+        try:
+            result = await executor.execute(
+                plan,
+                observation,
+                remaining_run_actions=1,
+            )
+        finally:
+            logger.close()
+
+        assert result.actions_completed == 1
+        assert result.completed is expected_completed
+        if expected_completed:
+            assert result.reason == "Plan completed."
+        else:
+            assert result.reason != "Plan completed."
 
     asyncio.run(scenario())

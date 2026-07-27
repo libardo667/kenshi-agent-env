@@ -17,6 +17,7 @@ from .models import (
     NativeCommandStatus,
     Observation,
     PerformContextAction,
+    ProduceResourceOutputAction,
     SkillAction,
     Transition,
     WorldStateRevision,
@@ -187,7 +188,12 @@ class StatefulNativeMovementOption:
         self,
         *,
         option_id: str,
-        action: MoveInDirectionAction | ExitCurrentBuildingAction | PerformContextAction,
+        action: (
+            MoveInDirectionAction
+            | ExitCurrentBuildingAction
+            | PerformContextAction
+            | ProduceResourceOutputAction
+        ),
         environment: AgentEnvironment,
         require_paused_start: bool = True,
     ) -> None:
@@ -211,6 +217,8 @@ class StatefulNativeMovementOption:
 
     @property
     def _wire_command(self) -> str:
+        if isinstance(self.action, ProduceResourceOutputAction):
+            return "produce_resource_output"
         if isinstance(self.action, PerformContextAction):
             return "operate_natural_resource"
         if isinstance(self.action, ExitCurrentBuildingAction):
@@ -219,6 +227,8 @@ class StatefulNativeMovementOption:
 
     @property
     def _required_capability(self) -> str:
+        if isinstance(self.action, ProduceResourceOutputAction):
+            return "control.produce_resource_output"
         if isinstance(self.action, PerformContextAction):
             return "control.perform_context_action"
         if isinstance(self.action, ExitCurrentBuildingAction):
@@ -261,12 +271,24 @@ class StatefulNativeMovementOption:
                     "Building-exit option requires one selected character "
                     "confirmed indoors."
                 )
-        if isinstance(self.action, PerformContextAction):
+        if isinstance(
+            self.action,
+            (PerformContextAction, ProduceResourceOutputAction),
+        ):
             targets = [
                 target
                 for target in telemetry.world_targets
                 if target.id == self.action.target_id
-                and self.action.context_action in target.context_actions
+                and (
+                    (
+                        isinstance(self.action, PerformContextAction)
+                        and self.action.context_action in target.context_actions
+                    )
+                    or (
+                        isinstance(self.action, ProduceResourceOutputAction)
+                        and "operate" in target.context_actions
+                    )
+                )
             ]
             if len(targets) != 1:
                 raise OptionLifecycleError(
@@ -309,7 +331,12 @@ class StatefulNativeMovementOption:
         if self.native_command_id is None:
             self.native_command_id = command.command_id
         self.status = OptionStatus.RUNNING
-        if isinstance(self.action, PerformContextAction):
+        if isinstance(self.action, ProduceResourceOutputAction):
+            self.reason = (
+                "Resource production dispatched; awaiting actual stock in the "
+                "exact target's output inventory."
+            )
+        elif isinstance(self.action, PerformContextAction):
             self.reason = (
                 "Contextual task dispatched; awaiting native proof of the exact "
                 "task and target."
@@ -398,12 +425,27 @@ class StatefulNativeMovementOption:
             )
             return self._poll_result()
         if acknowledgement.status is NativeCommandStatus.ACCEPTED:
-            self.reason = (
-                "Kenshi accepted the exact native movement order; the character "
-                "is still walking."
-            )
+            if isinstance(self.action, ProduceResourceOutputAction):
+                self.reason = (
+                    "Kenshi retained the exact resource job; task or approach is "
+                    "progress, and output is not ready yet."
+                )
+            else:
+                self.reason = (
+                    "Kenshi accepted the exact native movement order; the character "
+                    "is still walking."
+                )
         elif acknowledgement.status is NativeCommandStatus.COMPLETED:
-            if self.transition is None:
+            if (
+                isinstance(self.action, ProduceResourceOutputAction)
+                and acknowledgement.reason != "resource_output_ready"
+            ):
+                self.status = OptionStatus.FAILED
+                self.reason = (
+                    "Native resource production claimed terminal completion "
+                    f"without output proof: {acknowledgement.reason}."
+                )
+            elif self.transition is None:
                 self.reason = (
                     "Kenshi completed the exact native movement order; "
                     "awaiting the dispatch transition."
@@ -494,7 +536,10 @@ class StatefulNativeMovementOption:
             return False
         if acknowledgement.selected_character_ids != self.selected_character_ids:
             return False
-        if isinstance(self.action, PerformContextAction):
+        if isinstance(
+            self.action,
+            (PerformContextAction, ProduceResourceOutputAction),
+        ):
             return bool(
                 acknowledgement.target_id == self.action.target_id
                 and acknowledgement.bearing_degrees == 0.0

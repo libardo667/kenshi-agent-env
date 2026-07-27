@@ -61,8 +61,7 @@ follow has one obstructed-move proof. Exact contextual operation is live-proven
 on one Copper Resource through `context_task_started`,
 the visible `Operating machine` goal, and a safe final pause.
 
-## Native protocol 1.0.0
-
+## Native protocol 1.1.0 (build-validated; not live-loaded)
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
 replaces a complete snapshot at roughly 2 Hz. Telemetry covers pause, speed,
 money, game time, camera position and bearings; stable session-scoped squad,
@@ -71,8 +70,10 @@ identities; squad life/consciousness/combat state, position, resolved indoor mem
 nutrition reserve, blood, UI-facing current goal, and bounded inventory; dialogue, trade, inventory,
 stats and management window state; up to 224 visible controls with window
 ownership and normalized bounds; nearest-first structurally reviewed mining
-resources combined from bounded local and outer queries; and a keyed
-acknowledgement ring for five declared commands.
+resources combined from bounded local and outer queries; completeness markers
+for bounded squad/control inventories; exact contextual-inventory ownership; and
+a keyed acknowledgement ring for seven declared commands. Protocol `1.0.0`
+remains the latest supervised live-loaded evidence.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
 command capabilities before planning and rejects native actions again at the
@@ -86,10 +87,9 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. One live call returned truncated invalid
   JSON; synthetic proofs do not satisfy the requirement.
-- Resource output cells are observable with owner window, section, item, and
-  bounds once a human opens the target inventory, but no action opens that exact
-  contextual inventory or transfers its output. Ongoing tasks also lack retained
-  option ownership, so a planner can reissue `operate` instead of waiting.
+- Resource production, exact contextual-inventory opening, and conserved output
+  transfer now have portable tests and a native conformance build. They have no
+  loaded-DLL or supervised Kenshi proof, so no production or income claim passes.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations

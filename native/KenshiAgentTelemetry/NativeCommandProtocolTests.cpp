@@ -13,6 +13,7 @@
 #include "NativeCommandProtocol.cpp"
 #include "NativeCommandTiming.cpp"
 #include "NativeMovementSemantics.cpp"
+#include "ResourceProductionSemantics.h"
 #include "WorldTargetProtocol.cpp"
 #include "GameplayCapabilities.generated.h"
 
@@ -145,6 +146,38 @@ namespace
             std::string::npos)
         {
             return Fail("conditional gameplay capability was not serialized");
+        }
+        return 0;
+    }
+
+    int TestResourceProductionSemantics()
+    {
+        using namespace KenshiAgentTelemetry;
+
+        if (EvaluateResourceProduction(false, 0, false, false) !=
+            RESOURCE_PRODUCTION_OUTPUT_UNKNOWN)
+        {
+            return Fail("unknown output inventory did not fail closed");
+        }
+        if (EvaluateResourceProduction(true, 0, false, false) !=
+            RESOURCE_PRODUCTION_APPROACHING)
+        {
+            return Fail("pre-task resource production did not remain pending");
+        }
+        if (EvaluateResourceProduction(true, 0, true, false) !=
+            RESOURCE_PRODUCTION_WORKING)
+        {
+            return Fail("an exact operating goal was mistaken for output");
+        }
+        if (EvaluateResourceProduction(true, 1, true, true) !=
+            RESOURCE_PRODUCTION_OUTPUT_READY)
+        {
+            return Fail("produced output did not complete the option");
+        }
+        if (EvaluateResourceProduction(true, 0, false, true) !=
+            RESOURCE_PRODUCTION_TASK_ENDED)
+        {
+            return Fail("lost work after task observation did not fail");
         }
         return 0;
     }
@@ -449,6 +482,9 @@ int main(int argc, char** argv)
     const int capabilityResult = TestGameplayCapabilities();
     if (capabilityResult != 0)
         return capabilityResult;
+    const int resourceProductionResult = TestResourceProductionSemantics();
+    if (resourceProductionResult != 0)
+        return resourceProductionResult;
     const int timingResult = TestNativeMovementPauseTiming();
     if (timingResult != 0)
         return timingResult;
@@ -585,6 +621,48 @@ int main(int argc, char** argv)
         contextAction.distanceUnits != 0.0)
     {
         return Fail("valid context action did not retain its exact target");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest resourceProduction;
+    const std::string resourceProductionPayload =
+        ReadFile(prefix + "valid_resource_production_request.json");
+    if (resourceProductionPayload.empty())
+        return Fail("could not read valid_resource_production_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            resourceProductionPayload,
+            resourceProduction,
+            rejectionReason))
+    {
+        return Fail(
+            "valid resource-production request was rejected as " +
+            rejectionReason);
+    }
+    if (resourceProduction.command != "produce_resource_output" ||
+        resourceProduction.targetId != "entity-natural-resource")
+    {
+        return Fail(
+            "valid resource production did not retain its exact target");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest contextInventory;
+    const std::string contextInventoryPayload =
+        ReadFile(prefix + "valid_context_inventory_request.json");
+    if (contextInventoryPayload.empty())
+        return Fail("could not read valid_context_inventory_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            contextInventoryPayload,
+            contextInventory,
+            rejectionReason))
+    {
+        return Fail(
+            "valid context-inventory request was rejected as " +
+            rejectionReason);
+    }
+    if (contextInventory.command != "open_context_inventory" ||
+        contextInventory.targetId != "entity-natural-resource")
+    {
+        return Fail(
+            "valid context inventory did not retain its exact target");
     }
 
     const std::string naturalResourcePayload =

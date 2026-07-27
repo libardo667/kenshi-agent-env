@@ -271,6 +271,9 @@ class CharacterState(StrictModel):
     current_goal: str | None = None
     body_parts: list[BodyPartState] = Field(default_factory=list)
     inventory: list[InventoryItem] = Field(default_factory=list)
+    # False means the bounded native export omitted one or more items. Absence
+    # from `inventory` is therefore usable as zero only when this is true.
+    inventory_complete: bool | None = None
 
 
 class NearbyEntity(StrictModel):
@@ -604,6 +607,13 @@ class UIState(StrictModel):
         # screen fails validation outright instead of arriving truncated.
         max_length=224,
     )
+    # False means either the widget walk or the emitted-control budget bound.
+    # A missing item/control is known absent only when this is true.
+    visible_controls_complete: bool | None = None
+    # Stable identity of the exact building whose contextual inventory is
+    # currently open. Window captions are not identities: two resources may
+    # share the same name.
+    context_inventory_target_id: str | None = Field(default=None, max_length=200)
     context_menu_open: bool | None = None
     # Additional screen signals. `active_screen` collapses everything to
     # dialogue/trade/inventory/world, which cannot express "the stats window is
@@ -635,6 +645,8 @@ class NativeCommandAcknowledgement(StrictModel):
         "move_in_direction",
         "exit_current_building",
         "operate_natural_resource",
+        "produce_resource_output",
+        "open_context_inventory",
     ]
     status: NativeCommandStatus
     reason: str = Field(min_length=1, max_length=200)
@@ -749,7 +761,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.0.0"
+    protocol_version: str = "1.1.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -983,6 +995,20 @@ class PerformContextAction(StrictModel):
     context_action: ContextActionKind
 
 
+class ProduceResourceOutputAction(StrictModel):
+    """Operate one exact natural resource until its output inventory gains stock."""
+
+    kind: Literal["produce_resource_output"] = "produce_resource_output"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
+class OpenContextInventoryAction(StrictModel):
+    """Open the ordinary inventory UI for one exact observed world target."""
+
+    kind: Literal["open_context_inventory"] = "open_context_inventory"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
 class MoveInDirectionAction(StrictModel):
     """Walk a bearing and a distance from wherever the character is standing.
 
@@ -1155,6 +1181,23 @@ class SellItemAction(StrictModel):
     buyer_id: str = Field(min_length=1, max_length=200)
 
 
+class CollectResourceOutputAction(StrictModel):
+    """Transfer one exact resource-output cell into the selected squadmate.
+
+    The exact world-target ID binds the source window to its observed resource.
+    `source_quantity` is copied from the cell so the controller can prove that
+    source loss equals destination gain after the right-click.
+    """
+
+    kind: Literal["collect_resource_output"] = "collect_resource_output"
+    target_id: str = Field(min_length=1, max_length=200)
+    cell_label: str = Field(min_length=1, max_length=80)
+    item_name: str = Field(min_length=1, max_length=200)
+    source_quantity: int = Field(gt=0)
+    window: str = Field(min_length=1, max_length=200)
+    section: Literal["out"] = "out"
+
+
 class ScrollScreenAction(StrictModel):
     """Scroll inside one open window so more of its contents become visible.
 
@@ -1323,6 +1366,8 @@ PlannerControlAction: TypeAlias = (
 SemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | PerformContextAction
+    | ProduceResourceOutputAction
+    | OpenContextInventoryAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | ExitCurrentBuildingAction
@@ -1333,6 +1378,7 @@ SemanticAction: TypeAlias = (
     | ScrollScreenAction
     | SellItemAction
     | EquipItemAction
+    | CollectResourceOutputAction
     | RecoverCameraViewAction
 )
 """Reusable typed game/UI intentions bound to currently observed references."""
@@ -1356,6 +1402,8 @@ Action: TypeAlias = (
     | SkillAction
     | ApproachDialogueTargetAction
     | PerformContextAction
+    | ProduceResourceOutputAction
+    | OpenContextInventoryAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | ExitCurrentBuildingAction
@@ -1366,6 +1414,7 @@ Action: TypeAlias = (
     | ScrollScreenAction
     | SellItemAction
     | EquipItemAction
+    | CollectResourceOutputAction
     | RecoverCameraViewAction
 )
 ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
@@ -1374,6 +1423,8 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
         "perform_context_action",
+        "produce_resource_output",
+        "open_context_inventory",
         "move_to_character",
         "move_in_direction",
         "exit_current_building",
@@ -1384,6 +1435,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "scroll_screen",
         "sell_item",
         "equip_item",
+        "collect_resource_output",
         "recover_camera_view",
     }
 )
@@ -1673,6 +1725,8 @@ class NativeCommandRequest(StrictModel):
         "move_in_direction",
         "exit_current_building",
         "operate_natural_resource",
+        "produce_resource_output",
+        "open_context_inventory",
     ]
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
@@ -1964,13 +2018,17 @@ class PlanStep(StrictModel):
                 RequestAffordanceAction,
                 ExitCurrentBuildingAction,
                 PerformContextAction,
+                ProduceResourceOutputAction,
+                OpenContextInventoryAction,
+                CollectResourceOutputAction,
             ),
         ):
             raise ValueError(
                 "success_conditions may be empty only for recover_camera_view, "
-                "consult_advisor, request_affordance, exit_current_building, or "
-                "perform_context_action, whose owning subsystem returns a typed "
-                "terminal outcome"
+                "consult_advisor, request_affordance, exit_current_building, "
+                "perform_context_action, produce_resource_output, "
+                "open_context_inventory, or collect_resource_output, whose "
+                "owning subsystem returns a typed terminal outcome"
             )
         return self
 
@@ -2679,6 +2737,27 @@ class CameraRecoveryEvidence(StrictModel):
     candidates: list[CameraFrameScore] = Field(min_length=1, max_length=16)
 
 
+class ResourceTransferStatus(StrEnum):
+    TRANSFERRED = "transferred"
+    NOT_TRANSFERRED = "not_transferred"
+    UNVERIFIED = "unverified"
+
+
+class ResourceTransferEvidence(StrictModel):
+    """Controller-owned conservation proof for one resource-output transfer."""
+
+    status: ResourceTransferStatus
+    target_id: str = Field(min_length=1, max_length=200)
+    selected_character_id: str | None = Field(default=None, min_length=1, max_length=200)
+    item_name: str = Field(min_length=1, max_length=200)
+    source_quantity_before: int | None = Field(default=None, ge=0)
+    source_quantity_after: int | None = Field(default=None, ge=0)
+    destination_quantity_before: int | None = Field(default=None, ge=0)
+    destination_quantity_after: int | None = Field(default=None, ge=0)
+    observed_after_sequence: int | None = Field(default=None, ge=0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -2698,6 +2777,7 @@ class SemanticActionReceipt(StrictModel):
     revalidation: str = Field(min_length=1, max_length=1000)
     legacy_compatibility: bool = False
     camera_recovery: CameraRecoveryEvidence | None = None
+    resource_transfer: ResourceTransferEvidence | None = None
 
 
 class ActionReceipt(StrictModel):

@@ -61,13 +61,14 @@ dialogue. Failure never falls through to force termination or ad-hoc input.
 ## What the native bridge may do
 
 The telemetry path is observational, but the DLL is not globally read-only. In
-native-assisted mode the bounded bridge may issue one of five declared player
+native-assisted mode the bounded bridge may issue one of seven declared player
 orders: talk to an exact valid dialogue target; walk to an exact nearby
 character; issue a bounded bearing/distance walk; resolve and use the selected
 character's current unlocked building exit; or operate an exact current natural
-resource. **No mode permits direct health, position, money, faction, save/load,
-editor, or arbitrary task mutation.** Interface-only actions remain visible
-keyboard and mouse operations through the ordinary UI.
+resource through task-start or output-ready semantics; or open that exact
+resource's ordinary inventory UI. **No mode permits direct health, position,
+money, faction, save/load, editor, or arbitrary task mutation.** Interface-only
+actions remain visible keyboard and mouse operations through the ordinary UI.
 
 Every native request requires a globally unique caller command ID, exact
 issue-time revision, `native_assisted` mode, the current identity session, and

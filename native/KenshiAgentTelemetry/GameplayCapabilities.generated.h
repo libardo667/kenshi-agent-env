@@ -28,6 +28,7 @@ namespace KenshiAgentTelemetry
             "ui.dialogue.options",
             "ui.tooltip",
             "ui.visible_controls",
+            "ui.context_inventory_target",
             "nearby.characters",
             "nearby.roles",
             "control.approach_vendor",
@@ -36,6 +37,8 @@ namespace KenshiAgentTelemetry
             "control.exit_current_building",
             "world.context_targets",
             "control.perform_context_action",
+            "control.produce_resource_output",
+            "control.open_context_inventory",
             "identity.stable_handles",
         };
         static const char* const conditional[] =

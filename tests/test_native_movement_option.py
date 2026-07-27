@@ -21,6 +21,7 @@ from kenshi_agent.models import (
     NativeControlState,
     Observation,
     PerformContextAction,
+    ProduceResourceOutputAction,
     TelemetrySnapshot,
     Transition,
     UIState,
@@ -278,6 +279,67 @@ def context_observation(
     )
 
 
+def production_acknowledgement(
+    sequence: int,
+    status: NativeCommandStatus,
+    *,
+    reason: str,
+) -> NativeCommandAcknowledgement:
+    terminal = status is not NativeCommandStatus.ACCEPTED
+    return NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="produce_resource_output",
+        status=status,
+        reason=reason,
+        target_id="entity-copper",
+        selected_character_ids=[SELECTED_ID],
+        based_on_telemetry_sequence=1,
+        acknowledged_at_telemetry_sequence=2,
+        accepted_at_telemetry_sequence=2,
+        terminal_at_telemetry_sequence=sequence if terminal else None,
+    )
+
+
+def production_observation(
+    sequence: int,
+    *,
+    ack: NativeCommandAcknowledgement | None = None,
+    current_goal: str | None = None,
+) -> Observation:
+    state = context_observation(sequence)
+    assert state.telemetry is not None
+    selected = CharacterState(
+        id=SELECTED_ID,
+        name="Hep",
+        selected=True,
+        current_goal=current_goal,
+    )
+    return state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        "game.pause",
+                        "control.produce_resource_output",
+                        "world.context_targets",
+                    ],
+                    "squad": [selected],
+                    "native_control": NativeControlState(
+                        active_command_id=(
+                            ack.command_id
+                            if ack is not None
+                            and ack.status is NativeCommandStatus.ACCEPTED
+                            else None
+                        ),
+                        acknowledgements=[ack] if ack is not None else [],
+                    ),
+                }
+            )
+        },
+        deep=True,
+    )
+
+
 class InstantNativeMovementEnvironment(AgentEnvironment):
     async def reset(self, *, seed: int | None = None) -> Observation:
         del seed
@@ -376,6 +438,36 @@ class InstantContextActionEnvironment(AgentEnvironment):
                 native_acknowledgement=accepted,
             ),
             observation=context_observation(2, ack=accepted),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
+class InstantResourceProductionEnvironment(AgentEnvironment):
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return production_observation(1)
+
+    async def observe(self) -> Observation:
+        return production_observation(1)
+
+    async def step(self, action: Action) -> Transition:
+        accepted = production_acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+            reason="issued",
+        )
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="resource production issued",
+                native_acknowledgement=accepted,
+            ),
+            observation=production_observation(2, ack=accepted),
         )
 
     async def close(self) -> None:
@@ -490,6 +582,83 @@ def test_context_action_option_waits_for_exact_native_task_proof() -> None:
     asyncio.run(scenario())
 
 
+def test_resource_production_retains_work_until_output_is_ready() -> None:
+    async def scenario() -> None:
+        production = StatefulNativeMovementOption(
+            option_id="native-production-1",
+            action=ProduceResourceOutputAction(target_id="entity-copper"),
+            environment=InstantResourceProductionEnvironment(),
+        )
+        start = production_observation(1)
+        production.prepare(start)
+        await production.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=start.world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        operating = production_acknowledgement(
+            3,
+            NativeCommandStatus.ACCEPTED,
+            reason="context_task_active",
+        )
+        progress = production.poll(
+            update(
+                production_observation(
+                    3,
+                    ack=operating,
+                    current_goal="Operating machine",
+                )
+            )
+        )
+        assert progress.status is OptionStatus.RUNNING
+
+        ready = production_acknowledgement(
+            4,
+            NativeCommandStatus.COMPLETED,
+            reason="resource_output_ready",
+        )
+        outcome = production.poll(
+            update(production_observation(4, ack=ready))
+        )
+        assert outcome.status is OptionStatus.SUCCEEDED
+        assert "resource_output_ready" in outcome.reason
+
+    asyncio.run(scenario())
+
+
+def test_resource_production_never_accepts_task_start_as_terminal_output() -> None:
+    async def scenario() -> None:
+        production = StatefulNativeMovementOption(
+            option_id="native-production-bad-terminal",
+            action=ProduceResourceOutputAction(target_id="entity-copper"),
+            environment=InstantResourceProductionEnvironment(),
+        )
+        start = production_observation(1)
+        production.prepare(start)
+        await production.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=start.world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        false_terminal = production_acknowledgement(
+            3,
+            NativeCommandStatus.COMPLETED,
+            reason="context_task_started",
+        )
+        outcome = production.poll(
+            update(production_observation(3, ack=false_terminal))
+        )
+
+        assert outcome.status is OptionStatus.FAILED
+        assert "output" in outcome.reason
+
+    asyncio.run(scenario())
 def test_building_exit_option_rejects_an_outdoor_start() -> None:
     movement = StatefulNativeMovementOption(
         option_id="native-exit-outdoors",

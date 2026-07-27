@@ -854,6 +854,62 @@
       "title": "ClickAction",
       "type": "object"
     },
+    "CollectResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
+      "properties": {
+        "kind": {
+          "const": "collect_resource_output",
+          "default": "collect_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity": {
+          "exclusiveMinimum": 0,
+          "title": "Source Quantity",
+          "type": "integer"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "section": {
+          "const": "out",
+          "default": "out",
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "cell_label",
+        "item_name",
+        "source_quantity",
+        "window"
+      ],
+      "title": "CollectResourceOutputAction",
+      "type": "object"
+    },
     "Condition": {
       "additionalProperties": false,
       "properties": {
@@ -1543,7 +1599,9 @@
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
-            "operate_natural_resource"
+            "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory"
           ],
           "title": "Command",
           "type": "string"
@@ -1700,6 +1758,29 @@
       "title": "NormalizedPointerBounds",
       "type": "object"
     },
+    "OpenContextInventoryAction": {
+      "additionalProperties": false,
+      "description": "Open the ordinary inventory UI for one exact observed world target.",
+      "properties": {
+        "kind": {
+          "const": "open_context_inventory",
+          "default": "open_context_inventory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "OpenContextInventoryAction",
+      "type": "object"
+    },
     "PauseAction": {
       "additionalProperties": false,
       "properties": {
@@ -1755,6 +1836,29 @@
       ],
       "title": "PointerActionClass",
       "type": "string"
+    },
+    "ProduceResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Operate one exact natural resource until its output inventory gains stock.",
+      "properties": {
+        "kind": {
+          "const": "produce_resource_output",
+          "default": "produce_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ProduceResourceOutputAction",
+      "type": "object"
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
@@ -1898,6 +2002,129 @@
       ],
       "title": "RequestAffordanceAction",
       "type": "object"
+    },
+    "ResourceTransferEvidence": {
+      "additionalProperties": false,
+      "description": "Controller-owned conservation proof for one resource-output transfer.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ResourceTransferStatus"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Character Id"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity_before": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Quantity Before"
+        },
+        "source_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Quantity After"
+        },
+        "destination_quantity_before": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination Quantity Before"
+        },
+        "destination_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination Quantity After"
+        },
+        "observed_after_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed After Sequence"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "target_id",
+        "item_name",
+        "reason"
+      ],
+      "title": "ResourceTransferEvidence",
+      "type": "object"
+    },
+    "ResourceTransferStatus": {
+      "enum": [
+        "transferred",
+        "not_transferred",
+        "unverified"
+      ],
+      "title": "ResourceTransferStatus",
+      "type": "string"
     },
     "ScrollAction": {
       "additionalProperties": false,
@@ -2114,6 +2341,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/CameraRecoveryEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resource_transfer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceTransferEvidence"
             },
             {
               "type": "null"
@@ -2387,6 +2625,12 @@
           "$ref": "#/$defs/PerformContextAction"
         },
         {
+          "$ref": "#/$defs/ProduceResourceOutputAction"
+        },
+        {
+          "$ref": "#/$defs/OpenContextInventoryAction"
+        },
+        {
           "$ref": "#/$defs/MoveToCharacterAction"
         },
         {
@@ -2415,6 +2659,9 @@
         },
         {
           "$ref": "#/$defs/EquipItemAction"
+        },
+        {
+          "$ref": "#/$defs/CollectResourceOutputAction"
         },
         {
           "$ref": "#/$defs/RecoverCameraViewAction"

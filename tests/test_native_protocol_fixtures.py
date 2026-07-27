@@ -69,6 +69,27 @@ def test_python_accepts_exact_context_action_request_fixture() -> None:
     assert request.distance_units == 0.0
 
 
+@pytest.mark.parametrize(
+    ("fixture", "command"),
+    [
+        ("valid_resource_production_request.json", "produce_resource_output"),
+        ("valid_context_inventory_request.json", "open_context_inventory"),
+    ],
+)
+def test_python_accepts_exact_resource_workflow_request_fixtures(
+    fixture: str,
+    command: str,
+) -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / fixture).read_bytes()
+    )
+
+    assert request.command == command
+    assert request.target_id == "entity-natural-resource"
+    assert request.bearing_degrees == 0.0
+    assert request.distance_units == 0.0
+
+
 def test_python_accepts_reviewed_natural_resource_fixture() -> None:
     target = WorldTarget.model_validate_json(
         (FIXTURES / "valid_natural_resource.json").read_bytes()

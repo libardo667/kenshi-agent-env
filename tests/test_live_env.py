@@ -15,6 +15,7 @@ from kenshi_agent.models import (
     CalibrationStatus,
     CharacterState,
     ClickAction,
+    CollectResourceOutputAction,
     CommandDispatchContext,
     ContextActionKind,
     ControlMode,
@@ -22,6 +23,7 @@ from kenshi_agent.models import (
     ExitCurrentBuildingAction,
     GameState,
     HotkeyAction,
+    InventoryItem,
     KeyAction,
     MouseButton,
     MoveInDirectionAction,
@@ -31,9 +33,12 @@ from kenshi_agent.models import (
     NativeControlState,
     NearbyEntity,
     NormalizedPointerBounds,
+    OpenContextInventoryAction,
     PauseAction,
     PerformContextAction,
     PointerActionClass,
+    ProduceResourceOutputAction,
+    ResourceTransferStatus,
     SkillAction,
     TelemetrySnapshot,
     UIState,
@@ -704,6 +709,8 @@ class NativePulseTelemetry(PulseTelemetry):
             "nearby.roles",
             "world.context_targets",
             "control.perform_context_action",
+            "control.produce_resource_output",
+            "control.open_context_inventory",
         ]
         self.target_distance: float | None = None
         self.target_screen_position: Vec2 | None = None
@@ -774,6 +781,108 @@ class NativePulseTelemetry(PulseTelemetry):
         )
 
 
+class ResourceTransferPulseTelemetry(PulseTelemetry):
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self.path = path
+        self.transferred = False
+
+    def read(self) -> TelemetryRead:
+        self.sequence += 1
+        bounds = NormalizedPointerBounds(
+            min_x=0.30,
+            max_x=0.36,
+            min_y=0.40,
+            max_y=0.48,
+        )
+        return TelemetryRead(
+            snapshot=TelemetrySnapshot(
+                protocol_version="1.1.0",
+                sequence=self.sequence,
+                captured_at=datetime.now(UTC),
+                identity_session_id="session-resource-transfer",
+                capabilities=[
+                    "identity.stable_handles",
+                    "squad.inventory",
+                    "ui.context_inventory_target",
+                    "ui.visible_controls",
+                    "world.context_targets",
+                ],
+                game=GameState(loaded=True, paused=True),
+                ui=UIState(
+                    active_screen="inventory",
+                    modal_open=True,
+                    dialogue_open=False,
+                    context_inventory_target_id="entity-copper",
+                    visible_controls_complete=True,
+                    selected_character_id="entity-selected",
+                    selected_character_ids=["entity-selected"],
+                    visible_controls=(
+                        []
+                        if self.transferred
+                        else [
+                            VisibleUIControl(
+                                label="Raw Iron 0",
+                                window="COPPER RESOURCE",
+                                role="item",
+                                item_name="Raw Iron",
+                                item_quantity=2,
+                                section="out",
+                                bounds=bounds,
+                            )
+                        ]
+                    ),
+                ),
+                squad=[
+                    CharacterState(
+                        id="entity-selected",
+                        name="Wanderer",
+                        selected=True,
+                        inventory_complete=True,
+                        inventory=(
+                            [
+                                InventoryItem(
+                                    name="Raw Iron",
+                                    item_name="Raw Iron",
+                                    item_quantity=2,
+                                    section="main",
+                                )
+                            ]
+                            if self.transferred
+                            else []
+                        ),
+                    )
+                ],
+                world_targets=[
+                    WorldTarget(
+                        id="entity-copper",
+                        name="Copper Resource",
+                        kind="natural_resource",
+                        position=Vec3(x=10.0, y=0.0, z=20.0),
+                        distance=30.0,
+                        context_actions=[ContextActionKind.OPERATE],
+                        default_task="operate_machinery",
+                    )
+                ],
+            ),
+            age_seconds=0.0,
+            stale=False,
+            path=self.path,
+        )
+
+
+class ResourceTransferController(PulseController):
+    def __init__(self, telemetry: ResourceTransferPulseTelemetry) -> None:
+        super().__init__(telemetry)
+        self.resource_telemetry = telemetry
+
+    async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
+        receipt = await super().execute(action)
+        if isinstance(action, ClickAction) and action.button is MouseButton.RIGHT:
+            self.resource_telemetry.transferred = True
+        return receipt
+
+
 class NativeAckController(PulseController):
     def __init__(
         self,
@@ -783,12 +892,14 @@ class NativeAckController(PulseController):
         status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
         acknowledgement_command_id: str | None = None,
         open_dialogue_on_hotkey: bool = False,
+        reason: str | None = None,
     ) -> None:
         super().__init__(telemetry)
         self.request_path = request_path
         self.status = status
         self.acknowledgement_command_id = acknowledgement_command_id
         self.open_dialogue_on_hotkey = open_dialogue_on_hotkey
+        self.reason = reason
         self.request_seen_before_hotkey = False
         self.request: NativeCommandRequest | None = None
 
@@ -824,9 +935,12 @@ class NativeAckController(PulseController):
                         command=request.command,
                         status=self.status,
                         reason=(
-                            "issued"
-                            if self.status == NativeCommandStatus.ACCEPTED
-                            else self.status.value
+                            self.reason
+                            or (
+                                "issued"
+                                if self.status == NativeCommandStatus.ACCEPTED
+                                else self.status.value
+                            )
                         ),
                         target_id=request.target_id,
                         bearing_degrees=request.bearing_degrees,
@@ -848,6 +962,7 @@ def native_vendor_environment(
     status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
     acknowledgement_command_id: str | None = None,
     open_dialogue_on_hotkey: bool = False,
+    reason: str | None = None,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
     telemetry_path = tmp_path / "telemetry.latest.json"
     request_path = tmp_path / "native_command.request.json"
@@ -858,6 +973,7 @@ def native_vendor_environment(
         status=status,
         acknowledgement_command_id=acknowledgement_command_id,
         open_dialogue_on_hotkey=open_dialogue_on_hotkey,
+        reason=reason,
     )
     registry = MacroRegistry(
         {
@@ -1450,6 +1566,141 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
         assert transition.receipt.executed
         assert transition.receipt.semantic is not None
         assert transition.receipt.semantic.resolved_label == "operate"
+
+    asyncio.run(scenario())
+
+
+def test_resource_production_issues_exact_monitored_native_command(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="resource_output_ready",
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"native_approach_skill": "approach_confirmed_vendor"}
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ProduceResourceOutputAction(target_id="entity-copper"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "3" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert not [
+            action for action in controller.actions if isinstance(action, ClickAction)
+        ]
+        assert len(
+            [action for action in controller.actions if isinstance(action, HotkeyAction)]
+        ) == 1
+        assert controller.request is not None
+        assert controller.request.command == "produce_resource_output"
+        assert controller.request.target_id == "entity-copper"
+        assert transition.receipt.executed
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert acknowledgement is not None
+        assert acknowledgement.reason == "resource_output_ready"
+
+    asyncio.run(scenario())
+
+
+def test_context_inventory_requires_exact_native_terminal(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="exact_context_inventory_open",
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"native_approach_skill": "approach_confirmed_vendor"}
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            OpenContextInventoryAction(target_id="entity-copper"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "4" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert len(
+            [action for action in controller.actions if isinstance(action, HotkeyAction)]
+        ) == 1
+        assert controller.request is not None
+        assert controller.request.command == "open_context_inventory"
+        assert controller.request.target_id == "entity-copper"
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert acknowledgement is not None
+        assert acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert acknowledgement.reason == "exact_context_inventory_open"
+
+    asyncio.run(scenario())
+
+
+def test_collect_resource_output_requires_conserved_transfer(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = ResourceTransferPulseTelemetry(
+            tmp_path / "telemetry.latest.json"
+        )
+        controller = ResourceTransferController(telemetry)
+        environment = LiveEnvironment(
+            run_id="resource-transfer-test",
+            run_dir=tmp_path,
+            telemetry=telemetry,  # type: ignore[arg-type]
+            controller=controller,
+            macros=MacroRegistry({}),
+            runtime_config=RuntimeConfig(settle_seconds=0.0),
+            controls_config=ControlsConfig(
+                post_input_delay_seconds=0.0,
+                item_cell_hover_seconds=0.0,
+            ),
+            capture_config=CaptureConfig(enabled=False),
+            execute_actions=True,
+            emergency_stop_key="f12",
+            available_skills=[],
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            CollectResourceOutputAction(
+                target_id="entity-copper",
+                cell_label="Raw Iron 0",
+                item_name="Raw Iron",
+                source_quantity=2,
+                window="COPPER RESOURCE",
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "5" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert [
+            action.kind for action in controller.actions
+        ] == ["move_cursor", "click"]
+        evidence = transition.receipt.semantic
+        assert evidence is not None
+        assert evidence.resource_transfer is not None
+        assert (
+            evidence.resource_transfer.status
+            is ResourceTransferStatus.TRANSFERRED
+        )
+        assert evidence.resource_transfer.source_quantity_before == 2
+        assert evidence.resource_transfer.source_quantity_after == 0
+        assert evidence.resource_transfer.destination_quantity_before == 0
+        assert evidence.resource_transfer.destination_quantity_after == 2
+        assert transition.receipt.error_type is None
 
     asyncio.run(scenario())
 

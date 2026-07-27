@@ -72,6 +72,8 @@ runtime:
     towards completing it. You have the run of the interface. Open the
     inventory, map and stats windows with their bindings, move the camera,
     control game speed, walk to people and talk to them, buy and sell.
+    You can also retain an exact resource job through actual output, open that
+    resource's inventory, and collect an exact observed output cell.
     Prefer acting on what you can currently see over gathering more
     information.
 
@@ -255,7 +257,8 @@ safety:
     - move_to_character
     - move_in_direction
     - exit_current_building
-    - perform_context_action
+    - produce_resource_output
+    - open_context_inventory
     - activate_visible_control
     - dismiss_screen
     - purchase_item
@@ -263,6 +266,7 @@ safety:
     - scroll_screen
     - sell_item
     - equip_item
+    - collect_resource_output
     - recover_camera_view
     - consult_advisor
     - request_affordance

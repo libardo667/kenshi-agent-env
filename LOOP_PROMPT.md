@@ -9,7 +9,7 @@ One invocation delivers **one bounded slice**, fully finished and green.
 
 ## Where the project actually is
 
-Verify this; do not assume it. It was accurate at protocol `1.0.0`.
+Verify this; do not assume it. It was accurate at protocol `1.1.0`.
 
 The portable core is a deterministic Kenshi-like mock with strict Pydantic
 models, JSONL lifecycle logs, exact entity-scoped SQLite memory, generated
@@ -25,11 +25,13 @@ planner-visible surface is a contracted action catalog
 advisor and a typed, cross-run aggregable `request_affordance` channel exist;
 both emit zero game input and grant no authority.
 
-The native plug-in exports telemetry at ~2 Hz and accepts five reviewed
+The native plug-in exports telemetry at ~2 Hz and accepts seven reviewed
 commands. Protocol `1.0.0` is live-loaded: nearest mining-resource observation,
 the UI-facing current goal, and exact contextual operation are proven on one
-Copper Resource. Hidden task scores grant no authority, and unresolved stale
-indoor handles fail closed.
+Copper Resource. Protocol `1.1.0` is build-validated but not live-loaded; it
+adds retained resource production through actual output, exact contextual
+inventory opening, and conservation-proved collection. Hidden task scores grant
+no authority, and unresolved stale indoor handles fail closed.
 
 Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
@@ -264,12 +266,12 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Complete the resource-production option.** `context_task_started` proves
-   issue, not production. Retain the job while the selected character reports
-   its matching goal; use bounded speed/wait policy; then open the exact target's
-   contextual inventory and transfer an exact observed output cell into the
-   selected character. Unchanged work state must not reissue `operate`, and no
-   income claim passes without causal inventory or money evidence.
+1. **Live-prove the resource-production option.** Portable and native-build
+   evidence now retain the exact job through actual output, adopt unchanged
+   matching work without reissue, open that target's contextual inventory, and
+   require equal source loss/destination gain for collection. Prove that whole
+   chain through the supported launcher; no production or income claim passes
+   without causal inventory or money evidence.
 2. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
    create source saves; capture dynamic states; use `./dev scenario`, `launch
    --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,

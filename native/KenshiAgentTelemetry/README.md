@@ -31,7 +31,7 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `1.0.0` retains the opaque entity IDs derived from validated
+Protocol `1.1.0` retains the opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 and world-target list reordering and distinguish duplicate names without
 serializing addresses.
@@ -80,6 +80,12 @@ arguments:
   rechecks Kenshi's mining role and `OPERATE_MACHINERY` default task, issues
   Kenshi's own task, and completes only when the selected character's AI
   reports that exact task and subject.
+- `produce_resource_output` adopts that exact already-running task or issues it
+  once, then stays active through `Operating machine` and completes only when
+  the resource output section contains a positive quantity.
+- `open_context_inventory` re-resolves one exact resource and invokes Kenshi's
+  ordinary building-inventory UI, completing only when that same handle owns
+  the open contextual inventory.
 
 The plugin rechecks all shared and command-specific facts and never substitutes
 a nearer target. `native_control` exposes a bounded ring of keyed
@@ -188,6 +194,10 @@ folder component.
   `world_targets` with `operate` advertised, then issue that exact ID and
   confirm keyed `context_task_started`, plausible movement/task behavior in a
   resulting frame, fresh advancing telemetry, and final pause.
+- Repeat the full resource transaction: prove `produce_resource_output` adopts
+  matching work without reissue and reaches `resource_output_ready`; prove the
+  exact contextual inventory opens; then prove equal output loss and selected
+  inventory gain after one exact-cell transfer.
 - Move a character and verify position and movement speed change plausibly.
 - Compare squad count and names against the UI.
 - Leave the game running for ten minutes and inspect `kenshi.log` for plugin
@@ -227,3 +237,8 @@ authorizes only a bounded exact-target attempt. The bridge revalidates the
 target and completes only on the exact AI task and subject. See
 [`ADR_CONTEXT_ACTION_AUTHORITY`](../../docs/ADR_CONTEXT_ACTION_AUTHORITY.md) for
 the observability and prospecting boundary.
+
+Protocol `1.1.0` adds completeness markers for bounded visible controls and
+squad inventory, exact contextual-inventory ownership, retained resource
+production, and exact inventory opening. Its C++ conformance target builds, but
+the DLL has not yet been live-loaded or supervised in Kenshi.

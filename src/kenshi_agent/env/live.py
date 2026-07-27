@@ -9,6 +9,7 @@ from typing import Literal
 from ..action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
+    COLLECT_RESOURCE_OUTPUT_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
     EQUIP_ITEM_CONTRACT,
     EXIT_CURRENT_BUILDING_CONTRACT,
@@ -18,8 +19,12 @@ from ..action_contracts import (
     NATIVE_DIRECTION_WIRE_COMMAND,
     NATIVE_EXIT_BUILDING_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
+    NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
     NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
+    NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+    OPEN_CONTEXT_INVENTORY_CONTRACT,
     PERFORM_CONTEXT_ACTION_CONTRACT,
+    PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
     RECOVER_CAMERA_VIEW_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
@@ -55,6 +60,7 @@ from ..models import (
     CameraRecoveryEvidence,
     CameraRecoveryStatus,
     ClickAction,
+    CollectResourceOutputAction,
     CommandDispatchContext,
     ControlMode,
     DismissScreenAction,
@@ -74,11 +80,14 @@ from ..models import (
     NoopAction,
     NormalizedPointerBounds,
     Observation,
+    OpenContextInventoryAction,
     PauseAction,
     PerformContextAction,
     PointerActionClass,
+    ProduceResourceOutputAction,
     PurchaseItemAction,
     RecoverCameraViewAction,
+    ResourceTransferStatus,
     ScrollAction,
     ScrollScreenAction,
     SellItemAction,
@@ -95,6 +104,10 @@ from ..models import (
     window_close_point,
 )
 from ..native_commands import write_native_command_request_atomic
+from ..resource_transfer import (
+    begin_resource_transfer,
+    finalize_resource_transfer,
+)
 from ..skills import MacroRegistry
 from ..telemetry import TelemetryReader, TelemetryReadError
 from .base import AgentEnvironment
@@ -103,6 +116,7 @@ from .base import AgentEnvironment
 class LiveEnvironment(AgentEnvironment):
     _NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
     _NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
+    _RESOURCE_TRANSFER_OBSERVATION_TIMEOUT_SECONDS = 2.0
     _NATIVE_COMMAND_POLL_SECONDS = 0.025
     _NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
 
@@ -458,6 +472,50 @@ class LiveEnvironment(AgentEnvironment):
         if self.runtime_config.settle_seconds:
             await asyncio.sleep(self.runtime_config.settle_seconds)
         observation = await self.observe()
+        if (
+            isinstance(action, CollectResourceOutputAction)
+            and receipt.semantic is not None
+            and receipt.semantic.resource_transfer is not None
+            and receipt.semantic.source_revision is not None
+        ):
+            deadline = (
+                time.monotonic()
+                + self._RESOURCE_TRANSFER_OBSERVATION_TIMEOUT_SECONDS
+            )
+            evidence = finalize_resource_transfer(
+                action,
+                baseline=receipt.semantic.resource_transfer,
+                before_revision=receipt.semantic.source_revision,
+                after=observation,
+            )
+            while (
+                evidence.status is ResourceTransferStatus.UNVERIFIED
+                and not observation.world_revision.is_later_than(
+                    receipt.semantic.source_revision
+                )
+                and time.monotonic() < deadline
+            ):
+                await asyncio.sleep(0.05)
+                observation = await self.observe_without_capture()
+                evidence = finalize_resource_transfer(
+                    action,
+                    baseline=receipt.semantic.resource_transfer,
+                    before_revision=receipt.semantic.source_revision,
+                    after=observation,
+                )
+            receipt = receipt.model_copy(
+                update={
+                    "semantic": receipt.semantic.model_copy(
+                        update={"resource_transfer": evidence}
+                    ),
+                    "message": receipt.message + " " + evidence.reason,
+                    "error_type": (
+                        None
+                        if evidence.status is ResourceTransferStatus.TRANSFERRED
+                        else "ResourceTransferNotProven"
+                    ),
+                }
+            )
         if receipt.native_acknowledgement is not None and observation.telemetry is not None:
             latest_acknowledgement = observation.telemetry.native_control.acknowledgement_for(
                 receipt.native_acknowledgement.command_id
@@ -644,6 +702,26 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_context_action(action, started, command)
+        if isinstance(action, ProduceResourceOutputAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_produce_resource_output(
+                action,
+                started,
+                command,
+            )
+        if isinstance(action, OpenContextInventoryAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_open_context_inventory(
+                action,
+                started,
+                command,
+            )
         if isinstance(action, MoveInDirectionAction):
             if command is None:
                 raise RuntimeError(
@@ -678,6 +756,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_sell_item(action, started)
         if isinstance(action, EquipItemAction):
             return await self._execute_equip_item(action, started)
+        if isinstance(action, CollectResourceOutputAction):
+            return await self._execute_collect_resource_output(action, started)
         if isinstance(action, SkillAction):
             pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
             if pulse_seconds is not None:
@@ -965,6 +1045,103 @@ class LiveEnvironment(AgentEnvironment):
             continue_until_terminal=True,
             wire_command=NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
+        )
+
+    def _context_native_transport(
+        self,
+        *,
+        target_id: str,
+        purpose: str,
+    ) -> tuple[SkillAction, float]:
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                f"{purpose} requires a configured native transport skill."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value=target_id)],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native transport skill {skill_name!r} has no "
+                "movement pulse."
+            )
+        return primitive_skill, pulse_seconds
+
+    async def _execute_produce_resource_output(
+        self,
+        action: ProduceResourceOutputAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Retain one exact mining job until native output proof is terminal."""
+
+        primitive_skill, pulse_seconds = self._context_native_transport(
+            target_id=action.target_id,
+            purpose="Resource production",
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=PRODUCE_RESOURCE_OUTPUT_CONTRACT.version,
+            target_id=action.target_id,
+            resolved_label="produce_output",
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound the exact reviewed natural resource. Native code owns "
+                "the task through actual output, and adopts matching active work "
+                "without reissuing it."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            require_dialogue_target=False,
+        )
+
+    async def _execute_open_context_inventory(
+        self,
+        action: OpenContextInventoryAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Open the ordinary inventory window for one exact resource handle."""
+
+        primitive_skill, pulse_seconds = self._context_native_transport(
+            target_id=action.target_id,
+            purpose="Contextual inventory opening",
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=OPEN_CONTEXT_INVENTORY_CONTRACT.version,
+            target_id=action.target_id,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound the exact natural-resource handle and required native "
+                "terminal proof that its contextual inventory is open."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            wire_command=NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+            require_dialogue_target=False,
+            accepted_is_terminal_error=True,
         )
 
     async def _execute_directional_move(
@@ -1888,6 +2065,69 @@ class LiveEnvironment(AgentEnvironment):
             }
         )
 
+    async def _execute_collect_resource_output(
+        self,
+        action: CollectResourceOutputAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Right-click exact output, retaining both inventory baselines."""
+
+        del started
+        binding, observation = self._rebind_in_lease(
+            COLLECT_RESOURCE_OUTPUT_CONTRACT,
+            action,
+        )
+        bounds = binding.resolved_bounds
+        assert bounds is not None
+        baseline = begin_resource_transfer(action, observation)
+        if (
+            baseline.source_quantity_before is None
+            or baseline.destination_quantity_before is None
+            or baseline.selected_character_id is None
+        ):
+            raise RuntimeError(
+                "No input was sent: complete source and destination baselines "
+                "could not be retained."
+            )
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        await self.controller.execute(MoveCursorAction(x=x, y=y))
+        if self.controls_config.item_cell_hover_seconds:
+            await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
+        primitive_receipt = await self.controller.execute(
+            ClickAction(
+                x=x,
+                y=y,
+                button=MouseButton.RIGHT,
+                hold_seconds=self.controls_config.control_activation_hold_seconds,
+            )
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=COLLECT_RESOURCE_OUTPUT_CONTRACT.version,
+            target_id=action.target_id,
+            resolved_label=binding.resolved_label,
+            resolved_role=binding.resolved_role,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-proved exact resource identity, output section, item, "
+                f"quantity, bounds, and complete destination in-lease. {binding.reason}"
+            ),
+            resource_transfer=baseline,
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Sent the transfer gesture for {action.source_quantity} "
+                    f"{action.item_name!r}; awaiting conserved source loss and "
+                    "destination gain."
+                ),
+            }
+        )
+
     async def _execute_dismiss_screen(
         self,
         action: DismissScreenAction,
@@ -1969,12 +2209,15 @@ class LiveEnvironment(AgentEnvironment):
             "move_in_direction",
             "exit_current_building",
             "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
         distance_units: float = 0.0,
         semantic: SemanticActionReceipt | None = None,
         continue_until_terminal: bool = False,
+        accepted_is_terminal_error: bool = False,
     ) -> ActionReceipt:
         adopted = (
             self._active_native_order_for(
@@ -2060,6 +2303,26 @@ class LiveEnvironment(AgentEnvironment):
                     if acknowledgement.status == NativeCommandStatus.CANCELLED
                     else None
                 ),
+                native_acknowledgement=acknowledgement,
+                semantic=semantic,
+            )
+        if accepted_is_terminal_error:
+            return ActionReceipt(
+                action=action,
+                command_id=command.command_id,
+                started_after_revision=command.based_on_revision,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=primitive_count,
+                message=(
+                    " ".join(messages)
+                    + " This command requires an immediate native terminal; "
+                    "accepted-only is inconclusive and will not be retried."
+                ),
+                error_type="NativeCommandIncomplete",
                 native_acknowledgement=acknowledgement,
                 semantic=semantic,
             )
@@ -2208,6 +2471,8 @@ class LiveEnvironment(AgentEnvironment):
             "move_in_direction",
             "exit_current_building",
             "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory",
         ],
         target_id: str,
         bearing_degrees: float,
@@ -2279,6 +2544,8 @@ class LiveEnvironment(AgentEnvironment):
             "move_in_direction",
             "exit_current_building",
             "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
@@ -2326,6 +2593,10 @@ class LiveEnvironment(AgentEnvironment):
             native_contract = MOVE_IN_DIRECTION_CONTRACT
         elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             native_contract = EXIT_CURRENT_BUILDING_CONTRACT
+        elif wire_command == NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND:
+            native_contract = PRODUCE_RESOURCE_OUTPUT_CONTRACT
+        elif wire_command == NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND:
+            native_contract = OPEN_CONTEXT_INVENTORY_CONTRACT
         elif wire_command == NATIVE_OPERATE_RESOURCE_WIRE_COMMAND:
             native_contract = PERFORM_CONTEXT_ACTION_CONTRACT
         elif wire_command == NATIVE_MOVE_WIRE_COMMAND:
@@ -2379,7 +2650,11 @@ class LiveEnvironment(AgentEnvironment):
             )
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
-        if wire_command == NATIVE_OPERATE_RESOURCE_WIRE_COMMAND:
+        if wire_command in {
+            NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
+            NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+        }:
             matches = [
                 target
                 for target in telemetry.world_targets

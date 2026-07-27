@@ -371,6 +371,18 @@
           },
           "title": "Inventory",
           "type": "array"
+        },
+        "inventory_complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Complete"
         }
       },
       "required": [
@@ -647,7 +659,9 @@
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
-            "operate_natural_resource"
+            "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory"
           ],
           "title": "Command",
           "type": "string"
@@ -1174,6 +1188,31 @@
           "default": null,
           "title": "Visible Controls"
         },
+        "visible_controls_complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible Controls Complete"
+        },
+        "context_inventory_target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Inventory Target Id"
+        },
         "context_menu_open": {
           "anyOf": [
             {
@@ -1483,7 +1522,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.0.0",
+      "default": "1.1.0",
       "title": "Protocol Version",
       "type": "string"
     },

@@ -82,6 +82,7 @@
 #include "NativeCommandProtocol.h"
 #include "NativeCommandTiming.h"
 #include "NativeMovementSemantics.h"
+#include "ResourceProductionSemantics.h"
 #include "WorldTargetProtocol.h"
 
 namespace
@@ -118,7 +119,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.0.0";
+    const char* PROTOCOL_VERSION = "1.1.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -150,6 +151,8 @@ namespace
         // visually complete doorway traversal.
         bool isBuildingExit;
         bool isContextAction;
+        bool isResourceProduction;
+        bool resourceTaskObserved;
         TaskType expectedTask;
         // One uninterrupted pause may mean an abandoned movement order, but
         // short paused gaps are how the stop-motion controller safely pulses.
@@ -232,6 +235,8 @@ namespace
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.isResourceProduction = false;
+        g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
@@ -479,6 +484,8 @@ namespace
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.isResourceProduction = false;
+        g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
@@ -868,7 +875,10 @@ namespace
         return NULL;
     }
 
-    bool HasExactContextGoal(Character* selected)
+    bool HasExactContextGoal(
+        Character* selected,
+        TaskType expectedTask,
+        const hand& targetHandle)
     {
         if (selected == NULL || !selected->isValid())
             return false;
@@ -877,10 +887,42 @@ namespace
         if (tasks == NULL)
             return false;
         const TaskMatch& goal = tasks->getCurrentGoal();
-        return goal.key() == g_activeNativeCommand.expectedTask &&
-               SameHandleIdentity(
-                   goal.subject,
-                   g_activeNativeCommand.targetHandle);
+        return goal.key() == expectedTask &&
+               SameHandleIdentity(goal.subject, targetHandle);
+    }
+
+    bool HasExactContextGoal(Character* selected)
+    {
+        return HasExactContextGoal(
+            selected,
+            g_activeNativeCommand.expectedTask,
+            g_activeNativeCommand.targetHandle);
+    }
+
+    bool TryGetInventorySectionQuantity(
+        Building* target,
+        const std::string& sectionName,
+        int& quantity)
+    {
+        quantity = 0;
+        if (target == NULL || !target->isValid())
+            return false;
+        Inventory* inventory = target->getInventory();
+        if (inventory == NULL)
+            return false;
+        InventorySection* section = inventory->getSection(sectionName);
+        if (section == NULL)
+            return false;
+        const Ogre::vector<InventorySection::SectionItem>::type& items =
+            section->getItems();
+        for (size_t index = 0; index < items.size(); ++index)
+        {
+            Item* item = items[index].item;
+            if (item == NULL || !item->isValid() || item->quantity <= 0)
+                continue;
+            quantity += item->quantity;
+        }
+        return true;
     }
 
     bool IsExactDialogueTargetOpen(const hand& targetHandle)
@@ -1085,7 +1127,11 @@ namespace
     // one at a time to discover what each held - a model call per cell, while a
     // human simply sees the bread. The icons themselves know their Item, so
     // walk the inventory structure instead and say what is actually there.
-    void AppendNamedItemCells(std::ostringstream& json, bool& first, unsigned int& appended)
+    void AppendNamedItemCells(
+        std::ostringstream& json,
+        bool& first,
+        unsigned int& appended,
+        bool& complete)
     {
         if (gui == NULL)
             return;
@@ -1162,6 +1208,8 @@ namespace
                 }
             }
         }
+        if (appended >= MAX_VISIBLE_UI_CONTROLS)
+            complete = false;
     }
 
     bool IsItemCellIcon(MyGUI::Widget* widget)
@@ -1185,13 +1233,16 @@ namespace
         unsigned int& visited,
         unsigned int& appended,
         bool& first,
-        UIControlPass pass)
+        UIControlPass pass,
+        bool& complete)
     {
         if (widget == NULL ||
             depth > MAX_UI_WIDGET_DEPTH ||
             visited >= MAX_VISITED_UI_WIDGETS ||
             appended >= MAX_VISIBLE_UI_CONTROLS)
         {
+            if (widget != NULL)
+                complete = false;
             return;
         }
         ++visited;
@@ -1286,25 +1337,32 @@ namespace
                 visited,
                 appended,
                 first,
-                pass);
+                pass,
+                complete);
         }
     }
 
-    void AppendVisibleUIControls(std::ostringstream& json, bool includeItemCells)
+    bool AppendVisibleUIControls(
+        std::ostringstream& json,
+        bool includeItemCells,
+        bool& complete)
     {
+        complete = true;
         MyGUI::Gui* myGui = MyGUI::Gui::getInstancePtr();
         MyGUI::RenderManager* renderManager =
             MyGUI::RenderManager::getInstancePtr();
         if (myGui == NULL || renderManager == NULL)
         {
             json << "null";
-            return;
+            complete = false;
+            return false;
         }
         const MyGUI::IntSize view = renderManager->getViewSize();
         if (view.width <= 0 || view.height <= 0)
         {
             json << "null";
-            return;
+            complete = false;
+            return false;
         }
 
         json << "[";
@@ -1329,7 +1387,11 @@ namespace
                 // Named cells come from the inventory structure, not the widget
                 // tree, so this pass does not walk widgets at all.
                 if (includeItemCells)
-                    AppendNamedItemCells(json, first, appended);
+                    AppendNamedItemCells(
+                        json,
+                        first,
+                        appended,
+                        complete);
                 continue;
             }
             // Each pass re-walks the tree with its own visit budget so a wide
@@ -1348,10 +1410,17 @@ namespace
                     visited,
                     appended,
                     first,
-                    passes[index]);
+                    passes[index],
+                    complete);
+            }
+            if (visited >= MAX_VISITED_UI_WIDGETS ||
+                appended >= MAX_VISIBLE_UI_CONTROLS)
+            {
+                complete = false;
             }
         }
         json << "]";
+        return true;
     }
 
     void MonitorActiveNativeCommand(PlayerInterface* player)
@@ -1386,6 +1455,7 @@ namespace
             return;
         }
         Character* walker = selectedHandle.getCharacter();
+        bool resourceTaskActive = false;
         if (g_activeNativeCommand.isContextAction)
         {
             Building* contextTarget =
@@ -1410,7 +1480,49 @@ namespace
                     "target_role_invalid");
                 return;
             }
-            if (HasExactContextGoal(walker))
+            if (g_activeNativeCommand.isResourceProduction)
+            {
+                int outputQuantity = 0;
+                const bool outputKnown =
+                    TryGetInventorySectionQuantity(
+                        contextTarget,
+                        "out",
+                        outputQuantity);
+                resourceTaskActive = HasExactContextGoal(walker);
+                const KenshiAgentTelemetry::ResourceProductionState state =
+                    KenshiAgentTelemetry::EvaluateResourceProduction(
+                        outputKnown,
+                        outputQuantity,
+                        resourceTaskActive,
+                        g_activeNativeCommand.resourceTaskObserved);
+                if (state ==
+                    KenshiAgentTelemetry::RESOURCE_PRODUCTION_OUTPUT_UNKNOWN)
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "resource_output_unknown");
+                    return;
+                }
+                if (state ==
+                    KenshiAgentTelemetry::RESOURCE_PRODUCTION_OUTPUT_READY)
+                {
+                    FinishActiveNativeCommand(
+                        "completed",
+                        "resource_output_ready");
+                    return;
+                }
+                if (state ==
+                    KenshiAgentTelemetry::RESOURCE_PRODUCTION_TASK_ENDED)
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "resource_task_ended_without_output");
+                    return;
+                }
+                if (resourceTaskActive)
+                    g_activeNativeCommand.resourceTaskObserved = true;
+            }
+            else if (HasExactContextGoal(walker))
             {
                 FinishActiveNativeCommand(
                     "completed",
@@ -1442,6 +1554,14 @@ namespace
 
         if (g_activeNativeCommand.isContextAction)
         {
+            if (
+                g_activeNativeCommand.isResourceProduction &&
+                resourceTaskActive)
+            {
+                KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                    g_activeNativeCommand.stallWindow);
+                return;
+            }
             if (walker == NULL || !walker->isValid())
             {
                 FinishActiveNativeCommand("cancelled", "selection_mismatch");
@@ -1642,7 +1762,9 @@ namespace
                  request.command == "move_to_character" ||
                  request.command == "move_in_direction" ||
                  request.command == "exit_current_building" ||
-                 request.command == "operate_natural_resource") &&
+                 request.command == "operate_natural_resource" ||
+                 request.command == "produce_resource_output" ||
+                 request.command == "open_context_inventory") &&
                 hasCommandIdentity &&
                 !request.selectedCharacterId.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
@@ -1673,13 +1795,20 @@ namespace
             request.command == "exit_current_building";
         const bool isContextAction =
             request.command == "operate_natural_resource";
-        if (isApproach || isMove || isDirection || isBuildingExit || isContextAction)
+        const bool isResourceProduction =
+            request.command == "produce_resource_output";
+        const bool isContextInventory =
+            request.command == "open_context_inventory";
+        if (isApproach || isMove || isDirection || isBuildingExit ||
+            isContextAction || isResourceProduction || isContextInventory)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
             !isDirection &&
             !isBuildingExit &&
-            !isContextAction)
+            !isContextAction &&
+            !isResourceProduction &&
+            !isContextInventory)
         {
             // The telemetry acknowledgement schema is intentionally limited
             // to reviewed commands. Do not publish an unparseable ack.
@@ -1720,7 +1849,7 @@ namespace
             return;
         }
 
-        if (isContextAction)
+        if (isContextAction || isResourceProduction || isContextInventory)
         {
             Building* target = FindExactNaturalResource(
                 player,
@@ -1740,18 +1869,109 @@ namespace
                 return;
             }
             const hand& targetHandle = target->getHandle();
+            g_lastNativeCommandTarget = target->getName();
+            g_lastNativeCommandTargetId = request.targetId;
+            if (isContextInventory)
+            {
+                if (gui == NULL ||
+                    gui->inDialogue() ||
+                    gui->hasModalMessage())
+                {
+                    RejectNativeCommand(
+                        request,
+                        "conflicting_modal_open");
+                    return;
+                }
+                if (gui->hasInventoryWindowOpen(targetHandle))
+                {
+                    AddNativeAcknowledgement(
+                        request,
+                        "completed",
+                        "exact_context_inventory_open",
+                        true,
+                        true);
+                    g_lastNativeCommandResult =
+                        "exact_context_inventory_open";
+                    return;
+                }
+                if (gui->isAnyInventoryWindowOpen())
+                {
+                    RejectNativeCommand(
+                        request,
+                        "conflicting_inventory_open");
+                    return;
+                }
+                InventoryGUI* opened =
+                    gui->showInventoryBuilding(targetHandle);
+                if (opened == NULL ||
+                    !gui->hasInventoryWindowOpen(targetHandle))
+                {
+                    RejectNativeCommand(
+                        request,
+                        "context_inventory_not_opened");
+                    return;
+                }
+                AddNativeAcknowledgement(
+                    request,
+                    "completed",
+                    "exact_context_inventory_open",
+                    true,
+                    true);
+                g_lastNativeCommandResult =
+                    "exact_context_inventory_open";
+                return;
+            }
+
+            Character* selected = selectedHandle.getCharacter();
+            const bool exactTaskAlreadyActive =
+                isResourceProduction &&
+                HasExactContextGoal(
+                    selected,
+                    OPERATE_MACHINERY,
+                    targetHandle);
+            if (isResourceProduction)
+            {
+                int outputQuantity = 0;
+                if (!TryGetInventorySectionQuantity(
+                        target,
+                        "out",
+                        outputQuantity))
+                {
+                    RejectNativeCommand(
+                        request,
+                        "resource_output_unknown");
+                    return;
+                }
+                if (outputQuantity > 0)
+                {
+                    AddNativeAcknowledgement(
+                        request,
+                        "completed",
+                        "resource_output_ready",
+                        true,
+                        true);
+                    g_lastNativeCommandResult =
+                        "resource_output_ready";
+                    return;
+                }
+            }
             Building* destinationIndoors =
                 target->isIndoors().getBuilding();
-            player->newPlayerTaskSelectedCharacters(
-                OPERATE_MACHINERY,
-                targetHandle,
-                destinationIndoors,
-                target->getPosition(),
-                false);
+            if (!exactTaskAlreadyActive)
+            {
+                player->newPlayerTaskSelectedCharacters(
+                    OPERATE_MACHINERY,
+                    targetHandle,
+                    destinationIndoors,
+                    target->getPosition(),
+                    false);
+            }
             AddNativeAcknowledgement(
                 request,
                 "accepted",
-                "issued",
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued",
                 true,
                 false);
             g_activeNativeCommand.active = true;
@@ -1765,6 +1985,10 @@ namespace
             g_activeNativeCommand.hasFixedDestination = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.isResourceProduction =
+                isResourceProduction;
+            g_activeNativeCommand.resourceTaskObserved =
+                exactTaskAlreadyActive;
             g_activeNativeCommand.expectedTask = OPERATE_MACHINERY;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
@@ -1774,9 +1998,10 @@ namespace
                 g_activeNativeCommand.outdoorWindow);
             g_activeNativeCommand.originX = 0.0f;
             g_activeNativeCommand.originZ = 0.0f;
-            g_lastNativeCommandResult = "issued";
-            g_lastNativeCommandTarget = target->getName();
-            g_lastNativeCommandTargetId = request.targetId;
+            g_lastNativeCommandResult =
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued";
             return;
         }
 
@@ -1822,6 +2047,8 @@ namespace
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.expectedTask = NULL_TASK;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
@@ -1918,6 +2145,8 @@ namespace
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isBuildingExit = true;
             g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.resourceTaskObserved = false;
             g_activeNativeCommand.expectedTask = NULL_TASK;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);
@@ -1981,6 +2210,8 @@ namespace
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
+        g_activeNativeCommand.isResourceProduction = false;
+        g_activeNativeCommand.resourceTaskObserved = false;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
             g_activeNativeCommand.pauseWindow);
@@ -2196,7 +2427,38 @@ namespace
             json << "null";
         json << ",";
         json << "\"visible_controls\":";
-        AppendVisibleUIControls(json, inventoryOpen || tradeOpen);
+        bool visibleControlsComplete = false;
+        const bool visibleControlsAvailable =
+            AppendVisibleUIControls(
+                json,
+                inventoryOpen || tradeOpen,
+                visibleControlsComplete);
+        json << ",\"visible_controls_complete\":";
+        if (visibleControlsAvailable)
+            json << JsonBool(visibleControlsComplete);
+        else
+            json << "null";
+        json << ",\"context_inventory_target_id\":";
+        Building* contextInventoryTarget =
+            gui != NULL
+                ? gui->inventoryWindowBuilding.getBuilding()
+                : NULL;
+        if (inventoryOpen &&
+            contextInventoryTarget != NULL &&
+            contextInventoryTarget->isValid() &&
+            gui->hasInventoryWindowOpen(
+                contextInventoryTarget->getHandle()))
+        {
+            json << "\""
+                 << JsonEscape(
+                        StableEntityId(
+                            contextInventoryTarget->getHandle()))
+                 << "\"";
+        }
+        else
+        {
+            json << "null";
+        }
         json << ",";
         const std::string selectedId = StableEntityId(selected);
         if (!selectedId.empty() &&
@@ -2391,7 +2653,18 @@ namespace
                         }
                     }
                 }
-                json << "]";
+                json << "],";
+                json << "\"inventory_complete\":";
+                if (inventory != NULL)
+                {
+                    json << JsonBool(
+                        inventory->getAllItems().size() <=
+                        MAX_INVENTORY_ITEMS);
+                }
+                else
+                {
+                    json << "null";
+                }
                 json << "}";
             }
         }
@@ -2584,7 +2857,18 @@ namespace
         json << "\"ui\":{";
         json << "\"active_screen\":\"title\",";
         json << "\"visible_controls\":";
-        AppendVisibleUIControls(json, false);
+        bool visibleControlsComplete = false;
+        const bool visibleControlsAvailable =
+            AppendVisibleUIControls(
+                json,
+                false,
+                visibleControlsComplete);
+        json << ",\"visible_controls_complete\":";
+        if (visibleControlsAvailable)
+            json << JsonBool(visibleControlsComplete);
+        else
+            json << "null";
+        json << ",\"context_inventory_target_id\":null";
         json << "},";
         json << "\"native_control\":{";
         json << "\"available\":false,";

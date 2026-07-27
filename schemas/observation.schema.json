@@ -62,6 +62,12 @@
               "$ref": "#/$defs/PerformContextAction"
             },
             {
+              "$ref": "#/$defs/ProduceResourceOutputAction"
+            },
+            {
+              "$ref": "#/$defs/OpenContextInventoryAction"
+            },
+            {
               "$ref": "#/$defs/MoveToCharacterAction"
             },
             {
@@ -90,6 +96,9 @@
             },
             {
               "$ref": "#/$defs/EquipItemAction"
+            },
+            {
+              "$ref": "#/$defs/CollectResourceOutputAction"
             },
             {
               "$ref": "#/$defs/RecoverCameraViewAction"
@@ -1004,6 +1013,18 @@
           },
           "title": "Inventory",
           "type": "array"
+        },
+        "inventory_complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Complete"
         }
       },
       "required": [
@@ -1065,6 +1086,62 @@
         "y"
       ],
       "title": "ClickAction",
+      "type": "object"
+    },
+    "CollectResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
+      "properties": {
+        "kind": {
+          "const": "collect_resource_output",
+          "default": "collect_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity": {
+          "exclusiveMinimum": 0,
+          "title": "Source Quantity",
+          "type": "integer"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "section": {
+          "const": "out",
+          "default": "out",
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "cell_label",
+        "item_name",
+        "source_quantity",
+        "window"
+      ],
+      "title": "CollectResourceOutputAction",
       "type": "object"
     },
     "ConsultAdvisorAction": {
@@ -1753,7 +1830,9 @@
             "move_to_character",
             "move_in_direction",
             "exit_current_building",
-            "operate_natural_resource"
+            "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory"
           ],
           "title": "Command",
           "type": "string"
@@ -2181,6 +2260,29 @@
       "title": "NormalizedPointerBounds",
       "type": "object"
     },
+    "OpenContextInventoryAction": {
+      "additionalProperties": false,
+      "description": "Open the ordinary inventory UI for one exact observed world target.",
+      "properties": {
+        "kind": {
+          "const": "open_context_inventory",
+          "default": "open_context_inventory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "OpenContextInventoryAction",
+      "type": "object"
+    },
     "PauseAction": {
       "additionalProperties": false,
       "properties": {
@@ -2233,6 +2335,29 @@
       ],
       "title": "PlanningMode",
       "type": "string"
+    },
+    "ProduceResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Operate one exact natural resource until its output inventory gains stock.",
+      "properties": {
+        "kind": {
+          "const": "produce_resource_output",
+          "default": "produce_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ProduceResourceOutputAction",
+      "type": "object"
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
@@ -2747,7 +2872,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.0.0",
+          "default": "1.1.0",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -2959,6 +3084,31 @@
           ],
           "default": null,
           "title": "Visible Controls"
+        },
+        "visible_controls_complete": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Visible Controls Complete"
+        },
+        "context_inventory_target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Inventory Target Id"
         },
         "context_menu_open": {
           "anyOf": [

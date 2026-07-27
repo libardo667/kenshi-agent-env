@@ -11,8 +11,7 @@ cannot express.
 An atomic JSON file, normally
 `%LOCALAPPDATA%\KenshiAgent\telemetry.latest.json`. The writer builds a complete
 temporary file, flushes it, and replaces the public path; the reader never tails
-or incrementally parses. A pipe or socket can be added later without changing
-the semantics below.
+or incrementally parses.
 
 `protocol_version` is `MAJOR.MINOR.PATCH`. MAJOR breaks existing readers or
 changes field meaning. MINOR adds optional fields or capabilities. PATCH fixes
@@ -46,10 +45,8 @@ An ID is valid only inside its matching `identity_session_id` — a session chan
 tombstones every prior ID.
 
 - **birth** — first authoritative observation of an ID in a session.
-- **update** — a later observation carrying the same complete ID, even if name,
-  position, role, or list position changed.
-- **tombstone** — omission from a later authoritative bounded list, or any
-  session change.
+- **update** — a later observation carrying the same complete ID despite reorder.
+- **tombstone** — omission from an authoritative list, or any session change.
 
 A nearby-list tombstone means "no longer in the observed set," not death or
 destruction; target-bound execution must still cancel, because the exact target
@@ -72,10 +69,11 @@ nearest-first, and then truncated. `context_actions` names a reviewed bounded
 attempt on that exact target; it is not a prediction of task success.
 
 Targets with a current advertised action enter the planner's `context_targets`
-digest. Binding requires the exact current target and action. Native dispatch
-then re-resolves identity and structural role and accepts success only when the
-selected character's AI reports the exact task and subject. Perception
-therefore does not grant unchecked native authority.
+digest. Native dispatch re-resolves identity and structural role. Legacy
+operation completes on the exact task and subject; retained production treats
+that task as progress and completes only on positive resource output. Exact
+contextual-inventory opening is separately keyed to the same target handle.
+Perception therefore grants no unchecked native authority.
 
 If either source query reaches its maximum result count, `warnings` says
 `world_targets` may be incomplete. Kenshi does not document those bounded
@@ -87,6 +85,9 @@ though the retained recognized targets are sorted.
 Omit or null what is unavailable. Do not serialize unknown health as zero, an
 unknown faction as neutral, or an unavailable inventory as empty. An empty list
 is valid only when the capability says the list was actually enumerated.
+`ui.visible_controls_complete` and `squad[].inventory_complete` distinguish a
+complete empty enumeration from bounded truncation. Resource transfer requires
+both true plus `ui.context_inventory_target_id` matching the exact target.
 
 Despite the field name, `squad[].hunger` is a **nutrition reserve**: `3.0` is
 full and `0.0` is starving, matching Kenshi's UI value divided by 100. The

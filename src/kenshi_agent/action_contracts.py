@@ -33,10 +33,12 @@ from .models import (
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    CollectResourceOutputAction,
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionPath,
+    ContextActionKind,
     ControlMode,
     DismissScreenAction,
     Disposition,
@@ -47,9 +49,11 @@ from .models import (
     MoveToCharacterAction,
     NormalizedPointerBounds,
     Observation,
+    OpenContextInventoryAction,
     PerformContextAction,
     PlanEnvelope,
     PointerActionClass,
+    ProduceResourceOutputAction,
     PurchaseItemAction,
     RecoverCameraViewAction,
     ScrollScreenAction,
@@ -57,6 +61,7 @@ from .models import (
     SkillAction,
     UseGameBindingAction,
     WorldStateRevision,
+    WorldTarget,
     dialogue_targets,
     normalize_control_label,
 )
@@ -87,6 +92,15 @@ NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
 NATIVE_OPERATE_RESOURCE_WIRE_COMMAND: Literal["operate_natural_resource"] = (
     "operate_natural_resource"
 )
+NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
+NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
+    "produce_resource_output"
+)
+NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY = "control.open_context_inventory"
+NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND: Literal["open_context_inventory"] = (
+    "open_context_inventory"
+)
+CONTEXT_INVENTORY_TARGET_CAPABILITY = "ui.context_inventory_target"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
 CAMERA_RECOVERY_CAPABILITY = "camera.recovery"
@@ -129,6 +143,8 @@ class ReferenceBinding:
     # For item cells: what the game itself says the cell holds and is worth.
     item_name: str | None = None
     item_value: int | None = None
+    item_quantity: int | None = None
+    section: str | None = None
     # Camera-recovery-only facts resolved from the current world HUD.
     selected_character_name: str | None = None
     floor: int | None = None
@@ -322,6 +338,158 @@ def context_action_is_currently_authorable(observation: Observation) -> bool:
     )
 
 
+def _bind_exact_natural_resource(
+    target_id: str,
+    observation: Observation,
+) -> tuple[WorldTarget | None, ReferenceBinding | None]:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return None, _unbound("No telemetry is available to bind the resource.")
+    if observation.telemetry_stale:
+        return None, _unbound("Telemetry is stale, so the resource cannot be bound.")
+    matches = [
+        target for target in telemetry.world_targets if target.id == target_id
+    ]
+    if not matches:
+        return None, _unbound(
+            f"Target {target_id!r} is not a current natural-resource target."
+        )
+    if len(matches) > 1:
+        return None, _unbound(
+            f"Target {target_id!r} matches {len(matches)} world targets; an "
+            "ambiguous reference fails closed."
+        )
+    target = matches[0]
+    if (
+        target.kind != "natural_resource"
+        or ContextActionKind.OPERATE not in target.context_actions
+        or target.default_task != "operate_machinery"
+    ):
+        return None, _unbound(
+            f"Target {target.name!r} does not currently advertise the reviewed "
+            "natural-resource operation."
+        )
+    return target, None
+
+
+def bind_produce_resource_output(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind retained production to one exact reviewed natural resource."""
+
+    if not isinstance(action, ProduceResourceOutputAction):
+        return _unbound("Action is not a produce_resource_output action.")
+    telemetry = observation.telemetry
+    target, failure = _bind_exact_natural_resource(action.target_id, observation)
+    if failure is not None:
+        return failure
+    assert telemetry is not None and target is not None
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.modal_open is not False
+        or telemetry.ui.dialogue_open is not False
+    ):
+        return _unbound(
+            "The world interface is not confirmed clear, so resource production "
+            "cannot bind."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound retained production to {target.name!r} ({target.id}); task "
+            "acceptance is progress and output inventory is terminal proof."
+        ),
+        target_id=target.id,
+        resolved_label="produce_output",
+        source_revision=observation.world_revision,
+    )
+
+
+def resource_production_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+        and any(
+            target.kind == "natural_resource"
+            and ContextActionKind.OPERATE in target.context_actions
+            and target.default_task == "operate_machinery"
+            for target in telemetry.world_targets
+        )
+    )
+
+
+def bind_open_context_inventory(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind native UI opening to one exact resource handle."""
+
+    if not isinstance(action, OpenContextInventoryAction):
+        return _unbound("Action is not an open_context_inventory action.")
+    telemetry = observation.telemetry
+    target, failure = _bind_exact_natural_resource(action.target_id, observation)
+    if failure is not None:
+        return failure
+    assert telemetry is not None and target is not None
+    already_open = (
+        telemetry.ui.active_screen == "inventory"
+        and telemetry.ui.context_inventory_target_id == action.target_id
+        and telemetry.ui.dialogue_open is False
+    )
+    if not already_open and (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.modal_open is not False
+        or telemetry.ui.dialogue_open is not False
+    ):
+        return _unbound(
+            "A different modal, dialogue, or inventory is open; close it before "
+            "opening this exact resource inventory."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound the contextual inventory to {target.name!r} ({target.id})"
+            + ("; it is already open." if already_open else ".")
+        ),
+        target_id=target.id,
+        resolved_label=target.name,
+        source_revision=observation.world_revision,
+    )
+
+
+def context_inventory_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    if telemetry.ui.dialogue_open is not False:
+        return False
+    clear_world = (
+        telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+    )
+    exact_inventory_target = telemetry.ui.context_inventory_target_id
+    exact_inventory = telemetry.ui.active_screen == "inventory" and any(
+        target.id == exact_inventory_target
+        and target.kind == "natural_resource"
+        and ContextActionKind.OPERATE in target.context_actions
+        and target.default_task == "operate_machinery"
+        for target in telemetry.world_targets
+    )
+    return bool(
+        (clear_world or exact_inventory)
+        and any(
+            target.kind == "natural_resource"
+            and ContextActionKind.OPERATE in target.context_actions
+            for target in telemetry.world_targets
+        )
+    )
+
+
 def bind_move_in_direction(
     action: Action,
     observation: Observation,
@@ -484,6 +652,9 @@ def _bind_item_cell(
     *,
     window: str | None = None,
     item_value: int | None = None,
+    item_name: str | None = None,
+    item_quantity: int | None = None,
+    section: str | None = None,
 ) -> ReferenceBinding:
     """Resolve one exact inventory or shop cell from current telemetry.
 
@@ -514,6 +685,9 @@ def _bind_item_cell(
         if control.role == ITEM_ROLE
         and normalize_control_label(control.label) == wanted
         and (window is None or control.window == window)
+        and (item_name is None or control.item_name == item_name)
+        and (item_quantity is None or control.item_quantity == item_quantity)
+        and (section is None or control.section == section)
     ]
     if not matches:
         where = f" in window {window!r}" if window is not None else ""
@@ -556,6 +730,8 @@ def _bind_item_cell(
         source_revision=observation.world_revision,
         item_name=cell.item_name,
         item_value=cell.item_value,
+        item_quantity=cell.item_quantity,
+        section=cell.section,
     )
 
 
@@ -819,6 +995,115 @@ def bind_equip_item(
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
         source_revision=observation.world_revision,
+    )
+
+
+def bind_collect_resource_output(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind one exact output cell to the exact open resource inventory."""
+
+    if not isinstance(action, CollectResourceOutputAction):
+        return _unbound("Action is not a collect_resource_output action.")
+    telemetry = observation.telemetry
+    target, failure = _bind_exact_natural_resource(action.target_id, observation)
+    if failure is not None:
+        return failure
+    assert telemetry is not None and target is not None
+    if (
+        telemetry.ui.active_screen != "inventory"
+        or telemetry.ui.dialogue_open is not False
+    ):
+        return _unbound(
+            "Resource output collection requires an inventory screen and no "
+            "trade or dialogue."
+        )
+    if telemetry.ui.context_inventory_target_id != action.target_id:
+        return _unbound(
+            "The open contextual inventory does not belong to the exact "
+            "requested resource target."
+        )
+    if telemetry.ui.visible_controls_complete is not True:
+        return _unbound(
+            "The visible-control export is incomplete, so source absence or "
+            "quantity cannot be proved."
+        )
+    if not _window_belongs_to(action.window, target.name):
+        return _unbound(
+            f"Window {action.window!r} does not name target {target.name!r}."
+        )
+    selected = [character for character in telemetry.squad if character.selected]
+    if (
+        len(selected) != 1
+        or telemetry.ui.selected_character_ids != [selected[0].id]
+        or telemetry.ui.selected_character_id != selected[0].id
+        or selected[0].inventory_complete is not True
+    ):
+        return _unbound(
+            "One exact selected character with a complete destination inventory "
+            "is required."
+        )
+    cell = _bind_item_cell(
+        action.cell_label,
+        observation,
+        window=action.window,
+        item_name=action.item_name,
+        item_quantity=action.source_quantity,
+        section=action.section,
+    )
+    if not cell.bound:
+        return cell
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound {action.source_quantity} {action.item_name!r} in exact "
+            f"{action.section!r} output cell {cell.resolved_label!r} for "
+            f"{target.id}; destination is selected character {selected[0].id}."
+        ),
+        target_id=target.id,
+        resolved_label=cell.resolved_label,
+        resolved_role=cell.resolved_role,
+        resolved_bounds=cell.resolved_bounds,
+        source_revision=observation.world_revision,
+        item_name=cell.item_name,
+        item_quantity=cell.item_quantity,
+        section=cell.section,
+    )
+
+
+def resource_output_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    target_id = telemetry.ui.context_inventory_target_id
+    targets = [
+        target
+        for target in telemetry.world_targets
+        if target.id == target_id
+        and target.kind == "natural_resource"
+        and ContextActionKind.OPERATE in target.context_actions
+        and target.default_task == "operate_machinery"
+    ]
+    selected = [character for character in telemetry.squad if character.selected]
+    return bool(
+        telemetry.ui.active_screen == "inventory"
+        and telemetry.ui.dialogue_open is False
+        and telemetry.ui.visible_controls_complete is True
+        and len(targets) == 1
+        and len(selected) == 1
+        and telemetry.ui.selected_character_ids == [selected[0].id]
+        and telemetry.ui.selected_character_id == selected[0].id
+        and selected[0].inventory_complete is True
+        and any(
+            control.role == ITEM_ROLE
+            and control.section == "out"
+            and control.item_name is not None
+            and control.item_quantity is not None
+            and control.item_quantity > 0
+            and _window_belongs_to(control.window, targets[0].name)
+            for control in (telemetry.ui.visible_controls or [])
+        )
     )
 
 
@@ -1203,7 +1488,10 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
         "target_id and context_action must be copied as an exact pair from the "
         "observation's context_targets."
     ),
-    planner_visible=True,
+    # Kept as a compatibility-level "issue the task" primitive. Planning uses
+    # produce_resource_output, whose terminal is actual output rather than the
+    # first observed AI goal.
+    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -1225,6 +1513,79 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     bind=bind_perform_context_action,
     controller_verified=True,
     authorable_when=context_action_is_currently_authorable,
+)
+
+PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
+    kind="produce_resource_output",
+    version="1.0",
+    model=ProduceResourceOutputAction,
+    summary=(
+        "Keep one exact natural-resource job under option ownership until the "
+        "resource output inventory contains stock. An Operating machine goal is "
+        "progress, not success; unchanged active work is adopted without reissue."
+    ),
+    argument_source=(
+        "target_id must be copied from one natural_resource entry in "
+        "context_targets that advertises operate."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_PRODUCE_RESOURCE_CAPABILITY,
+            NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            "game.pause",
+            "identity.stable_handles",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=4,
+    reference_fields=("target_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_resource_production",
+    bind=bind_produce_resource_output,
+    controller_verified=True,
+    authorable_when=resource_production_is_currently_authorable,
+)
+
+OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
+    kind="open_context_inventory",
+    version="1.0",
+    model=OpenContextInventoryAction,
+    summary=(
+        "Open the ordinary inventory UI for one exact current natural-resource "
+        "handle. Native code re-resolves the target and terminally proves that "
+        "this exact building inventory is open."
+    ),
+    argument_source=(
+        "target_id must be copied from one natural_resource entry in "
+        "context_targets."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
+            NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            "identity.stable_handles",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("target_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_context_inventory",
+    bind=bind_open_context_inventory,
+    controller_verified=True,
+    authorable_when=context_inventory_is_currently_authorable,
 )
 
 MOVE_IN_DIRECTION_CONTRACT = ActionContract(
@@ -1616,11 +1977,59 @@ EQUIP_ITEM_CONTRACT = ActionContract(
     bind=bind_equip_item,
 )
 
+COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
+    kind="collect_resource_output",
+    version="1.0",
+    model=CollectResourceOutputAction,
+    summary=(
+        "Right-click one exact observed output cell into the selected character. "
+        "Success requires a causally later equal source loss and destination gain "
+        "from complete inventories; a click receipt is never enough."
+    ),
+    argument_source=(
+        "target_id is the open resource group's exact target_id; copy cell_label, "
+        "item_name, item_quantity as source_quantity, window, and section='out' "
+        "from one item in that same group."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            VISIBLE_CONTROLS_CAPABILITY,
+            CONTEXT_INVENTORY_TARGET_CAPABILITY,
+            NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            "squad.inventory",
+            "identity.stable_handles",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=1,
+    reference_fields=(
+        "target_id",
+        "cell_label",
+        "item_name",
+        "source_quantity",
+        "window",
+        "section",
+    ),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_resource_transfer",
+    bind=bind_collect_resource_output,
+    controller_verified=True,
+    authorable_when=resource_output_is_currently_authorable,
+)
+
 ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         PERFORM_CONTEXT_ACTION_CONTRACT,
+        PRODUCE_RESOURCE_OUTPUT_CONTRACT,
+        OPEN_CONTEXT_INVENTORY_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,
         EXIT_CURRENT_BUILDING_CONTRACT,
@@ -1632,6 +2041,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         SCROLL_SCREEN_CONTRACT,
         SELL_ITEM_CONTRACT,
         EQUIP_ITEM_CONTRACT,
+        COLLECT_RESOURCE_OUTPUT_CONTRACT,
     )
 }
 
