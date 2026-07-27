@@ -17,6 +17,7 @@ from .models import (
     ConditionOperator,
     ConditionResult,
     ControlMode,
+    InterruptPolicy,
     LiveContinuousPolicy,
     MoveCursorAction,
     NoopAction,
@@ -121,6 +122,7 @@ _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
     # first approach command made a direction's own terminal result impossible
     # to use as a postcondition.
     "telemetry.native_control.available": _NATIVE_CONTROL_CAPABILITIES,
+    "telemetry.native_control.command_active": _NATIVE_CONTROL_CAPABILITIES,
     "telemetry.native_control.last_command_sequence": _NATIVE_CONTROL_CAPABILITIES,
     "telemetry.native_control.last_command": _NATIVE_CONTROL_CAPABILITIES,
     "telemetry.native_control.last_result": _NATIVE_CONTROL_CAPABILITIES,
@@ -220,6 +222,9 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
         "telemetry.ui.selected_character_count": len(telemetry.ui.selected_character_ids),
         "telemetry.active_shop_trader_count": telemetry.active_shop_trader_count,
         "telemetry.native_control.available": telemetry.native_control.available,
+        "telemetry.native_control.command_active": (
+            telemetry.native_control.active_command_id is not None
+        ),
         "telemetry.native_control.last_command_sequence": (
             telemetry.native_control.last_command_sequence
         ),
@@ -631,6 +636,58 @@ def validate_future_plan_patch(
         current_observation.world_revision
     ):
         errors.append("patch became stale while the concurrent planner was running")
+    if patch.interrupt_active_step_id is not None:
+        active_context = planner_observation.active_plan
+        if (
+            active_context is None
+            or patch.interrupt_active_step_id != active_context.active_step_id
+        ):
+            errors.append(
+                "interrupt patch does not name the exact active step from its "
+                "immutable planner observation"
+            )
+        active_step = next(
+            (
+                step
+                for step in active_plan.steps
+                if step.step_id == patch.interrupt_active_step_id
+            ),
+            None,
+        )
+        if (
+            active_step is None
+            or active_step.interrupt_policy
+            is not InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
+            or active_context is None
+            or active_context.active_step_interrupt_policy
+            is not InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
+        ):
+            errors.append("the exact active step does not permit planner interruption")
+        pause_step = patch.replace_future_steps[0]
+        has_paused_terminal = any(
+            condition.kind is ConditionKind.FIELD
+            and condition.path == "telemetry.game.paused"
+            and condition.operator is ConditionOperator.EQUALS
+            and condition.expected is True
+            for condition in pause_step.success_conditions
+        )
+        has_command_terminal = any(
+            condition.kind is ConditionKind.FIELD
+            and condition.path == "telemetry.native_control.command_active"
+            and condition.operator is ConditionOperator.EQUALS
+            and condition.expected is False
+            for condition in pause_step.success_conditions
+        )
+        if (
+            not isinstance(pause_step.action, PauseAction)
+            or pause_step.action.paused is not True
+            or not has_paused_terminal
+            or not has_command_terminal
+        ):
+            errors.append(
+                "interrupt replacement must begin with a confirmed pause handoff "
+                "that proves the world paused and the native command ended"
+            )
     replacement_ids = {step.step_id for step in patch.replace_future_steps}
     conflicts = sorted(replacement_ids & protected_step_ids)
     if conflicts:

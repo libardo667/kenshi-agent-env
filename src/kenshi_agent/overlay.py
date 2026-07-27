@@ -237,6 +237,16 @@ def format_event(record: dict[str, Any]) -> str | None:
         return f"{step} | RUNNING {payload.get('step_id', '?')}\n"
     if event_type == "plan_step_succeeded":
         return f"{step} | STEP OK  {payload.get('step_id', '?')}\n"
+    if event_type == "plan_interrupt_staged":
+        return (
+            f"{step} | COURSE CHANGE REQUESTED | "
+            f"{payload.get('step_id', '?')}\n"
+        )
+    if event_type in {"plan_step_interrupted", "option_interrupted"}:
+        return (
+            f"{step} | MOVEMENT INTERRUPTED {payload.get('step_id', '?')}\n"
+            f"{payload.get('reason', '')}\n"
+        )
     if event_type in {"plan_step_cancelled", "plan_aborted"}:
         return (
             f"{step} | STEP STOPPED {payload.get('step_id', '?')}\n"
@@ -300,6 +310,9 @@ _EVENT_CATEGORIES: dict[str, str] = {
     "strategic_planner_call": "thinking",
     "option_progress": "thinking",
     "plan_step_succeeded": "progress",
+    "plan_interrupt_staged": "control",
+    "plan_step_interrupted": "control",
+    "option_interrupted": "control",
     "plan_completed": "progress",
     "action_receipt": "progress",
     "plan_rejected": "refused",

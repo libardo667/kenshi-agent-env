@@ -143,6 +143,7 @@ class InputBoundaryDecision(StrEnum):
 
 class InterruptPolicy(StrEnum):
     CANCEL_ON_REFLEX = "cancel_on_reflex"
+    CANCEL_ON_REFLEX_OR_PLAN_PATCH = "cancel_on_reflex_or_plan_patch"
 
 
 class ObservationPolicy(StrEnum):
@@ -1695,6 +1696,7 @@ class ConditionPath(StrEnum):
     TELEMETRY_UI_SELECTED_CHARACTER_COUNT = "telemetry.ui.selected_character_count"
     TELEMETRY_ACTIVE_SHOP_TRADER_COUNT = "telemetry.active_shop_trader_count"
     TELEMETRY_NATIVE_CONTROL_AVAILABLE = "telemetry.native_control.available"
+    TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE = "telemetry.native_control.command_active"
     TELEMETRY_NATIVE_CONTROL_LAST_COMMAND_SEQUENCE = (
         "telemetry.native_control.last_command_sequence"
     )
@@ -1997,6 +1999,12 @@ class PlanPatch(StrictModel):
     plan_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,95}$")
     based_on_plan_version: int = Field(ge=1)
     based_on_revision: WorldStateRevision
+    # Null preserves the active step. Naming it exactly requests a guarded
+    # interruption; the executor still owns cancellation and pause handoff.
+    interrupt_active_step_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+    )
     replace_future_steps: list[PlanStep] = Field(min_length=1, max_length=8)
     rationale: str = Field(min_length=1, max_length=1000)
     memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
@@ -2007,6 +2015,7 @@ class ActivePlanContext(StrictModel):
     plan_version: int = Field(ge=1)
     objective: str = Field(min_length=1, max_length=1000)
     active_step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
+    active_step_interrupt_policy: InterruptPolicy = InterruptPolicy.CANCEL_ON_REFLEX
     completed_step_ids: list[str] = Field(default_factory=list, max_length=16)
     remaining_actions: int = Field(ge=0, le=16)
 

@@ -32,6 +32,7 @@ from kenshi_agent.models import (
     IdempotencyPolicy,
     InputBoundaryDecision,
     InputBoundaryReport,
+    InterruptPolicy,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
@@ -1473,25 +1474,37 @@ def test_approach_option_reaches_success_by_closing_distance_and_dialogue(
 class NativeDirectionEnvironment(RevisionEnvironment):
     """Accept a bare-point order, then publish its keyed arrival."""
 
-    def __init__(self, *, clock: FakeClock) -> None:
+    def __init__(
+        self,
+        *,
+        clock: FakeClock,
+        complete_on_observe: bool = True,
+    ) -> None:
         super().__init__(clock=clock, control_mode=ControlMode.NATIVE_ASSISTED)
         self.dispatched = asyncio.Event()
         self.command: CommandDispatchContext | None = None
+        self.complete_on_observe = complete_on_observe
         self.completed = False
+        self.cancelled = False
 
     def _acknowledgement(
         self,
         status: NativeCommandStatus,
     ) -> NativeCommandAcknowledgement:
         assert self.command is not None
-        terminal = status is NativeCommandStatus.COMPLETED
+        terminal = status in {
+            NativeCommandStatus.COMPLETED,
+            NativeCommandStatus.CANCELLED,
+        }
         return NativeCommandAcknowledgement(
             command_id=self.command.command_id,
             command="move_in_direction",
             status=status,
             reason=(
                 NATIVE_WALK_DESTINATION_REACHED_RESULT
-                if terminal
+                if status is NativeCommandStatus.COMPLETED
+                else "plan_patch_interrupted"
+                if status is NativeCommandStatus.CANCELLED
                 else "issued"
             ),
             target_id="",
@@ -1512,7 +1525,9 @@ class NativeDirectionEnvironment(RevisionEnvironment):
         assert telemetry is not None
         acknowledgement = (
             self._acknowledgement(
-                NativeCommandStatus.COMPLETED
+                NativeCommandStatus.CANCELLED
+                if self.cancelled
+                else NativeCommandStatus.COMPLETED
                 if self.completed
                 else NativeCommandStatus.ACCEPTED
             )
@@ -1522,7 +1537,9 @@ class NativeDirectionEnvironment(RevisionEnvironment):
         native_control = NativeControlState(
             active_command_id=(
                 self.command.command_id
-                if self.command is not None and not self.completed
+                if self.command is not None
+                and not self.completed
+                and not self.cancelled
                 else None
             ),
             acknowledgements=(
@@ -1533,7 +1550,9 @@ class NativeDirectionEnvironment(RevisionEnvironment):
                 "move_in_direction" if acknowledgement is not None else None
             ),
             last_result=(
-                NATIVE_WALK_DESTINATION_REACHED_RESULT
+                "plan_patch_interrupted"
+                if self.cancelled
+                else NATIVE_WALK_DESTINATION_REACHED_RESULT
                 if self.completed
                 else ("issued" if acknowledgement is not None else None)
             ),
@@ -1573,7 +1592,7 @@ class NativeDirectionEnvironment(RevisionEnvironment):
 
     async def observe_without_capture(self) -> Observation:
         self.sequence += 1
-        if self.dispatched.is_set():
+        if self.complete_on_observe and self.dispatched.is_set():
             self.completed = True
         return self.observation()
 
@@ -1585,9 +1604,36 @@ class NativeDirectionEnvironment(RevisionEnvironment):
         token: ExecutionToken | None = None,
     ) -> Transition:
         del token
+        if isinstance(action, PauseAction):
+            self.actions.append(action)
+            self.paused = action.paused
+            self.cancelled = action.paused
+            self.sequence += 1
+            acknowledgement = (
+                self._acknowledgement(NativeCommandStatus.CANCELLED)
+                if self.command is not None
+                else None
+            )
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.NATIVE_ASSISTED,
+                    command_id=command.command_id,
+                    started_after_revision=command.based_on_revision,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=1,
+                    message="paused and cancelled the active native order",
+                    native_acknowledgement=acknowledgement,
+                ),
+                observation=self.observation(),
+            )
         assert isinstance(action, MoveInDirectionAction)
         self.command = command
         self.actions.append(action)
+        if not self.complete_on_observe:
+            self.paused = False
         self.sequence = 2
         self.dispatched.set()
         acknowledgement = self._acknowledgement(NativeCommandStatus.ACCEPTED)
@@ -1712,6 +1758,281 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
         ]
         assert len(directions) == 1
         assert directions[0].bearing_degrees == 90.0
+
+    asyncio.run(scenario())
+
+
+def test_interruptible_native_move_applies_a_pause_handoff_before_replanning(
+    tmp_path: Path,
+) -> None:
+    class InterruptingPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.advisory_started = asyncio.Event()
+            self.release_advisory = asyncio.Event()
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return PlanEnvelope(
+                    schema_version="1.0",
+                    plan_id="responsive-direction",
+                    plan_version=1,
+                    objective="Change course safely when the situation changes.",
+                    control_mode=current.control_mode,
+                    based_on_revision=current.world_revision,
+                    assumptions=[fresh()],
+                    steps=[
+                        PlanStep(
+                            step_id="walk-east",
+                            action=MoveInDirectionAction(
+                                bearing_degrees=90.0,
+                                distance_units=250.0,
+                                expected_effect="move east until interrupted",
+                            ),
+                            preconditions=[
+                                condition(
+                                    "telemetry.game.paused",
+                                    True,
+                                    "game.pause",
+                                )
+                            ],
+                            success_conditions=[
+                                condition(
+                                    "telemetry.native_control.last_result",
+                                    NATIVE_WALK_DESTINATION_REACHED_RESULT,
+                                    "control.move_in_direction",
+                                )
+                            ],
+                            failure_conditions=[],
+                            timeout_seconds=5.0,
+                            retry_budget=0,
+                            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                            interrupt_policy=(
+                                InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
+                            ),
+                        )
+                    ],
+                    entry_step_id="walk-east",
+                    # One action is executing; the second is reserved for the
+                    # deterministic pause handoff an interrupt requires.
+                    max_actions=2,
+                    max_wall_seconds=10.0,
+                    max_game_seconds=10.0,
+                    risk_budget=RiskBudget(
+                        max_pointer_actions=0,
+                        max_purchase_actions=0,
+                        max_native_assisted_actions=1,
+                    ),
+                )
+            if current.active_plan is not None:
+                assert current.active_plan.active_step_id == "walk-east"
+                assert (
+                    current.active_plan.active_step_interrupt_policy
+                    is InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
+                )
+                self.advisory_started.set()
+                await self.release_advisory.wait()
+                return PlanPatch(
+                    schema_version="1.0",
+                    plan_id=current.active_plan.plan_id,
+                    based_on_plan_version=current.active_plan.plan_version,
+                    based_on_revision=current.world_revision,
+                    interrupt_active_step_id=current.active_plan.active_step_id,
+                    replace_future_steps=[
+                        PlanStep(
+                            step_id="pause-interrupted-walk",
+                            action=PauseAction(paused=True),
+                            preconditions=[
+                                condition(
+                                    "telemetry.game.paused",
+                                    False,
+                                    "game.pause",
+                                )
+                            ],
+                            success_conditions=[
+                                condition(
+                                    "telemetry.game.paused",
+                                    True,
+                                    "game.pause",
+                                ),
+                                condition(
+                                    "telemetry.native_control.command_active",
+                                    False,
+                                    "control.move_in_direction",
+                                ),
+                            ],
+                            failure_conditions=[],
+                            timeout_seconds=2.0,
+                            retry_budget=0,
+                            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                        )
+                    ],
+                    rationale=(
+                        "Interrupt the exact active walk, pause it causally, then "
+                        "replan from the stopped state."
+                    ),
+                )
+            return PlannerDecision(
+                intent="stop",
+                rationale="The interruption handoff was proven.",
+                action=StopAction(reason="responsive movement proof complete"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = NativeDirectionEnvironment(
+            clock=clock,
+            complete_on_observe=False,
+        )
+        planner = InterruptingPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await asyncio.wait_for(environment.dispatched.wait(), timeout=1.0)
+            await asyncio.wait_for(planner.advisory_started.wait(), timeout=1.0)
+            # Make the immutable planner snapshot older while the exact same
+            # plan and step remain active. Responsiveness cannot require the
+            # world to freeze while the planner thinks.
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            planner.release_advisory.set()
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert summary.terminated
+        assert environment.cancelled
+        assert environment.paused
+        assert [type(action) for action in environment.actions[:2]] == [
+            MoveInDirectionAction,
+            PauseAction,
+        ]
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "plan_interrupt_staged" for event in events) == 1
+        assert sum(event["event_type"] == "plan_step_interrupted" for event in events) == 1
+        assert sum(event["event_type"] == "plan_patched" for event in events) == 1
+        assert sum(event["event_type"] == "option_succeeded" for event in events) == 0
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.plan_patches_staged == 1
+        assert metrics.plan_steps_cancelled == 1
+        assert metrics.options_cancelled == 1
+
+    asyncio.run(scenario())
+
+
+def test_native_move_timeout_pauses_before_the_planner_can_run_again(
+    tmp_path: Path,
+) -> None:
+    class TimeoutPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.replanned_from_paused: bool | None = None
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return PlanEnvelope(
+                    schema_version="1.0",
+                    plan_id="timeout-direction",
+                    objective="Bound an obstructed directional walk.",
+                    control_mode=current.control_mode,
+                    based_on_revision=current.world_revision,
+                    assumptions=[fresh()],
+                    steps=[
+                        PlanStep(
+                            step_id="walk-east",
+                            action=MoveInDirectionAction(
+                                bearing_degrees=90.0,
+                                distance_units=250.0,
+                                expected_effect="move east if the path is open",
+                            ),
+                            preconditions=[
+                                condition(
+                                    "telemetry.game.paused",
+                                    True,
+                                    "game.pause",
+                                )
+                            ],
+                            success_conditions=[
+                                condition(
+                                    "telemetry.native_control.last_result",
+                                    NATIVE_WALK_DESTINATION_REACHED_RESULT,
+                                    "control.move_in_direction",
+                                )
+                            ],
+                            failure_conditions=[],
+                            timeout_seconds=0.01,
+                            retry_budget=0,
+                            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                        )
+                    ],
+                    entry_step_id="walk-east",
+                    max_actions=1,
+                    max_wall_seconds=1.0,
+                    max_game_seconds=10.0,
+                    risk_budget=RiskBudget(
+                        max_pointer_actions=0,
+                        max_purchase_actions=0,
+                        max_native_assisted_actions=1,
+                    ),
+                )
+            assert current.telemetry is not None
+            self.replanned_from_paused = current.telemetry.game.paused
+            return PlannerDecision(
+                intent="stop",
+                rationale="The timeout recovery pause was proven.",
+                action=StopAction(reason="timeout ownership proof complete"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = NativeDirectionEnvironment(
+            clock=clock,
+            complete_on_observe=False,
+        )
+        planner = TimeoutPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_enabled=False,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            summary = await asyncio.wait_for(runtime.run(max_steps=3), timeout=1.0)
+        finally:
+            logger.close()
+
+        assert summary.terminated
+        assert planner.replanned_from_paused is True
+        assert [type(action) for action in environment.actions[:2]] == [
+            MoveInDirectionAction,
+            PauseAction,
+        ]
+        events = read_events(tmp_path / "events.jsonl")
+        failed = [
+            event for event in events if event["event_type"] == "option_failed"
+        ]
+        assert len(failed) == 1
+        assert "timed out" in str(failed[0]["payload"]).lower()
 
     asyncio.run(scenario())
 

@@ -83,8 +83,9 @@ class OpenRouterPlanner(Planner):
         output_model = structured_output_model(observation)
         if output_model is PlanPatch:
             request = (
-                "Return one future-only PlanPatch grounded in active_plan and the "
-                "exact world_revision. "
+                "Return one PlanPatch grounded in active_plan and the exact "
+                "world_revision; preserve the active step unless an exact guarded "
+                "interrupt is warranted. "
             )
         elif output_model is PlanEnvelope:
             request = (

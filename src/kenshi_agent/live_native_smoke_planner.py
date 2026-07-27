@@ -6,6 +6,7 @@ import argparse
 import sys
 from typing import Literal
 
+from .live_smoke_planner import pause_handoff_step, preserve_pause_handoff_patch
 from .models import (
     CharacterState,
     Condition,
@@ -15,11 +16,13 @@ from .models import (
     ContextActionKind,
     ExitCurrentBuildingAction,
     IdempotencyPolicy,
+    InterruptPolicy,
     Observation,
     PerformContextAction,
     PlanEnvelope,
     PlannerAction,
     PlannerDecision,
+    PlannerOutput,
     PlanningMode,
     PlanStep,
     RiskBudget,
@@ -134,11 +137,14 @@ def build_plan(
                 success_conditions=[],
                 timeout_seconds=30.0,
                 idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-            )
+                interrupt_policy=InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH,
+                on_success="pause-after-smoke",
+            ),
+            pause_handoff_step(),
         ],
         entry_step_id="native-smoke",
-        max_actions=1,
-        max_wall_seconds=30.0,
+        max_actions=2,
+        max_wall_seconds=40.0,
         max_game_seconds=540.0,
         risk_budget=RiskBudget(
             max_pointer_actions=0,
@@ -180,6 +186,31 @@ def build_decision(
     )
 
 
+def build_output(
+    observation: Observation,
+    *,
+    action_kind: SmokeActionKind,
+    target_id: str | None = None,
+) -> PlannerOutput:
+    """Follow the continuous planner state machine without reissuing the action."""
+
+    if observation.planning_mode == PlanningMode.CONTINUOUS:
+        return (
+            preserve_pause_handoff_patch(observation)
+            if observation.active_plan is not None
+            else build_plan(
+                observation,
+                action_kind=action_kind,
+                target_id=target_id,
+            )
+        )
+    return build_decision(
+        observation,
+        action_kind=action_kind,
+        target_id=target_id,
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -199,18 +230,10 @@ def main() -> int:
         return 2
     observation = Observation.model_validate_json(line)
     try:
-        output = (
-            build_plan(
-                observation,
-                action_kind=args.action,
-                target_id=args.target_id,
-            )
-            if observation.planning_mode == PlanningMode.CONTINUOUS
-            else build_decision(
-                observation,
-                action_kind=args.action,
-                target_id=args.target_id,
-            )
+        output = build_output(
+            observation,
+            action_kind=args.action,
+            target_id=args.target_id,
         )
     except ValueError as exc:
         print(str(exc), file=sys.stderr)

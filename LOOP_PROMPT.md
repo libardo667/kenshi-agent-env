@@ -15,7 +15,8 @@ The portable core is a deterministic Kenshi-like mock with strict Pydantic
 models, JSONL lifecycle logs, SQLite memory, generated schemas, and
 heuristic/scripted/subprocess/OpenAI/OpenRouter planners. `single_step` is the
 default scheduler; feature-flagged `continuous` planning accepts bounded typed
-plans and future-only patches behind deterministic acceptance.
+plans, future patches, and exact opt-in active-movement interruption behind
+deterministic acceptance.
 
 Live work runs through one observation pump, a bounded `WorldStateStore`, an
 independent safety supervisor, and a final in-lease authorization fence. The
@@ -26,8 +27,8 @@ advisor and a `request_affordance` channel exist and emit zero game input.
 The native plug-in exports telemetry at ~2 Hz and accepts five reviewed
 commands. Protocol `0.8.2` is live-loaded: natural-resource presence stays
 separate from current task eligibility, and unresolved stale indoor handles fail
-closed. Contextual operation still lacks an eligible live target and terminal
-proof.
+closed. Contextual operation remains unproven: the eligibility API's meaning is
+unresolved, and a saturated building scan can omit the nearest active mine.
 
 Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
@@ -264,11 +265,14 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Complete the protocol `0.8.2` contextual-operation proof.** The corrected
-   plug-in and structural targets are live-proven. Find a target that honestly
-   advertises `task_available:true`, dispatch its exact `operate` pair, require
-   the keyed `context_task_started` terminal plus a plausible resulting frame
-   and advancing telemetry, and leave the run safely paused.
+1. **Make resource observation truthful, then complete contextual operation.**
+   A manual mine showed Kenshi's visible `Operating machine` goal while
+   `current_goal` stayed null and the nearest copper node vanished from a
+   saturated building scan. Fix nearest-resource discovery, determine what
+   `getPlayerTaskProbability` actually means, and expose only player-observable
+   task state. Then dispatch an exact reviewed `operate` pair, require the keyed
+   `context_task_started` terminal plus a plausible resulting frame and
+   advancing telemetry, and leave the run safely paused.
 2. **Make affordance requests aggregable.** `capability` is free text, so
    requests from different runs cannot be counted or ranked. A controlled
    vocabulary (or a clustering pass) is required before fanning out across
@@ -306,15 +310,17 @@ versioned world-state store
         ↓
 independent deterministic safety
         ↓
-interruptible option/plan executor ← strict bounded plan or future patch
+interruptible option/plan executor ← strict bounded plan or typed patch
         ↑
 asynchronous strategic planner
 ```
 
 Strategic planning may overlap execution, but a returning response is advisory
 until revalidated. The executor owns plan state, budgets, retries, cancellation,
-and terminal reasons. Patches use optimistic concurrency and may only touch
-future steps. A deterministic reflex layer stays beneath all of it.
+and terminal reasons. Patches use optimistic concurrency. They may revise future
+steps, or an exact opt-in monitored movement step may request a guarded
+pause-before-replacement handoff. A deterministic reflex layer stays beneath all
+of it.
 
 ## Testing requirements
 

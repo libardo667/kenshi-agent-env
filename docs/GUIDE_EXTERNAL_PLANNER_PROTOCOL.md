@@ -15,8 +15,10 @@ child process.
 The child writes one JSON object to stdout and exits with code zero:
 
 - `planning_mode: single_step` requires `PlannerDecision`.
-- `planning_mode: continuous` requires a bounded `PlanEnvelope` tied to the
-  observation's exact `world_revision`.
+- `planning_mode: continuous` without `active_plan` requires a bounded
+  `PlanEnvelope` tied to the observation's exact `world_revision`.
+- `planning_mode: continuous` with `active_plan` requires a `PlanPatch` tied to
+  that exact plan, version, active step, and world revision.
 
 Diagnostic logs belong on stderr. If several stdout lines are written, the
 runtime parses the final non-empty line.
@@ -36,20 +38,19 @@ Example:
 
 The rationale must be a concise decision basis, not private chain-of-thought.
 
-For continuous output, use `schemas/plan.schema.json`. Every plan is bounded and
-acyclic, binds its control mode and causal revision, declares typed assumptions,
-preconditions and postconditions, and carries action, wall-clock, game-time, and
-risk budgets. The executor—not the child process—owns active state, retries,
-branches, budget accounting, condition evaluation, cancellation, and
-postcondition polling. A snapshot at or before the action-start revision cannot
-confirm success. A later snapshot satisfies only the temporal fence; most
-postconditions are still planner-authored and are not controller-owned proof
-that the intended action caused the observed change.
-
-The subprocess adapter currently always parses continuous output as a
-`PlanEnvelope`. It does not select `PlanPatch` when `active_plan` is present, so
-do not use it for concurrent option advice. The OpenAI/OpenRouter adapters
-implement that mode-aware output selection.
+For continuous output, use `schemas/plan.schema.json` or
+`schemas/plan_patch.schema.json` according to `active_plan`. Every plan is
+bounded and acyclic, binds its control mode and causal revision, declares typed
+assumptions, preconditions and postconditions, and carries action, wall-clock,
+game-time, and risk budgets. During a monitored option, a patch may change only
+future steps unless the exact active step opts into interruption and the
+replacement begins with a causally confirmed pause handoff. The executor—not
+the child process—owns active state, retries, branches, budget accounting,
+condition evaluation, cancellation, and postcondition polling. A snapshot at or
+before the action-start revision cannot confirm success. A later snapshot
+satisfies only the temporal fence; most postconditions are still
+planner-authored and are not controller-owned proof that the intended action
+caused the observed change.
 
 ## Errors
 

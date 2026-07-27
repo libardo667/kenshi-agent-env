@@ -24,7 +24,7 @@ Python runtime
   │                                      └─> scheduler/executor
   │                                             ├─ semantic action contracts
   │                                             └─ monitored movement options
-  │                                                   ↕ future-only advisory
+  │                                                   ↕ future/change-course patch
   ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
   ├─ strategic advisor (read-only hosted model + attributed guide corpus)
@@ -50,10 +50,9 @@ side-effect free and requests a visual frame when capture exists.
 `dispatch(action, command=...)` is the causal execution seam: the runtime supplies
 one globally unique command ID and complete based-on revision, and the receipt
 binds the result to the later observation. `step(action)` is the legacy primitive
-beneath that seam. `close()` releases resources without manipulating the game —
-so the supervisor's verified pause cleanup does not extend to normal stop, budget
-exhaustion, cancellation, exception, or completion exits. A unified final-state
-owner is open work.
+beneath that seam. `close()` releases resources without manipulating the game;
+the runtime's final-state owner verifies pause across normal, budget, failure,
+cancellation, exception, and completion exits before environment close.
 
 ## Action hierarchy
 
@@ -100,7 +99,7 @@ telemetry.
 | Revision ownership and causal confirmation | [ADR_WORLD_STATE_STREAM](docs/ADR_WORLD_STATE_STREAM.md) |
 | Final in-lease authorization fence | [ADR_INPUT_BOUNDARY_AUTHORITY](docs/ADR_INPUT_BOUNDARY_AUTHORITY.md) |
 | Pointer calibration identity | [ADR_CALIBRATION_IDENTITY](docs/ADR_CALIBRATION_IDENTITY.md) |
-| Movement options and future-only patches | [ADR_STATEFUL_MOVEMENT_OPTIONS](docs/ADR_STATEFUL_MOVEMENT_OPTIONS.md) |
+| Movement options and active-step interruption | [ADR_ACTIVE_OPTION_INTERRUPTION](docs/ADR_ACTIVE_OPTION_INTERRUPTION.md) |
 | Independent preemption and safe pause | [ADR_SAFETY_SUPERVISOR](docs/ADR_SAFETY_SUPERVISOR.md) |
 | Native handle identity and lifecycle | [ADR_STABLE_NATIVE_IDENTITY](docs/ADR_STABLE_NATIVE_IDENTITY.md) |
 | Native request/acknowledgement causality | [ADR_CAUSAL_NATIVE_COMMANDS](docs/ADR_CAUSAL_NATIVE_COMMANDS.md) |

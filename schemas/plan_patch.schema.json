@@ -216,6 +216,7 @@
         "telemetry.ui.selected_character_count",
         "telemetry.active_shop_trader_count",
         "telemetry.native_control.available",
+        "telemetry.native_control.command_active",
         "telemetry.native_control.last_command_sequence",
         "telemetry.native_control.last_command",
         "telemetry.native_control.last_result",
@@ -430,7 +431,8 @@
     },
     "InterruptPolicy": {
       "enum": [
-        "cancel_on_reflex"
+        "cancel_on_reflex",
+        "cancel_on_reflex_or_plan_patch"
       ],
       "title": "InterruptPolicy",
       "type": "string"
@@ -1203,6 +1205,19 @@
     },
     "based_on_revision": {
       "$ref": "#/$defs/WorldStateRevision"
+    },
+    "interrupt_active_step_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Interrupt Active Step Id"
     },
     "replace_future_steps": {
       "items": {

@@ -1018,6 +1018,7 @@
         "telemetry.ui.selected_character_count",
         "telemetry.active_shop_trader_count",
         "telemetry.native_control.available",
+        "telemetry.native_control.command_active",
         "telemetry.native_control.last_command_sequence",
         "telemetry.native_control.last_command",
         "telemetry.native_control.last_result",

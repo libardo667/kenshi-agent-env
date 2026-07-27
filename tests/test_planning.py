@@ -11,6 +11,7 @@ from pydantic import ValidationError
 
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.models import (
+    ActivePlanContext,
     CharacterState,
     Condition,
     ConditionKind,
@@ -19,6 +20,7 @@ from kenshi_agent.models import (
     ControlMode,
     GameState,
     IdempotencyPolicy,
+    InterruptPolicy,
     Observation,
     PauseAction,
     PlanEnvelope,
@@ -130,6 +132,37 @@ def speed_step(step_id: str = "accelerate") -> PlanStep:
         ],
         failure_conditions=[],
         timeout_seconds=1.0,
+        retry_budget=0,
+        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    )
+
+
+def interruption_pause_step(
+    step_id: str = "pause-interrupted-movement",
+) -> PlanStep:
+    return PlanStep(
+        step_id=step_id,
+        action=PauseAction(paused=True),
+        preconditions=[
+            field_condition(
+                "telemetry.game.paused",
+                False,
+                required_capabilities=["game.pause"],
+            )
+        ],
+        success_conditions=[
+            field_condition(
+                "telemetry.game.paused",
+                True,
+                required_capabilities=["game.pause"],
+            ),
+            field_condition(
+                "telemetry.native_control.command_active",
+                False,
+            ),
+        ],
+        failure_conditions=[],
+        timeout_seconds=2.0,
         retry_budget=0,
         idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     )
@@ -376,6 +409,20 @@ def test_plan_patch_carries_optimistic_concurrency_basis() -> None:
     assert patch.based_on_revision.telemetry_sequence == 7
 
 
+def test_plan_patch_names_the_exact_active_step_when_requesting_interruption() -> None:
+    patch = PlanPatch(
+        schema_version="1.0",
+        plan_id="survival-setup",
+        based_on_plan_version=1,
+        based_on_revision=revision(7),
+        interrupt_active_step_id="resume",
+        replace_future_steps=[speed_step()],
+        rationale="Conditions changed enough to interrupt the exact active step.",
+    )
+
+    assert patch.interrupt_active_step_id == "resume"
+
+
 def test_future_patch_requires_current_basis_and_cannot_restart_protected_steps() -> None:
     current = observation(sequence=7)
     active_plan = plan_for(current.world_revision)
@@ -438,6 +485,122 @@ def test_future_patch_requires_current_basis_and_cannot_restart_protected_steps(
             protected_step_ids={"resume"},
             require_current_basis=True,
         )
+
+
+def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
+    current = observation(sequence=7)
+    interruptible_resume = pause_step(on_success="accelerate").model_copy(
+        update={
+            "interrupt_policy": InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH,
+        }
+    )
+    active_plan = plan_for(
+        current.world_revision,
+        steps=[interruptible_resume, speed_step()],
+        max_actions=3,
+    )
+    ledger = PlanBudgetLedger.from_plan(active_plan)
+    ledger.reserve(active_plan.steps[0].action, MacroRegistry({}))
+    ledger.commit()
+    planner_observation = current.model_copy(
+        update={
+            "active_plan": ActivePlanContext(
+                plan_id=active_plan.plan_id,
+                plan_version=active_plan.plan_version,
+                objective=active_plan.objective,
+                active_step_id="resume",
+                active_step_interrupt_policy=(
+                    InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
+                ),
+                remaining_actions=ledger.remaining_actions,
+            )
+        }
+    )
+
+    wrong_step = PlanPatch(
+        schema_version="1.0",
+        plan_id=active_plan.plan_id,
+        based_on_plan_version=active_plan.plan_version,
+        based_on_revision=current.world_revision,
+        interrupt_active_step_id="accelerate",
+        replace_future_steps=[interruption_pause_step()],
+        rationale="This names a future step, not the exact active step.",
+    )
+    with pytest.raises(PlanValidationError, match="exact active step"):
+        validate_future_plan_patch(
+            wrong_step,
+            active_plan=active_plan,
+            planner_observation=planner_observation,
+            current_observation=current,
+            config=PlanningConfig(),
+            macros=MacroRegistry({}),
+            budget=ledger,
+            remaining_run_actions=2,
+            protected_step_ids={"resume"},
+            require_current_basis=True,
+        )
+
+    no_pause = wrong_step.model_copy(
+        update={
+            "interrupt_active_step_id": "resume",
+            "replace_future_steps": [speed_step("unsafe-replacement")],
+        }
+    )
+    with pytest.raises(PlanValidationError, match="confirmed pause handoff"):
+        validate_future_plan_patch(
+            no_pause,
+            active_plan=active_plan,
+            planner_observation=planner_observation,
+            current_observation=current,
+            config=PlanningConfig(),
+            macros=MacroRegistry({}),
+            budget=ledger,
+            remaining_run_actions=2,
+            protected_step_ids={"resume"},
+            require_current_basis=True,
+        )
+
+    non_interruptible = active_plan.model_copy(
+        update={
+            "steps": [
+                interruptible_resume.model_copy(
+                    update={"interrupt_policy": InterruptPolicy.CANCEL_ON_REFLEX}
+                ),
+                speed_step(),
+            ]
+        }
+    )
+    valid = no_pause.model_copy(
+        update={"replace_future_steps": [interruption_pause_step()]}
+    )
+    with pytest.raises(PlanValidationError, match="does not permit"):
+        validate_future_plan_patch(
+            valid,
+            active_plan=non_interruptible,
+            planner_observation=planner_observation,
+            current_observation=current,
+            config=PlanningConfig(),
+            macros=MacroRegistry({}),
+            budget=ledger,
+            remaining_run_actions=2,
+            protected_step_ids={"resume"},
+            require_current_basis=True,
+        )
+
+    candidate = validate_future_plan_patch(
+        valid,
+        active_plan=active_plan,
+        planner_observation=planner_observation,
+        current_observation=current,
+        config=PlanningConfig(),
+        macros=MacroRegistry({}),
+        budget=ledger,
+        remaining_run_actions=2,
+        protected_step_ids={"resume"},
+        require_current_basis=True,
+    )
+
+    assert candidate.steps == [interruption_pause_step()]
 
 
 def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
@@ -513,3 +676,39 @@ def test_scripted_and_subprocess_adapters_parse_continuous_plan(
 
     assert isinstance(scripted_output, PlanEnvelope)
     assert isinstance(subprocess_output, PlanEnvelope)
+
+
+def test_subprocess_adapter_parses_a_patch_for_the_exact_active_plan() -> None:
+    current = observation().model_copy(
+        update={
+            "planning_mode": PlanningMode.CONTINUOUS,
+            "active_plan": ActivePlanContext(
+                plan_id="survival-setup",
+                plan_version=1,
+                objective="Keep the current movement responsive.",
+                active_step_id="resume",
+                remaining_actions=1,
+            ),
+        }
+    )
+    patch = PlanPatch(
+        schema_version="1.0",
+        plan_id="survival-setup",
+        based_on_plan_version=1,
+        based_on_revision=current.world_revision,
+        replace_future_steps=[speed_step()],
+        rationale="Keep the active step and revise only what follows it.",
+    )
+
+    output = asyncio.run(
+        SubprocessPlanner(
+            [
+                sys.executable,
+                "-c",
+                "import sys; print(sys.argv[1])",
+                patch.model_dump_json(),
+            ]
+        ).decide(current)
+    )
+
+    assert output == patch

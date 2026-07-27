@@ -1,8 +1,7 @@
 # Implementation status
 
 Current-state snapshot. Dated evidence lives in `git log` and `runs/<run-id>/`;
-the action surface lives in the generated [catalog](docs/generated/ACTION_CATALOG.md)
-and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
+the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
 
 ## What works
 
@@ -10,9 +9,9 @@ and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
   lifecycle logs, optional full-observation replay, SQLite memory, and
   heuristic/scripted/subprocess/OpenAI/OpenRouter planners.
 - `single_step` is the default scheduler. Feature-flagged `continuous` planning
-  accepts bounded typed plans and future-only patches, owns action and risk
-  budgets, and rechecks typed conditions before every step. See
-  [ADR: bounded continuous planning](docs/ADR_CONTINUOUS_PLANNING.md).
+  accepts bounded typed plans and future patches plus exact opt-in movement
+  interruption, owns action and risk budgets, and rechecks typed conditions
+  before every step. See [bounded continuous planning](docs/ADR_CONTINUOUS_PLANNING.md).
 - One authoritative observation pump and bounded `WorldStateStore` preserving
   revisions, semantic old/new deltas, transient events, entity lifetimes, active
   plan/command state, and isolated subscriber queues.
@@ -68,8 +67,8 @@ selection, nearby-character, dialogue-target, world-target and command
 identities; squad life/consciousness/combat state, position, resolved indoor membership,
 nutrition reserve, blood, and bounded inventory; dialogue, trade, inventory,
 stats and management window state; up to 224 visible controls with window
-ownership and normalized bounds; up to 128 structurally reviewed natural
-resources from a 2,000-unit query with current task eligibility reported
+ownership and normalized bounds; structurally reviewed natural resources surfaced
+through a bounded nearby-building query with the sampled task predicate reported
 separately; and a keyed acknowledgement ring for five declared commands.
 
 The DLL is therefore not globally read-only. `interface_only` removes native
@@ -82,7 +81,9 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 - **Protocol `0.8.2` is live-loaded with advancing telemetry, honest outdoor
   state, and structural resource targets.** Contextual operation remains unproven:
-  every observed target was unavailable, so no `operate` order was authorized.
+  its predicate was false before a manual mine, while the visible `Operating
+  machine` goal was not exported and the saturated scan omitted that active node,
+  so no `operate` order was authorized.
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
@@ -110,7 +111,7 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   active `controls.cfg`.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name,
   current tasks, trader money, occlusion, and distant world state are
-  unavailable or unvalidated.
+  unavailable or unvalidated; saturated building scans can omit nearby targets.
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
 - Renderer stability remains open on this Intel Iris Xe host: later paused runs

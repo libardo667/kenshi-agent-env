@@ -7,12 +7,18 @@ import argparse
 import sys
 
 from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
+from kenshi_agent.live_smoke_planner import (
+    interrupt_with_pause_handoff_patch,
+    pause_handoff_step,
+    preserve_pause_handoff_patch,
+)
 from kenshi_agent.models import (
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionPath,
     IdempotencyPolicy,
+    InterruptPolicy,
     MoveInDirectionAction,
     Observation,
     PlanEnvelope,
@@ -25,12 +31,21 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--bearing", type=float, required=True)
     parser.add_argument("--distance", type=float, required=True)
+    parser.add_argument("--interrupt-on-advisory", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     observation = Observation.model_validate_json(sys.stdin.readline())
+    if observation.active_plan is not None:
+        patch = (
+            interrupt_with_pause_handoff_patch(observation)
+            if args.interrupt_on_advisory
+            else preserve_pause_handoff_patch(observation)
+        )
+        print(patch.model_dump_json())
+        return
     selected = (
         next(
             (character for character in observation.telemetry.squad if character.selected),
@@ -89,13 +104,16 @@ def main() -> None:
                         required_capabilities=["control.move_in_direction"],
                     )
                 ],
-                timeout_seconds=25.0,
+                timeout_seconds=55.0,
                 idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-            )
+                interrupt_policy=InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH,
+                on_success="pause-after-smoke",
+            ),
+            pause_handoff_step(),
         ],
         entry_step_id="direction-smoke",
-        max_actions=1,
-        max_wall_seconds=30.0,
+        max_actions=2,
+        max_wall_seconds=65.0,
         max_game_seconds=540.0,
         risk_budget=RiskBudget(
             max_pointer_actions=0,

@@ -322,7 +322,7 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["plan_steps_succeeded"] += 1
             elif event_type == "plan_step_failed":
                 values["plan_steps_failed"] += 1
-            elif event_type == "plan_step_cancelled":
+            elif event_type in {"plan_step_cancelled", "plan_step_interrupted"}:
                 values["plan_steps_cancelled"] += 1
             elif event_type == "plan_budget_reserved":
                 values["budget_reservations"] += 1
@@ -368,7 +368,7 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["safety_supervisor_terminals"] += 1
                 if payload.get("status") == "safe_paused":
                     values["safety_supervisor_safe_paused"] += 1
-            elif event_type == "plan_patch_staged":
+            elif event_type in {"plan_patch_staged", "plan_interrupt_staged"}:
                 values["plan_patches_staged"] += 1
             elif event_type == "plan_patched":
                 values["plan_patches_applied"] += 1
@@ -386,7 +386,7 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["options_succeeded"] += 1
             elif event_type == "option_failed":
                 values["options_failed"] += 1
-            elif event_type == "option_cancelled":
+            elif event_type in {"option_cancelled", "option_interrupted"}:
                 values["options_cancelled"] += 1
             elif event_type == "world_state_update":
                 if payload.get("sequence_status") == "duplicate":
@@ -543,6 +543,7 @@ def replay_plan_lifecycle(path: Path) -> dict[str, PlanLifecycle]:
         "plan_step_succeeded": "running",
         "plan_step_failed": "running",
         "plan_step_cancelled": "running",
+        "plan_step_interrupted": "running",
         "plan_patch_requested": "needs_replan",
         "plan_patched": "running",
         "plan_completed": "completed",
@@ -573,7 +574,7 @@ def replay_plan_lifecycle(path: Path) -> dict[str, PlanLifecycle]:
                 elif event_type == "plan_step_failed" and step_id not in lifecycle.failed_step_ids:
                     lifecycle.failed_step_ids.append(step_id)
                 elif (
-                    event_type == "plan_step_cancelled"
+                    event_type in {"plan_step_cancelled", "plan_step_interrupted"}
                     and step_id not in lifecycle.cancelled_step_ids
                 ):
                     lifecycle.cancelled_step_ids.append(step_id)

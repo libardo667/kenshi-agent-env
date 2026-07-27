@@ -4,8 +4,8 @@ import asyncio
 import json
 import shlex
 
-from ..models import Observation, PlanEnvelope, PlannerDecision, PlannerOutput, PlanningMode
-from .base import Planner
+from ..models import Observation, PlannerOutput
+from .base import Planner, structured_output_model
 
 
 class SubprocessPlanner(Planner):
@@ -44,8 +44,6 @@ class SubprocessPlanner(Planner):
             raise RuntimeError("Subprocess planner returned no JSON decision.")
         try:
             payload = json.loads(text.splitlines()[-1])
-            if observation.planning_mode == PlanningMode.CONTINUOUS:
-                return PlanEnvelope.model_validate(payload)
-            return PlannerDecision.model_validate(payload)
+            return structured_output_model(observation).model_validate(payload)
         except Exception as exc:
             raise RuntimeError(f"Subprocess planner returned invalid decision JSON: {exc}") from exc

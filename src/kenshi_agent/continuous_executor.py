@@ -24,6 +24,7 @@ from .models import (
     MoveInDirectionAction,
     Observation,
     ObservationPolicy,
+    PauseAction,
     PerformContextAction,
     PlanEnvelope,
     PlannerDecision,
@@ -32,6 +33,7 @@ from .models import (
     PlanStep,
     RequestAffordanceAction,
     SkillAction,
+    StopAction,
     Transition,
     WorldStateRevision,
 )
@@ -115,12 +117,18 @@ class _StepResult:
     terminated: bool = False
     success: bool | None = None
     staged_patch: _StagedPatch | None = None
+    interrupted: bool = False
+    pause_before_replan: bool = False
 
 
 @dataclass(frozen=True, slots=True)
 class _StagedPatch:
     patch: PlanPatch
     planner_observation: Observation
+
+    @property
+    def interrupts_active_step(self) -> bool:
+        return self.patch.interrupt_active_step_id is not None
 
 
 def _unmet_postcondition_reason(
@@ -347,6 +355,90 @@ class ContinuousPlanExecutor:
                 observation = step_result.observation
                 actions_completed += step_result.actions_completed
 
+                if step_result.interrupted:
+                    assert step_result.staged_patch is not None
+                    self._event(
+                        "plan_step_interrupted",
+                        plan,
+                        observation,
+                        step=step,
+                        reason=step_result.reason,
+                        evidence={
+                            "patch": step_result.staged_patch.patch.model_dump(
+                                mode="json"
+                            )
+                        },
+                    )
+                    budget_reason = self._budget_stop_reason(
+                        plan,
+                        plan_started_at,
+                        plan_started_observation,
+                        observation,
+                        remaining_run_actions - actions_completed,
+                    )
+                    try:
+                        if budget_reason is not None:
+                            raise PlanValidationError(budget_reason)
+                        patched_plan = validate_future_plan_patch(
+                            step_result.staged_patch.patch,
+                            active_plan=plan,
+                            planner_observation=(
+                                step_result.staged_patch.planner_observation
+                            ),
+                            current_observation=observation,
+                            config=self.planning_config,
+                            macros=self.guard.macros,
+                            budget=budget,
+                            remaining_run_actions=(
+                                remaining_run_actions - actions_completed
+                            ),
+                            protected_step_ids=completed_step_ids | {step.step_id},
+                            require_current_basis=False,
+                        )
+                    except PlanValidationError as exc:
+                        reason = (
+                            "The active option was interrupted, but its pause "
+                            f"handoff patch failed latest-state validation: {exc}"
+                        )
+                        aborted = self._abort(
+                            plan,
+                            step,
+                            observation,
+                            actions_completed,
+                            reason,
+                            emit_step_cancelled=False,
+                        )
+                        return self._require_pause_before_replan(
+                            aborted,
+                            observation,
+                            reason,
+                        )
+                    previous_version = plan.plan_version
+                    self.state_store.apply_plan_patch(
+                        patched_plan.plan_version,
+                        observation.world_revision,
+                    )
+                    plan = patched_plan
+                    by_id = {item.step_id: item for item in plan.steps}
+                    step_id = plan.entry_step_id
+                    self._event(
+                        "plan_patched",
+                        plan,
+                        observation,
+                        reason=(
+                            "The exact active option accepted an explicit "
+                            "interruption; its guarded pause handoff is now the "
+                            "only executable future."
+                        ),
+                        evidence={
+                            "previous_plan_version": previous_version,
+                            "patch": (
+                                step_result.staged_patch.patch.model_dump(mode="json")
+                            ),
+                        },
+                    )
+                    break
+
                 if step_result.succeeded:
                     self._event(
                         "plan_step_succeeded",
@@ -436,6 +528,28 @@ class ContinuousPlanExecutor:
                             break
                     step_id = step.on_success
                     break
+
+                if step_result.pause_before_replan:
+                    self._event(
+                        "plan_step_failed",
+                        plan,
+                        observation,
+                        step=step,
+                        reason=step_result.reason,
+                    )
+                    aborted = self._abort(
+                        plan,
+                        step,
+                        observation,
+                        actions_completed,
+                        step_result.reason,
+                        emit_step_cancelled=False,
+                    )
+                    return self._require_pause_before_replan(
+                        aborted,
+                        observation,
+                        step_result.reason,
+                    )
 
                 if retries_remaining > 0 and not step_result.terminated:
                     retries_remaining -= 1
@@ -1023,6 +1137,25 @@ class ContinuousPlanExecutor:
                 terminated=transition.terminated,
                 success=transition.success,
             )
+        if (
+            monitored_outcome is not None
+            and staged_patch is not None
+            and staged_patch.interrupts_active_step
+            and monitored_outcome.status is OptionStatus.CANCELLED
+        ):
+            return _StepResult(
+                observation=latest,
+                succeeded=False,
+                actions_completed=1,
+                reason=(
+                    "The exact active option stopped for a validated strategic "
+                    "interruption; control passes only to its pause handoff."
+                ),
+                terminated=transition.terminated,
+                success=transition.success,
+                staged_patch=staged_patch,
+                interrupted=True,
+            )
         if monitored_outcome is not None and monitored_outcome.status is not OptionStatus.SUCCEEDED:
             # The monitored option is this action's authority on arrival. A lost
             # target or a hostile inside threat range is a terminal verdict, not
@@ -1038,6 +1171,10 @@ class ContinuousPlanExecutor:
                 ),
                 terminated=transition.terminated,
                 success=transition.success,
+                pause_before_replan=(
+                    latest.telemetry is not None
+                    and latest.telemetry.game.paused is False
+                ),
             )
         contract = contract_for(step.action)
         if contract is not None and contract.controller_verified:
@@ -1639,6 +1776,7 @@ class ContinuousPlanExecutor:
         planner_started_at: float | None = None
         staged_patch: _StagedPatch | None = None
         timed_out = False
+        interrupted = False
 
         if (
             self.planning_config.concurrent_option_planning_enabled
@@ -1651,6 +1789,7 @@ class ContinuousPlanExecutor:
                         plan_version=plan.plan_version,
                         objective=plan.objective,
                         active_step_id=step.step_id,
+                        active_step_interrupt_policy=step.interrupt_policy,
                         completed_step_ids=sorted(protected_step_ids - {step.step_id}),
                         remaining_actions=budget.remaining_actions,
                     )
@@ -1733,6 +1872,33 @@ class ContinuousPlanExecutor:
                     # option state so a rejected order fails rather than waiting.
                     option.poll()
 
+                if (
+                    staged_patch is not None
+                    and staged_patch.interrupts_active_step
+                    and option.transition is not None
+                    and option.poll().status is OptionStatus.RUNNING
+                ):
+                    interrupted = True
+                    terminal = await option.cancel(
+                        "The exact active option accepted a revision-bound "
+                        "strategic interruption."
+                    )
+                    self._event(
+                        "option_interrupted",
+                        plan,
+                        self.state_store.latest or observation,
+                        step=step,
+                        reason=terminal.reason,
+                        evidence={
+                            "option_id": option.option_id,
+                            "option_status": terminal.status.value,
+                            "interrupt_active_step_id": (
+                                staged_patch.patch.interrupt_active_step_id
+                            ),
+                        },
+                    )
+                    break
+
             if timed_out:
                 await option.cancel(
                     "Monitored native movement exceeded its step timeout before terminal success."
@@ -1752,7 +1918,7 @@ class ContinuousPlanExecutor:
                         "option_status": terminal.status.value,
                     },
                 )
-            else:
+            elif not interrupted:
                 self._event(
                     "option_failed",
                     plan,
@@ -1887,13 +2053,14 @@ class ContinuousPlanExecutor:
                 self.state_store.latest or planner_observation,
                 step=step,
                 reason=(
-                    "Concurrent option planning accepts only a future-only PlanPatch advisory."
+                    "Concurrent option planning accepts only a typed PlanPatch advisory."
                 ),
                 evidence={"output_type": type(output).__name__},
             )
             return None
 
         latest = self.state_store.latest or planner_observation
+        interrupts_active_step = output.interrupt_active_step_id is not None
         try:
             validate_future_plan_patch(
                 output,
@@ -1905,7 +2072,10 @@ class ContinuousPlanExecutor:
                 budget=budget,
                 remaining_run_actions=remaining_run_actions,
                 protected_step_ids=protected_step_ids,
-                require_current_basis=True,
+                # An explicit interrupt is useful only while the world keeps
+                # moving. Its effect is restricted to a guarded pause handoff,
+                # then every replacement action is revalidated on latest state.
+                require_current_basis=not interrupts_active_step,
             )
         except PlanValidationError as exc:
             self._event(
@@ -1919,13 +2089,16 @@ class ContinuousPlanExecutor:
             return None
 
         self._event(
-            "plan_patch_staged",
+            "plan_interrupt_staged" if interrupts_active_step else "plan_patch_staged",
             plan,
             latest,
             step=step,
             reason=(
-                "Concurrent future patch matches the active plan and immutable "
-                "planner revision; application awaits option completion."
+                "Concurrent revision names the exact interruptible active "
+                "step and begins with a guarded pause handoff."
+                if interrupts_active_step
+                else "Concurrent future patch matches the active plan and "
+                "immutable planner revision; application awaits option completion."
             ),
             evidence={"patch": output.model_dump(mode="json")},
         )
@@ -2009,6 +2182,47 @@ class ContinuousPlanExecutor:
             terminated=terminated,
             success=success,
             reason=reason,
+        )
+
+    @staticmethod
+    def _require_pause_before_replan(
+        result: PlanExecutionResult,
+        observation: Observation,
+        reason: str,
+    ) -> PlanExecutionResult:
+        telemetry = observation.telemetry
+        if telemetry is None or telemetry.game.paused is not False:
+            return result
+        if "game.pause" in telemetry.capabilities:
+            decision = PlannerDecision(
+                intent="Recover option ownership before replanning.",
+                rationale=(
+                    "The active option ended without a terminal handoff while "
+                    f"the world was still running: {reason}"
+                ),
+                action=PauseAction(paused=True),
+                confidence=1.0,
+            )
+        else:
+            decision = PlannerDecision(
+                intent="Stop after losing safe option ownership.",
+                rationale=(
+                    "The active option ended while the world was running and "
+                    "the pause capability is unavailable."
+                ),
+                action=StopAction(
+                    reason="Cannot confirm a safe pause before replanning."
+                ),
+                confidence=1.0,
+            )
+        return PlanExecutionResult(
+            observation=result.observation,
+            actions_completed=result.actions_completed,
+            completed=result.completed,
+            terminated=result.terminated,
+            success=result.success,
+            reason=result.reason,
+            reflex_decision=decision,
         )
 
     def _event(

@@ -493,6 +493,7 @@ class AgentRuntime:
         observation: Observation | None = None
         consecutive_replans = 0
         planner_feedback: str | None = None
+        pending_reflex: PlannerDecision | None = None
         last_replan_failure: str | None = None
         identical_replan_failures = 0
         observation_pump: ObservationPump | None = None
@@ -602,7 +603,8 @@ class AgentRuntime:
                     )
                     steps_completed += completed
                     continue
-                reflex = self.reflexes.decide(observation)
+                reflex = pending_reflex or self.reflexes.decide(observation)
+                pending_reflex = None
                 if reflex is not None:
                     (
                         observation,
@@ -1049,6 +1051,7 @@ class AgentRuntime:
                 if result.reflex_decision is not None:
                     # The next scheduler pass executes the deterministic reflex
                     # through the ordinary guard/environment path before replanning.
+                    pending_reflex = result.reflex_decision
                     continue
                 if identical_failure_limit_reached(result.reason):
                     stop_reason = (
