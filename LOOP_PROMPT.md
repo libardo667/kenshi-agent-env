@@ -208,13 +208,14 @@ evidence; supervised live Kenshi evidence; historical evidence; proposed design.
 ### 12. The supported launcher is part of the capability
 
 Live evidence must travel through `./dev launch` and `./dev journey`, including
-deterministic subprocess planners. The wrapper owns WSL-to-Windows Python,
-configuration and planner-path translation, execution gates, logs, and final
-safe-state reporting. Direct Windows-Python commands, hand-written native request
-files, ad-hoc SendInput snippets, and PTY launcher attempts are diagnostics only
-and never accepted planner capability evidence. If the supported path cannot
-express or safely finish a test, fix it in the current slice; do not normalize a
-workaround into the procedure.
+deterministic subprocess planners. Terminal crashes travel through `./dev crash`,
+which archives the current dump, logs, telemetry, settings, and frame before any
+explicit dismissal. The wrapper owns WSL-to-Windows Python, path translation,
+execution gates, logs, and final-state reporting. Direct Windows-Python commands,
+hand-written native request files, ad-hoc SendInput snippets, and PTY launcher
+attempts are diagnostics only and never accepted planner capability evidence. If
+the supported path cannot express or safely finish a test, fix it in the current
+slice; do not normalize a workaround into the procedure.
 
 ## Standing supervised live-test authorization
 

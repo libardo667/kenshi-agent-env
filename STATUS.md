@@ -47,7 +47,7 @@ and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
   `food_procurement_v1` policy is retired and its continuous policy is
   `disabled`.
 
-From WSL, `./dev journey` selects Windows Python, translates paths once, and passes subprocess planners as exact argv.
+From WSL, `./dev journey` preserves exact planner argv; `./dev crash` archives terminal evidence before optional bounded dismissal.
 Supervised runs have demonstrated generic approach and dialogue activation,
 semantic startup, inventory and trade navigation, one-step purchases with
 confirmed debits, readable world deltas, persistent continuous memory, and
@@ -114,7 +114,7 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
 - Renderer stability remains open on this Intel Iris Xe host. Driver
-  `32.0.101.7088` passed two dissimilar 20-minute soaks, but a later supervised
-  run still hit DXGI device-removal and driver-internal failures; multi-hour and
-  large-water coverage remain open.
+  `32.0.101.7088` passed two dissimilar 20-minute soaks, but later paused runs
+  still hit DXGI device-removal and driver-internal failures across unrelated
+  materials; a short health window does not establish stability.
 - The mock world tests orchestration, not Kenshi strategy competence.

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import csv
 import ctypes
+import hashlib
 import json
 import os
 import re
@@ -29,7 +30,13 @@ from .graphics_profile import (
     load_graphics_profile,
     verify_graphics_profile,
 )
-from .models import ClickAction, KeyAction, TelemetrySnapshot, VisibleUIControl
+from .models import (
+    ClickAction,
+    HotkeyAction,
+    KeyAction,
+    TelemetrySnapshot,
+    VisibleUIControl,
+)
 from .telemetry import TelemetryReader, TelemetryReadError
 
 
@@ -49,9 +56,13 @@ _TERMINAL_WINDOW_MARKERS = (
 )
 
 
-def _controller(config: AppConfig) -> Win32InputController:
+def _controller(
+    config: AppConfig,
+    *,
+    window_title_contains: str | None = None,
+) -> Win32InputController:
     return Win32InputController(
-        config.capture.window_title_contains,
+        window_title_contains or config.capture.window_title_contains,
         focus_before_input=config.controls.focus_before_input,
         post_input_delay_seconds=config.controls.post_input_delay_seconds,
         polite_input_enabled=True,
@@ -282,10 +293,17 @@ def _validate_launch_preconditions(
     config: AppConfig,
     *,
     process_names: set[str] | None = None,
+    terminal_window_title: str | None = None,
     available_physical_memory_mib: int | None = None,
     settings_path: Path | None = None,
     steam_connection_log_path: Path | None = None,
 ) -> None:
+    if terminal_window_title is not None:
+        raise LaunchFailed(
+            f"Kenshi is in terminal state {terminal_window_title!r}. Run './dev crash' "
+            "to archive evidence, or './dev crash --dismiss' to archive it before "
+            "closing the unsent report."
+        )
     names = process_names if process_names is not None else _running_process_names()
     if "kenshi_x64.exe" in names:
         raise LaunchFailed("Kenshi is already running; refusing to start a second client.")
@@ -550,7 +568,15 @@ async def _launch(args: argparse.Namespace) -> int:
         raise SystemExit("The live developer launcher must run with Windows Python.")
     config = load_config(args.config)
     try:
-        _validate_launch_preconditions(config)
+        controller = _controller(config)
+        try:
+            terminal_window_title = _terminal_window_title(controller)
+        except (OSError, RuntimeError, ValueError):
+            terminal_window_title = None
+        _validate_launch_preconditions(
+            config,
+            terminal_window_title=terminal_window_title,
+        )
     except (FileNotFoundError, LaunchFailed, OSError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 4
@@ -560,8 +586,6 @@ async def _launch(args: argparse.Namespace) -> int:
             "matches, and physical-memory headroom is sufficient."
         )
         return 0
-
-    controller = _controller(config)
 
     try:
         _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
@@ -689,6 +713,198 @@ async def _launch(args: argparse.Namespace) -> int:
 
     print("Kenshi launched" + (", loaded, and paused." if args.continue_game else "."))
     return 0
+
+
+_CRASH_LOG_NAMES = (
+    "RE_Kenshi_log.txt",
+    "kenshi.log",
+    "kenshi_info.log",
+    "save.log",
+    "MyGUI.log",
+    "Havok.log",
+    "FileIOLog.txt",
+    "settings.cfg",
+    "kenshi.cfg",
+    "RE_Kenshi.ini",
+)
+
+
+def _crash_artifact_record(path: Path, *, source: Path) -> dict[str, object]:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    stat = path.stat()
+    return {
+        "name": path.name,
+        "source": str(source),
+        "size_bytes": stat.st_size,
+        "modified_at": datetime.fromtimestamp(stat.st_mtime, UTC).isoformat(),
+        "sha256": digest.hexdigest(),
+    }
+
+
+def _collect_crash_evidence(
+    config: AppConfig,
+    controller: InputController,
+    *,
+    terminal_window_title: str,
+    captured_at: datetime | None = None,
+) -> Path:
+    observed_at = captured_at or datetime.now(UTC)
+    stamp = observed_at.strftime("%Y%m%dT%H%M%S.%fZ")
+    evidence_dir = config.paths.runs_dir / "crashes" / stamp
+    evidence_dir.mkdir(parents=True, exist_ok=False)
+    game_dir = _kenshi_settings_path().parent
+    sources = [
+        path
+        for name in _CRASH_LOG_NAMES
+        if (path := game_dir / name).is_file()
+    ]
+    crash_dumps = [path for path in game_dir.glob("crashDump*.zip") if path.is_file()]
+    if crash_dumps:
+        sources.append(max(crash_dumps, key=lambda path: path.stat().st_mtime_ns))
+    telemetry_sources = [
+        config.telemetry.file,
+        config.telemetry.file.parent / "plugin_status.json",
+    ]
+    sources.extend(path for path in telemetry_sources if path.is_file())
+
+    artifacts: list[dict[str, object]] = []
+    copied_names: set[str] = set()
+    for source in sources:
+        if source.name in copied_names:
+            continue
+        destination = evidence_dir / source.name
+        shutil.copy2(source, destination)
+        artifacts.append(_crash_artifact_record(destination, source=source))
+        copied_names.add(source.name)
+
+    warnings: list[str] = []
+    try:
+        frame = WindowCapture(
+            controller,
+            evidence_dir,
+            image_format=config.capture.image_format,
+            jpeg_quality=config.capture.jpeg_quality,
+        ).capture(0)
+        artifacts.append(_crash_artifact_record(frame.path, source=frame.path))
+    except (OSError, RuntimeError, ValueError) as exc:
+        warnings.append(f"Crash frame capture failed ({type(exc).__name__}: {exc}).")
+
+    manifest = {
+        "captured_at": observed_at.isoformat(),
+        "terminal_window_title": terminal_window_title,
+        "artifacts": artifacts,
+        "warnings": warnings,
+    }
+    temporary = evidence_dir / "manifest.json.tmp"
+    temporary.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(evidence_dir / "manifest.json")
+    return evidence_dir
+
+
+async def _dismiss_crash_reporter(
+    controller: InputController,
+    *,
+    timeout_seconds: float,
+) -> None:
+    title = _terminal_window_title(controller)
+    if title is None:
+        raise LaunchFailed("No terminal Kenshi crash window is visible; no input was sent.")
+    await _execute_primitive(controller, HotkeyAction(keys=["alt", "f4"]))
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            visible_titles = controller.visible_window_titles()
+        except (OSError, RuntimeError, ValueError):
+            visible_titles = []
+        if title not in visible_titles:
+            return
+        await asyncio.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    raise LaunchFailed(
+        f"The terminal window {title!r} did not close before timeout."
+    )
+
+
+async def _dismiss_crash_session(
+    probe: InputController,
+    *,
+    timeout_seconds: float,
+    controller_for_title: Callable[[str], InputController],
+    process_names: Callable[[], set[str]] = _running_process_names,
+) -> tuple[str, ...]:
+    deadline = time.monotonic() + timeout_seconds
+    dismissed: list[str] = []
+    while time.monotonic() < deadline:
+        try:
+            title = _terminal_window_title(probe)
+        except (OSError, RuntimeError, ValueError):
+            title = None
+        if title is None:
+            if "kenshi_x64.exe" not in process_names():
+                return tuple(dismissed)
+            await asyncio.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+            continue
+        if title in dismissed:
+            raise LaunchFailed(
+                f"Terminal window {title!r} reappeared during bounded crash recovery."
+            )
+        if len(dismissed) >= 4:
+            raise LaunchFailed(
+                "Crash recovery exceeded four distinct terminal windows."
+            )
+        remaining = deadline - time.monotonic()
+        await _dismiss_crash_reporter(
+            controller_for_title(title),
+            timeout_seconds=remaining,
+        )
+        dismissed.append(title)
+    raise LaunchFailed(
+        "The archived crash session did not exit cleanly before timeout; no "
+        "force-termination was attempted."
+    )
+
+
+async def _crash(args: argparse.Namespace) -> int:
+    if os.name != "nt":
+        raise SystemExit("The crash recovery command must run with Windows Python.")
+    config = load_config(args.config)
+    probe = _controller(config)
+    try:
+        title = _terminal_window_title(probe)
+        if title is None:
+            raise LaunchFailed(
+                "No terminal Kenshi crash window is visible; no evidence or input "
+                "was produced."
+            )
+        evidence_dir = _collect_crash_evidence(
+            config,
+            probe,
+            terminal_window_title=title,
+        )
+        print(f"Crash evidence archived at {evidence_dir}", flush=True)
+        if not args.dismiss:
+            return 0
+        dismissed = await _dismiss_crash_session(
+            probe,
+            timeout_seconds=args.timeout,
+            controller_for_title=lambda current_title: _controller(
+                config,
+                window_title_contains=current_title,
+            ),
+        )
+        print(
+            "Crash session dismissed after evidence archival: "
+            + ", ".join(repr(current_title) for current_title in dismissed)
+        )
+        return 0
+    except LaunchInterrupted as exc:
+        print(str(exc), file=sys.stderr)
+        return 3
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
 
 
 def _graphics(args: argparse.Namespace) -> int:
@@ -899,6 +1115,18 @@ def build_parser() -> argparse.ArgumentParser:
     telemetry = subparsers.add_parser("telemetry", help="Print a concise live-state snapshot.")
     telemetry.add_argument("--config", required=True)
 
+    crash = subparsers.add_parser(
+        "crash",
+        help="Archive a visible terminal crash before optional reporter dismissal.",
+    )
+    crash.add_argument("--config", required=True)
+    crash.add_argument(
+        "--dismiss",
+        action="store_true",
+        help="After archival, explicitly close the unsent crash report with Alt+F4.",
+    )
+    crash.add_argument("--timeout", type=float, default=10.0)
+
     journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
     journey.add_argument("--config", required=True)
     journey.add_argument("--objective")
@@ -964,6 +1192,8 @@ def main(argv: list[str] | None = None) -> int:
         return _shot(args)
     if args.command == "telemetry":
         return _telemetry(args)
+    if args.command == "crash":
+        return asyncio.run(_crash(args))
     if args.command == "journey":
         return _journey(args)
     raise AssertionError(args.command)

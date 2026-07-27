@@ -1,4 +1,5 @@
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
@@ -29,6 +30,7 @@ from kenshi_agent.models import (
     ActionReceipt,
     CharacterState,
     GameState,
+    HotkeyAction,
     KeyAction,
     NormalizedPointerBounds,
     TelemetrySnapshot,
@@ -456,6 +458,229 @@ def test_launch_preflight_rejects_second_kenshi_client(
             process_names={"steam.exe", "kenshi_x64.exe"},
             available_physical_memory_mib=8192,
         )
+
+
+def test_launch_preflight_prioritizes_terminal_crash_over_duplicate_process(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    config = load_config(root / "config" / "live.burnin.yaml")
+
+    with pytest.raises(
+        LaunchFailed,
+        match=r"RE_Kenshi Crash Reporter.*\./dev crash",
+    ):
+        _validate_launch_preconditions(
+            config,
+            process_names={"steam.exe", "kenshi_x64.exe"},
+            terminal_window_title="RE_Kenshi Crash Reporter",
+        )
+
+
+def test_crash_evidence_archives_latest_dump_logs_telemetry_and_frame(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    local_app_data = tmp_path / "local"
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
+    config = load_config(root / "config" / "live.burnin.yaml")
+    telemetry_dir = tmp_path / "telemetry"
+    telemetry_dir.mkdir()
+    telemetry_file = telemetry_dir / "telemetry.latest.json"
+    telemetry_file.write_text('{"sequence": 44}\n', encoding="utf-8")
+    (telemetry_dir / "plugin_status.json").write_text(
+        '{"state": "ready"}\n',
+        encoding="utf-8",
+    )
+    evidence_root = tmp_path / "runs"
+    config = config.model_copy(
+        update={
+            "paths": config.paths.model_copy(update={"runs_dir": evidence_root}),
+            "telemetry": config.telemetry.model_copy(update={"file": telemetry_file}),
+        }
+    )
+    game_dir = tmp_path / "game"
+    game_dir.mkdir()
+    settings = game_dir / "settings.cfg"
+    settings.write_text("view distance=1500\n", encoding="utf-8")
+    (game_dir / "RE_Kenshi_log.txt").write_text(
+        "Crash detected\n",
+        encoding="utf-8",
+    )
+    (game_dir / "kenshi.log").write_text(
+        "DXGI_ERROR_DEVICE_REMOVED\n",
+        encoding="utf-8",
+    )
+    older_dump = game_dir / "crashDump-old.zip"
+    older_dump.write_bytes(b"old")
+    newest_dump = game_dir / "crashDump-new.zip"
+    newest_dump.write_bytes(b"new")
+    older_dump.touch()
+    newest_dump.touch()
+    older_dump_mtime = older_dump.stat().st_mtime - 60
+    os.utime(older_dump, (older_dump_mtime, older_dump_mtime))
+    monkeypatch.setattr(live_dev, "_kenshi_settings_path", lambda: settings)
+
+    class FakeCapture:
+        def __init__(self, controller: object, run_dir: Path, **_: object) -> None:
+            del controller
+            self.run_dir = run_dir
+
+        def capture(self, step_index: int) -> object:
+            path = self.run_dir / f"live_frame_{step_index:06d}.png"
+            path.write_bytes(b"frame")
+            return type("Frame", (), {"path": path})()
+
+    monkeypatch.setattr(live_dev, "WindowCapture", FakeCapture)
+    captured_at = datetime(2026, 7, 27, 2, 2, 0, tzinfo=UTC)
+
+    evidence_dir = live_dev._collect_crash_evidence(
+        config,
+        LaunchController(title="RE_Kenshi Crash Reporter"),
+        terminal_window_title="RE_Kenshi Crash Reporter",
+        captured_at=captured_at,
+    )
+
+    manifest = json.loads((evidence_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_names = {artifact["name"] for artifact in manifest["artifacts"]}
+    assert evidence_dir.parent == evidence_root / "crashes"
+    assert {
+        "RE_Kenshi_log.txt",
+        "kenshi.log",
+        "crashDump-new.zip",
+        "telemetry.latest.json",
+        "plugin_status.json",
+        "live_frame_000000.png",
+    } <= artifact_names
+    assert "crashDump-old.zip" not in artifact_names
+    assert (evidence_dir / "crashDump-new.zip").read_bytes() == b"new"
+    assert all(len(artifact["sha256"]) == 64 for artifact in manifest["artifacts"])
+    assert manifest["terminal_window_title"] == "RE_Kenshi Crash Reporter"
+
+
+def test_crash_reporter_dismissal_is_exact_bounded_and_human_preemptible() -> None:
+    class DismissController(LaunchController):
+        async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
+            receipt = await super().execute(action)
+            self.title = None
+            self.visible_titles = []
+            return receipt
+
+    async def scenario() -> None:
+        controller = DismissController(
+            title="RE_Kenshi Crash Reporter",
+            visible_titles=["RE_Kenshi Crash Reporter"],
+        )
+
+        await live_dev._dismiss_crash_reporter(
+            controller,
+            timeout_seconds=0.1,
+        )
+
+        assert controller.actions == [HotkeyAction(keys=["alt", "f4"])]
+
+        interrupted = DismissController(
+            title="RE_Kenshi Crash Reporter",
+            human_input=True,
+        )
+        with pytest.raises(LaunchInterrupted, match="human input"):
+            await live_dev._dismiss_crash_reporter(
+                interrupted,
+                timeout_seconds=0.1,
+            )
+        assert interrupted.actions == []
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_crash_session_dismisses_each_exact_terminal_layer_before_exit() -> None:
+    terminal_titles = [
+        "RE_Kenshi Crash Reporter",
+        "Kenshi has crashed",
+    ]
+    actions: list[tuple[str, PrimitiveInputAction]] = []
+
+    class LayerController(LaunchController):
+        def __init__(self, target: str | None = None) -> None:
+            super().__init__()
+            self.target = target
+
+        def visible_window_titles(self) -> list[str]:
+            return list(terminal_titles)
+
+        async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
+            assert self.target == terminal_titles[0]
+            actions.append((self.target, action))
+            terminal_titles.pop(0)
+            return ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+            )
+
+    async def scenario() -> None:
+        dismissed = await live_dev._dismiss_crash_session(
+            LayerController(),
+            timeout_seconds=0.2,
+            controller_for_title=lambda title: LayerController(title),
+            process_names=lambda: (
+                {"kenshi_x64.exe"} if terminal_titles else set()
+            ),
+        )
+
+        assert dismissed == (
+            "RE_Kenshi Crash Reporter",
+            "Kenshi has crashed",
+        )
+        assert actions == [
+            (
+                "RE_Kenshi Crash Reporter",
+                HotkeyAction(keys=["alt", "f4"]),
+            ),
+            (
+                "Kenshi has crashed",
+                HotkeyAction(keys=["alt", "f4"]),
+            ),
+        ]
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_crash_session_never_force_terminates_a_lingering_process() -> None:
+    async def scenario() -> None:
+        with pytest.raises(LaunchFailed, match="no force-termination"):
+            await live_dev._dismiss_crash_session(
+                LaunchController(visible_titles=[]),
+                timeout_seconds=0.01,
+                controller_for_title=lambda _: (_ for _ in ()).throw(
+                    AssertionError("no terminal window may receive input")
+                ),
+                process_names=lambda: {"kenshi_x64.exe"},
+            )
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_crash_parser_requires_explicit_dismissal_flag() -> None:
+    inspect_args = live_dev.build_parser().parse_args(
+        ["crash", "--config", "config/live.burnin.yaml"]
+    )
+    dismiss_args = live_dev.build_parser().parse_args(
+        ["crash", "--config", "config/live.burnin.yaml", "--dismiss"]
+    )
+
+    assert inspect_args.dismiss is False
+    assert dismiss_args.dismiss is True
 
 
 def test_launch_preflight_rejects_low_memory_before_profile_read(

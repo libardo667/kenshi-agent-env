@@ -30,6 +30,8 @@ launcher without a pseudo-terminal:
 ```bash
 ./dev launch --preflight-only
 ./dev launch
+./dev crash
+./dev crash --dismiss
 ./dev journey --planner subprocess \
   --planner-script scripts/live_direction_smoke_planner.py \
   --planner-arg=--bearing --planner-arg=100 \
@@ -44,6 +46,12 @@ translated by the wrapper. Do not substitute direct Windows-Python invocations,
 manually written native request files, ad-hoc input snippets, or PTY launch
 attempts. If `./dev` cannot express or complete the run, repair that supported
 path before treating a workaround as evidence.
+
+If preflight reports a terminal crash, `./dev crash` first archives the newest
+dump plus current logs, telemetry, settings, and frame under `runs/crashes/`.
+`--dismiss` is explicit because it closes an unsent report; it archives first,
+dismisses each exact terminal layer with bounded ordinary input, aborts on human
+input, and never force-terminates a process that fails to exit.
 
 ## Before a run
 
