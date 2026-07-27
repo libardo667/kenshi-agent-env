@@ -27,6 +27,67 @@ def _selected_character(observation: Observation) -> CharacterState | None:
     return selected[0]
 
 
+def resource_transfer_layout_error(
+    action: CollectResourceOutputAction,
+    observation: Observation,
+) -> str | None:
+    """Return why the source-to-character transfer route is not explicit.
+
+    Kenshi will hover and right-click a building output cell with only that
+    building window open, but it will not move the item anywhere. The selected
+    character's own inventory window is the destination route. `active_screen`
+    calls this two-window layout "trade" even when no trader exists, so window
+    ownership and the native trader count—not the coarse screen label—own the
+    safety decision.
+    """
+
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return "Fresh inventory telemetry is required for resource transfer."
+    ui = telemetry.ui
+    if ui.dialogue_open is not False:
+        return "Resource transfer requires no open dialogue."
+    if ui.active_screen not in {"inventory", "trade"}:
+        return "Resource transfer requires the inventory interface."
+    if telemetry.active_shop_trader_count != 0:
+        return (
+            "An active shop trader makes a right-click a commercial action, "
+            "so resource collection fails closed."
+        )
+    if ui.open_inventory_windows != 2:
+        return (
+            "Resource transfer requires exactly two inventory windows: the "
+            "exact source and the selected character's own inventory."
+        )
+    controls = ui.visible_controls
+    if ui.visible_controls_complete is not True or controls is None:
+        return (
+            "Complete visible controls are required to prove both inventory "
+            "window owners."
+        )
+    selected = _selected_character(observation)
+    if selected is None or not selected.name:
+        return (
+            "One exact named selected character is required as the transfer "
+            "destination."
+        )
+    source = normalize_control_label(action.window)
+    destination = normalize_control_label(selected.name)
+    if not source or source == destination:
+        return (
+            "Source and selected-character inventory captions are ambiguous."
+        )
+    if not any(
+        normalize_control_label(control.window) == destination
+        for control in controls
+    ):
+        return (
+            f"The selected character's own inventory ({selected.name!r}) is not "
+            "confirmed open, so right-click has no destination."
+        )
+    return None
+
+
 def _source_quantity(
     action: CollectResourceOutputAction,
     observation: Observation,
@@ -34,15 +95,15 @@ def _source_quantity(
     telemetry = observation.telemetry
     if (
         telemetry is None
-        or observation.telemetry_stale
-        or telemetry.ui.visible_controls is None
-        or telemetry.ui.visible_controls_complete is not True
+        or resource_transfer_layout_error(action, observation) is not None
         or telemetry.ui.context_inventory_target_id != action.target_id
-        or telemetry.ui.active_screen != "inventory"
     ):
         return None
+    controls = telemetry.ui.visible_controls
+    if controls is None:
+        return None
     quantities: list[int] = []
-    for control in telemetry.ui.visible_controls:
+    for control in controls:
         if (
             control.role == "item"
             and control.window == action.window

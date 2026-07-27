@@ -34,6 +34,7 @@ from kenshi_agent.live_dev import (
 from kenshi_agent.models import (
     ActionReceipt,
     CharacterState,
+    ClickAction,
     GameState,
     HotkeyAction,
     KeyAction,
@@ -278,6 +279,145 @@ def test_supported_close_never_closes_an_unresolved_modal() -> None:
     asyncio.run(scenario())
 
 
+def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+        resource_inventory = resource_inventory_snapshot(60)
+        world = launch_snapshot(61, paused=True).model_copy(
+            update={
+                "ui": UIState(
+                    active_screen="world",
+                    modal_open=False,
+                    dialogue_open=False,
+                    open_inventory_windows=0,
+                    visible_controls_complete=True,
+                    visible_controls=[],
+                )
+            }
+        )
+        telemetry = LaunchTelemetry(
+            resource_inventory,
+            resource_inventory,
+            resource_inventory,
+            world,
+            world,
+        )
+
+        await live_dev._close_kenshi_safely(
+            config,
+            controller,
+            telemetry,
+            timeout_seconds=0.1,
+            process_names=lambda: (
+                set() if controller.close_requested else {"kenshi_x64.exe"}
+            ),
+        )
+
+        assert controller.actions == [
+            ClickAction(
+                x=0.488,
+                y=0.311,
+                hold_seconds=live_dev.MYGUI_CLICK_HOLD_SECONDS,
+            )
+        ]
+        assert controller.close_requested is True
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+        incomplete = resource_inventory_snapshot(70).model_copy(
+            update={
+                "ui": resource_inventory_snapshot(70).ui.model_copy(
+                    update={"visible_controls_complete": False}
+                )
+            },
+            deep=True,
+        )
+
+        with pytest.raises(LaunchFailed, match="modal or dialogue"):
+            await live_dev._close_kenshi_safely(
+                config,
+                controller,
+                LaunchTelemetry(incomplete),
+                timeout_seconds=0.1,
+                process_names=lambda: {"kenshi_x64.exe"},
+            )
+
+        assert controller.actions == []
+        assert controller.close_requested is False
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_supported_close_dismisses_source_and_destination_before_wm_close() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+        both = resource_inventory_snapshot(80, destination_open=True)
+        destination = resource_inventory_snapshot(
+            81,
+            source_open=False,
+            destination_open=True,
+        )
+        world = launch_snapshot(82, paused=True).model_copy(
+            update={
+                "ui": UIState(
+                    active_screen="world",
+                    modal_open=False,
+                    dialogue_open=False,
+                    open_inventory_windows=0,
+                    visible_controls_complete=True,
+                    visible_controls=[],
+                )
+            }
+        )
+        telemetry = LaunchTelemetry(
+            both,
+            both,
+            both,
+            destination,
+            destination,
+            world,
+        )
+
+        await live_dev._close_kenshi_safely(
+            config,
+            controller,
+            telemetry,
+            timeout_seconds=0.1,
+            process_names=lambda: (
+                set() if controller.close_requested else {"kenshi_x64.exe"}
+            ),
+        )
+
+        assert len(controller.actions) == 2
+        assert all(
+            isinstance(action, ClickAction) for action in controller.actions
+        )
+        clicks = [
+            action for action in controller.actions if isinstance(action, ClickAction)
+        ]
+        assert (clicks[0].x, clicks[0].y) == pytest.approx((0.488, 0.311))
+        assert (clicks[1].x, clicks[1].y) == pytest.approx((0.888, 0.211))
+        assert controller.close_requested is True
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
 class LaunchTelemetry:
     def __init__(self, *snapshots: TelemetrySnapshot) -> None:
         self.snapshots = list(snapshots)
@@ -301,6 +441,106 @@ def launch_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
         capabilities=["game.pause"],
         game=GameState(loaded=True, paused=paused),
         squad=[CharacterState(id="entity-hep", name="Hep", selected=True)],
+    )
+
+
+def resource_inventory_snapshot(
+    sequence: int,
+    *,
+    source_open: bool = True,
+    destination_open: bool = False,
+) -> TelemetrySnapshot:
+    source_bounds = NormalizedPointerBounds(
+        min_x=0.2,
+        max_x=0.5,
+        min_y=0.3,
+        max_y=0.7,
+    )
+    destination_bounds = NormalizedPointerBounds(
+        min_x=0.6,
+        max_x=0.9,
+        min_y=0.2,
+        max_y=0.8,
+    )
+    controls = []
+    if source_open:
+        controls.extend(
+            [
+                VisibleUIControl(
+                    label="IRON RESOURCE",
+                    role="text",
+                    window="IRON RESOURCE",
+                    bounds=source_bounds,
+                ),
+                VisibleUIControl(
+                    label="Raw Iron",
+                    role="item",
+                    window="IRON RESOURCE",
+                    item_name="Raw Iron",
+                    item_quantity=1,
+                    section="out",
+                    bounds=NormalizedPointerBounds(
+                        min_x=0.25,
+                        max_x=0.3,
+                        min_y=0.4,
+                        max_y=0.45,
+                    ),
+                ),
+            ]
+        )
+    if destination_open:
+        controls.append(
+            VisibleUIControl(
+                label="HEP",
+                role="text",
+                window="HEP",
+                bounds=destination_bounds,
+            )
+        )
+    open_count = int(source_open) + int(destination_open)
+    return TelemetrySnapshot(
+        sequence=sequence,
+        captured_at=datetime.now(UTC),
+        capabilities=[
+            "identity.stable_handles",
+            "ui.context_inventory_target",
+            "ui.inventory",
+            "ui.visible_controls",
+            "world.context_targets",
+        ],
+        identity_session_id="session-close",
+        game=GameState(loaded=True, paused=True),
+        active_shop_trader_count=0,
+        ui=UIState(
+            active_screen="trade" if open_count == 2 else "inventory",
+            modal_open=open_count > 0,
+            dialogue_open=False,
+            open_inventory_windows=open_count,
+            context_inventory_target_id=(
+                "entity-iron" if source_open else None
+            ),
+            visible_controls_complete=True,
+            selected_character_id="entity-hep",
+            selected_character_ids=["entity-hep"],
+            visible_controls=controls,
+        ),
+        squad=[
+            CharacterState(
+                id="entity-hep",
+                name="Hep",
+                selected=True,
+            )
+        ],
+        world_targets=[
+            WorldTarget(
+                id="entity-iron",
+                name="Iron Resource",
+                kind="natural_resource",
+                position=Vec3(x=0, y=0, z=0),
+                distance=0,
+                default_task="operate_machinery",
+            )
+        ],
     )
 
 

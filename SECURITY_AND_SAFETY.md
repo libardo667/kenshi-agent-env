@@ -59,8 +59,10 @@ accepted or ambiguous delivery commits both.
 
 The supported `./dev close` path owns pause-before-close: an unpaused loaded
 world must advance to a causally confirmed pause before `WM_CLOSE`. It then
-re-reads telemetry and still refuses an active native command, modal, or
-dialogue. Failure never falls through to force termination or ad-hoc input.
+re-reads telemetry and refuses an active native command, dialogue, shop, or
+unexplained modal. It may close at most the fully observed exact resource source
+and selected-character inventory, proving each decrease and the final paused
+world. Failure never falls through to force termination.
 
 ## What the native bridge may do
 
@@ -115,5 +117,4 @@ local action. Cleanup is not successful until a causally later revision with
 ## Threading
 
 Never read Kenshi or MyGUI state from a worker thread. Sample on a known game/UI
-thread, copy into plain data, then hand it to other threads or files. Telemetry
-uses atomic replace so the reader never consumes a half-written snapshot.
+thread and copy plain data; atomic replace prevents half-written telemetry.

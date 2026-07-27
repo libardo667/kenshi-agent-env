@@ -56,9 +56,11 @@ from .models import (
     ClickAction,
     HotkeyAction,
     KeyAction,
+    NormalizedPointerBounds,
     ScenarioIdentity,
     TelemetrySnapshot,
     VisibleUIControl,
+    window_close_point,
 )
 from .scenario_fixtures import (
     MANAGED_SAVE_NAME,
@@ -149,6 +151,192 @@ def _validate_safe_close_snapshot(
     raise LaunchFailed(
         "Safe close requires a fresh loaded paused world or the title screen."
     )
+
+
+def _safe_close_inventory_window(
+    snapshot: TelemetrySnapshot,
+) -> tuple[str, NormalizedPointerBounds]:
+    """Resolve one exact non-commercial inventory window safe to dismiss.
+
+    Shutdown may clean up an inventory layout it can fully explain, but it does
+    not gain generic modal-closing authority. The exact contextual source and
+    selected-character destination are the only recognized owners.
+    """
+
+    refusal = (
+        "Safe close refuses a loaded world while a modal or dialogue is open; "
+        "automatic inventory cleanup"
+    )
+    ui = snapshot.ui
+    if (
+        snapshot.game.loaded is not True
+        or snapshot.game.paused is not True
+        or ui.modal_open is not True
+        or ui.dialogue_open is not False
+    ):
+        raise LaunchFailed(f"{refusal} requires a paused inventory modal.")
+    if snapshot.native_control.active_command_id is not None:
+        raise LaunchFailed("Safe close refuses while a native command is active.")
+    if ui.active_screen not in {"inventory", "trade"}:
+        raise LaunchFailed(f"{refusal} does not recognize this screen.")
+    if snapshot.active_shop_trader_count != 0:
+        raise LaunchFailed(f"{refusal} refuses a shop or unknown trader state.")
+    if ui.context_menu_open is True:
+        raise LaunchFailed(f"{refusal} refuses an open context menu.")
+    if ui.open_inventory_windows not in {1, 2}:
+        raise LaunchFailed(f"{refusal} requires one or two exact inventory windows.")
+    if (
+        "ui.visible_controls" not in snapshot.capabilities
+        or ui.visible_controls_complete is not True
+        or ui.visible_controls is None
+    ):
+        raise LaunchFailed(f"{refusal} requires complete visible-control telemetry.")
+
+    selected = [
+        character
+        for character in snapshot.squad
+        if character.selected
+        and character.id == ui.selected_character_id
+        and character.id in ui.selected_character_ids
+    ]
+    if len(selected) != 1 or not selected[0].name:
+        raise LaunchFailed(f"{refusal} requires one exact selected character.")
+    destination_caption = selected[0].name
+
+    source_caption: str | None = None
+    if ui.context_inventory_target_id is not None:
+        targets = [
+            target
+            for target in snapshot.world_targets
+            if target.id == ui.context_inventory_target_id
+            and target.kind == "natural_resource"
+        ]
+        if len(targets) != 1 or not targets[0].name:
+            raise LaunchFailed(f"{refusal} cannot resolve the contextual source.")
+        source_caption = targets[0].name
+
+    captions = [
+        caption
+        for caption in (source_caption, destination_caption)
+        if caption is not None
+    ]
+    normalized_captions = {
+        _normalize_control_label(caption): caption for caption in captions
+    }
+    if len(normalized_captions) != len(captions):
+        raise LaunchFailed(f"{refusal} found ambiguous inventory owners.")
+
+    resolved: dict[str, NormalizedPointerBounds] = {}
+    for normalized, caption in normalized_captions.items():
+        roots = [
+            control
+            for control in ui.visible_controls
+            if control.role == "text"
+            and _normalize_control_label(control.window) == normalized
+            and _normalize_control_label(control.label) == normalized
+        ]
+        if len(roots) > 1:
+            raise LaunchFailed(
+                f"{refusal} found duplicate roots for {caption!r}."
+            )
+        if len(roots) == 1:
+            resolved[normalized] = roots[0].bounds
+
+    if source_caption is not None:
+        source_key = _normalize_control_label(source_caption)
+        if source_key not in resolved:
+            raise LaunchFailed(f"{refusal} cannot see the exact source window.")
+    else:
+        destination_key = _normalize_control_label(destination_caption)
+        if destination_key not in resolved:
+            raise LaunchFailed(
+                f"{refusal} cannot see the selected character's inventory."
+            )
+    if len(resolved) != ui.open_inventory_windows:
+        raise LaunchFailed(
+            f"{refusal} found an unexplained or missing inventory window."
+        )
+
+    chosen_caption = source_caption or destination_caption
+    return (
+        chosen_caption,
+        resolved[_normalize_control_label(chosen_caption)].model_copy(deep=True),
+    )
+
+
+async def _dismiss_safe_close_inventories(
+    controller: InputController,
+    telemetry: TelemetryReader,
+    current: TelemetryRead,
+    *,
+    timeout_seconds: float,
+) -> TelemetryRead:
+    """Dismiss at most the exact source and destination, with causal proof."""
+
+    deadline = time.monotonic() + timeout_seconds
+    for _ in range(2):
+        baseline = current.snapshot
+        if baseline.ui.modal_open is False:
+            return current
+        caption, bounds = _safe_close_inventory_window(baseline)
+        open_count = baseline.ui.open_inventory_windows
+        if open_count is None:
+            raise LaunchFailed("Safe close inventory count became unknown.")
+        action = ClickAction(
+            x=window_close_point(bounds)[0],
+            y=window_close_point(bounds)[1],
+            hold_seconds=MYGUI_CLICK_HOLD_SECONDS,
+        )
+
+        _abort_if_human_input(controller)
+        async with controller.input_lease():
+            _abort_if_human_input(controller)
+            in_lease = telemetry.read()
+            if in_lease.stale:
+                raise LaunchFailed(
+                    "Safe close inventory telemetry became stale inside the input lease."
+                )
+            current_caption, current_bounds = _safe_close_inventory_window(
+                in_lease.snapshot
+            )
+            current_action = ClickAction(
+                x=window_close_point(current_bounds)[0],
+                y=window_close_point(current_bounds)[1],
+                hold_seconds=MYGUI_CLICK_HOLD_SECONDS,
+            )
+            if current_caption != caption or current_action != action:
+                raise LaunchFailed(
+                    "Safe close inventory layout changed inside the input lease; "
+                    "no pointer input was sent."
+                )
+            receipt = await controller.execute(action)
+        if not receipt.executed:
+            raise LaunchFailed(
+                receipt.message or f"Safe close could not dismiss {caption!r}."
+            )
+
+        while time.monotonic() < deadline:
+            candidate = telemetry.read()
+            if (
+                not candidate.stale
+                and candidate.snapshot.sequence > in_lease.snapshot.sequence
+                and candidate.snapshot.game.loaded is True
+                and candidate.snapshot.game.paused is True
+                and candidate.snapshot.native_control.active_command_id is None
+                and candidate.snapshot.ui.dialogue_open is False
+                and candidate.snapshot.ui.open_inventory_windows is not None
+                and candidate.snapshot.ui.open_inventory_windows < open_count
+            ):
+                current = candidate
+                break
+            await asyncio.sleep(0.25)
+        else:
+            raise LaunchFailed(
+                f"Safe close could not causally confirm {caption!r} closed."
+            )
+    if current.snapshot.ui.modal_open is False:
+        return current
+    raise LaunchFailed("Safe close inventory cleanup exceeded two exact windows.")
 
 
 def _controller(
@@ -1376,6 +1564,17 @@ async def _close_kenshi_safely(
     current = telemetry.read()
     if current.stale:
         raise LaunchFailed("Safe close requires fresh telemetry.")
+    if (
+        current.snapshot.game.loaded is True
+        and current.snapshot.game.paused is True
+        and current.snapshot.ui.modal_open is True
+    ):
+        current = await _dismiss_safe_close_inventories(
+            controller,
+            telemetry,
+            current,
+            timeout_seconds=timeout_seconds,
+        )
     safe_state = _validate_safe_close_snapshot(
         current.snapshot.model_dump(mode="json"),
         max_age_seconds=config.telemetry.max_age_seconds,

@@ -314,8 +314,9 @@ class ResourceVerdictEnvironment(CameraVerdictEnvironment):
         collecting = isinstance(self.action, CollectResourceOutputAction)
         ui = observation.telemetry.ui.model_copy(
             update={
-                "active_screen": "inventory" if collecting else "world",
+                "active_screen": "trade" if collecting else "world",
                 "modal_open": collecting,
+                "open_inventory_windows": 2 if collecting else 0,
                 "context_inventory_target_id": (
                     "entity-copper" if collecting else None
                 ),
@@ -335,7 +336,18 @@ class ResourceVerdictEnvironment(CameraVerdictEnvironment):
                                 min_y=0.40,
                                 max_y=0.48,
                             ),
-                        )
+                        ),
+                        VisibleUIControl(
+                            label="HEP",
+                            window="HEP",
+                            role="text",
+                            bounds=NormalizedPointerBounds(
+                                min_x=0.60,
+                                max_x=0.90,
+                                min_y=0.20,
+                                max_y=0.80,
+                            ),
+                        ),
                     ]
                     if collecting
                     else []
@@ -349,9 +361,11 @@ class ResourceVerdictEnvironment(CameraVerdictEnvironment):
                     "identity.stable_handles",
                     "squad.inventory",
                     "ui.context_inventory_target",
+                    "ui.inventory",
                     "ui.visible_controls",
                     "world.context_targets",
                 ],
+                "active_shop_trader_count": 0,
                 "ui": ui,
                 "squad": [
                     CharacterState(

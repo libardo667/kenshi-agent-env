@@ -8,7 +8,7 @@ Regenerate with `python scripts/export_docs.py`.
 | --- | --- | --- | --- | --- | --- | --- |
 | `activate_visible_control` | 1.0 | yes | atomic_handler | no | 1 | `ui.visible_controls` |
 | `approach_dialogue_target` | 1.0 | yes | monitored_option | yes | 4 | `control.approach_dialogue_target`, `identity.stable_handles`, `nearby.characters`, `nearby.roles` |
-| `collect_resource_output` | 1.0 | yes | atomic_handler | no | 1 | `identity.stable_handles`, `squad.inventory`, `ui.context_inventory_target`, `ui.visible_controls`, `world.context_targets` |
+| `collect_resource_output` | 1.1 | yes | atomic_handler | no | 1 | `identity.stable_handles`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
 | `dismiss_screen` | 1.0 | yes | atomic_handler | no | 1 | — |
 | `equip_item` | 1.0 | yes | atomic_handler | no | 1 | `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
 | `exit_current_building` | 1.0 | yes | monitored_option | yes | 4 | `control.exit_current_building`, `game.pause`, `identity.stable_handles`, `squad.indoors` |

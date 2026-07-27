@@ -265,25 +265,26 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Live-prove the resource-production option.** Portable and native-build
+1. **Run and operationalize mutation testing.** Configure `mutmut` over a bounded
+   reproducible source scope, execute it, classify every survivor or timeout, and
+   strengthen unmeasured code. An install without a reviewable result is not done.
+2. **Live-prove the resource-production option.** Portable and native-build
    evidence now retain the exact job through actual output, adopt unchanged
-   matching work without reissue, open that target's contextual inventory, and
-   require equal source loss/destination gain for collection. A matching later
-   destination quantity lacked simultaneous source-loss and planner-causality
-   proof. Prove the whole autonomous chain through the supported launcher; no
-   collection or income claim passes without causal inventory or money evidence.
-2. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
+   matching work without reissue, open that target's contextual source, require
+   the selected-character destination to be separately open, and conserve equal
+   source loss/destination gain. One fresh run proved source-only right-click is
+   a no-op; another stopped after repeated destination-opening plans omitted a
+   causal window-count condition. Prove the whole chain through the supported
+   launcher; no collection or income claim passes without conserved evidence.
+3. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
    create source saves; capture dynamic states; use `./dev scenario`, `launch
    --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,
    broke/funded, solo/squad, and day/night. Manual labels and raw reruns are not
    recurrence evidence. Select the first gap supported across verified situations.
-3. **Expand controller-verified contracts.** Most success conditions are still
+4. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one
    class of false success.
-4. **Add mutation testing.** Test count is not coverage; `mutmut` or
-   `cosmic-ray` over `src/kenshi_agent/` is the only cheap answer to whether the
-   suite would notice broken code.
 5. **Remote map travel.** No semantic action exists at all; `move_to_character`
    is bounded to the nearby-character query.
 6. **Native identity validation** across recruit, dismiss, reorder, KO, death,

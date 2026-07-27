@@ -81,6 +81,7 @@ def observation(
     stale: bool = False,
     control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
     world_targets: list[WorldTarget] | None = None,
+    active_shop_trader_count: int = 0,
 ) -> Observation:
     return Observation(
         run_id="contract-test",
@@ -94,6 +95,7 @@ def observation(
             capabilities=capabilities if capabilities is not None else APPROACH_CAPABILITIES,
             game=GameState(loaded=True, paused=True),
             ui=ui or UIState(visible_controls=controls),
+            active_shop_trader_count=active_shop_trader_count,
             squad=squad or [],
             nearby_entities=entities or [],
             world_targets=world_targets or [],
@@ -634,46 +636,54 @@ class TestCollectResourceOutput:
         section: str = "out",
         active_screen: str = "inventory",
         source_quantity: int = 2,
+        player_inventory_open: bool = True,
+        active_shop_trader_count: int = 0,
     ) -> Observation:
         target = natural_resource()
+        visible_controls = [
+            VisibleUIControl(
+                label="Raw Iron",
+                window="COPPER RESOURCE",
+                role="item",
+                item_name="Raw Iron",
+                item_quantity=source_quantity,
+                section=section,
+                bounds=_bounds(0.5),
+            )
+        ]
+        if player_inventory_open:
+            visible_controls.append(
+                VisibleUIControl(
+                    label="Wooden Backpack",
+                    window="HEP",
+                    role="item",
+                    item_name="Wooden Backpack",
+                    item_quantity=1,
+                    section="main",
+                    bounds=_bounds(0.7),
+                )
+            )
         return observation(
             ui=UIState(
                 active_screen=active_screen,
                 modal_open=True,
                 dialogue_open=False,
-                open_inventory_windows=2,
+                open_inventory_windows=2 if player_inventory_open else 1,
                 context_inventory_target_id=context_target_id,
                 visible_controls_complete=True,
                 selected_character_id="entity-hep",
                 selected_character_ids=["entity-hep"],
-                visible_controls=[
-                    VisibleUIControl(
-                        label="Raw Iron",
-                        window="COPPER RESOURCE",
-                        role="item",
-                        item_name="Raw Iron",
-                        item_quantity=source_quantity,
-                        section=section,
-                        bounds=_bounds(0.5),
-                    ),
-                    VisibleUIControl(
-                        label="Wooden Backpack",
-                        window="HEP",
-                        role="item",
-                        item_name="Wooden Backpack",
-                        item_quantity=1,
-                        section="main",
-                        bounds=_bounds(0.7),
-                    ),
-                ],
+                visible_controls=visible_controls,
             ),
             capabilities=[
                 "ui.visible_controls",
                 "ui.context_inventory_target",
+                "ui.inventory",
                 "squad.inventory",
                 "world.context_targets",
                 "identity.stable_handles",
             ],
+            active_shop_trader_count=active_shop_trader_count,
             squad=[
                 CharacterState(
                     id="entity-hep",
@@ -706,6 +716,26 @@ class TestCollectResourceOutput:
         assert binding.item_name == "Raw Iron"
         assert binding.resolved_bounds == _bounds(0.5)
 
+    def test_requires_the_selected_characters_open_destination_inventory(self) -> None:
+        contract = ACTION_CONTRACTS["collect_resource_output"]
+
+        binding = contract.bind(
+            self._action(),
+            self._state(player_inventory_open=False),
+        )
+
+        assert not binding.bound
+        assert "selected character" in binding.reason
+        assert "inventory" in binding.reason
+
+    def test_noncommercial_two_inventory_layout_may_report_trade_screen(self) -> None:
+        binding = ACTION_CONTRACTS["collect_resource_output"].bind(
+            self._action(),
+            self._state(active_screen="trade"),
+        )
+
+        assert binding.bound
+
     def test_rejects_wrong_target_section_quantity_and_trade_context(self) -> None:
         contract = ACTION_CONTRACTS["collect_resource_output"]
         wrong_target = self._state(context_target_id="entity-other")
@@ -722,7 +752,11 @@ class TestCollectResourceOutput:
             self._state(source_quantity=1),
         ).bound
         assert not contract.bind(
-            self._action(), self._state(active_screen="trade")
+            self._action(),
+            self._state(
+                active_screen="trade",
+                active_shop_trader_count=1,
+            ),
         ).bound
 
     def test_rejects_incomplete_source_or_destination_observation(self) -> None:

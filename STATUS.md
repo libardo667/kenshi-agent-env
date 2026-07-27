@@ -59,9 +59,10 @@ supports exact characters, bounded direction, and no-argument exits; a shared
 ten-second no-progress terminal prevents poisoning later movement. Native camera
 follow has one obstructed-move proof. Exact contextual operation is live-proven on
 one Copper Resource through `context_task_started`, the visible `Operating machine`
-goal, and a safe final pause. Production reached output and opened its inventory;
-a later post-run snapshot showed five Copper in selected inventory, without
-causal or simultaneous source-loss proof.
+goal, and a safe final pause. A fresh zero-ore run reached Raw Iron output and
+opened the source, but four source-only transfers changed neither inventory.
+Collection now requires the separately open selected-character destination;
+its live conservation proof remains absent.
 
 ## Native protocol 1.1.0 (supervised live-loaded)
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
@@ -91,7 +92,8 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   brief and current Kenshi evidence. One live call returned truncated invalid
   JSON; synthetic proofs do not satisfy the requirement.
 - Conserved output transfer has portable tests and native conformance; production
-  and inventory opening are live-proven, but collection and income are not.
+  and source opening are live-proven, but a fresh follow-up stopped on repeated
+  non-causal destination-opening plans. Collection and income are not proven.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
@@ -112,9 +114,7 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name,
   internal task stacks, trader money, occlusion, and distant world state are
   unavailable or unvalidated; source-scan capacity still makes absence unknown.
-- Native identity still needs repeated validation across
-  recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
-- Exact entity memories do not transfer by name across process or game-session identity changes.
-- Renderer stability remains open on this Intel Iris Xe host: the 30 fps
-  external-only path passed startup and rejects Event 141s, but has no long soak.
-- The mock world tests orchestration, not Kenshi strategy competence.
+- Native identity needs validation across recruit/dismiss/reorder/KO/death,
+  save/load, and zones; entity memories do not transfer across session identity.
+- Renderer stability remains open: the 30 fps external-only path passed startup
+  and rejects Event 141s, but has no long soak or real competence proof.

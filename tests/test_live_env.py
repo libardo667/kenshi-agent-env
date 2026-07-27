@@ -783,10 +783,16 @@ class NativePulseTelemetry(PulseTelemetry):
 
 
 class ResourceTransferPulseTelemetry(PulseTelemetry):
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        player_inventory_open: bool = True,
+    ) -> None:
         super().__init__()
         self.path = path
         self.transferred = False
+        self.player_inventory_open = player_inventory_open
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -806,33 +812,59 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                     "identity.stable_handles",
                     "squad.inventory",
                     "ui.context_inventory_target",
+                    "ui.inventory",
                     "ui.visible_controls",
                     "world.context_targets",
                 ],
                 game=GameState(loaded=True, paused=True),
+                active_shop_trader_count=0,
                 ui=UIState(
-                    active_screen="inventory",
+                    active_screen=(
+                        "trade" if self.player_inventory_open else "inventory"
+                    ),
                     modal_open=True,
                     dialogue_open=False,
+                    open_inventory_windows=(
+                        2 if self.player_inventory_open else 1
+                    ),
                     context_inventory_target_id="entity-copper",
                     visible_controls_complete=True,
                     selected_character_id="entity-selected",
                     selected_character_ids=["entity-selected"],
-                    visible_controls=(
-                        []
-                        if self.transferred
-                        else [
-                            VisibleUIControl(
-                                label="Raw Iron 0",
-                                window="COPPER RESOURCE",
-                                role="item",
-                                item_name="Raw Iron",
-                                item_quantity=2,
-                                section="out",
-                                bounds=bounds,
-                            )
-                        ]
-                    ),
+                    visible_controls=[
+                        *(
+                            []
+                            if self.transferred
+                            else [
+                                VisibleUIControl(
+                                    label="Raw Iron 0",
+                                    window="COPPER RESOURCE",
+                                    role="item",
+                                    item_name="Raw Iron",
+                                    item_quantity=2,
+                                    section="out",
+                                    bounds=bounds,
+                                )
+                            ]
+                        ),
+                        *(
+                            [
+                                VisibleUIControl(
+                                    label="close",
+                                    window="WANDERER",
+                                    role="button",
+                                    bounds=NormalizedPointerBounds(
+                                        min_x=0.70,
+                                        max_x=0.72,
+                                        min_y=0.20,
+                                        max_y=0.24,
+                                    ),
+                                )
+                            ]
+                            if self.player_inventory_open
+                            else []
+                        ),
+                    ],
                 ),
                 squad=[
                     CharacterState(
@@ -1702,6 +1734,54 @@ def test_collect_resource_output_requires_conserved_transfer(
         assert evidence.resource_transfer.destination_quantity_before == 0
         assert evidence.resource_transfer.destination_quantity_after == 2
         assert transition.receipt.error_type is None
+
+    asyncio.run(scenario())
+
+
+def test_collect_resource_output_emits_zero_input_without_destination_window(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = ResourceTransferPulseTelemetry(
+            tmp_path / "telemetry.latest.json",
+            player_inventory_open=False,
+        )
+        controller = ResourceTransferController(telemetry)
+        environment = LiveEnvironment(
+            run_id="resource-transfer-missing-destination",
+            run_dir=tmp_path,
+            telemetry=telemetry,  # type: ignore[arg-type]
+            controller=controller,
+            macros=MacroRegistry({}),
+            runtime_config=RuntimeConfig(settle_seconds=0.0),
+            controls_config=ControlsConfig(
+                post_input_delay_seconds=0.0,
+                item_cell_hover_seconds=0.0,
+            ),
+            capture_config=CaptureConfig(enabled=False),
+            execute_actions=True,
+            emergency_stop_key="f12",
+            available_skills=[],
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        )
+        initial = await environment.reset()
+
+        with pytest.raises(RuntimeError, match="selected character.*inventory"):
+            await environment.dispatch(
+                CollectResourceOutputAction(
+                    target_id="entity-copper",
+                    cell_label="Raw Iron 0",
+                    item_name="Raw Iron",
+                    source_quantity=2,
+                    window="COPPER RESOURCE",
+                ),
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "6" * 32,
+                    based_on_revision=initial.world_revision,
+                ),
+            )
+
+        assert controller.actions == []
 
     asyncio.run(scenario())
 

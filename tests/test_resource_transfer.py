@@ -37,6 +37,7 @@ def observation(
     destination_quantities: list[int],
     source_complete: bool = True,
     destination_complete: bool = True,
+    destination_window_open: bool = True,
 ) -> Observation:
     return Observation(
         run_id="resource-transfer",
@@ -54,13 +55,18 @@ def observation(
             capabilities=[
                 "ui.visible_controls",
                 "ui.context_inventory_target",
+                "ui.inventory",
                 "squad.inventory",
             ],
             game=GameState(loaded=True, paused=True),
+            active_shop_trader_count=0,
             ui=UIState(
-                active_screen="inventory",
+                active_screen=(
+                    "trade" if destination_window_open else "inventory"
+                ),
                 modal_open=True,
                 dialogue_open=False,
+                open_inventory_windows=2 if destination_window_open else 1,
                 context_inventory_target_id="entity-copper",
                 visible_controls_complete=source_complete,
                 selected_character_id="entity-hep",
@@ -76,7 +82,19 @@ def observation(
                         bounds=_bounds(),
                     )
                     for index, quantity in enumerate(source_quantities)
-                ],
+                ]
+                + (
+                    [
+                        VisibleUIControl(
+                            label="close",
+                            window="HEP",
+                            role="button",
+                            bounds=_bounds(),
+                        )
+                    ]
+                    if destination_window_open
+                    else []
+                ),
             ),
             squad=[
                 CharacterState(
@@ -181,3 +199,23 @@ def test_noncausal_or_incomplete_observation_is_unverified() -> None:
     assert same_revision.status is ResourceTransferStatus.UNVERIFIED
     assert truncated_source.status is ResourceTransferStatus.UNVERIFIED
     assert truncated_destination.status is ResourceTransferStatus.UNVERIFIED
+
+
+def test_closed_destination_window_never_proves_transfer() -> None:
+    evidence = evaluate_resource_transfer(
+        ACTION,
+        before=observation(
+            10,
+            source_quantities=[2],
+            destination_quantities=[],
+            destination_window_open=False,
+        ),
+        after=observation(
+            11,
+            source_quantities=[],
+            destination_quantities=[2],
+            destination_window_open=False,
+        ),
+    )
+
+    assert evidence.status is ResourceTransferStatus.UNVERIFIED

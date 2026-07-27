@@ -65,6 +65,7 @@ from .models import (
     dialogue_targets,
     normalize_control_label,
 )
+from .resource_transfer import resource_transfer_layout_error
 
 # The installed plug-in still names this capability and wire command after the
 # vendor specialization it was first built for, but the fact it authorizes is
@@ -1011,14 +1012,9 @@ def bind_collect_resource_output(
     if failure is not None:
         return failure
     assert telemetry is not None and target is not None
-    if (
-        telemetry.ui.active_screen != "inventory"
-        or telemetry.ui.dialogue_open is not False
-    ):
-        return _unbound(
-            "Resource output collection requires an inventory screen and no "
-            "trade or dialogue."
-        )
+    layout_error = resource_transfer_layout_error(action, observation)
+    if layout_error is not None:
+        return _unbound(layout_error)
     if telemetry.ui.context_inventory_target_id != action.target_id:
         return _unbound(
             "The open contextual inventory does not belong to the exact "
@@ -1086,24 +1082,36 @@ def resource_output_is_currently_authorable(observation: Observation) -> bool:
         and target.default_task == "operate_machinery"
     ]
     selected = [character for character in telemetry.squad if character.selected]
-    return bool(
-        telemetry.ui.active_screen == "inventory"
-        and telemetry.ui.dialogue_open is False
-        and telemetry.ui.visible_controls_complete is True
+    output_controls = [
+        control
+        for control in (telemetry.ui.visible_controls or [])
+        if control.role == ITEM_ROLE
+        and control.section == "out"
+        and control.item_name is not None
+        and control.item_quantity is not None
+        and control.item_quantity > 0
         and len(targets) == 1
+        and _window_belongs_to(control.window, targets[0].name)
+    ]
+    return bool(
+        len(targets) == 1
         and len(selected) == 1
         and telemetry.ui.selected_character_ids == [selected[0].id]
         and telemetry.ui.selected_character_id == selected[0].id
         and selected[0].inventory_complete is True
-        and any(
-            control.role == ITEM_ROLE
-            and control.section == "out"
-            and control.item_name is not None
-            and control.item_quantity is not None
-            and control.item_quantity > 0
-            and _window_belongs_to(control.window, targets[0].name)
-            for control in (telemetry.ui.visible_controls or [])
+        and len(output_controls) >= 1
+        and resource_transfer_layout_error(
+            CollectResourceOutputAction(
+                target_id=targets[0].id,
+                cell_label=output_controls[0].label,
+                item_name=output_controls[0].item_name or "",
+                source_quantity=output_controls[0].item_quantity or 0,
+                window=output_controls[0].window,
+                section="out",
+            ),
+            observation,
         )
+        is None
     )
 
 
@@ -1559,7 +1567,9 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     summary=(
         "Open the ordinary inventory UI for one exact current natural-resource "
         "handle. Native code re-resolves the target and terminally proves that "
-        "this exact building inventory is open."
+        "this exact building inventory is open. This opens the source window; "
+        "use toggle_inventory afterward to open the selected character's "
+        "destination before collecting output."
     ),
     argument_source=(
         "target_id must be copied from one natural_resource entry in "
@@ -1979,10 +1989,13 @@ EQUIP_ITEM_CONTRACT = ActionContract(
 
 COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     kind="collect_resource_output",
-    version="1.0",
+    version="1.1",
     model=CollectResourceOutputAction,
     summary=(
         "Right-click one exact observed output cell into the selected character. "
+        "The exact resource inventory and selected character's own inventory "
+        "must both be open, with no active shop trader; after "
+        "open_context_inventory, use toggle_inventory to open the destination. "
         "Success requires a causally later equal source loss and destination gain "
         "from complete inventories; a click receipt is never enough."
     ),
@@ -1998,6 +2011,7 @@ COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
             VISIBLE_CONTROLS_CAPABILITY,
             CONTEXT_INVENTORY_TARGET_CAPABILITY,
             NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            "ui.inventory",
             "squad.inventory",
             "identity.stable_handles",
         }
