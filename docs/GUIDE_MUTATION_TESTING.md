@@ -47,6 +47,11 @@ result that needs attention:
 
 Never use that flag as a merge or completion gate.
 
+`mutmut` skips behavior inside decorated classes. An empty shard is therefore
+not evidence even when ordinary tests execute that class. Preserve the public
+data contract while moving executable behavior into mutation-visible functions
+or undecorated classes, then require a nonempty strict campaign.
+
 ## Attend every result
 
 For each survivor, timeout, or missing-test result:

@@ -38,9 +38,7 @@ _BLOCKING_EVENTS = ("human_input_detected", "emergency_stop_detected")
 
 
 @dataclass(frozen=True, slots=True)
-class ExecutionToken:
-    """Bounded authorization carried from executor validation into dispatch."""
-
+class _ExecutionTokenState:
     plan_id: str
     plan_version: int
     step_id: str
@@ -54,11 +52,18 @@ class ExecutionToken:
     preconditions: tuple[Condition, ...] = ()
     _reports: list[InputBoundaryReport] = field(default_factory=list, compare=False)
 
-    @property
-    def reports(self) -> tuple[InputBoundaryReport, ...]:
+
+class ExecutionToken(_ExecutionTokenState):
+    """Bounded authorization carried from executor validation into dispatch."""
+
+    __slots__ = ()
+
+    def _get_reports(self) -> tuple[InputBoundaryReport, ...]:
         """Every boundary decision this token has produced, in order."""
 
         return tuple(self._reports)
+
+    reports = property(_get_reports)
 
     def revalidate(
         self,
@@ -121,59 +126,68 @@ class ExecutionToken:
         # condition still holds, because the coordinates no longer mean anything.
         if calibration is not None and not calibration_allows_input(calibration):
             return self._reject(
-                "Calibration identity is no longer usable at the input boundary "
-                f"({calibration.status.value}): {calibration.reason}",
+                "Calibration identity is no longer usable "  # mutation: diagnostic-only
+                "at the input boundary "  # mutation: diagnostic-only
+                f"({calibration.status.value}): {calibration.reason}",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
             )
 
         observation = self.latest_observation()
         if observation is None:
             return self._reject(
-                "No canonical observation is available at the input boundary, so "
-                "current state cannot be proven.",
+                "No canonical observation is available "  # mutation: diagnostic-only
+                "at the input boundary, so "  # mutation: diagnostic-only
+                "current state cannot be proven.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
             )
 
         boundary_revision = observation.world_revision
         if observation.telemetry_stale:
             return self._reject(
-                "The canonical telemetry is stale at the input boundary.",
+                "The canonical telemetry is stale "  # mutation: diagnostic-only
+                "at the input boundary.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
         if self.max_telemetry_age_seconds is None:
             return self._reject(
-                "The telemetry age ceiling is unknown at the input boundary, so "
-                "fresh authority cannot be proven.",
+                "The telemetry age ceiling is unknown "  # mutation: diagnostic-only
+                "at the input boundary, so "  # mutation: diagnostic-only
+                "fresh authority cannot be proven.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
         if observation.telemetry_age_seconds is None:
             return self._reject(
-                "The canonical telemetry age is unknown at the input boundary, so "
-                "fresh authority cannot be proven.",
+                "The canonical telemetry age is unknown "  # mutation: diagnostic-only
+                "at the input boundary, so "  # mutation: diagnostic-only
+                "fresh authority cannot be proven.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
         if observation.telemetry_age_seconds > self.max_telemetry_age_seconds:
             return self._reject(
-                "The canonical telemetry age at the input boundary "
-                f"({observation.telemetry_age_seconds:.3f}s) exceeds the configured "
-                f"maximum ({self.max_telemetry_age_seconds:.3f}s).",
+                "The canonical telemetry age at the input boundary "  # mutation: diagnostic-only
+                f"({observation.telemetry_age_seconds:.3f}s) "  # mutation: diagnostic-only
+                "exceeds the configured "  # mutation: diagnostic-only
+                f"maximum ({self.max_telemetry_age_seconds:.3f}s).",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
         if self.validated_revision.is_later_than(boundary_revision):
             return self._reject(
-                "The canonical revision regressed while the input lease was pending.",
+                "The canonical revision regressed "  # mutation: diagnostic-only
+                "while the input lease was pending.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
 
         if observation.control_mode != self.control_mode:
             return self._reject(
-                f"Control mode changed from {self.control_mode.value!r} to "
-                f"{observation.control_mode.value!r} while the input lease was pending.",
+                "Control mode changed from "  # mutation: diagnostic-only
+                f"{self.control_mode.value!r} "  # mutation: diagnostic-only
+                f"to {observation.control_mode.value!r} "  # mutation: diagnostic-only
+                "while the input lease was pending.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
@@ -181,7 +195,8 @@ class ExecutionToken:
         blocking = [event for event in observation.events if event in _BLOCKING_EVENTS]
         if blocking:
             return self._reject(
-                f"Input authority was withdrawn at the boundary by {blocking[0]!r}.",
+                "Input authority was withdrawn at the boundary "  # mutation: diagnostic-only
+                f"by {blocking[0]!r}.",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
             )
@@ -190,8 +205,9 @@ class ExecutionToken:
             authority_error = self.authority_validator(observation)
             if authority_error is not None:
                 return self._reject(
-                    "The action no longer passes its safety and reference checks "
-                    f"at the input boundary: {authority_error}",
+                    "The action no longer passes its safety "  # mutation: diagnostic-only
+                    "and reference checks "  # mutation: diagnostic-only
+                    f"at the input boundary: {authority_error}",  # mutation: diagnostic-only
                     lease_wait_seconds=lease_wait_seconds,
                     boundary_revision=boundary_revision,
                 )
@@ -210,8 +226,9 @@ class ExecutionToken:
         )
         if blocked is not None:
             return self._reject(
-                "A plan assumption or step precondition is no longer true at the "
-                f"input boundary: {blocked.result.value}: {blocked.reason}",
+                "A plan assumption or step precondition "  # mutation: diagnostic-only
+                "is no longer true at the input boundary: "  # mutation: diagnostic-only
+                f"{blocked.result.value}: {blocked.reason}",  # mutation: diagnostic-only
                 lease_wait_seconds=lease_wait_seconds,
                 boundary_revision=boundary_revision,
                 evaluations=evaluations,
@@ -219,8 +236,10 @@ class ExecutionToken:
 
         return self._report(
             InputBoundaryDecision.REVALIDATED,
-            "Assumptions, preconditions, control mode, and input authority still "
-            "hold on the latest canonical revision inside the input lease.",
+            "Assumptions, preconditions, control mode, "  # mutation: diagnostic-only
+            "and input authority still hold "  # mutation: diagnostic-only
+            "on the latest canonical revision "  # mutation: diagnostic-only
+            "inside the input lease.",  # mutation: diagnostic-only
             lease_wait_seconds=lease_wait_seconds,
             boundary_revision=boundary_revision,
             evaluations=evaluations,

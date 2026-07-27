@@ -12,10 +12,11 @@ from __future__ import annotations
 import asyncio
 import json
 from contextlib import asynccontextmanager
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, is_dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from test_live_env import (
     PulseController,
     PulseTelemetry,
@@ -39,8 +40,10 @@ from kenshi_agent.models import (
     ConditionKind,
     ConditionOperator,
     ConditionPath,
+    ConditionResult,
     ControlMode,
     InputBoundaryDecision,
+    InputBoundaryReport,
     Observation,
     PlannerDecision,
     SkillAction,
@@ -172,6 +175,7 @@ def token_for(
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     assumptions: tuple[Condition, ...] | None = None,
     preconditions: tuple[Condition, ...] | None = None,
+    max_telemetry_age_seconds: float | None = 3.0,
 ) -> ExecutionToken:
     return ExecutionToken(
         plan_id="boundary-plan",
@@ -181,7 +185,7 @@ def token_for(
         control_mode=control_mode,
         validated_revision=validated or revision(10),
         latest_observation=lambda: latest[0],
-        max_telemetry_age_seconds=3.0,
+        max_telemetry_age_seconds=max_telemetry_age_seconds,
         assumptions=(
             assumptions
             if assumptions is not None
@@ -193,6 +197,125 @@ def token_for(
             else (selection_condition(),)
         ),
     )
+
+
+def assert_report_identity(
+    report: InputBoundaryReport,
+    token: ExecutionToken,
+    boundary_revision: WorldStateRevision | None,
+) -> None:
+    assert report.plan_id == token.plan_id
+    assert report.plan_version == token.plan_version
+    assert report.step_id == token.step_id
+    assert report.validated_revision == token.validated_revision
+    assert report.boundary_revision == boundary_revision
+
+
+def test_execution_token_remains_a_frozen_slotted_data_contract() -> None:
+    token = token_for([observation()])
+
+    assert is_dataclass(token)
+    assert not hasattr(token, "__dict__")
+    with pytest.raises(FrozenInstanceError):
+        token.plan_id = "changed"  # type: ignore[misc]
+
+
+def test_every_observation_bound_decision_preserves_authority_evidence() -> None:
+    current = observation(sequence=11)
+    cases: list[tuple[ExecutionToken, InputBoundaryDecision]] = [
+        (
+            token_for([observation(sequence=11, telemetry_stale=True)]),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for([current], max_telemetry_age_seconds=None),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for([observation(sequence=11, telemetry_age_seconds=None)]),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for([observation(sequence=11, telemetry_age_seconds=3.001)]),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for([observation(sequence=4)], validated=revision(10)),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for(
+                [observation(sequence=11, control_mode=ControlMode.NATIVE_ASSISTED)]
+            ),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for([observation(sequence=11, events=("human_input_detected",))]),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            ExecutionToken(
+                plan_id="boundary-plan",
+                plan_version=1,
+                step_id="approach",
+                command_id="cmd-" + "0" * 32,
+                control_mode=ControlMode.INTERFACE_ONLY,
+                validated_revision=revision(10),
+                latest_observation=lambda: current,
+                max_telemetry_age_seconds=3.0,
+                authority_validator=lambda _: "target disappeared",
+            ),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
+            token_for([observation(sequence=11, paused=False)]),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (token_for([current]), InputBoundaryDecision.REVALIDATED),
+    ]
+
+    for token, decision in cases:
+        boundary_observation = token.latest_observation()
+        assert boundary_observation is not None
+        report = token.revalidate()
+        assert report.decision is decision
+        assert report.lease_wait_seconds == 0.0
+        assert_report_identity(report, token, boundary_observation.world_revision)
+
+
+def test_condition_rejection_retains_every_evaluation_in_contract_order() -> None:
+    assumptions = (paused_condition(),)
+    preconditions = (selection_condition(),)
+    current = observation(sequence=11, paused=False, selected_id="char-2")
+    token = token_for(
+        [current],
+        assumptions=assumptions,
+        preconditions=preconditions,
+    )
+
+    report = token.revalidate(lease_wait_seconds=2.25)
+
+    assert report.decision is InputBoundaryDecision.REJECTED
+    assert report.lease_wait_seconds == 2.25
+    assert_report_identity(report, token, current.world_revision)
+    assert [evaluation.condition for evaluation in report.evaluations] == [
+        *assumptions,
+        *preconditions,
+    ]
+    assert [evaluation.result for evaluation in report.evaluations] == [
+        ConditionResult.FALSE,
+        ConditionResult.FALSE,
+    ]
+
+
+def test_telemetry_at_the_exact_age_ceiling_remains_authorized() -> None:
+    current = observation(sequence=11, telemetry_age_seconds=3.0)
+    token = token_for([current], max_telemetry_age_seconds=3.0)
+
+    report = token.revalidate()
+
+    assert report.decision is InputBoundaryDecision.REVALIDATED
+    assert_report_identity(report, token, current.world_revision)
 
 
 async def dispatch_with_blocking_lease(
