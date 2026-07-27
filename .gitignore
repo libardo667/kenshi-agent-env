@@ -4,6 +4,8 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .mypy_cache/
+mutants/
+.mutation-workspaces/
 *.egg-info/
 build/
 dist/

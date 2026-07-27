@@ -25,10 +25,12 @@ dev = [
   "ruff>=0.9,<1",
   "mypy>=1.14,<2",
   "types-PyYAML>=6,<7",
+  "mutmut>=3.5,<4",
 ]
 
 [project.scripts]
 kenshi-agent = "kenshi_agent.cli:main"
+kenshi-mutate = "kenshi_agent.mutation_campaign:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -48,3 +50,28 @@ select = ["E", "F", "I", "B", "UP"]
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
+
+[tool.mutmut]
+source_paths = ["src/kenshi_agent/"]
+do_not_mutate_patterns = ["# mutation: diagnostic-only"]
+pytest_add_cli_args_test_selection = ["tests/"]
+also_copy = [
+  ".env.example",
+  ".githooks/",
+  ".gitignore",
+  "config/",
+  "docs/",
+  "examples/",
+  "knowledge/",
+  "native/",
+  "prompts/",
+  "scenarios/",
+  "schemas/",
+  "scripts/",
+  "ARCHITECTURE.md",
+  "CHANGELOG.md",
+  "LOOP_PROMPT.md",
+  "README.md",
+  "SECURITY_AND_SAFETY.md",
+  "STATUS.md",
+]

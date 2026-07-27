@@ -5,7 +5,16 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-from kenshi_agent.affordance_requests import aggregate_affordance_requests
+from kenshi_agent.affordance_requests import (
+    _merge_demand,
+    _parse_classified_event,
+    _RunDemand,
+    aggregate_affordance_requests,
+)
+from kenshi_agent.models import (
+    AffordanceUrgency,
+    RequestAffordanceAction,
+)
 
 
 def request_event(
@@ -16,6 +25,10 @@ def request_event(
     intent_class: str = "interact",
     urgency: str = "blocks_current_goal",
     status: str = "retained",
+    blocked_goal: str = "Earn money by mining.",
+    why_needed: str = "No advertised action expresses the exact intention.",
+    evidence: str = "A current Copper Resource is visible in world targets.",
+    available_workaround: str | None = "Sell carried items.",
 ) -> dict[str, object]:
     aggregation_key = f"kenshi:{intent_class}:{capability_slug}"
     return {
@@ -35,10 +48,10 @@ def request_event(
                 "intent_class": intent_class,
                 "capability_slug": capability_slug,
                 "capability_description": capability_description,
-                "blocked_goal": "Earn money by mining.",
-                "why_needed": "No advertised action expresses the exact intention.",
-                "evidence": "A current Copper Resource is visible in world targets.",
-                "available_workaround": "Sell carried items.",
+                "blocked_goal": blocked_goal,
+                "why_needed": why_needed,
+                "evidence": evidence,
+                "available_workaround": available_workaround,
                 "urgency": urgency,
             },
         },
@@ -106,6 +119,415 @@ def write_log(path: Path, *events: dict[str, object]) -> None:
         "".join(json.dumps(event) + "\n" for event in events),
         encoding="utf-8",
     )
+
+
+def typed_action(
+    *,
+    capability_description: str,
+    urgency: AffordanceUrgency,
+) -> RequestAffordanceAction:
+    event = request_event(
+        run_id="typed",
+        capability_slug="typed_gap",
+        capability_description=capability_description,
+        urgency=urgency.value,
+    )
+    payload = event["payload"]
+    assert isinstance(payload, dict)
+    return RequestAffordanceAction.model_validate(payload["request"])
+
+
+def test_demand_merge_obeys_the_full_urgency_and_retention_truth_table() -> None:
+    strength = {
+        AffordanceUrgency.IMPROVES_FIDELITY: 1,
+        AffordanceUrgency.BLOCKS_CURRENT_GOAL: 2,
+        AffordanceUrgency.SURVIVAL_CRITICAL: 3,
+    }
+    for current_urgency in AffordanceUrgency:
+        for incoming_urgency in AffordanceUrgency:
+            for current_retained in (False, True):
+                for incoming_retained in (False, True):
+                    current_action = typed_action(
+                        capability_description="Current demand.",
+                        urgency=current_urgency,
+                    )
+                    incoming_action = typed_action(
+                        capability_description="Incoming demand.",
+                        urgency=incoming_urgency,
+                    )
+                    demands = {
+                        "gap": _RunDemand(
+                            action=current_action,
+                            strongest_urgency=current_urgency,
+                            retained=current_retained,
+                        )
+                    }
+                    incoming = _RunDemand(
+                        action=incoming_action,
+                        strongest_urgency=incoming_urgency,
+                        retained=incoming_retained,
+                    )
+
+                    _merge_demand(demands, "gap", incoming)
+
+                    merged = demands["gap"]
+                    stronger = (
+                        strength[incoming_urgency] > strength[current_urgency]
+                    )
+                    replaces = stronger or (
+                        incoming_retained and not current_retained
+                    )
+                    assert merged.action is (
+                        incoming_action if replaces else current_action
+                    )
+                    assert merged.strongest_urgency is (
+                        incoming_urgency if stronger else current_urgency
+                    )
+                    assert merged.retained is (
+                        current_retained or incoming_retained
+                    )
+
+
+def test_classified_events_require_a_nonempty_string_run_identity() -> None:
+    event = request_event(
+        run_id="valid",
+        capability_slug="typed_gap",
+        capability_description="Typed gap.",
+    )
+    for invalid_run_id in (None, "", 42):
+        invalid = {**event, "run_id": invalid_run_id}
+        try:
+            _parse_classified_event(invalid)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"accepted invalid run ID {invalid_run_id!r}")
+
+
+def test_aggregation_preserves_exact_payloads_and_malformed_line_evidence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.jsonl"
+    legacy = {
+        "event_type": "affordance_request",
+        "run_id": "legacy-run",
+        "payload": {
+            "request": {"capability": "Legacy free prose"},
+            "evidence": {"status": "retained"},
+        },
+    }
+    classified = [
+        request_event(
+            run_id="run-a",
+            capability_slug="operate_world_target",
+            capability_description="Initial description.",
+            urgency="improves_fidelity",
+            status="retained",
+        ),
+        request_event(
+            run_id="run-a",
+            capability_slug="operate_world_target",
+            capability_description="Strongest description.",
+            urgency="survival_critical",
+            status="duplicate",
+            blocked_goal="Escape starvation.",
+            why_needed="The exact machine has no typed operation.",
+            evidence="Fresh telemetry exposes the exact machine.",
+            available_workaround=None,
+        ),
+        request_event(
+            run_id="run-a",
+            capability_slug="operate_world_target",
+            capability_description="Weaker later description.",
+            urgency="blocks_current_goal",
+            status="duplicate",
+        ),
+        request_event(
+            run_id="run-b",
+            capability_slug="operate_world_target",
+            capability_description="Second run description.",
+            urgency="blocks_current_goal",
+            status="duplicate",
+        ),
+    ]
+    records: list[object] = [
+        [],
+        {"event_type": "ignored", "run_id": 42},
+        {
+            **run_started(
+                run_id="invalid",
+                scenario_id="invalid",
+                save_id="invalid",
+            ),
+            "run_id": "",
+        },
+        legacy,
+        {"event_type": "affordance_request"},
+        *classified,
+    ]
+    path.write_text(
+        "".join(json.dumps(record) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    report = aggregate_affordance_requests([path, path])
+
+    assert report.source_logs == [str(path.resolve())]
+    assert report.request_events == 6
+    assert report.classified_events == 4
+    assert report.unclassified_events == 2
+    assert report.scenario_coverage.verified_run_count == 0
+    assert report.scenario_coverage.unverified_run_count == 3
+    assert report.scenario_coverage.distinct_scenario_count == 0
+    assert report.scenario_coverage.distinct_save_count == 0
+    assert len(report.unclassified_samples) == 2
+    assert report.unclassified_samples[0].source_log == str(path.resolve())
+    assert report.unclassified_samples[0].run_id == "legacy-run"
+    assert report.unclassified_samples[0].reason.startswith("line 4:")
+    assert report.unclassified_samples[0].legacy_capability == "Legacy free prose"
+    assert report.unclassified_samples[1].run_id is None
+    assert report.unclassified_samples[1].reason.startswith("line 5:")
+    assert report.unclassified_samples[1].legacy_capability is None
+
+    assert len(report.candidates) == 1
+    candidate = report.candidates[0]
+    assert candidate.aggregation_key == "kenshi:interact:operate_world_target"
+    assert candidate.game == "kenshi"
+    assert candidate.intent_class == "interact"
+    assert candidate.capability_slug == "operate_world_target"
+    assert candidate.capability_descriptions == [
+        "Initial description.",
+        "Second run description.",
+        "Strongest description.",
+        "Weaker later description.",
+    ]
+    assert candidate.distinct_run_count == 2
+    assert candidate.unverified_run_count == 2
+    assert candidate.request_event_count == 4
+    assert candidate.retained_event_count == 1
+    assert candidate.duplicate_event_count == 3
+    assert candidate.urgency_run_counts == {
+        "survival_critical": 1,
+        "blocks_current_goal": 1,
+        "improves_fidelity": 0,
+    }
+    assert len(candidate.grounded_examples) == 2
+    strongest = candidate.grounded_examples[0]
+    assert strongest.run_id == "run-a"
+    assert strongest.scenario is None
+    assert strongest.capability_description == "Strongest description."
+    assert strongest.blocked_goal == "Escape starvation."
+    assert strongest.why_needed == "The exact machine has no typed operation."
+    assert strongest.evidence == "Fresh telemetry exposes the exact machine."
+    assert strongest.available_workaround is None
+    assert strongest.urgency == "survival_critical"
+    assert candidate.grounded_examples[1].available_workaround == (
+        "Sell carried items."
+    )
+
+
+def test_scenario_evidence_fails_closed_without_poisoning_later_runs(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.jsonl"
+    repeated = run_started(
+        run_id="run-repeated",
+        scenario_id="repeated-valid",
+        save_id="repeated-save",
+    )
+    conflict_first = run_started(
+        run_id="run-conflict",
+        scenario_id="conflict",
+        save_id="conflict-save",
+        danger="safe",
+    )
+    conflict_second = run_started(
+        run_id="run-conflict",
+        scenario_id="conflict",
+        save_id="conflict-save",
+        danger="hostile",
+    )
+    events = [
+        {
+            **run_started(
+                run_id="run-malformed",
+                scenario_id="malformed",
+                save_id="malformed-save",
+            ),
+            "payload": {
+                "scenario": {"scenario_id": 42},
+                "scenario_attestation": {"schema_version": "invalid"},
+            },
+        },
+        request_event(
+            run_id="run-malformed",
+            capability_slug="scenario_gap",
+            capability_description="Malformed declaration.",
+        ),
+        run_started(
+            run_id="a-unattested",
+            scenario_id="unattested",
+            save_id="unattested-save",
+            fixture_verified=False,
+        ),
+        request_event(
+            run_id="a-unattested",
+            capability_slug="scenario_gap",
+            capability_description="Unattested demand.",
+        ),
+        run_started(
+            run_id="b-valid",
+            scenario_id="first-valid",
+            save_id="first-save",
+        ),
+        request_event(
+            run_id="b-valid",
+            capability_slug="scenario_gap",
+            capability_description="First valid demand.",
+        ),
+        run_started(
+            run_id="run-save-a",
+            scenario_id="save-conflict-a",
+            save_id="shared-save",
+            fixture_digest="a" * 64,
+        ),
+        request_event(
+            run_id="run-save-a",
+            capability_slug="scenario_gap",
+            capability_description="Save conflict A.",
+        ),
+        run_started(
+            run_id="run-save-b",
+            scenario_id="save-conflict-b",
+            save_id="shared-save",
+            fixture_digest="b" * 64,
+        ),
+        request_event(
+            run_id="run-save-b",
+            capability_slug="scenario_gap",
+            capability_description="Save conflict B.",
+        ),
+        repeated,
+        repeated,
+        request_event(
+            run_id="run-repeated",
+            capability_slug="scenario_gap",
+            capability_description="Repeated valid declaration.",
+        ),
+        conflict_first,
+        conflict_second,
+        request_event(
+            run_id="run-conflict",
+            capability_slug="scenario_gap",
+            capability_description="Conflicting declaration.",
+        ),
+    ]
+    write_log(path, *events)
+
+    report = aggregate_affordance_requests([path])
+
+    assert report.scenario_coverage.verified_run_count == 2
+    assert report.scenario_coverage.unverified_run_count == 5
+    assert report.scenario_coverage.distinct_scenario_count == 2
+    assert report.scenario_coverage.distinct_save_count == 2
+    assert report.scenario_coverage.dimension_scenario_counts == {
+        "environment": {"outdoor": 2},
+        "danger": {"safe": 2},
+        "economy": {"broke": 2},
+        "party": {"solo": 2},
+        "time_of_day": {"day": 2},
+    }
+    candidate = report.candidates[0]
+    assert candidate.distinct_run_count == 7
+    assert candidate.distinct_scenario_count == 2
+    assert candidate.distinct_save_count == 2
+    assert candidate.unverified_run_count == 5
+    verified_scenario_ids = {
+        example.scenario["scenario_id"]
+        for example in candidate.grounded_examples
+        if example.scenario is not None
+    }
+    assert verified_scenario_ids == {"first-valid", "repeated-valid"}
+
+
+def test_representative_and_ranking_prefer_retained_urgent_scenario_demand(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.jsonl"
+    events: list[dict[str, object]] = []
+    for run_id, urgency, status in (
+        ("run-a", "improves_fidelity", "retained"),
+        ("run-b", "survival_critical", "duplicate"),
+        ("run-c", "improves_fidelity", "duplicate"),
+        ("run-y", "survival_critical", "retained"),
+        ("run-z", "improves_fidelity", "duplicate"),
+    ):
+        events.extend(
+            [
+                run_started(
+                    run_id=run_id,
+                    scenario_id="shared-scenario",
+                    save_id="shared-save",
+                ),
+                request_event(
+                    run_id=run_id,
+                    capability_slug="representative_gap",
+                    capability_description=f"Description from {run_id}.",
+                    urgency=urgency,
+                    status=status,
+                ),
+            ]
+        )
+    events.extend(
+        [
+            request_event(
+                run_id="run-a",
+                capability_slug="a_fidelity_gap",
+                capability_description="Lower-priority gap.",
+                urgency="improves_fidelity",
+            ),
+            request_event(
+                run_id="run-a",
+                capability_slug="z_blocking_gap",
+                capability_description="Higher-priority gap.",
+                urgency="blocks_current_goal",
+            ),
+        ]
+    )
+    write_log(path, *events)
+
+    report = aggregate_affordance_requests([path])
+
+    assert [candidate.capability_slug for candidate in report.candidates] == [
+        "representative_gap",
+        "z_blocking_gap",
+        "a_fidelity_gap",
+    ]
+    representative = report.candidates[0]
+    assert len(representative.grounded_examples) == 1
+    assert representative.grounded_examples[0].run_id == "run-y"
+    assert representative.grounded_examples[0].scenario is not None
+    assert representative.grounded_examples[0].scenario["scenario_id"] == (
+        "shared-scenario"
+    )
+
+
+def test_unclassified_samples_obey_the_exact_report_cap(tmp_path: Path) -> None:
+    path = tmp_path / "malformed.jsonl"
+    events = [
+        {
+            "event_type": "affordance_request",
+            "run_id": f"malformed-{index}",
+        }
+        for index in range(21)
+    ]
+    write_log(path, *events)
+
+    report = aggregate_affordance_requests([path])
+
+    assert report.request_events == 21
+    assert report.unclassified_events == 21
+    assert len(report.unclassified_samples) == 20
 
 
 def test_same_typed_gap_across_runs_forms_one_grounded_review_candidate(

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TypeVar
 
 from pydantic import ValidationError
 
@@ -18,6 +19,7 @@ from .scenario_fixtures import ScenarioAttestation
 MAX_GROUNDED_EXAMPLES_PER_CANDIDATE = 5
 MAX_UNCLASSIFIED_SAMPLES = 20
 _MISSING_SCENARIO = object()
+_DemandKey = TypeVar("_DemandKey")
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,30 +137,51 @@ def _parse_classified_event(
     record: object,
 ) -> tuple[str, RequestAffordanceAction, AffordanceRequestStatus]:
     if not isinstance(record, dict):
-        raise ValueError("event is not a JSON object")
+        raise ValueError("event is not a JSON object")  # mutation: diagnostic-only
     run_id = record.get("run_id")
     if not isinstance(run_id, str) or not run_id:
-        raise ValueError("event has no non-empty run_id")
+        raise ValueError(  # mutation: diagnostic-only
+            "event has no non-empty run_id"
+        )
     payload = record.get("payload")
     if not isinstance(payload, dict):
-        raise ValueError("event payload is not an object")
+        raise ValueError(  # mutation: diagnostic-only
+            "event payload is not an object"
+        )
     request = RequestAffordanceAction.model_validate(payload.get("request"))
     evidence = payload.get("evidence")
     if not isinstance(evidence, dict):
-        raise ValueError("event evidence is not an object")
+        raise ValueError(  # mutation: diagnostic-only
+            "event evidence is not an object"
+        )
     raw_status = evidence.get("status")
     if not isinstance(raw_status, str):
-        raise ValueError("event evidence has no string status")
+        raise ValueError(  # mutation: diagnostic-only
+            "event evidence has no string status"
+        )
     status = AffordanceRequestStatus(raw_status)
     expected_key = affordance_aggregation_key(request)
     if evidence.get("aggregation_key") != expected_key:
-        raise ValueError("event evidence does not match the typed request key")
+        raise ValueError(  # mutation: diagnostic-only
+            "event evidence does not match the typed request key"
+        )
     return run_id, request, status
 
 
+def _incoming_demand_replaces(
+    current: _RunDemand,
+    incoming: _RunDemand,
+) -> bool:
+    return bool(
+        _URGENCY_STRENGTH[incoming.strongest_urgency]
+        > _URGENCY_STRENGTH[current.strongest_urgency]
+        or (incoming.retained and not current.retained)
+    )
+
+
 def _merge_demand(
-    demands: dict[tuple[str, str], _RunDemand],
-    key: tuple[str, str],
+    demands: dict[_DemandKey, _RunDemand],
+    key: _DemandKey,
     run: _RunDemand,
 ) -> None:
     current = demands.get(key)
@@ -169,15 +192,13 @@ def _merge_demand(
             retained=run.retained,
         )
         return
-    stronger = (
-        _URGENCY_STRENGTH[run.strongest_urgency]
-        > _URGENCY_STRENGTH[current.strongest_urgency]
-    )
-    newly_retained = run.retained and not current.retained
-    if stronger or newly_retained:
+    if _incoming_demand_replaces(current, run):
         current.action = run.action
-    if stronger:
-        current.strongest_urgency = run.strongest_urgency
+    current.strongest_urgency = max(
+        current.strongest_urgency,
+        run.strongest_urgency,
+        key=_URGENCY_STRENGTH.__getitem__,
+    )
     if run.retained:
         current.retained = True
 
@@ -277,12 +298,7 @@ def _representative_example_runs(
             verified[key] = (run_id, run)
             continue
         _, current_run = current
-        stronger = (
-            _URGENCY_STRENGTH[run.strongest_urgency]
-            > _URGENCY_STRENGTH[current_run.strongest_urgency]
-        )
-        newly_retained = run.retained and not current_run.retained
-        if stronger or newly_retained:
+        if _incoming_demand_replaces(current_run, run):
             verified[key] = (run_id, run)
     representatives = [
         example for _, example in sorted(verified.items())
@@ -305,7 +321,7 @@ def aggregate_affordance_requests(
     verified_attestations: dict[str, ScenarioAttestation | None] = {}
 
     for path in paths:
-        with path.open("r", encoding="utf-8") as handle:
+        with path.open("r", encoding="utf-8") as handle:  # pragma: no mutate
             for line_number, line in enumerate(handle, start=1):
                 record = json.loads(line)
                 if not isinstance(record, dict):
@@ -380,28 +396,15 @@ def aggregate_affordance_requests(
                 else:
                     candidate.duplicate_events += 1
 
-                run = candidate.runs.get(run_id)
-                if run is None:
-                    candidate.runs[run_id] = _RunDemand(
+                _merge_demand(
+                    candidate.runs,
+                    run_id,
+                    _RunDemand(
                         action=action,
                         strongest_urgency=action.urgency,
                         retained=status is AffordanceRequestStatus.RETAINED,
-                    )
-                    continue
-                stronger = (
-                    _URGENCY_STRENGTH[action.urgency]
-                    > _URGENCY_STRENGTH[run.strongest_urgency]
+                    ),
                 )
-                newly_retained = (
-                    status is AffordanceRequestStatus.RETAINED
-                    and not run.retained
-                )
-                if stronger or newly_retained:
-                    run.action = action
-                if stronger:
-                    run.strongest_urgency = action.urgency
-                if status is AffordanceRequestStatus.RETAINED:
-                    run.retained = True
 
     effective_scenarios = _effective_scenarios(verified_attestations)
     review_candidates: list[AffordanceReviewCandidate] = []
@@ -434,7 +437,7 @@ def aggregate_affordance_requests(
             GroundedAffordanceExample(
                 run_id=run_id,
                 scenario=(
-                    effective_scenarios[run_id].model_dump(mode="json")
+                    effective_scenarios[run_id].model_dump()
                     if run_id in effective_scenarios
                     else None
                 ),
@@ -484,7 +487,6 @@ def aggregate_affordance_requests(
                 > 0
             ),
             -candidate.distinct_save_count,
-            -candidate.distinct_scenario_count,
             -candidate.urgency_scenario_counts[
                 AffordanceUrgency.BLOCKS_CURRENT_GOAL.value
             ],

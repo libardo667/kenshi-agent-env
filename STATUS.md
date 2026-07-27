@@ -31,13 +31,12 @@ Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the ac
 - A read-only guide-grounded strategic advisor. `consult_advisor` consumes a
   strategic turn, creates no world command, and emits zero primitives. Unknown
   source IDs fail closed; unchanged-state requests are suppressed before the call.
-- `request_affordance` records a typed intent class plus Kenshi capability slug,
-  evidence, and urgency without granting authority or input. Aggregation separates
-  raw reruns from fixture-attested save/scenario recurrence across five matrix axes.
-- Hash-locked FCS Game Starts install without overwrite and launch through exact
-  controls with money/party proof; closed saves become fixture-attested.
+- `request_affordance` records typed, non-authoritative demand; aggregation separates
+  raw reruns from fixture-attested recurrence across five matrix axes.
+- Hash-locked FCS starts install and launch with money/party proof.
 - Persistent memory unions bounded general recall with exact, fresh
   current-target matches and exposes dialogue-approach repetition by target.
+- Mutation testing partitions all 62 Python modules; four attended shards are clean.
 
 ## Live profiles
 
@@ -118,3 +117,4 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   save/load, and zones; entity memories do not transfer across session identity.
 - Renderer stability remains open: the 30 fps external-only path passed startup
   and rejects Event 141s, but has no long soak or real competence proof.
+- Fifty-eight mutation shards remain unattested.

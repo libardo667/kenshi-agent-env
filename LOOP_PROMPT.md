@@ -265,9 +265,9 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Run and operationalize mutation testing.** Configure `mutmut` over a bounded
-   reproducible source scope, execute it, classify every survivor or timeout, and
-   strengthen unmeasured code. An install without a reviewable result is not done.
+1. **Continue attended mutation rollout.** Four of 62 module shards are clean;
+   begin the remainder risk-first with `planning`. A shard is not evidence until
+   every result is classified and default `./mutate run <name>` passes.
 2. **Live-prove the resource-production option.** Portable and native-build
    evidence now retain the exact job through actual output, adopt unchanged
    matching work without reissue, open that target's contextual source, require

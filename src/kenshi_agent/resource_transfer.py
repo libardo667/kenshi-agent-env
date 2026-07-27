@@ -12,6 +12,73 @@ from .models import (
     normalize_control_label,
 )
 
+# These sentences explain typed evidence whose status, identities, quantities,
+# and revisions own the contract. Capitalization-only mutations are equivalent,
+# so exclude prose construction without excluding any decision branch.
+# pragma: no mutate start
+_FRESH_TELEMETRY_REASON = (
+    "Fresh inventory telemetry is required for resource transfer."
+)
+_NO_DIALOGUE_REASON = "Resource transfer requires no open dialogue."
+_INVENTORY_SCREEN_REASON = "Resource transfer requires the inventory interface."
+_COMMERCIAL_ROUTE_REASON = (
+    "An active shop trader makes a right-click a commercial action, "
+    "so resource collection fails closed."
+)
+_TWO_WINDOWS_REASON = (
+    "Resource transfer requires exactly two inventory windows: the "
+    "exact source and the selected character's own inventory."
+)
+_COMPLETE_CONTROLS_REASON = (
+    "Complete visible controls are required to prove both inventory window owners."
+)
+_SELECTED_CHARACTER_REASON = (
+    "One exact named selected character is required as the transfer destination."
+)
+_AMBIGUOUS_CAPTIONS_REASON = (
+    "Source and selected-character inventory captions are ambiguous."
+)
+_BASELINE_REASON = (
+    "Captured complete pre-input source and destination quantities."
+)
+_NONCAUSAL_REASON = (
+    "No causally later world revision observed the attempted transfer."
+)
+_INCOMPLETE_EVIDENCE_REASON = (
+    "Exact source or destination inventory was absent, stale, incomplete, "
+    "or changed selection."
+)
+
+
+def _missing_destination_reason(selected_name: str) -> str:
+    return (
+        f"The selected character's own inventory ({selected_name!r}) is not "
+        "confirmed open, so right-click has no destination."
+    )
+
+
+def _transferred_reason(
+    source_loss: int,
+    item_name: str,
+) -> str:
+    return (
+        f"Conserved {source_loss} {item_name!r} from exact resource output "
+        "into the selected character."
+    )
+
+
+def _conservation_failed_reason(
+    source_loss: int,
+    destination_gain: int,
+) -> str:
+    return (
+        f"Transfer conservation failed: source loss {source_loss}, "
+        f"destination gain {destination_gain}."
+    )
+
+
+# pragma: no mutate end
+
 
 def _selected_character(observation: Observation) -> CharacterState | None:
     telemetry = observation.telemetry
@@ -43,48 +110,31 @@ def resource_transfer_layout_error(
 
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
-        return "Fresh inventory telemetry is required for resource transfer."
+        return _FRESH_TELEMETRY_REASON
     ui = telemetry.ui
     if ui.dialogue_open is not False:
-        return "Resource transfer requires no open dialogue."
+        return _NO_DIALOGUE_REASON
     if ui.active_screen not in {"inventory", "trade"}:
-        return "Resource transfer requires the inventory interface."
+        return _INVENTORY_SCREEN_REASON
     if telemetry.active_shop_trader_count != 0:
-        return (
-            "An active shop trader makes a right-click a commercial action, "
-            "so resource collection fails closed."
-        )
+        return _COMMERCIAL_ROUTE_REASON
     if ui.open_inventory_windows != 2:
-        return (
-            "Resource transfer requires exactly two inventory windows: the "
-            "exact source and the selected character's own inventory."
-        )
+        return _TWO_WINDOWS_REASON
     controls = ui.visible_controls
     if ui.visible_controls_complete is not True or controls is None:
-        return (
-            "Complete visible controls are required to prove both inventory "
-            "window owners."
-        )
+        return _COMPLETE_CONTROLS_REASON
     selected = _selected_character(observation)
     if selected is None or not selected.name:
-        return (
-            "One exact named selected character is required as the transfer "
-            "destination."
-        )
+        return _SELECTED_CHARACTER_REASON
     source = normalize_control_label(action.window)
     destination = normalize_control_label(selected.name)
     if not source or source == destination:
-        return (
-            "Source and selected-character inventory captions are ambiguous."
-        )
+        return _AMBIGUOUS_CAPTIONS_REASON
     if not any(
         normalize_control_label(control.window) == destination
         for control in controls
     ):
-        return (
-            f"The selected character's own inventory ({selected.name!r}) is not "
-            "confirmed open, so right-click has no destination."
-        )
+        return _missing_destination_reason(selected.name)  # pragma: no mutate
     return None
 
 
@@ -173,7 +223,7 @@ def begin_resource_transfer(
         item_name=action.item_name,
         source_quantity_before=source,
         destination_quantity_before=destination,
-        reason="Captured complete pre-input source and destination quantities.",
+        reason=_BASELINE_REASON,
     )
 
 
@@ -210,37 +260,47 @@ def finalize_resource_transfer(
     if not after.world_revision.is_later_than(before_revision):
         return evidence(
             ResourceTransferStatus.UNVERIFIED,
-            "No causally later world revision observed the attempted transfer.",
+            _NONCAUSAL_REASON,
         )
-    if (
-        baseline.source_quantity_before is None
-        or source_after is None
-        or baseline.destination_quantity_before is None
-        or destination_after is None
-        or baseline.selected_character_id is None
-        or selected_id != baseline.selected_character_id
-    ):
+    quantities = (
+        baseline.source_quantity_before,
+        source_after,
+        baseline.destination_quantity_before,
+        destination_after,
+    )
+    if any(quantity is None for quantity in quantities):
         return evidence(
             ResourceTransferStatus.UNVERIFIED,
-            (
-                "Exact source or destination inventory was absent, stale, "
-                "incomplete, or changed selection."
-            ),
+            _INCOMPLETE_EVIDENCE_REASON,
         )
+    if baseline.selected_character_id is None:
+        return evidence(
+            ResourceTransferStatus.UNVERIFIED,
+            _INCOMPLETE_EVIDENCE_REASON,
+        )
+    if selected_id != baseline.selected_character_id:
+        return evidence(
+            ResourceTransferStatus.UNVERIFIED,
+            _INCOMPLETE_EVIDENCE_REASON,
+        )
+    assert baseline.source_quantity_before is not None
+    assert source_after is not None
+    assert baseline.destination_quantity_before is not None
+    assert destination_after is not None
     source_loss = baseline.source_quantity_before - source_after
     destination_gain = destination_after - baseline.destination_quantity_before
     if source_loss > 0 and source_loss == destination_gain:
+        # pragma: no mutate start
+        reason = _transferred_reason(source_loss, action.item_name)
+        # pragma: no mutate end
         return evidence(
             ResourceTransferStatus.TRANSFERRED,
-            (
-                f"Conserved {source_loss} {action.item_name!r} from exact "
-                "resource output into the selected character."
-            ),
+            reason,
         )
+    # pragma: no mutate start
+    reason = _conservation_failed_reason(source_loss, destination_gain)
+    # pragma: no mutate end
     return evidence(
         ResourceTransferStatus.NOT_TRANSFERRED,
-        (
-            f"Transfer conservation failed: source loss {source_loss}, "
-            f"destination gain {destination_gain}."
-        ),
+        reason,
     )
