@@ -35,6 +35,12 @@ from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .runtime import AgentRuntime
 from .safety import ActionGuard
+from .scenario_fixtures import (
+    ScenarioFixtureError,
+    load_scenario_attestation,
+    load_scenario_fixture,
+    validate_current_scenario,
+)
 from .schema_export import export_schemas
 from .session_log import SessionLogger
 from .skills import MacroRegistry
@@ -180,6 +186,11 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
     supplied_scenario_values = [
         name for name, value in scenario_values.items() if value is not None
     ]
+    attestation_path = getattr(args, "scenario_attestation", None)
+    if attestation_path is not None and supplied_scenario_values:
+        raise SystemExit(
+            "--scenario-attestation cannot be combined with manual scenario labels."
+        )
     if supplied_scenario_values and len(supplied_scenario_values) != len(
         scenario_values
     ):
@@ -189,6 +200,15 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
             + ", ".join(missing)
         )
     scenario: ScenarioIdentity | None = None
+    scenario_attestation = None
+    if attestation_path is not None:
+        try:
+            scenario_attestation = load_scenario_attestation(
+                Path(attestation_path).expanduser().resolve()
+            )
+        except ScenarioFixtureError as exc:
+            raise SystemExit(str(exc)) from exc
+        scenario = scenario_attestation.scenario
     if supplied_scenario_values:
         try:
             scenario = ScenarioIdentity.model_validate(scenario_values)
@@ -203,6 +223,8 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
         runtime_updates["objective"] = objective
     if scenario is not None:
         runtime_updates["scenario"] = scenario
+    if scenario_attestation is not None:
+        runtime_updates["scenario_attestation"] = scenario_attestation
     if runtime_updates:
         updates["runtime"] = config.runtime.model_copy(update=runtime_updates)
     if planning_mode is not None:
@@ -240,11 +262,54 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
 
 
 def _validate_run_platform(config: AppConfig, args: argparse.Namespace) -> None:
-    if (args.mode or config.mode) == "live" and os.name != "nt":
+    mode = args.mode or config.mode
+    if config.runtime.scenario_attestation is not None and mode != "live":
+        raise SystemExit(
+            "Fixture-attested scenarios are valid only for a live Kenshi run."
+        )
+    if mode == "live" and os.name != "nt":
         raise SystemExit(
             "Live mode requires Windows. From WSL, use the supported ./dev journey "
             "launcher."
         )
+
+
+def _validate_attested_live_scenario(
+    config: AppConfig,
+    args: argparse.Namespace,
+) -> None:
+    attestation = config.runtime.scenario_attestation
+    if attestation is None:
+        return
+    raw_path = getattr(args, "scenario_attestation", None)
+    if raw_path is None:
+        raise SystemExit(
+            "A fixture-attested live run requires its current attestation path."
+        )
+    path = Path(raw_path).expanduser().resolve()
+    try:
+        manifest = load_scenario_fixture(
+            path.parent,
+            attestation.scenario.scenario_id,
+        )
+        result = TelemetryReader(
+            config.telemetry.file,
+            max_age_seconds=config.telemetry.max_age_seconds,
+            retries=config.telemetry.read_retries,
+            retry_delay_seconds=config.telemetry.retry_delay_seconds,
+            require_protocol_major=config.telemetry.require_protocol_major,
+        ).read()
+        if result.stale:
+            raise ScenarioFixtureError(
+                "Fixture-attested run requires fresh current telemetry."
+            )
+        validate_current_scenario(
+            attestation,
+            manifest,
+            result.snapshot,
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def _run_exit_code(
@@ -317,6 +382,7 @@ def _build_environment(
 async def _run_command(args: argparse.Namespace) -> int:
     config = _apply_run_overrides(load_config(args.config), args)
     _validate_run_platform(config, args)
+    _validate_attested_live_scenario(config, args)
     run_id = args.run_id or _new_run_id()
     run_dir = config.paths.runs_dir / run_id
     run_dir.mkdir(parents=True, exist_ok=False)
@@ -364,6 +430,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             planning_config=config.planning,
             log_full_observations=config.runtime.log_full_observations,
             scenario=config.runtime.scenario,
+            scenario_attestation=config.runtime.scenario_attestation,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,
@@ -596,6 +663,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the configured objective for this run only.",
     )
     run.add_argument("--scenario-id")
+    run.add_argument(
+        "--scenario-attestation",
+        help=(
+            "Fixture verification receipt produced by the supported live launcher. "
+            "Manual scenario fields cannot be combined with it."
+        ),
+    )
     run.add_argument(
         "--save-id",
         help="Stable operator label for the exact save snapshot under test.",

@@ -263,10 +263,11 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Execute the declared scenario matrix.** Use distinct save/scenario IDs for
-   indoor/outdoor, hostile/safe, broke/funded, solo/squad, and day/night runs.
-   Undeclared reruns are not recurrence evidence. The affordance-request stream
-   is the backlog; select the first gap supported across declared situations.
+1. **Execute the fixture-attested scenario matrix.** Author FCS Game Starts,
+   capture dynamic saves where needed, then use `./dev scenario`, `launch
+   --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,
+   broke/funded, solo/squad, and day/night. Manual labels and raw reruns are not
+   recurrence evidence. Select the first gap supported across verified situations.
 2. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one

@@ -13,6 +13,7 @@ from .models import (
     ScenarioIdentity,
     affordance_aggregation_key,
 )
+from .scenario_fixtures import ScenarioAttestation
 
 MAX_GROUNDED_EXAMPLES_PER_CANDIDATE = 5
 MAX_UNCLASSIFIED_SAMPLES = 20
@@ -41,7 +42,7 @@ class AffordanceReviewCandidate:
     distinct_run_count: int
     distinct_scenario_count: int
     distinct_save_count: int
-    undeclared_run_count: int
+    unverified_run_count: int
     request_event_count: int
     retained_event_count: int
     duplicate_event_count: int
@@ -53,8 +54,8 @@ class AffordanceReviewCandidate:
 
 @dataclass(frozen=True, slots=True)
 class ScenarioCoverage:
-    declared_run_count: int
-    undeclared_run_count: int
+    verified_run_count: int
+    unverified_run_count: int
     distinct_scenario_count: int
     distinct_save_count: int
     dimension_scenario_counts: dict[str, dict[str, int]]
@@ -182,26 +183,45 @@ def _merge_demand(
 
 
 def _effective_scenarios(
-    declared: dict[str, ScenarioIdentity | None],
+    attested: dict[str, ScenarioAttestation | None],
 ) -> dict[str, ScenarioIdentity]:
-    """Drop undeclared and internally conflicting scenario identities."""
+    """Drop unattested, conflicting, or relabeled fixture identities."""
 
     declarations_by_key: dict[tuple[str, str], set[str]] = {}
-    for scenario in declared.values():
-        if scenario is None:
+    digests_by_key: dict[tuple[str, str], set[str]] = {}
+    keys_by_save: dict[str, set[tuple[str, str]]] = {}
+    keys_by_digest: dict[str, set[tuple[str, str]]] = {}
+    for attestation in attested.values():
+        if attestation is None:
             continue
+        scenario = attestation.scenario
         key = (scenario.save_id, scenario.scenario_id)
         declarations_by_key.setdefault(key, set()).add(
             scenario.model_dump_json()
         )
+        digests_by_key.setdefault(key, set()).add(attestation.fixture_digest)
+        keys_by_save.setdefault(scenario.save_id, set()).add(key)
+        keys_by_digest.setdefault(attestation.fixture_digest, set()).add(key)
     consistent_keys = {
-        key for key, declarations in declarations_by_key.items() if len(declarations) == 1
+        key
+        for key, declarations in declarations_by_key.items()
+        if len(declarations) == 1
+        and len(digests_by_key[key]) == 1
+        and len(keys_by_save[key[0]]) == 1
+        and all(
+            len(keys_by_digest[digest]) == 1
+            for digest in digests_by_key[key]
+        )
     }
     return {
-        run_id: scenario
-        for run_id, scenario in declared.items()
-        if scenario is not None
-        and (scenario.save_id, scenario.scenario_id) in consistent_keys
+        run_id: attestation.scenario
+        for run_id, attestation in attested.items()
+        if attestation is not None
+        and (
+            attestation.scenario.save_id,
+            attestation.scenario.scenario_id,
+        )
+        in consistent_keys
     }
 
 
@@ -228,8 +248,8 @@ def _scenario_coverage(
             values[value] = values.get(value, 0) + 1
         dimension_counts[field_name] = dict(sorted(values.items()))
     return ScenarioCoverage(
-        declared_run_count=len(scenarios),
-        undeclared_run_count=len(all_run_ids - set(scenarios)),
+        verified_run_count=len(scenarios),
+        unverified_run_count=len(all_run_ids - set(scenarios)),
         distinct_scenario_count=len(unique_scenarios),
         distinct_save_count=len(
             {scenario.save_id for scenario in unique_scenarios.values()}
@@ -242,19 +262,19 @@ def _representative_example_runs(
     candidate: _Candidate,
     scenarios: dict[str, ScenarioIdentity],
 ) -> list[tuple[str, _RunDemand]]:
-    """Retain one strongest example per declared scenario before raw reruns."""
+    """Retain one strongest example per verified scenario before raw reruns."""
 
-    declared: dict[tuple[str, str], tuple[str, _RunDemand]] = {}
-    undeclared: list[tuple[str, _RunDemand]] = []
+    verified: dict[tuple[str, str], tuple[str, _RunDemand]] = {}
+    unverified: list[tuple[str, _RunDemand]] = []
     for run_id, run in sorted(candidate.runs.items()):
         scenario = scenarios.get(run_id)
         if scenario is None:
-            undeclared.append((run_id, run))
+            unverified.append((run_id, run))
             continue
         key = (scenario.save_id, scenario.scenario_id)
-        current = declared.get(key)
+        current = verified.get(key)
         if current is None:
-            declared[key] = (run_id, run)
+            verified[key] = (run_id, run)
             continue
         _, current_run = current
         stronger = (
@@ -263,11 +283,11 @@ def _representative_example_runs(
         )
         newly_retained = run.retained and not current_run.retained
         if stronger or newly_retained:
-            declared[key] = (run_id, run)
+            verified[key] = (run_id, run)
     representatives = [
-        example for _, example in sorted(declared.items())
+        example for _, example in sorted(verified.items())
     ]
-    return [*representatives, *undeclared]
+    return [*representatives, *unverified]
 
 
 def aggregate_affordance_requests(
@@ -282,7 +302,7 @@ def aggregate_affordance_requests(
     unclassified_events = 0
     unclassified_samples: list[UnclassifiedAffordanceSample] = []
     all_run_ids: set[str] = set()
-    declared_scenarios: dict[str, ScenarioIdentity | None] = {}
+    verified_attestations: dict[str, ScenarioAttestation | None] = {}
 
     for path in paths:
         with path.open("r", encoding="utf-8") as handle:
@@ -300,22 +320,38 @@ def aggregate_affordance_requests(
                     raw_scenario = (
                         payload.get("scenario") if isinstance(payload, dict) else None
                     )
+                    raw_attestation = (
+                        payload.get("scenario_attestation")
+                        if isinstance(payload, dict)
+                        else None
+                    )
                     try:
                         scenario = (
                             ScenarioIdentity.model_validate(raw_scenario)
                             if raw_scenario is not None
                             else None
                         )
+                        attestation = (
+                            ScenarioAttestation.model_validate(raw_attestation)
+                            if raw_attestation is not None
+                            else None
+                        )
+                        if (
+                            scenario is None
+                            or attestation is None
+                            or attestation.scenario != scenario
+                        ):
+                            attestation = None
                     except ValidationError:
-                        scenario = None
-                    existing = declared_scenarios.get(
+                        attestation = None
+                    existing = verified_attestations.get(
                         raw_run_id,
                         _MISSING_SCENARIO,
                     )
                     if existing is _MISSING_SCENARIO:
-                        declared_scenarios[raw_run_id] = scenario
-                    elif scenario != existing:
-                        declared_scenarios[raw_run_id] = None
+                        verified_attestations[raw_run_id] = attestation
+                    elif attestation != existing:
+                        verified_attestations[raw_run_id] = None
                     continue
                 if record.get("event_type") != "affordance_request":
                     continue
@@ -367,7 +403,7 @@ def aggregate_affordance_requests(
                 if status is AffordanceRequestStatus.RETAINED:
                     run.retained = True
 
-    effective_scenarios = _effective_scenarios(declared_scenarios)
+    effective_scenarios = _effective_scenarios(verified_attestations)
     review_candidates: list[AffordanceReviewCandidate] = []
     for key, candidate in candidates.items():
         urgency_run_counts = {
@@ -426,7 +462,7 @@ def aggregate_affordance_requests(
                 distinct_save_count=len(
                     {save_id for save_id, _ in scenario_demands}
                 ),
-                undeclared_run_count=(
+                unverified_run_count=(
                     len(candidate.runs)
                     - sum(run_id in effective_scenarios for run_id in candidate.runs)
                 ),

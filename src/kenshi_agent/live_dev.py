@@ -46,8 +46,23 @@ from .models import (
     ClickAction,
     HotkeyAction,
     KeyAction,
+    ScenarioIdentity,
     TelemetrySnapshot,
     VisibleUIControl,
+)
+from .scenario_fixtures import (
+    MANAGED_SAVE_NAME,
+    ScenarioFixtureError,
+    ScenarioFixtureManifest,
+    attest_loaded_scenario,
+    capture_scenario_fixture,
+    current_attestation_path,
+    load_scenario_attestation,
+    load_scenario_fixture,
+    restore_scenario_fixture,
+    validate_current_scenario,
+    verify_staged_scenario,
+    write_scenario_attestation,
 )
 from .telemetry import TelemetryRead, TelemetryReader, TelemetryReadError
 
@@ -279,6 +294,41 @@ def _kenshi_renderer_path() -> Path:
         "Kenshi kenshi.cfg was not found. Set KENSHI_AGENT_RENDERER_SETTINGS "
         "to its full path."
     )
+
+
+def _local_app_data() -> Path:
+    value = os.environ.get("LOCALAPPDATA")
+    if not value:
+        raise FileNotFoundError("Windows LOCALAPPDATA is unavailable.")
+    return Path(value)
+
+
+def _kenshi_save_root() -> Path:
+    override = os.environ.get("KENSHI_AGENT_SAVE_ROOT")
+    return Path(override) if override else _local_app_data() / "kenshi" / "save"
+
+
+def _scenario_store() -> Path:
+    override = os.environ.get("KENSHI_AGENT_SCENARIO_STORE")
+    return (
+        Path(override)
+        if override
+        else _local_app_data() / "KenshiAgent" / "scenarios"
+    )
+
+
+def _named_save(root: Path, name: str) -> Path:
+    if (
+        not name
+        or name in {".", ".."}
+        or "/" in name
+        or "\\" in name
+        or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}", name)
+    ):
+        raise ScenarioFixtureError(
+            "Save names must be one plain Windows directory name."
+        )
+    return root / name
 
 
 def _steam_connection_log_path() -> Path:
@@ -560,6 +610,57 @@ async def _click_semantic_control(
         raise RuntimeError(receipt.message)
 
 
+async def _open_exact_scenario_save(
+    controller: InputController,
+    reader: TelemetryReader,
+    *,
+    load_control_labels: list[str],
+    save_control_label: str,
+    timeout: float,
+    health_check: Callable[[], None] | None = None,
+) -> None:
+    """Open the load screen and one exact save row; never auto-Continue."""
+
+    await _wait_until(
+        lambda: (
+            not (result := reader.read()).stale
+            and _unique_visible_control(
+                result.snapshot,
+                load_control_labels,
+            )
+            is not None
+        ),
+        timeout,
+        "semantic Load Game control",
+        controller=controller,
+        health_check=health_check,
+    )
+    await _click_semantic_control(
+        controller,
+        reader,
+        load_control_labels,
+    )
+    await _wait_until(
+        lambda: (
+            not (result := reader.read()).stale
+            and _unique_visible_control(
+                result.snapshot,
+                [save_control_label],
+            )
+            is not None
+        ),
+        timeout,
+        f"exact scenario save control {save_control_label!r}",
+        controller=controller,
+        health_check=health_check,
+    )
+    await _click_semantic_control(
+        controller,
+        reader,
+        [save_control_label],
+    )
+
+
 async def _wait_for_loaded_or_semantic_control(
     reader: TelemetryReader,
     labels: list[str],
@@ -676,6 +777,7 @@ async def _perform_launch(
     config: AppConfig,
     controller: InputController,
     monitor: GpuTdrMonitor | None,
+    scenario_manifest: ScenarioFixtureManifest | None = None,
 ) -> None:
     health_check = monitor.raise_if_new if monitor is not None else None
     _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
@@ -717,38 +819,49 @@ async def _perform_launch(
 
     if args.continue_game:
         reader = _telemetry_read(config)
-        await _wait_until(
-            lambda: (
-                not (result := reader.read()).stale
-                and _unique_visible_control(
-                    result.snapshot,
-                    config.controls.startup_continue_control_labels,
-                )
-                is not None
-            ),
-            args.timeout,
-            "semantic Continue control",
-            controller=controller,
-            health_check=health_check,
-        )
-        await _click_semantic_control(
-            controller,
-            reader,
-            config.controls.startup_continue_control_labels,
-        )
-        loaded = await _wait_for_loaded_or_semantic_control(
-            reader,
-            config.controls.startup_save_control_labels,
-            timeout=args.timeout,
-            controller=controller,
-            health_check=health_check,
-        )
-        if not loaded:
+        if scenario_manifest is not None:
+            await _open_exact_scenario_save(
+                controller,
+                reader,
+                load_control_labels=config.controls.startup_load_control_labels,
+                save_control_label=scenario_manifest.managed_save_name,
+                timeout=args.timeout,
+                health_check=health_check,
+            )
+        else:
+            save_control_labels = config.controls.startup_save_control_labels
+            await _wait_until(
+                lambda: (
+                    not (result := reader.read()).stale
+                    and _unique_visible_control(
+                        result.snapshot,
+                        config.controls.startup_continue_control_labels,
+                    )
+                    is not None
+                ),
+                args.timeout,
+                "semantic Continue control",
+                controller=controller,
+                health_check=health_check,
+            )
             await _click_semantic_control(
                 controller,
                 reader,
-                config.controls.startup_save_control_labels,
+                config.controls.startup_continue_control_labels,
             )
+            loaded = await _wait_for_loaded_or_semantic_control(
+                reader,
+                save_control_labels,
+                timeout=args.timeout,
+                controller=controller,
+                health_check=health_check,
+            )
+            if not loaded:
+                await _click_semantic_control(
+                    controller,
+                    reader,
+                    save_control_labels,
+                )
 
         def game_loaded() -> bool:
             try:
@@ -800,6 +913,20 @@ async def _perform_launch(
             duration_seconds=config.launch.post_load_health_seconds,
             health_check=health_check,
         )
+        if scenario_manifest is not None:
+            result = reader.read()
+            if result.stale:
+                raise LaunchFailed(
+                    "Scenario attestation requires fresh post-load telemetry."
+                )
+            attestation = attest_loaded_scenario(
+                scenario_manifest,
+                result.snapshot,
+            )
+            write_scenario_attestation(
+                current_attestation_path(_scenario_store()),
+                attestation,
+            )
     if monitor is not None:
         monitor.raise_if_new(force=True)
 
@@ -814,7 +941,16 @@ async def _launch(args: argparse.Namespace) -> int:
         else None
     )
     monitor = GpuTdrMonitor() if config.launch.monitor_gpu_tdr else None
+    scenario_manifest: ScenarioFixtureManifest | None = None
     try:
+        if args.scenario is not None:
+            if not args.continue_game:
+                raise LaunchFailed("--scenario cannot be combined with --no-continue.")
+            scenario_manifest = verify_staged_scenario(
+                _scenario_store(),
+                args.scenario,
+                _kenshi_save_root(),
+            )
         controller = _controller(config)
         try:
             terminal_window_title = _terminal_window_title(controller)
@@ -836,11 +972,19 @@ async def _launch(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 4
     if args.preflight_only:
+        scenario_suffix = (
+            f" Scenario {scenario_manifest.scenario.scenario_id!r} is staged exactly."
+            if scenario_manifest is not None
+            else ""
+        )
         print(
             "Launch preflight passed: all configured Steam, memory, graphics, "
             "display, and Windows GPU-event checks are ready."
+            + scenario_suffix
         )
         return 0
+
+    current_attestation_path(_scenario_store()).unlink(missing_ok=True)
 
     display_context: AbstractContextManager[None] = (
         external_display_lease(display_controller)
@@ -850,7 +994,13 @@ async def _launch(args: argparse.Namespace) -> int:
     try:
         with display_context:
             try:
-                await _perform_launch(args, config, controller, monitor)
+                await _perform_launch(
+                    args,
+                    config,
+                    controller,
+                    monitor,
+                    scenario_manifest,
+                )
             except LaunchInterrupted as exc:
                 safe_state = await _ensure_interrupted_safe_state(
                     controller,
@@ -872,7 +1022,16 @@ async def _launch(args: argparse.Namespace) -> int:
         print(str(exc), file=sys.stderr)
         return 4
 
-    print("Kenshi launched" + (", loaded, and paused." if args.continue_game else "."))
+    scenario_suffix = (
+        f" Scenario {scenario_manifest.scenario.scenario_id!r} was fixture-attested."
+        if scenario_manifest is not None
+        else ""
+    )
+    print(
+        "Kenshi launched"
+        + (", loaded, and paused." if args.continue_game else ".")
+        + scenario_suffix
+    )
     return 0
 
 
@@ -1241,7 +1400,100 @@ def _telemetry(args: argparse.Namespace) -> int:
     return 1 if result.stale else 0
 
 
-def _journey_argv(args: argparse.Namespace, run_id: str) -> list[str]:
+def _scenario_identity_from_args(args: argparse.Namespace) -> ScenarioIdentity:
+    return ScenarioIdentity(
+        scenario_id=args.scenario_id,
+        save_id=args.save_id,
+        environment=args.environment,
+        danger=args.danger,
+        economy=args.economy,
+        party=args.party,
+        time_of_day=args.time_of_day,
+    )
+
+
+def _scenario_command(args: argparse.Namespace) -> int:
+    store = _scenario_store()
+    try:
+        if args.scenario_action == "list":
+            fixtures_root = store / "fixtures"
+            manifests = (
+                [
+                    load_scenario_fixture(store, path.name)
+                    for path in sorted(fixtures_root.iterdir())
+                    if path.is_dir() and not path.name.startswith(".")
+                ]
+                if fixtures_root.is_dir()
+                else []
+            )
+            print(
+                json.dumps(
+                    [
+                        {
+                            "scenario": manifest.scenario.model_dump(mode="json"),
+                            "fixture_digest": manifest.fixture_digest,
+                            "captured_at": manifest.captured_at.isoformat(),
+                            "managed_save_name": manifest.managed_save_name,
+                        }
+                        for manifest in manifests
+                    ],
+                    indent=2,
+                )
+            )
+            return 0
+
+        if "kenshi_x64.exe" in _running_process_names():
+            raise ScenarioFixtureError(
+                "Kenshi must be closed before capturing or restoring a scenario save."
+            )
+        if args.scenario_action == "capture":
+            scenario = _scenario_identity_from_args(args)
+            source = _named_save(_kenshi_save_root(), args.source_save)
+            manifest = capture_scenario_fixture(source, store, scenario)
+            print(
+                f"Captured {scenario.scenario_id!r} from {args.source_save!r} "
+                f"as fixture {manifest.fixture_digest}."
+            )
+            return 0
+        if args.scenario_action == "restore":
+            result = restore_scenario_fixture(
+                store,
+                args.scenario_id,
+                _kenshi_save_root(),
+            )
+            if result.changed:
+                recovery = (
+                    f" Prior managed state is recoverable at {result.recovery_path}."
+                    if result.recovery_path is not None
+                    else ""
+                )
+                print(
+                    f"Restored {result.scenario.scenario_id!r} into "
+                    f"{MANAGED_SAVE_NAME!r}.{recovery}"
+                )
+            else:
+                print(
+                    f"Scenario {result.scenario.scenario_id!r} is already restored "
+                    f"exactly in {MANAGED_SAVE_NAME!r}."
+                )
+            return 0
+        raise AssertionError(args.scenario_action)
+    except (
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
+
+
+def _journey_argv(
+    args: argparse.Namespace,
+    run_id: str,
+    *,
+    scenario_attestation: Path | None = None,
+) -> list[str]:
     """Build the `run` argv from journey options.
 
     Every gate is a faithful passthrough of an existing `run` flag; the `run`
@@ -1265,18 +1517,21 @@ def _journey_argv(args: argparse.Namespace, run_id: str) -> list[str]:
     ]
     if args.objective:
         argv.extend(["--objective", args.objective])
-    for option, destination in (
-        ("--scenario-id", "scenario_id"),
-        ("--save-id", "save_id"),
-        ("--scenario-environment", "scenario_environment"),
-        ("--scenario-danger", "scenario_danger"),
-        ("--scenario-economy", "scenario_economy"),
-        ("--scenario-party", "scenario_party"),
-        ("--scenario-time-of-day", "scenario_time_of_day"),
-    ):
-        value = getattr(args, destination)
-        if value is not None:
-            argv.extend([option, value])
+    if scenario_attestation is not None:
+        argv.extend(["--scenario-attestation", str(scenario_attestation)])
+    else:
+        for option, destination in (
+            ("--scenario-id", "scenario_id"),
+            ("--save-id", "save_id"),
+            ("--scenario-environment", "scenario_environment"),
+            ("--scenario-danger", "scenario_danger"),
+            ("--scenario-economy", "scenario_economy"),
+            ("--scenario-party", "scenario_party"),
+            ("--scenario-time-of-day", "scenario_time_of_day"),
+        ):
+            value = getattr(args, destination)
+            if value is not None:
+                argv.extend([option, value])
     if args.planner == "subprocess":
         if not args.planner_script:
             raise SystemExit(
@@ -1311,7 +1566,48 @@ def _journey_argv(args: argparse.Namespace, run_id: str) -> list[str]:
 def _journey(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
-    argv = _journey_argv(args, run_id)
+    scenario_attestation_path: Path | None = None
+    manual_scenario_values = [
+        getattr(args, destination)
+        for destination in (
+            "scenario_id",
+            "save_id",
+            "scenario_environment",
+            "scenario_danger",
+            "scenario_economy",
+            "scenario_party",
+            "scenario_time_of_day",
+        )
+        if getattr(args, destination) is not None
+    ]
+    try:
+        if args.scenario is not None:
+            if manual_scenario_values:
+                raise ScenarioFixtureError(
+                    "--scenario cannot be combined with manual scenario labels."
+                )
+            store = _scenario_store()
+            manifest = load_scenario_fixture(store, args.scenario)
+            scenario_attestation_path = current_attestation_path(store)
+            attestation = load_scenario_attestation(scenario_attestation_path)
+            telemetry_result = _telemetry_read(config).read()
+            if telemetry_result.stale:
+                raise ScenarioFixtureError(
+                    "The loaded scenario cannot be verified from stale telemetry."
+                )
+            validate_current_scenario(
+                attestation,
+                manifest,
+                telemetry_result.snapshot,
+            )
+        argv = _journey_argv(
+            args,
+            run_id,
+            scenario_attestation=scenario_attestation_path,
+        )
+    except (FileNotFoundError, OSError, RuntimeError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
     event_log = config.paths.runs_dir / run_id / "events.jsonl"
     display_controller: DisplayTopologyController | None = None
     monitor: GpuTdrMonitor | None = None
@@ -1391,6 +1687,13 @@ def build_parser() -> argparse.ArgumentParser:
     launch.add_argument("--timeout", type=float, default=60.0)
     launch.add_argument("--no-continue", dest="continue_game", action="store_false")
     launch.add_argument(
+        "--scenario",
+        help=(
+            "Load the exact project-owned save slot already restored for this "
+            "fixture ID, then attest all matrix axes."
+        ),
+    )
+    launch.add_argument(
         "--resume-launcher",
         action="store_true",
         help=(
@@ -1438,9 +1741,64 @@ def build_parser() -> argparse.ArgumentParser:
     )
     crash.add_argument("--timeout", type=float, default=10.0)
 
+    scenario = subparsers.add_parser(
+        "scenario",
+        help="Capture, inspect, or restore reproducible Kenshi save fixtures.",
+    )
+    scenario.add_argument("--config", required=True)
+    scenario_actions = scenario.add_subparsers(
+        dest="scenario_action",
+        required=True,
+    )
+    scenario_actions.add_parser("list", help="List and verify captured fixtures.")
+    capture_scenario = scenario_actions.add_parser(
+        "capture",
+        help="Copy one closed save into the immutable fixture store.",
+    )
+    capture_scenario.add_argument("--source-save", required=True)
+    capture_scenario.add_argument("--scenario-id", required=True)
+    capture_scenario.add_argument("--save-id", required=True)
+    capture_scenario.add_argument(
+        "--environment",
+        choices=["indoor", "outdoor"],
+        required=True,
+    )
+    capture_scenario.add_argument(
+        "--danger",
+        choices=["hostile", "safe"],
+        required=True,
+    )
+    capture_scenario.add_argument(
+        "--economy",
+        choices=["broke", "funded"],
+        required=True,
+    )
+    capture_scenario.add_argument(
+        "--party",
+        choices=["solo", "squad"],
+        required=True,
+    )
+    capture_scenario.add_argument(
+        "--time-of-day",
+        choices=["day", "night"],
+        required=True,
+    )
+    restore_scenario = scenario_actions.add_parser(
+        "restore",
+        help="Restore a fixture into the reserved project-owned save slot.",
+    )
+    restore_scenario.add_argument("scenario_id")
+
     journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
     journey.add_argument("--config", required=True)
     journey.add_argument("--objective")
+    journey.add_argument(
+        "--scenario",
+        help=(
+            "Require the current loaded fixture attestation for this scenario ID. "
+            "This is the only form that counts as recurrence evidence."
+        ),
+    )
     journey.add_argument("--scenario-id")
     journey.add_argument(
         "--save-id",
@@ -1532,6 +1890,8 @@ def main(argv: list[str] | None = None) -> int:
         return _telemetry(args)
     if args.command == "crash":
         return asyncio.run(_crash(args))
+    if args.command == "scenario":
+        return _scenario_command(args)
     if args.command == "journey":
         return _journey(args)
     raise AssertionError(args.command)

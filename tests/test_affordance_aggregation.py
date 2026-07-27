@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from kenshi_agent.affordance_requests import aggregate_affordance_requests
@@ -53,21 +55,48 @@ def run_started(
     economy: str = "broke",
     party: str = "solo",
     time_of_day: str = "day",
+    fixture_verified: bool = True,
+    fixture_digest: str | None = None,
 ) -> dict[str, object]:
+    scenario = {
+        "scenario_id": scenario_id,
+        "save_id": save_id,
+        "environment": environment,
+        "danger": danger,
+        "economy": economy,
+        "party": party,
+        "time_of_day": time_of_day,
+    }
     return {
         "event_type": "run_started",
         "run_id": run_id,
         "step_index": None,
         "payload": {
-            "scenario": {
-                "scenario_id": scenario_id,
-                "save_id": save_id,
-                "environment": environment,
-                "danger": danger,
-                "economy": economy,
-                "party": party,
-                "time_of_day": time_of_day,
-            }
+            "scenario": scenario,
+            "scenario_attestation": (
+                {
+                    "schema_version": 1,
+                    "scenario": scenario,
+                    "fixture_digest": (
+                        fixture_digest
+                        or hashlib.sha256(save_id.encode("utf-8")).hexdigest()
+                    ),
+                    "managed_save_name": "KenshiAgentScenario",
+                    "identity_session_id": f"session-{run_id}",
+                    "loaded_sequence": 10,
+                    "verified_at": datetime.now(UTC).isoformat(),
+                    "observed": {
+                        "selected_character_id": "character-0",
+                        "indoors": environment == "indoor",
+                        "in_combat": danger == "hostile",
+                        "money": 20 if economy == "broke" else 10_000,
+                        "party_size": 1 if party == "solo" else 2,
+                        "minute_of_day": 720 if time_of_day == "day" else 1_320,
+                    },
+                }
+                if fixture_verified
+                else None
+            ),
         },
     }
 
@@ -182,7 +211,7 @@ def test_same_save_scenario_reruns_do_not_inflate_cross_scenario_demand(
     assert candidate.distinct_run_count == 3
     assert candidate.distinct_scenario_count == 2
     assert candidate.distinct_save_count == 2
-    assert candidate.undeclared_run_count == 0
+    assert candidate.unverified_run_count == 0
     assert candidate.urgency_scenario_counts == {
         "survival_critical": 1,
         "blocks_current_goal": 1,
@@ -197,7 +226,7 @@ def test_same_save_scenario_reruns_do_not_inflate_cross_scenario_demand(
         "hub-outdoor-safe-day",
         "squin-indoor-hostile-night",
     }
-    assert report.scenario_coverage.declared_run_count == 3
+    assert report.scenario_coverage.verified_run_count == 3
     assert report.scenario_coverage.distinct_scenario_count == 2
     assert report.scenario_coverage.distinct_save_count == 2
     assert report.scenario_coverage.dimension_scenario_counts == {
@@ -229,8 +258,76 @@ def test_undeclared_run_stays_visible_without_becoming_scenario_recurrence(
     assert candidate.distinct_run_count == 1
     assert candidate.distinct_scenario_count == 0
     assert candidate.distinct_save_count == 0
-    assert candidate.undeclared_run_count == 1
-    assert report.scenario_coverage.undeclared_run_count == 1
+    assert candidate.unverified_run_count == 1
+    assert report.scenario_coverage.unverified_run_count == 1
+
+
+def test_unattested_scenario_labels_do_not_become_recurrence_evidence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "unverified.jsonl"
+    write_log(
+        path,
+        run_started(
+            run_id="run-unverified",
+            scenario_id="claimed-scenario",
+            save_id="claimed-save",
+            fixture_verified=False,
+        ),
+        request_event(
+            run_id="run-unverified",
+            capability_slug="remote_map_travel",
+            capability_description="Travel to a remote map location.",
+        ),
+    )
+
+    report = aggregate_affordance_requests([path])
+
+    assert report.scenario_coverage.verified_run_count == 0
+    assert report.scenario_coverage.unverified_run_count == 1
+    assert report.candidates[0].distinct_scenario_count == 0
+
+
+def test_same_fixture_digest_cannot_masquerade_as_distinct_saves(
+    tmp_path: Path,
+) -> None:
+    shared_digest = "d" * 64
+    first = tmp_path / "first.jsonl"
+    second = tmp_path / "second.jsonl"
+    write_log(
+        first,
+        run_started(
+            run_id="run-a",
+            scenario_id="scenario-a",
+            save_id="save-a",
+            fixture_digest=shared_digest,
+        ),
+        request_event(
+            run_id="run-a",
+            capability_slug="remote_map_travel",
+            capability_description="Travel remotely.",
+        ),
+    )
+    write_log(
+        second,
+        run_started(
+            run_id="run-b",
+            scenario_id="scenario-b",
+            save_id="save-b",
+            fixture_digest=shared_digest,
+        ),
+        request_event(
+            run_id="run-b",
+            capability_slug="remote_map_travel",
+            capability_description="Travel remotely.",
+        ),
+    )
+
+    report = aggregate_affordance_requests([first, second])
+
+    assert report.scenario_coverage.verified_run_count == 0
+    assert report.scenario_coverage.unverified_run_count == 2
+    assert report.candidates[0].distinct_save_count == 0
 
 
 def test_reused_scenario_identity_with_conflicting_axes_fails_closed(
@@ -267,10 +364,10 @@ def test_reused_scenario_identity_with_conflicting_axes_fails_closed(
 
     report = aggregate_affordance_requests([path])
 
-    assert report.scenario_coverage.declared_run_count == 0
-    assert report.scenario_coverage.undeclared_run_count == 2
+    assert report.scenario_coverage.verified_run_count == 0
+    assert report.scenario_coverage.unverified_run_count == 2
     assert report.candidates[0].distinct_scenario_count == 0
-    assert report.candidates[0].undeclared_run_count == 2
+    assert report.candidates[0].unverified_run_count == 2
 
 
 def test_declared_diversity_outranks_more_reruns_of_one_scenario(

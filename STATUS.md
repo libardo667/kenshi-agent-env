@@ -1,7 +1,6 @@
 # Implementation status
 
-Current-state snapshot. Dated evidence lives in `git log` and `runs/<run-id>/`;
-the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
+Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
 
 ## What works
 
@@ -34,7 +33,9 @@ the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md
   source IDs fail closed; unchanged-state requests are suppressed before the call.
 - `request_affordance` records a typed intent class plus Kenshi capability slug,
   evidence, and urgency without granting authority or input. Aggregation separates
-  raw reruns from declared save/scenario recurrence across five matrix axes.
+  raw reruns from fixture-attested save/scenario recurrence across five matrix axes.
+- Closed saves become hashed fixtures restored to a collision-safe managed slot,
+  loaded through exact controls, and attested against fresh matrix predicates.
 - Persistent memory unions bounded general recall with exact, fresh
   current-target matches and exposes dialogue-approach repetition by target.
 
@@ -87,6 +88,7 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
+- No FCS Game Start or fixture-attested matrix run is live-proven yet.
 
 ## Known limitations
 
@@ -113,7 +115,6 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
 - Exact entity memories deliberately do not transfer by display name across a
   native process or game-session identity change.
-- Renderer stability remains open on this Intel Iris Xe host: later paused runs
-  still failed after two clean soaks. The 30 fps external-only path passed its
-  45-second startup window and rejects recovered Event 141s, but has no long soak.
+- Renderer stability remains open on this Intel Iris Xe host: the 30 fps
+  external-only path passed startup and rejects Event 141s, but has no long soak.
 - The mock world tests orchestration, not Kenshi strategy competence.

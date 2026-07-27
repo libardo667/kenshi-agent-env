@@ -17,6 +17,7 @@ from .models import (
     ScenarioIdentity,
     parse_action,
 )
+from .scenario_fixtures import ScenarioAttestation
 
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")
 
@@ -42,6 +43,9 @@ class RuntimeConfig(ConfigModel):
     # Explicit experimental context. Absent means this run cannot support a
     # cross-scenario or cross-save recurrence claim.
     scenario: ScenarioIdentity | None = None
+    # Present only when the supported fixture launcher proved the exact staged
+    # save and all declared axes from fresh loaded telemetry.
+    scenario_attestation: ScenarioAttestation | None = None
     # Log a compact observation digest instead of the whole observation. Full
     # payloads are only needed to replay a run with the replay environment, and
     # writing them every pump tick produced a 112 MB log in ten minutes.
@@ -299,6 +303,11 @@ class ControlsConfig(ConfigModel):
         min_length=1,
         max_length=8,
     )
+    startup_load_control_labels: list[str] = Field(
+        default_factory=lambda: ["Load Game", "Load"],
+        min_length=1,
+        max_length=8,
+    )
     startup_save_control_labels: list[str] = Field(
         default_factory=lambda: ["autosave1"],
         min_length=1,
@@ -325,6 +334,7 @@ class ControlsConfig(ConfigModel):
 
     @field_validator(
         "startup_continue_control_labels",
+        "startup_load_control_labels",
         "startup_save_control_labels",
     )
     @classmethod

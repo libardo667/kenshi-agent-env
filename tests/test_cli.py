@@ -269,6 +269,79 @@ def test_run_scenario_override_is_typed_and_ephemeral() -> None:
         "time_of_day": "day",
     }
     assert config.runtime.scenario is None
+    assert overridden.runtime.scenario_attestation is None
+
+
+def test_run_uses_fixture_attestation_as_scenario_source(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+    attestation = tmp_path / "attestation.json"
+    attestation.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "scenario": {
+                    "scenario_id": "hub-outdoor-safe-day",
+                    "save_id": "hub-start-v1",
+                    "environment": "outdoor",
+                    "danger": "safe",
+                    "economy": "broke",
+                    "party": "solo",
+                    "time_of_day": "day",
+                },
+                "fixture_digest": "a" * 64,
+                "managed_save_name": "KenshiAgentScenario",
+                "identity_session_id": "native-session-a",
+                "loaded_sequence": 10,
+                "verified_at": "2026-07-27T12:00:00+00:00",
+                "observed": {
+                    "selected_character_id": "character-0",
+                    "indoors": False,
+                    "in_combat": False,
+                    "money": 20,
+                    "party_size": 1,
+                    "minute_of_day": 720,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    overridden = cli._apply_run_overrides(
+        config,
+        SimpleNamespace(
+            objective=None,
+            planning_mode=None,
+            scenario_attestation=str(attestation),
+        ),
+    )
+
+    assert overridden.runtime.scenario is not None
+    assert overridden.runtime.scenario.scenario_id == "hub-outdoor-safe-day"
+    assert overridden.runtime.scenario_attestation is not None
+    assert overridden.runtime.scenario_attestation.fixture_digest == "a" * 64
+
+
+def test_attested_scenario_refuses_parallel_manual_labels(
+    tmp_path: Path,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+    path = tmp_path / "attestation.json"
+    path.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(SystemExit, match="cannot be combined"):
+        cli._apply_run_overrides(
+            config,
+            SimpleNamespace(
+                objective=None,
+                planning_mode=None,
+                scenario_attestation=str(path),
+                scenario_id="fabricated",
+            ),
+        )
 
 
 def test_run_scenario_override_refuses_partial_declarations() -> None:

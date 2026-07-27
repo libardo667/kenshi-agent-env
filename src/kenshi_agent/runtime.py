@@ -76,6 +76,7 @@ from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .safety import ActionGuard, SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
+from .scenario_fixtures import ScenarioAttestation
 from .session_log import SessionLogger
 from .world_state import (
     CommandCausalityError,
@@ -134,6 +135,7 @@ class AgentRuntime:
         observation_clock: PlanningClock | None = None,
         log_full_observations: bool = False,
         scenario: ScenarioIdentity | None = None,
+        scenario_attestation: ScenarioAttestation | None = None,
     ) -> None:
         self.run_id = run_id
         self.environment = environment
@@ -155,6 +157,14 @@ class AgentRuntime:
         self.observation_clock = observation_clock or SystemPlanningClock()
         self.log_full_observations = log_full_observations
         self.scenario = scenario
+        if (
+            scenario_attestation is not None
+            and scenario_attestation.scenario != scenario
+        ):
+            raise ValueError(
+                "Scenario attestation must match the runtime scenario identity."
+            )
+        self.scenario_attestation = scenario_attestation
         self._state_store: WorldStateStore | None = None
         self._affordance_requests: list[AffordanceRequestRecord] = []
         # Numbering only. Membership is answered by the record list itself, so a
@@ -245,6 +255,11 @@ class AgentRuntime:
                     "scenario": (
                         self.scenario.model_dump(mode="json")
                         if self.scenario is not None
+                        else None
+                    ),
+                    "scenario_attestation": (
+                        self.scenario_attestation.model_dump(mode="json")
+                        if self.scenario_attestation is not None
                         else None
                     ),
                 },
@@ -551,6 +566,11 @@ class AgentRuntime:
                     "scenario": (
                         self.scenario.model_dump(mode="json")
                         if self.scenario is not None
+                        else None
+                    ),
+                    "scenario_attestation": (
+                        self.scenario_attestation.model_dump(mode="json")
+                        if self.scenario_attestation is not None
                         else None
                     ),
                 },

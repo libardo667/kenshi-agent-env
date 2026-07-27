@@ -178,6 +178,9 @@ controls:
   # These are not fixed coordinates and remain valid across client sizes.
   startup_continue_control_labels:
     - Continue
+  startup_load_control_labels:
+    - Load Game
+    - Load
   startup_save_control_labels:
     - autosave1
   # Supplies the audited native approach hotkey and its calibrated pulse for

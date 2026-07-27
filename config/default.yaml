@@ -95,6 +95,9 @@ controls:
   alt_tab_after_input: true
   startup_continue_control_labels:
     - Continue
+  startup_load_control_labels:
+    - Load Game
+    - Load
   startup_save_control_labels:
     - autosave1
   camera_recovery:

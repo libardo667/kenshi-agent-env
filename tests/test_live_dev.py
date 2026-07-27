@@ -19,6 +19,7 @@ from kenshi_agent.live_dev import (
     _ensure_interrupted_safe_state,
     _journey_argv,
     _observe_loaded_paused_health,
+    _open_exact_scenario_save,
     _plugin_ready,
     _steam_connection_state,
     _telemetry_payload,
@@ -1100,6 +1101,63 @@ def test_semantic_control_click_uses_current_center_at_any_client_size() -> None
     asyncio.run(scenario())
 
 
+def test_scenario_start_uses_load_game_then_exact_managed_save() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        load_bounds = NormalizedPointerBounds(
+            min_x=0.1,
+            max_x=0.3,
+            min_y=0.2,
+            max_y=0.4,
+        )
+        save_bounds = NormalizedPointerBounds(
+            min_x=0.4,
+            max_x=0.8,
+            min_y=0.5,
+            max_y=0.7,
+        )
+        reader = LaunchTelemetry(
+            semantic_snapshot(1, label="Load Game", bounds=load_bounds),
+            semantic_snapshot(2, label="Load Game", bounds=load_bounds),
+            semantic_snapshot(3, label="Load Game", bounds=load_bounds),
+            semantic_snapshot(
+                4,
+                label="KenshiAgentScenario",
+                bounds=save_bounds,
+            ),
+            semantic_snapshot(
+                5,
+                label="KenshiAgentScenario",
+                bounds=save_bounds,
+            ),
+            semantic_snapshot(
+                6,
+                label="KenshiAgentScenario",
+                bounds=save_bounds,
+            ),
+        )
+
+        await _open_exact_scenario_save(
+            controller,
+            reader,  # type: ignore[arg-type]
+            load_control_labels=["Load Game"],
+            save_control_label="KenshiAgentScenario",
+            timeout=0.5,
+        )
+
+        assert len(controller.actions) == 2
+        first, second = controller.actions
+        assert isinstance(first, live_dev.ClickAction)
+        assert isinstance(second, live_dev.ClickAction)
+        assert (first.x, first.y) == pytest.approx((0.2, 0.3))
+        assert (second.x, second.y) == pytest.approx((0.6, 0.6))
+        assert first.hold_seconds == second.hold_seconds == MYGUI_CLICK_HOLD_SECONDS
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
 def test_duplicate_semantic_label_is_ambiguous_and_emits_no_match() -> None:
     control = semantic_snapshot(4, label="Continue").ui.visible_controls
     assert control is not None
@@ -1183,6 +1241,145 @@ def test_journey_passes_complete_scenario_declaration_to_core_run() -> None:
     assert argv[argv.index("--scenario-economy") + 1] == "broke"
     assert argv[argv.index("--scenario-party") + 1] == "solo"
     assert argv[argv.index("--scenario-time-of-day") + 1] == "day"
+
+
+def test_attested_journey_forwards_only_the_attestation(
+    tmp_path: Path,
+) -> None:
+    attestation = tmp_path / "current_attestation.json"
+    argv = _journey_argv(
+        _journey_args("--scenario", "hub-outdoor-safe-day"),
+        "scenario-run",
+        scenario_attestation=attestation,
+    )
+
+    assert argv[argv.index("--scenario-attestation") + 1] == str(attestation)
+    assert "--scenario-id" not in argv
+    assert "--save-id" not in argv
+
+
+def test_scenario_capture_refuses_to_read_a_live_save(
+    monkeypatch: object,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source = tmp_path / "saves" / "autosave1"
+    source.mkdir(parents=True)
+    (source / "quick.save").write_bytes(b"save")
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_running_process_names",
+        lambda: {"kenshi_x64.exe"},
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_kenshi_save_root",
+        lambda: tmp_path / "saves",
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_scenario_store",
+        lambda: tmp_path / "store",
+    )
+    args = live_dev.build_parser().parse_args(
+        [
+            "scenario",
+            "--config",
+            "config/live.burnin.yaml",
+            "capture",
+            "--source-save",
+            "autosave1",
+            "--scenario-id",
+            "hub-outdoor-safe-day",
+            "--save-id",
+            "hub-start-v1",
+            "--environment",
+            "outdoor",
+            "--danger",
+            "safe",
+            "--economy",
+            "broke",
+            "--party",
+            "solo",
+            "--time-of-day",
+            "day",
+        ]
+    )
+
+    assert live_dev._scenario_command(args) == 4
+    assert "must be closed" in capsys.readouterr().err
+    assert not (tmp_path / "store").exists()
+
+
+def test_supported_scenario_command_captures_and_restores_reserved_slot(
+    monkeypatch: object,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    save_root = tmp_path / "saves"
+    source = save_root / "autosave1"
+    source.mkdir(parents=True)
+    (source / "quick.save").write_bytes(b"quick")
+    (source / "platoon").mkdir()
+    (source / "platoon" / "Nameless_0.platoon").write_bytes(b"platoon")
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_running_process_names",
+        lambda: set(),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_kenshi_save_root",
+        lambda: save_root,
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        live_dev,
+        "_scenario_store",
+        lambda: tmp_path / "store",
+    )
+    capture = live_dev.build_parser().parse_args(
+        [
+            "scenario",
+            "--config",
+            "config/live.burnin.yaml",
+            "capture",
+            "--source-save",
+            "autosave1",
+            "--scenario-id",
+            "hub-outdoor-safe-day",
+            "--save-id",
+            "hub-start-v1",
+            "--environment",
+            "outdoor",
+            "--danger",
+            "safe",
+            "--economy",
+            "broke",
+            "--party",
+            "solo",
+            "--time-of-day",
+            "day",
+        ]
+    )
+    restore = live_dev.build_parser().parse_args(
+        [
+            "scenario",
+            "--config",
+            "config/live.burnin.yaml",
+            "restore",
+            "hub-outdoor-safe-day",
+        ]
+    )
+
+    assert live_dev._scenario_command(capture) == 0
+    assert live_dev._scenario_command(restore) == 0
+
+    managed = save_root / "KenshiAgentScenario"
+    assert (managed / "quick.save").read_bytes() == b"quick"
+    assert source.is_dir()
+    output = capsys.readouterr().out
+    assert "Captured" in output
+    assert "Restored" in output
 
 
 def test_journey_subprocess_planner_uses_lossless_windows_argv() -> None:

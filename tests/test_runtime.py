@@ -222,6 +222,7 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             assert started["payload"]["control_mode"] == "interface_only"
             assert started["payload"]["scenario"]["scenario_id"] == "mock-hub-safe-day"
             assert started["payload"]["scenario"]["save_id"] == "mock-seed-11"
+            assert started["payload"]["scenario_attestation"] is None
             assert finished["payload"]["control_mode"] == "interface_only"
             assert receipt["payload"]["control_mode"] == "interface_only"
         finally:
