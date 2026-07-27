@@ -14,6 +14,7 @@ from .models import (
     ControlMode,
     LiveContinuousPolicy,
     PlanningMode,
+    ScenarioIdentity,
     parse_action,
 )
 
@@ -38,6 +39,9 @@ class RuntimeConfig(ConfigModel):
     stop_when_terminated: bool = True
     objective: str | None = Field(default=None, max_length=1000)
     decision_stream: bool = False
+    # Explicit experimental context. Absent means this run cannot support a
+    # cross-scenario or cross-save recurrence claim.
+    scenario: ScenarioIdentity | None = None
     # Log a compact observation digest instead of the whole observation. Full
     # payloads are only needed to replay a run with the replay environment, and
     # writing them every pump tick produced a 112 MB log in ten minutes.

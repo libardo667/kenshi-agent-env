@@ -50,6 +50,18 @@ class LiveContinuousPolicy(StrEnum):
     DIALOGUE_INTERACTION_V1 = "dialogue_interaction_v1"
 
 
+class ScenarioIdentity(StrictModel):
+    """One declared game situation, tied to the exact save used to reproduce it."""
+
+    scenario_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+    save_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+    environment: Literal["indoor", "outdoor"]
+    danger: Literal["hostile", "safe"]
+    economy: Literal["broke", "funded"]
+    party: Literal["solo", "squad"]
+    time_of_day: Literal["day", "night"]
+
+
 class ConditionKind(StrEnum):
     FIELD = "field"
     CAPABILITY = "capability"

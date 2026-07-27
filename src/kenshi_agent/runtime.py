@@ -61,6 +61,7 @@ from .models import (
     PlanStep,
     RecoverCameraViewAction,
     RequestAffordanceAction,
+    ScenarioIdentity,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -132,6 +133,7 @@ class AgentRuntime:
         planning_clock: PlanningClock | None = None,
         observation_clock: PlanningClock | None = None,
         log_full_observations: bool = False,
+        scenario: ScenarioIdentity | None = None,
     ) -> None:
         self.run_id = run_id
         self.environment = environment
@@ -152,6 +154,7 @@ class AgentRuntime:
         self.planning_clock = planning_clock or SystemPlanningClock()
         self.observation_clock = observation_clock or SystemPlanningClock()
         self.log_full_observations = log_full_observations
+        self.scenario = scenario
         self._state_store: WorldStateStore | None = None
         self._affordance_requests: list[AffordanceRequestRecord] = []
         # Numbering only. Membership is answered by the record list itself, so a
@@ -239,6 +242,11 @@ class AgentRuntime:
                     "max_steps": max_steps,
                     "seed": seed,
                     "control_mode": self.control_mode.value,
+                    "scenario": (
+                        self.scenario.model_dump(mode="json")
+                        if self.scenario is not None
+                        else None
+                    ),
                 },
             )
             if self.reporter is not None:
@@ -540,6 +548,11 @@ class AgentRuntime:
                     "control_mode": self.control_mode.value,
                     "planning_mode": self.planning_config.mode.value,
                     "live_execution_policy": (self.planning_config.live_execution_policy.value),
+                    "scenario": (
+                        self.scenario.model_dump(mode="json")
+                        if self.scenario is not None
+                        else None
+                    ),
                 },
             )
             if self.reporter is not None:

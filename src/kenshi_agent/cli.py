@@ -21,7 +21,7 @@ from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvir
 from .evals import evaluate_log
 from .final_safe_state import FinalSafeStateOutcome, FinalSafeStateStatus
 from .memory import MemoryStore
-from .models import ControlMode, PlanningMode
+from .models import ControlMode, PlanningMode, ScenarioIdentity
 from .overlay import show_overlay
 from .planners import (
     HeuristicPlanner,
@@ -168,11 +168,43 @@ def _controller_kwargs(config: AppConfig, args: argparse.Namespace) -> _Controll
 def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConfig:
     objective = getattr(args, "objective", None)
     planning_mode = getattr(args, "planning_mode", None)
-    if objective is None and planning_mode is None:
+    scenario_values = {
+        "scenario_id": getattr(args, "scenario_id", None),
+        "save_id": getattr(args, "save_id", None),
+        "environment": getattr(args, "scenario_environment", None),
+        "danger": getattr(args, "scenario_danger", None),
+        "economy": getattr(args, "scenario_economy", None),
+        "party": getattr(args, "scenario_party", None),
+        "time_of_day": getattr(args, "scenario_time_of_day", None),
+    }
+    supplied_scenario_values = [
+        name for name, value in scenario_values.items() if value is not None
+    ]
+    if supplied_scenario_values and len(supplied_scenario_values) != len(
+        scenario_values
+    ):
+        missing = sorted(set(scenario_values) - set(supplied_scenario_values))
+        raise SystemExit(
+            "A scenario declaration requires all scenario fields; missing: "
+            + ", ".join(missing)
+        )
+    scenario: ScenarioIdentity | None = None
+    if supplied_scenario_values:
+        try:
+            scenario = ScenarioIdentity.model_validate(scenario_values)
+        except ValueError as exc:
+            raise SystemExit(f"Invalid scenario declaration: {exc}") from exc
+
+    if objective is None and planning_mode is None and scenario is None:
         return config
     updates: dict[str, object] = {}
+    runtime_updates: dict[str, object] = {}
     if objective is not None:
-        updates["runtime"] = config.runtime.model_copy(update={"objective": objective})
+        runtime_updates["objective"] = objective
+    if scenario is not None:
+        runtime_updates["scenario"] = scenario
+    if runtime_updates:
+        updates["runtime"] = config.runtime.model_copy(update=runtime_updates)
     if planning_mode is not None:
         updates["planning"] = config.planning.model_copy(
             update={"mode": PlanningMode(planning_mode)}
@@ -331,6 +363,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             control_mode=run_control_mode,
             planning_config=config.planning,
             log_full_observations=config.runtime.log_full_observations,
+            scenario=config.runtime.scenario,
             reporter=(
                 ConsoleDecisionReporter(
                     run_id=run_id,
@@ -357,6 +390,11 @@ async def _run_command(args: argparse.Namespace) -> int:
             "run_dir": str(run_dir),
             "control_mode": summary.control_mode.value,
             "planning_mode": config.planning.mode.value,
+            "scenario": (
+                config.runtime.scenario.model_dump(mode="json")
+                if config.runtime.scenario is not None
+                else None
+            ),
             "steps_completed": summary.steps_completed,
             "terminated": summary.terminated,
             "success": summary.success,
@@ -556,6 +594,31 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--objective",
         help="Override the configured objective for this run only.",
+    )
+    run.add_argument("--scenario-id")
+    run.add_argument(
+        "--save-id",
+        help="Stable operator label for the exact save snapshot under test.",
+    )
+    run.add_argument(
+        "--scenario-environment",
+        choices=["indoor", "outdoor"],
+    )
+    run.add_argument(
+        "--scenario-danger",
+        choices=["hostile", "safe"],
+    )
+    run.add_argument(
+        "--scenario-economy",
+        choices=["broke", "funded"],
+    )
+    run.add_argument(
+        "--scenario-party",
+        choices=["solo", "squad"],
+    )
+    run.add_argument(
+        "--scenario-time-of-day",
+        choices=["day", "night"],
     )
     run.add_argument("--script", help="JSONL decisions for scripted planner.")
     run.add_argument("--command", help="External planner command for subprocess planner.")

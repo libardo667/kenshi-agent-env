@@ -1265,6 +1265,18 @@ def _journey_argv(args: argparse.Namespace, run_id: str) -> list[str]:
     ]
     if args.objective:
         argv.extend(["--objective", args.objective])
+    for option, destination in (
+        ("--scenario-id", "scenario_id"),
+        ("--save-id", "save_id"),
+        ("--scenario-environment", "scenario_environment"),
+        ("--scenario-danger", "scenario_danger"),
+        ("--scenario-economy", "scenario_economy"),
+        ("--scenario-party", "scenario_party"),
+        ("--scenario-time-of-day", "scenario_time_of_day"),
+    ):
+        value = getattr(args, destination)
+        if value is not None:
+            argv.extend([option, value])
     if args.planner == "subprocess":
         if not args.planner_script:
             raise SystemExit(
@@ -1429,6 +1441,31 @@ def build_parser() -> argparse.ArgumentParser:
     journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
     journey.add_argument("--config", required=True)
     journey.add_argument("--objective")
+    journey.add_argument("--scenario-id")
+    journey.add_argument(
+        "--save-id",
+        help="Stable operator label for the exact save snapshot under test.",
+    )
+    journey.add_argument(
+        "--scenario-environment",
+        choices=["indoor", "outdoor"],
+    )
+    journey.add_argument(
+        "--scenario-danger",
+        choices=["hostile", "safe"],
+    )
+    journey.add_argument(
+        "--scenario-economy",
+        choices=["broke", "funded"],
+    )
+    journey.add_argument(
+        "--scenario-party",
+        choices=["solo", "squad"],
+    )
+    journey.add_argument(
+        "--scenario-time-of-day",
+        choices=["day", "night"],
+    )
     journey.add_argument(
         "--planner",
         choices=["openai", "openrouter", "subprocess"],

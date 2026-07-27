@@ -1155,6 +1155,36 @@ def test_journey_full_continuous_live_invocation_passes_every_gate() -> None:
     assert "--acknowledge-continuous-live" in argv
 
 
+def test_journey_passes_complete_scenario_declaration_to_core_run() -> None:
+    argv = _journey_argv(
+        _journey_args(
+            "--scenario-id",
+            "hub-outdoor-safe-day",
+            "--save-id",
+            "hub-start-v1",
+            "--scenario-environment",
+            "outdoor",
+            "--scenario-danger",
+            "safe",
+            "--scenario-economy",
+            "broke",
+            "--scenario-party",
+            "solo",
+            "--scenario-time-of-day",
+            "day",
+        ),
+        "scenario-run",
+    )
+
+    assert argv[argv.index("--scenario-id") + 1] == "hub-outdoor-safe-day"
+    assert argv[argv.index("--save-id") + 1] == "hub-start-v1"
+    assert argv[argv.index("--scenario-environment") + 1] == "outdoor"
+    assert argv[argv.index("--scenario-danger") + 1] == "safe"
+    assert argv[argv.index("--scenario-economy") + 1] == "broke"
+    assert argv[argv.index("--scenario-party") + 1] == "solo"
+    assert argv[argv.index("--scenario-time-of-day") + 1] == "day"
+
+
 def test_journey_subprocess_planner_uses_lossless_windows_argv() -> None:
     args = _journey_args(
         "--planner",

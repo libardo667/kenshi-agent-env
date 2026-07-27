@@ -17,6 +17,7 @@ from kenshi_agent.models import (
     ActionReceipt,
     Observation,
     PlannerDecision,
+    ScenarioIdentity,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -196,6 +197,15 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
                 memory=memory,
                 memory_limit=12,
                 minimum_memory_salience=0.0,
+                scenario=ScenarioIdentity(
+                    scenario_id="mock-hub-safe-day",
+                    save_id="mock-seed-11",
+                    environment="outdoor",
+                    danger="safe",
+                    economy="broke",
+                    party="solo",
+                    time_of_day="day",
+                ),
             )
             summary = await runtime.run(max_steps=30)
             assert summary.success is True
@@ -210,6 +220,8 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             finished = next(event for event in events if event["event_type"] == "run_finished")
             receipt = next(event for event in events if event["event_type"] == "action_receipt")
             assert started["payload"]["control_mode"] == "interface_only"
+            assert started["payload"]["scenario"]["scenario_id"] == "mock-hub-safe-day"
+            assert started["payload"]["scenario"]["save_id"] == "mock-seed-11"
             assert finished["payload"]["control_mode"] == "interface_only"
             assert receipt["payload"]["control_mode"] == "interface_only"
         finally:

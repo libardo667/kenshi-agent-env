@@ -263,10 +263,10 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Multi-save robustness.** Deliberate scenario matrix — indoor/outdoor,
-   hostile/safe, broke/funded, solo/squad, day/night — rather than repeated runs
-   of one town. The affordance-request stream is the instrument; treat its
-   output as the backlog.
+1. **Execute the declared scenario matrix.** Use distinct save/scenario IDs for
+   indoor/outdoor, hostile/safe, broke/funded, solo/squad, and day/night runs.
+   Undeclared reruns are not recurrence evidence. The affordance-request stream
+   is the backlog; select the first gap supported across declared situations.
 2. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one

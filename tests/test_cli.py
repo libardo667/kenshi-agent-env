@@ -239,6 +239,53 @@ def test_run_planning_mode_override_is_ephemeral() -> None:
     assert config.planning.mode is PlanningMode.SINGLE_STEP
 
 
+def test_run_scenario_override_is_typed_and_ephemeral() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+
+    overridden = cli._apply_run_overrides(
+        config,
+        SimpleNamespace(
+            objective=None,
+            planning_mode=None,
+            scenario_id="hub-outdoor-safe-day",
+            save_id="hub-start-v1",
+            scenario_environment="outdoor",
+            scenario_danger="safe",
+            scenario_economy="broke",
+            scenario_party="solo",
+            scenario_time_of_day="day",
+        ),
+    )
+
+    assert overridden.runtime.scenario is not None
+    assert overridden.runtime.scenario.model_dump(mode="json") == {
+        "scenario_id": "hub-outdoor-safe-day",
+        "save_id": "hub-start-v1",
+        "environment": "outdoor",
+        "danger": "safe",
+        "economy": "broke",
+        "party": "solo",
+        "time_of_day": "day",
+    }
+    assert config.runtime.scenario is None
+
+
+def test_run_scenario_override_refuses_partial_declarations() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+
+    with pytest.raises(SystemExit, match="all scenario fields"):
+        cli._apply_run_overrides(
+            config,
+            SimpleNamespace(
+                objective=None,
+                planning_mode=None,
+                scenario_id="hub-outdoor-safe-day",
+            ),
+        )
+
+
 def test_exclusive_input_session_keeps_kenshi_foreground() -> None:
     root = Path(__file__).resolve().parents[1]
     config = load_config(root / "config" / "live.burnin.yaml")

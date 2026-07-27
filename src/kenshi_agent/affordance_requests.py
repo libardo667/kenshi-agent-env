@@ -10,16 +10,19 @@ from .models import (
     AffordanceRequestStatus,
     AffordanceUrgency,
     RequestAffordanceAction,
+    ScenarioIdentity,
     affordance_aggregation_key,
 )
 
 MAX_GROUNDED_EXAMPLES_PER_CANDIDATE = 5
 MAX_UNCLASSIFIED_SAMPLES = 20
+_MISSING_SCENARIO = object()
 
 
 @dataclass(frozen=True, slots=True)
 class GroundedAffordanceExample:
     run_id: str
+    scenario: dict[str, str] | None
     capability_description: str
     blocked_goal: str
     why_needed: str
@@ -36,12 +39,25 @@ class AffordanceReviewCandidate:
     capability_slug: str
     capability_descriptions: list[str]
     distinct_run_count: int
+    distinct_scenario_count: int
+    distinct_save_count: int
+    undeclared_run_count: int
     request_event_count: int
     retained_event_count: int
     duplicate_event_count: int
     urgency_run_counts: dict[str, int]
+    urgency_scenario_counts: dict[str, int]
     grounded_examples: list[GroundedAffordanceExample]
     review_status: str = "needs_engineering_review"
+
+
+@dataclass(frozen=True, slots=True)
+class ScenarioCoverage:
+    declared_run_count: int
+    undeclared_run_count: int
+    distinct_scenario_count: int
+    distinct_save_count: int
+    dimension_scenario_counts: dict[str, dict[str, int]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +74,7 @@ class AffordanceAggregationReport:
     request_events: int
     classified_events: int
     unclassified_events: int
+    scenario_coverage: ScenarioCoverage
     candidates: list[AffordanceReviewCandidate]
     unclassified_samples: list[UnclassifiedAffordanceSample]
 
@@ -138,6 +155,121 @@ def _parse_classified_event(
     return run_id, request, status
 
 
+def _merge_demand(
+    demands: dict[tuple[str, str], _RunDemand],
+    key: tuple[str, str],
+    run: _RunDemand,
+) -> None:
+    current = demands.get(key)
+    if current is None:
+        demands[key] = _RunDemand(
+            action=run.action,
+            strongest_urgency=run.strongest_urgency,
+            retained=run.retained,
+        )
+        return
+    stronger = (
+        _URGENCY_STRENGTH[run.strongest_urgency]
+        > _URGENCY_STRENGTH[current.strongest_urgency]
+    )
+    newly_retained = run.retained and not current.retained
+    if stronger or newly_retained:
+        current.action = run.action
+    if stronger:
+        current.strongest_urgency = run.strongest_urgency
+    if run.retained:
+        current.retained = True
+
+
+def _effective_scenarios(
+    declared: dict[str, ScenarioIdentity | None],
+) -> dict[str, ScenarioIdentity]:
+    """Drop undeclared and internally conflicting scenario identities."""
+
+    declarations_by_key: dict[tuple[str, str], set[str]] = {}
+    for scenario in declared.values():
+        if scenario is None:
+            continue
+        key = (scenario.save_id, scenario.scenario_id)
+        declarations_by_key.setdefault(key, set()).add(
+            scenario.model_dump_json()
+        )
+    consistent_keys = {
+        key for key, declarations in declarations_by_key.items() if len(declarations) == 1
+    }
+    return {
+        run_id: scenario
+        for run_id, scenario in declared.items()
+        if scenario is not None
+        and (scenario.save_id, scenario.scenario_id) in consistent_keys
+    }
+
+
+def _scenario_coverage(
+    *,
+    all_run_ids: set[str],
+    scenarios: dict[str, ScenarioIdentity],
+) -> ScenarioCoverage:
+    unique_scenarios = {
+        (scenario.save_id, scenario.scenario_id): scenario
+        for scenario in scenarios.values()
+    }
+    dimension_counts: dict[str, dict[str, int]] = {}
+    for field_name in (
+        "environment",
+        "danger",
+        "economy",
+        "party",
+        "time_of_day",
+    ):
+        values: dict[str, int] = {}
+        for scenario in unique_scenarios.values():
+            value = str(getattr(scenario, field_name))
+            values[value] = values.get(value, 0) + 1
+        dimension_counts[field_name] = dict(sorted(values.items()))
+    return ScenarioCoverage(
+        declared_run_count=len(scenarios),
+        undeclared_run_count=len(all_run_ids - set(scenarios)),
+        distinct_scenario_count=len(unique_scenarios),
+        distinct_save_count=len(
+            {scenario.save_id for scenario in unique_scenarios.values()}
+        ),
+        dimension_scenario_counts=dimension_counts,
+    )
+
+
+def _representative_example_runs(
+    candidate: _Candidate,
+    scenarios: dict[str, ScenarioIdentity],
+) -> list[tuple[str, _RunDemand]]:
+    """Retain one strongest example per declared scenario before raw reruns."""
+
+    declared: dict[tuple[str, str], tuple[str, _RunDemand]] = {}
+    undeclared: list[tuple[str, _RunDemand]] = []
+    for run_id, run in sorted(candidate.runs.items()):
+        scenario = scenarios.get(run_id)
+        if scenario is None:
+            undeclared.append((run_id, run))
+            continue
+        key = (scenario.save_id, scenario.scenario_id)
+        current = declared.get(key)
+        if current is None:
+            declared[key] = (run_id, run)
+            continue
+        _, current_run = current
+        stronger = (
+            _URGENCY_STRENGTH[run.strongest_urgency]
+            > _URGENCY_STRENGTH[current_run.strongest_urgency]
+        )
+        newly_retained = run.retained and not current_run.retained
+        if stronger or newly_retained:
+            declared[key] = (run_id, run)
+    representatives = [
+        example for _, example in sorted(declared.items())
+    ]
+    return [*representatives, *undeclared]
+
+
 def aggregate_affordance_requests(
     log_paths: list[Path],
 ) -> AffordanceAggregationReport:
@@ -149,14 +281,43 @@ def aggregate_affordance_requests(
     classified_events = 0
     unclassified_events = 0
     unclassified_samples: list[UnclassifiedAffordanceSample] = []
+    all_run_ids: set[str] = set()
+    declared_scenarios: dict[str, ScenarioIdentity | None] = {}
 
     for path in paths:
         with path.open("r", encoding="utf-8") as handle:
             for line_number, line in enumerate(handle, start=1):
                 record = json.loads(line)
-                if not isinstance(record, dict) or (
-                    record.get("event_type") != "affordance_request"
-                ):
+                if not isinstance(record, dict):
+                    continue
+                raw_run_id = record.get("run_id")
+                if isinstance(raw_run_id, str) and raw_run_id:
+                    all_run_ids.add(raw_run_id)
+                if record.get("event_type") == "run_started":
+                    if not isinstance(raw_run_id, str) or not raw_run_id:
+                        continue
+                    payload = record.get("payload")
+                    raw_scenario = (
+                        payload.get("scenario") if isinstance(payload, dict) else None
+                    )
+                    try:
+                        scenario = (
+                            ScenarioIdentity.model_validate(raw_scenario)
+                            if raw_scenario is not None
+                            else None
+                        )
+                    except ValidationError:
+                        scenario = None
+                    existing = declared_scenarios.get(
+                        raw_run_id,
+                        _MISSING_SCENARIO,
+                    )
+                    if existing is _MISSING_SCENARIO:
+                        declared_scenarios[raw_run_id] = scenario
+                    elif scenario != existing:
+                        declared_scenarios[raw_run_id] = None
+                    continue
+                if record.get("event_type") != "affordance_request":
                     continue
                 request_events += 1
                 try:
@@ -206,18 +367,41 @@ def aggregate_affordance_requests(
                 if status is AffordanceRequestStatus.RETAINED:
                     run.retained = True
 
+    effective_scenarios = _effective_scenarios(declared_scenarios)
     review_candidates: list[AffordanceReviewCandidate] = []
     for key, candidate in candidates.items():
-        urgency_counts = {
+        urgency_run_counts = {
             urgency.value: sum(
                 run.strongest_urgency is urgency
                 for run in candidate.runs.values()
             )
             for urgency in AffordanceUrgency
         }
+        scenario_demands: dict[tuple[str, str], _RunDemand] = {}
+        for run_id, run in candidate.runs.items():
+            scenario = effective_scenarios.get(run_id)
+            if scenario is None:
+                continue
+            _merge_demand(
+                scenario_demands,
+                (scenario.save_id, scenario.scenario_id),
+                run,
+            )
+        urgency_scenario_counts = {
+            urgency.value: sum(
+                demand.strongest_urgency is urgency
+                for demand in scenario_demands.values()
+            )
+            for urgency in AffordanceUrgency
+        }
         examples = [
             GroundedAffordanceExample(
                 run_id=run_id,
+                scenario=(
+                    effective_scenarios[run_id].model_dump(mode="json")
+                    if run_id in effective_scenarios
+                    else None
+                ),
                 capability_description=run.action.capability_description,
                 blocked_goal=run.action.blocked_goal,
                 why_needed=run.action.why_needed,
@@ -225,7 +409,10 @@ def aggregate_affordance_requests(
                 available_workaround=run.action.available_workaround,
                 urgency=run.strongest_urgency.value,
             )
-            for run_id, run in sorted(candidate.runs.items())
+            for run_id, run in _representative_example_runs(
+                candidate,
+                effective_scenarios,
+            )
         ][:MAX_GROUNDED_EXAMPLES_PER_CANDIDATE]
         review_candidates.append(
             AffordanceReviewCandidate(
@@ -235,21 +422,34 @@ def aggregate_affordance_requests(
                 capability_slug=candidate.action.capability_slug,
                 capability_descriptions=sorted(candidate.descriptions),
                 distinct_run_count=len(candidate.runs),
+                distinct_scenario_count=len(scenario_demands),
+                distinct_save_count=len(
+                    {save_id for save_id, _ in scenario_demands}
+                ),
+                undeclared_run_count=(
+                    len(candidate.runs)
+                    - sum(run_id in effective_scenarios for run_id in candidate.runs)
+                ),
                 request_event_count=candidate.request_events,
                 retained_event_count=candidate.retained_events,
                 duplicate_event_count=candidate.duplicate_events,
-                urgency_run_counts=urgency_counts,
+                urgency_run_counts=urgency_run_counts,
+                urgency_scenario_counts=urgency_scenario_counts,
                 grounded_examples=examples,
             )
         )
 
     review_candidates.sort(
         key=lambda candidate: (
-            -candidate.urgency_run_counts[
-                AffordanceUrgency.SURVIVAL_CRITICAL.value
-            ],
-            -candidate.distinct_run_count,
-            -candidate.urgency_run_counts[
+            -int(
+                candidate.urgency_run_counts[
+                    AffordanceUrgency.SURVIVAL_CRITICAL.value
+                ]
+                > 0
+            ),
+            -candidate.distinct_save_count,
+            -candidate.distinct_scenario_count,
+            -candidate.urgency_scenario_counts[
                 AffordanceUrgency.BLOCKS_CURRENT_GOAL.value
             ],
             candidate.aggregation_key,
@@ -260,6 +460,10 @@ def aggregate_affordance_requests(
         request_events=request_events,
         classified_events=classified_events,
         unclassified_events=unclassified_events,
+        scenario_coverage=_scenario_coverage(
+            all_run_ids=all_run_ids,
+            scenarios=effective_scenarios,
+        ),
         candidates=review_candidates,
         unclassified_samples=unclassified_samples,
     )

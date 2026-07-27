@@ -33,8 +33,8 @@ the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md
   strategic turn, creates no world command, and emits zero primitives. Unknown
   source IDs fail closed; unchanged-state requests are suppressed before the call.
 - `request_affordance` records a typed intent class plus Kenshi capability slug,
-  grounded evidence, and urgency without granting authority or emitting input.
-  `kenshi-agent aggregate-affordances` ranks those keys across run logs for review.
+  evidence, and urgency without granting authority or input. Aggregation separates
+  raw reruns from declared save/scenario recurrence across five matrix axes.
 - Persistent memory unions bounded general recall with exact, fresh
   current-target matches and exposes dialogue-approach repetition by target.
 
