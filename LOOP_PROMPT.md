@@ -12,11 +12,11 @@ One invocation delivers **one bounded slice**, fully finished and green.
 Verify this; do not assume it. It was accurate at protocol `1.0.0`.
 
 The portable core is a deterministic Kenshi-like mock with strict Pydantic
-models, JSONL lifecycle logs, SQLite memory, generated schemas, and
-heuristic/scripted/subprocess/OpenAI/OpenRouter planners. `single_step` is the
-default scheduler; feature-flagged `continuous` planning accepts bounded typed
-plans, future patches, and exact opt-in active-movement interruption behind
-deterministic acceptance.
+models, JSONL lifecycle logs, exact entity-scoped SQLite memory, generated
+schemas, and heuristic/scripted/subprocess/OpenAI/OpenRouter planners.
+`single_step` is the default scheduler; feature-flagged `continuous` planning
+accepts bounded typed plans, future patches, and exact opt-in active-movement
+interruption behind deterministic acceptance.
 
 Live work runs through one observation pump, a bounded `WorldStateStore`, an
 independent safety supervisor, and a final in-lease authorization fence. The
@@ -263,27 +263,23 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Make learned constraints recallable by target.** Salience-only top-N recall
-   can bury a correct entity-specific negative constraint after later writes.
-   Bind memories to stable target IDs and union entity-scoped matches with the
-   bounded general recall; measure whether repeated approaches fall.
-2. **Multi-save robustness.** Deliberate scenario matrix — indoor/outdoor,
+1. **Multi-save robustness.** Deliberate scenario matrix — indoor/outdoor,
    hostile/safe, broke/funded, solo/squad, day/night — rather than repeated runs
    of one town. The affordance-request stream is the instrument; treat its
    output as the backlog.
-3. **Expand controller-verified contracts.** Most success conditions are still
+2. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one
    class of false success.
-4. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
+3. **Close the `use_game_binding(pause)` gap.** `allow_live_unpause_actions=false`
    guards only direct `PauseAction`. Bindings also use a hard-coded key map
    rather than the active `controls.cfg`.
-5. **Add mutation testing.** Test count is not coverage; `mutmut` or
+4. **Add mutation testing.** Test count is not coverage; `mutmut` or
    `cosmic-ray` over `src/kenshi_agent/` is the only cheap answer to whether the
    suite would notice broken code.
-6. **Remote map travel.** No semantic action exists at all; `move_to_character`
+5. **Remote map travel.** No semantic action exists at all; `move_to_character`
    is bounded to the nearby-character query.
-7. **Native identity validation** across recruit, dismiss, reorder, KO, death,
+6. **Native identity validation** across recruit, dismiss, reorder, KO, death,
    save/load, and zone transitions.
 
 ## Continuous-planning semantics

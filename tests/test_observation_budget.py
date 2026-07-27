@@ -393,6 +393,33 @@ def test_semantic_budget_preserves_critical_fields_and_reports_omissions() -> No
         assert count["original"] >= count["retained"]
 
 
+def test_semantic_budget_never_discards_a_current_target_memory() -> None:
+    observation = _oversized_observation()
+    target_memory = MemoryRecord(
+        id=100,
+        namespace="test",
+        run_id="budget-run",
+        kind=MemoryKind.FACT,
+        content="This exact barman has no affordable work.",
+        salience=0.0,
+        evidence="Earlier dialogue reached its terminal unaffordable branch.",
+        target_id=_TARGET_ID,
+        created_at=_NOW,
+        last_accessed_at=_NOW,
+    )
+    observation = observation.model_copy(
+        update={"memories": [target_memory, *observation.memories]}
+    )
+
+    budget, payload = _minimum_fitting_budget(observation)
+    document = json.loads(payload)
+
+    assert len(payload) <= budget
+    assert [
+        (memory["target_id"], memory["content"]) for memory in document["memories"]
+    ] == [(_TARGET_ID, target_memory.content)]
+
+
 def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
     observation = _oversized_observation()
     minimum, _ = _minimum_fitting_budget(observation)

@@ -124,6 +124,7 @@ class AgentRuntime:
         memory: MemoryStore | None,
         memory_limit: int,
         minimum_memory_salience: float,
+        entity_memory_limit: int = 8,
         action_outcome_limit: int = 12,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         reporter: ConsoleDecisionReporter | None = None,
@@ -141,6 +142,7 @@ class AgentRuntime:
         self.logger = logger
         self.memory = memory
         self.memory_limit = memory_limit
+        self.entity_memory_limit = entity_memory_limit
         self.minimum_memory_salience = minimum_memory_salience
         self.action_outcome_limit = action_outcome_limit
         self.control_mode = control_mode
@@ -1983,10 +1985,14 @@ class AgentRuntime:
             ),
             "affordance_requests": list(self._affordance_requests),
         }
-        if self.memory is not None and self.memory_limit > 0:
+        if self.memory is not None and (
+            self.memory_limit > 0 or self.entity_memory_limit > 0
+        ):
             updates["memories"] = self.memory.recall(
                 limit=self.memory_limit,
                 minimum_salience=self.minimum_memory_salience,
+                target_ids=observation.current_memory_target_ids(),
+                entity_limit=self.entity_memory_limit,
             )
         return observation.model_copy(update=updates)
 

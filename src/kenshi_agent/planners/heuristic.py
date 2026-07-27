@@ -93,6 +93,7 @@ class HeuristicPlanner(Planner):
                         ),
                         salience=0.55,
                         evidence="Visible hostile in telemetry.",
+                        target_id=hostile.id,
                     )
                 ],
             )

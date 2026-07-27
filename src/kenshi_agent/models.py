@@ -1455,6 +1455,10 @@ class MemoryWrite(StrictModel):
     content: str = Field(min_length=1, max_length=2000)
     salience: float = Field(default=0.5, ge=0.0, le=1.0)
     evidence: str | None = Field(default=None, max_length=1000)
+    # Opaque identity copied exactly from the current observation. Display
+    # names are intentionally insufficient: two Barmen may share one, and a
+    # later identity session may reuse the same role for another character.
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class MemoryRecord(StrictModel):
@@ -1465,6 +1469,7 @@ class MemoryRecord(StrictModel):
     content: str
     salience: float
     evidence: str | None = None
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
     created_at: datetime
     last_accessed_at: datetime
 
@@ -2087,6 +2092,32 @@ class Observation(StrictModel):
         max_length=32,
     )
 
+    def current_memory_target_ids(self) -> set[str]:
+        """Return exact identities safe to use for entity-scoped recall.
+
+        A stale snapshot is not evidence that an entity is still current. The
+        lookup deliberately ignores display names and historical native target
+        fields: only an entity in this snapshot, or the dialogue currently
+        open in this snapshot, can reactivate a bound memory.
+        """
+
+        if self.telemetry is None or self.telemetry_stale:
+            return set()
+        telemetry = self.telemetry
+        target_ids = {
+            item.id
+            for collection in (
+                telemetry.squad,
+                telemetry.nearby_entities,
+                telemetry.world_targets,
+            )
+            for item in collection
+            if item.id
+        }
+        if telemetry.ui.dialogue_target_id:
+            target_ids.add(telemetry.ui.dialogue_target_id)
+        return target_ids
+
     def travel_destination_digest(self) -> list[dict[str, Any]]:
         """Somewhere to walk that is not already somewhere to talk.
 
@@ -2499,11 +2530,11 @@ class Observation(StrictModel):
         `max_chars` bounds what the observation *costs*, which is a spending
         decision, not a limit of the model - the configured 30k is under one
         percent of a current context window. It therefore governs the optional
-        content only. The control list is not optional: the planner may act
-        only on a control it was shown, so truncating it does not produce a
-        smaller observation, it produces an agent that cannot press a button it
-        is looking at and has no way to know the button exists. When the full
-        action surface costs more than the budget, the budget gives way.
+        content only. The control list and exact current-target memories are not
+        optional: the planner may act only on a control it was shown, and a
+        learned entity constraint must not vanish merely because later general
+        facts filled the recall list. When either decision-critical surface
+        costs more than the budget, the spending budget gives way.
 
         `max_context_chars` is the genuine ceiling, being a property of the
         model rather than a preference. Crossing it is a real failure and says
@@ -2522,14 +2553,19 @@ class Observation(StrictModel):
         controls = self.visible_control_digest()
         floor = irreducible_payload(payload)
         floor["visible_controls"] = []
-        # A budget too small for the envelope even before any control is listed
-        # is a configuration mistake, and stays the hard error it has always
-        # been. Only the control list may push past the budget, because that is
-        # a property of the screen the agent happens to be looking at.
-        base_required = len(json.dumps(floor, indent=2, ensure_ascii=False))
+        # A budget too small for the safety envelope is still a hard
+        # configuration error. Current-target memories, like controls, may push
+        # past the spending preference because silently dropping them changes
+        # the planner's effective state.
+        safety_floor = irreducible_payload(
+            payload,
+            preserve_current_target_memories=False,
+        )
+        safety_floor["visible_controls"] = []
+        safety_required = len(json.dumps(safety_floor, indent=2, ensure_ascii=False))
         floor["visible_controls"] = group_controls_by_window(controls, self.window_owners())
         required = len(json.dumps(floor, indent=2, ensure_ascii=False))
-        if max_chars < base_required:
+        if max_chars < safety_required:
             required = max_chars
         if required > max_context_chars:
             # Only here is dropping a control the lesser evil. Say so in the

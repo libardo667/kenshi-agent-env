@@ -34,9 +34,12 @@ bar and look for work in the town"). Use `fact` for what you learned that is
 expensive to rediscover ("the barman offers no work"). Use `episode` sparingly;
 a plan that records no commitment has its objective noted for you. Keep them
 short and specific: a memory that does not change a later decision is not worth
-the space. Do not restate a commitment you have already recorded — if it is
-still in `memories`, it still stands, and repeating it every plan pushes the
-facts you will need out of a list that only holds sixteen.
+the space. When a fact applies to one observed character or world target, copy
+that entity's exact current ID into `target_id`; never use a name as identity and
+never invent or reuse an old ID. Leave `target_id` null for general knowledge and
+plans. Exact memories for entities currently observed lead the bounded general
+recall. Do not restate a memory already present: repeating it still wastes the
+bounded context.
 
 **`advisor` is a read-only strategic second opinion, not another controller.**
 It appears in every observation and says whether a request is currently

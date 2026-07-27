@@ -486,8 +486,12 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
                 "kind": memory.kind.value,
                 "content": memory.content,
                 "evidence": memory.evidence,
+                "target_id": memory.target_id,
             }
-            for memory in observation.memories[-16:]
+            # Runtime orders exact current-target matches before the general
+            # salience list. Keep that ordering when this smaller advisor view
+            # needs to truncate.
+            for memory in observation.memories[:16]
         ],
     }
 

@@ -19,6 +19,9 @@ class _MetricValues(TypedDict):
     dry_run_actions: int
     executed_actions: int
     primitive_actions: int
+    dialogue_approach_attempts: int
+    repeated_dialogue_approach_attempts: int
+    max_dialogue_approach_attempts_per_target: int
     observations: int
     stale_observations: int
     memory_writes: int
@@ -95,6 +98,10 @@ class LogMetrics:
     dry_run_actions: int = 0
     executed_actions: int = 0
     primitive_actions: int = 0
+    dialogue_approach_attempts: int = 0
+    repeated_dialogue_approach_attempts: int = 0
+    max_dialogue_approach_attempts_per_target: int = 0
+    dialogue_approach_attempts_by_target: dict[str, int] = field(default_factory=dict)
     observations: int = 0
     stale_observations: int = 0
     memory_writes: int = 0
@@ -172,6 +179,7 @@ def evaluate_log(path: Path) -> LogMetrics:
     decision_planner_latencies: list[float] = []
     strategic_planner_latencies: list[float] = []
     native_acknowledgements: dict[str, dict[str, object]] = {}
+    dialogue_approaches_by_target: dict[str, int] = {}
 
     def retain_native_acknowledgement(candidate: object) -> None:
         if not isinstance(candidate, dict):
@@ -192,6 +200,9 @@ def evaluate_log(path: Path) -> LogMetrics:
         "dry_run_actions": 0,
         "executed_actions": 0,
         "primitive_actions": 0,
+        "dialogue_approach_attempts": 0,
+        "repeated_dialogue_approach_attempts": 0,
+        "max_dialogue_approach_attempts_per_target": 0,
         "observations": 0,
         "stale_observations": 0,
         "memory_writes": 0,
@@ -281,6 +292,17 @@ def evaluate_log(path: Path) -> LogMetrics:
             elif event_type == "action_receipt":
                 values["action_receipts"] += 1
                 values["primitive_actions"] += int(payload.get("primitive_actions", 0))
+                action = payload.get("action")
+                if (
+                    isinstance(action, dict)
+                    and action.get("kind") == "approach_dialogue_target"
+                    and isinstance(action.get("target_id"), str)
+                    and action["target_id"]
+                ):
+                    target_id = action["target_id"]
+                    dialogue_approaches_by_target[target_id] = (
+                        dialogue_approaches_by_target.get(target_id, 0) + 1
+                    )
                 if payload.get("dry_run"):
                     values["dry_run_actions"] += 1
                 if payload.get("executed"):
@@ -447,6 +469,17 @@ def evaluate_log(path: Path) -> LogMetrics:
             0,
             values["decisions"] - values["reflex_decisions"],
         )
+    values["dialogue_approach_attempts"] = sum(
+        dialogue_approaches_by_target.values()
+    )
+    values["repeated_dialogue_approach_attempts"] = sum(
+        max(0, count - 1) for count in dialogue_approaches_by_target.values()
+    )
+    values["max_dialogue_approach_attempts_per_target"] = max(
+        dialogue_approaches_by_target.values(),
+        default=0,
+    )
+    ordered_dialogue_approaches = dict(sorted(dialogue_approaches_by_target.items()))
     actions_per_call = (
         values["action_receipts"] / values["strategic_planner_calls"]
         if values["strategic_planner_calls"]
@@ -494,6 +527,7 @@ def evaluate_log(path: Path) -> LogMetrics:
     if not planner_latencies:
         return LogMetrics(
             **values,
+            dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
             mean_native_ack_sequence_lag=mean_native_ack_sequence_lag,
@@ -505,6 +539,7 @@ def evaluate_log(path: Path) -> LogMetrics:
     p95_index = max(0, ceil(len(ordered) * 0.95) - 1)
     return LogMetrics(
         **values,
+        dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
         mean_planner_latency_seconds=fmean(ordered),
         p50_planner_latency_seconds=median(ordered),
         p95_planner_latency_seconds=ordered[p95_index],

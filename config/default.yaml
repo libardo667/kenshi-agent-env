@@ -143,6 +143,7 @@ memory:
   enabled: true
   run_namespace: default
   max_recalled_memories: 12
+  max_entity_recalled_memories: 8
   minimum_salience: 0.15
 
 macros:

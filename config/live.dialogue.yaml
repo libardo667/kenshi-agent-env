@@ -208,6 +208,7 @@ memory:
   enabled: true
   run_namespace: live-dialogue-chain
   max_recalled_memories: 16
+  max_entity_recalled_memories: 8
   minimum_salience: 0.2
 
 macros:

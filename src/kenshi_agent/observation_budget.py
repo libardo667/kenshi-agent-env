@@ -205,15 +205,10 @@ def budget_observation_payload(
             )
         )
 
-    for memory in sorted(
-        original["memories"],
-        key=lambda item: (
-            float(item["salience"]),
-            str(item["last_accessed_at"]),
-            int(item["id"]),
-        ),
-        reverse=True,
-    ):
+    retained_memory_ids = {int(item["id"]) for item in retained["memories"]}
+    for memory in sorted(original["memories"], key=_memory_sort_key, reverse=True):
+        if int(memory["id"]) in retained_memory_ids:
+            continue
         attempt(
             _append_mutator(
                 "memories",
@@ -250,7 +245,11 @@ def budget_observation_payload(
     return text
 
 
-def irreducible_payload(original: JsonObject) -> JsonObject:
+def irreducible_payload(
+    original: JsonObject,
+    *,
+    preserve_current_target_memories: bool = True,
+) -> JsonObject:
     retained = {
         key: deepcopy(value)
         for key, value in original.items()
@@ -264,7 +263,20 @@ def irreducible_payload(original: JsonObject) -> JsonObject:
     )
     retained["available_skills"] = []
     retained["skill_specs"] = []
-    retained["memories"] = []
+    current_target_ids = _current_memory_target_ids(original)
+    retained["memories"] = (
+        sorted(
+            (
+                deepcopy(memory)
+                for memory in original["memories"]
+                if memory.get("target_id") in current_target_ids
+            ),
+            key=_memory_sort_key,
+            reverse=True,
+        )
+        if preserve_current_target_memories
+        else []
+    )
 
     telemetry = original.get("telemetry")
     if not isinstance(telemetry, dict):
@@ -361,6 +373,37 @@ def irreducible_payload(original: JsonObject) -> JsonObject:
         }
     )
     return retained
+
+
+def _current_memory_target_ids(original: JsonObject) -> set[str]:
+    if original.get("telemetry_stale") is True:
+        return set()
+    telemetry = original.get("telemetry")
+    if not isinstance(telemetry, dict):
+        return set()
+
+    target_ids: set[str] = set()
+    for collection_name in ("squad", "nearby_entities", "world_targets"):
+        collection = telemetry.get(collection_name)
+        if not isinstance(collection, list):
+            continue
+        target_ids.update(
+            str(item["id"])
+            for item in collection
+            if isinstance(item, dict) and item.get("id")
+        )
+    ui = telemetry.get("ui")
+    if isinstance(ui, dict) and ui.get("dialogue_target_id"):
+        target_ids.add(str(ui["dialogue_target_id"]))
+    return target_ids
+
+
+def _memory_sort_key(memory: JsonObject) -> tuple[float, str, int]:
+    return (
+        float(memory["salience"]),
+        str(memory["last_accessed_at"]),
+        int(memory["id"]),
+    )
 
 
 def _critical_acknowledgements(native: JsonObject) -> list[JsonObject]:

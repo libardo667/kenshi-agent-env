@@ -1603,6 +1603,20 @@
           "default": null,
           "title": "Evidence"
         },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
         "created_at": {
           "format": "date-time",
           "title": "Created At",

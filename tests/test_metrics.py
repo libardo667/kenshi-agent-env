@@ -147,6 +147,44 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.native_command_completion_percentage == 100.0
 
 
+def test_evaluate_log_measures_repeated_dialogue_approaches_by_target(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "events.jsonl"
+    records = [
+        {
+            "event_type": "action_receipt",
+            "payload": {
+                "action": {
+                    "kind": "approach_dialogue_target",
+                    "target_id": target_id,
+                },
+                "executed": executed,
+            },
+        }
+        for target_id, executed in (
+            ("entity-barman", True),
+            ("entity-guard", True),
+            ("entity-barman", True),
+            ("entity-barman", False),
+        )
+    ]
+    path.write_text(
+        "\n".join(json.dumps(record) for record in records) + "\n",
+        encoding="utf-8",
+    )
+
+    metrics = evaluate_log(path)
+
+    assert metrics.dialogue_approach_attempts_by_target == {
+        "entity-barman": 3,
+        "entity-guard": 1,
+    }
+    assert metrics.dialogue_approach_attempts == 4
+    assert metrics.repeated_dialogue_approach_attempts == 2
+    assert metrics.max_dialogue_approach_attempts_per_target == 3
+
+
 def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
     """A digest must not silently break replay metrics.
 

@@ -395,7 +395,11 @@ class SafetyConfig(ConfigModel):
 class MemoryConfig(ConfigModel):
     enabled: bool = True
     run_namespace: str = "default"
+    # General memories compete by salience within this budget. Exact memories
+    # for entities in the fresh current observation receive a separate bounded
+    # budget so later general writes cannot erase a learned constraint.
     max_recalled_memories: int = Field(default=12, ge=0, le=100)
+    max_entity_recalled_memories: int = Field(default=8, ge=0, le=100)
     minimum_salience: float = Field(default=0.15, ge=0.0, le=1.0)
 
 

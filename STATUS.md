@@ -35,6 +35,8 @@ the action surface lives in generated [catalog](docs/generated/ACTION_CATALOG.md
 - `request_affordance` records a typed intent class plus Kenshi capability slug,
   grounded evidence, and urgency without granting authority or emitting input.
   `kenshi-agent aggregate-affordances` ranks those keys across run logs for review.
+- Persistent memory unions bounded general recall with exact, fresh
+  current-target matches and exposes dialogue-approach repetition by target.
 
 ## Live profiles
 
@@ -85,8 +87,6 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
-- Persistent recall is salience-only and not entity-scoped, so a learned
-  constraint can disappear when later writes fill the recall budget.
 
 ## Known limitations
 
@@ -111,6 +111,8 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
   unavailable or unvalidated; source-scan capacity still makes absence unknown.
 - Native identity still needs repeated validation across
   recruit/dismiss/reorder/KO/death, save/load, and zone transitions.
+- Exact entity memories deliberately do not transfer by display name across a
+  native process or game-session identity change.
 - Renderer stability remains open on this Intel Iris Xe host: later paused runs
   still failed after two clean soaks. The 30 fps external-only path passed its
   45-second startup window and rejects recovered Event 141s, but has no long soak.
