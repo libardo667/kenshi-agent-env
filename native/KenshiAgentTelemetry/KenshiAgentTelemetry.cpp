@@ -111,7 +111,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "0.8.1";
+    const char* PROTOCOL_VERSION = "0.8.2";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -1438,7 +1438,13 @@ namespace
             if (g_activeNativeCommand.isBuildingExit)
             {
                 const hand& currentBuilding = walker->isIndoors();
-                buildingExitIndoors = currentBuilding.isValid();
+                Building* resolvedBuilding = currentBuilding.getBuilding();
+                buildingExitIndoors =
+                    KenshiAgentTelemetry::HasResolvedIndoorBuilding(
+                        currentBuilding.isValid(),
+                        resolvedBuilding != NULL,
+                        resolvedBuilding != NULL &&
+                            resolvedBuilding->isValid());
                 if (KenshiAgentTelemetry::ObserveNativeOutdoorConfirmation(
                         g_activeNativeCommand.outdoorWindow,
                         buildingExitIndoors,
@@ -1795,9 +1801,10 @@ namespace
             }
             const hand& buildingHandle = walker->isIndoors();
             Building* building = buildingHandle.getBuilding();
-            if (!buildingHandle.isValid() ||
-                building == NULL ||
-                !building->isValid())
+            if (!KenshiAgentTelemetry::HasResolvedIndoorBuilding(
+                    buildingHandle.isValid(),
+                    building != NULL,
+                    building != NULL && building->isValid()))
             {
                 RejectNativeCommand(request, "not_indoors");
                 return;
@@ -2253,8 +2260,16 @@ namespace
                 json << "\"position\":";
                 AppendVector3(json, position);
                 json << ",\"movement_speed\":" << character->getMovementSpeed() << ",";
+                const hand& indoorHandle = character->isIndoors();
+                Building* indoorBuilding = indoorHandle.getBuilding();
                 json << "\"indoors\":"
-                     << JsonBool(character->isIndoors().isValid()) << ",";
+                     << JsonBool(
+                            KenshiAgentTelemetry::HasResolvedIndoorBuilding(
+                                indoorHandle.isValid(),
+                                indoorBuilding != NULL,
+                                indoorBuilding != NULL &&
+                                    indoorBuilding->isValid()))
+                     << ",";
                 json << "\"food_items\":" << character->getNumFoodItems() << ",";
                 // Whether anyone is currently fighting this character. The
                 // field existed in the schema and was never filled, so it read

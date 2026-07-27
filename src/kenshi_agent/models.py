@@ -234,9 +234,11 @@ class CharacterState(StrictModel):
     stealth: bool | None = None
     position: Vec3 | None = None
     movement_speed: float | None = None
-    # Native building membership, exported directly from Character::isIndoors.
-    # This is deliberately a boolean rather than a model-authored location:
-    # it answers the exact controller question "is an exit order applicable?"
+    # Resolved native building membership. Kenshi can retain a valid-looking
+    # indoor handle after its building no longer resolves, so the producer
+    # fails that stale case closed. This is deliberately a boolean rather than
+    # a model-authored location: it answers the exact controller question "is
+    # an exit order applicable?"
     indoors: bool | None = None
     # How *fed* the character is, not how hungry, despite the name: a nutrition
     # reserve on a 0.0-3.0 scale where 3.0 is full and 0.0 is starving. It falls

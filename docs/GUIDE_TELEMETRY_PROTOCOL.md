@@ -93,6 +93,9 @@ not override the named `inventory` list. `squad.health` makes
 life/down/conscious/crippled/combat, nutrition, and blood authoritative — it does
 not make `bleeding_rate` or body-part wounds authoritative.
 
+`squad[].indoors` is true only when the native handle resolves to a valid current
+building. A valid-looking stale handle fails closed, matching exit authority.
+
 ## Threading
 
 Sample Kenshi objects only on a verified game/UI thread. The plug-in uses

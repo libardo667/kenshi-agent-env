@@ -262,6 +262,24 @@ namespace
         return 0;
     }
 
+    int TestResolvedIndoorMembership()
+    {
+        using KenshiAgentTelemetry::HasResolvedIndoorBuilding;
+
+        if (!HasResolvedIndoorBuilding(true, true, true))
+            return Fail("a valid resolved building was not classified indoors");
+        if (HasResolvedIndoorBuilding(true, false, false))
+        {
+            return Fail(
+                "a stale valid handle without a building was classified indoors");
+        }
+        if (HasResolvedIndoorBuilding(true, true, false))
+            return Fail("an invalid resolved building was classified indoors");
+        if (HasResolvedIndoorBuilding(false, true, true))
+            return Fail("an invalid handle was classified indoors");
+        return 0;
+    }
+
     int TestNativeExitDestinationCompletion()
     {
         using KenshiAgentTelemetry::HasReachedResolvedExitDestination;
@@ -380,6 +398,9 @@ int main(int argc, char** argv)
     const int outdoorResult = TestNativeOutdoorConfirmation();
     if (outdoorResult != 0)
         return outdoorResult;
+    const int indoorMembershipResult = TestResolvedIndoorMembership();
+    if (indoorMembershipResult != 0)
+        return indoorMembershipResult;
     const int exitDestinationResult = TestNativeExitDestinationCompletion();
     if (exitDestinationResult != 0)
         return exitDestinationResult;

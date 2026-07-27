@@ -37,6 +37,13 @@ namespace KenshiAgentTelemetry
     void ResetNativeOutdoorConfirmationWindow(
         NativeOutdoorConfirmationWindow& window);
 
+    // A hand can remain valid after its building no longer resolves. Indoor
+    // membership and exit authority must use this same fail-closed predicate.
+    bool HasResolvedIndoorBuilding(
+        bool handleValid,
+        bool buildingExists,
+        bool buildingValid);
+
     // Building handles can change while traversing nested interior/door
     // objects. Completion requires remaining outside every building for one
     // telemetry interval, not merely observing a different valid handle.

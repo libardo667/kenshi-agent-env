@@ -53,6 +53,14 @@ namespace KenshiAgentTelemetry
         window.startedAtMs = 0UL;
     }
 
+    bool HasResolvedIndoorBuilding(
+        bool handleValid,
+        bool buildingExists,
+        bool buildingValid)
+    {
+        return handleValid && buildingExists && buildingValid;
+    }
+
     bool ObserveNativeOutdoorConfirmation(
         NativeOutdoorConfirmationWindow& window,
         bool indoors,

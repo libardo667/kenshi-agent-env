@@ -9,7 +9,7 @@ One invocation delivers **one bounded slice**, fully finished and green.
 
 ## Where the project actually is
 
-Verify this; do not assume it. It was accurate at protocol `0.8.1`.
+Verify this; do not assume it. It was accurate at protocol `0.8.2`.
 
 The portable core is a deterministic Kenshi-like mock with strict Pydantic
 models, JSONL lifecycle logs, SQLite memory, generated schemas, and
@@ -24,9 +24,9 @@ planner-visible surface is a contracted action catalog
 advisor and a `request_affordance` channel exist and emit zero game input.
 
 The native plug-in exports telemetry at ~2 Hz and accepts five reviewed
-commands. Protocol `0.8.0` was live-loaded with fresh advancing telemetry;
-`0.8.1` separates natural-resource presence from current task eligibility, has
-native build/install proof, and still requires load and contextual-operation
+commands. Protocol `0.8.2` is live-loaded: natural-resource presence stays
+separate from current task eligibility, and unresolved stale indoor handles fail
+closed. Contextual operation still lacks an eligible live target and terminal
 proof.
 
 Live evidence is thin by design and thinner than it looks: single supervised
@@ -247,11 +247,11 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Complete the protocol `0.8.1` live proof.** Load the installed corrected
-   plug-in, then observe one exact natural-resource target, dispatch its
-   advertised `operate` pair, receive the keyed `context_task_started` terminal,
-   confirm plausible behavior in a resulting frame plus fresh advancing
-   telemetry, and leave the run safely paused.
+1. **Complete the protocol `0.8.2` contextual-operation proof.** The corrected
+   plug-in and structural targets are live-proven. Find a target that honestly
+   advertises `task_available:true`, dispatch its exact `operate` pair, require
+   the keyed `context_task_started` terminal plus a plausible resulting frame
+   and advancing telemetry, and leave the run safely paused.
 2. **Make affordance requests aggregable.** `capability` is free text, so
    requests from different runs cannot be counted or ranked. A controlled
    vocabulary (or a clustering pass) is required before fanning out across

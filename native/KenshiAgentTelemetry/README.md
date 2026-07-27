@@ -31,7 +31,7 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `0.8.1` retains the `0.2.0` opaque entity IDs derived from validated
+Protocol `0.8.2` retains the `0.2.0` opaque entity IDs derived from validated
 Kenshi handles plus process/session generations. These IDs survive squad/nearby
 and world-target list reordering and distinguish duplicate names without
 serializing addresses.
@@ -73,8 +73,9 @@ arguments:
   capped at 2,000 units, and completes inside the fixed arrival tolerance or
   after crossing the intended destination plane. Its request and acknowledgement
   carry an empty target plus the exact bearing and distance.
-- `exit_current_building` resolves the selected character's current unlocked
-  exit and outside point without accepting model-authored geometry.
+- `exit_current_building` requires the selected character's indoor handle to
+  resolve to a valid building, then resolves its current unlocked exit and
+  outside point without accepting model-authored geometry.
 - `operate_natural_resource` re-resolves one exact current natural resource,
   rechecks `BF_MINE_NATURAL`, `OPERATE_MACHINERY`, and native task
   availability, issues Kenshi's own task, and completes only when the selected
@@ -224,7 +225,8 @@ Protocol `0.8.0` added bounded natural-resource targets and the exact
 contract: structural identity determines presence, while current Kenshi task
 eligibility is exported separately and rechecked at dispatch. A query that
 reaches its result bound emits a warning because its omissions are not known to
-be distance-ordered. The corrected DLL and shared conformance target build and
-pass, and the byte-identical staged DLL is installed with a reversible backup.
-Load, target discovery, task acceptance, visible behavior, and final safe-state
-proof remain open.
+be distance-ordered. Protocol `0.8.2` makes `squad[].indoors` and exit dispatch
+share the same resolved-building predicate. Its byte-identical staged and
+installed DLL is live-loaded with advancing telemetry; structural resource
+presence and stale-handle rejection are live-proven, while task acceptance
+remains open because every observed target was unavailable.

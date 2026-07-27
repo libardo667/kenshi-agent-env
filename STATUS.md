@@ -55,13 +55,13 @@ continuous-unpaused no-progress terminal, so a blocked order cannot poison later
 movement. During exact native commands, engine-native camera follow is reasserted
 each frame and live-proven through one short obstructed move.
 
-## Native protocol 0.8.1
+## Native protocol 0.8.2
 
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically
 replaces a complete snapshot at roughly 2 Hz. Telemetry covers pause, speed,
 money, game time, camera position and bearings; stable session-scoped squad,
 selection, nearby-character, dialogue-target, world-target and command
-identities; squad life/consciousness/combat state, position, indoor membership,
+identities; squad life/consciousness/combat state, position, resolved indoor membership,
 nutrition reserve, blood, and bounded inventory; dialogue, trade, inventory,
 stats and management window state; up to 224 visible controls with window
 ownership and normalized bounds; up to 128 structurally reviewed natural
@@ -76,9 +76,9 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 ## Open work
 
-- **Protocol `0.8.0` was live-loaded; corrected `0.8.1` is built and installed
-  but not loaded.** Contextual operation remains unproven and still requires an
-  exact target, keyed terminal, frame, advancing telemetry, and safe pause.
+- **Protocol `0.8.2` is live-loaded with advancing telemetry, honest outdoor
+  state, and structural resource targets.** Contextual operation remains unproven:
+  every observed target was unavailable, so no `operate` order was authorized.
 - No live plan has yet been retained in which the playing model itself authors
   `consult_advisor` and its changed goal is grounded in both the attributed
   brief and current Kenshi evidence. Synthetic proofs do not satisfy that.
@@ -90,11 +90,10 @@ opt-in plus a separate CLI acknowledgement. Wire semantics are in
 
 - Native build and supervised evidence are specific to the pinned
   Kenshi/RE_Kenshi/KenshiLib versions and the current Windows host.
-- Live proofs are single supervised runs. One direction probe (36.5°, 30 units)
-  does not generalize to other bearings or scenes; one Storm House exit does not
-  generalize to other buildings. `Character::isIndoors()` can stay valid after the
-  character is visibly outside, so it must never be the sole exit terminal.
-  Chosen remote map travel has no semantic action at all.
+- Live proofs are single supervised runs. One direction probe and one Storm House
+  exit do not generalize; raw `Character::isIndoors()` can retain a stale handle.
+  The producer fails unresolved buildings closed, while exit completion uses
+  controller-owned proof. Chosen remote map travel has no semantic action.
 - Item cells expose base value, not the final shop charge; the real debit is
   confirmed only after the at-most-once purchase, from later money telemetry.
 - A causally later observation stops stale pre-action state from satisfying a
