@@ -112,22 +112,6 @@ class AdvancingStrategyAdvisor(FakeStrategyAdvisor):
         )
 
 
-class BrieflySlowStrategyAdvisor(FakeStrategyAdvisor):
-    async def advise(
-        self,
-        *,
-        action: ConsultAdvisorAction,
-        observation: Observation,
-        corpus: GuideCorpus,
-    ) -> AdvisorDraft:
-        await asyncio.sleep(0.02)
-        return await super().advise(
-            action=action,
-            observation=observation,
-            corpus=corpus,
-        )
-
-
 def observation(step_index: int = 0) -> Observation:
     return Observation(
         run_id="advisor-test",
@@ -451,7 +435,6 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
                 plan_id="advisor-race",
                 plan_version=1,
                 step_id="consult",
-                timeout_seconds=30.0,
             )
         finally:
             logger.close()
@@ -468,25 +451,44 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
     asyncio.run(scenario())
 
 
-def test_runtime_applies_configured_advisor_timeout_floor(tmp_path: Path) -> None:
+def test_runtime_never_shortens_the_configured_advisor_timeout(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
     async def scenario() -> None:
         corpus = GuideCorpus.load(ROOT / "knowledge" / "kenshi_strategy_v1.yaml")
         session = AdvisorSession(
             advisor_config(
                 cooldown_steps=0,
-                timeout_seconds=1.0,
-                minimum_step_timeout_seconds=1.0,
+                timeout_seconds=90.0,
             ),
             corpus,
-            BrieflySlowStrategyAdvisor(),
+            FakeStrategyAdvisor(),
         )
-        logger = SessionLogger(tmp_path / "events.jsonl", "advisor-timeout-floor")
+
+        class RejectShortTimeout:
+            def __init__(self, delay: float | None) -> None:
+                self.delay = delay
+
+            async def __aenter__(self) -> None:
+                if self.delay is not None and self.delay < session.config.timeout_seconds:
+                    raise TimeoutError
+
+            async def __aexit__(self, *args: object) -> None:
+                return None
+
+        monkeypatch.setattr(
+            "kenshi_agent.runtime.asyncio.timeout",
+            lambda delay: RejectShortTimeout(delay),
+        )
+
+        logger = SessionLogger(tmp_path / "events.jsonl", "advisor-timeout-owner")
         runtime = AgentRuntime(
-            run_id="advisor-timeout-floor",
+            run_id="advisor-timeout-owner",
             environment=MockEnvironment(
                 MockConfig(random_events=False),
                 tmp_path,
-                "advisor-timeout-floor",
+                "advisor-timeout-owner",
             ),
             planner=ConsultThenStopPlanner(),
             advisor=session,
@@ -511,10 +513,9 @@ def test_runtime_applies_configured_advisor_timeout_floor(tmp_path: Path) -> Non
                     focus=AdvisorFocus.NEXT_GOAL,
                 ),
                 observation(),
-                plan_id="advisor-timeout-floor",
+                plan_id="advisor-timeout-owner",
                 plan_version=1,
                 step_id="consult",
-                timeout_seconds=0.001,
             )
         finally:
             logger.close()

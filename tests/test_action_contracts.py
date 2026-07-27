@@ -382,6 +382,11 @@ class TestPerformContextAction:
             mining_resource_level=0.8,
         )
         state = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
             capabilities=[
                 "control.perform_context_action",
                 "world.context_targets",
@@ -413,7 +418,14 @@ class TestPerformContextAction:
             context_actions=[],
             default_task="operate_machinery",
         )
-        state = observation(world_targets=[target])
+        state = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
+            world_targets=[target],
+        )
 
         binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
             PerformContextAction(
@@ -436,7 +448,14 @@ class TestPerformContextAction:
             context_actions=[ContextActionKind.OPERATE],
             default_task="operate_machinery",
         )
-        state = observation(world_targets=[target])
+        state = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
+            world_targets=[target],
+        )
 
         binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
             PerformContextAction(
@@ -448,6 +467,44 @@ class TestPerformContextAction:
 
         assert binding.bound
         assert binding.target_id == target.id
+
+    def test_unknown_interface_state_fails_closed(self) -> None:
+        target = WorldTarget(
+            id="entity-copper",
+            name="Copper Resource",
+            kind="natural_resource",
+            position=Vec3(x=1.0, y=0.0, z=2.0),
+            distance=40.0,
+            context_actions=[ContextActionKind.OPERATE],
+            default_task="operate_machinery",
+        )
+        state = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=None,
+                dialogue_open=False,
+            ),
+            capabilities=[
+                "control.perform_context_action",
+                "world.context_targets",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            world_targets=[target],
+        )
+
+        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+            PerformContextAction(
+                target_id=target.id,
+                context_action=ContextActionKind.OPERATE,
+            ),
+            state,
+        )
+        digest_kinds = {entry["kind"] for entry in state.semantic_action_digest()}
+
+        assert not binding.bound
+        assert "not confirmed clear" in binding.reason
+        assert "perform_context_action" not in digest_kinds
 
 
 class TestContractCatalog:
@@ -552,6 +609,50 @@ class TestSemanticActionsAreAdvertised:
         kinds = {entry["kind"] for entry in digest}
         assert {"approach_dialogue_target", "activate_visible_control", "dismiss_screen"} <= kinds
         assert all(entry["argument_source"] for entry in digest)
+
+    def test_modal_withholds_blocked_world_action_but_keeps_recovery(self) -> None:
+        target = WorldTarget(
+            id="entity-copper",
+            name="Copper Resource",
+            kind="natural_resource",
+            position=Vec3(x=1.0, y=0.0, z=2.0),
+            distance=40.0,
+            context_actions=[ContextActionKind.OPERATE],
+            default_task="operate_machinery",
+        )
+        capabilities = [
+            "control.perform_context_action",
+            "world.context_targets",
+            "game.pause",
+            "identity.stable_handles",
+        ]
+        world = observation(
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
+            capabilities=capabilities,
+            world_targets=[target],
+        )
+        inventory = observation(
+            ui=UIState(
+                active_screen="inventory",
+                modal_open=True,
+                dialogue_open=False,
+            ),
+            capabilities=capabilities,
+            world_targets=[target],
+        )
+
+        world_kinds = {entry["kind"] for entry in world.semantic_action_digest()}
+        inventory_kinds = {
+            entry["kind"] for entry in inventory.semantic_action_digest()
+        }
+
+        assert "perform_context_action" in world_kinds
+        assert "perform_context_action" not in inventory_kinds
+        assert "dismiss_screen" in inventory_kinds
 
     def test_visible_control_digest_marks_ambiguity(self) -> None:
         state = observation(

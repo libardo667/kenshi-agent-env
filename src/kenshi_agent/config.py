@@ -130,7 +130,6 @@ class AdvisorConfig(ConfigModel):
         "none", "minimal", "low", "medium", "high", "xhigh", "max"
     ] = "medium"
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
-    minimum_step_timeout_seconds: float = Field(default=30.0, ge=1.0, le=60.0)
     max_output_tokens: int = Field(default=2500, ge=512, le=20000)
     corpus_file: Path = Path("../knowledge/kenshi_strategy_v1.yaml")
     max_calls_per_run: int = Field(default=4, ge=0, le=100)
@@ -140,14 +139,6 @@ class AdvisorConfig(ConfigModel):
     stall_window_actions: int = Field(default=12, ge=2, le=100)
     provider_sort: Literal["latency", "throughput", "price"] = "latency"
     require_parameters: bool = False
-
-    @model_validator(mode="after")
-    def minimum_step_timeout_fits_provider_timeout(self) -> AdvisorConfig:
-        if self.minimum_step_timeout_seconds > self.timeout_seconds:
-            raise ValueError(
-                "advisor minimum_step_timeout_seconds cannot exceed timeout_seconds"
-            )
-        return self
 
 
 class MockConfig(ConfigModel):

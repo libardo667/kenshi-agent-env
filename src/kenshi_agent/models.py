@@ -2349,6 +2349,7 @@ class Observation(StrictModel):
             for contract in planner_visible_contracts(
                 control_mode=self.control_mode,
                 capabilities=capabilities,
+                observation=self,
             )
         ]
 

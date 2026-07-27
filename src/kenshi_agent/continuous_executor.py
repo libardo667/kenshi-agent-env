@@ -76,7 +76,7 @@ ConcurrentPlanner = Callable[
     Coroutine[Any, Any, PlannerOutput],
 ]
 AdvisorConsultant = Callable[
-    [ConsultAdvisorAction, Observation, str, int, str, float | None],
+    [ConsultAdvisorAction, Observation, str, int, str],
     Coroutine[Any, Any, "AdvisorActionResult"],
 ]
 AffordanceRequester = Callable[
@@ -1417,7 +1417,6 @@ class ContinuousPlanExecutor:
                 plan.plan_id,
                 plan.plan_version,
                 step.step_id,
-                step.timeout_seconds,
             )
         except asyncio.CancelledError:
             budget.commit()

@@ -336,7 +336,6 @@ class AgentRuntime:
                         plan_id="single-step",
                         plan_version=1,
                         step_id=f"step-{observation.step_index}",
-                        timeout_seconds=None,
                     )
                     steps_completed += 1
                     observation = advisor_result.observation
@@ -2102,9 +2101,8 @@ class AgentRuntime:
         plan_id: str,
         plan_version: int,
         step_id: str,
-        timeout_seconds: float | None,
     ) -> AdvisorActionResult:
-        """Execute a cognitive request and decorate planner context only."""
+        """Execute a cognitive request under the advisor-owned provider bound."""
 
         started_at = datetime.now(UTC)
         if self.advisor is None:
@@ -2116,24 +2114,17 @@ class AgentRuntime:
                 state_fingerprint=advisor_state_fingerprint(observation),
             )
         else:
-            effective_timeout = timeout_seconds
-            if effective_timeout is not None:
-                effective_timeout = max(
-                    effective_timeout,
-                    self.advisor.config.minimum_step_timeout_seconds,
-                )
             try:
-                if effective_timeout is None:
-                    evidence = await self.advisor.consult(action, observation)
-                else:
-                    async with asyncio.timeout(effective_timeout):
-                        evidence = await self.advisor.consult(action, observation)
+                # The hosted client owns this bound. A planner-authored step timeout
+                # describes world-step verification and must not silently shorten a
+                # read-only provider call whose configured allowance may be longer.
+                evidence = await self.advisor.consult(action, observation)
             except TimeoutError:
                 evidence = AdvisorConsultEvidence(
                     status=AdvisorConsultStatus.FAILED,
                     reason=(
-                        f"Advisor call exceeded the effective timeout of "
-                        f"{effective_timeout:.2f} seconds."
+                        f"Advisor call exceeded its configured provider timeout of "
+                        f"{self.advisor.config.timeout_seconds:.2f} seconds."
                     ),
                     calls_used=self.advisor.calls_used,
                     max_calls=self.advisor.config.max_calls_per_run,

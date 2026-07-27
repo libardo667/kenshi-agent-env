@@ -269,10 +269,14 @@ def bind_perform_context_action(
         return _unbound("No telemetry is available to bind the context target.")
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the context target cannot be bound.")
-    if telemetry.ui.dialogue_open or telemetry.ui.modal_open:
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.dialogue_open is not False
+        or telemetry.ui.modal_open is not False
+    ):
         return _unbound(
-            "A modal or dialogue interface blocks a new world context action; "
-            "finish or close it first."
+            "The modal and dialogue state is not confirmed clear, so a new world "
+            "context action cannot bind; finish or close the interface first."
         )
     matches = [
         target for target in telemetry.world_targets if target.id == action.target_id
@@ -301,6 +305,20 @@ def bind_perform_context_action(
         target_id=target.id,
         resolved_label=action.context_action.value,
         source_revision=observation.world_revision,
+    )
+
+
+def context_action_is_currently_authorable(observation: Observation) -> bool:
+    """Whether at least one exact observed context-action pair can be authored."""
+
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+        and any(target.context_actions for target in telemetry.world_targets)
     )
 
 
@@ -1103,6 +1121,14 @@ class ActionContract:
     # The handler itself returns a typed terminal verdict based on evidence it
     # owns, so the planner must not invent a redundant postcondition.
     controller_verified: bool = False
+    # Optional observation-specific visibility. Capabilities answer whether an
+    # action kind exists; this answers whether its declared argument source
+    # contains at least one currently bindable choice.
+    authorable_when: Callable[[Observation], bool] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     def missing_capabilities(self, capabilities: set[str] | frozenset[str]) -> list[str]:
         """Required capabilities absent from an observation, alias-aware.
@@ -1124,6 +1150,11 @@ class ActionContract:
 
     def allows_control_mode(self, control_mode: ControlMode) -> bool:
         return control_mode in self.allowed_control_modes
+
+    def is_currently_authorable(self, observation: Observation | None) -> bool:
+        if observation is None or self.authorable_when is None:
+            return True
+        return self.authorable_when(observation)
 
 
 APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
@@ -1193,6 +1224,7 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     receipt_kind="semantic_context_action",
     bind=bind_perform_context_action,
     controller_verified=True,
+    authorable_when=context_action_is_currently_authorable,
 )
 
 MOVE_IN_DIRECTION_CONTRACT = ActionContract(
@@ -1614,6 +1646,7 @@ def planner_visible_contracts(
     *,
     control_mode: ControlMode,
     capabilities: set[str] | frozenset[str],
+    observation: Observation | None = None,
 ) -> list[ActionContract]:
     """Contracts a planner may currently author, in stable order.
 
@@ -1628,6 +1661,7 @@ def planner_visible_contracts(
         if contract.planner_visible
         and contract.allows_control_mode(control_mode)
         and not contract.missing_capabilities(capabilities)
+        and contract.is_currently_authorable(observation)
     ]
 
 

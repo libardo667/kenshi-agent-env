@@ -52,6 +52,8 @@ materially change the next goal.
   and `focus`. That action must be the plan's only step and must have
   `success_conditions: []`; the next planner call receives the resulting
   `latest_brief`.
+- The runtime, not your plan, owns the bounded hosted-call allowance. Your
+  ordinary step timeout does not shorten the configured advisor timeout.
 - It consumes one strategic action but emits zero keyboard, mouse, or native
   primitives and creates no world command. It cannot act for you.
 - Never request it when `may_request: false`, and do not repeat a request during
