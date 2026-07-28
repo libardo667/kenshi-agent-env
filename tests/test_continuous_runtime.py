@@ -539,6 +539,13 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
         assert metrics.receipts_with_post_command_revision_percentage == 100.0
 
         events = read_events(tmp_path / "events.jsonl")
+        started = next(
+            event for event in events if event["event_type"] == "run_started"
+        )
+        assert (
+            started["payload"]["memory_retrieval_policy"]
+            == "deterministic"
+        )
         receipts = [
             event["payload"]
             for event in events

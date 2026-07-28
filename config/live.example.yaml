@@ -155,6 +155,7 @@ safety:
 
 memory:
   enabled: true
+  retrieval_policy: deterministic
   # Live runs must say whose save this is. Set it to the campaign you are
   # actually playing, or set `ephemeral: true` to keep this run's memories
   # to itself. Leaving both unset fails closed rather than guessing.

@@ -283,6 +283,7 @@ safety:
 
 memory:
   enabled: true
+  retrieval_policy: deterministic
   # This profile is generic and cannot choose a save lineage. Pass
   # `./dev journey --campaign <save-lineage>` or use an attested scenario.
   campaign_id: null

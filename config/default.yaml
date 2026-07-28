@@ -153,6 +153,7 @@ safety:
 
 memory:
   enabled: true
+  retrieval_policy: deterministic
   # No campaign here: `default.yaml` runs the mock world, and a shared
   # namespace was how unrelated saves ended up reading each other's
   # memories. Unattested mock and replay runs are run-scoped instead.

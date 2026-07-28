@@ -220,6 +220,7 @@ safety:
 
 memory:
   enabled: true
+  retrieval_policy: deterministic
   campaign_id: null
   ephemeral: true
   max_recalled_memories: 16

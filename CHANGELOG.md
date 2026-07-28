@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Added explicit, bounded, lossless memory compaction. The read-only operator
+  proposal preserves exact source text and fingerprints durable source state;
+  applying the inspected candidate re-resolves it under an immediate write
+  lock, atomically supersedes every exact source, and retains source history
+  plus candidate and generator provenance. Tampering, source drift, replay,
+  malformed documents, and late store failures change nothing. Every run now
+  logs the deterministic retrieval treatment, configuration rejects the
+  unimplemented semantic treatment, and the semantic compactor prompt is
+  explicitly reserved and inactive.
 - Added a campaign-scoped private fieldbook for larger named work without
   promoting planner prose into world truth. Typed projects, entries, lifecycle
   transitions, provenance, and audit events share the durable SQLite boundary;

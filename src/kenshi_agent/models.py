@@ -1545,6 +1545,12 @@ def new_memory_read_receipt_id() -> str:
     return f"mrr-{uuid4().hex}"
 
 
+def new_memory_compaction_candidate_id() -> str:
+    """A runtime-owned identity for one inspectable compaction proposal."""
+
+    return f"mcc-{uuid4().hex}"
+
+
 def new_fieldbook_project_id() -> str:
     return f"fbp-{uuid4().hex}"
 
@@ -2338,6 +2344,77 @@ class MemoryAuthorship(StrEnum):
     LEGACY_UNVERIFIED = "legacy_unverified"
 
 
+class CompactionMethod(StrEnum):
+    """Implemented compaction treatments.
+
+    Semantic rewriting is deliberately absent until it can satisfy the same
+    source-conservation and atomic-application contract as the lossless path.
+    """
+
+    LOSSLESS = "lossless"
+
+
+class MemoryCompactionGenerator(StrictModel):
+    """How one candidate was produced, including honest non-use of a prompt."""
+
+    provider: str = Field(min_length=1, max_length=120)
+    model: str = Field(min_length=1, max_length=200)
+    prompt_version: str | None = Field(default=None, max_length=120)
+    prompt_sha256: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    parameters: dict[str, JsonValue] = Field(default_factory=dict, max_length=16)
+
+
+class MemoryCompactionCandidate(StrictModel):
+    """A bounded proposal that has no authority until atomically applied."""
+
+    schema_version: Literal[1] = 1
+    candidate_id: str = Field(pattern=r"^mcc-[0-9a-f]{32}$")
+    method: CompactionMethod
+    campaign_id: str = Field(min_length=1, max_length=80)
+    source_memory_ids: list[str] = Field(min_length=2, max_length=8)
+    source_fingerprints: dict[str, str] = Field(min_length=2, max_length=8)
+    kind: MemoryKind
+    content: str = Field(min_length=1, max_length=2000)
+    salience: float = Field(ge=0.0, le=1.0)
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    authorship: MemoryAuthorship
+    generator: MemoryCompactionGenerator
+    generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def model_post_init(self, __context: object) -> None:
+        # Local import avoids a model/compaction module cycle. The executable
+        # authority rule lives in the undecorated, mutation-tested compaction
+        # seam; this data model merely invokes it after parsing.
+        from .memory_compaction import validate_compaction_source_identity
+
+        validate_compaction_source_identity(
+            self.source_memory_ids,
+            self.source_fingerprints,
+        )
+
+
+class CanonicalCompactionProvenance(StrictModel):
+    """Exact immutable candidate and application identity behind a replacement."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    provenance_kind: Literal["compaction"] = "compaction"
+    candidate: MemoryCompactionCandidate
+    applied_run_id: str = Field(min_length=1, max_length=200)
+    replacement_memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
+    applied_at: datetime
+    transition_result: Literal["applied"] = "applied"
+
+
+MemoryProvenance: TypeAlias = (
+    CanonicalMemoryProvenance | CanonicalCompactionProvenance
+)
+
+
 class MemoryLifecycleEvent(StrEnum):
     KEEP = "keep"
     REINFORCE = "reinforce"
@@ -2360,7 +2437,7 @@ class MemoryRecord(StrictModel):
     grounding: str | None = None
     # Exact accepted operation and typed source snapshots behind the latest
     # grounding-bearing transition. Older provenance remains in event history.
-    latest_provenance: CanonicalMemoryProvenance | None = None
+    latest_provenance: MemoryProvenance | None = None
     authorship: MemoryAuthorship = MemoryAuthorship.AGENT_AUTHORED
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
     created_run_id: str
@@ -2390,6 +2467,12 @@ class RecallTier(StrEnum):
     CURRENT_TARGET = "current_target"
     OPEN_HYPOTHESIS = "open_hypothesis"
     GENERAL = "general"
+
+
+class MemoryRetrievalPolicy(StrEnum):
+    """Canonical-memory retrieval treatments implemented by this build."""
+
+    DETERMINISTIC = "deterministic"
 
 
 class RecallSummary(StrictModel):

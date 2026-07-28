@@ -1,8 +1,7 @@
 # Implementation status
 
-Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface lives
-in generated [catalog](docs/generated/ACTION_CATALOG.md) and
-[coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
+Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface lives in
+generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
 
 ## What works
 
@@ -36,14 +35,16 @@ in generated [catalog](docs/generated/ACTION_CATALOG.md) and
   `ao-`/`po-` history, and durable memory; IDs resolve to immutable typed snapshots and an
   admissibility matrix before rendering; non-effects cannot become world proof or close a
   commitment. Rich windows sit over all-run compact digests returned only by elective read.
-  Campaign-scoped schema 4 transactionally keeps structured lifecycle provenance in append-only
-  history and a rebuildable projection, with backed-up migration and read-only audit. Tiered recall
-  reports omissions and receipts; `recall_memory` returns an identified, plan-bound
-  completed/unavailable/failed receipt for exactly the next call, without game input. A private
-  campaign fieldbook provides typed named projects, evidence-bound entries, lifecycle, one
-  selected summary, bounded elective reads, and disposable Markdown without becoming world authority.
-- Hash-locked FCS starts install and launch with money/party proof. The mutation campaign is
-  permanently bounded to nine named authority modules and records strict evidence per run.
+  Campaign-scoped schema 4 keeps structured provenance in append-only history and a rebuildable
+  projection, with backed-up migration and read-only audit. Tiered recall reports omissions and
+  receipts; `recall_memory` returns an identified, plan-bound one-call result without game input.
+  A private fieldbook provides typed projects, evidence-bound entries, lifecycle, a selected summary,
+  bounded elective reads, and disposable Markdown without becoming world authority. Lossless
+  operator compaction fingerprints exact active sources, presents a read-only candidate, then
+  revalidates and supersedes them atomically without deleting history. Retrieval is deterministic and
+  logged; semantic rewriting and semantic MMR are unavailable.
+- Hash-locked FCS starts install and launch with money/party proof. The continuity loop names its
+  authority shards explicitly, and the mutation campaign records strict evidence per run.
 
 ## Live profiles
 
@@ -109,8 +110,7 @@ semantics are in [`GUIDE_TELEMETRY_PROTOCOL.md`](docs/GUIDE_TELEMETRY_PROTOCOL.m
 - A causally later observation stops stale pre-action state from satisfying a postcondition, but
   most success conditions are planner-authored. Only `controller_verified` contracts carry effect
   proof, so later correlated state can still be mistaken for the intended effect.
-- Continuity now has an explicit evidence-capability matrix and structured provenance nodes; a
-  long-horizon restart proof remains open.
+- Continuity has an evidence-capability matrix and structured provenance; restart proof remains open.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name, task stacks, trader
   money, occlusion, and distant world state are unavailable or unvalidated; source-scan capacity
   makes absence unknown. Fifty-six mutation shards remain unattested.

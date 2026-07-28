@@ -5,6 +5,7 @@ import asyncio
 import json
 import os
 import platform
+import sqlite3
 import sys
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -15,7 +16,12 @@ from dotenv import load_dotenv
 
 from .advisor import AdvisorSession, GuideCorpus, OpenRouterStrategyAdvisor
 from .affordance_requests import aggregate_affordance_requests
-from .campaign import CampaignScopeError, resolve_campaign_scope
+from .campaign import (
+    CampaignScope,
+    CampaignScopeError,
+    CampaignScopeOrigin,
+    resolve_campaign_scope,
+)
 from .config import AppConfig, load_config
 from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
@@ -28,7 +34,16 @@ from .memory import (
     read_only_schema_version,
     read_only_store,
 )
-from .models import ControlMode, PlanningMode, ScenarioIdentity
+from .memory_compaction import (
+    MemoryCompactionError,
+    build_lossless_compaction_candidate,
+)
+from .models import (
+    ControlMode,
+    MemoryCompactionCandidate,
+    PlanningMode,
+    ScenarioIdentity,
+)
 from .overlay import show_overlay
 from .planners import (
     HeuristicPlanner,
@@ -452,6 +467,81 @@ def _inspect_memory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _compact_memory(args: argparse.Namespace) -> int:
+    """Propose read-only, or apply one exact previously inspected candidate."""
+
+    config = load_config(args.config)
+    path = config.paths.memory_db
+    if not path.exists():
+        print(f"No continuity database at {path}.", file=sys.stderr)
+        return 1
+    version = read_only_schema_version(path)
+    if version is None or version < 4:
+        print(
+            f"{path} uses schema {version}; open it once with the current "
+            "runtime before compacting.",
+            file=sys.stderr,
+        )
+        return 1
+    campaign_rows = read_only_campaigns(path)
+    origins = {
+        campaign_id: CampaignScopeOrigin(origin)
+        for campaign_id, origin, _ in campaign_rows
+    }
+    if args.campaign not in origins:
+        print(
+            f"No campaign {args.campaign!r} in {path}.",
+            file=sys.stderr,
+        )
+        return 1
+
+    try:
+        if args.apply_candidate is None:
+            with read_only_store(path, args.campaign) as memories:
+                records = []
+                for memory_id in args.sources:
+                    record = memories.get(memory_id)
+                    if record is None:
+                        raise MemoryCompactionError(
+                            f"No memory {memory_id!r} exists in campaign "
+                            f"{args.campaign!r}."
+                        )
+                    records.append(record)
+                candidate = build_lossless_compaction_candidate(records)
+            print(candidate.model_dump_json(indent=2))
+            return 0
+
+        candidate_path = Path(args.apply_candidate).expanduser().resolve()
+        candidate = MemoryCompactionCandidate.model_validate_json(
+            candidate_path.read_text(encoding="utf-8")
+        )
+        if candidate.campaign_id != args.campaign:
+            raise MemoryCompactionError(
+                "The inspected candidate belongs to another campaign."
+            )
+        with MemoryStore(
+            path,
+            CampaignScope(
+                campaign_id=args.campaign,
+                origin=origins[args.campaign],
+            ),
+        ) as memories:
+            replacement = memories.compact(_new_run_id(), candidate)
+        print(
+            json.dumps(
+                {
+                    "candidate": candidate.model_dump(mode="json"),
+                    "replacement": replacement.model_dump(mode="json"),
+                },
+                indent=2,
+            )
+        )
+        return 0
+    except (MemoryCompactionError, OSError, sqlite3.Error, ValueError) as exc:
+        print(f"Compaction refused: {exc}", file=sys.stderr)
+        return 1
+
+
 def _inspect_fieldbook(args: argparse.Namespace) -> int:
     """Inspect the canonical fieldbook through read-only SQLite queries."""
 
@@ -588,6 +678,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             commitment_memory_limit=config.memory.max_commitment_memories,
             hypothesis_memory_limit=config.memory.max_hypothesis_memories,
             fieldbook_project_limit=config.memory.max_fieldbook_projects,
+            memory_retrieval_policy=config.memory.retrieval_policy,
             minimum_memory_salience=config.memory.minimum_salience,
             action_outcome_limit=config.runtime.observation_memory_limit,
             control_mode=run_control_mode,
@@ -927,6 +1018,24 @@ def build_parser() -> argparse.ArgumentParser:
     )
     memory.add_argument("--limit", type=int, default=20)
 
+    compaction = subparsers.add_parser(
+        "compact-memory",
+        help="Propose or atomically apply bounded lossless memory compaction.",
+    )
+    compaction.add_argument("--config", default="config/default.yaml")
+    compaction.add_argument("--campaign", required=True)
+    compaction_mode = compaction.add_mutually_exclusive_group(required=True)
+    compaction_mode.add_argument(
+        "--source",
+        action="append",
+        dest="sources",
+        help="Exact source memory ID; repeat two to eight times for a dry run.",
+    )
+    compaction_mode.add_argument(
+        "--apply-candidate",
+        help="Apply one exact candidate JSON document emitted by a dry run.",
+    )
+
     fieldbook = subparsers.add_parser(
         "fieldbook",
         help="Inspect campaign fieldbook projects and entries read-only.",
@@ -999,6 +1108,8 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(args)
     if args.subcommand == "memory":
         return _inspect_memory(args)
+    if args.subcommand == "compact-memory":
+        return _compact_memory(args)
     if args.subcommand == "fieldbook":
         return _inspect_fieldbook(args)
     if args.subcommand == "validate-telemetry":

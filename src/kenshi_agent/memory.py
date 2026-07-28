@@ -24,14 +24,23 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
 
+from pydantic import TypeAdapter
+
 from .campaign import CampaignScope, CampaignScopeOrigin, legacy_campaign_id
 from .fieldbook import FieldbookStore, create_fieldbook_schema
+from .memory_compaction import (
+    MemoryCompactionError,
+    validate_lossless_compaction_candidate,
+)
 from .models import (
+    CanonicalCompactionProvenance,
     CanonicalMemoryProvenance,
     MemoryAuthorship,
+    MemoryCompactionCandidate,
     MemoryHistoryEntry,
     MemoryKind,
     MemoryLifecycleEvent,
+    MemoryProvenance,
     MemoryRecord,
     MemoryResolutionDisposition,
     MemorySearchResult,
@@ -41,12 +50,16 @@ from .models import (
 )
 
 SCHEMA_VERSION = 4
+_MEMORY_PROVENANCE_ADAPTER: TypeAdapter[MemoryProvenance] = TypeAdapter(
+    MemoryProvenance
+)
 
 # Mutmut understands Python expressions, not SQL. Its SQL-string mutations are
 # either SQLite-equivalent case changes or deliberately invalid statements.
 # Keep SQL declarative here and test its observable storage contract below.
 # pragma: no mutate start
 _JOURNAL_MODE_SQL = "PRAGMA journal_mode=WAL"
+_BEGIN_IMMEDIATE_SQL = "BEGIN IMMEDIATE"
 _FOREIGN_KEYS_SQL = "PRAGMA foreign_keys=ON"
 _FOREIGN_KEYS_STATE_SQL = "PRAGMA foreign_keys"
 _TABLE_INFO_SQL = "PRAGMA table_info(memories)"
@@ -261,6 +274,11 @@ _UPDATE_SUPERSEDE_SQL = """
         latest_provenance=COALESCE(?, latest_provenance)
     WHERE campaign_id=? AND memory_id=?
 """
+_UPDATE_COMPACTION_SOURCE_SQL = """
+    UPDATE memories SET status=?, superseded_at=?, superseded_by_id=?,
+        latest_provenance=?
+    WHERE campaign_id=? AND memory_id=? AND status='active'
+"""
 _UPDATE_RETRACT_SQL = """
     UPDATE memories SET status=?, resolved_at=?, resolution_reason=?,
         latest_provenance=COALESCE(?, latest_provenance)
@@ -474,8 +492,6 @@ class MemoryStore:
             self._migrate_v1(legacy_rows)
         elif existing_version == 2:
             self._migrate_v2()
-        elif existing_version == 3:
-            self._migrate_v3()
         self._create_schema()
         self._register_campaign(scope.campaign_id, scope.origin)
         self.fieldbook = FieldbookStore(self._connection, self.campaign_id)
@@ -591,12 +607,6 @@ class MemoryStore:
             if "resolution_disposition" not in columns:
                 self._connection.execute(_MIGRATE_V2_ADD_DISPOSITION_SQL)
 
-    def _migrate_v3(self) -> None:
-        """Add fieldbook tables without rewriting v3 memory history."""
-
-        with self._connection:
-            create_fieldbook_schema(self._connection)
-
     def _append_legacy_row(self, row: sqlite3.Row) -> None:
         campaign_id = legacy_campaign_id(_row_text(row, "namespace"))
         record = MemoryRecord(
@@ -667,7 +677,7 @@ class MemoryStore:
 
     @staticmethod
     def _provenance_payload(
-        provenance: CanonicalMemoryProvenance | None,
+        provenance: MemoryProvenance | None,
     ) -> dict[str, Any] | None:
         return (
             None
@@ -677,7 +687,7 @@ class MemoryStore:
 
     @staticmethod
     def _provenance_text(
-        provenance: CanonicalMemoryProvenance | None,
+        provenance: MemoryProvenance | None,
     ) -> str | None:
         payload = MemoryStore._provenance_payload(provenance)
         return None if payload is None else json.dumps(payload, sort_keys=True)
@@ -685,18 +695,18 @@ class MemoryStore:
     @staticmethod
     def _provenance_from_payload(
         payload: dict[str, Any],
-    ) -> CanonicalMemoryProvenance | None:
+    ) -> MemoryProvenance | None:
         provenance = payload.get("provenance")
         return (
             None
             if provenance is None
-            else CanonicalMemoryProvenance.model_validate(provenance)
+            else _MEMORY_PROVENANCE_ADAPTER.validate_python(provenance)
         )
 
     @staticmethod
     def _payload_with_provenance(
         payload: dict[str, Any],
-        provenance: CanonicalMemoryProvenance | None,
+        provenance: MemoryProvenance | None,
     ) -> dict[str, Any]:
         return {
             **payload,
@@ -752,7 +762,7 @@ class MemoryStore:
                 None
                 if (raw_provenance := _row_optional_text(row, "latest_provenance"))
                 is None
-                else CanonicalMemoryProvenance.model_validate_json(raw_provenance)
+                else _MEMORY_PROVENANCE_ADAPTER.validate_json(raw_provenance)
             ),
             authorship=MemoryAuthorship(_row_text(row, "authorship")),
             target_id=_row_optional_text(row, "target_id") or None,
@@ -1052,6 +1062,117 @@ class MemoryStore:
                         self.campaign_id,
                         memory_id,
                     ),
+                )
+                self._insert_projection(replacement)
+        except sqlite3.IntegrityError as exc:
+            self._raise_expected_integrity_conflict(exc)
+        return replacement
+
+    def compact(
+        self,
+        run_id: str,
+        candidate: MemoryCompactionCandidate,
+    ) -> MemoryRecord:
+        """Atomically replace every exact source in one lossless candidate.
+
+        Candidate construction has no write authority. Application takes an
+        immediate SQLite write lock, re-reads every source, recomputes the
+        candidate, then appends all lifecycle events and projection changes in
+        one transaction. Any drift or late failure leaves every source open.
+        """
+
+        try:
+            with self._connection:
+                self._connection.execute(_BEGIN_IMMEDIATE_SQL)
+                if candidate.campaign_id != self.campaign_id:
+                    raise MemoryCompactionError(  # mutation: reason
+                        "The compaction candidate belongs to another campaign."  # mutation: reason
+                    )
+                records: list[MemoryRecord] = []
+                for memory_id in candidate.source_memory_ids:
+                    record = self.get(memory_id)
+                    if record is None:
+                        raise MemoryCompactionError(  # mutation: reason
+                            f"No compaction source {memory_id!r} exists in "  # mutation: reason
+                            f"campaign {self.campaign_id!r}."  # mutation: reason
+                        )
+                    records.append(record)
+                ordered = validate_lossless_compaction_candidate(
+                    candidate,
+                    records,
+                )
+                conflicting = self._active_by_key(
+                    normalized_key(
+                        candidate.kind,
+                        candidate.content,
+                        candidate.target_id,
+                    )
+                )
+                if conflicting is not None:
+                    raise MemoryCompactionError(  # mutation: reason
+                        "An active memory already has the compacted identity."  # mutation: reason
+                    )
+                replacement_id = self._new_memory_id()
+                now = datetime.now(UTC)
+                provenance = CanonicalCompactionProvenance(
+                    candidate=candidate,
+                    applied_run_id=run_id,
+                    replacement_memory_id=replacement_id,
+                    applied_at=now,
+                )
+                replacement = MemoryRecord(
+                    memory_id=replacement_id,
+                    campaign_id=self.campaign_id,
+                    kind=candidate.kind,
+                    status=MemoryStatus.ACTIVE,
+                    content=candidate.content,
+                    salience=candidate.salience,
+                    grounding=(
+                        "lossless_compaction("
+                        + ",".join(candidate.source_memory_ids)
+                        + ")"
+                    ),
+                    latest_provenance=provenance,
+                    authorship=candidate.authorship,
+                    target_id=candidate.target_id,
+                    created_run_id=run_id,
+                    created_at=now,
+                )
+                for source in ordered:
+                    self._append_event(
+                        self.campaign_id,
+                        source.memory_id,
+                        MemoryLifecycleEvent.SUPERSEDE,
+                        run_id,
+                        now.isoformat(),
+                        self._payload_with_provenance(
+                            {"superseded_by_id": replacement_id},
+                            provenance,
+                        ),
+                    )
+                    updated = self._connection.execute(
+                        _UPDATE_COMPACTION_SOURCE_SQL,
+                        (
+                            MemoryStatus.SUPERSEDED.value,
+                            now.isoformat(),
+                            replacement_id,
+                            self._provenance_text(provenance),
+                            self.campaign_id,
+                            source.memory_id,
+                        ),
+                    )
+                    if updated.rowcount != 1:
+                        raise MemoryCompactionError(  # mutation: reason
+                            f"Compaction source {source.memory_id!r} stopped "  # mutation: reason
+                            "being active during application."  # mutation: reason
+                        )
+                self._append_event(
+                    self.campaign_id,
+                    replacement.memory_id,
+                    MemoryLifecycleEvent.KEEP,
+                    run_id,
+                    now.isoformat(),
+                    self._keep_payload(replacement),
                 )
                 self._insert_projection(replacement)
         except sqlite3.IntegrityError as exc:

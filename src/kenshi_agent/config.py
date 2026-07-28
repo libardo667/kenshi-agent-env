@@ -13,6 +13,7 @@ from .models import (
     CalibrationIdentity,
     ControlMode,
     LiveContinuousPolicy,
+    MemoryRetrievalPolicy,
     PlanningMode,
     ScenarioIdentity,
     parse_action,
@@ -428,6 +429,12 @@ class MemoryConfig(ConfigModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
     )
     ephemeral: bool = False
+    # Deterministic recall is the only implemented canonical treatment.
+    # Semantic retrieval cannot be selected until its bounded, disposable
+    # provider path and honest fallback exist end to end.
+    retrieval_policy: MemoryRetrievalPolicy = (
+        MemoryRetrievalPolicy.DETERMINISTIC
+    )
     # Recall is tiered, and each tier has its own budget so that the loudest
     # one cannot eat the others. Open commitments and memories bound to an
     # entity in the fresh current observation are what a plan cannot safely

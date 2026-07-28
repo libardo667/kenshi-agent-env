@@ -1189,6 +1189,57 @@
       "title": "CameraState",
       "type": "object"
     },
+    "CanonicalCompactionProvenance": {
+      "additionalProperties": false,
+      "description": "Exact immutable candidate and application identity behind a replacement.",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "provenance_kind": {
+          "const": "compaction",
+          "default": "compaction",
+          "title": "Provenance Kind",
+          "type": "string"
+        },
+        "candidate": {
+          "$ref": "#/$defs/MemoryCompactionCandidate"
+        },
+        "applied_run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Applied Run Id",
+          "type": "string"
+        },
+        "replacement_memory_id": {
+          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+          "title": "Replacement Memory Id",
+          "type": "string"
+        },
+        "applied_at": {
+          "format": "date-time",
+          "title": "Applied At",
+          "type": "string"
+        },
+        "transition_result": {
+          "const": "applied",
+          "default": "applied",
+          "title": "Transition Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate",
+        "applied_run_id",
+        "replacement_memory_id",
+        "applied_at"
+      ],
+      "title": "CanonicalCompactionProvenance",
+      "type": "object"
+    },
     "CanonicalFieldbookProvenance": {
       "additionalProperties": false,
       "description": "Exact planner context and resolved sources behind a fieldbook change.",
@@ -1867,6 +1918,14 @@
       ],
       "title": "CollectResourceOutputAction",
       "type": "object"
+    },
+    "CompactionMethod": {
+      "description": "Implemented compaction treatments.\n\nSemantic rewriting is deliberately absent until it can satisfy the same\nsource-conservation and atomic-application contract as the lossless path.",
+      "enum": [
+        "lossless"
+      ],
+      "title": "CompactionMethod",
+      "type": "string"
     },
     "ConsultAdvisorAction": {
       "additionalProperties": false,
@@ -3068,6 +3127,7 @@
       "title": "InventoryItem",
       "type": "object"
     },
+    "JsonValue": {},
     "KeepMemoryOperation": {
       "additionalProperties": false,
       "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
@@ -3185,6 +3245,162 @@
       ],
       "title": "MemoryAuthorship",
       "type": "string"
+    },
+    "MemoryCompactionCandidate": {
+      "additionalProperties": false,
+      "description": "A bounded proposal that has no authority until atomically applied.",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "candidate_id": {
+          "pattern": "^mcc-[0-9a-f]{32}$",
+          "title": "Candidate Id",
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/$defs/CompactionMethod"
+        },
+        "campaign_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "source_memory_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 2,
+          "title": "Source Memory Ids",
+          "type": "array"
+        },
+        "source_fingerprints": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "maxProperties": 8,
+          "minProperties": 2,
+          "title": "Source Fingerprints",
+          "type": "object"
+        },
+        "kind": {
+          "$ref": "#/$defs/MemoryKind"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "salience": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Salience",
+          "type": "number"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "authorship": {
+          "$ref": "#/$defs/MemoryAuthorship"
+        },
+        "generator": {
+          "$ref": "#/$defs/MemoryCompactionGenerator"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_id",
+        "method",
+        "campaign_id",
+        "source_memory_ids",
+        "source_fingerprints",
+        "kind",
+        "content",
+        "salience",
+        "authorship",
+        "generator"
+      ],
+      "title": "MemoryCompactionCandidate",
+      "type": "object"
+    },
+    "MemoryCompactionGenerator": {
+      "additionalProperties": false,
+      "description": "How one candidate was produced, including honest non-use of a prompt.",
+      "properties": {
+        "provider": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "prompt_version": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Version"
+        },
+        "prompt_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prompt Sha256"
+        },
+        "parameters": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "maxProperties": 16,
+          "title": "Parameters",
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider",
+        "model"
+      ],
+      "title": "MemoryCompactionGenerator",
+      "type": "object"
     },
     "MemoryEvidence": {
       "additionalProperties": false,
@@ -3411,10 +3627,14 @@
               "$ref": "#/$defs/CanonicalMemoryProvenance"
             },
             {
+              "$ref": "#/$defs/CanonicalCompactionProvenance"
+            },
+            {
               "type": "null"
             }
           ],
-          "default": null
+          "default": null,
+          "title": "Latest Provenance"
         },
         "authorship": {
           "$ref": "#/$defs/MemoryAuthorship",

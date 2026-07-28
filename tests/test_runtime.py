@@ -227,6 +227,7 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             finished = next(event for event in events if event["event_type"] == "run_finished")
             receipt = next(event for event in events if event["event_type"] == "action_receipt")
             assert started["payload"]["control_mode"] == "interface_only"
+            assert started["payload"]["memory_retrieval_policy"] == "deterministic"
             assert started["payload"]["scenario"]["scenario_id"] == "mock-hub-safe-day"
             assert started["payload"]["scenario"]["save_id"] == "mock-seed-11"
             assert started["payload"]["scenario_attestation"] is None

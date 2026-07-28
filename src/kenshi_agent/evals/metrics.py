@@ -10,6 +10,7 @@ from typing import TypedDict
 
 class _MetricValues(TypedDict):
     control_mode: str | None
+    memory_retrieval_policies: dict[str, int]
     decisions: int
     strategic_planner_calls: int
     reflex_decisions: int
@@ -108,6 +109,7 @@ class _MetricValues(TypedDict):
 @dataclass(frozen=True, slots=True)
 class LogMetrics:
     control_mode: str | None = None
+    memory_retrieval_policies: dict[str, int] = field(default_factory=dict)
     decisions: int = 0
     strategic_planner_calls: int = 0
     reflex_decisions: int = 0
@@ -248,6 +250,7 @@ def evaluate_log(path: Path) -> LogMetrics:
 
     values: _MetricValues = {
         "control_mode": None,
+        "memory_retrieval_policies": {},
         "decisions": 0,
         "strategic_planner_calls": 0,
         "reflex_decisions": 0,
@@ -349,6 +352,10 @@ def evaluate_log(path: Path) -> LogMetrics:
         if event_type == "run_started":
             control_mode = payload.get("control_mode")
             values["control_mode"] = str(control_mode) if control_mode is not None else None
+            retrieval_policy = payload.get("memory_retrieval_policy")
+            if isinstance(retrieval_policy, str) and retrieval_policy:
+                policies = values["memory_retrieval_policies"]
+                policies[retrieval_policy] = policies.get(retrieval_policy, 0) + 1
         elif event_type == "decision":
             values["decisions"] += 1
             source = payload.get("source")

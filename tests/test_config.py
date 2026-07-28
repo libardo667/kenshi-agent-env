@@ -2,11 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.config import ControlsConfig, load_config
+from kenshi_agent.config import ControlsConfig, MemoryConfig, load_config
 from kenshi_agent.models import (
     ClickAction,
     ControlMode,
     LiveContinuousPolicy,
+    MemoryRetrievalPolicy,
     PlanningMode,
     SkillAction,
 )
@@ -27,6 +28,7 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.planning.max_native_assisted_actions_per_plan == 0
     assert config.planning.stateful_movement_options_enabled
     assert config.planning.concurrent_option_planning_enabled
+    assert config.memory.retrieval_policy is MemoryRetrievalPolicy.DETERMINISTIC
     assert config.safety.supervisor_enabled
     assert config.safety.supervisor_max_sequence_stalls == 3
     assert config.safety.supervisor_pause_timeout_seconds == 2.0
@@ -36,6 +38,11 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.paths.runs_dir == (root / "runs").resolve()
     assert config.paths.prompt_file.exists()
     assert config.telemetry.file == (root / "examples" / "telemetry.latest.json").resolve()
+
+
+def test_unimplemented_semantic_retrieval_cannot_be_enabled_by_config() -> None:
+    with pytest.raises(ValueError):
+        MemoryConfig(retrieval_policy="semantic_mmr")  # type: ignore[arg-type]
 
 
 def test_calibrated_client_dimensions_must_be_configured_together() -> None:

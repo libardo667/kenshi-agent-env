@@ -1,8 +1,6 @@
 # Guide: campaign scope, migration, and inspection
 
-Durable memory belongs to a **campaign** — one save lineage — and never to a
-config profile. This guide covers naming one, migrating an existing database,
-and auditing what an agent believes.
+Durable memory belongs to a **campaign** — one save lineage — and never to a config profile.
 
 ## Naming a campaign
 
@@ -10,6 +8,7 @@ and auditing what an agent believes.
 memory:
   enabled: true
   campaign_id: ladle-css-01   # the save lineage this profile plays
+  retrieval_policy: deterministic
 ```
 
 Or, when the run's memories should not outlive it:
@@ -36,13 +35,9 @@ and origin are logged as `campaign_scope`.
 
 ## Migrating an existing database
 
-On first open, a pre-campaign database is copied to
-`<memory-db>.v1-backup` before any write. Rows become `keep` events under
-`legacy:<old-namespace>` with `legacy_unverified` authorship, never the opening
-campaign. Schema 2 similarly gets a `.v2-backup` before structured provenance
-is added; schema 3 gets a `.v3-backup` before schema 4 adds the fieldbook. Old
-event payloads remain unstructured; migration invents no evidence. These paths
-are idempotent. Restore the matching backup to roll back.
+Before writing, migration backs up the prior schema as `<memory-db>.vN-backup`. Pre-campaign rows
+become `keep` events under `legacy:<old-namespace>` with `legacy_unverified` authorship. Later
+migrations add structured provenance and the fieldbook without inventing evidence. All are idempotent.
 
 To read migrated rows, name their campaign explicitly:
 
@@ -60,8 +55,22 @@ uv run kenshi-agent memory --campaign ladle-css-01  # active records
 uv run kenshi-agent memory --campaign ladle-css-01 --memory-id mem-<id>
 ```
 
-Every one of these opens SQLite read-only. Looking cannot change what an agent
-believes, and cannot register a campaign that was never played.
+These open SQLite read-only; looking cannot change belief or register a campaign.
+
+## Compacting active memories
+
+Write a read-only candidate, inspect it, then apply that exact document:
+
+```bash
+uv run kenshi-agent compact-memory --campaign ladle-css-01 \
+  --source mem-<first> --source mem-<second> > candidate.json
+uv run kenshi-agent compact-memory --campaign ladle-css-01 \
+  --apply-candidate candidate.json
+```
+
+Application rechecks all source state under one lock. Drift, edits, malformed JSON, or store failure
+change nothing; success retains source history and the inspected candidate as provenance. Only
+lossless compaction and deterministic recall exist. See [the compaction ADR](ADR_LOSSLESS_MEMORY_COMPACTION.md).
 
 ## What a planner is shown
 
@@ -72,30 +81,19 @@ Recall spends separate budgets in order:
 3. unresolved hypotheses;
 4. general knowledge, and only this tier honours `minimum_salience`.
 
-A record occupies one tier. `memory_recall` reports omissions; identified
-`recent_continuity_receipts` report accepted, rejected, no-op, or failed. Fix a
-rejection; failure quarantines writes. Tight budgets preserve the latest adverse
-receipt, while open commitments and current-target memories also survive.
-Persistent read/write degradation reasons distinguish quarantine from an empty
-result; read failure disables both paths without stopping play or blind retries.
+A record occupies one tier. `memory_recall` reports omissions; receipts report accepted, rejected,
+no-op, or failed. Tight budgets preserve the latest adverse receipt, commitments, and current-target
+memory. Degradation is distinct from an empty result and stops blind store retries, not gameplay.
 
-A planner may use `recall_memory` for a bounded search of `"durable_memory"` or compact
-`"working_outcomes"` outside the rich window. A runtime-owned receipt names its exact plan/step,
-source, campaign, returned IDs, and `completed`, `unavailable`, or `failed` status. Its identity
-and results enter only the next manifest. Unavailable and failed reads are not empty searches; the
-read emits no game input or risk-budget cost.
+`recall_memory` searches bounded durable memory or compact working outcomes. Its runtime-owned receipt
+binds exact plan, step, source, campaign, results, and status to only the next manifest. It emits no
+game input or risk-budget cost.
 
 ## Fieldbook
 
-The fieldbook shares the campaign and database but serves larger named work:
-delivery dockets, route atlases, logs, plans, journals, and generic projects.
-Its index is bounded; one selected summary is automatic, and entries require
-`read_fieldbook`.
-
-Planner writes use typed `fieldbook_operations`. Project IDs must occur in the
-exact planner input. Observational, manifest, expense, incident, and route
-entries require appropriate delivered evidence. Notes, decisions, and questions
-may be self-authored but never become inventory or other world truth.
+The fieldbook serves larger named work in the same campaign database. Its index is bounded; one
+selected summary is automatic, and entries require `read_fieldbook`. Typed planner writes require
+visible project IDs and appropriate delivered evidence. Self-authored notes never become world truth.
 
 Operator inspection is read-only:
 
@@ -104,17 +102,8 @@ uv run kenshi-agent fieldbook --campaign ladle-css-01
 uv run kenshi-agent fieldbook --campaign ladle-css-01 --project-id fbp-<id> # or --query/--markdown
 ```
 
-The Markdown form is generated to stdout and disposable. Editing or deleting a
-saved copy cannot change SQLite.
+Markdown output is disposable. Immutable evidence is resolved before grounding; non-effects may
+ground a failed episode, never success. See [the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
 
-The runtime resolves immutable evidence before rendering grounding. Non-effects
-may ground an honest failed episode, never successful world proof. The complete
-capability decision is in
-[the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
-
-`memory_events` is append-only canonical history; `memories` is its
-transactional, rebuildable projection. Accepted events retain exact operation,
-planner context, revisions, evidence, origin, and rendered grounding. Exact
-restatement reinforces by deterministic normalized key. Reads never influence
-ordering or write state. Closed records reject further transitions, and
-campaigns cannot reach each other's records.
+`memory_events` is append-only history; `memories` is its transactional, rebuildable projection.
+Reads never change ordering or state. Closed records reject transitions; campaigns cannot cross.

@@ -12,7 +12,10 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     records = [
         {
             "event_type": "run_started",
-            "payload": {"control_mode": "native_assisted"},
+            "payload": {
+                "control_mode": "native_assisted",
+                "memory_retrieval_policy": "deterministic",
+            },
         },
         {
             "event_type": "decision",
@@ -121,6 +124,7 @@ def test_evaluate_log_counts_events(tmp_path: Path) -> None:
     assert metrics.stale_observations == 1
     assert metrics.success is True
     assert metrics.control_mode == "native_assisted"
+    assert metrics.memory_retrieval_policies == {"deterministic": 1}
     assert metrics.mean_planner_latency_seconds == 2.0
     assert metrics.p50_planner_latency_seconds == 2.0
     assert metrics.p95_planner_latency_seconds == 3.0

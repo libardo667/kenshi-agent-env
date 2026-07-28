@@ -72,6 +72,7 @@ from .models import (
     LiveContinuousPolicy,
     MemoryReadReceipt,
     MemoryReadStatus,
+    MemoryRetrievalPolicy,
     MemorySearchResult,
     NearbyEntity,
     Observation,
@@ -168,6 +169,9 @@ class AgentRuntime:
         commitment_memory_limit: int = 4,
         hypothesis_memory_limit: int = 2,
         fieldbook_project_limit: int = 8,
+        memory_retrieval_policy: MemoryRetrievalPolicy = (
+            MemoryRetrievalPolicy.DETERMINISTIC
+        ),
         action_outcome_limit: int = 12,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         reporter: ConsoleDecisionReporter | None = None,
@@ -190,6 +194,7 @@ class AgentRuntime:
         self.entity_memory_limit = entity_memory_limit
         self.minimum_memory_salience = minimum_memory_salience
         self.fieldbook_project_limit = fieldbook_project_limit
+        self.memory_retrieval_policy = memory_retrieval_policy
         self.action_outcome_limit = action_outcome_limit
         self.control_mode = control_mode
         self._ledger = ContinuityLedger(
@@ -343,6 +348,9 @@ class AgentRuntime:
                     "max_steps": max_steps,
                     "seed": seed,
                     "control_mode": self.control_mode.value,
+                    "memory_retrieval_policy": (
+                        self.memory_retrieval_policy.value
+                    ),
                     "scenario": (
                         self.scenario.model_dump(mode="json")
                         if self.scenario is not None
@@ -790,6 +798,9 @@ class AgentRuntime:
                     "control_mode": self.control_mode.value,
                     "planning_mode": self.planning_config.mode.value,
                     "live_execution_policy": (self.planning_config.live_execution_policy.value),
+                    "memory_retrieval_policy": (
+                        self.memory_retrieval_policy.value
+                    ),
                     "scenario": (
                         self.scenario.model_dump(mode="json")
                         if self.scenario is not None
