@@ -38,8 +38,8 @@ in generated [catalog](docs/generated/ACTION_CATALOG.md) and
   commitment. Rich windows sit over all-run compact digests returned only by elective read.
   Campaign-scoped schema 3 transactionally keeps structured lifecycle provenance in append-only
   history and a rebuildable projection, with backed-up migration and read-only audit. Tiered recall
-  reports omissions and receipts; `recall_memory` searches durable records or working outcomes
-  without game input.
+  reports omissions and receipts; `recall_memory` returns an identified, plan-bound
+  completed/unavailable/failed receipt for exactly the next call, without game input.
 - Hash-locked FCS starts install and launch with money/party proof. The mutation campaign is
   permanently bounded to nine named authority modules and records strict evidence per run.
 

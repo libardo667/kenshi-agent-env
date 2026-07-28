@@ -145,6 +145,7 @@ safety:
     - skill
     - recover_camera_view
     - request_affordance
+    - recall_memory
   allow_skills:
     - pause_game
     - open_map

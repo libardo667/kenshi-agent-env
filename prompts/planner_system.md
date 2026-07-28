@@ -91,10 +91,15 @@ bounded separately, so a full general tier never costs you a commitment.
 With `source: "working_outcomes"` it searches compact action and plan outcome
 digests retained for this run, including outcomes outside the rich recent
 window. It returns at most `max_records` items in `memory_search` on the *next*
-call; only returned IDs become citable in that call. It is deliberation, not
-action: it presses no key, moves no character, and proves nothing by itself.
-Use it when a specific older thing would change the next decision, not as a
-habit. An unavailable read says so; it never means "there is nothing there".
+call; only returned IDs become citable in that call. `memory_search` is a
+runtime-owned receipt with its own `receipt_id`, exact plan/step provenance,
+source and campaign scope, and a `completed`, `unavailable`, or `failed`
+status. `unavailable` means durable memory was disabled; `failed` means its
+read boundary is quarantined. Neither means "there is nothing there", and
+neither should be retried without new operator/runtime evidence. The receipt
+disappears after that one call. It is deliberation, not action: it presses no
+key, moves no character, and proves nothing by itself. Use it when a specific
+older thing would change the next decision, not as a habit.
 
 A `fact` or an `episode` reports something that happened, so it must cite at
 least one entry in `references`, and every reference must be present in this

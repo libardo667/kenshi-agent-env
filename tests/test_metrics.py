@@ -454,6 +454,7 @@ def test_evaluate_log_conserves_every_recognized_event_into_exact_metrics(
             "event_type": "memory_read",
             "payload": {
                 "result": {
+                    "status": "completed",
                     "records": [{"memory_id": "mem-a"}, {"memory_id": "mem-b"}],
                     "truncated": True,
                 }
@@ -609,6 +610,9 @@ def test_evaluate_log_conserves_every_recognized_event_into_exact_metrics(
         memory_lifecycle_transitions={"keep": 1, "reinforce": 1, "unknown": 1},
         plan_outcomes=1,
         memory_reads=2,
+        memory_reads_completed=1,
+        memory_reads_unavailable=0,
+        memory_reads_failed=0,
         memory_read_records=2,
         memory_read_truncations=1,
         plans_proposed=1,
@@ -741,6 +745,24 @@ def test_empty_and_legacy_logs_have_exact_closed_defaults(tmp_path: Path) -> Non
             1,
         ),
         ("plan_outcomes", "plan_outcome", {}, 1),
+        (
+            "memory_reads_completed",
+            "memory_read",
+            {"result": {"status": "completed"}},
+            1,
+        ),
+        (
+            "memory_reads_unavailable",
+            "memory_read",
+            {"result": {"status": "unavailable"}},
+            1,
+        ),
+        (
+            "memory_reads_failed",
+            "memory_read",
+            {"result": {"status": "failed"}},
+            1,
+        ),
         (
             "memory_read_records",
             "memory_read",

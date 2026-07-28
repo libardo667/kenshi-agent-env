@@ -2400,6 +2400,152 @@
       "title": "MemoryKind",
       "type": "string"
     },
+    "MemoryReadReceipt": {
+      "additionalProperties": false,
+      "description": "Runtime identity and provenance for one planner-requested memory read.",
+      "properties": {
+        "query": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "records": {
+          "items": {
+            "$ref": "#/$defs/MemoryRecord"
+          },
+          "maxItems": 16,
+          "title": "Records",
+          "type": "array"
+        },
+        "action_outcomes": {
+          "items": {
+            "$ref": "#/$defs/ActionOutcomeDigest"
+          },
+          "maxItems": 8,
+          "title": "Action Outcomes",
+          "type": "array"
+        },
+        "plan_outcomes": {
+          "items": {
+            "$ref": "#/$defs/PlanOutcomeDigest"
+          },
+          "maxItems": 8,
+          "title": "Plan Outcomes",
+          "type": "array"
+        },
+        "matched": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Matched",
+          "type": "integer"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "receipt_id": {
+          "pattern": "^mrr-[0-9a-f]{32}$",
+          "title": "Receipt Id",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "durable_memory",
+            "working_outcomes"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/MemoryReadStatus"
+        },
+        "campaign_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Campaign Id"
+        },
+        "record_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Record Ids",
+          "type": "array"
+        },
+        "action_outcome_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Action Outcome Ids",
+          "type": "array"
+        },
+        "plan_outcome_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Plan Outcome Ids",
+          "type": "array"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query",
+        "receipt_id",
+        "source",
+        "status",
+        "plan_id",
+        "plan_version",
+        "step_id"
+      ],
+      "title": "MemoryReadReceipt",
+      "type": "object"
+    },
+    "MemoryReadStatus": {
+      "enum": [
+        "completed",
+        "unavailable",
+        "failed"
+      ],
+      "title": "MemoryReadStatus",
+      "type": "string"
+    },
     "MemoryRecord": {
       "additionalProperties": false,
       "description": "One durable record, projected from its lifecycle history.",
@@ -2615,64 +2761,6 @@
       ],
       "title": "MemoryResolutionDisposition",
       "type": "string"
-    },
-    "MemorySearchResult": {
-      "additionalProperties": false,
-      "description": "The typed answer to one deliberate, bounded continuity read.",
-      "properties": {
-        "query": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Query",
-          "type": "string"
-        },
-        "records": {
-          "items": {
-            "$ref": "#/$defs/MemoryRecord"
-          },
-          "maxItems": 16,
-          "title": "Records",
-          "type": "array"
-        },
-        "action_outcomes": {
-          "items": {
-            "$ref": "#/$defs/ActionOutcomeDigest"
-          },
-          "maxItems": 8,
-          "title": "Action Outcomes",
-          "type": "array"
-        },
-        "plan_outcomes": {
-          "items": {
-            "$ref": "#/$defs/PlanOutcomeDigest"
-          },
-          "maxItems": 8,
-          "title": "Plan Outcomes",
-          "type": "array"
-        },
-        "matched": {
-          "default": 0,
-          "minimum": 0,
-          "title": "Matched",
-          "type": "integer"
-        },
-        "truncated": {
-          "default": false,
-          "title": "Truncated",
-          "type": "boolean"
-        },
-        "reason": {
-          "default": "",
-          "maxLength": 600,
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "query"
-      ],
-      "title": "MemorySearchResult",
-      "type": "object"
     },
     "MemoryStatus": {
       "description": "Where a record sits in its lifecycle. Only `active` reaches recall.",
@@ -5397,7 +5485,7 @@
     "memory_search": {
       "anyOf": [
         {
-          "$ref": "#/$defs/MemorySearchResult"
+          "$ref": "#/$defs/MemoryReadReceipt"
         },
         {
           "type": "null"

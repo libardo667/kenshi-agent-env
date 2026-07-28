@@ -78,10 +78,11 @@ receipt, while open commitments and current-target memories also survive.
 Persistent read/write degradation reasons distinguish quarantine from an empty
 result; read failure disables both paths without stopping play or blind retries.
 
-A planner may use `recall_memory` with `source: "durable_memory"` for a bounded
-literal record search, or `"working_outcomes"` for compact run-local digests
-outside the rich window. Results reach the next call only; only returned IDs
-enter its manifest. The read emits no game input or risk-budget cost.
+A planner may use `recall_memory` for a bounded search of `"durable_memory"` or compact
+`"working_outcomes"` outside the rich window. A runtime-owned receipt names its exact plan/step,
+source, campaign, returned IDs, and `completed`, `unavailable`, or `failed` status. Its identity
+and results enter only the next manifest. Unavailable and failed reads are not empty searches; the
+read emits no game input or risk-budget cost.
 
 ## What evidence may establish
 
@@ -110,8 +111,7 @@ proof. See [the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
 - `memories` is a projection, updated in the same transaction that appends the
   event. If the two ever disagree, the history wins and `rebuild_projection()`
   restores agreement.
-- Recall reads only. Ordering uses declared salience and creation time, never
-  read time.
+- Recall reads only. Ordering uses declared salience and creation time, never read time.
 - Exact restatement reinforces rather than duplicates, by a deterministic
   normalized key — kind, squashed whitespace, case, and exact target. The
   storage boundary makes no similarity judgment.

@@ -86,7 +86,14 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
     assert config.control.native_assisted_actions_enabled
     assert config.safety.require_cli_execute_flag
-    assert set(config.safety.allow_action_kinds) == {"noop", "stop", "pause", "wait", "skill"}
+    assert set(config.safety.allow_action_kinds) == {
+        "noop",
+        "stop",
+        "pause",
+        "wait",
+        "skill",
+        "recall_memory",
+    }
     assert set(config.safety.allow_skills) == {
         "open_map",
         "zoom_map_in",
@@ -326,3 +333,27 @@ def test_generic_longform_profile_does_not_claim_a_specific_save_campaign(
     assert config.memory.enabled
     assert config.memory.campaign_id is None
     assert not config.memory.ephemeral
+
+
+@pytest.mark.parametrize(
+    "profile",
+    [
+        "default.yaml",
+        "live.burnin.yaml",
+        "live.dialogue.yaml",
+        "live.example.yaml",
+        "live.longform.yaml",
+    ],
+)
+def test_every_memory_enabled_profile_allows_the_cognitive_read(
+    profile: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    config = load_config(root / "config" / profile)
+
+    assert config.memory.enabled
+    assert "recall_memory" in config.safety.allow_action_kinds

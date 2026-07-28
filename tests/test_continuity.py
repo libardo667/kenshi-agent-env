@@ -47,6 +47,8 @@ from kenshi_agent.models import (
     MemoryEvidence,
     MemoryKind,
     MemoryLifecycleEvent,
+    MemoryReadReceipt,
+    MemoryReadStatus,
     MemoryRecord,
     MemoryResolutionDisposition,
     MemoryStatus,
@@ -405,9 +407,19 @@ def test_an_explicit_outcome_read_resurfaces_an_evicted_digest_for_citation() ->
     ledger.record_action_outcome(action_outcome("ao-2"))
 
     result = ledger.search_outcomes(query="ao-1", limit=1)
+    read_receipt = MemoryReadReceipt(
+        **result.model_dump(),
+        receipt_id="mrr-" + "1" * 32,
+        source="working_outcomes",
+        status=MemoryReadStatus.COMPLETED,
+        action_outcome_ids=["ao-1"],
+        plan_id="single-step",
+        plan_version=1,
+        step_id="step-0",
+    )
     recalled = observation().model_copy(
         update={
-            "memory_search": result,
+            "memory_search": read_receipt,
             "recent_action_outcomes": ledger.recent_action_outcomes,
         }
     )
@@ -419,6 +431,85 @@ def test_an_explicit_outcome_read_resurfaces_an_evicted_digest_for_citation() ->
 
     assert [item.outcome_id for item in result.action_outcomes] == ["ao-1"]
     assert manifest.action_outcome_ids == ["ao-1", "ao-2"]
+    assert manifest.memory_read_receipt_ids == ["mrr-" + "1" * 32]
+
+
+@pytest.mark.parametrize(
+    ("overridden_field", "invented_id"),
+    [
+        ("action_outcome_ids", "ao-invented"),
+        ("plan_outcome_ids", "po-invented"),
+    ],
+)
+def test_a_read_receipt_cannot_advertise_working_ids_it_did_not_return(
+    overridden_field: str,
+    invented_id: str,
+) -> None:
+    ledger = ledger_with_evidence()
+    result = ledger.search_outcomes(query="plan", limit=8)
+    values = {
+        "action_outcome_ids": [
+            outcome.outcome_id for outcome in result.action_outcomes
+        ],
+        "plan_outcome_ids": [
+            outcome.plan_outcome_id for outcome in result.plan_outcomes
+        ],
+    }
+    values[overridden_field] = [invented_id]
+
+    with pytest.raises(ValueError, match=overridden_field):
+        MemoryReadReceipt(
+            **result.model_dump(),
+            receipt_id="mrr-" + "1" * 32,
+            source="working_outcomes",
+            status=MemoryReadStatus.COMPLETED,
+            plan_id="single-step",
+            plan_version=1,
+            step_id="step-0",
+            **values,
+        )
+
+
+def test_a_working_outcome_receipt_cannot_claim_a_durable_campaign() -> None:
+    with pytest.raises(ValueError, match="campaign_id"):
+        MemoryReadReceipt(
+            query="plan",
+            receipt_id="mrr-" + "1" * 32,
+            source="working_outcomes",
+            status=MemoryReadStatus.COMPLETED,
+            campaign_id="campaign-a",
+            plan_id="single-step",
+            plan_version=1,
+            step_id="step-0",
+        )
+
+
+@pytest.mark.parametrize(
+    ("source", "status", "campaign_id"),
+    [
+        ("durable_memory", MemoryReadStatus.COMPLETED, None),
+        ("durable_memory", MemoryReadStatus.FAILED, None),
+        ("durable_memory", MemoryReadStatus.UNAVAILABLE, "campaign-a"),
+        ("working_outcomes", MemoryReadStatus.UNAVAILABLE, None),
+        ("working_outcomes", MemoryReadStatus.FAILED, None),
+    ],
+)
+def test_a_read_receipt_rejects_impossible_source_status_scope_combinations(
+    source: str,
+    status: MemoryReadStatus,
+    campaign_id: str | None,
+) -> None:
+    with pytest.raises(ValueError, match="source, status, and campaign_id"):
+        MemoryReadReceipt(
+            query="gate",
+            receipt_id="mrr-" + "1" * 32,
+            source=source,  # type: ignore[arg-type]
+            status=status,
+            campaign_id=campaign_id,
+            plan_id="single-step",
+            plan_version=1,
+            step_id="step-0",
+        )
 
 
 def test_outcome_search_reports_matches_across_both_ledgers_under_one_bound() -> None:
@@ -3246,6 +3337,7 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
     import json
 
     from kenshi_agent.models import (
+        NoopAction,
         PlannerDecision,
         RecallMemoryAction,
         StopAction,
@@ -3268,6 +3360,13 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
                     action=RecallMemoryAction(query="gate", max_records=2),
                     confidence=1.0,
                 )
+            if self.calls == 2:
+                return PlannerDecision(
+                    intent="Use one deliberation turn.",
+                    rationale="The next call must not inherit this read.",
+                    action=NoopAction(reason="continue"),
+                    confidence=1.0,
+                )
             return PlannerDecision(
                 intent="Stop.",
                 rationale="The lookup answered the question.",
@@ -3286,14 +3385,22 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
             finally:
                 logger.close()
 
-        assert summary.steps_completed == 2
+        assert summary.steps_completed == 3
         assert seen[0] is None, "nothing was requested before the first call"
         assert seen[1] is not None, "the read never reached the planner that asked"
         assert [record.content for record in seen[1].records] == [
             "The gate at Squin closes at night."
         ]
+        assert seen[1].receipt_id.startswith("mrr-")
+        assert seen[1].source == "durable_memory"
+        assert seen[1].status == "completed"
+        assert seen[1].campaign_id == "reader"
+        assert seen[1].record_ids == [
+            record.memory_id for record in seen[1].records
+        ]
         assert seen[1].truncated is False
-        assert len(seen) == 2
+        assert seen[2] is None, "the elective read leaked into a later planner call"
+        assert len(seen) == 3
 
         events = [
             json.loads(line)
@@ -3305,6 +3412,18 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
         assert len(reads) == 1
         assert reads[0]["controller_primitives"] == 0
         assert reads[0]["world_command_created"] is False
+        receipt_id = reads[0]["result"]["receipt_id"]
+        assert receipt_id == seen[1].receipt_id
+        manifests = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "planner_context_prepared"
+        ]
+        assert [manifest["memory_read_receipt_ids"] for manifest in manifests] == [
+            [],
+            [receipt_id],
+            [],
+        ]
         read_receipts = [
             event["payload"]
             for event in events
@@ -3343,8 +3462,67 @@ def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
 
     assert runner._pending_memory_search is not None
     assert runner._pending_memory_search.records == []
+    assert runner._pending_memory_search.receipt_id.startswith("mrr-")
+    assert runner._pending_memory_search.source == "durable_memory"
+    assert runner._pending_memory_search.status is MemoryReadStatus.UNAVAILABLE
+    assert runner._pending_memory_search.campaign_id is None
     assert "disabled" in runner._pending_memory_search.reason
     assert receipt.primitive_actions == 0
+
+
+def test_a_working_outcome_read_returns_exact_runtime_owned_evidence() -> None:
+    from kenshi_agent.models import RecallMemoryAction
+    from kenshi_agent.runtime import AgentRuntime
+
+    ledger = ledger_with_evidence()
+    ledger.record_action_outcome(
+        action_outcome("ao-2").model_copy(update={"plan_id": "plan-action"})
+    )
+    events: list[tuple[str, dict[str, Any]]] = []
+    runner = object.__new__(AgentRuntime)
+    runner.memory = None
+    runner.run_id = "run-a"
+    runner.control_mode = ControlMode.INTERFACE_ONLY
+    runner._ledger = ledger
+    runner.logger = SimpleNamespace(
+        write=lambda event_type, **kwargs: events.append((event_type, kwargs))
+    )
+    runner._pending_memory_search = None
+
+    receipt = AgentRuntime._execute_memory_read(
+        runner,
+        RecallMemoryAction(
+            source="working_outcomes",
+            query="plan",
+            max_records=8,
+        ),
+        observation(),
+        plan_id="plan-reader",
+        plan_version=3,
+        step_id="read-outcomes",
+    )
+
+    returned = runner._pending_memory_search
+    assert returned is not None
+    assert returned.source == "working_outcomes"
+    assert returned.status is MemoryReadStatus.COMPLETED
+    assert returned.campaign_id is None
+    assert returned.action_outcome_ids == [
+        outcome.outcome_id for outcome in returned.action_outcomes
+    ] == ["ao-2"]
+    assert returned.plan_outcome_ids == [
+        outcome.plan_outcome_id for outcome in returned.plan_outcomes
+    ] == ["po-1"]
+    assert returned.plan_id == "plan-reader"
+    assert returned.plan_version == 3
+    assert returned.step_id == "read-outcomes"
+    assert receipt.primitive_actions == 0
+    read_events = [
+        payload["payload"]["result"]
+        for event_type, payload in events
+        if event_type == "memory_read"
+    ]
+    assert read_events == [returned.model_dump(mode="json")]
 
 
 def test_elective_memory_search_failure_is_typed_and_quarantined(
@@ -3396,6 +3574,8 @@ def test_elective_memory_search_failure_is_typed_and_quarantined(
         assert store.search_attempts == 1
         assert runner._pending_memory_search is not None
         assert runner._pending_memory_search.records == []
+        assert runner._pending_memory_search.status is MemoryReadStatus.FAILED
+        assert runner._pending_memory_search.campaign_id == "reader"
         assert runner._pending_memory_search.reason == expected_reason
         assert receipt.message == expected_reason
         assert repeated.message == expected_reason
@@ -3416,6 +3596,13 @@ def test_elective_memory_search_failure_is_typed_and_quarantined(
                 },
             }
         ]
+        read_receipts = [
+            payload["payload"]["result"]
+            for event_type, payload in events
+            if event_type == "memory_read"
+        ]
+        assert [item["status"] for item in read_receipts] == ["failed", "failed"]
+        assert len({item["receipt_id"] for item in read_receipts}) == 2
 
 
 def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(

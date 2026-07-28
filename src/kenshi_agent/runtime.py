@@ -61,6 +61,8 @@ from .models import (
     ControlMode,
     InputBoundaryDecision,
     LiveContinuousPolicy,
+    MemoryReadReceipt,
+    MemoryReadStatus,
     MemorySearchResult,
     NearbyEntity,
     Observation,
@@ -88,6 +90,7 @@ from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, v
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .runtime_continuity import (
+    build_memory_read_receipt,
     continuity_receipt_digests,
     recall_for_observation,
     record_planner_delivery,
@@ -191,7 +194,7 @@ class AgentRuntime:
         self._continuity_receipts: deque[ContinuityReceiptDigest] = deque(
             maxlen=MAX_SURFACED_CONTINUITY_RECEIPTS
         )
-        self._pending_memory_search: MemorySearchResult | None = None
+        self._pending_memory_search: MemoryReadReceipt | None = None
         self._advisor_brief_ids: set[str] = set()
         self._planner_contexts_issued = 0
         self._continuity = ContinuityAuthority(
@@ -2662,17 +2665,21 @@ class AgentRuntime:
         """
 
         started_at = datetime.now(UTC)
+        read_status = MemoryReadStatus.COMPLETED
+        campaign_id: str | None = None
         if action.source == "working_outcomes":
             result = self._ledger.search_outcomes(
                 query=action.query,
                 limit=action.max_records,
             )
         elif self.memory is None:
+            read_status = MemoryReadStatus.UNAVAILABLE
             result = MemorySearchResult(
                 query=action.query,
                 reason="Durable memory is disabled for this run; nothing was read.",
             )
         else:
+            campaign_id = self.memory.campaign_id
             search = search_durable_memory(
                 self.memory,
                 self._continuity,
@@ -2680,6 +2687,8 @@ class AgentRuntime:
                 limit=action.max_records,
             )
             result = search.result
+            if self._continuity.reads_degraded_reason is not None:
+                read_status = MemoryReadStatus.FAILED
             if search.failure is not None:
                 self.logger.write(
                     "continuity_store_failed",
@@ -2689,7 +2698,16 @@ class AgentRuntime:
                         "reason": search.failure.reason,
                     },
                 )
-        self._pending_memory_search = result
+        read_receipt = build_memory_read_receipt(
+            result,
+            source=action.source,
+            status=read_status,
+            campaign_id=campaign_id,
+            plan_id=plan_id,
+            plan_version=plan_version,
+            step_id=step_id,
+        )
+        self._pending_memory_search = read_receipt
         receipt = ActionReceipt(
             action=action,
             control_mode=self.control_mode,
@@ -2699,7 +2717,7 @@ class AgentRuntime:
             started_at=started_at,
             finished_at=datetime.now(UTC),
             primitive_actions=0,
-            message=result.reason,
+            message=read_receipt.reason,
         )
         self.logger.write(
             "memory_read",
@@ -2710,7 +2728,7 @@ class AgentRuntime:
                 "step_id": step_id,
                 "controller_primitives": 0,
                 "world_command_created": False,
-                "result": result.model_dump(mode="json"),
+                "result": read_receipt.model_dump(mode="json"),
             },
         )
         self.logger.write(

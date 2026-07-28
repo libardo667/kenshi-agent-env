@@ -94,12 +94,12 @@ The automatic `Set out to:` episode is gone. Plan purpose is working history
 now: it is recorded by `_record_plan_outcome` once the plan has ended, with the
 reason it ended.
 
-Recall is read-only and ordered by `salience, created_at, id`, never read time.
-`record_delivery` marks only records in the final planner-context manifest.
+Recall is read-only and ordered by `salience, created_at, id`, never read time. An elective read
+gets a runtime-owned receipt binding source, status, scope, returned IDs, and plan/step to exactly
+the next planner manifest, whose final delivered records alone are marked by `record_delivery`.
 
-The versioned store pairs append-only `memory_events` with a transactionally
-written, rebuildable `memories` projection.
-All five transitions have separate `reinforced_at`,
+The versioned store pairs append-only `memory_events` with a transactionally written,
+rebuildable `memories` projection. All five transitions have separate `reinforced_at`,
 `resolved_at`, `superseded_at`, and `last_delivered_at` timestamps. A closed
 record refuses every further transition, exact restatement reinforces by a
 deterministic normalized key rather than duplicating, and no campaign's

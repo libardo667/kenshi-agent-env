@@ -82,6 +82,7 @@ def _observation() -> Observation:
             "recent_action_outcomes": [SimpleNamespace(outcome_id="ao-2")],
             "recent_plan_outcomes": [SimpleNamespace(plan_outcome_id="po-2")],
             "memory_search": SimpleNamespace(
+                receipt_id="mrr-" + "1" * 32,
                 records=[
                     MemoryRecord(
                         memory_id="mem-search",
@@ -140,6 +141,7 @@ def test_full_manifest_is_the_exact_delivered_identity_projection(
         plan_outcome_ids=["po-1", "po-2"],
         memory_ids=["mem-receipt", "mem-search", "mem-visible"],
         continuity_receipt_ids=["cor-" + "1" * 32],
+        memory_read_receipt_ids=["mrr-" + "1" * 32],
         advisor_brief_ids=["advisor-" + "a" * 32],
         candidate_memory_count=3,
         payload_characters=None,
@@ -172,6 +174,7 @@ def test_budgeted_manifest_is_the_exact_final_json_projection(
         "recent_plan_outcomes": [{"plan_outcome_id": "po-4"}],
         "memories": [{"memory_id": "mem-payload"}],
         "memory_search": {
+            "receipt_id": "mrr-" + "2" * 32,
             "records": [{"memory_id": "mem-payload-search"}],
             "action_outcomes": [{"outcome_id": "ao-3"}],
             "plan_outcomes": [{"plan_outcome_id": "po-3"}],
@@ -213,6 +216,7 @@ def test_budgeted_manifest_is_the_exact_final_json_projection(
             "mem-payload-search",
         ],
         continuity_receipt_ids=["cor-" + "2" * 32],
+        memory_read_receipt_ids=["mrr-" + "2" * 32],
         advisor_brief_ids=["advisor-" + "b" * 32],
         candidate_memory_count=3,
         payload_characters=1234,
@@ -246,6 +250,7 @@ def test_scripted_manifest_discloses_no_observation_identities(
         plan_outcome_ids=[],
         memory_ids=[],
         continuity_receipt_ids=[],
+        memory_read_receipt_ids=[],
         advisor_brief_ids=[],
         candidate_memory_count=3,
         payload_characters=99,

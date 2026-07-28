@@ -38,10 +38,11 @@
   general tier honours the salience floor. Observations now carry
   `memory_recall` (what was left out), `recent_continuity_receipts` (why the
   last operations were accepted or refused), and `memory_search`. Added the
-  `recall_memory` cognitive action: a bounded literal search whose typed result
-  reaches exactly the next planner call, emitting no game input and spending no
-  pointer, purchase, or native risk. Open commitments now survive payload
-  budgeting alongside current-target memories.
+  `recall_memory` cognitive action: a bounded literal search whose
+  runtime-identified receipt binds exact source, campaign, plan/step, returned
+  IDs, and completed/unavailable/failed status to exactly the next planner call.
+  It emits no game input and spends no pointer, purchase, or native risk. Open
+  commitments now survive payload budgeting alongside current-target memories.
 - Scoped durable memory to an explicit campaign and gave it a real lifecycle.
   `run_namespace` becomes `campaign_id`: a live run with memory enabled and no
   campaign now fails closed instead of sharing one `default` namespace across

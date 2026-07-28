@@ -17,8 +17,12 @@ from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.models import (
     MemoryKind,
+    MemoryReadReceipt,
+    MemoryReadStatus,
     MemoryRecord,
+    RecallMemoryAction,
     RecallTier,
+    is_planner_control_action,
 )
 
 
@@ -283,6 +287,33 @@ def test_another_campaigns_records_reach_no_tier(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------
 # The elective bounded read
 # --------------------------------------------------------------------------
+
+
+def test_recall_memory_is_a_cognitive_planner_control() -> None:
+    action = RecallMemoryAction(query="gate")
+
+    assert is_planner_control_action(action)
+
+
+def test_a_read_receipt_cannot_advertise_memory_ids_it_did_not_return(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        returned = keep(store, "The gate at Squin closes at night.")
+
+    with pytest.raises(ValueError, match="record_ids"):
+        MemoryReadReceipt(
+            query="gate",
+            records=[returned],
+            receipt_id="mrr-" + "1" * 32,
+            source="durable_memory",
+            status=MemoryReadStatus.COMPLETED,
+            campaign_id="test",
+            record_ids=["mem-invented"],
+            plan_id="single-step",
+            plan_version=1,
+            step_id="step-0",
+        )
 
 
 def test_an_elective_search_finds_what_automatic_recall_left_out(

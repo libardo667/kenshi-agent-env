@@ -71,8 +71,13 @@ no-op, not-executed, or unknown evidence. Hypothesis resolution supplies
 
 `recall_memory` defaults to `source: "durable_memory"`. Setting
 `source: "working_outcomes"` performs a bounded read of compact run-local action
-and plan digests. Returned IDs enter only the next planner manifest, allowing
+and plan digests. The next request carries one runtime-owned `memory_search`
+receipt with an exact `receipt_id`, plan/step provenance, source, campaign
+scope, result IDs, and `completed`, `unavailable`, or `failed` status. Its
+receipt and result IDs enter only that request's planner manifest, allowing
 deliberate citation without placing all run history in automatic context.
+Unavailable and failed reads are not evidence of an empty search and should
+not be blindly retried.
 
 Commit timing is exact. A plan's operations are processed after the plan passes
 every validation gate; a decision's after its action receipt; a patch's only if

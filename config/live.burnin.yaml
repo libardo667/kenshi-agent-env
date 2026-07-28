@@ -175,6 +175,7 @@ safety:
     - pause
     - wait
     - skill
+    - recall_memory
   allow_skills:
     - open_map
     - zoom_map_in

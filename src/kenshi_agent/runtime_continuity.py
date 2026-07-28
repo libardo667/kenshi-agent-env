@@ -17,9 +17,12 @@ from .memory import RecallBudget, TieredRecall
 from .models import (
     ContinuityOperationReceipt,
     ContinuityReceiptDigest,
+    MemoryReadReceipt,
+    MemoryReadStatus,
     MemoryRecord,
     MemorySearchResult,
     RecallSummary,
+    new_memory_read_receipt_id,
 )
 
 
@@ -71,6 +74,37 @@ class ObservationRecall:
 class DurableMemorySearch:
     result: MemorySearchResult
     failure: StoreBoundaryFailure | None = None
+
+
+def build_memory_read_receipt(
+    result: MemorySearchResult,
+    *,
+    source: Literal["durable_memory", "working_outcomes"],
+    status: MemoryReadStatus,
+    campaign_id: str | None,
+    plan_id: str,
+    plan_version: int,
+    step_id: str,
+) -> MemoryReadReceipt:
+    """Stamp one exact elective-read result with runtime-owned provenance."""
+
+    return MemoryReadReceipt(
+        **result.model_dump(),
+        receipt_id=new_memory_read_receipt_id(),
+        source=source,
+        status=status,
+        campaign_id=campaign_id,
+        record_ids=[record.memory_id for record in result.records],
+        action_outcome_ids=[
+            outcome.outcome_id for outcome in result.action_outcomes
+        ],
+        plan_outcome_ids=[
+            outcome.plan_outcome_id for outcome in result.plan_outcomes
+        ],
+        plan_id=plan_id,
+        plan_version=plan_version,
+        step_id=step_id,
+    )
 
 
 def _empty_recall(

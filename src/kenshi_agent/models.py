@@ -1473,6 +1473,7 @@ PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
         "wait",
         "consult_advisor",
         "request_affordance",
+        "recall_memory",
     }
 )
 
@@ -1501,6 +1502,12 @@ def new_continuity_receipt_id() -> str:
     """A runtime-owned identity for one attempted continuity operation."""
 
     return f"cor-{uuid4().hex}"
+
+
+def new_memory_read_receipt_id() -> str:
+    """A runtime-owned identity for one elective continuity read."""
+
+    return f"mrr-{uuid4().hex}"
 
 
 def parse_action(value: Any) -> Action:
@@ -2031,6 +2038,75 @@ class MemorySearchResult(StrictModel):
     reason: str = Field(default="", max_length=600)
 
 
+class MemoryReadStatus(StrEnum):
+    COMPLETED = "completed"
+    UNAVAILABLE = "unavailable"
+    FAILED = "failed"
+
+
+class MemoryReadReceipt(MemorySearchResult):
+    """Runtime identity and provenance for one planner-requested memory read."""
+
+    receipt_id: str = Field(pattern=r"^mrr-[0-9a-f]{32}$")
+    source: Literal["durable_memory", "working_outcomes"]
+    status: MemoryReadStatus
+    campaign_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
+    )
+    record_ids: list[str] = Field(default_factory=list, max_length=8)
+    action_outcome_ids: list[str] = Field(default_factory=list, max_length=8)
+    plan_outcome_ids: list[str] = Field(default_factory=list, max_length=8)
+    plan_id: str = Field(pattern=PLAN_ID_PATTERN)
+    plan_version: int = Field(ge=1)
+    step_id: str = Field(pattern=STEP_ID_PATTERN)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def result_ids_match_returned_records(self) -> MemoryReadReceipt:
+        expected_record_ids = [record.memory_id for record in self.records]
+        if self.record_ids != expected_record_ids:
+            raise ValueError("record_ids must exactly match returned records")
+        expected_action_ids = [
+            outcome.outcome_id for outcome in self.action_outcomes
+        ]
+        if self.action_outcome_ids != expected_action_ids:
+            raise ValueError(
+                "action_outcome_ids must exactly match returned action outcomes"
+            )
+        expected_plan_ids = [
+            outcome.plan_outcome_id for outcome in self.plan_outcomes
+        ]
+        if self.plan_outcome_ids != expected_plan_ids:
+            raise ValueError(
+                "plan_outcome_ids must exactly match returned plan outcomes"
+            )
+        working_scope_is_valid = (
+            self.source == "working_outcomes"
+            and self.status is MemoryReadStatus.COMPLETED
+            and self.campaign_id is None
+        )
+        durable_scope_is_valid = (
+            self.source == "durable_memory"
+            and (
+                (
+                    self.status is MemoryReadStatus.UNAVAILABLE
+                    and self.campaign_id is None
+                )
+                or (
+                    self.status
+                    in {MemoryReadStatus.COMPLETED, MemoryReadStatus.FAILED}
+                    and self.campaign_id is not None
+                )
+            )
+        )
+        if not (working_scope_is_valid or durable_scope_is_valid):
+            raise ValueError(
+                "source, status, and campaign_id describe an impossible read"
+            )
+        return self
+
+
 class MemoryHistoryEntry(StrictModel):
     """One append-only lifecycle event. Never rewritten, never deleted."""
 
@@ -2125,6 +2201,7 @@ class PlannerContextManifest(StrictModel):
     plan_outcome_ids: list[str] = Field(default_factory=list, max_length=8)
     memory_ids: list[str] = Field(default_factory=list, max_length=128)
     continuity_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
+    memory_read_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
     advisor_brief_ids: list[str] = Field(default_factory=list, max_length=8)
     candidate_memory_count: int = Field(default=0, ge=0)
     payload_characters: int | None = Field(default=None, ge=0)
@@ -2808,7 +2885,7 @@ class Observation(StrictModel):
     memory_recall: RecallSummary = Field(default_factory=RecallSummary)
     # The typed result of an elective `recall_memory`, carried to exactly the
     # next planner call that asked for it.
-    memory_search: MemorySearchResult | None = None
+    memory_search: MemoryReadReceipt | None = None
     advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
     affordance_requests: list[AffordanceRequestRecord] = Field(
         default_factory=list,

@@ -9,19 +9,25 @@ import pytest
 
 from kenshi_agent.memory import RecallBudget, TieredRecall
 from kenshi_agent.models import (
+    ActionOutcomeAssessment,
+    ActionOutcomeDigest,
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
     ContinuityOrigin,
     KeepMemoryOperation,
     MemoryKind,
+    MemoryReadStatus,
     MemoryRecord,
     MemorySearchResult,
     MemoryStatus,
+    PlanDisposition,
+    PlanOutcomeDigest,
     RecallTier,
     WorldStateRevision,
 )
 from kenshi_agent.runtime_continuity import (
     StoreBoundaryFailure,
+    build_memory_read_receipt,
     continuity_receipt_digests,
     recall_for_observation,
     record_planner_delivery,
@@ -312,6 +318,74 @@ def test_successful_search_conserves_result_and_non_sqlite_failure_escapes() -> 
             query="gate",
             limit=7,
         )
+
+
+def test_memory_read_receipts_conserve_exact_results_provenance_and_identity() -> None:
+    memory = _memory()
+    action = ActionOutcomeDigest(
+        outcome_id="ao-1",
+        run_id="run-a",
+        plan_id="plan-a",
+        plan_version=2,
+        step_id="walk",
+        action_kind="stop",
+        assessment=ActionOutcomeAssessment.NO_OP,
+        executed=True,
+        controller_verified=False,
+        evidence_summary="Nothing changed.",
+        recorded_at=NOW,
+    )
+    plan = PlanOutcomeDigest(
+        plan_outcome_id="po-1",
+        run_id="run-a",
+        plan_id="plan-a",
+        plan_version=2,
+        objective="Reach the gate.",
+        disposition=PlanDisposition.FAILED,
+        reason_digest="The gate was closed.",
+        actions_completed=1,
+        started_at=NOW,
+        finished_at=NOW,
+    )
+
+    durable = build_memory_read_receipt(
+        MemorySearchResult(query="gate", records=[memory]),
+        source="durable_memory",
+        status=MemoryReadStatus.COMPLETED,
+        campaign_id="campaign-a",
+        plan_id="plan-a",
+        plan_version=2,
+        step_id="read-memory",
+    )
+    working = build_memory_read_receipt(
+        MemorySearchResult(
+            query="gate",
+            action_outcomes=[action],
+            plan_outcomes=[plan],
+        ),
+        source="working_outcomes",
+        status=MemoryReadStatus.COMPLETED,
+        campaign_id=None,
+        plan_id="plan-a",
+        plan_version=2,
+        step_id="read-outcomes",
+    )
+
+    assert durable.record_ids == ["mem-a"]
+    assert durable.action_outcome_ids == []
+    assert durable.plan_outcome_ids == []
+    assert durable.campaign_id == "campaign-a"
+    assert working.record_ids == []
+    assert working.action_outcome_ids == ["ao-1"]
+    assert working.plan_outcome_ids == ["po-1"]
+    assert working.campaign_id is None
+    assert durable.receipt_id.startswith("mrr-")
+    assert working.receipt_id.startswith("mrr-")
+    assert durable.receipt_id != working.receipt_id
+    assert durable.plan_id == working.plan_id == "plan-a"
+    assert durable.plan_version == working.plan_version == 2
+    assert durable.step_id == "read-memory"
+    assert working.step_id == "read-outcomes"
 
 
 def test_receipt_digest_projection_conserves_order_and_runtime_identity() -> None:

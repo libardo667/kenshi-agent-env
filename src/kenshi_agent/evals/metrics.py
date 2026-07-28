@@ -28,6 +28,9 @@ class _MetricValues(TypedDict):
     continuity_operations_failed: int
     plan_outcomes: int
     memory_reads: int
+    memory_reads_completed: int
+    memory_reads_unavailable: int
+    memory_reads_failed: int
     memory_read_records: int
     memory_read_truncations: int
     plans_proposed: int
@@ -116,6 +119,9 @@ class LogMetrics:
     memory_lifecycle_transitions: dict[str, int] = field(default_factory=dict)
     plan_outcomes: int = 0
     memory_reads: int = 0
+    memory_reads_completed: int = 0
+    memory_reads_unavailable: int = 0
+    memory_reads_failed: int = 0
     memory_read_records: int = 0
     memory_read_truncations: int = 0
     plans_proposed: int = 0
@@ -232,6 +238,9 @@ def evaluate_log(path: Path) -> LogMetrics:
         "continuity_operations_failed": 0,
         "plan_outcomes": 0,
         "memory_reads": 0,
+        "memory_reads_completed": 0,
+        "memory_reads_unavailable": 0,
+        "memory_reads_failed": 0,
         "memory_read_records": 0,
         "memory_read_truncations": 0,
         "plans_proposed": 0,
@@ -381,6 +390,13 @@ def evaluate_log(path: Path) -> LogMetrics:
             values["memory_reads"] += 1
             result = payload.get("result")
             if isinstance(result, dict):
+                status = result.get("status")
+                if status == "completed":
+                    values["memory_reads_completed"] += 1
+                elif status == "unavailable":
+                    values["memory_reads_unavailable"] += 1
+                elif status == "failed":
+                    values["memory_reads_failed"] += 1
                 records = result.get("records")
                 if isinstance(records, list):
                     values["memory_read_records"] += len(records)
