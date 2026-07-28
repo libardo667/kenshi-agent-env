@@ -5,6 +5,22 @@
 
 namespace KenshiAgentTelemetry
 {
+    // A request crosses Python, an atomic file replace, SendInput, and the
+    // Kenshi UI-thread hook. At the 500 ms telemetry cadence that proven path
+    // advanced by two snapshots in a live run. Four snapshots is the bounded
+    // transport allowance; every command still revalidates current selection,
+    // target lifetime, role, UI state, and command-specific authority natively.
+    const unsigned long long MAX_NATIVE_COMMAND_REVISION_LAG = 4ULL;
+
+    inline bool IsNativeCommandRevisionWithinTransportWindow(
+        unsigned long long basedOnTelemetrySequence,
+        unsigned long long currentTelemetrySequence)
+    {
+        return basedOnTelemetrySequence <= currentTelemetrySequence &&
+            currentTelemetrySequence - basedOnTelemetrySequence <=
+                MAX_NATIVE_COMMAND_REVISION_LAG;
+    }
+
     struct NativeCommandRequest
     {
         NativeCommandRequest();
@@ -18,6 +34,7 @@ namespace KenshiAgentTelemetry
         std::string targetId;
         double bearingDegrees;
         double distanceUnits;
+        unsigned int minimumOutputQuantity;
     };
 
     struct NativeCommandAcknowledgement
@@ -31,6 +48,7 @@ namespace KenshiAgentTelemetry
         std::string targetId;
         double bearingDegrees;
         double distanceUnits;
+        unsigned int minimumOutputQuantity;
         std::string selectedCharacterId;
         unsigned long long basedOnTelemetrySequence;
         unsigned long long acknowledgedAtTelemetrySequence;

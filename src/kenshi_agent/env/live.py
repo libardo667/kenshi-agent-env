@@ -1111,6 +1111,7 @@ class LiveEnvironment(AgentEnvironment):
             continue_until_terminal=True,
             wire_command=NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
+            minimum_output_quantity=action.minimum_output_quantity,
         )
 
     async def _execute_open_context_inventory(
@@ -2096,7 +2097,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
-        await self.controller.execute(MoveCursorAction(x=x, y=y))
+        move_receipt = await self.controller.execute(MoveCursorAction(x=x, y=y))
         if self.controls_config.item_cell_hover_seconds:
             await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
         primitive_receipt = await self.controller.execute(
@@ -2125,6 +2126,10 @@ class LiveEnvironment(AgentEnvironment):
             update={
                 "action": action,
                 "semantic": semantic,
+                "primitive_actions": (
+                    move_receipt.primitive_actions
+                    + primitive_receipt.primitive_actions
+                ),
                 "message": (
                     f"Sent the transfer gesture for {action.source_quantity} "
                     f"{action.item_name!r}; awaiting conserved source loss and "
@@ -2223,6 +2228,7 @@ class LiveEnvironment(AgentEnvironment):
         semantic: SemanticActionReceipt | None = None,
         continue_until_terminal: bool = False,
         accepted_is_terminal_error: bool = False,
+        minimum_output_quantity: int = 1,
     ) -> ActionReceipt:
         adopted = (
             self._active_native_order_for(
@@ -2230,6 +2236,7 @@ class LiveEnvironment(AgentEnvironment):
                 target_id=target_id,
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
+                minimum_output_quantity=minimum_output_quantity,
             )
             if continue_until_terminal
             else None
@@ -2261,6 +2268,7 @@ class LiveEnvironment(AgentEnvironment):
                 require_dialogue_target=require_dialogue_target,
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
+                minimum_output_quantity=minimum_output_quantity,
             )
             request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
             write_native_command_request_atomic(request_path, request)
@@ -2482,6 +2490,7 @@ class LiveEnvironment(AgentEnvironment):
         target_id: str,
         bearing_degrees: float,
         distance_units: float,
+        minimum_output_quantity: int,
     ) -> NativeCommandAcknowledgement | None:
         """An already accepted, still active order with this exact identity.
 
@@ -2503,6 +2512,8 @@ class LiveEnvironment(AgentEnvironment):
             acknowledgement is None
             or acknowledgement.status is not NativeCommandStatus.ACCEPTED
             or acknowledgement.command != wire_command
+            or acknowledgement.minimum_output_quantity
+            != minimum_output_quantity
         ):
             return None
         if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
@@ -2555,6 +2566,7 @@ class LiveEnvironment(AgentEnvironment):
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
         distance_units: float = 0.0,
+        minimum_output_quantity: int = 1,
     ) -> NativeCommandRequest:
         """Build the native pathing request for one exact stable target.
 
@@ -2565,15 +2577,12 @@ class LiveEnvironment(AgentEnvironment):
         a commerce affordance.
         """
 
-        # The plug-in fences a request against the telemetry sequence that is
-        # current when it reads the file, and telemetry only advances at ~2Hz,
-        # so the basis has a working life of about half a second. The executor's
-        # revision is older than that by the time the polite input lease is
-        # acquired, which made roughly a fifth of native orders die on
-        # `stale_revision` for no reason but elapsed time. So re-read telemetry
-        # here and issue on the newest sequence, re-proving every authorization
-        # fact against that same snapshot - the same discipline `_rebind_in_lease`
-        # applies to semantic actions, one layer deeper.
+        # Re-read at issue time and re-prove every authorization fact on the
+        # newest sequence. The plug-in admits only its four-publication
+        # cross-process transport window, then independently revalidates the
+        # current selection, target, role, UI state, and command-specific
+        # authority. Issuing on anything older would waste that bounded window
+        # before the atomic file + hotkey + UI-hook handoff even begins.
         result = self.telemetry_reader.read()
         if result.stale:
             raise RuntimeError("Native command requires fresh telemetry.")
@@ -2625,7 +2634,7 @@ class LiveEnvironment(AgentEnvironment):
             # character already stands, which is what makes it available in a
             # place a destination list would be empty.
             return NativeCommandRequest(
-                schema_version="1.0",
+                schema_version="1.1",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -2645,7 +2654,7 @@ class LiveEnvironment(AgentEnvironment):
                     "confirmed indoors at issue time."
                 )
             return NativeCommandRequest(
-                schema_version="1.0",
+                schema_version="1.1",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -2672,7 +2681,7 @@ class LiveEnvironment(AgentEnvironment):
                     "the exact operate action."
                 )
             return NativeCommandRequest(
-                schema_version="1.0",
+                schema_version="1.1",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -2680,6 +2689,7 @@ class LiveEnvironment(AgentEnvironment):
                 based_on_revision=observation.world_revision,
                 selected_character_ids=list(selected_ids),
                 target_id=target_id,
+                minimum_output_quantity=minimum_output_quantity,
             )
         target = next(
             (entity for entity in telemetry.nearby_entities if entity.id == target_id),
@@ -2697,7 +2707,7 @@ class LiveEnvironment(AgentEnvironment):
         if require_vendor_role and not target.is_confirmed_vendor():
             raise RuntimeError("Native command target lacks exact safe current vendor evidence.")
         return NativeCommandRequest(
-            schema_version="1.0",
+            schema_version="1.1",
             command_id=command.command_id,
             # The wire name is a legacy alias retained so the proven installed
             # plug-in keeps parsing this request without a rebuild.
@@ -2735,6 +2745,8 @@ class LiveEnvironment(AgentEnvironment):
                         or acknowledgement.bearing_degrees
                         != request.bearing_degrees
                         or acknowledgement.distance_units != request.distance_units
+                        or acknowledgement.minimum_output_quantity
+                        != request.minimum_output_quantity
                         or acknowledgement.selected_character_ids != request.selected_character_ids
                     ):
                         raise RuntimeError(

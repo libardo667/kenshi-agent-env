@@ -18,10 +18,10 @@ from kenshi_agent.models import (
     ConditionPath,
     ContextActionKind,
     ExitCurrentBuildingAction,
+    HarvestResourceAction,
     IdempotencyPolicy,
     InterruptPolicy,
     Observation,
-    PerformContextAction,
     PlanEnvelope,
     PlannerAction,
     PlannerDecision,
@@ -31,7 +31,7 @@ from kenshi_agent.models import (
     RiskBudget,
 )
 
-SmokeActionKind = Literal["exit_current_building", "perform_context_action"]
+SmokeActionKind = Literal["exit_current_building", "harvest_resource"]
 
 
 def _selected_character(observation: Observation) -> CharacterState:
@@ -79,11 +79,12 @@ def _smoke_action(
         )
     target = targets[0]
     return (
-        PerformContextAction(
+        HarvestResourceAction(
+            actor_id=selected.id,
             target_id=target.id,
-            context_action=ContextActionKind.OPERATE,
+            quantity=1,
         ),
-        f"Operate the exact currently advertised {target.name} target.",
+        f"Harvest one output from the exact currently advertised {target.name}.",
     )
 
 
@@ -137,7 +138,11 @@ def build_plan(
                     )
                 ],
                 success_conditions=[],
-                timeout_seconds=30.0,
+                timeout_seconds=(
+                    300.0
+                    if isinstance(action, HarvestResourceAction)
+                    else 30.0
+                ),
                 idempotency=IdempotencyPolicy.AT_MOST_ONCE,
                 interrupt_policy=InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH,
                 on_success="pause-after-smoke",
@@ -146,12 +151,16 @@ def build_plan(
         ],
         entry_step_id="native-smoke",
         max_actions=3,
-        max_wall_seconds=40.0,
+        max_wall_seconds=360.0,
         max_game_seconds=540.0,
         risk_budget=RiskBudget(
-            max_pointer_actions=0,
+            max_pointer_actions=(
+                4 if isinstance(action, HarvestResourceAction) else 0
+            ),
             max_purchase_actions=0,
-            max_native_assisted_actions=1,
+            max_native_assisted_actions=(
+                2 if isinstance(action, HarvestResourceAction) else 1
+            ),
         ),
     )
 
@@ -177,6 +186,10 @@ def build_decision(
         action_kind=action_kind,
         target_id=target_id,
     )
+    if isinstance(action, HarvestResourceAction):
+        raise ValueError(
+            "harvest_resource requires continuous option ownership"
+        )
     return PlannerDecision(
         intent=objective,
         rationale=(
@@ -217,7 +230,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--action",
-        choices=["exit_current_building", "perform_context_action"],
+        choices=["exit_current_building", "harvest_resource"],
         required=True,
     )
     parser.add_argument("--target-id")

@@ -96,7 +96,6 @@ def test_native_plugin_requires_causal_exact_target_command_requests() -> None:
     assert "ProcessNativeCommandRequest" in source
     assert "FindExactDialogueTarget" in source
     assert "FindNearestConfirmedVendor" not in source
-    assert "based_on_revision.telemetry_sequence" in source
     assert "identity_session_id" in source
     assert "native_assisted" in source
     assert "selected_character_ids" in source

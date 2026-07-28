@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "command_id": "cmd-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "command": "move_in_direction",
   "control_mode": "native_assisted",
@@ -15,5 +15,6 @@
   ],
   "target_id": "entity-not-a-direction",
   "bearing_degrees": 180.0,
-  "distance_units": 100.0
+  "distance_units": 100.0,
+  "minimum_output_quantity": 1
 }

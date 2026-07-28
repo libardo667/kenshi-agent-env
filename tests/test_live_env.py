@@ -1134,11 +1134,8 @@ def test_native_vendor_dispatch_rebases_an_older_authorized_revision(
 ) -> None:
     """An order authorized a few telemetry ticks ago still issues on the newest.
 
-    Telemetry advances at about 2Hz and the plug-in fences a request against an
-    exact sequence, so an authorization that had to wait for the polite input
-    lease is routinely older than the snapshot the plug-in will compare against.
-    Re-basing forward - having re-proved every fact on the newer snapshot - is
-    what stops that from being a coin flip.
+    Re-basing forward after re-proving every fact preserves as much of the
+    plug-in's bounded cross-process transit window as possible.
     """
 
     async def scenario() -> None:

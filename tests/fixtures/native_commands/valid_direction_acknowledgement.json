@@ -6,6 +6,7 @@
   "target_id": "",
   "bearing_degrees": 90.0,
   "distance_units": 250.0,
+  "minimum_output_quantity": 1,
   "selected_character_ids": [
     "entity-selected"
   ],

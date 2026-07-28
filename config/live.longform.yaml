@@ -42,7 +42,7 @@ planning:
   max_delta_paths: 128
   max_plan_steps: 8
   max_actions_per_plan: 16
-  max_plan_wall_seconds: 120
+  max_plan_wall_seconds: 360
   # Kenshi's elapsed_minutes is accelerated game time, not movement-pulse
   # wall time. This ceiling covers the longest audited eight-second pulse
   # plus one wall-second at the conservative 60x conversion.
@@ -72,8 +72,8 @@ runtime:
     towards completing it. You have the run of the interface. Open the
     inventory, map and stats windows with their bindings, move the camera,
     control game speed, walk to people and talk to them, buy and sell.
-    You can also retain an exact resource job through actual output, open that
-    resource's inventory, and collect an exact observed output cell.
+    You can also harvest a bounded yield from an exact observed resource into
+    the selected character as one controller-owned action.
     Prefer acting on what you can currently see over gathering more
     information.
 
@@ -235,7 +235,7 @@ safety:
   takeover_poll_seconds: 0.1
   max_primitive_actions_per_step: 4
   # Does not loosen the four-primitive cap for ordinary macros.
-  max_controller_verified_primitive_actions_per_step: 15
+  max_controller_verified_primitive_actions_per_step: 41
   max_actions_per_minute: 120
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
@@ -257,6 +257,7 @@ safety:
     - move_to_character
     - move_in_direction
     - exit_current_building
+    - harvest_resource
     - produce_resource_output
     - open_context_inventory
     - activate_visible_control

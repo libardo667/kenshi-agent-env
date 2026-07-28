@@ -1345,6 +1345,43 @@
       "title": "GameBinding",
       "type": "string"
     },
+    "HarvestResourceAction": {
+      "additionalProperties": false,
+      "description": "Harvest a bounded yield from one exact resource into one exact actor.\n\nThe planner chooses the actor, resource, and useful yield once. The\ncontroller owns production, inventory opening, exact conserved transfer,\ncleanup, and terminal proof as one interruptible option.",
+      "properties": {
+        "kind": {
+          "const": "harvest_resource",
+          "default": "harvest_resource",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id",
+        "quantity"
+      ],
+      "title": "HarvestResourceAction",
+      "type": "object"
+    },
     "HotkeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -1660,6 +1697,13 @@
           "title": "Distance Units",
           "type": "number"
         },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
+        },
         "selected_character_ids": {
           "items": {
             "type": "string"
@@ -1864,7 +1908,7 @@
     },
     "ProduceResourceOutputAction": {
       "additionalProperties": false,
-      "description": "Operate one exact natural resource until its output inventory gains stock.",
+      "description": "Internal production phase retained until a bounded output yield exists.",
       "properties": {
         "kind": {
           "const": "produce_resource_output",
@@ -1877,6 +1921,13 @@
           "minLength": 1,
           "title": "Target Id",
           "type": "string"
+        },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
         }
       },
       "required": [
@@ -2114,6 +2165,119 @@
       ],
       "title": "RequestAffordanceAction",
       "type": "object"
+    },
+    "ResourceHarvestEvidence": {
+      "additionalProperties": false,
+      "description": "Terminal proof for one controller-owned production and transfer bundle.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ResourceHarvestStatus"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "requested_quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Requested Quantity",
+          "type": "integer"
+        },
+        "item_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Name"
+        },
+        "transferred_quantity": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Transferred Quantity",
+          "type": "integer"
+        },
+        "production_command_id": {
+          "anyOf": [
+            {
+              "pattern": "^cmd-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Command Id"
+        },
+        "inventory_command_id": {
+          "anyOf": [
+            {
+              "pattern": "^cmd-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Command Id"
+        },
+        "transfer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceTransferEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cleanup_confirmed": {
+          "title": "Cleanup Confirmed",
+          "type": "boolean"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "target_id",
+        "selected_character_id",
+        "requested_quantity",
+        "cleanup_confirmed",
+        "reason"
+      ],
+      "title": "ResourceHarvestEvidence",
+      "type": "object"
+    },
+    "ResourceHarvestStatus": {
+      "enum": [
+        "harvested",
+        "not_harvested",
+        "cleanup_failed"
+      ],
+      "title": "ResourceHarvestStatus",
+      "type": "string"
     },
     "ResourceTransferEvidence": {
       "additionalProperties": false,
@@ -2470,6 +2634,17 @@
             }
           ],
           "default": null
+        },
+        "resource_harvest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceHarvestEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2781,6 +2956,9 @@
         },
         {
           "$ref": "#/$defs/OpenContextInventoryAction"
+        },
+        {
+          "$ref": "#/$defs/HarvestResourceAction"
         },
         {
           "$ref": "#/$defs/MoveToCharacterAction"

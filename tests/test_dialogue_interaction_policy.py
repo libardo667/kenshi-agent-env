@@ -760,7 +760,7 @@ class TestDismissScreen:
                     success=[screen_is(screen or "world")],
                 )
             ],
-            pointer=0,
+            pointer=1,
             native=0,
         )
 
@@ -799,10 +799,10 @@ class TestDismissScreen:
         errors = dialogue_interaction_policy_errors(composed, in_world)
         assert any("does not bind to current state" in error for error in errors)
 
-    def test_dismiss_costs_no_pointer_or_native_budget(self) -> None:
+    def test_dismiss_costs_one_pointer_and_no_native_budget(self) -> None:
         from kenshi_agent.action_contracts import DISMISS_SCREEN_CONTRACT
 
-        assert DISMISS_SCREEN_CONTRACT.risk.as_tuple() == (0, 0, 0)
+        assert DISMISS_SCREEN_CONTRACT.risk.as_tuple() == (1, 0, 0)
         # It is available without any capability, in either control mode.
         assert not DISMISS_SCREEN_CONTRACT.missing_capabilities(set())
         assert DISMISS_SCREEN_CONTRACT.allows_control_mode(ControlMode.INTERFACE_ONLY)

@@ -30,6 +30,7 @@ launcher without a pseudo-terminal:
 ```bash
 ./dev launch --preflight-only
 ./dev launch
+./dev recover
 ./dev crash
 ./dev crash --dismiss
 ./dev journey --planner subprocess \
@@ -41,17 +42,19 @@ launcher without a pseudo-terminal:
   --acknowledge-continuous-live --exclusive
 ```
 
-`journey` defaults to campaign-neutral `config/live.longform.yaml`; pass `--campaign <save-lineage>` or an attested `--scenario`. Other commands default to
-`config/live.burnin.yaml`; explicit repository-relative configs are translated.
-Do not substitute direct Windows-Python, native-file, input-snippet, or PTY workarounds.
-If `./dev` cannot complete the run, repair that supported path before claiming evidence.
+`journey` defaults to campaign-neutral `config/live.longform.yaml`; pass
+`--campaign <save-lineage>` or an attested `--scenario`. Other commands default
+to `config/live.burnin.yaml`. Do not substitute direct Windows-Python, native
+file, input snippet, or PTY workarounds.
 
 The live profiles require the checked-in 30 fps renderer profile and an active
 1920x1080 external display. Actual `launch` and executing `journey` commands
 switch to external-only mode, verify the laptop panel is off, and restore
-extended mode on every handled exit, including Ctrl-C. A hard process kill or
-power loss still requires `Win+P`, then **Extend**. The ownership overlay is off
-by default; add `--ownership-overlay` only when its extra window is wanted.
+extended mode on every handled exit. Any nonzero or interrupted journey invokes
+`./dev recover`: it causally pauses a loaded world, dismisses only exact owned
+inventories after any active native command terminates, leaves Kenshi open, and
+restores a stranded display lease. Run it directly after interrupted cleanup. A power loss may still require `Win+P`,
+then **Extend**. The ownership overlay remains opt-in.
 
 If preflight reports a terminal crash, `./dev crash` first archives the newest
 dump plus current logs, telemetry, settings, and frame under `runs/crashes/`.
@@ -105,10 +108,8 @@ A live run is only as stable as the GPU driver. This host has produced Windows
 drivers, including recovered hangs that fresh telemetry alone would miss.
 Launch health and journeys therefore reject any new Event 141 after their
 baseline; crash archives include the matching WER metadata and watchdog-dump
-identity when Windows exposes them.
-
-A clean soak proves only the scene it ran in. A quiet paused town does not clear
-water- or effects-heavy locations.
+identity when Windows exposes them. A clean soak proves only its scene; a quiet
+paused town does not clear water- or effects-heavy locations.
 
 ## What live evidence does and does not cover
 

@@ -87,7 +87,7 @@ def _step_action_errors(
             f"{label} requests direct live unpause, which the action guard cannot "
             "authorize. Do not add an unpause step before movement: "
             "approach_dialogue_target, move_to_character, move_in_direction, and "
-            "produce_resource_output own any world-time transition they require."
+            "harvest_resource own any world-time transition they require."
         )
         return errors
 

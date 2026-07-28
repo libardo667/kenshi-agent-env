@@ -17,13 +17,17 @@ from .models import (
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
     CameraRecoveryStatus,
+    CollectResourceOutputAction,
     CommandDispatchContext,
     ConditionEvaluation,
     ConditionResult,
     ConsultAdvisorAction,
     ContinuityOperation,
+    DismissScreenAction,
     ExitCurrentBuildingAction,
     FieldbookOperation,
+    GameBinding,
+    HarvestResourceAction,
     InputBoundaryDecision,
     MoveInDirectionAction,
     NativeCommandStatus,
@@ -40,11 +44,18 @@ from .models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     RequestAffordanceAction,
+    ResourceHarvestEvidence,
+    ResourceHarvestStatus,
+    ResourceTransferEvidence,
     ResourceTransferStatus,
+    SemanticActionReceipt,
     SkillAction,
     StopAction,
     Transition,
+    UseGameBindingAction,
     WorldStateRevision,
+    new_command_id,
+    normalize_control_label,
 )
 from .options import (
     OptionLifecycleError,
@@ -1134,8 +1145,25 @@ class ContinuousPlanExecutor:
 
         staged_patch: _StagedPatch | None = None
         monitored_outcome: OptionPoll | None = None
+        composite_interrupted = False
         try:
-            if movement_option is not None:
+            if isinstance(action, HarvestResourceAction):
+                (
+                    transition,
+                    staged_patch,
+                    composite_interrupted,
+                ) = await self._execute_resource_harvest(
+                    action,
+                    plan,
+                    step,
+                    observation,
+                    budget,
+                    dispatch_context,
+                    remaining_run_actions=remaining_run_actions,
+                    protected_step_ids=protected_step_ids,
+                    step_deadline=step_deadline,
+                )
+            elif movement_option is not None:
                 transition, staged_patch = await self._execute_movement_option(
                     movement_option,
                     plan,
@@ -1374,6 +1402,24 @@ class ContinuousPlanExecutor:
                     and latest.telemetry.game.paused is False
                 ),
             )
+        if (
+            composite_interrupted
+            and staged_patch is not None
+            and staged_patch.interrupts_active_step
+        ):
+            return _StepResult(
+                observation=latest,
+                succeeded=False,
+                actions_completed=1,
+                reason=(
+                    "The resource harvest stopped for a validated strategic "
+                    "interruption; control passes only to its pause handoff."
+                ),
+                terminated=transition.terminated,
+                success=transition.success,
+                staged_patch=staged_patch,
+                interrupted=True,
+            )
         contract = contract_for(step.action)
         if contract is not None and contract.controller_verified:
             if monitored_outcome is not None:
@@ -1411,6 +1457,42 @@ class ContinuousPlanExecutor:
                 if transition.receipt.semantic is not None
                 else None
             )
+            harvest = (
+                transition.receipt.semantic.resource_harvest
+                if transition.receipt.semantic is not None
+                else None
+            )
+            if harvest is not None:
+                succeeded = harvest.status is ResourceHarvestStatus.HARVESTED
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Accepted the controller-owned resource-harvest "
+                        "production, conservation, and cleanup verdict."
+                    ),
+                    evidence={
+                        "controller_verified": True,
+                        "status": harvest.status.value,
+                        "requested_quantity": harvest.requested_quantity,
+                        "transferred_quantity": harvest.transferred_quantity,
+                        "cleanup_confirmed": harvest.cleanup_confirmed,
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        "Controller-owned resource harvest returned "
+                        f"{harvest.status.value!r}: {harvest.reason}"
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
             if transfer is not None:
                 succeeded = (
                     transfer.status is ResourceTransferStatus.TRANSFERRED
@@ -2165,6 +2247,802 @@ class ContinuousPlanExecutor:
                     reason="Movement ended before the concurrent advisory completed.",
                     evidence={"option_id": option.option_id},
                 )
+
+    def _harvest_actor_error(
+        self,
+        actor_id: str,
+        observation: Observation,
+        *,
+        require_safe: bool,
+    ) -> str | None:
+        telemetry = observation.telemetry
+        if telemetry is None or observation.telemetry_stale:
+            return "Fresh telemetry is required to retain harvest authority."
+        selected = [
+            character
+            for character in telemetry.squad
+            if character.selected and character.id == actor_id
+        ]
+        if (
+            len(selected) != 1
+            or telemetry.ui.selected_character_id != actor_id
+            or telemetry.ui.selected_character_ids != [actor_id]
+        ):
+            return "The exact harvest actor is no longer the sole selected character."
+        if require_safe and (
+            selected[0].alive is not True
+            or selected[0].conscious is not True
+            or selected[0].down is not False
+            or selected[0].in_combat is not False
+            or selected[0].inventory_complete is not True
+        ):
+            return (
+                "The harvest actor is no longer confirmed alive, conscious, "
+                "standing, out of combat, with complete inventory telemetry."
+            )
+        return None
+
+    def _harvest_phase_authority_error(
+        self,
+        action: Action,
+        actor_id: str,
+        observation: Observation,
+        *,
+        require_safe_actor: bool,
+    ) -> str | None:
+        action_error = self._action_authority_error(action, observation)
+        if action_error is not None:
+            return action_error
+        return self._harvest_actor_error(
+            actor_id,
+            observation,
+            require_safe=require_safe_actor,
+        )
+
+    def _harvest_execution_token(
+        self,
+        action: Action,
+        actor_id: str,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        command: CommandDispatchContext,
+        *,
+        require_safe_actor: bool,
+        retain_plan_assumptions: bool,
+    ) -> ExecutionToken:
+        return ExecutionToken(
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            step_id=step.step_id,
+            command_id=command.command_id,
+            control_mode=plan.control_mode,
+            validated_revision=command.based_on_revision,
+            latest_observation=lambda: self.state_store.latest,
+            max_telemetry_age_seconds=(
+                self.environment.input_boundary_max_telemetry_age_seconds()
+            ),
+            authority_validator=lambda current: self._harvest_phase_authority_error(
+                action,
+                actor_id,
+                current,
+                require_safe_actor=require_safe_actor,
+            ),
+            assumptions=tuple(plan.assumptions) if retain_plan_assumptions else (),
+            # Outer preconditions describe the world-screen start. Replaying
+            # them after this option intentionally opens inventory would revoke
+            # the very authority needed to finish or clean up the transaction.
+            preconditions=(),
+        )
+
+    def _publish_harvest_phase(
+        self,
+        before: Observation,
+        transition: Transition,
+        command_id: str,
+    ) -> Observation:
+        if transition.receipt.command_id != command_id:
+            raise CommandCausalityError(
+                "Harvest phase receipt command ID does not match its exact "
+                f"subcommand {command_id!r}."
+            )
+        after = transition.observation
+        latest = self.state_store.latest
+        if latest is not None and not after.world_revision.is_later_than(
+            latest.world_revision
+        ):
+            # The observation pump owns current world truth. A phase receipt
+            # can finish after the pump has already published a later sample;
+            # republishing that older bundled observation would roll the
+            # single state stream backward. Keep the later authoritative
+            # observation while retaining the phase receipt as causal evidence.
+            return latest
+        if after.world_revision.is_later_than(before.world_revision):
+            self.state_store.publish(after)
+            return self.state_store.latest or after
+        return latest or after
+
+    @staticmethod
+    def _harvest_speed_error(
+        observation: Observation,
+        *,
+        expected_multiplier: float,
+        require_running: bool,
+    ) -> str | None:
+        telemetry = observation.telemetry
+        if telemetry is None or observation.telemetry_stale:
+            return "Harvest speed control requires fresh telemetry."
+        if telemetry.game.speed_multiplier != expected_multiplier:
+            return (
+                "Harvest speed control was not causally confirmed: expected "
+                f"{expected_multiplier:g}x, observed "
+                f"{telemetry.game.speed_multiplier!r}."
+            )
+        if require_running and telemetry.game.paused is not False:
+            return "Fast harvest speed did not causally confirm a running world."
+        return None
+
+    async def _set_harvest_speed(
+        self,
+        action: HarvestResourceAction,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        *,
+        binding: GameBinding,
+        expected_multiplier: float,
+        require_running: bool,
+        require_safe_actor: bool,
+        retain_plan_assumptions: bool,
+    ) -> tuple[Observation, ActionReceipt | None]:
+        telemetry = observation.telemetry
+        if (
+            telemetry is not None
+            and telemetry.game.speed_multiplier == expected_multiplier
+            and (not require_running or telemetry.game.paused is False)
+        ):
+            return observation, None
+        transition, current, _ = await self._dispatch_harvest_phase(
+            UseGameBindingAction(
+                binding=binding,
+                expected_effect=(
+                    f"Set Kenshi to its observed {expected_multiplier:g}x "
+                    "simulation speed for the controller-owned harvest."
+                ),
+            ),
+            action.actor_id,
+            plan,
+            step,
+            observation,
+            require_safe_actor=require_safe_actor,
+            retain_plan_assumptions=retain_plan_assumptions,
+        )
+        speed_error = self._harvest_speed_error(
+            current,
+            expected_multiplier=expected_multiplier,
+            require_running=require_running,
+        )
+        if speed_error is not None:
+            raise SafetyViolation(speed_error)
+        return current, transition.receipt
+
+    async def _dispatch_harvest_phase(
+        self,
+        action: Action,
+        actor_id: str,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        *,
+        require_safe_actor: bool = True,
+        retain_plan_assumptions: bool = True,
+    ) -> tuple[Transition, Observation, str]:
+        error = self._harvest_phase_authority_error(
+            action,
+            actor_id,
+            observation,
+            require_safe_actor=require_safe_actor,
+        )
+        if error is not None:
+            raise SafetyViolation(error)
+        command_id = new_command_id()
+        command = CommandDispatchContext(
+            command_id=command_id,
+            based_on_revision=observation.world_revision,
+        )
+        token = self._harvest_execution_token(
+            action,
+            actor_id,
+            plan,
+            step,
+            command,
+            require_safe_actor=require_safe_actor,
+            retain_plan_assumptions=retain_plan_assumptions,
+        )
+        transition = await self.environment.dispatch(
+            action,
+            command=command,
+            token=token,
+        )
+        after = self._publish_harvest_phase(
+            observation,
+            transition,
+            command_id,
+        )
+        self._event(
+            "resource_harvest_phase",
+            plan,
+            after,
+            step=step,
+            reason=f"Completed controller-owned phase {action.kind!r}.",
+            evidence={
+                "phase_action": action.kind,
+                "phase_command_id": command_id,
+                "primitive_actions": transition.receipt.primitive_actions,
+            },
+        )
+        return transition, after, command_id
+
+    @staticmethod
+    def _inventory_window_for_owner(
+        observation: Observation,
+        owner_name: str,
+    ) -> str | None:
+        telemetry = observation.telemetry
+        if (
+            telemetry is None
+            or telemetry.ui.visible_controls_complete is not True
+            or telemetry.ui.visible_controls is None
+        ):
+            return None
+        wanted = normalize_control_label(owner_name)
+        matches = {
+            control.window
+            for control in telemetry.ui.visible_controls
+            if control.window and normalize_control_label(control.window) == wanted
+        }
+        if len(matches) != 1:
+            return None
+        return next(iter(matches))
+
+    @staticmethod
+    def _harvest_collect_action(
+        action: HarvestResourceAction,
+        observation: Observation,
+    ) -> CollectResourceOutputAction:
+        telemetry = observation.telemetry
+        if (
+            telemetry is None
+            or observation.telemetry_stale
+            or telemetry.ui.open_inventory_windows != 2
+            or telemetry.ui.context_inventory_target_id != action.target_id
+            or telemetry.ui.visible_controls_complete is not True
+            or telemetry.ui.visible_controls is None
+        ):
+            raise SafetyViolation(
+                "Harvest transfer requires one complete, exact two-window "
+                "resource-to-actor inventory layout."
+            )
+        targets = [
+            target
+            for target in telemetry.world_targets
+            if target.id == action.target_id and target.kind == "natural_resource"
+        ]
+        if len(targets) != 1:
+            raise SafetyViolation(
+                "The exact harvest source is absent or ambiguous after inventory open."
+            )
+        wanted_window = normalize_control_label(targets[0].name)
+        outputs = [
+            control
+            for control in telemetry.ui.visible_controls
+            if control.role == "item"
+            and control.section == "out"
+            and control.item_name is not None
+            and control.item_quantity is not None
+            and 1 <= control.item_quantity <= 5
+            and normalize_control_label(control.window) == wanted_window
+        ]
+        if len(outputs) != 1:
+            raise SafetyViolation(
+                "The exact resource inventory did not expose one unambiguous "
+                "bounded output stack containing the requested yield."
+            )
+        output = outputs[0]
+        assert output.item_name is not None
+        assert output.item_quantity is not None
+        return CollectResourceOutputAction(
+            target_id=action.target_id,
+            cell_label=output.label,
+            item_name=output.item_name,
+            source_quantity=output.item_quantity,
+            window=output.window,
+            section="out",
+        )
+
+    async def _cleanup_harvest_windows(
+        self,
+        action: HarvestResourceAction,
+        actor_name: str,
+        target_name: str,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+    ) -> tuple[Observation, list[ActionReceipt], bool, str]:
+        current = observation
+        receipts: list[ActionReceipt] = []
+        for owner_name in (target_name, actor_name):
+            telemetry = current.telemetry
+            if telemetry is None:
+                return current, receipts, False, "Cleanup lost telemetry."
+            if telemetry.ui.open_inventory_windows == 0:
+                break
+            window = self._inventory_window_for_owner(current, owner_name)
+            if window is None:
+                return (
+                    current,
+                    receipts,
+                    False,
+                    f"Cleanup could not bind the exact {owner_name!r} inventory window.",
+                )
+            active_screen = telemetry.ui.active_screen
+            if active_screen == "trade":
+                dismiss = DismissScreenAction(
+                    expected_screen="trade",
+                    window=window,
+                )
+            elif active_screen == "inventory":
+                dismiss = DismissScreenAction(
+                    expected_screen="inventory",
+                    window=window,
+                )
+            else:
+                return (
+                    current,
+                    receipts,
+                    False,
+                    f"Cleanup found unexpected active screen {active_screen!r}.",
+                )
+            try:
+                transition, current, _ = await self._dispatch_harvest_phase(
+                    dismiss,
+                    action.actor_id,
+                    plan,
+                    step,
+                    current,
+                    require_safe_actor=False,
+                    retain_plan_assumptions=False,
+                )
+            except Exception as exc:
+                return (
+                    current,
+                    receipts,
+                    False,
+                    f"Cleanup failed while closing {window!r}: "
+                    f"{type(exc).__name__}: {exc}",
+                )
+            receipts.append(transition.receipt)
+
+        telemetry = current.telemetry
+        confirmed = bool(
+            telemetry is not None
+            and telemetry.ui.open_inventory_windows == 0
+            and telemetry.ui.modal_open is False
+            and telemetry.ui.active_screen == "world"
+        )
+        return (
+            current,
+            receipts,
+            confirmed,
+            (
+                "Both controller-owned inventory windows are closed."
+                if confirmed
+                else "Inventory cleanup did not return to a clear world screen."
+            ),
+        )
+
+    async def _execute_resource_harvest(
+        self,
+        action: HarvestResourceAction,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        budget: PlanBudgetLedger,
+        outer_command: CommandDispatchContext,
+        *,
+        remaining_run_actions: int,
+        protected_step_ids: set[str],
+        step_deadline: float,
+    ) -> tuple[Transition, _StagedPatch | None, bool]:
+        """Execute one bounded, interruptible production-to-inventory option."""
+
+        telemetry = observation.telemetry
+        assert telemetry is not None
+        actors = [
+            character
+            for character in telemetry.squad
+            if character.id == action.actor_id and character.selected
+        ]
+        targets = [
+            target
+            for target in telemetry.world_targets
+            if target.id == action.target_id and target.kind == "natural_resource"
+        ]
+        assert len(actors) == 1 and len(targets) == 1
+        actor_name = actors[0].name
+        target_name = targets[0].name
+
+        current = observation
+        receipts: list[ActionReceipt] = []
+        staged_patch: _StagedPatch | None = None
+        interrupted = False
+        failure_reason: str | None = None
+        production_command_id: str | None = None
+        inventory_command_id: str | None = None
+        transfer = None
+        item_name: str | None = None
+
+        try:
+            current, fast_speed_receipt = await self._set_harvest_speed(
+                action,
+                plan,
+                step,
+                current,
+                binding=GameBinding.SPEED_3,
+                expected_multiplier=5.0,
+                require_running=True,
+                require_safe_actor=True,
+                retain_plan_assumptions=True,
+            )
+            if fast_speed_receipt is not None:
+                receipts.append(fast_speed_receipt)
+            production = ProduceResourceOutputAction(
+                target_id=action.target_id,
+                minimum_output_quantity=action.quantity,
+            )
+            production_error = self._harvest_phase_authority_error(
+                production,
+                action.actor_id,
+                current,
+                require_safe_actor=True,
+            )
+            if production_error is not None:
+                raise SafetyViolation(production_error)
+            production_command_id = new_command_id()
+            production_command = CommandDispatchContext(
+                command_id=production_command_id,
+                based_on_revision=current.world_revision,
+            )
+            production_token = self._harvest_execution_token(
+                production,
+                action.actor_id,
+                plan,
+                step,
+                production_command,
+                require_safe_actor=True,
+                retain_plan_assumptions=True,
+            )
+            option = StatefulNativeMovementOption(
+                option_id=(
+                    f"harvest-production-{plan.plan_id}-"
+                    f"{plan.plan_version}-{step.step_id}"
+                ),
+                action=production,
+                environment=self.environment,
+                require_paused_start=(
+                    self.planning_config.require_paused_between_actions
+                ),
+            )
+            option.prepare(current)
+            production_transition, staged_patch, outcome = (
+                await self._execute_monitored_option(
+                    option,
+                    plan,
+                    step,
+                    current,
+                    budget,
+                    production_command,
+                    remaining_run_actions=remaining_run_actions,
+                    protected_step_ids=protected_step_ids,
+                    token=production_token,
+                    step_deadline=step_deadline,
+                )
+            )
+            current = self._publish_harvest_phase(
+                current,
+                production_transition,
+                production_command_id,
+            )
+            receipts.append(production_transition.receipt)
+            if outcome.status is not OptionStatus.SUCCEEDED:
+                interrupted = bool(
+                    staged_patch is not None
+                    and staged_patch.interrupts_active_step
+                    and outcome.status is OptionStatus.CANCELLED
+                )
+                failure_reason = (
+                    "Resource production did not reach its exact requested yield: "
+                    f"{outcome.reason}"
+                )
+        except Exception as exc:
+            failure_reason = (
+                "Resource harvest production failed closed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        finally:
+            latest = self.state_store.latest
+            if latest is not None and latest.world_revision.is_later_than(
+                current.world_revision
+            ):
+                current = latest
+            try:
+                current, normal_speed_receipt = await self._set_harvest_speed(
+                    action,
+                    plan,
+                    step,
+                    current,
+                    binding=GameBinding.SPEED_1,
+                    expected_multiplier=1.0,
+                    require_running=False,
+                    require_safe_actor=False,
+                    retain_plan_assumptions=False,
+                )
+                if normal_speed_receipt is not None:
+                    receipts.append(normal_speed_receipt)
+            except Exception as exc:
+                speed_reason = (
+                    "Resource harvest could not restore normal speed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                failure_reason = (
+                    f"{failure_reason} {speed_reason}"
+                    if failure_reason is not None
+                    else speed_reason
+                )
+
+        try:
+            if failure_reason is None:
+                open_transition, current, inventory_command_id = (
+                    await self._dispatch_harvest_phase(
+                        OpenContextInventoryAction(target_id=action.target_id),
+                        action.actor_id,
+                        plan,
+                        step,
+                        current,
+                    )
+                )
+                receipts.append(open_transition.receipt)
+                acknowledgement = open_transition.receipt.native_acknowledgement
+                if not (
+                    acknowledgement is not None
+                    and acknowledgement.status is NativeCommandStatus.COMPLETED
+                    and acknowledgement.reason == "exact_context_inventory_open"
+                    and acknowledgement.target_id == action.target_id
+                ):
+                    failure_reason = (
+                        "Native inventory open lacked exact target terminal proof."
+                    )
+
+            if failure_reason is None:
+                toggle_transition, current, _ = await self._dispatch_harvest_phase(
+                    UseGameBindingAction(
+                        binding=GameBinding.TOGGLE_INVENTORY,
+                        expected_effect=(
+                            "Open the exact selected actor's inventory beside "
+                            "the resource output."
+                        ),
+                    ),
+                    action.actor_id,
+                    plan,
+                    step,
+                    current,
+                )
+                receipts.append(toggle_transition.receipt)
+                first_transfer: ResourceTransferEvidence | None = None
+                last_transfer: ResourceTransferEvidence | None = None
+                transferred_quantity = 0
+                for _ in range(action.quantity):
+                    collect = self._harvest_collect_action(action, current)
+                    if item_name is not None and collect.item_name != item_name:
+                        failure_reason = (
+                            "Resource output identity changed during bounded collection."
+                        )
+                        break
+                    item_name = collect.item_name
+                    collect_transition, current, _ = (
+                        await self._dispatch_harvest_phase(
+                            collect,
+                            action.actor_id,
+                            plan,
+                            step,
+                            current,
+                        )
+                    )
+                    receipts.append(collect_transition.receipt)
+                    phase_transfer = (
+                        collect_transition.receipt.semantic.resource_transfer
+                        if collect_transition.receipt.semantic is not None
+                        else None
+                    )
+                    source_loss = (
+                        phase_transfer.source_quantity_before
+                        - phase_transfer.source_quantity_after
+                        if phase_transfer is not None
+                        and phase_transfer.source_quantity_before is not None
+                        and phase_transfer.source_quantity_after is not None
+                        else 0
+                    )
+                    destination_gain = (
+                        phase_transfer.destination_quantity_after
+                        - phase_transfer.destination_quantity_before
+                        if phase_transfer is not None
+                        and phase_transfer.destination_quantity_before is not None
+                        and phase_transfer.destination_quantity_after is not None
+                        else 0
+                    )
+                    if not (
+                        phase_transfer is not None
+                        and phase_transfer.status
+                        is ResourceTransferStatus.TRANSFERRED
+                        and phase_transfer.target_id == action.target_id
+                        and phase_transfer.selected_character_id == action.actor_id
+                        and phase_transfer.item_name == item_name
+                        and 1 <= source_loss == destination_gain <= 5
+                        and (
+                            transferred_quantity + source_loss
+                            <= action.quantity
+                        )
+                    ):
+                        failure_reason = (
+                            "Resource transfer lacked exact bounded conservation proof."
+                        )
+                        break
+                    if first_transfer is None:
+                        first_transfer = phase_transfer
+                    last_transfer = phase_transfer
+                    transferred_quantity += source_loss
+                    if transferred_quantity >= action.quantity:
+                        break
+
+                if first_transfer is not None and last_transfer is not None:
+                    transfer = ResourceTransferEvidence(
+                        status=ResourceTransferStatus.TRANSFERRED,
+                        target_id=action.target_id,
+                        selected_character_id=action.actor_id,
+                        item_name=first_transfer.item_name,
+                        source_quantity_before=first_transfer.source_quantity_before,
+                        source_quantity_after=last_transfer.source_quantity_after,
+                        destination_quantity_before=(
+                            first_transfer.destination_quantity_before
+                        ),
+                        destination_quantity_after=(
+                            last_transfer.destination_quantity_after
+                        ),
+                        observed_after_sequence=(
+                            last_transfer.observed_after_sequence
+                        ),
+                        reason=(
+                            "Conserved "
+                            f"{transferred_quantity} {first_transfer.item_name!r} "
+                            "through the bounded controller-owned collection loop."
+                        ),
+                    )
+                if (
+                    failure_reason is None
+                    and transferred_quantity < action.quantity
+                ):
+                    failure_reason = (
+                        "Bounded resource collection ended before the requested "
+                        f"yield was conserved ({transferred_quantity}/"
+                        f"{action.quantity})."
+                    )
+        except Exception as exc:
+            failure_reason = (
+                (
+                    f"{failure_reason} "
+                    if failure_reason is not None
+                    else ""
+                )
+                + "Resource harvest inventory phase failed closed: "
+                + f"{type(exc).__name__}: {exc}"
+            )
+
+        current, cleanup_receipts, cleanup_confirmed, cleanup_reason = (
+            await self._cleanup_harvest_windows(
+                action,
+                actor_name,
+                target_name,
+                plan,
+                step,
+                current,
+            )
+        )
+        receipts.extend(cleanup_receipts)
+
+        transferred_quantity = (
+            transfer.source_quantity_before - transfer.source_quantity_after
+            if transfer is not None
+            and transfer.source_quantity_before is not None
+            and transfer.source_quantity_after is not None
+            else 0
+        )
+        if failure_reason is None and cleanup_confirmed:
+            status = ResourceHarvestStatus.HARVESTED
+            reason = (
+                f"Conserved {transferred_quantity} {item_name!r} into "
+                f"{actor_name!r}; {cleanup_reason}"
+            )
+        elif failure_reason is None:
+            status = ResourceHarvestStatus.CLEANUP_FAILED
+            reason = (
+                "The resource transfer was conserved, but controller-owned "
+                f"cleanup failed: {cleanup_reason}"
+            )
+        else:
+            status = ResourceHarvestStatus.NOT_HARVESTED
+            reason = (
+                f"{failure_reason} Cleanup: {cleanup_reason}"
+                if not cleanup_confirmed
+                else failure_reason
+            )
+        evidence = ResourceHarvestEvidence(
+            status=status,
+            target_id=action.target_id,
+            selected_character_id=action.actor_id,
+            requested_quantity=action.quantity,
+            item_name=item_name,
+            transferred_quantity=max(0, transferred_quantity),
+            production_command_id=production_command_id,
+            inventory_command_id=inventory_command_id,
+            transfer=transfer,
+            cleanup_confirmed=cleanup_confirmed,
+            reason=reason[:1000],
+        )
+        contract = contract_for(action)
+        assert contract is not None
+        primitive_actions = sum(receipt.primitive_actions for receipt in receipts)
+        boundary = next(
+            (
+                receipt.input_boundary
+                for receipt in reversed(receipts)
+                if receipt.input_boundary is not None
+            ),
+            None,
+        )
+        outer_transition = Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=plan.control_mode,
+                command_id=outer_command.command_id,
+                started_after_revision=outer_command.based_on_revision,
+                completed_at_revision=current.world_revision,
+                causal_revision_advanced=current.world_revision.is_later_than(
+                    outer_command.based_on_revision
+                ),
+                input_boundary=boundary,
+                semantic=SemanticActionReceipt(
+                    action_kind=action.kind,
+                    contract_version=contract.version,
+                    target_id=action.target_id,
+                    resolved_label=target_name,
+                    source_revision=outer_command.based_on_revision,
+                    option_id=(
+                        f"harvest-{plan.plan_id}-{plan.plan_version}-{step.step_id}"
+                    ),
+                    revalidation=(
+                        "Each private phase rebound the exact actor, source, "
+                        "inventory layout, and current input lease."
+                    ),
+                    resource_harvest=evidence,
+                ),
+                accepted=True,
+                executed=bool(receipts),
+                dry_run=False,
+                primitive_actions=primitive_actions,
+                message=reason[:1000],
+            ),
+            observation=current,
+        )
+        return outer_transition, staged_patch, interrupted
 
     async def _execute_monitored_option(
         self,

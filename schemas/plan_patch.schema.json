@@ -246,62 +246,6 @@
       "title": "CapabilityCondition",
       "type": "object"
     },
-    "CollectResourceOutputAction": {
-      "additionalProperties": false,
-      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
-      "properties": {
-        "kind": {
-          "const": "collect_resource_output",
-          "default": "collect_resource_output",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "cell_label": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Cell Label",
-          "type": "string"
-        },
-        "item_name": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Item Name",
-          "type": "string"
-        },
-        "source_quantity": {
-          "exclusiveMinimum": 0,
-          "title": "Source Quantity",
-          "type": "integer"
-        },
-        "window": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Window",
-          "type": "string"
-        },
-        "section": {
-          "const": "out",
-          "default": "out",
-          "title": "Section",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id",
-        "cell_label",
-        "item_name",
-        "source_quantity",
-        "window"
-      ],
-      "title": "CollectResourceOutputAction",
-      "type": "object"
-    },
     "Condition": {
       "anyOf": [
         {
@@ -356,14 +300,6 @@
       ],
       "title": "ConsultAdvisorAction",
       "type": "object"
-    },
-    "ContextActionKind": {
-      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
-      "enum": [
-        "operate"
-      ],
-      "title": "ContextActionKind",
-      "type": "string"
     },
     "CreateFieldbookProjectOperation": {
       "additionalProperties": false,
@@ -697,6 +633,43 @@
       "title": "GameBinding",
       "type": "string"
     },
+    "HarvestResourceAction": {
+      "additionalProperties": false,
+      "description": "Harvest a bounded yield from one exact resource into one exact actor.\n\nThe planner chooses the actor, resource, and useful yield once. The\ncontroller owns production, inventory opening, exact conserved transfer,\ncleanup, and terminal proof as one interruptible option.",
+      "properties": {
+        "kind": {
+          "const": "harvest_resource",
+          "default": "harvest_resource",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id",
+        "quantity"
+      ],
+      "title": "HarvestResourceAction",
+      "type": "object"
+    },
     "IdempotencyPolicy": {
       "enum": [
         "at_most_once",
@@ -914,29 +887,6 @@
       "title": "ObservationPolicy",
       "type": "string"
     },
-    "OpenContextInventoryAction": {
-      "additionalProperties": false,
-      "description": "Open the ordinary inventory UI for one exact observed world target.",
-      "properties": {
-        "kind": {
-          "const": "open_context_inventory",
-          "default": "open_context_inventory",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id"
-      ],
-      "title": "OpenContextInventoryAction",
-      "type": "object"
-    },
     "PauseAction": {
       "additionalProperties": false,
       "properties": {
@@ -953,33 +903,6 @@
         }
       },
       "title": "PauseAction",
-      "type": "object"
-    },
-    "PerformContextAction": {
-      "additionalProperties": false,
-      "description": "Perform one exact contextual task an observed world object advertises.\n\nThe planner copies only a `(target_id, context_action)` pair from current\n`context_targets`. Native code re-resolves the object, rechecks the reviewed\ntask, issues Kenshi's own default order, and proves the selected character's\nAI accepted that exact object/task pair.",
-      "properties": {
-        "kind": {
-          "const": "perform_context_action",
-          "default": "perform_context_action",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        },
-        "context_action": {
-          "$ref": "#/$defs/ContextActionKind"
-        }
-      },
-      "required": [
-        "target_id",
-        "context_action"
-      ],
-      "title": "PerformContextAction",
       "type": "object"
     },
     "PlanOutcomeEvidence": {
@@ -1044,15 +967,6 @@
               "$ref": "#/$defs/ApproachDialogueTargetAction"
             },
             {
-              "$ref": "#/$defs/PerformContextAction"
-            },
-            {
-              "$ref": "#/$defs/ProduceResourceOutputAction"
-            },
-            {
-              "$ref": "#/$defs/OpenContextInventoryAction"
-            },
-            {
               "$ref": "#/$defs/MoveToCharacterAction"
             },
             {
@@ -1083,10 +997,10 @@
               "$ref": "#/$defs/EquipItemAction"
             },
             {
-              "$ref": "#/$defs/CollectResourceOutputAction"
+              "$ref": "#/$defs/RecoverCameraViewAction"
             },
             {
-              "$ref": "#/$defs/RecoverCameraViewAction"
+              "$ref": "#/$defs/HarvestResourceAction"
             },
             {
               "$ref": "#/$defs/SkillAction"
@@ -1121,7 +1035,7 @@
         },
         "timeout_seconds": {
           "exclusiveMinimum": 0.0,
-          "maximum": 60.0,
+          "maximum": 300.0,
           "title": "Timeout Seconds",
           "type": "number"
         },
@@ -1178,29 +1092,6 @@
         "timeout_seconds"
       ],
       "title": "PlanStep",
-      "type": "object"
-    },
-    "ProduceResourceOutputAction": {
-      "additionalProperties": false,
-      "description": "Operate one exact natural resource until its output inventory gains stock.",
-      "properties": {
-        "kind": {
-          "const": "produce_resource_output",
-          "default": "produce_resource_output",
-          "title": "Kind",
-          "type": "string"
-        },
-        "target_id": {
-          "maxLength": 200,
-          "minLength": 1,
-          "title": "Target Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id"
-      ],
-      "title": "ProduceResourceOutputAction",
       "type": "object"
     },
     "PurchaseItemAction": {

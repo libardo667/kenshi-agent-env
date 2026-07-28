@@ -119,7 +119,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.1.0";
+    const char* PROTOCOL_VERSION = "1.2.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -153,6 +153,7 @@ namespace
         bool isContextAction;
         bool isResourceProduction;
         bool resourceTaskObserved;
+        unsigned int minimumOutputQuantity;
         TaskType expectedTask;
         // One uninterrupted pause may mean an abandoned movement order, but
         // short paused gaps are how the stop-motion controller safely pulses.
@@ -237,6 +238,7 @@ namespace
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
+        g_activeNativeCommand.minimumOutputQuantity = 1;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
@@ -432,6 +434,8 @@ namespace
         acknowledgement.targetId = request.targetId;
         acknowledgement.bearingDegrees = request.bearingDegrees;
         acknowledgement.distanceUnits = request.distanceUnits;
+        acknowledgement.minimumOutputQuantity =
+            request.minimumOutputQuantity;
         acknowledgement.selectedCharacterId =
             request.selectedCharacterId;
         acknowledgement.basedOnTelemetrySequence =
@@ -486,6 +490,7 @@ namespace
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
         g_activeNativeCommand.resourceTaskObserved = false;
+        g_activeNativeCommand.minimumOutputQuantity = 1;
         g_activeNativeCommand.expectedTask = NULL_TASK;
         g_activeNativeCommand.originX = 0.0f;
         g_activeNativeCommand.originZ = 0.0f;
@@ -1493,6 +1498,8 @@ namespace
                     KenshiAgentTelemetry::EvaluateResourceProduction(
                         outputKnown,
                         outputQuantity,
+                        static_cast<int>(
+                            g_activeNativeCommand.minimumOutputQuantity),
                         resourceTaskActive,
                         g_activeNativeCommand.resourceTaskObserved);
                 if (state ==
@@ -1825,9 +1832,14 @@ namespace
             RejectNativeCommand(request, "identity_session_mismatch");
             return;
         }
-        // based_on_revision.telemetry_sequence is an exact issue-time fence,
-        // not a minimum. A newer snapshot requires a newly planned command.
-        if (request.basedOnTelemetrySequence != g_sequence)
+        // Python has already re-proved authority against the request basis,
+        // but the atomic file + hotkey + UI-hook transport can span telemetry
+        // publications. Admit only that small measured window, then revalidate
+        // every command-specific identity and authority fact below.
+        if (!KenshiAgentTelemetry::
+                IsNativeCommandRevisionWithinTransportWindow(
+                    request.basedOnTelemetrySequence,
+                    g_sequence))
         {
             if (request.basedOnTelemetrySequence > g_sequence)
             {
@@ -1942,7 +1954,8 @@ namespace
                         "resource_output_unknown");
                     return;
                 }
-                if (outputQuantity > 0)
+                if (outputQuantity >=
+                    static_cast<int>(request.minimumOutputQuantity))
                 {
                     AddNativeAcknowledgement(
                         request,
@@ -1989,6 +2002,8 @@ namespace
                 isResourceProduction;
             g_activeNativeCommand.resourceTaskObserved =
                 exactTaskAlreadyActive;
+            g_activeNativeCommand.minimumOutputQuantity =
+                request.minimumOutputQuantity;
             g_activeNativeCommand.expectedTask = OPERATE_MACHINERY;
             KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
                 g_activeNativeCommand.pauseWindow);

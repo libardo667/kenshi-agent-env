@@ -284,6 +284,7 @@ def production_acknowledgement(
     status: NativeCommandStatus,
     *,
     reason: str,
+    minimum_output_quantity: int = 1,
 ) -> NativeCommandAcknowledgement:
     terminal = status is not NativeCommandStatus.ACCEPTED
     return NativeCommandAcknowledgement(
@@ -292,6 +293,7 @@ def production_acknowledgement(
         status=status,
         reason=reason,
         target_id="entity-copper",
+        minimum_output_quantity=minimum_output_quantity,
         selected_character_ids=[SELECTED_ID],
         based_on_telemetry_sequence=1,
         acknowledged_at_telemetry_sequence=2,
@@ -586,11 +588,21 @@ def test_resource_production_retains_work_until_output_is_ready() -> None:
     async def scenario() -> None:
         production = StatefulNativeMovementOption(
             option_id="native-production-1",
-            action=ProduceResourceOutputAction(target_id="entity-copper"),
+            action=ProduceResourceOutputAction(
+                target_id="entity-copper",
+                minimum_output_quantity=5,
+            ),
             environment=InstantResourceProductionEnvironment(),
         )
-        start = production_observation(1)
+        smaller_active_order = production_acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+            reason="context_task_active",
+            minimum_output_quantity=1,
+        )
+        start = production_observation(1, ack=smaller_active_order)
         production.prepare(start)
+        assert production.native_command_id is None
         await production.start(
             CommandDispatchContext(
                 command_id=COMMAND_ID,
@@ -603,6 +615,7 @@ def test_resource_production_retains_work_until_output_is_ready() -> None:
             3,
             NativeCommandStatus.ACCEPTED,
             reason="context_task_active",
+            minimum_output_quantity=5,
         )
         progress = production.poll(
             update(
@@ -619,6 +632,7 @@ def test_resource_production_retains_work_until_output_is_ready() -> None:
             4,
             NativeCommandStatus.COMPLETED,
             reason="resource_output_ready",
+            minimum_output_quantity=5,
         )
         outcome = production.poll(
             update(production_observation(4, ack=ready))

@@ -62,20 +62,20 @@ from a portrait name.
 
 ## World targets and current authority
 
-`world_targets` reports structurally recognized non-character objects inside
-the current bounded native query. Mining targets are collected from a
-town-local scan and a larger outer scan, deduplicated by stable identity, sorted
-nearest-first, and then truncated. `context_actions` names a reviewed bounded
-attempt on that exact target; it is not a prediction of task success.
+`world_targets` reports structurally recognized non-character objects inside the
+bounded native query. Mining targets from town-local and larger outer scans are
+deduplicated by stable identity, sorted nearest-first, then truncated.
+`context_actions` names an attempt, not a prediction of task success.
 
 Targets with a current advertised action enter the planner's `context_targets`
-digest. Native dispatch re-resolves identity and structural role. Legacy
-operation completes on the exact task and subject; retained production treats
-that task as progress and completes only on positive resource output. Exact
-contextual-inventory opening is separately keyed to the same target handle.
-Perception therefore grants no unchecked native authority.
-
-If either source query reaches its maximum result count, `warnings` says
+digest. A native request basis may cross at most four later 500 ms publications
+during atomic-file, hotkey, and UI-hook transit; future or older bases fail,
+after which native dispatch still re-resolves current selection, identity,
+structural role, UI state, and command authority. Legacy operation completes on
+the exact task and subject; retained production completes only when output
+reaches the acknowledged bounded `minimum_output_quantity`. Inventory opening is
+separately keyed; no unchecked authority is granted. If either query reaches its
+maximum result count, `warnings` says
 `world_targets` may be incomplete. Kenshi does not document those bounded
 queries as nearest-first, so absence at source capacity remains unknown even
 though the retained recognized targets are sorted.
@@ -116,5 +116,5 @@ retain game pointers.
 
 ## Privacy
 
-Telemetry and screenshots can contain character names, save details, dialogue,
-and user-authored mod content. Treat run directories as private by default.
+Telemetry and screenshots can contain names, save details, dialogue, and
+user-authored mod content; treat run directories as private by default.

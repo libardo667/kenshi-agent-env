@@ -15,12 +15,13 @@ namespace KenshiAgentTelemetry
     inline ResourceProductionState EvaluateResourceProduction(
         bool outputKnown,
         int outputQuantity,
+        int minimumOutputQuantity,
         bool exactTaskActive,
         bool taskObserved)
     {
         if (!outputKnown)
             return RESOURCE_PRODUCTION_OUTPUT_UNKNOWN;
-        if (outputQuantity > 0)
+        if (outputQuantity >= minimumOutputQuantity)
             return RESOURCE_PRODUCTION_OUTPUT_READY;
         if (exactTaskActive)
             return RESOURCE_PRODUCTION_WORKING;

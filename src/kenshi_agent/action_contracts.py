@@ -44,6 +44,7 @@ from .models import (
     Disposition,
     EquipItemAction,
     ExitCurrentBuildingAction,
+    HarvestResourceAction,
     IdempotencyPolicy,
     MoveInDirectionAction,
     MoveToCharacterAction,
@@ -112,6 +113,7 @@ class ActionExecution(StrEnum):
 
     ATOMIC_HANDLER = "atomic_handler"
     MONITORED_OPTION = "monitored_option"
+    COMPOSITE_OPTION = "composite_option"
 
 
 @dataclass(frozen=True, slots=True)
@@ -415,6 +417,89 @@ def resource_production_is_currently_authorable(observation: Observation) -> boo
         and telemetry.ui.active_screen == "world"
         and telemetry.ui.modal_open is False
         and telemetry.ui.dialogue_open is False
+        and any(
+            target.kind == "natural_resource"
+            and ContextActionKind.OPERATE in target.context_actions
+            and target.default_task == "operate_machinery"
+            for target in telemetry.world_targets
+        )
+    )
+
+
+def bind_harvest_resource(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind one bounded production/transfer option to an exact actor and source."""
+
+    if not isinstance(action, HarvestResourceAction):
+        return _unbound("Action is not a harvest_resource action.")
+    telemetry = observation.telemetry
+    target, failure = _bind_exact_natural_resource(action.target_id, observation)
+    if failure is not None:
+        return failure
+    assert telemetry is not None and target is not None
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.modal_open is not False
+        or telemetry.ui.dialogue_open is not False
+    ):
+        return _unbound(
+            "The world interface is not confirmed clear, so a harvest option "
+            "cannot begin."
+        )
+    selected = [
+        character
+        for character in telemetry.squad
+        if character.selected and character.id == action.actor_id
+    ]
+    if (
+        len(selected) != 1
+        or telemetry.ui.selected_character_id != action.actor_id
+        or telemetry.ui.selected_character_ids != [action.actor_id]
+        or selected[0].alive is not True
+        or selected[0].conscious is not True
+        or selected[0].down is not False
+        or selected[0].in_combat is not False
+        or selected[0].inventory_complete is not True
+    ):
+        return _unbound(
+            "Harvesting requires the exact selected actor to be alive, conscious, "
+            "standing, out of combat, and backed by a complete inventory export."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound a yield of {action.quantity} from {target.name!r} ({target.id}) "
+            f"into exact selected actor {selected[0].name!r} ({action.actor_id})."
+        ),
+        target_id=target.id,
+        resolved_label=target.name,
+        source_revision=observation.world_revision,
+    )
+
+
+def harvest_resource_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return False
+    selected = [
+        character
+        for character in telemetry.squad
+        if character.selected
+        and character.alive is True
+        and character.conscious is True
+        and character.down is False
+        and character.in_combat is False
+        and character.inventory_complete is True
+    ]
+    return bool(
+        telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+        and len(selected) == 1
+        and telemetry.ui.selected_character_id == selected[0].id
+        and telemetry.ui.selected_character_ids == [selected[0].id]
         and any(
             target.kind == "natural_resource"
             and ContextActionKind.OPERATE in target.context_actions
@@ -1536,7 +1621,7 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
         "target_id must be copied from one natural_resource entry in "
         "context_targets that advertises operate."
     ),
-    planner_visible=True,
+    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -1550,7 +1635,7 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     risk=ActionRiskCost(native_assisted_actions=1),
-    max_primitive_actions=4,
+    max_primitive_actions=7,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.MONITORED_OPTION,
@@ -1558,6 +1643,53 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     bind=bind_produce_resource_output,
     controller_verified=True,
     authorable_when=resource_production_is_currently_authorable,
+)
+
+HARVEST_RESOURCE_CONTRACT = ActionContract(
+    kind="harvest_resource",
+    version="1.0",
+    model=HarvestResourceAction,
+    summary=(
+        "Run one exact natural-resource job at Kenshi's observed 5x speed until "
+        "the requested bounded yield exists, restore normal speed, transfer it "
+        "conservatively into one exact selected actor, and close the two owned "
+        "inventory windows. Production, transfer, and cleanup are one "
+        "interruptible controller option."
+    ),
+    argument_source=(
+        "actor_id is selected.id; target_id is one natural_resource entry in "
+        "context_targets advertising operate; quantity is the useful yield, 1-5."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_PRODUCE_RESOURCE_CAPABILITY,
+            NATIVE_OPEN_CONTEXT_INVENTORY_CAPABILITY,
+            NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            CONTEXT_INVENTORY_TARGET_CAPABILITY,
+            VISIBLE_CONTROLS_CAPABILITY,
+            "game.pause",
+            "game.speed",
+            "squad.basic",
+            "squad.health",
+            "squad.inventory",
+            "ui.inventory",
+            "identity.stable_handles",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=True,
+    risk=ActionRiskCost(pointer_actions=12, native_assisted_actions=2),
+    max_primitive_actions=41,
+    reference_fields=("actor_id", "target_id"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.COMPOSITE_OPTION,
+    receipt_kind="semantic_resource_harvest",
+    bind=bind_harvest_resource,
+    controller_verified=True,
+    authorable_when=harvest_resource_is_currently_authorable,
 )
 
 OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
@@ -1575,7 +1707,7 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
         "target_id must be copied from one natural_resource entry in "
         "context_targets."
     ),
-    planner_visible=True,
+    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -1588,7 +1720,7 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     risk=ActionRiskCost(native_assisted_actions=1),
-    max_primitive_actions=1,
+    max_primitive_actions=6,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,
@@ -1747,11 +1879,13 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(),
     capability_aliases=frozenset(),
-    # One configured key; it carries no screen position at all.
-    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    # Inventory and trade windows close through their current close box; other
+    # screens use a configured key. The pointer path is resolved from current
+    # telemetry inside the input lease.
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(),
-    max_primitive_actions=1,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=3,
     reference_fields=("expected_screen",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,
@@ -2004,7 +2138,7 @@ COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
         "item_name, item_quantity as source_quantity, window, and section='out' "
         "from one item in that same group."
     ),
-    planner_visible=True,
+    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2019,8 +2153,8 @@ COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
-    max_primitive_actions=1,
+    risk=ActionRiskCost(pointer_actions=2),
+    max_primitive_actions=4,
     reference_fields=(
         "target_id",
         "cell_label",
@@ -2043,6 +2177,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         PERFORM_CONTEXT_ACTION_CONTRACT,
         PRODUCE_RESOURCE_OUTPUT_CONTRACT,
+        HARVEST_RESOURCE_CONTRACT,
         OPEN_CONTEXT_INVENTORY_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,

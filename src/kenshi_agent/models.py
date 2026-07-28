@@ -649,6 +649,9 @@ class NativeCommandAcknowledgement(StrictModel):
     target_id: str = Field(default="", max_length=200)
     bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
     distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
+    # Retained in the acknowledgement so an adopted resource-production
+    # command cannot silently satisfy a later request for a larger yield.
+    minimum_output_quantity: int = Field(default=1, ge=1, le=5)
     selected_character_ids: list[str] = Field(min_length=1, max_length=1)
     based_on_telemetry_sequence: int = Field(ge=0)
     acknowledged_at_telemetry_sequence: int = Field(ge=0)
@@ -755,7 +758,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.1.0"
+    protocol_version: str = "1.2.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1038,10 +1041,25 @@ class PerformContextAction(StrictModel):
 
 
 class ProduceResourceOutputAction(StrictModel):
-    """Operate one exact natural resource until its output inventory gains stock."""
+    """Internal production phase retained until a bounded output yield exists."""
 
     kind: Literal["produce_resource_output"] = "produce_resource_output"
     target_id: str = Field(min_length=1, max_length=200)
+    minimum_output_quantity: int = Field(default=1, ge=1, le=5)
+
+
+class HarvestResourceAction(StrictModel):
+    """Harvest a bounded yield from one exact resource into one exact actor.
+
+    The planner chooses the actor, resource, and useful yield once. The
+    controller owns production, inventory opening, exact conserved transfer,
+    cleanup, and terminal proof as one interruptible option.
+    """
+
+    kind: Literal["harvest_resource"] = "harvest_resource"
+    actor_id: str = Field(min_length=1, max_length=200)
+    target_id: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(ge=1, le=5)
 
 
 class OpenContextInventoryAction(StrictModel):
@@ -1407,11 +1425,8 @@ PlannerControlAction: TypeAlias = (
 )
 """Planner-layer intentions that touch no game object and bind to no reference."""
 
-SemanticAction: TypeAlias = (
+PlannerAtomicSemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
-    | PerformContextAction
-    | ProduceResourceOutputAction
-    | OpenContextInventoryAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | ExitCurrentBuildingAction
@@ -1422,13 +1437,36 @@ SemanticAction: TypeAlias = (
     | ScrollScreenAction
     | SellItemAction
     | EquipItemAction
-    | CollectResourceOutputAction
     | RecoverCameraViewAction
 )
-"""Reusable typed game/UI intentions bound to currently observed references."""
+"""Reusable atomic game/UI intentions either planner mode may author."""
 
-PlannerAction: TypeAlias = PlannerControlAction | SemanticAction | SkillAction
-"""What a planner may author. `SkillAction` is temporary legacy compatibility."""
+PlannerCompositeSemanticAction: TypeAlias = HarvestResourceAction
+"""Executor-owned options that require continuous plan supervision."""
+
+PlannerSemanticAction: TypeAlias = (
+    PlannerAtomicSemanticAction | PlannerCompositeSemanticAction
+)
+"""Every game/UI intention a continuous strategic planner may author."""
+
+InternalSemanticAction: TypeAlias = (
+    PerformContextAction
+    | ProduceResourceOutputAction
+    | OpenContextInventoryAction
+    | CollectResourceOutputAction
+)
+"""Controller-owned phases used only inside larger semantic options."""
+
+SemanticAction: TypeAlias = PlannerSemanticAction | InternalSemanticAction
+"""Every typed game/UI intention, including controller-owned phases."""
+
+PlannerAction: TypeAlias = PlannerControlAction | PlannerSemanticAction | SkillAction
+"""What a continuous planner may author."""
+
+SingleStepPlannerAction: TypeAlias = (
+    PlannerControlAction | PlannerAtomicSemanticAction | SkillAction
+)
+"""Actions that do not require the continuous executor's option ownership."""
 
 Action: TypeAlias = (
     NoopAction
@@ -1450,6 +1488,7 @@ Action: TypeAlias = (
     | PerformContextAction
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
+    | HarvestResourceAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | ExitCurrentBuildingAction
@@ -1471,6 +1510,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
+        "harvest_resource",
         "move_to_character",
         "move_in_direction",
         "exit_current_building",
@@ -2803,7 +2843,7 @@ class CommandDispatchContext(StrictModel):
 
 
 class NativeCommandRequest(StrictModel):
-    schema_version: Literal["1.0"]
+    schema_version: Literal["1.1"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     command: Literal[
         "approach_confirmed_vendor",
@@ -2822,6 +2862,7 @@ class NativeCommandRequest(StrictModel):
     target_id: str = Field(default="", max_length=200)
     bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
     distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
+    minimum_output_quantity: int = Field(default=1, ge=1, le=5)
 
     @model_validator(mode="after")
     def validate_native_fences(self) -> NativeCommandRequest:
@@ -2844,6 +2885,10 @@ class NativeCommandRequest(StrictModel):
                 raise ValueError("this native command requires a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
                 raise ValueError("a targeted native command must not carry direction fields")
+        if self.command != "produce_resource_output" and self.minimum_output_quantity != 1:
+            raise ValueError(
+                "only resource production may request a larger output quantity"
+            )
         return self
 
 
@@ -3134,7 +3179,7 @@ class PlanStep(StrictModel):
     # conditional rule.
     success_conditions: list[Condition] = Field(default_factory=list, max_length=12)
     failure_conditions: list[Condition] = Field(default_factory=list, max_length=12)
-    timeout_seconds: float = Field(gt=0.0, le=60.0)
+    timeout_seconds: float = Field(gt=0.0, le=300.0)
     retry_budget: int = Field(default=0, ge=0, le=2)
     idempotency: IdempotencyPolicy = IdempotencyPolicy.AT_MOST_ONCE
     on_success: str | None = Field(
@@ -3161,18 +3206,14 @@ class PlanStep(StrictModel):
                 RecallMemoryAction,
                 ReadFieldbookAction,
                 ExitCurrentBuildingAction,
-                PerformContextAction,
-                ProduceResourceOutputAction,
-                OpenContextInventoryAction,
-                CollectResourceOutputAction,
+                HarvestResourceAction,
             ),
         ):
             raise ValueError(
                 "success_conditions may be empty only for recover_camera_view, "
                 "consult_advisor, request_affordance, recall_memory, "
-                "read_fieldbook, exit_current_building, perform_context_action, "
-                "produce_resource_output, open_context_inventory, or "
-                "collect_resource_output, whose owning subsystem returns a "
+                "read_fieldbook, exit_current_building, or harvest_resource, "
+                "whose owning subsystem returns a "
                 "typed terminal outcome"
             )
         return self
@@ -3189,7 +3230,7 @@ class PlanEnvelope(StrictModel):
     steps: list[PlanStep] = Field(min_length=1, max_length=8)
     entry_step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
     max_actions: int = Field(ge=1, le=16)
-    max_wall_seconds: float = Field(gt=0.0, le=120.0)
+    max_wall_seconds: float = Field(gt=0.0, le=600.0)
     max_game_seconds: float = Field(gt=0.0, le=3600.0)
     risk_budget: RiskBudget
     # A continuous planner had nowhere to write anything down: continuity
@@ -3924,7 +3965,7 @@ class Observation(StrictModel):
 class PlannerDecision(StrictModel):
     intent: str = Field(min_length=1, max_length=1000)
     rationale: str = Field(min_length=1, max_length=1500)
-    action: PlannerAction
+    action: SingleStepPlannerAction
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     expected_observation: str | None = Field(default=None, max_length=1000)
     # Committed after this action's receipt, never before it.
@@ -4033,6 +4074,34 @@ class ResourceTransferEvidence(StrictModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class ResourceHarvestStatus(StrEnum):
+    HARVESTED = "harvested"
+    NOT_HARVESTED = "not_harvested"
+    CLEANUP_FAILED = "cleanup_failed"
+
+
+class ResourceHarvestEvidence(StrictModel):
+    """Terminal proof for one controller-owned production and transfer bundle."""
+
+    status: ResourceHarvestStatus
+    target_id: str = Field(min_length=1, max_length=200)
+    selected_character_id: str = Field(min_length=1, max_length=200)
+    requested_quantity: int = Field(ge=1, le=5)
+    item_name: str | None = Field(default=None, min_length=1, max_length=200)
+    transferred_quantity: int = Field(default=0, ge=0)
+    production_command_id: str | None = Field(
+        default=None,
+        pattern=r"^cmd-[0-9a-f]{32}$",
+    )
+    inventory_command_id: str | None = Field(
+        default=None,
+        pattern=r"^cmd-[0-9a-f]{32}$",
+    )
+    transfer: ResourceTransferEvidence | None = None
+    cleanup_confirmed: bool
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -4053,6 +4122,7 @@ class SemanticActionReceipt(StrictModel):
     legacy_compatibility: bool = False
     camera_recovery: CameraRecoveryEvidence | None = None
     resource_transfer: ResourceTransferEvidence | None = None
+    resource_harvest: ResourceHarvestEvidence | None = None
 
 
 class ActionReceipt(StrictModel):

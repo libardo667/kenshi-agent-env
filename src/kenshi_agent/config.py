@@ -82,7 +82,7 @@ class PlanningConfig(ConfigModel):
     max_delta_paths: int = Field(default=128, ge=16, le=2048)
     max_plan_steps: int = Field(default=4, ge=1, le=8)
     max_actions_per_plan: int = Field(default=8, ge=1, le=16)
-    max_plan_wall_seconds: float = Field(default=30.0, gt=0.0, le=120.0)
+    max_plan_wall_seconds: float = Field(default=30.0, gt=0.0, le=600.0)
     max_plan_game_seconds: float = Field(default=12.0, gt=0.0, le=3600.0)
     max_pointer_actions_per_plan: int = Field(default=8, ge=0, le=32)
     max_purchase_actions_per_plan: int = Field(default=1, ge=0, le=8)

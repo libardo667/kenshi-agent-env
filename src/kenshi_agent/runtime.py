@@ -68,6 +68,7 @@ from .models import (
     FieldbookReadResult,
     FieldbookReadStatus,
     FieldbookReceiptDigest,
+    HarvestResourceAction,
     InputBoundaryDecision,
     LiveContinuousPolicy,
     MemoryReadReceipt,
@@ -87,6 +88,7 @@ from .models import (
     RecallMemoryAction,
     RecoverCameraViewAction,
     RequestAffordanceAction,
+    ResourceHarvestStatus,
     ScenarioIdentity,
     SkillAction,
     StopAction,
@@ -123,6 +125,13 @@ from .world_state import (
 )
 
 _WorkResult = TypeVar("_WorkResult")
+
+
+@dataclass(frozen=True, slots=True)
+class _OutcomeIntent:
+    """Minimal executor-authored context for recording a continuous step."""
+
+    intent: str
 
 # How many distinct capability gaps stay visible to the planner at once.
 MAX_RETAINED_AFFORDANCE_REQUESTS = 32
@@ -2289,14 +2298,8 @@ class AgentRuntime:
         command_id: str,
         action_start_revision: WorldStateRevision,
     ) -> Observation:
-        decision = PlannerDecision(
+        decision = _OutcomeIntent(
             intent=f"Execute plan {plan.plan_id} step {step.step_id}.",
-            rationale=(
-                "The executor revalidated this typed step against the latest "
-                "revision and remaining budgets."
-            ),
-            action=step.action,
-            confidence=1.0,
         )
         return self._record_transition(
             decision,
@@ -2311,7 +2314,7 @@ class AgentRuntime:
 
     def _record_transition(
         self,
-        decision: PlannerDecision,
+        decision: PlannerDecision | _OutcomeIntent,
         before: Observation,
         transition: Transition,
         *,
@@ -3205,7 +3208,7 @@ class AgentRuntime:
 
     def _record_action_outcome(
         self,
-        decision: PlannerDecision,
+        decision: PlannerDecision | _OutcomeIntent,
         receipt: ActionReceipt,
         before: Observation,
         after: Observation,
@@ -3237,7 +3240,9 @@ class AgentRuntime:
         target_id: str | None = None
         if receipt.semantic is not None:
             target_id = receipt.semantic.target_id
-            if receipt.semantic.resource_transfer is not None:
+            if receipt.semantic.resource_harvest is not None:
+                semantic_status = receipt.semantic.resource_harvest.status.value
+            elif receipt.semantic.resource_transfer is not None:
                 semantic_status = receipt.semantic.resource_transfer.status.value
             elif receipt.semantic.camera_recovery is not None:
                 semantic_status = receipt.semantic.camera_recovery.status.value
@@ -3302,6 +3307,30 @@ class AgentRuntime:
                 ActionOutcomeAssessment.UNKNOWN,
                 "The action has no causally later validated world revision. "
                 "Do not treat raw or pre-command state as progress.",
+            )
+
+        if isinstance(receipt.action, HarvestResourceAction):
+            harvest = (
+                receipt.semantic.resource_harvest
+                if receipt.semantic is not None
+                else None
+            )
+            if harvest is None:
+                return (
+                    ActionOutcomeAssessment.UNKNOWN,
+                    "Resource harvest returned no typed controller evidence.",
+                )
+            if harvest.status is ResourceHarvestStatus.HARVESTED:
+                return (
+                    ActionOutcomeAssessment.CHANGED,
+                    f"The controller conserved {harvest.transferred_quantity} "
+                    f"{harvest.item_name!r} into the exact actor and closed its "
+                    "owned inventory windows.",
+                )
+            return (
+                ActionOutcomeAssessment.NO_OP,
+                f"Resource harvest ended as {harvest.status.value!r}: "
+                f"{harvest.reason}",
             )
 
         if isinstance(receipt.action, RecoverCameraViewAction):

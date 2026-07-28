@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- Bundled resource work into one planner-visible `harvest_resource` option.
+  The planner selects one exact actor, resource, and bounded yield; the
+  controller owns causally confirmed 5x production, normal-speed restoration,
+  exact two-window routing, per-item bounded collection with aggregate
+  conservation, and cleanup. Pump observations outrank older phase receipts,
+  so a slow option cannot regress the shared world state when it completes.
+  Its three motor phases remain typed but are no longer planner-visible. Native
+  request schema 1.1 and telemetry protocol 1.2 retain the requested yield in
+  acknowledgement identity, preventing a smaller in-flight production order
+  from satisfying a later larger request.
+- Added an idempotent interrupted-journey recovery path. A nonzero WSL journey
+  exit now invokes supported Windows cleanup that causally pauses a loaded
+  world, waits for an in-flight native command to acknowledge cancellation,
+  dismisses only exact owned inventory windows, leaves Kenshi open, and restores
+  a stranded external-only display lease even when game recovery itself fails
+  closed.
+- Replaced the native command bridge's impossible exact-publication race with
+  a four-publication transit fence. Python still rebinds on its newest
+  telemetry and the DLL still revalidates every current identity and authority
+  fact; only the measured atomic-file/hotkey/UI-hook delivery interval is
+  tolerated. Future and older request bases remain rejected.
 - Made mutation coverage a committed, self-invalidating record instead of prose. Every campaign
   artifact now carries the SHA-256 of the source it attests, and a generated ledger derives each
   shard's state by digesting the module again at write time: a module edited after its campaign

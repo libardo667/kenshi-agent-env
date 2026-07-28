@@ -327,22 +327,21 @@ yourself, in whatever order the current evidence supports.
   typed check from `semantic_actions[].binding_success_conditions`. Direct
   unpause and a pause binding that would unpause share the profile's explicit
   gate. The physical keys are shipped defaults, not a parsed customized keymap.
-- **Resource work is an owned three-stage transaction.** If safe and useful,
-  first author `use_game_binding` with binding `speed_3` and its advertised
-  success condition. Then author `produce_resource_output` with one exact
-  `context_targets[].id`; the monitored option adopts already matching
-  `Operating machine` work, never reissues it, and succeeds only on native
-  `resource_output_ready`. Give it `success_conditions: []`.
-- After output is ready, author `open_context_inventory` for that same exact
-  target with `success_conditions: []`. It succeeds only on the keyed native
-  terminal `exact_context_inventory_open`; an accepted request is not success.
-- Then copy `target_id`, `cell_label`, `item_name`, `item_quantity` as
-  `source_quantity`, `window`, and `section: "out"` from one current output
-  cell into `collect_resource_output`. Give it `success_conditions: []`; the
-  controller proves equal source loss and selected-character inventory gain on
-  a later complete observation. A right-click receipt alone is failure, and an
-  incomplete source or destination remains unknown. Never claim income until
-  later inventory or money evidence establishes it.
+- **Resource work is one controller-owned harvest action.** Author
+  `harvest_resource` with `actor_id` copied from `selected.id`, one exact
+  natural-resource `context_targets[].id`, and a useful bounded `quantity` from
+  1 through 5. Give it `success_conditions: []` and enough wall time for slow
+  production (up to 300 seconds). The controller selects gear 3 and causally
+  confirms Kenshi's 5x multiplier, retains or adopts the exact
+  `Operating machine` job until that yield exists, restores gear 1 before
+  inventory input, opens both exact inventory windows, derives the output cell
+  from current telemetry, proves conserved transfer into that actor, and closes
+  only those two windows. Do not author `speed_3`,
+  `produce_resource_output`, `open_context_inventory`, or
+  `collect_resource_output` around a harvest; they are private motor phases,
+  not planning decisions. A harvest receipt is success only when its typed
+  verdict is `harvested`; never claim income until later money evidence
+  establishes a sale.
 - **Camera recovery is one controller action, not a camera plan.** When
   `recover_camera_view` is advertised and the world view is unreadable, author
   exactly `{"kind":"recover_camera_view"}` once. Give that step
@@ -422,8 +421,8 @@ yourself, in whatever order the current evidence supports.
   `belongs_to: "vendor"` group and sells from the `belongs_to: "you"` group.
   Read the group before acting on any cell: the cheapest cell on a trade screen
   is often your own clothing, and buying it is really selling it.
-- Give every step except `recover_camera_view`, the three controller-verified
-  resource actions, `consult_advisor`, and `request_affordance` a success
+- Give every step except `recover_camera_view`, `harvest_resource`,
+  `consult_advisor`, and `request_affordance` a success
   condition that a later observation can settle, such as
   `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.
@@ -462,11 +461,11 @@ yourself, in whatever order the current evidence supports.
   is slow. The `scroll_screen` contract is intrinsically retry-safe, but the
   current general plan validator still requires another explicit step rather
   than a retry budget. Declare risk budgets that cover the plan: approach and
-  movement, resource production, and resource inventory opening each cost one
-  native-assisted action; activate/equip/resource collection each cost one
+  movement costs one native-assisted action; `harvest_resource` costs twelve
+  pointer actions and two native-assisted actions; activate/equip each cost one
   pointer action; purchase and sale each cost one pointer plus one
-  purchase-budget action; dismissal, bindings, and scrolling add no
-  risk-budget unit.
+  purchase-budget action; dismissal costs one pointer action; bindings and
+  scrolling add no risk-budget unit.
 
 <!-- /policy -->
 Your priorities, in order:

@@ -119,3 +119,36 @@ def test_external_display_lease_reports_restore_failure() -> None:
             pass
 
     assert switches == ["external", "extend"]
+
+
+def test_display_recovery_restores_only_a_stranded_external_only_lease() -> None:
+    switches: list[str] = []
+    external_only = DisplayTopology(
+        screens=(_screen("external", 1920, 1080),),
+        internal_connected=True,
+        external_connected=True,
+    )
+    extended = DisplayTopology(
+        screens=(
+            _screen("internal", 2496, 1664),
+            _screen("external", 1920, 1080),
+        ),
+        internal_connected=True,
+        external_connected=True,
+    )
+    controller = _controller(iter((external_only, extended)), switches)
+
+    state, changed = controller.restore_if_stranded()
+
+    assert changed is True
+    assert state == extended
+    assert switches == ["extend"]
+
+    switches.clear()
+    controller = _controller(iter((extended,)), switches)
+
+    state, changed = controller.restore_if_stranded()
+
+    assert changed is False
+    assert state == extended
+    assert switches == []

@@ -540,10 +540,16 @@ class StatefulNativeMovementOption:
             self.action,
             (PerformContextAction, ProduceResourceOutputAction),
         ):
+            minimum_matches = (
+                not isinstance(self.action, ProduceResourceOutputAction)
+                or acknowledgement.minimum_output_quantity
+                == self.action.minimum_output_quantity
+            )
             return bool(
                 acknowledgement.target_id == self.action.target_id
                 and acknowledgement.bearing_degrees == 0.0
                 and acknowledgement.distance_units == 0.0
+                and minimum_matches
             )
         if acknowledgement.target_id != "":
             return False

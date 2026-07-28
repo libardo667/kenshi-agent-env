@@ -103,13 +103,15 @@ namespace KenshiAgentTelemetry
     NativeCommandRequest::NativeCommandRequest()
         : basedOnTelemetrySequence(0),
           bearingDegrees(0.0),
-          distanceUnits(0.0)
+          distanceUnits(0.0),
+          minimumOutputQuantity(1)
     {
     }
 
     NativeCommandAcknowledgement::NativeCommandAcknowledgement()
         : bearingDegrees(0.0),
           distanceUnits(0.0),
+          minimumOutputQuantity(1),
           basedOnTelemetrySequence(0),
           acknowledgedAtTelemetrySequence(0),
           acceptedAtTelemetrySequence(0),
@@ -151,7 +153,8 @@ namespace KenshiAgentTelemetry
             "selected_character_ids",
             "target_id",
             "bearing_degrees",
-            "distance_units"
+            "distance_units",
+            "minimum_output_quantity"
         };
         static const char* const revisionKeys[] = {
             "telemetry_sequence",
@@ -178,6 +181,8 @@ namespace KenshiAgentTelemetry
                 root.get<double>("bearing_degrees", 0.0);
             request.distanceUnits =
                 root.get<double>("distance_units", 0.0);
+            request.minimumOutputQuantity =
+                root.get<unsigned int>("minimum_output_quantity", 0);
             request.basedOnTelemetrySequence =
                 root.get<unsigned long long>(
                     "based_on_revision.telemetry_sequence",
@@ -197,7 +202,7 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
-            if (root.get<std::string>("schema_version") != "1.0" ||
+            if (root.get<std::string>("schema_version") != "1.1" ||
                 !IsValidCommandId(request.commandId) ||
                 request.command.empty() ||
                 request.command.size() > 80 ||
@@ -205,7 +210,9 @@ namespace KenshiAgentTelemetry
                 request.controlMode.size() > 80 ||
                 request.identitySessionId.empty() ||
                 request.identitySessionId.size() > 200 ||
-                request.targetId.size() > 200)
+                request.targetId.size() > 200 ||
+                request.minimumOutputQuantity < 1 ||
+                request.minimumOutputQuantity > 5)
             {
                 rejectionReason = "malformed_request";
                 return false;
@@ -295,6 +302,12 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
+            if (request.command != "produce_resource_output" &&
+                request.minimumOutputQuantity != 1)
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
         }
         catch (const std::exception&)
         {
@@ -325,6 +338,8 @@ namespace KenshiAgentTelemetry
              << acknowledgement.bearingDegrees << ",";
         json << "\"distance_units\":"
              << acknowledgement.distanceUnits << ",";
+        json << "\"minimum_output_quantity\":"
+             << acknowledgement.minimumOutputQuantity << ",";
         json << "\"selected_character_ids\":[\""
              << JsonEscape(acknowledgement.selectedCharacterId)
              << "\"],";

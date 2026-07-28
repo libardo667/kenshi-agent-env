@@ -364,6 +364,43 @@
       "title": "GameBinding",
       "type": "string"
     },
+    "HarvestResourceAction": {
+      "additionalProperties": false,
+      "description": "Harvest a bounded yield from one exact resource into one exact actor.\n\nThe planner chooses the actor, resource, and useful yield once. The\ncontroller owns production, inventory opening, exact conserved transfer,\ncleanup, and terminal proof as one interruptible option.",
+      "properties": {
+        "kind": {
+          "const": "harvest_resource",
+          "default": "harvest_resource",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id",
+        "quantity"
+      ],
+      "title": "HarvestResourceAction",
+      "type": "object"
+    },
     "HotkeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -611,7 +648,7 @@
     },
     "ProduceResourceOutputAction": {
       "additionalProperties": false,
-      "description": "Operate one exact natural resource until its output inventory gains stock.",
+      "description": "Internal production phase retained until a bounded output yield exists.",
       "properties": {
         "kind": {
           "const": "produce_resource_output",
@@ -624,6 +661,13 @@
           "minLength": 1,
           "title": "Target Id",
           "type": "string"
+        },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
         }
       },
       "required": [
@@ -1192,6 +1236,9 @@
     },
     {
       "$ref": "#/$defs/OpenContextInventoryAction"
+    },
+    {
+      "$ref": "#/$defs/HarvestResourceAction"
     },
     {
       "$ref": "#/$defs/MoveToCharacterAction"

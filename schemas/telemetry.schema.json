@@ -695,6 +695,13 @@
           "title": "Distance Units",
           "type": "number"
         },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
+        },
         "selected_character_ids": {
           "items": {
             "type": "string"
@@ -1522,7 +1529,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.1.0",
+      "default": "1.2.0",
       "title": "Protocol Version",
       "type": "string"
     },

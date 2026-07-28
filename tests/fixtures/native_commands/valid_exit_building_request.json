@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "command_id": "cmd-11111111111111111111111111111111",
   "command": "exit_current_building",
   "control_mode": "native_assisted",
@@ -15,5 +15,6 @@
   ],
   "target_id": "",
   "bearing_degrees": 0.0,
-  "distance_units": 0.0
+  "distance_units": 0.0,
+  "minimum_output_quantity": 1
 }

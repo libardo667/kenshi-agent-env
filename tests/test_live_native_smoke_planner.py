@@ -18,10 +18,10 @@ from kenshi_agent.models import (
     ControlMode,
     ExitCurrentBuildingAction,
     GameState,
+    HarvestResourceAction,
     InterruptPolicy,
     Observation,
     PauseAction,
-    PerformContextAction,
     PlanEnvelope,
     PlanningMode,
     PlanPatch,
@@ -67,10 +67,17 @@ def observation(*, indoors: bool, advertise_operate: bool = True) -> Observation
             identity_session_id="session-live-native-smoke",
             capabilities=[
                 "control.exit_current_building",
-                "control.perform_context_action",
+                "control.produce_resource_output",
+                "control.open_context_inventory",
                 "game.pause",
                 "identity.stable_handles",
+                "squad.basic",
+                "squad.health",
+                "squad.inventory",
                 "squad.indoors",
+                "ui.context_inventory_target",
+                "ui.inventory",
+                "ui.visible_controls",
                 "world.context_targets",
             ],
             game=GameState(loaded=True, paused=True),
@@ -83,7 +90,12 @@ def observation(*, indoors: bool, advertise_operate: bool = True) -> Observation
                     id="entity-hep",
                     name="Hep",
                     selected=True,
+                    alive=True,
+                    conscious=True,
+                    down=False,
+                    in_combat=False,
                     indoors=indoors,
+                    inventory_complete=True,
                 )
             ],
             world_targets=[target],
@@ -112,44 +124,34 @@ def test_exit_plan_requires_and_preserves_the_observed_indoor_state() -> None:
         )
 
 
-def test_context_plan_requires_the_exact_advertised_action() -> None:
+def test_harvest_plan_requires_the_exact_advertised_action() -> None:
     with pytest.raises(ValueError, match="not currently actionable"):
         build_plan(
             observation(indoors=False, advertise_operate=False),
-            action_kind="perform_context_action",
+            action_kind="harvest_resource",
             target_id=TARGET_ID,
         )
 
     plan = build_plan(
         observation(indoors=False),
-        action_kind="perform_context_action",
+        action_kind="harvest_resource",
         target_id=TARGET_ID,
     )
 
-    assert plan.steps[0].action == PerformContextAction(
+    assert plan.steps[0].action == HarvestResourceAction(
+        actor_id="entity-hep",
         target_id=TARGET_ID,
-        context_action=ContextActionKind.OPERATE,
+        quantity=1,
     )
 
 
-def test_single_step_decision_uses_the_same_advertised_action_fence() -> None:
-    with pytest.raises(ValueError, match="not currently actionable"):
+def test_single_step_refuses_the_continuous_harvest_option() -> None:
+    with pytest.raises(ValueError, match="continuous option ownership"):
         build_decision(
-            observation(indoors=False, advertise_operate=False),
-            action_kind="perform_context_action",
+            observation(indoors=False),
+            action_kind="harvest_resource",
             target_id=TARGET_ID,
         )
-
-    decision = build_decision(
-        observation(indoors=False),
-        action_kind="perform_context_action",
-        target_id=TARGET_ID,
-    )
-
-    assert decision.action == PerformContextAction(
-        target_id=TARGET_ID,
-        context_action=ContextActionKind.OPERATE,
-    )
 
 
 def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
@@ -157,7 +159,7 @@ def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
         update={
             "planning_mode": PlanningMode.CONTINUOUS,
             "active_plan": ActivePlanContext(
-                plan_id="live-perform-context-action-smoke",
+                plan_id="live-harvest-resource-smoke",
                 plan_version=1,
                 objective="Operate the exact advertised target.",
                 active_step_id="native-smoke",
@@ -168,7 +170,7 @@ def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
 
     output = build_output(
         state,
-        action_kind="perform_context_action",
+        action_kind="harvest_resource",
         target_id=TARGET_ID,
     )
 
@@ -182,7 +184,7 @@ def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
     ]
 
 
-def test_context_smoke_runs_through_the_subprocess_entrypoint() -> None:
+def test_harvest_smoke_runs_through_the_subprocess_entrypoint() -> None:
     state = observation(indoors=False).model_copy(
         update={"planning_mode": PlanningMode.CONTINUOUS}
     )
@@ -199,7 +201,7 @@ def test_context_smoke_runs_through_the_subprocess_entrypoint() -> None:
                 sys.executable,
                 str(script),
                 "--action",
-                "perform_context_action",
+                "harvest_resource",
                 "--target-id",
                 TARGET_ID,
             ]
@@ -207,9 +209,10 @@ def test_context_smoke_runs_through_the_subprocess_entrypoint() -> None:
     )
 
     assert isinstance(output, PlanEnvelope)
-    assert output.steps[0].action == PerformContextAction(
+    assert output.steps[0].action == HarvestResourceAction(
+        actor_id="entity-hep",
         target_id=TARGET_ID,
-        context_action=ContextActionKind.OPERATE,
+        quantity=1,
     )
 
 

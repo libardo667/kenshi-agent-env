@@ -1590,6 +1590,115 @@ async def _close_kenshi_safely(
     )
 
 
+async def _recover_kenshi_safe_state(
+    config: AppConfig,
+    controller: Win32InputController,
+    telemetry: TelemetryReader,
+    *,
+    timeout_seconds: float,
+    process_names: Callable[[], set[str]],
+) -> Literal["loaded_paused", "title", "not_running"]:
+    """Recover a running journey to an idle state without closing Kenshi."""
+
+    if "kenshi_x64.exe" not in process_names():
+        return "not_running"
+
+    initial = telemetry.read()
+    if initial.stale:
+        raise LaunchFailed("Interrupted recovery requires fresh telemetry.")
+    if initial.snapshot.game.loaded and initial.snapshot.game.paused is not True:
+        outcome = await ensure_final_safe_state(
+            controller=controller,
+            telemetry=telemetry,
+            pause_primitives=[KeyAction(key=config.controls.pause_key)],
+            timeout_seconds=timeout_seconds,
+            input_authorized=True,
+        )
+        if outcome.status is not FinalSafeStateStatus.PAUSE_CONFIRMED:
+            raise LaunchFailed(
+                "Interrupted recovery could not causally confirm a pause. "
+                f"{outcome.reason}"
+            )
+
+    current = telemetry.read()
+    if current.stale:
+        raise LaunchFailed("Interrupted recovery requires fresh telemetry.")
+    active_command_id = current.snapshot.native_control.active_command_id
+    if (
+        current.snapshot.game.loaded is True
+        and current.snapshot.game.paused is True
+        and active_command_id is not None
+    ):
+        current = await _wait_for_paused_native_command_terminal(
+            telemetry,
+            current,
+            command_id=active_command_id,
+            timeout_seconds=timeout_seconds,
+        )
+    if (
+        current.snapshot.game.loaded is True
+        and current.snapshot.game.paused is True
+        and current.snapshot.ui.modal_open is True
+    ):
+        current = await _dismiss_safe_close_inventories(
+            controller,
+            telemetry,
+            current,
+            timeout_seconds=timeout_seconds,
+        )
+    return _validate_safe_close_snapshot(
+        current.snapshot.model_dump(mode="json"),
+        max_age_seconds=config.telemetry.max_age_seconds,
+    )
+
+
+async def _wait_for_paused_native_command_terminal(
+    telemetry: TelemetryReader,
+    current: TelemetryRead,
+    *,
+    command_id: str,
+    timeout_seconds: float,
+) -> TelemetryRead:
+    """Wait for the plug-in to causally cancel one command after a safety pause."""
+
+    initial_sequence = current.snapshot.sequence
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        if (
+            not current.stale
+            and current.snapshot.sequence > initial_sequence
+            and current.snapshot.game.loaded is True
+            and current.snapshot.game.paused is True
+            and current.snapshot.native_control.active_command_id is None
+        ):
+            return current
+        active_command_id = current.snapshot.native_control.active_command_id
+        if active_command_id not in {None, command_id}:
+            raise LaunchFailed(
+                "Interrupted recovery observed a different native command after "
+                "the safety pause."
+            )
+        if (
+            current.snapshot.game.loaded is not True
+            or current.snapshot.game.paused is not True
+        ):
+            raise LaunchFailed(
+                "Interrupted recovery lost the confirmed paused loaded world "
+                "while waiting for native command cancellation."
+            )
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise LaunchFailed(
+                "Interrupted recovery timed out waiting for the paused native "
+                "command to reach a terminal acknowledgement."
+            )
+        await asyncio.sleep(min(0.05, remaining))
+        try:
+            current = telemetry.read()
+        except TelemetryReadError:
+            continue
+
+
 async def _close(args: argparse.Namespace) -> int:
     if os.name != "nt":
         raise SystemExit("The live developer close command must run with Windows Python.")
@@ -1617,6 +1726,56 @@ async def _close(args: argparse.Namespace) -> int:
     ) as exc:
         print(str(exc), file=sys.stderr)
         return 4
+
+
+async def _recover(args: argparse.Namespace) -> int:
+    if os.name != "nt":
+        raise SystemExit("The live developer recovery command must run with Windows Python.")
+    config = load_config(args.config)
+    failures: list[str] = []
+    game_state: Literal["loaded_paused", "title", "not_running"] | None = None
+    display_changed: bool | None = None
+
+    try:
+        game_state = await _recover_kenshi_safe_state(
+            config,
+            _controller(config),
+            _telemetry_read(config),
+            timeout_seconds=args.timeout,
+            process_names=_running_process_names,
+        )
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        LaunchFailed,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        failures.append(f"game recovery failed: {exc}")
+
+    try:
+        _, display_changed = DisplayTopologyController().restore_if_stranded()
+    except (DisplayLeaseError, OSError, RuntimeError, ValueError) as exc:
+        failures.append(f"display recovery failed: {exc}")
+
+    if failures:
+        print("; ".join(failures), file=sys.stderr)
+        return 4
+
+    assert game_state is not None and display_changed is not None
+    game_message = {
+        "loaded_paused": "Kenshi is paused with no unresolved modal.",
+        "title": "Kenshi is idle at the title screen.",
+        "not_running": "Kenshi is not running.",
+    }[game_state]
+    display_message = (
+        "The stranded display lease was restored."
+        if display_changed
+        else "The display lease was already released."
+    )
+    print(f"Interrupted journey recovery complete: {game_message} {display_message}")
+    return 0
 
 
 _CRASH_LOG_NAMES = (
@@ -2311,6 +2470,16 @@ def build_parser() -> argparse.ArgumentParser:
     close.add_argument("--config", required=True)
     close.add_argument("--timeout", type=float, default=15.0)
 
+    recover = subparsers.add_parser(
+        "recover",
+        help=(
+            "Recover an interrupted journey to a paused idle game and an "
+            "extended display."
+        ),
+    )
+    recover.add_argument("--config", required=True)
+    recover.add_argument("--timeout", type=float, default=15.0)
+
     graphics = subparsers.add_parser(
         "graphics",
         help="Verify or reversibly install the configured Kenshi graphics profile.",
@@ -2496,6 +2665,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_launch(args))
     if args.command == "close":
         return asyncio.run(_close(args))
+    if args.command == "recover":
+        return asyncio.run(_recover(args))
     if args.command == "graphics":
         return _graphics(args)
     if args.command == "shot":

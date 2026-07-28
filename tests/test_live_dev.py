@@ -38,6 +38,9 @@ from kenshi_agent.models import (
     GameState,
     HotkeyAction,
     KeyAction,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
     NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
@@ -241,6 +244,137 @@ def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> Non
 
         assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
         assert controller.close_requested is True
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_closing() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+        inventory_capabilities = [
+            *resource_inventory_snapshot(40).capabilities,
+            "game.pause",
+        ]
+        unpaused = resource_inventory_snapshot(40).model_copy(
+            update={
+                "capabilities": inventory_capabilities,
+                "game": GameState(loaded=True, paused=False),
+            },
+            deep=True,
+        )
+        paused = resource_inventory_snapshot(41).model_copy(
+            update={"capabilities": inventory_capabilities},
+            deep=True,
+        )
+        world = launch_snapshot(42, paused=True).model_copy(
+            update={
+                "ui": UIState(
+                    active_screen="world",
+                    modal_open=False,
+                    dialogue_open=False,
+                    open_inventory_windows=0,
+                    visible_controls_complete=True,
+                    visible_controls=[],
+                )
+            }
+        )
+        telemetry = LaunchTelemetry(
+            unpaused,
+            unpaused,
+            paused,
+            paused,
+            paused,
+            world,
+        )
+
+        safe_state = await live_dev._recover_kenshi_safe_state(
+            config,
+            controller,
+            telemetry,
+            timeout_seconds=0.1,
+            process_names=lambda: {"kenshi_x64.exe"},
+        )
+
+        assert safe_state == "loaded_paused"
+        assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
+        assert controller.actions == [
+            ClickAction(
+                x=0.488,
+                y=0.311,
+                hold_seconds=live_dev.MYGUI_CLICK_HOLD_SECONDS,
+            )
+        ]
+        assert controller.close_requested is False
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> None:
+    async def scenario() -> None:
+        root = Path(__file__).resolve().parents[1]
+        config = load_config(root / "config" / "live.longform.yaml")
+        controller = LaunchController()
+        command_id = "cmd-" + "a" * 32
+        acknowledgement = NativeCommandAcknowledgement(
+            command_id=command_id,
+            command="produce_resource_output",
+            status=NativeCommandStatus.ACCEPTED,
+            reason="Resource production remains active.",
+            target_id="entity-iron",
+            minimum_output_quantity=3,
+            selected_character_ids=["entity-hep"],
+            based_on_telemetry_sequence=38,
+            acknowledged_at_telemetry_sequence=39,
+            accepted_at_telemetry_sequence=40,
+        )
+
+        def active_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
+            return launch_snapshot(sequence, paused=paused).model_copy(
+                update={
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                    ),
+                    "native_control": NativeControlState(
+                        available=True,
+                        active_command_id=command_id,
+                        acknowledgements=[acknowledgement],
+                    )
+                }
+            )
+
+        telemetry = LaunchTelemetry(
+            active_snapshot(40, paused=False),
+            active_snapshot(40, paused=False),
+                active_snapshot(41, paused=True),
+                active_snapshot(41, paused=True),
+                active_snapshot(42, paused=True),
+                active_snapshot(43, paused=True).model_copy(
+                    update={"native_control": NativeControlState(available=True)}
+                ),
+                active_snapshot(43, paused=True).model_copy(
+                    update={"native_control": NativeControlState(available=True)}
+                ),
+            )
+
+        safe_state = await live_dev._recover_kenshi_safe_state(
+            config,
+            controller,
+            telemetry,
+            timeout_seconds=0.1,
+            process_names=lambda: {"kenshi_x64.exe"},
+        )
+
+        assert safe_state == "loaded_paused"
+        assert controller.safety_actions == [KeyAction(key=config.controls.pause_key)]
+        assert controller.close_requested is False
 
     import asyncio
 

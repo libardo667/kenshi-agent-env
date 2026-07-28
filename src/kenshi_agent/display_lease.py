@@ -209,6 +209,19 @@ class DisplayTopologyController:
             ),
         )
 
+    def restore_if_stranded(self) -> tuple[DisplayTopology, bool]:
+        """Idempotently recover the exact external-only topology leased here."""
+
+        state = self._query_state()
+        if (
+            len(state.screens) == 1
+            and state.internal_connected
+            and state.external_connected
+            and self._has_1080p_screen(state)
+        ):
+            return self.restore_extended(), True
+        return state, False
+
 
 @contextmanager
 def external_display_lease(

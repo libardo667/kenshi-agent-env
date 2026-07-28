@@ -57,16 +57,18 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 - `config/live.burnin.yaml` — legacy single-step calibrated profile; its continuous and
   food-procurement policies are retired.
 
-From WSL, `./dev journey` preserves exact planner argv; `./dev close` confirms pause then guards
-`WM_CLOSE`; `./dev crash` archives evidence before bounded dismissal.
+From WSL, `./dev journey` preserves exact planner argv; `./dev recover` causally pauses an
+interrupted native command, waits for its terminal acknowledgement, cleans exact owned windows,
+and restores a stranded display; `./dev close` guards `WM_CLOSE`; `./dev crash` archives evidence.
 
 Supervised runs have live-proven approach and dialogue activation, semantic startup, inventory and
 trade navigation, one-step purchases with confirmed debits, readable world deltas, persistent
 continuous memory, human-control handback, bounded native walking with camera follow, and exact
-contextual operation through `context_task_started`. Selling and equipping have portable coverage
-but no live proof.
+contextual operation through `context_task_started`. One bundled harvest retained an exact Iron
+job at observed 5x speed, restored 1x speed, conserved three outputs into the selected actor, and
+closed both inventories. Selling and equipping have portable coverage but no live proof.
 
-## Native protocol 1.1.0 (supervised live-loaded)
+## Native protocol 1.2.0 (supervised live-loaded)
 
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically replaces a
 complete snapshot at roughly 2 Hz, covering world/squad state, window state, bounded visible
@@ -82,19 +84,18 @@ before planning and rejects native actions again at the guard and environment bo
 - No live plan has yet been retained in which the playing model itself authors `consult_advisor`
   and grounds its changed goal in both the attributed brief and current Kenshi evidence. One live
   call returned truncated invalid JSON; synthetic proofs do not satisfy the requirement.
-- Conserved output transfer has portable tests and native conformance; production and source
-  opening are live-proven, but a fresh follow-up stopped on repeated non-causal destination plans.
-  Collection and income are not proven.
+- Resource harvesting is live-proven on one Iron target, but no live receipt yet closes the
+  harvest-to-sale or food-purchase economic loop.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
 
 - Native build and supervised evidence are specific to the pinned Kenshi/RE_Kenshi/KenshiLib
   versions and this Windows host.
-- Live proofs are single supervised runs. One direction probe and one Storm House exit do not
-  generalize; raw `Character::isIndoors()` can retain a stale handle. The producer fails
-  unresolved buildings closed while exit completion uses controller proof. Chosen remote map
-  travel has no semantic action, and no live run has exercised the continuity authority.
+- Live proofs are single supervised runs. One harvest, one direction probe, and one Storm House
+  exit do not generalize; raw `Character::isIndoors()` can retain a stale handle. The producer
+  fails unresolved buildings closed while exit completion uses controller proof. Chosen remote
+  map travel has no semantic action, and no live run has exercised the continuity authority.
 - Item cells expose base value, not the final shop charge; the real debit is confirmed only after
   the purchase, from later money telemetry.
 - A causally later observation stops stale pre-action state from satisfying a postcondition, but

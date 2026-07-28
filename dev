@@ -4,14 +4,14 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $# -eq 0 ]]; then
-  echo "usage: ./dev {launch|close|crash|graphics|shot|telemetry|scenario|journey} [options]" >&2
+  echo "usage: ./dev {launch|close|recover|crash|graphics|shot|telemetry|scenario|journey} [options]" >&2
   exit 2
 fi
 
 command_name="$1"
 shift
 case "$command_name" in
-  launch|close|crash|graphics|shot|telemetry|scenario)
+  launch|close|recover|crash|graphics|shot|telemetry|scenario)
     config_path="$repo_dir/config/live.burnin.yaml"
     ;;
   journey)
@@ -101,7 +101,33 @@ for variable_name in "${runtime_overrides[@]}"; do
 done
 
 cd "$repo_dir"
-exec "$windows_python" -m kenshi_agent.live_dev \
-  "$command_name" \
-  --config "$windows_config" \
+windows_command=(
+  "$windows_python"
+  -m
+  kenshi_agent.live_dev
+  "$command_name"
+  --config
+  "$windows_config"
   "${forward_args[@]}"
+)
+
+if [[ "$command_name" != "journey" ]]; then
+  exec "${windows_command[@]}"
+fi
+
+recover_interrupted_journey() {
+  local journey_status="$?"
+  trap - EXIT INT TERM
+  if [[ "$journey_status" -ne 0 ]]; then
+    echo "Journey exited before clean completion; running supported recovery." >&2
+    "$windows_python" -m kenshi_agent.live_dev \
+      recover \
+      --config "$windows_config" >&2 || true
+  fi
+  exit "$journey_status"
+}
+
+trap recover_interrupted_journey EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+"${windows_command[@]}"

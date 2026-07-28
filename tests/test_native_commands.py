@@ -27,7 +27,7 @@ def revision(sequence: int | None = 7) -> WorldStateRevision:
 
 def request() -> NativeCommandRequest:
     return NativeCommandRequest(
-        schema_version="1.0",
+        schema_version="1.1",
         command_id=COMMAND_ID,
         command="approach_confirmed_vendor",
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -61,6 +61,23 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
         )
     with pytest.raises(ValidationError):
         NativeCommandRequest.model_validate(valid.model_dump(mode="python") | {"unexpected": True})
+
+
+def test_only_resource_production_may_request_a_larger_bounded_yield() -> None:
+    valid = request()
+    production = NativeCommandRequest.model_validate(
+        valid.model_dump(mode="python")
+        | {
+            "command": "produce_resource_output",
+            "minimum_output_quantity": 5,
+        }
+    )
+
+    assert production.minimum_output_quantity == 5
+    with pytest.raises(ValidationError, match="only resource production"):
+        NativeCommandRequest.model_validate(
+            valid.model_dump(mode="python") | {"minimum_output_quantity": 2}
+        )
 
 
 def test_native_telemetry_snapshot_identity_ignores_capture_and_observation_time() -> None:

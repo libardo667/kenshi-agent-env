@@ -9,7 +9,7 @@ One invocation delivers **one bounded slice**, fully finished and green.
 
 ## Where the project actually is
 
-Verify this; do not assume it. It was accurate at protocol `1.1.0`.
+Verify this; do not assume it. It was accurate at protocol `1.2.0`.
 
 The portable core is a deterministic Kenshi-like mock with strict Pydantic
 models, JSONL lifecycle logs, exact entity-scoped SQLite memory, generated
@@ -26,11 +26,11 @@ advisor and a typed, cross-run aggregable `request_affordance` channel exist;
 both emit zero game input and grant no authority.
 
 The native plug-in exports telemetry at ~2 Hz and accepts seven reviewed
-commands. Protocol `1.1.0` is live-loaded: nearest mining-resource observation,
-the UI-facing current goal, exact contextual operation, retained production
-through actual Copper output, and exact contextual-inventory opening are proven
-on one resource. Conservation-proved collection still lacks live proof. Hidden
-task scores grant no authority, and unresolved stale indoor handles fail closed.
+commands. Protocol `1.2.0` is live-loaded: the bundled harvest option retained
+one exact Iron job at observed 5x speed, restored 1x speed, conserved each of
+three collected outputs into the selected actor, and closed both owned windows.
+Hidden task scores grant no authority, and unresolved stale indoor handles fail
+closed.
 
 Live evidence is thin by design and thinner than it looks: single supervised
 runs, one host, one save, mostly one town. Read `STATUS.md` for the honest
@@ -214,12 +214,12 @@ evidence; supervised live Kenshi evidence; historical evidence; proposed design.
 Live evidence must travel through `./dev launch` and `./dev journey`, including
 deterministic subprocess planners. Terminal crashes travel through `./dev crash`,
 which archives the current dump, logs, telemetry, settings, and frame before any
-explicit dismissal. The wrapper owns WSL-to-Windows Python, path translation,
-execution gates, logs, and final-state reporting. Direct Windows-Python commands,
-hand-written native request files, ad-hoc SendInput snippets, and PTY launcher
-attempts are diagnostics only and never accepted planner capability evidence. If
-the supported path cannot express or safely finish a test, fix it in the current
-slice; do not normalize a workaround into the procedure.
+explicit dismissal; interrupted journeys use wrapper-owned `./dev recover` for
+causal game safety and stranded display leases. The wrapper owns Windows
+Python, path translation, gates, logs, and final-state reporting. Direct
+Windows-Python, native request files, SendInput snippets, and PTY attempts are
+diagnostics only, never planner-capability evidence. If the supported path
+cannot safely finish a test, fix it; do not normalize a workaround.
 
 ## Standing supervised live-test authorization
 
@@ -265,33 +265,30 @@ is unmodelled.
 
 Work top-down. Verify each is still open before starting it.
 
-1. **Continue attended mutation rollout.** Six of 62 module shards are clean;
-   begin the remainder risk-first with `safety`. A shard is not evidence until
-   every result is classified and default `./mutate run <name>` passes.
-2. **Live-prove the resource-production option.** Portable and native-build
-   evidence now retain the exact job through actual output, adopt unchanged
-   matching work without reissue, open that target's contextual source, require
-   the selected-character destination to be separately open, and conserve equal
-   source loss/destination gain. One fresh run proved source-only right-click is
-   a no-op; another stopped after repeated destination-opening plans omitted a
-   causal window-count condition. Prove the whole chain through the supported
-   launcher; no collection or income claim passes without conserved evidence.
-3. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
+1. **Execute the fixture-attested scenario matrix.** Use the bundled starts to
    create source saves; capture dynamic states; use `./dev scenario`, `launch
    --scenario`, and `journey --scenario` across indoor/outdoor, hostile/safe,
    broke/funded, solo/squad, and day/night. Manual labels and raw reruns are not
-   recurrence evidence. Select the first gap supported across verified situations.
-4. **Expand controller-verified contracts.** Most success conditions are still
+   recurrence evidence. Let actual play produce typed, aggregable affordance
+   requests; select the first gap supported across verified situations.
+2. **Close one economic loop.** Extend the live-proven harvest option through
+   a causally verified sale or food purchase without exposing its mechanical
+   substeps. Missing authority becomes a typed affordance request, never a
+   hand-rolled command.
+3. **Expand controller-verified contracts.** Most success conditions are still
    planner-authored, so later correlated state can pass as the intended effect.
    Each contract moved to a controller-owned typed terminal verdict removes one
    class of false success.
-5. **Remote map travel.** No semantic action exists at all; `move_to_character`
+4. **Remote map travel.** No semantic action exists at all; `move_to_character`
    is bounded to the nearby-character query.
-6. **Native identity validation** across recruit, dismiss, reorder, KO, death,
+5. **Native identity validation** across recruit, dismiss, reorder, KO, death,
    save/load, and zone transitions.
-7. **Harden hosted structured-output truncation.** The advisor can return an
+6. **Harden hosted structured-output truncation.** The advisor can return an
    EOF-truncated JSON string within its wall-time allowance; make that failure
    attributable and recoverable without inventing a brief.
+7. **Resume mutation rollout after capability growth.** Mutation remains a
+   required gate, but its attended shard campaign is deliberately paused while
+   play-driven affordances expand the still-small implementation surface.
 
 ## Continuous-planning semantics
 

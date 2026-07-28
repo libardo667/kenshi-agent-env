@@ -154,31 +154,54 @@ namespace
     {
         using namespace KenshiAgentTelemetry;
 
-        if (EvaluateResourceProduction(false, 0, false, false) !=
+        if (EvaluateResourceProduction(false, 0, 5, false, false) !=
             RESOURCE_PRODUCTION_OUTPUT_UNKNOWN)
         {
             return Fail("unknown output inventory did not fail closed");
         }
-        if (EvaluateResourceProduction(true, 0, false, false) !=
+        if (EvaluateResourceProduction(true, 0, 5, false, false) !=
             RESOURCE_PRODUCTION_APPROACHING)
         {
             return Fail("pre-task resource production did not remain pending");
         }
-        if (EvaluateResourceProduction(true, 0, true, false) !=
+        if (EvaluateResourceProduction(true, 0, 5, true, false) !=
             RESOURCE_PRODUCTION_WORKING)
         {
             return Fail("an exact operating goal was mistaken for output");
         }
-        if (EvaluateResourceProduction(true, 1, true, true) !=
+        if (EvaluateResourceProduction(true, 4, 5, true, true) !=
+            RESOURCE_PRODUCTION_WORKING)
+        {
+            return Fail("partial output completed before the requested yield");
+        }
+        if (EvaluateResourceProduction(true, 5, 5, true, true) !=
             RESOURCE_PRODUCTION_OUTPUT_READY)
         {
             return Fail("produced output did not complete the option");
         }
-        if (EvaluateResourceProduction(true, 0, false, true) !=
+        if (EvaluateResourceProduction(true, 0, 5, false, true) !=
             RESOURCE_PRODUCTION_TASK_ENDED)
         {
             return Fail("lost work after task observation did not fail");
         }
+        return 0;
+    }
+
+    int TestNativeCommandRevisionTransportWindow()
+    {
+        using KenshiAgentTelemetry::IsNativeCommandRevisionWithinTransportWindow;
+
+        if (!IsNativeCommandRevisionWithinTransportWindow(100ULL, 100ULL) ||
+            !IsNativeCommandRevisionWithinTransportWindow(100ULL, 102ULL) ||
+            !IsNativeCommandRevisionWithinTransportWindow(100ULL, 104ULL))
+        {
+            return Fail(
+                "ordinary cross-process command transit was rejected as stale");
+        }
+        if (IsNativeCommandRevisionWithinTransportWindow(100ULL, 105ULL))
+            return Fail("an expired native command crossed its revision window");
+        if (IsNativeCommandRevisionWithinTransportWindow(101ULL, 100ULL))
+            return Fail("a future native command basis was accepted");
         return 0;
     }
 
@@ -485,6 +508,10 @@ int main(int argc, char** argv)
     const int resourceProductionResult = TestResourceProductionSemantics();
     if (resourceProductionResult != 0)
         return resourceProductionResult;
+    const int revisionWindowResult =
+        TestNativeCommandRevisionTransportWindow();
+    if (revisionWindowResult != 0)
+        return revisionWindowResult;
     const int timingResult = TestNativeMovementPauseTiming();
     if (timingResult != 0)
         return timingResult;
@@ -638,7 +665,8 @@ int main(int argc, char** argv)
             rejectionReason);
     }
     if (resourceProduction.command != "produce_resource_output" ||
-        resourceProduction.targetId != "entity-natural-resource")
+        resourceProduction.targetId != "entity-natural-resource" ||
+        resourceProduction.minimumOutputQuantity != 5)
     {
         return Fail(
             "valid resource production did not retain its exact target");
@@ -734,6 +762,8 @@ int main(int argc, char** argv)
         expected.get<double>("bearing_degrees");
     acknowledgement.distanceUnits =
         expected.get<double>("distance_units");
+    acknowledgement.minimumOutputQuantity =
+        expected.get<unsigned int>("minimum_output_quantity");
     acknowledgement.selectedCharacterId =
         expected.get_child("selected_character_ids").begin()->second.data();
     acknowledgement.basedOnTelemetrySequence =
@@ -758,6 +788,7 @@ int main(int argc, char** argv)
         actual.get<std::string>("target_id") != "" ||
         !EqualDouble(actual.get<double>("bearing_degrees"), 90.0) ||
         !EqualDouble(actual.get<double>("distance_units"), 250.0) ||
+        actual.get<unsigned int>("minimum_output_quantity") != 1 ||
         actual.get_child("selected_character_ids").begin()->second.data() !=
             "entity-selected" ||
         actual.get<unsigned long long>("accepted_at_telemetry_sequence") != 8)
