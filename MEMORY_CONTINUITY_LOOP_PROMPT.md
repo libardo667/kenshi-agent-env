@@ -23,7 +23,7 @@ ordinary in-game consequences into procedural paralysis; live-input authority re
 in force, but the early slices are portable and need no live input.
 
 **This document is the single source for its own rules.** Invariants are numbered
-(`I1`…`I25`) and stated once. Defects (`D1`…`D10`) and slices cite invariant numbers
+(`I1`…`I26`) and stated once. Defects (`D1`…`D10`) and slices cite invariant numbers
 rather than restating them. If you find yourself needing a rule that is not numbered
 here, that is a gap worth reporting, not a license to invent a fifth phrasing of an
 existing one.
@@ -196,6 +196,13 @@ These are normative and numbered. Cite them; do not paraphrase them.
   was mutation-tested, or that N shards remain unattested, is generated and re-checked
   against the current tree — never a number typed into prose. Evidence that lives only on
   the machine that produced it is not a repository claim.
+- **I26 — Automated pauses replan; they do not end the stream.** Once a non-human
+  safety intervention has cancelled current work and established a causally later,
+  fresh, loaded, capability-backed paused observation, the runtime abandons the stale
+  plan, tells the planner why it intervened, and requests a new plan from that paused
+  revision. Human control that is not explicitly handed back, emergency stop, explicit
+  planner stop, exhausted run budget, and failure to establish a safe observable paused
+  state remain terminal boundaries.
 
 ## Evidence: types and admissibility
 
@@ -517,7 +524,7 @@ Do not skip to the fieldbook because it is more visible. Do not reopen completed
 campaign/migration work unless a defect requires it.
 
 **The feature is complete when every slice below is `complete` and every invariant
-I1–I25 holds under test.** There is no separate completion list.
+I1–I26 holds under test.** There is no separate completion list.
 
 ### Slice 1 — planner-context authority and honest delivery
 
@@ -685,6 +692,12 @@ different entity receiving no old exact-entity memory; a different campaign rece
 none of Ladle's continuity; commitment resolution only after cited closure-capable
 evidence; exact manifests in the evidence bundle; rejection feedback producing a
 corrected next operation rather than unchanged repetition.
+
+A supervised integration run may expose a cross-cutting runtime defect while exercising
+this slice. Such a defect is part of the slice when it violates an invariant here. In
+particular, prove that a verified automated safety pause returns to strategic planning
+under I26 without resuming the cancelled plan; keep human-held control, emergency stop,
+and unobservable cleanup failure terminal.
 
 Compare at least: continuity disabled or pre-feature baseline; scoped lifecycle memory;
 memory plus fieldbook; deterministic versus semantic retrieval if it exists.

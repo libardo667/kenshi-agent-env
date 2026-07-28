@@ -428,6 +428,30 @@ class BlockedPlanner(Planner):
         raise AssertionError("Blocked planner unexpectedly resumed.")
 
 
+class BlockedThenStopPlanner(Planner):
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = asyncio.Event()
+        self.observations: list[Observation] = []
+
+    async def decide(self, observation: Observation) -> PlannerOutput:
+        self.observations.append(observation)
+        if len(self.observations) > 1:
+            return PlannerDecision(
+                intent="Stop after proving automated safety replanning.",
+                rationale="The cancelled planner call must never resume.",
+                action=StopAction(reason="Automated safety replan proof complete."),
+                confidence=1.0,
+            )
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled.set()
+            raise
+        raise AssertionError("Blocked planner unexpectedly resumed.")
+
+
 def runtime_for(
     tmp_path: Path,
     environment: RevisionEnvironment,
@@ -862,7 +886,7 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
     asyncio.run(scenario())
 
 
-def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
+def test_independent_supervisor_replans_after_confirming_an_automated_pause(
     tmp_path: Path,
 ) -> None:
     class UnsafeObserveEnvironment(RevisionEnvironment):
@@ -902,7 +926,7 @@ def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
         plan_clock = FakeClock()
         pump_clock = ManualPumpClock()
         environment = UnsafeObserveEnvironment(clock=plan_clock)
-        planner = BlockedPlanner()
+        planner = BlockedThenStopPlanner()
         runtime, logger = runtime_for(
             tmp_path,
             environment,
@@ -920,21 +944,33 @@ def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
             logger.close()
 
         assert planner.cancelled.is_set()
+        assert len(planner.observations) == 2
         assert summary.terminated
+        assert summary.stop_reason == "Automated safety replan proof complete."
         assert environment.paused is True
+        replanning_observation = planner.observations[1]
+        assert replanning_observation.telemetry is not None
+        assert replanning_observation.telemetry.game.paused is True
+        assert replanning_observation.telemetry_stale is False
+        assert replanning_observation.planner_feedback is not None
+        assert "reflex" in replanning_observation.planner_feedback
+        assert "visible hostile is close" in replanning_observation.planner_feedback
         assert [
             action.paused for action in environment.actions if isinstance(action, PauseAction)
         ] == [True]
         events = read_events(tmp_path / "events.jsonl")
         assert sum(event["event_type"] == "strategic_planner_cancelled" for event in events) == 1
         assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
-        terminal = [
-            event for event in events if event["event_type"] == "safety_supervisor_terminal"
-        ]
-        assert len(terminal) == 1
-        assert terminal[0]["payload"]["status"] == "safe_paused"
+        assert (
+            sum(
+                event["event_type"] == "safety_supervisor_replan_requested"
+                for event in events
+            )
+            == 1
+        )
+        assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 0
         receipts = [event["payload"] for event in events if event["event_type"] == "action_receipt"]
-        assert len(receipts) == 1
+        assert len(receipts) == 2
         assert isinstance(receipts[0]["command_id"], str)
         assert COMMAND_ID_PATTERN.fullmatch(receipts[0]["command_id"])
         assert receipts[0]["causal_revision_advanced"] is True
@@ -945,14 +981,69 @@ def test_independent_supervisor_preempts_a_blocked_planner_and_confirms_pause(
         assert metrics.safety_cleanups_started == 1
         assert metrics.safety_cleanups_completed == 1
         assert metrics.safety_cleanups_failed == 0
-        assert metrics.safety_supervisor_terminals == 1
-        assert metrics.safety_supervisor_safe_paused == 1
+        assert metrics.safety_supervisor_terminals == 0
+        assert metrics.safety_supervisor_safe_paused == 0
         assert metrics.safety_cleanup_success_percentage == 100.0
 
     asyncio.run(scenario())
 
 
-def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
+def test_emergency_stop_remains_terminal_after_confirmed_pause(
+    tmp_path: Path,
+) -> None:
+    class EmergencyStopEnvironment(RevisionEnvironment):
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            self.paused = False
+            return self.observation().model_copy(
+                update={"events": ["emergency_stop_detected"]}
+            )
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = EmergencyStopEnvironment(clock=plan_clock)
+        planner = BlockedThenStopPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await planner.started.wait()
+            pump_clock.advance(0.1)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert planner.cancelled.is_set()
+        assert len(planner.observations) == 1
+        assert summary.terminated
+        assert "Emergency stop ended continuous execution" in summary.stop_reason
+        assert environment.paused is True
+        assert [
+            action.paused for action in environment.actions if isinstance(action, PauseAction)
+        ] == [True]
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(
+            event["event_type"] == "safety_supervisor_replan_requested"
+            for event in events
+        ) == 0
+        terminal = [
+            event for event in events if event["event_type"] == "safety_supervisor_terminal"
+        ]
+        assert len(terminal) == 1
+        assert terminal[0]["payload"]["cause"] == "emergency_stop"
+        assert terminal[0]["payload"]["status"] == "safe_paused"
+
+    asyncio.run(scenario())
+
+
+def test_supervisor_cancels_blocked_plan_then_replans_from_automated_pause(
     tmp_path: Path,
 ) -> None:
     class BlockingMovementEnvironment(RevisionEnvironment):
@@ -987,7 +1078,7 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
         async def observe_without_capture(self) -> Observation:
             self.sequence += 1
             self.unsafe = True
-            return self.observation().model_copy(update={"events": ["human_input_detected"]})
+            return self.observation()
 
         async def step(self, action: Action) -> Transition:
             if isinstance(action, SkillAction):
@@ -1004,7 +1095,18 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
             return await super().step(action)
 
     class MovementPlanner(Planner):
+        def __init__(self) -> None:
+            self.observations: list[Observation] = []
+
         async def decide(self, current: Observation) -> PlannerOutput:
+            self.observations.append(current)
+            if len(self.observations) > 1:
+                return PlannerDecision(
+                    intent="Stop after proving cancelled-plan replanning.",
+                    rationale="The interrupted movement plan must never resume.",
+                    action=StopAction(reason="Cancelled-plan replan proof complete."),
+                    confidence=1.0,
+                )
             return PlanEnvelope(
                 schema_version="1.0",
                 plan_id="blocked-movement",
@@ -1052,10 +1154,11 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
         plan_clock = FakeClock()
         pump_clock = ManualPumpClock()
         environment = BlockingMovementEnvironment(clock=plan_clock)
+        planner = MovementPlanner()
         runtime, logger = runtime_for(
             tmp_path,
             environment,
-            MovementPlanner(),
+            planner,
             plan_clock,
             observation_pump_enabled=True,
             observation_clock=pump_clock,
@@ -1070,6 +1173,19 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
 
         assert environment.movement_cancelled.is_set()
         assert summary.terminated
+        assert summary.stop_reason == "Cancelled-plan replan proof complete."
+        # The middle call is the executor's concurrent option planner. The last
+        # call is a new strategic decision after safety cancelled both the
+        # active plan and that option.
+        assert len(planner.observations) == 3
+        replanning_observation = planner.observations[-1]
+        assert replanning_observation.planner_feedback is not None
+        assert "do not resume the cancelled plan" in replanning_observation.planner_feedback
+        assert len(replanning_observation.recent_plan_outcomes) == 1
+        interrupted_outcome = replanning_observation.recent_plan_outcomes[0]
+        assert interrupted_outcome.plan_id == "blocked-movement"
+        assert interrupted_outcome.disposition.value == "abandoned"
+        assert "Safety preempted the plan (reflex)" in interrupted_outcome.reason
         assert environment.paused is True
         assert (
             len([action for action in environment.actions if isinstance(action, SkillAction)]) == 1
@@ -1088,11 +1204,18 @@ def test_supervisor_cancels_blocked_movement_then_performs_one_safe_cleanup(
             == 1
         )
         assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
-        assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 1
         preemption = next(
             event for event in events if event["event_type"] == "safety_supervisor_preempted"
         )
-        assert preemption["payload"]["cause"] == "human_input"
+        assert preemption["payload"]["cause"] == "reflex"
+        assert (
+            sum(
+                event["event_type"] == "safety_supervisor_replan_requested"
+                for event in events
+            )
+            == 1
+        )
+        assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 0
         assert sum(event["event_type"] == "option_prepared" for event in events) == 1
         assert sum(event["event_type"] == "option_started" for event in events) == 1
         assert sum(event["event_type"] == "option_cancelled" for event in events) == 1

@@ -867,6 +867,7 @@ class AgentRuntime:
                         success,
                         stop_reason,
                         safety_supervisor,
+                        preemption_feedback,
                     ) = await self._handle_preemption_and_maybe_handoff(
                         pending_preemption,
                         state_store,
@@ -874,6 +875,10 @@ class AgentRuntime:
                         remaining_run_actions=max_steps - steps_completed,
                     )
                     steps_completed += completed
+                    if preemption_feedback is not None:
+                        planner_feedback = preemption_feedback
+                        consecutive_replans = 0
+                        reset_replan_failure()
                     continue
                 reflex = pending_reflex or self.reflexes.decide(observation)
                 pending_reflex = None
@@ -945,6 +950,7 @@ class AgentRuntime:
                             success,
                             stop_reason,
                             safety_supervisor,
+                            preemption_feedback,
                         ) = await self._handle_preemption_and_maybe_handoff(
                             preemption,
                             state_store,
@@ -952,6 +958,10 @@ class AgentRuntime:
                             remaining_run_actions=max_steps - steps_completed,
                         )
                         steps_completed += completed
+                        if preemption_feedback is not None:
+                            planner_feedback = preemption_feedback
+                            consecutive_replans = 0
+                            reset_replan_failure()
                         continue
                     assert authored_output is not None
                     output = authored_output.output
@@ -1322,6 +1332,7 @@ class AgentRuntime:
                         success,
                         stop_reason,
                         safety_supervisor,
+                        preemption_feedback,
                     ) = await self._handle_preemption_and_maybe_handoff(
                         preemption,
                         state_store,
@@ -1329,6 +1340,10 @@ class AgentRuntime:
                         remaining_run_actions=max_steps - steps_completed,
                     )
                     steps_completed += completed
+                    if preemption_feedback is not None:
+                        planner_feedback = preemption_feedback
+                        consecutive_replans = 0
+                        reset_replan_failure()
                     continue
                 assert result is not None
                 observation = result.observation
@@ -1495,6 +1510,7 @@ class AgentRuntime:
         bool | None,
         str,
         SafetySupervisor | None,
+        str | None,
     ]:
         (
             observation,
@@ -1502,7 +1518,19 @@ class AgentRuntime:
             terminated,
             success,
             stop_reason,
+            pause_confirmed,
         ) = await self._handle_safety_preemption(preemption, state_store)
+        if not pause_confirmed:
+            return (
+                observation,
+                completed,
+                terminated,
+                success,
+                stop_reason,
+                supervisor,
+                None,
+            )
+
         can_offer_takeover = (
             preemption.cause is SafetyCause.HUMAN_INPUT
             and self.guard.config.automatic_takeover_enabled
@@ -1513,30 +1541,191 @@ class AgentRuntime:
             and observation.telemetry.game.paused is True
             and "game.pause" in observation.telemetry.capabilities
         )
-        if not can_offer_takeover:
+        if preemption.cause is SafetyCause.HUMAN_INPUT and not can_offer_takeover:
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status="safe_paused",
+                reason=stop_reason,
+            )
             return (
                 observation,
                 completed,
-                terminated,
+                True,
                 success,
                 stop_reason,
                 supervisor,
+                None,
+            )
+
+        if can_offer_takeover:
+            if supervisor is not None:
+                await self._finish_safety_supervisor(supervisor)
+                supervisor = None
+            resumed, observation, stop_reason = await self._await_control_takeover(
+                state_store,
+                preemption,
+            )
+            if not resumed:
+                self._log_safety_terminal(
+                    preemption,
+                    observation,
+                    status="human_control",
+                    reason=stop_reason,
+                )
+                return observation, completed, True, None, stop_reason, None, None
+
+            if self.guard.config.supervisor_enabled:
+                supervisor = self._new_safety_supervisor(state_store)
+                await supervisor.start()
+            feedback = (
+                "Human input cancelled the previous work. Control returned after "
+                "fresh paused-state revalidation; author a new plan from the current "
+                "revision."
+            )
+            return (
+                observation,
+                completed,
+                False,
+                None,
+                stop_reason,
+                supervisor,
+                feedback,
+            )
+
+        if preemption.cause is SafetyCause.EMERGENCY_STOP:
+            stop_reason = (
+                "Emergency stop ended continuous execution after Kenshi reached "
+                "a confirmed safe pause."
+            )
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status="safe_paused",
+                reason=stop_reason,
+            )
+            return (
+                observation,
+                completed,
+                True,
+                None,
+                stop_reason,
+                supervisor,
+                None,
+            )
+
+        if remaining_run_actions <= completed:
+            stop_reason = (
+                "The automated safety pause was confirmed, but the run action "
+                "budget is exhausted."
+            )
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status="safe_paused",
+                reason=stop_reason,
+            )
+            return (
+                observation,
+                completed,
+                True,
+                None,
+                stop_reason,
+                supervisor,
+                None,
+            )
+
+        replan_errors = self._automated_pause_replan_errors(
+            observation,
+            preemption,
+            state_store,
+        )
+        if replan_errors:
+            stop_reason = (
+                "The automated safety pause was confirmed, but strategic work "
+                "cannot safely resume: " + "; ".join(replan_errors)
+            )
+            self._log_safety_terminal(
+                preemption,
+                observation,
+                status="replan_unavailable",
+                reason=stop_reason,
+            )
+            return (
+                observation,
+                completed,
+                True,
+                None,
+                stop_reason,
+                supervisor,
+                None,
             )
 
         if supervisor is not None:
             await self._finish_safety_supervisor(supervisor)
             supervisor = None
-        resumed, observation, stop_reason = await self._await_control_takeover(
-            state_store,
-            preemption,
-        )
-        if not resumed:
-            return observation, completed, True, None, stop_reason, None
-
         if self.guard.config.supervisor_enabled:
             supervisor = self._new_safety_supervisor(state_store)
             await supervisor.start()
-        return observation, completed, False, None, stop_reason, supervisor
+        planner_feedback = (
+            "An automated safety intervention cancelled the previous work and "
+            f"paused Kenshi ({preemption.cause.value}): "
+            f"{self._bounded_text(preemption.reason, 700)}. The paused state is "
+            "fresh and confirmed. Reassess the current observation and author a "
+            "new plan; do not resume the cancelled plan."
+        )
+        self.logger.write(
+            "safety_supervisor_replan_requested",
+            step_index=observation.step_index,
+            payload={
+                "cause": preemption.cause.value,
+                "reason": preemption.reason,
+                "planner_feedback": planner_feedback,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "control_mode": observation.control_mode.value,
+            },
+        )
+        return (
+            observation,
+            completed,
+            False,
+            None,
+            stop_reason,
+            supervisor,
+            planner_feedback,
+        )
+
+    def _automated_pause_replan_errors(
+        self,
+        observation: Observation,
+        preemption: SafetyPreemption,
+        state_store: WorldStateStore,
+    ) -> list[str]:
+        errors: list[str] = []
+        telemetry = observation.telemetry
+        if preemption.cause in {
+            SafetyCause.HUMAN_INPUT,
+            SafetyCause.EMERGENCY_STOP,
+        }:
+            errors.append("the intervention belongs to a human-control boundary")
+        if observation.control_mode is not self.control_mode:
+            errors.append("control mode changed")
+        if observation.telemetry_stale:
+            errors.append("telemetry is stale")
+        if telemetry is None:
+            errors.append("telemetry is unavailable")
+            return errors
+        if not telemetry.game.loaded:
+            errors.append("game is not loaded")
+        if telemetry.game.paused is not True:
+            errors.append("game is not confirmed paused")
+        if "game.pause" not in telemetry.capabilities:
+            errors.append("game.pause capability is unavailable")
+        if not observation.world_revision.is_later_than(preemption.observation.world_revision):
+            errors.append("world revision did not advance after safety preemption")
+        if state_store.active_command is not None:
+            errors.append("a command is still active")
+        return errors
 
     async def _await_control_takeover(
         self,
@@ -1750,7 +1939,7 @@ class AgentRuntime:
         self,
         preemption: SafetyPreemption,
         state_store: WorldStateStore,
-    ) -> tuple[Observation, int, bool, bool | None, str]:
+    ) -> tuple[Observation, int, bool, bool | None, str, bool]:
         observation = state_store.latest or preemption.observation
         self.logger.write(
             "safety_supervisor_preempted",
@@ -1791,7 +1980,7 @@ class AgentRuntime:
                 status=status,
                 reason=preemption.reason,
             )
-            return observation, 0, True, None, preemption.reason
+            return observation, 0, True, None, preemption.reason, False
 
         action = preemption.decision.action
         try:
@@ -1814,7 +2003,7 @@ class AgentRuntime:
                 status="cleanup_failed",
                 reason=reason,
             )
-            return observation, 0, True, None, reason
+            return observation, 0, True, None, reason, False
 
         if state_store.active_command is not None:
             state_store.fail_active_command(
@@ -1866,7 +2055,7 @@ class AgentRuntime:
                 status="cleanup_failed",
                 reason=reason,
             )
-            return observation, 1, True, None, reason
+            return observation, 1, True, None, reason, False
 
         latest = self._record_transition(
             preemption.decision,
@@ -1899,17 +2088,13 @@ class AgentRuntime:
                 status="cleanup_failed",
                 reason=reason,
             )
-            return latest, 1, True, None, reason
+            return latest, 1, True, None, reason, False
 
         verified = self._is_causally_paused(latest, start_revision)
         if not verified:
             try:
                 latest = await state_store.wait_for(
-                    lambda candidate: (
-                        candidate.telemetry is not None
-                        and candidate.telemetry.game.paused is True
-                        and "game.pause" in candidate.telemetry.capabilities
-                    ),
+                    self._is_usable_paused_observation,
                     after_revision=start_revision,
                     timeout_seconds=(self.guard.config.supervisor_pause_timeout_seconds),
                 )
@@ -1939,10 +2124,10 @@ class AgentRuntime:
                 status="cleanup_failed",
                 reason=reason,
             )
-            return latest, 1, True, None, reason
+            return latest, 1, True, None, reason, False
 
         reason = (
-            "Safety supervisor stopped the run and Kenshi is confirmed paused "
+            "Safety supervisor paused Kenshi and confirmed the result "
             "(verified on a fresh telemetry reading, not a stale one)."
         )
         self.logger.write(
@@ -1956,13 +2141,7 @@ class AgentRuntime:
                 "control_mode": latest.control_mode.value,
             },
         )
-        self._log_safety_terminal(
-            preemption,
-            latest,
-            status="safe_paused",
-            reason=reason,
-        )
-        return latest, 1, True, None, reason
+        return latest, 1, False, None, reason, True
 
     def _log_safety_terminal(
         self,
@@ -1991,7 +2170,15 @@ class AgentRuntime:
     ) -> bool:
         return bool(
             observation.world_revision.is_later_than(after_revision)
+            and AgentRuntime._is_usable_paused_observation(observation)
+        )
+
+    @staticmethod
+    def _is_usable_paused_observation(observation: Observation) -> bool:
+        return bool(
+            not observation.telemetry_stale
             and observation.telemetry is not None
+            and observation.telemetry.game.loaded
             and observation.telemetry.game.paused is True
             and "game.pause" in observation.telemetry.capabilities
         )
