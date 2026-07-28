@@ -33,6 +33,18 @@ class _MetricValues(TypedDict):
     memory_reads_failed: int
     memory_read_records: int
     memory_read_truncations: int
+    fieldbook_operations_accepted: int
+    fieldbook_operations_rejected: int
+    fieldbook_operations_no_op: int
+    fieldbook_operations_failed: int
+    fieldbook_projects_created: int
+    fieldbook_entries_appended: int
+    fieldbook_reads: int
+    fieldbook_reads_completed: int
+    fieldbook_reads_unavailable: int
+    fieldbook_reads_failed: int
+    fieldbook_read_entries: int
+    fieldbook_read_truncations: int
     plans_proposed: int
     plans_accepted: int
     plans_rejected: int
@@ -124,6 +136,21 @@ class LogMetrics:
     memory_reads_failed: int = 0
     memory_read_records: int = 0
     memory_read_truncations: int = 0
+    fieldbook_operations_accepted: int = 0
+    fieldbook_operations_rejected: int = 0
+    fieldbook_operations_no_op: int = 0
+    fieldbook_operations_failed: int = 0
+    fieldbook_projects_created: int = 0
+    fieldbook_entries_appended: int = 0
+    fieldbook_lifecycle_transitions: dict[str, int] = field(
+        default_factory=dict
+    )
+    fieldbook_reads: int = 0
+    fieldbook_reads_completed: int = 0
+    fieldbook_reads_unavailable: int = 0
+    fieldbook_reads_failed: int = 0
+    fieldbook_read_entries: int = 0
+    fieldbook_read_truncations: int = 0
     plans_proposed: int = 0
     plans_accepted: int = 0
     plans_rejected: int = 0
@@ -209,6 +236,7 @@ def evaluate_log(path: Path) -> LogMetrics:
     native_acknowledgements: dict[str, dict[str, object]] = {}
     dialogue_approaches_by_target: dict[str, int] = {}
     transitions: dict[str, int] = {}
+    fieldbook_transitions: dict[str, int] = {}
 
     def retain_native_acknowledgement(candidate: object) -> None:
         if not isinstance(candidate, dict):
@@ -243,6 +271,18 @@ def evaluate_log(path: Path) -> LogMetrics:
         "memory_reads_failed": 0,
         "memory_read_records": 0,
         "memory_read_truncations": 0,
+        "fieldbook_operations_accepted": 0,
+        "fieldbook_operations_rejected": 0,
+        "fieldbook_operations_no_op": 0,
+        "fieldbook_operations_failed": 0,
+        "fieldbook_projects_created": 0,
+        "fieldbook_entries_appended": 0,
+        "fieldbook_reads": 0,
+        "fieldbook_reads_completed": 0,
+        "fieldbook_reads_unavailable": 0,
+        "fieldbook_reads_failed": 0,
+        "fieldbook_read_entries": 0,
+        "fieldbook_read_truncations": 0,
         "plans_proposed": 0,
         "plans_accepted": 0,
         "plans_rejected": 0,
@@ -402,6 +442,45 @@ def evaluate_log(path: Path) -> LogMetrics:
                     values["memory_read_records"] += len(records)
                 if result.get("truncated") is True:
                     values["memory_read_truncations"] += 1
+        elif event_type == "fieldbook_receipt":
+            status = payload.get("status")
+            operation = payload.get("operation")
+            transition = (
+                str(operation.get("operation"))
+                if isinstance(operation, dict)
+                else "unknown"
+            )
+            if status == "accepted":
+                values["fieldbook_operations_accepted"] += 1
+                fieldbook_transitions[transition] = (
+                    fieldbook_transitions.get(transition, 0) + 1
+                )
+                if transition == "create_project":
+                    values["fieldbook_projects_created"] += 1
+                elif transition == "append_entry":
+                    values["fieldbook_entries_appended"] += 1
+            elif status == "rejected":
+                values["fieldbook_operations_rejected"] += 1
+            elif status == "no_op":
+                values["fieldbook_operations_no_op"] += 1
+            elif status == "failed":
+                values["fieldbook_operations_failed"] += 1
+        elif event_type == "fieldbook_read":
+            values["fieldbook_reads"] += 1
+            result = payload.get("result")
+            if isinstance(result, dict):
+                status = result.get("status")
+                if status == "completed":
+                    values["fieldbook_reads_completed"] += 1
+                elif status == "unavailable":
+                    values["fieldbook_reads_unavailable"] += 1
+                elif status == "failed":
+                    values["fieldbook_reads_failed"] += 1
+                entries = result.get("entries")
+                if isinstance(entries, list):
+                    values["fieldbook_read_entries"] += len(entries)
+                if result.get("truncated") is True:
+                    values["fieldbook_read_truncations"] += 1
         elif event_type == "plan_proposed":
             values["plans_proposed"] += 1
         elif event_type == "plan_accepted":
@@ -604,6 +683,9 @@ def evaluate_log(path: Path) -> LogMetrics:
             max_dialogue_approach_attempts_per_target=(max_dialogue_approach_attempts_per_target),
             dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
             memory_lifecycle_transitions=dict(sorted(transitions.items())),
+            fieldbook_lifecycle_transitions=dict(
+                sorted(fieldbook_transitions.items())
+            ),
             native_command_acknowledgements=native_command_acknowledgement_count,
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
@@ -621,6 +703,9 @@ def evaluate_log(path: Path) -> LogMetrics:
         max_dialogue_approach_attempts_per_target=(max_dialogue_approach_attempts_per_target),
         dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
         memory_lifecycle_transitions=dict(sorted(transitions.items())),
+        fieldbook_lifecycle_transitions=dict(
+            sorted(fieldbook_transitions.items())
+        ),
         native_command_acknowledgements=native_command_acknowledgement_count,
         mean_planner_latency_seconds=fmean(ordered),
         p50_planner_latency_seconds=median(ordered),

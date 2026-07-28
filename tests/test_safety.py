@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
@@ -9,6 +11,9 @@ from kenshi_agent.models import (
     ControlMode,
     CoordinateSpace,
     Disposition,
+    FieldbookProjectIndex,
+    FieldbookProjectKind,
+    FieldbookProjectStatus,
     GameBinding,
     GameState,
     KeyAction,
@@ -21,6 +26,8 @@ from kenshi_agent.models import (
     Observation,
     PauseAction,
     PurchaseItemAction,
+    ReadFieldbookAction,
+    RecallMemoryAction,
     RequestAffordanceAction,
     ScrollAction,
     SkillAction,
@@ -278,6 +285,8 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
                 *safety_config().allow_action_kinds,
                 "consult_advisor",
                 "request_affordance",
+                "recall_memory",
+                "read_fieldbook",
             ],
             "max_actions_per_minute": 1,
         }
@@ -295,8 +304,47 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
         why_needed="The current action vocabulary cannot open the map.",
         evidence="The requested binding is absent from the observation.",
     )
+    recall = RecallMemoryAction(query="gate")
+    project_id = "fbp-" + "1" * 32
+    fieldbook_observation = observation.model_copy(
+        update={
+            "fieldbook_projects": [
+                FieldbookProjectIndex(
+                    project_id=project_id,
+                    title="Route",
+                    kind=FieldbookProjectKind.ROUTE_ATLAS,
+                    status=FieldbookProjectStatus.ACTIVE,
+                    short_summary="Known route.",
+                    entry_count=1,
+                    updated_at=datetime.now(UTC),
+                    selected=False,
+                )
+            ]
+        }
+    )
+    read_fieldbook = ReadFieldbookAction(project_id=project_id)
     assert guard.validate(advisor, observation) == advisor
     assert guard.validate(affordance, observation) == affordance
+    assert guard.validate(recall, observation) == recall
+    assert guard.validate(read_fieldbook, fieldbook_observation) == read_fieldbook
+
+
+def test_fieldbook_read_fails_closed_on_an_undelivered_project_identity() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_action_kinds": [
+                *safety_config().allow_action_kinds,
+                "read_fieldbook",
+            ]
+        }
+    )
+    guard = ActionGuard(config, MacroRegistry({}))
+
+    with pytest.raises(SafetyViolation, match="not present"):
+        guard.validate(
+            ReadFieldbookAction(project_id="fbp-" + "1" * 32),
+            Observation(run_id="run", step_index=0, mode="mock"),
+        )
 
 
 def test_live_nonpurchase_actions_never_reserve_purchase_authority() -> None:

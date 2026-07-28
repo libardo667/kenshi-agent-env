@@ -20,6 +20,7 @@ from .models import (
     Observation,
     PauseAction,
     PurchaseItemAction,
+    ReadFieldbookAction,
     RecallMemoryAction,
     RequestAffordanceAction,
     ScrollAction,
@@ -246,7 +247,12 @@ class ActionGuard:
             else 0
             if isinstance(
                 action,
-                (ConsultAdvisorAction, RequestAffordanceAction, RecallMemoryAction),
+                (
+                    ConsultAdvisorAction,
+                    RequestAffordanceAction,
+                    RecallMemoryAction,
+                    ReadFieldbookAction,
+                ),
             )
             else 1
         )
@@ -684,6 +690,28 @@ class ActionGuard:
                 raise SafetyViolation(  # mutation: reason
                     "Direct live unpause is blocked; "  # mutation: reason
                     "use a bounded movement pulse."  # mutation: reason
+                )
+        if isinstance(action, ReadFieldbookAction) and action.project_id is not None:
+            available_project_ids = {
+                project.project_id for project in observation.fieldbook_projects
+            }
+            if observation.active_fieldbook_project is not None:
+                available_project_ids.add(
+                    observation.active_fieldbook_project.project_id
+                )
+            if observation.fieldbook_read is not None:
+                available_project_ids.update(
+                    observation.fieldbook_read.project_ids
+                )
+            available_project_ids.update(
+                receipt.project_id
+                for receipt in observation.recent_fieldbook_receipts
+                if receipt.project_id is not None
+            )
+            if action.project_id not in available_project_ids:
+                raise SafetyViolation(  # mutation: reason
+                    f"Fieldbook project {action.project_id!r} is not present "
+                    "in the current planner-visible fieldbook context."
                 )
         if (
             isinstance(action, UseGameBindingAction)

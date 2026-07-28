@@ -176,6 +176,7 @@ safety:
     - wait
     - skill
     - recall_memory
+    - read_fieldbook
   allow_skills:
     - open_map
     - zoom_map_in
@@ -210,6 +211,7 @@ memory:
   # loud general fact cannot push out what the plan is actually for.
   max_commitment_memories: 4
   max_hypothesis_memories: 2
+  max_fieldbook_projects: 8
   minimum_salience: 0.2
 
 macros:

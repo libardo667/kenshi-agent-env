@@ -498,6 +498,49 @@ def test_semantic_budget_never_hides_a_quarantined_continuity_store() -> None:
     assert document["continuity_writes_degraded_reason"] == "Writes are quarantined."
 
 
+@pytest.mark.parametrize("adverse_status", ["rejected", "failed"])
+def test_fieldbook_budget_preserves_active_read_and_latest_adverse_receipt(
+    adverse_status: str,
+) -> None:
+    original = json.loads(_oversized_observation().model_dump_json())
+    original["fieldbook_projects"] = [
+        {
+            "project_id": "fbp-" + f"{index:x}" * 32,
+            "title": f"Project {index}",
+        }
+        for index in range(1, 4)
+    ]
+    original["active_fieldbook_project"] = {
+        "project_id": "fbp-" + "1" * 32,
+        "summary": "The selected project's bounded summary.",
+    }
+    original["fieldbook_read"] = {
+        "receipt_id": "fbr-" + "1" * 32,
+        "entries": [{"entry_id": "fbe-" + "1" * 32}],
+    }
+    original["recent_fieldbook_receipts"] = [
+        {
+            "receipt_id": "fbor-" + "1" * 32,
+            "status": adverse_status,
+        },
+        {
+            "receipt_id": "fbor-" + "2" * 32,
+            "status": "accepted",
+        },
+    ]
+
+    retained = irreducible_payload(original)
+
+    assert retained["fieldbook_projects"] == []
+    assert retained["active_fieldbook_project"] == (
+        original["active_fieldbook_project"]
+    )
+    assert retained["fieldbook_read"] == original["fieldbook_read"]
+    assert retained["recent_fieldbook_receipts"] == [
+        original["recent_fieldbook_receipts"][0]
+    ]
+
+
 def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
     observation = _oversized_observation()
     minimum, _ = _minimum_fitting_budget(observation)

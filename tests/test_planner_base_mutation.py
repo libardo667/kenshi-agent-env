@@ -98,6 +98,24 @@ def _observation() -> Observation:
                 action_outcomes=[SimpleNamespace(outcome_id="ao-1")],
                 plan_outcomes=[SimpleNamespace(plan_outcome_id="po-1")],
             ),
+            "fieldbook_projects": [
+                SimpleNamespace(project_id="fbp-" + "1" * 32)
+            ],
+            "active_fieldbook_project": SimpleNamespace(
+                project_id="fbp-" + "2" * 32
+            ),
+            "recent_fieldbook_receipts": [
+                SimpleNamespace(
+                    receipt_id="fbor-" + "1" * 32,
+                    project_id="fbp-" + "3" * 32,
+                    entry_id="fbe-" + "3" * 32,
+                )
+            ],
+            "fieldbook_read": SimpleNamespace(
+                receipt_id="fbr-" + "1" * 32,
+                project_ids=["fbp-" + "4" * 32],
+                entry_ids=["fbe-" + "4" * 32],
+            ),
             "advisor": SimpleNamespace(
                 latest_brief=SimpleNamespace(brief_id="advisor-" + "a" * 32)
             ),
@@ -142,6 +160,18 @@ def test_full_manifest_is_the_exact_delivered_identity_projection(
         memory_ids=["mem-receipt", "mem-search", "mem-visible"],
         continuity_receipt_ids=["cor-" + "1" * 32],
         memory_read_receipt_ids=["mrr-" + "1" * 32],
+        fieldbook_project_ids=[
+            "fbp-" + "1" * 32,
+            "fbp-" + "2" * 32,
+            "fbp-" + "3" * 32,
+            "fbp-" + "4" * 32,
+        ],
+        fieldbook_entry_ids=[
+            "fbe-" + "3" * 32,
+            "fbe-" + "4" * 32,
+        ],
+        fieldbook_receipt_ids=["fbor-" + "1" * 32],
+        fieldbook_read_receipt_ids=["fbr-" + "1" * 32],
         advisor_brief_ids=["advisor-" + "a" * 32],
         candidate_memory_count=3,
         payload_characters=None,
@@ -187,6 +217,30 @@ def test_budgeted_manifest_is_the_exact_final_json_projection(
             {"receipt_id": 4, "memory_id": 5},
             "invalid",
         ],
+        "fieldbook_projects": [
+            {"project_id": "fbp-" + "5" * 32},
+            {"project_id": 6},
+        ],
+        "active_fieldbook_project": {
+            "project_id": "fbp-" + "6" * 32,
+        },
+        "fieldbook_read": {
+            "receipt_id": "fbr-" + "2" * 32,
+            "project": {"project_id": "fbp-" + "7" * 32},
+            "entries": [
+                {
+                    "project_id": "fbp-" + "7" * 32,
+                    "entry_id": "fbe-" + "7" * 32,
+                }
+            ],
+        },
+        "recent_fieldbook_receipts": [
+            {
+                "receipt_id": "fbor-" + "2" * 32,
+                "project_id": "fbp-" + "8" * 32,
+                "entry_id": "fbe-" + "8" * 32,
+            }
+        ],
         "advisor": {
             "latest_brief": {"brief_id": "advisor-" + "b" * 32},
         },
@@ -217,6 +271,18 @@ def test_budgeted_manifest_is_the_exact_final_json_projection(
         ],
         continuity_receipt_ids=["cor-" + "2" * 32],
         memory_read_receipt_ids=["mrr-" + "2" * 32],
+        fieldbook_project_ids=[
+            "fbp-" + "5" * 32,
+            "fbp-" + "6" * 32,
+            "fbp-" + "7" * 32,
+            "fbp-" + "8" * 32,
+        ],
+        fieldbook_entry_ids=[
+            "fbe-" + "7" * 32,
+            "fbe-" + "8" * 32,
+        ],
+        fieldbook_receipt_ids=["fbor-" + "2" * 32],
+        fieldbook_read_receipt_ids=["fbr-" + "2" * 32],
         advisor_brief_ids=["advisor-" + "b" * 32],
         candidate_memory_count=3,
         payload_characters=1234,

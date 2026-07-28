@@ -139,6 +139,10 @@ def planner_context_manifest(
         memory_ids: set[str] = set()
         continuity_receipt_ids: set[str] = set()
         memory_read_receipt_ids: set[str] = set()
+        fieldbook_project_ids: set[str] = set()
+        fieldbook_entry_ids: set[str] = set()
+        fieldbook_receipt_ids: set[str] = set()
+        fieldbook_read_receipt_ids: set[str] = set()
         advisor_brief_ids: set[str] = set()
         current_target_ids: set[str] = set()
         current_observation_delivered = False
@@ -178,6 +182,33 @@ def planner_context_manifest(
             if observation.memory_search is not None
             else set()
         )
+        fieldbook_project_ids = {
+            project.project_id for project in observation.fieldbook_projects
+        }
+        if observation.active_fieldbook_project is not None:
+            fieldbook_project_ids.add(
+                observation.active_fieldbook_project.project_id
+            )
+        fieldbook_entry_ids = set()
+        if observation.fieldbook_read is not None:
+            fieldbook_project_ids.update(
+                observation.fieldbook_read.project_ids
+            )
+            fieldbook_entry_ids.update(observation.fieldbook_read.entry_ids)
+        for receipt in observation.recent_fieldbook_receipts:
+            if receipt.project_id is not None:
+                fieldbook_project_ids.add(receipt.project_id)
+            if receipt.entry_id is not None:
+                fieldbook_entry_ids.add(receipt.entry_id)
+        fieldbook_receipt_ids = {
+            receipt.receipt_id
+            for receipt in observation.recent_fieldbook_receipts
+        }
+        fieldbook_read_receipt_ids = (
+            {observation.fieldbook_read.receipt_id}
+            if observation.fieldbook_read is not None
+            else set()
+        )
         latest_brief = observation.advisor.latest_brief
         advisor_brief_ids = (
             {latest_brief.brief_id} if latest_brief is not None else set()
@@ -205,6 +236,48 @@ def planner_context_manifest(
             {search["receipt_id"]}
             if isinstance(search, dict)
             and isinstance(search.get("receipt_id"), str)
+            else set()
+        )
+        fieldbook_project_ids = _string_ids(
+            payload.get("fieldbook_projects"),
+            "project_id",
+        )
+        active_fieldbook = payload.get("active_fieldbook_project")
+        if isinstance(active_fieldbook, dict):
+            active_project_id = active_fieldbook.get("project_id")
+            if isinstance(active_project_id, str):
+                fieldbook_project_ids.add(active_project_id)
+        fieldbook_entry_ids = set()
+        fieldbook_read = payload.get("fieldbook_read")
+        if isinstance(fieldbook_read, dict):
+            fieldbook_project_ids.update(
+                _string_ids(fieldbook_read.get("entries"), "project_id")
+            )
+            fieldbook_entry_ids.update(
+                _string_ids(fieldbook_read.get("entries"), "entry_id")
+            )
+            read_project = fieldbook_read.get("project")
+            if isinstance(read_project, dict):
+                read_project_id = read_project.get("project_id")
+                if isinstance(read_project_id, str):
+                    fieldbook_project_ids.add(read_project_id)
+        for receipt in payload.get("recent_fieldbook_receipts", []):
+            if not isinstance(receipt, dict):
+                continue
+            receipt_project_id = receipt.get("project_id")
+            receipt_entry_id = receipt.get("entry_id")
+            if isinstance(receipt_project_id, str):
+                fieldbook_project_ids.add(receipt_project_id)
+            if isinstance(receipt_entry_id, str):
+                fieldbook_entry_ids.add(receipt_entry_id)
+        fieldbook_receipt_ids = _string_ids(
+            payload.get("recent_fieldbook_receipts"),
+            "receipt_id",
+        )
+        fieldbook_read_receipt_ids = (
+            {fieldbook_read["receipt_id"]}
+            if isinstance(fieldbook_read, dict)
+            and isinstance(fieldbook_read.get("receipt_id"), str)
             else set()
         )
         for receipt in payload.get("recent_continuity_receipts", []):
@@ -240,6 +313,10 @@ def planner_context_manifest(
         memory_ids=sorted(memory_ids),
         continuity_receipt_ids=sorted(continuity_receipt_ids),
         memory_read_receipt_ids=sorted(memory_read_receipt_ids),
+        fieldbook_project_ids=sorted(fieldbook_project_ids),
+        fieldbook_entry_ids=sorted(fieldbook_entry_ids),
+        fieldbook_receipt_ids=sorted(fieldbook_receipt_ids),
+        fieldbook_read_receipt_ids=sorted(fieldbook_read_receipt_ids),
         advisor_brief_ids=sorted(advisor_brief_ids),
         candidate_memory_count=len(candidate_memory_ids),
         payload_characters=payload_characters,

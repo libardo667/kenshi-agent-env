@@ -29,7 +29,10 @@ from kenshi_agent.models import (
     ConditionKind,
     ConditionOperator,
     ControlMode,
+    CreateFieldbookProjectOperation,
     Disposition,
+    FieldbookEntryKind,
+    FieldbookProjectKind,
     GameState,
     IdempotencyPolicy,
     InputBoundaryDecision,
@@ -49,6 +52,7 @@ from kenshi_agent.models import (
     PlanningMode,
     PlanPatch,
     PlanStep,
+    ReadFieldbookAction,
     RiskBudget,
     SemanticActionReceipt,
     SetSpeedAction,
@@ -3258,6 +3262,13 @@ def _future_speed_patch(current: Observation, step_id: str) -> PlanPatch:
         ],
         rationale="The future speed choice can be updated without restarting movement.",
         continuity_operations=[_keep_a_route_lesson()],  # type: ignore[list-item]
+        fieldbook_operations=[
+            CreateFieldbookProjectOperation(
+                kind=FieldbookProjectKind.ROUTE_ATLAS,
+                title="Revised movement route",
+                summary="The movement option required a mid-route revision.",
+            )
+        ],
     )
 
 
@@ -3305,6 +3316,7 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
             environment.release_movement.set()
             await asyncio.wait_for(run, timeout=1.0)
             kept = [record.content for record in store.recall(limit=8)]
+            projects = store.fieldbook.list_projects()
         finally:
             store.close()
             logger.close()
@@ -3312,6 +3324,9 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
         events = read_events(tmp_path / "events.jsonl")
         assert sum(event["event_type"] == "plan_patched" for event in events) == 1
         assert kept == ["The speed change had to be revised mid-option."]
+        assert [project.title for project in projects] == [
+            "Revised movement route"
+        ]
         receipts = [
             event["payload"]
             for event in events
@@ -3327,6 +3342,16 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
         assert receipts[0]["authored_context_id"] == contexts[1]["context_id"]
         assert receipts[0]["authored_revision"] == contexts[1]["authored_revision"]
         assert receipts[0]["commit_revision"] != receipts[0]["authored_revision"]
+        fieldbook_receipts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "fieldbook_receipt"
+        ]
+        assert [receipt["origin"] for receipt in fieldbook_receipts] == ["patch"]
+        assert fieldbook_receipts[0]["status"] == "accepted"
+        assert fieldbook_receipts[0]["authored_context_id"] == (
+            contexts[1]["context_id"]
+        )
 
     asyncio.run(scenario())
 
@@ -3380,6 +3405,7 @@ def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
             environment.release_movement.set()
             await asyncio.wait_for(run, timeout=1.0)
             kept = store.recall(limit=8)
+            projects = store.fieldbook.list_projects()
         finally:
             store.close()
             logger.close()
@@ -3388,9 +3414,123 @@ def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
         assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 1
         assert sum(event["event_type"] == "plan_patched" for event in events) == 0
         assert kept == []
+        assert projects == []
         assert not any(
             event["event_type"] == "continuity_receipt" for event in events
         )
+        assert not any(
+            event["event_type"] == "fieldbook_receipt" for event in events
+        )
+
+    asyncio.run(scenario())
+
+
+def test_a_continuous_fieldbook_read_reaches_the_replacing_planner_without_game_input(
+    tmp_path: Path,
+) -> None:
+    seen_reads: list[object] = []
+
+    class ReadingPlanner(Planner):
+        def __init__(self, project_id: str) -> None:
+            self.project_id = project_id
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            seen_reads.append(current.fieldbook_read)
+            if self.calls == 1:
+                return PlanEnvelope(
+                    schema_version="1.0",
+                    plan_id="read-fieldbook",
+                    plan_version=1,
+                    objective="Reopen the bounded route entry.",
+                    control_mode=current.control_mode,
+                    based_on_revision=current.world_revision,
+                    assumptions=[fresh()],
+                    steps=[
+                        PlanStep(
+                            step_id="read-route",
+                            action=ReadFieldbookAction(
+                                project_id=self.project_id,
+                                max_entries=2,
+                            ),
+                            preconditions=[fresh()],
+                            success_conditions=[],
+                            failure_conditions=[],
+                            timeout_seconds=1.0,
+                            retry_budget=0,
+                            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                        )
+                    ],
+                    entry_step_id="read-route",
+                    max_actions=1,
+                    max_wall_seconds=3.0,
+                    max_game_seconds=3.0,
+                    risk_budget=RiskBudget(
+                        max_pointer_actions=0,
+                        max_purchase_actions=0,
+                        max_native_assisted_actions=0,
+                    ),
+                )
+            return PlannerDecision(
+                intent="Stop after receiving the read.",
+                rationale="The route entry reached this exact planner call.",
+                action=StopAction(reason="done"),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        store = MemoryStore(
+            tmp_path / "memory.sqlite3",
+            CampaignScope(
+                campaign_id="fieldbook-read",
+                origin=CampaignScopeOrigin.CONFIGURED,
+            ),
+        )
+        project = store.fieldbook.create_project(
+            run_id="operator",
+            kind=FieldbookProjectKind.ROUTE_ATLAS,
+            title="Squin route",
+            summary="Known route details.",
+            provenance=None,
+        )
+        entry = store.fieldbook.append_entry(
+            run_id="operator",
+            project_id=project.project_id,
+            kind=FieldbookEntryKind.QUESTION,
+            content="Does the western gate close at night?",
+            provenance=None,
+        )
+        planner = ReadingPlanner(project.project_id)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            memory=store,
+        )
+        runtime.guard.config.allow_action_kinds.append("read_fieldbook")
+        try:
+            summary = await runtime.run(max_steps=2)
+        finally:
+            store.close()
+            logger.close()
+
+        assert summary.steps_completed == 2
+        assert seen_reads[0] is None
+        received = seen_reads[1]
+        assert received is not None
+        assert received.entry_ids == [entry.entry_id]  # type: ignore[union-attr]
+        assert [type(action) for action in environment.actions] == [StopAction]
+        events = read_events(tmp_path / "events.jsonl")
+        read_event = next(
+            event
+            for event in events
+            if event["event_type"] == "fieldbook_read"
+        )
+        assert read_event["payload"]["controller_primitives"] == 0
+        assert read_event["payload"]["world_command_created"] is False
 
     asyncio.run(scenario())
 

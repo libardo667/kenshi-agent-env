@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Added a campaign-scoped private fieldbook for larger named work without
+  promoting planner prose into world truth. Typed projects, entries, lifecycle
+  transitions, provenance, and audit events share the durable SQLite boundary;
+  exact planner manifests and evidence capabilities authorize writes. A
+  bounded project index and one selected summary are automatic, while
+  `read_fieldbook` returns exact, one-turn results without game input.
+  Decisions, validated plans, and applied patches commit independently from
+  gameplay; failures roll back and quarantine the shared durable subsystem.
+  Schema 4 backs up schema 3 before adding fieldbook tables, and read-only CLI
+  inspection can generate disposable Markdown without mutating the store.
 - Isolated continuity transition failures from gameplay. Every operation now
   receives a runtime-owned receipt ID and an accepted, rejected, no-op, or
   failed status. Expected active-key conflicts become typed rejections with

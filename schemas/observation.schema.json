@@ -82,6 +82,9 @@
               "$ref": "#/$defs/RecallMemoryAction"
             },
             {
+              "$ref": "#/$defs/ReadFieldbookAction"
+            },
+            {
               "$ref": "#/$defs/KeyAction"
             },
             {
@@ -530,6 +533,58 @@
       "title": "ActivateVisibleControlAction",
       "type": "object"
     },
+    "ActiveFieldbookProject": {
+      "additionalProperties": false,
+      "description": "The one explicitly selected project allowed a fuller automatic summary.",
+      "properties": {
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookProjectKind"
+        },
+        "status": {
+          "const": "active",
+          "title": "Status",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "entry_count": {
+          "minimum": 0,
+          "title": "Entry Count",
+          "type": "integer"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "title",
+        "kind",
+        "status",
+        "summary",
+        "entry_count",
+        "updated_at"
+      ],
+      "title": "ActiveFieldbookProject",
+      "type": "object"
+    },
     "ActivePlanContext": {
       "additionalProperties": false,
       "properties": {
@@ -928,6 +983,62 @@
       "title": "AffordanceUrgency",
       "type": "string"
     },
+    "AppendFieldbookEntryOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "append_entry",
+          "default": "append_entry",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookEntryKind"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "project_id",
+        "kind",
+        "content"
+      ],
+      "title": "AppendFieldbookEntryOperation",
+      "type": "object"
+    },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
       "description": "Initiate dialogue with one exact currently observed dialogue target.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nThe controller issues Kenshi's native talk-to order and owns the whole\nmonitored interaction, so there is no planner-visible \"continue\napproaching\" or prerequisite unpause command.",
@@ -1076,6 +1187,158 @@
         }
       },
       "title": "CameraState",
+      "type": "object"
+    },
+    "CanonicalFieldbookProvenance": {
+      "additionalProperties": false,
+      "description": "Exact planner context and resolved sources behind a fieldbook change.",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CreateFieldbookProjectOperation"
+            },
+            {
+              "$ref": "#/$defs/AppendFieldbookEntryOperation"
+            },
+            {
+              "$ref": "#/$defs/UpdateFieldbookSummaryOperation"
+            },
+            {
+              "$ref": "#/$defs/SelectFieldbookProjectOperation"
+            },
+            {
+              "$ref": "#/$defs/SetFieldbookProjectStatusOperation"
+            }
+          ],
+          "title": "Operation"
+        },
+        "origin": {
+          "$ref": "#/$defs/ContinuityOrigin"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "authored_context_id": {
+          "pattern": "^pc-[1-9][0-9]{0,8}$",
+          "title": "Authored Context Id",
+          "type": "string"
+        },
+        "authored_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "commit_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        },
+        "resolved_evidence": {
+          "items": {
+            "$ref": "#/$defs/ResolvedEvidenceSnapshot"
+          },
+          "maxItems": 4,
+          "title": "Resolved Evidence",
+          "type": "array"
+        },
+        "plan_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Id"
+        },
+        "plan_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Version"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "rendered_grounding": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rendered Grounding"
+        },
+        "transition_result": {
+          "const": "applied",
+          "default": "applied",
+          "title": "Transition Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "origin",
+        "run_id",
+        "authored_context_id",
+        "authored_revision",
+        "commit_revision"
+      ],
+      "title": "CanonicalFieldbookProvenance",
       "type": "object"
     },
     "CanonicalMemoryProvenance": {
@@ -1820,6 +2083,39 @@
       "title": "CoordinateSpace",
       "type": "string"
     },
+    "CreateFieldbookProjectOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "create_project",
+          "default": "create_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookProjectKind"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "summary"
+      ],
+      "title": "CreateFieldbookProjectOperation",
+      "type": "object"
+    },
     "CurrentObservationEvidence": {
       "additionalProperties": false,
       "description": "The exact observation the planner was looking at when it wrote this.",
@@ -1943,6 +2239,527 @@
         }
       },
       "title": "ExitCurrentBuildingAction",
+      "type": "object"
+    },
+    "FieldbookEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "entry_id": {
+          "pattern": "^fbe-[0-9a-f]{32}$",
+          "title": "Entry Id",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "campaign_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "sequence": {
+          "minimum": 1,
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookEntryKind"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "created_run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Created Run Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalFieldbookProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "entry_id",
+        "project_id",
+        "campaign_id",
+        "sequence",
+        "kind",
+        "content",
+        "created_run_id",
+        "created_at"
+      ],
+      "title": "FieldbookEntry",
+      "type": "object"
+    },
+    "FieldbookEntryKind": {
+      "enum": [
+        "note",
+        "decision",
+        "observation",
+        "incident",
+        "manifest",
+        "route_entry",
+        "expense",
+        "question"
+      ],
+      "title": "FieldbookEntryKind",
+      "type": "string"
+    },
+    "FieldbookProject": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "campaign_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookProjectKind"
+        },
+        "status": {
+          "$ref": "#/$defs/FieldbookProjectStatus"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "selected": {
+          "default": false,
+          "title": "Selected",
+          "type": "boolean"
+        },
+        "entry_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Entry Count",
+          "type": "integer"
+        },
+        "created_run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Created Run Id",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "latest_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalFieldbookProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "project_id",
+        "campaign_id",
+        "kind",
+        "status",
+        "title",
+        "summary",
+        "created_run_id",
+        "created_at",
+        "updated_at"
+      ],
+      "title": "FieldbookProject",
+      "type": "object"
+    },
+    "FieldbookProjectIndex": {
+      "additionalProperties": false,
+      "description": "Bounded metadata automatically shown without full project entries.",
+      "properties": {
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookProjectKind"
+        },
+        "status": {
+          "$ref": "#/$defs/FieldbookProjectStatus"
+        },
+        "short_summary": {
+          "maxLength": 160,
+          "minLength": 1,
+          "title": "Short Summary",
+          "type": "string"
+        },
+        "entry_count": {
+          "minimum": 0,
+          "title": "Entry Count",
+          "type": "integer"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        },
+        "selected": {
+          "title": "Selected",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "project_id",
+        "title",
+        "kind",
+        "status",
+        "short_summary",
+        "entry_count",
+        "updated_at",
+        "selected"
+      ],
+      "title": "FieldbookProjectIndex",
+      "type": "object"
+    },
+    "FieldbookProjectKind": {
+      "enum": [
+        "delivery_docket",
+        "route_atlas",
+        "incident_log",
+        "vendor_ledger",
+        "equipment_plan",
+        "journal",
+        "generic"
+      ],
+      "title": "FieldbookProjectKind",
+      "type": "string"
+    },
+    "FieldbookProjectStatus": {
+      "enum": [
+        "active",
+        "paused",
+        "completed",
+        "abandoned"
+      ],
+      "title": "FieldbookProjectStatus",
+      "type": "string"
+    },
+    "FieldbookReadReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "project": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FieldbookProject"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/FieldbookEntry"
+          },
+          "maxItems": 8,
+          "title": "Entries",
+          "type": "array"
+        },
+        "matched": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Matched",
+          "type": "integer"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        },
+        "receipt_id": {
+          "pattern": "^fbr-[0-9a-f]{32}$",
+          "title": "Receipt Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/FieldbookReadStatus"
+        },
+        "campaign_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Campaign Id"
+        },
+        "project_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Project Ids",
+          "type": "array"
+        },
+        "entry_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Entry Ids",
+          "type": "array"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "receipt_id",
+        "status",
+        "plan_id",
+        "plan_version",
+        "step_id"
+      ],
+      "title": "FieldbookReadReceipt",
+      "type": "object"
+    },
+    "FieldbookReadStatus": {
+      "enum": [
+        "completed",
+        "unavailable",
+        "failed"
+      ],
+      "title": "FieldbookReadStatus",
+      "type": "string"
+    },
+    "FieldbookReceiptDigest": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt_id": {
+          "pattern": "^fbor-[0-9a-f]{32}$",
+          "title": "Receipt Id",
+          "type": "string"
+        },
+        "origin": {
+          "$ref": "#/$defs/ContinuityOrigin"
+        },
+        "operation": {
+          "enum": [
+            "create_project",
+            "append_entry",
+            "update_summary",
+            "select_project",
+            "set_project_status"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ContinuityOperationStatus"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "entry_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbe-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entry Id"
+        },
+        "authored_context_id": {
+          "pattern": "^pc-[1-9][0-9]{0,8}$",
+          "title": "Authored Context Id",
+          "type": "string"
+        },
+        "authored_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "commit_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "plan_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Id"
+        },
+        "plan_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Version"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "writes_degraded": {
+          "default": false,
+          "title": "Writes Degraded",
+          "type": "boolean"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "receipt_id",
+        "origin",
+        "operation",
+        "status",
+        "reason",
+        "authored_context_id",
+        "authored_revision",
+        "commit_revision",
+        "recorded_at"
+      ],
+      "title": "FieldbookReceiptDigest",
       "type": "object"
     },
     "GameBinding": {
@@ -3675,6 +4492,54 @@
       "title": "PurchaseItemAction",
       "type": "object"
     },
+    "ReadFieldbookAction": {
+      "additionalProperties": false,
+      "description": "Electively inspect bounded private project context without game input.",
+      "properties": {
+        "kind": {
+          "const": "read_fieldbook",
+          "default": "read_fieldbook",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "max_entries": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Entries",
+          "type": "integer"
+        }
+      },
+      "title": "ReadFieldbookAction",
+      "type": "object"
+    },
     "RecallMemoryAction": {
       "additionalProperties": false,
       "description": "Deliberately read continuity beyond what automatic context already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything. Durable memory searches active\nrecords; working-outcome searches resurface compact runtime-owned evidence\nthat scrolled out of the rich recent window.",
@@ -4244,6 +5109,32 @@
       "title": "ScrollScreenAction",
       "type": "object"
     },
+    "SelectFieldbookProjectOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "select_project",
+          "default": "select_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "SelectFieldbookProjectOperation",
+      "type": "object"
+    },
     "SellItemAction": {
       "additionalProperties": false,
       "description": "Sell the item in one exact cell of the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
@@ -4286,6 +5177,31 @@
         "buyer_id"
       ],
       "title": "SellItemAction",
+      "type": "object"
+    },
+    "SetFieldbookProjectStatusOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "set_project_status",
+          "default": "set_project_status",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/FieldbookProjectStatus"
+        }
+      },
+      "required": [
+        "project_id",
+        "status"
+      ],
+      "title": "SetFieldbookProjectStatusOperation",
       "type": "object"
     },
     "SetSpeedAction": {
@@ -4975,6 +5891,34 @@
       "title": "UIState",
       "type": "object"
     },
+    "UpdateFieldbookSummaryOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "update_summary",
+          "default": "update_summary",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "summary"
+      ],
+      "title": "UpdateFieldbookSummaryOperation",
+      "type": "object"
+    },
     "UseGameBindingAction": {
       "additionalProperties": false,
       "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap, `C` the stats window, `Space` pauses under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.",
@@ -5486,6 +6430,44 @@
       "anyOf": [
         {
           "$ref": "#/$defs/MemoryReadReceipt"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "fieldbook_projects": {
+      "items": {
+        "$ref": "#/$defs/FieldbookProjectIndex"
+      },
+      "maxItems": 8,
+      "title": "Fieldbook Projects",
+      "type": "array"
+    },
+    "active_fieldbook_project": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ActiveFieldbookProject"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "recent_fieldbook_receipts": {
+      "items": {
+        "$ref": "#/$defs/FieldbookReceiptDigest"
+      },
+      "maxItems": 8,
+      "title": "Recent Fieldbook Receipts",
+      "type": "array"
+    },
+    "fieldbook_read": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FieldbookReadReceipt"
         },
         {
           "type": "null"

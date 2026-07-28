@@ -461,6 +461,50 @@ def test_evaluate_log_conserves_every_recognized_event_into_exact_metrics(
             },
         },
         {"event_type": "memory_read", "payload": {"result": []}},
+        {
+            "event_type": "fieldbook_receipt",
+            "payload": {
+                "status": "accepted",
+                "operation": {"operation": "create_project"},
+            },
+        },
+        {
+            "event_type": "fieldbook_receipt",
+            "payload": {
+                "status": "accepted",
+                "operation": {"operation": "append_entry"},
+            },
+        },
+        {
+            "event_type": "fieldbook_receipt",
+            "payload": {"status": "rejected", "operation": {}},
+        },
+        {
+            "event_type": "fieldbook_receipt",
+            "payload": {"status": "no_op", "operation": {}},
+        },
+        {
+            "event_type": "fieldbook_receipt",
+            "payload": {"status": "failed", "operation": {}},
+        },
+        {
+            "event_type": "fieldbook_read",
+            "payload": {
+                "result": {
+                    "status": "completed",
+                    "entries": [{"entry_id": "fbe-a"}, {"entry_id": "fbe-b"}],
+                    "truncated": True,
+                }
+            },
+        },
+        {
+            "event_type": "fieldbook_read",
+            "payload": {"result": {"status": "unavailable", "entries": []}},
+        },
+        {
+            "event_type": "fieldbook_read",
+            "payload": {"result": {"status": "failed", "entries": []}},
+        },
         {"event_type": "plan_proposed", "payload": {}},
         {"event_type": "plan_accepted", "payload": {}},
         {"event_type": "plan_rejected", "payload": {}},
@@ -615,6 +659,22 @@ def test_evaluate_log_conserves_every_recognized_event_into_exact_metrics(
         memory_reads_failed=0,
         memory_read_records=2,
         memory_read_truncations=1,
+        fieldbook_operations_accepted=2,
+        fieldbook_operations_rejected=1,
+        fieldbook_operations_no_op=1,
+        fieldbook_operations_failed=1,
+        fieldbook_projects_created=1,
+        fieldbook_entries_appended=1,
+        fieldbook_lifecycle_transitions={
+            "append_entry": 1,
+            "create_project": 1,
+        },
+        fieldbook_reads=3,
+        fieldbook_reads_completed=1,
+        fieldbook_reads_unavailable=1,
+        fieldbook_reads_failed=1,
+        fieldbook_read_entries=2,
+        fieldbook_read_truncations=1,
         plans_proposed=1,
         plans_accepted=1,
         plans_rejected=1,

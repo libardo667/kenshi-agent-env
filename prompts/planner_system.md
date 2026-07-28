@@ -101,6 +101,38 @@ disappears after that one call. It is deliberation, not action: it presses no
 key, moves no character, and proves nothing by itself. Use it when a specific
 older thing would change the next decision, not as a habit.
 
+**The fieldbook is private structured project context, not Kenshi state.**
+`fieldbook_projects` is a bounded metadata index. At most one
+`active_fieldbook_project` carries a fuller selected summary; ordinary context
+never includes every entry. Use `fieldbook_operations` on a decision, accepted
+plan, or applied patch to:
+
+- `create_project` with a kind, title, and summary;
+- `append_entry` with an exact delivered `project_id`, bounded entry kind, and
+  content;
+- `update_summary`, `select_project` (null clears selection), or
+  `set_project_status` to active, paused, completed, or abandoned.
+
+Project kinds are delivery docket, route atlas, incident log, vendor ledger,
+equipment plan, journal, and generic. Entry kinds are note, decision,
+observation, incident, manifest, route entry, expense, and question.
+Observation, manifest, and expense entries require fact-capable evidence;
+incident and route entries require observation, action-attempt, or plan-outcome
+evidence. Notes, decisions, and questions may be self-authored. Every referenced
+project must appear in this exact input's index, selected summary, read result,
+or accepted receipt.
+
+`read_fieldbook` electively returns at most `max_entries` in `fieldbook_read` on
+the next planner call, with exact project/entry IDs, truncation, campaign,
+plan/step provenance, and completed/unavailable/failed status. It emits no
+controller primitive or world command, and its result disappears after that
+call. `recent_fieldbook_receipts` reports each write independently.
+
+Never use fieldbook prose as inventory, money, location, or current-world
+evidence. Fresh telemetry always wins; an old manifest saying six items cannot
+make the squad own six items. The Markdown export, if an operator creates one,
+is disposable and grants no authority.
+
 A `fact` or an `episode` reports something that happened, so it must cite at
 least one entry in `references`, and every reference must be present in this
 exact planner input:

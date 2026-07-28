@@ -1935,6 +1935,54 @@
       "title": "PurchaseItemAction",
       "type": "object"
     },
+    "ReadFieldbookAction": {
+      "additionalProperties": false,
+      "description": "Electively inspect bounded private project context without game input.",
+      "properties": {
+        "kind": {
+          "const": "read_fieldbook",
+          "default": "read_fieldbook",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "max_entries": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Entries",
+          "type": "integer"
+        }
+      },
+      "title": "ReadFieldbookAction",
+      "type": "object"
+    },
     "RecallMemoryAction": {
       "additionalProperties": false,
       "description": "Deliberately read continuity beyond what automatic context already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything. Durable memory searches active\nrecords; working-outcome searches resurface compact runtime-owned evidence\nthat scrolled out of the rich recent window.",
@@ -2700,6 +2748,9 @@
         },
         {
           "$ref": "#/$defs/RecallMemoryAction"
+        },
+        {
+          "$ref": "#/$defs/ReadFieldbookAction"
         },
         {
           "$ref": "#/$defs/KeyAction"

@@ -20,6 +20,7 @@ from .config import AppConfig, load_config
 from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
+from .fieldbook import render_fieldbook_markdown
 from .final_safe_state import FinalSafeStateOutcome, FinalSafeStateStatus
 from .memory import (
     MemoryStore,
@@ -451,6 +452,79 @@ def _inspect_memory(args: argparse.Namespace) -> int:
     return 0
 
 
+def _inspect_fieldbook(args: argparse.Namespace) -> int:
+    """Inspect the canonical fieldbook through read-only SQLite queries."""
+
+    config = load_config(args.config)
+    path = config.paths.memory_db
+    if not path.exists():
+        print(f"No continuity database at {path}.")
+        return 0
+    version = read_only_schema_version(path)
+    campaigns = read_only_campaigns(path)
+    if args.campaign is None:
+        print(f"{path} (schema {version})")
+        for campaign_id, origin, created_at in campaigns:
+            print(f"  {campaign_id}\t{origin}\tcreated {created_at}")
+        if not campaigns:
+            print("  (no campaigns)")
+        return 0
+    if version is None or version < 4:
+        print(
+            f"{path} uses schema {version}; open it once with the current "
+            "runtime to migrate before inspecting the fieldbook."
+        )
+        return 1
+    known = {campaign_id for campaign_id, _, _ in campaigns}
+    if args.campaign not in known:
+        print(f"No campaign {args.campaign!r} in {path}.")
+        return 1
+
+    with read_only_store(path, args.campaign) as store:
+        if args.markdown:
+            print(render_fieldbook_markdown(store.fieldbook), end="")
+            return 0
+        if args.project_id is not None:
+            project = store.fieldbook.get_project(args.project_id)
+            if project is None:
+                print(
+                    f"No fieldbook project {args.project_id!r} in "
+                    f"campaign {args.campaign!r}."
+                )
+                return 1
+            document = {
+                "project": project.model_dump(mode="json"),
+                "entries": [
+                    entry.model_dump(mode="json")
+                    for entry in store.fieldbook.entries(args.project_id)
+                ],
+                "history": [
+                    entry.model_dump(mode="json")
+                    for entry in store.fieldbook.history(args.project_id)
+                ],
+            }
+            print(json.dumps(document, indent=2))
+            return 0
+        if args.query is not None:
+            result = store.fieldbook.read(
+                project_id=None,
+                query=args.query,
+                limit=args.limit,
+            )
+            print(result.model_dump_json(indent=2))
+            return 0
+        projects = store.fieldbook.list_projects(limit=args.limit)
+        print(f"campaign {args.campaign}: {len(projects)} projects shown")
+        for project_index in projects:
+            marker = "*" if project_index.selected else " "
+            print(
+                f"{marker} {project_index.project_id}\t{project_index.status.value}"
+                f"\t{project_index.kind.value}\tentries={project_index.entry_count}"
+                f"\t{project_index.title}"
+            )
+    return 0
+
+
 async def _run_command(args: argparse.Namespace) -> int:
     config = _apply_run_overrides(load_config(args.config), args)
     _validate_run_platform(config, args)
@@ -513,6 +587,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             entity_memory_limit=config.memory.max_entity_recalled_memories,
             commitment_memory_limit=config.memory.max_commitment_memories,
             hypothesis_memory_limit=config.memory.max_hypothesis_memories,
+            fieldbook_project_limit=config.memory.max_fieldbook_projects,
             minimum_memory_salience=config.memory.minimum_salience,
             action_outcome_limit=config.runtime.observation_memory_limit,
             control_mode=run_control_mode,
@@ -852,6 +927,30 @@ def build_parser() -> argparse.ArgumentParser:
     )
     memory.add_argument("--limit", type=int, default=20)
 
+    fieldbook = subparsers.add_parser(
+        "fieldbook",
+        help="Inspect campaign fieldbook projects and entries read-only.",
+    )
+    fieldbook.add_argument("--config", default="config/default.yaml")
+    fieldbook.add_argument(
+        "--campaign",
+        help="Campaign to inspect. Omit to list every campaign.",
+    )
+    fieldbook_view = fieldbook.add_mutually_exclusive_group()
+    fieldbook_view.add_argument("--project-id")
+    fieldbook_view.add_argument("--query")
+    fieldbook.add_argument(
+        "--limit",
+        type=int,
+        choices=range(1, 9),
+        default=8,
+    )
+    fieldbook_view.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Render the disposable Markdown projection to stdout.",
+    )
+
     validate = subparsers.add_parser("validate-telemetry", help="Validate one telemetry snapshot.")
     validate.add_argument("--config", default="config/default.yaml")
     validate.add_argument("--file")
@@ -900,6 +999,8 @@ def main(argv: list[str] | None = None) -> int:
         return _doctor(args)
     if args.subcommand == "memory":
         return _inspect_memory(args)
+    if args.subcommand == "fieldbook":
+        return _inspect_fieldbook(args)
     if args.subcommand == "validate-telemetry":
         return _validate_telemetry(args)
     if args.subcommand == "summarize":

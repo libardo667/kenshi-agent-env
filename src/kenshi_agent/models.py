@@ -891,6 +891,38 @@ class RecallMemoryAction(StrictModel):
     max_records: int = Field(default=4, ge=1, le=8)
 
 
+FIELD_BOOK_PROJECT_ID_PATTERN = r"^fbp-[0-9a-f]{32}$"
+FIELD_BOOK_ENTRY_ID_PATTERN = r"^fbe-[0-9a-f]{32}$"
+
+
+class ReadFieldbookAction(StrictModel):
+    """Electively inspect bounded private project context without game input."""
+
+    kind: Literal["read_fieldbook"] = "read_fieldbook"
+    project_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_PROJECT_ID_PATTERN,
+    )
+    query: str | None = Field(default=None, min_length=1, max_length=200)
+    max_entries: int = Field(default=4, ge=1, le=8)
+
+    @field_validator("query")
+    @classmethod
+    def normalize_query(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("fieldbook query must not be blank")
+        return normalized
+
+    @model_validator(mode="after")
+    def has_a_read_selector(self) -> ReadFieldbookAction:
+        if self.project_id is None and self.query is None:
+            raise ValueError("read_fieldbook requires project_id or query")
+        return self
+
+
 class AffordanceUrgency(StrEnum):
     SURVIVAL_CRITICAL = "survival_critical"
     BLOCKS_CURRENT_GOAL = "blocks_current_goal"
@@ -1371,6 +1403,7 @@ PlannerControlAction: TypeAlias = (
     | ConsultAdvisorAction
     | RequestAffordanceAction
     | RecallMemoryAction
+    | ReadFieldbookAction
 )
 """Planner-layer intentions that touch no game object and bind to no reference."""
 
@@ -1406,6 +1439,7 @@ Action: TypeAlias = (
     | ConsultAdvisorAction
     | RequestAffordanceAction
     | RecallMemoryAction
+    | ReadFieldbookAction
     | KeyAction
     | HotkeyAction
     | MoveCursorAction
@@ -1474,6 +1508,7 @@ PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
         "consult_advisor",
         "request_affordance",
         "recall_memory",
+        "read_fieldbook",
     }
 )
 
@@ -1508,6 +1543,22 @@ def new_memory_read_receipt_id() -> str:
     """A runtime-owned identity for one elective continuity read."""
 
     return f"mrr-{uuid4().hex}"
+
+
+def new_fieldbook_project_id() -> str:
+    return f"fbp-{uuid4().hex}"
+
+
+def new_fieldbook_entry_id() -> str:
+    return f"fbe-{uuid4().hex}"
+
+
+def new_fieldbook_operation_receipt_id() -> str:
+    return f"fbor-{uuid4().hex}"
+
+
+def new_fieldbook_read_receipt_id() -> str:
+    return f"fbr-{uuid4().hex}"
 
 
 def parse_action(value: Any) -> Action:
@@ -1794,6 +1845,102 @@ class ContinuityOperationStatus(StrEnum):
     FAILED = "failed"
 
 
+class FieldbookProjectKind(StrEnum):
+    DELIVERY_DOCKET = "delivery_docket"
+    ROUTE_ATLAS = "route_atlas"
+    INCIDENT_LOG = "incident_log"
+    VENDOR_LEDGER = "vendor_ledger"
+    EQUIPMENT_PLAN = "equipment_plan"
+    JOURNAL = "journal"
+    GENERIC = "generic"
+
+
+class FieldbookProjectStatus(StrEnum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+
+
+class FieldbookEntryKind(StrEnum):
+    NOTE = "note"
+    DECISION = "decision"
+    OBSERVATION = "observation"
+    INCIDENT = "incident"
+    MANIFEST = "manifest"
+    ROUTE_ENTRY = "route_entry"
+    EXPENSE = "expense"
+    QUESTION = "question"
+
+
+class CreateFieldbookProjectOperation(StrictModel):
+    operation: Literal["create_project"] = "create_project"
+    kind: FieldbookProjectKind
+    title: str = Field(min_length=1, max_length=120)
+    summary: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("title", "summary")
+    @classmethod
+    def normalize_nonblank_text(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("fieldbook text must not be blank")
+        return normalized
+
+
+class AppendFieldbookEntryOperation(StrictModel):
+    operation: Literal["append_entry"] = "append_entry"
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    kind: FieldbookEntryKind
+    content: str = Field(min_length=1, max_length=2000)
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+
+    @field_validator("content")
+    @classmethod
+    def normalize_nonblank_content(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("fieldbook entry content must not be blank")
+        return normalized
+
+
+class UpdateFieldbookSummaryOperation(StrictModel):
+    operation: Literal["update_summary"] = "update_summary"
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    summary: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("summary")
+    @classmethod
+    def normalize_nonblank_summary(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("fieldbook summary must not be blank")
+        return normalized
+
+
+class SelectFieldbookProjectOperation(StrictModel):
+    operation: Literal["select_project"] = "select_project"
+    project_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_PROJECT_ID_PATTERN,
+    )
+
+
+class SetFieldbookProjectStatusOperation(StrictModel):
+    operation: Literal["set_project_status"] = "set_project_status"
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    status: FieldbookProjectStatus
+
+
+FieldbookOperation: TypeAlias = (
+    CreateFieldbookProjectOperation
+    | AppendFieldbookEntryOperation
+    | UpdateFieldbookSummaryOperation
+    | SelectFieldbookProjectOperation
+    | SetFieldbookProjectStatusOperation
+)
+
+
 class MemoryStatus(StrEnum):
     """Where a record sits in its lifecycle. Only `active` reaches recall."""
 
@@ -1871,6 +2018,246 @@ class CanonicalMemoryProvenance(StrictModel):
     step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
     rendered_grounding: str | None = Field(default=None, max_length=1000)
     transition_result: Literal["applied"] = "applied"
+
+
+class CanonicalFieldbookProvenance(StrictModel):
+    """Exact planner context and resolved sources behind a fieldbook change."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    operation: FieldbookOperation
+    origin: ContinuityOrigin
+    run_id: str = Field(min_length=1, max_length=200)
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    authored_revision: WorldStateRevision
+    commit_revision: WorldStateRevision
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+    resolved_evidence: list[ResolvedEvidenceSnapshot] = Field(
+        default_factory=list,
+        max_length=4,
+    )
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    rendered_grounding: str | None = Field(default=None, max_length=1000)
+    transition_result: Literal["applied"] = "applied"
+
+
+class FieldbookLifecycleEvent(StrEnum):
+    CREATE_PROJECT = "create_project"
+    APPEND_ENTRY = "append_entry"
+    UPDATE_SUMMARY = "update_summary"
+    SELECT_PROJECT = "select_project"
+    CLEAR_SELECTION = "clear_selection"
+    SET_PROJECT_STATUS = "set_project_status"
+
+
+class FieldbookProject(StrictModel):
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    campaign_id: str = Field(min_length=1, max_length=80)
+    kind: FieldbookProjectKind
+    status: FieldbookProjectStatus
+    title: str = Field(min_length=1, max_length=120)
+    summary: str = Field(min_length=1, max_length=1000)
+    selected: bool = False
+    entry_count: int = Field(default=0, ge=0)
+    created_run_id: str = Field(min_length=1, max_length=200)
+    created_at: datetime
+    updated_at: datetime
+    latest_provenance: CanonicalFieldbookProvenance | None = None
+
+
+class FieldbookProjectIndex(StrictModel):
+    """Bounded metadata automatically shown without full project entries."""
+
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    title: str = Field(min_length=1, max_length=120)
+    kind: FieldbookProjectKind
+    status: FieldbookProjectStatus
+    short_summary: str = Field(min_length=1, max_length=160)
+    entry_count: int = Field(ge=0)
+    updated_at: datetime
+    selected: bool
+
+
+class ActiveFieldbookProject(StrictModel):
+    """The one explicitly selected project allowed a fuller automatic summary."""
+
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    title: str = Field(min_length=1, max_length=120)
+    kind: FieldbookProjectKind
+    status: Literal[FieldbookProjectStatus.ACTIVE]
+    summary: str = Field(min_length=1, max_length=1000)
+    entry_count: int = Field(ge=0)
+    updated_at: datetime
+
+
+class FieldbookEntry(StrictModel):
+    entry_id: str = Field(pattern=FIELD_BOOK_ENTRY_ID_PATTERN)
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    campaign_id: str = Field(min_length=1, max_length=80)
+    sequence: int = Field(ge=1)
+    kind: FieldbookEntryKind
+    content: str = Field(min_length=1, max_length=2000)
+    created_run_id: str = Field(min_length=1, max_length=200)
+    created_at: datetime
+    provenance: CanonicalFieldbookProvenance | None = None
+
+
+class FieldbookHistoryEntry(StrictModel):
+    event_id: int = Field(ge=1)
+    campaign_id: str
+    project_id: str = Field(pattern=FIELD_BOOK_PROJECT_ID_PATTERN)
+    entry_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_ENTRY_ID_PATTERN,
+    )
+    event: FieldbookLifecycleEvent
+    run_id: str
+    recorded_at: datetime
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class FieldbookReadResult(StrictModel):
+    project_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_PROJECT_ID_PATTERN,
+    )
+    query: str | None = Field(default=None, min_length=1, max_length=200)
+    project: FieldbookProject | None = None
+    entries: list[FieldbookEntry] = Field(default_factory=list, max_length=8)
+    matched: int = Field(default=0, ge=0)
+    truncated: bool = False
+    reason: str = Field(default="", max_length=600)
+
+
+class FieldbookReadStatus(StrEnum):
+    COMPLETED = "completed"
+    UNAVAILABLE = "unavailable"
+    FAILED = "failed"
+
+
+class FieldbookReadReceipt(FieldbookReadResult):
+    receipt_id: str = Field(pattern=r"^fbr-[0-9a-f]{32}$")
+    status: FieldbookReadStatus
+    campaign_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
+    )
+    project_ids: list[str] = Field(default_factory=list, max_length=8)
+    entry_ids: list[str] = Field(default_factory=list, max_length=8)
+    plan_id: str = Field(pattern=PLAN_ID_PATTERN)
+    plan_version: int = Field(ge=1)
+    step_id: str = Field(pattern=STEP_ID_PATTERN)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @model_validator(mode="after")
+    def result_ids_and_status_match(self) -> FieldbookReadReceipt:
+        expected_projects = sorted(
+            {
+                *(
+                    [self.project.project_id]
+                    if self.project is not None
+                    else []
+                ),
+                *(entry.project_id for entry in self.entries),
+            }
+        )
+        if self.project_ids != expected_projects:
+            raise ValueError("project_ids must exactly match returned fieldbook data")
+        expected_entries = [entry.entry_id for entry in self.entries]
+        if self.entry_ids != expected_entries:
+            raise ValueError("entry_ids must exactly match returned fieldbook entries")
+        unavailable_is_valid = (
+            self.status is FieldbookReadStatus.UNAVAILABLE
+            and self.campaign_id is None
+        )
+        available_is_valid = (
+            self.status
+            in {FieldbookReadStatus.COMPLETED, FieldbookReadStatus.FAILED}
+            and self.campaign_id is not None
+        )
+        if not (unavailable_is_valid or available_is_valid):
+            raise ValueError("status and campaign_id describe an impossible fieldbook read")
+        return self
+
+
+class FieldbookReceiptDigest(StrictModel):
+    receipt_id: str = Field(pattern=r"^fbor-[0-9a-f]{32}$")
+    origin: ContinuityOrigin
+    operation: Literal[
+        "create_project",
+        "append_entry",
+        "update_summary",
+        "select_project",
+        "set_project_status",
+    ]
+    status: ContinuityOperationStatus
+    reason: str = Field(min_length=1, max_length=1000)
+    project_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_PROJECT_ID_PATTERN,
+    )
+    entry_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_ENTRY_ID_PATTERN,
+    )
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    authored_revision: WorldStateRevision
+    commit_revision: WorldStateRevision
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    writes_degraded: bool = False
+    recorded_at: datetime
+
+
+class FieldbookOperationReceipt(StrictModel):
+    receipt_id: str = Field(pattern=r"^fbor-[0-9a-f]{32}$")
+    origin: ContinuityOrigin
+    status: ContinuityOperationStatus
+    operation: FieldbookOperation
+    reason: str = Field(min_length=1, max_length=1000)
+    project_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_PROJECT_ID_PATTERN,
+    )
+    entry_id: str | None = Field(
+        default=None,
+        pattern=FIELD_BOOK_ENTRY_ID_PATTERN,
+    )
+    resolved_evidence: list[ResolvedEvidenceSnapshot] = Field(
+        default_factory=list,
+        max_length=4,
+    )
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    authored_revision: WorldStateRevision
+    commit_revision: WorldStateRevision
+    writes_degraded: bool = False
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def digest(self) -> FieldbookReceiptDigest:
+        return FieldbookReceiptDigest(
+            receipt_id=self.receipt_id,
+            origin=self.origin,
+            operation=self.operation.operation,
+            status=self.status,
+            reason=self.reason,
+            project_id=self.project_id,
+            entry_id=self.entry_id,
+            authored_context_id=self.authored_context_id,
+            authored_revision=self.authored_revision,
+            commit_revision=self.commit_revision,
+            plan_id=self.plan_id,
+            plan_version=self.plan_version,
+            step_id=self.step_id,
+            writes_degraded=self.writes_degraded,
+            recorded_at=self.recorded_at,
+        )
 
 
 class ContinuityReceiptDigest(StrictModel):
@@ -2202,6 +2589,10 @@ class PlannerContextManifest(StrictModel):
     memory_ids: list[str] = Field(default_factory=list, max_length=128)
     continuity_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
     memory_read_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
+    fieldbook_project_ids: list[str] = Field(default_factory=list, max_length=32)
+    fieldbook_entry_ids: list[str] = Field(default_factory=list, max_length=8)
+    fieldbook_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
+    fieldbook_read_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
     advisor_brief_ids: list[str] = Field(default_factory=list, max_length=8)
     candidate_memory_count: int = Field(default=0, ge=0)
     payload_characters: int | None = Field(default=None, ge=0)
@@ -2684,6 +3075,8 @@ class PlanStep(StrictModel):
                 RecoverCameraViewAction,
                 ConsultAdvisorAction,
                 RequestAffordanceAction,
+                RecallMemoryAction,
+                ReadFieldbookAction,
                 ExitCurrentBuildingAction,
                 PerformContextAction,
                 ProduceResourceOutputAction,
@@ -2693,10 +3086,11 @@ class PlanStep(StrictModel):
         ):
             raise ValueError(
                 "success_conditions may be empty only for recover_camera_view, "
-                "consult_advisor, request_affordance, exit_current_building, "
-                "perform_context_action, produce_resource_output, "
-                "open_context_inventory, or collect_resource_output, whose "
-                "owning subsystem returns a typed terminal outcome"
+                "consult_advisor, request_affordance, recall_memory, "
+                "read_fieldbook, exit_current_building, perform_context_action, "
+                "produce_resource_output, open_context_inventory, or "
+                "collect_resource_output, whose owning subsystem returns a "
+                "typed terminal outcome"
             )
         return self
 
@@ -2725,6 +3119,10 @@ class PlanEnvelope(StrictModel):
     continuity_operations: list[ContinuityOperation] = Field(
         default_factory=list,
         max_length=6,
+    )
+    fieldbook_operations: list[FieldbookOperation] = Field(
+        default_factory=list,
+        max_length=4,
     )
 
     @model_validator(mode="after")
@@ -2788,6 +3186,10 @@ class PlanPatch(StrictModel):
     continuity_operations: list[ContinuityOperation] = Field(
         default_factory=list,
         max_length=6,
+    )
+    fieldbook_operations: list[FieldbookOperation] = Field(
+        default_factory=list,
+        max_length=4,
     )
 
 
@@ -2886,6 +3288,18 @@ class Observation(StrictModel):
     # The typed result of an elective `recall_memory`, carried to exactly the
     # next planner call that asked for it.
     memory_search: MemoryReadReceipt | None = None
+    # Automatic context carries only a bounded project index and the selected
+    # active summary. Full entries arrive through one bounded elective read.
+    fieldbook_projects: list[FieldbookProjectIndex] = Field(
+        default_factory=list,
+        max_length=8,
+    )
+    active_fieldbook_project: ActiveFieldbookProject | None = None
+    recent_fieldbook_receipts: list[FieldbookReceiptDigest] = Field(
+        default_factory=list,
+        max_length=8,
+    )
+    fieldbook_read: FieldbookReadReceipt | None = None
     advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
     affordance_requests: list[AffordanceRequestRecord] = Field(
         default_factory=list,
@@ -3434,6 +3848,10 @@ class PlannerDecision(StrictModel):
     continuity_operations: list[ContinuityOperation] = Field(
         default_factory=list,
         max_length=6,
+    )
+    fieldbook_operations: list[FieldbookOperation] = Field(
+        default_factory=list,
+        max_length=4,
     )
 
 

@@ -39,9 +39,10 @@ and origin are logged as `campaign_scope`.
 On first open, a pre-campaign database is copied to
 `<memory-db>.v1-backup` before any write. Rows become `keep` events under
 `legacy:<old-namespace>` with `legacy_unverified` authorship, never the opening
-campaign. Schema 2 similarly gets a `.v2-backup` before schema 3 adds structured
-provenance. Old event payloads remain unstructured; migration invents no
-evidence. Both paths are idempotent. Restore the matching backup to roll back.
+campaign. Schema 2 similarly gets a `.v2-backup` before structured provenance
+is added; schema 3 gets a `.v3-backup` before schema 4 adds the fieldbook. Old
+event payloads remain unstructured; migration invents no evidence. These paths
+are idempotent. Restore the matching backup to roll back.
 
 To read migrated rows, name their campaign explicitly:
 
@@ -84,37 +85,36 @@ source, campaign, returned IDs, and `completed`, `unavailable`, or `failed` stat
 and results enter only the next manifest. Unavailable and failed reads are not empty searches; the
 read emits no game input or risk-budget cost.
 
-## What evidence may establish
+## Fieldbook
 
-The runtime resolves each reference to a typed immutable snapshot, validates
-what its authority can establish, and only then renders grounding:
+The fieldbook shares the campaign and database but serves larger named work:
+delivery dockets, route atlases, logs, plans, journals, and generic projects.
+Its index is bounded; one selected summary is automatic, and entries require
+`read_fieldbook`.
 
-| Operation claim | Required capability |
-| --- | --- |
-| fact | fresh observation, controller-verified world effect, or causally observed change |
-| episode | observation, action attempt, or plan lifecycle outcome |
-| open commitment or hypothesis | may be self-authored |
-| resolve commitment | fresh or causally verified world evidence |
-| resolve hypothesis | observed evidence plus `confirmed`, `rejected`, or `unknown` |
+Planner writes use typed `fieldbook_operations`. Project IDs must occur in the
+exact planner input. Observational, manifest, expense, incident, and route
+entries require appropriate delivered evidence. Notes, decisions, and questions
+may be self-authored but never become inventory or other world truth.
 
-Non-effect evidence may ground an honest failed episode, never successful world
-proof. See [the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
+Operator inspection is read-only:
 
-## What the store guarantees
+```bash
+uv run kenshi-agent fieldbook --campaign ladle-css-01
+uv run kenshi-agent fieldbook --campaign ladle-css-01 --project-id fbp-<id> # or --query/--markdown
+```
 
-- `memory_events` is append-only. Nothing is deleted or rewritten; resolution,
-  supersession, retraction, and delivery are all explicit rows.
-- Accepted lifecycle events retain the exact operation, authored context,
-  authored and commit revisions, references, typed resolved evidence snapshots,
-  plan/step origin, and rendered grounding. The projection exposes the latest
-  provenance; full history remains authoritative.
-- `memories` is a projection, updated in the same transaction that appends the
-  event. If the two ever disagree, the history wins and `rebuild_projection()`
-  restores agreement.
-- Recall reads only. Ordering uses declared salience and creation time, never read time.
-- Exact restatement reinforces rather than duplicates, by a deterministic
-  normalized key — kind, squashed whitespace, case, and exact target. The
-  storage boundary makes no similarity judgment.
-- A closed record refuses every further transition, and one campaign's
-  operations cannot reach another's records.
-- Recall and search both write nothing, at any rate.
+The Markdown form is generated to stdout and disposable. Editing or deleting a
+saved copy cannot change SQLite.
+
+The runtime resolves immutable evidence before rendering grounding. Non-effects
+may ground an honest failed episode, never successful world proof. The complete
+capability decision is in
+[the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
+
+`memory_events` is append-only canonical history; `memories` is its
+transactional, rebuildable projection. Accepted events retain exact operation,
+planner context, revisions, evidence, origin, and rendered grounding. Exact
+restatement reinforces by deterministic normalized key. Reads never influence
+ordering or write state. Closed records reject further transitions, and
+campaigns cannot reach each other's records.

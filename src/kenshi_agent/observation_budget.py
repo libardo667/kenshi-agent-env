@@ -13,9 +13,11 @@ _ROOT_COLLECTION_PATHS = (
     "recent_action_outcomes",
     "recent_plan_outcomes",
     "recent_continuity_receipts",
+    "recent_fieldbook_receipts",
     "available_skills",
     "skill_specs",
     "memories",
+    "fieldbook_projects",
 )
 _TELEMETRY_COLLECTION_PATHS = (
     "telemetry.capabilities",
@@ -240,6 +242,30 @@ def budget_observation_payload(
             for item in retained["recent_continuity_receipts"]
         }
 
+    retained_fieldbook_receipt_ids = {
+        str(receipt["receipt_id"])
+        for receipt in retained["recent_fieldbook_receipts"]
+    }
+    for receipt in reversed(original.get("recent_fieldbook_receipts", [])):
+        receipt_id = str(receipt["receipt_id"])
+        if receipt_id in retained_fieldbook_receipt_ids:
+            continue
+        wanted_ids = retained_fieldbook_receipt_ids | {receipt_id}
+        attempt(
+            _set_mutator(
+                "recent_fieldbook_receipts",
+                [
+                    item
+                    for item in original.get("recent_fieldbook_receipts", [])
+                    if str(item["receipt_id"]) in wanted_ids
+                ],
+            )
+        )
+        retained_fieldbook_receipt_ids = {
+            str(item["receipt_id"])
+            for item in retained["recent_fieldbook_receipts"]
+        }
+
     retained_memory_ids = {str(item["memory_id"]) for item in retained["memories"]}
     for memory in sorted(original["memories"], key=_memory_sort_key, reverse=True):
         if str(memory["memory_id"]) in retained_memory_ids:
@@ -250,6 +276,9 @@ def budget_observation_payload(
                 memory,
             )
         )
+
+    for project in original.get("fieldbook_projects", []):
+        attempt(_append_mutator("fieldbook_projects", project))
 
     if isinstance(telemetry, dict):
         retained_nearby_ids = {
@@ -304,7 +333,7 @@ def irreducible_payload(
         if original["recent_plan_outcomes"]
         else []
     )
-    receipts = original["recent_continuity_receipts"]
+    receipts = original.get("recent_continuity_receipts", [])
     latest_adverse = next(
         (
             receipt
@@ -317,6 +346,24 @@ def irreducible_payload(
         [deepcopy(latest_adverse)]
         if latest_adverse is not None
         else ([deepcopy(receipts[-1])] if receipts else [])
+    )
+    fieldbook_receipts = original.get("recent_fieldbook_receipts", [])
+    latest_adverse_fieldbook = next(
+        (
+            receipt
+            for receipt in reversed(fieldbook_receipts)
+            if receipt["status"] in {"rejected", "failed"}
+        ),
+        None,
+    )
+    retained["recent_fieldbook_receipts"] = (
+        [deepcopy(latest_adverse_fieldbook)]
+        if latest_adverse_fieldbook is not None
+        else (
+            [deepcopy(fieldbook_receipts[-1])]
+            if fieldbook_receipts
+            else []
+        )
     )
     retained["available_skills"] = []
     retained["skill_specs"] = []
@@ -334,6 +381,7 @@ def irreducible_payload(
         if preserve_current_target_memories
         else []
     )
+    retained["fieldbook_projects"] = []
 
     telemetry = original.get("telemetry")
     if not isinstance(telemetry, dict):

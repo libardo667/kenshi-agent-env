@@ -436,6 +436,7 @@ class MemoryConfig(ConfigModel):
     max_entity_recalled_memories: int = Field(default=8, ge=0, le=100)
     max_commitment_memories: int = Field(default=4, ge=0, le=32)
     max_hypothesis_memories: int = Field(default=2, ge=0, le=32)
+    max_fieldbook_projects: int = Field(default=8, ge=0, le=8)
     # Applied to general recall only. A survival constraint is not less
     # important for being unexciting.
     minimum_salience: float = Field(default=0.15, ge=0.0, le=1.0)

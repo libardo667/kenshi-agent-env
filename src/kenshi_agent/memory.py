@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 
 from .campaign import CampaignScope, CampaignScopeOrigin, legacy_campaign_id
+from .fieldbook import FieldbookStore, create_fieldbook_schema
 from .models import (
     CanonicalMemoryProvenance,
     MemoryAuthorship,
@@ -39,7 +40,7 @@ from .models import (
     new_memory_id,
 )
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Mutmut understands Python expressions, not SQL. Its SQL-string mutations are
 # either SQLite-equivalent case changes or deliberately invalid statements.
@@ -466,15 +467,18 @@ class MemoryStore:
                 f"newer than this build's schema {SCHEMA_VERSION}; refusing "  # mutation: reason
                 "to open it with an older writer."  # mutation: reason
             )
-        if existing_version == 2:
-            self._backup_version(2)
+        if existing_version in {2, 3}:
+            self._backup_version(existing_version)
         self._connection.execute(_JOURNAL_MODE_SQL)
         if legacy_rows is not None:
             self._migrate_v1(legacy_rows)
         elif existing_version == 2:
             self._migrate_v2()
+        elif existing_version == 3:
+            self._migrate_v3()
         self._create_schema()
         self._register_campaign(scope.campaign_id, scope.origin)
+        self.fieldbook = FieldbookStore(self._connection, self.campaign_id)
         self._connection.commit()
 
     # -- schema ---------------------------------------------------------
@@ -489,6 +493,7 @@ class MemoryStore:
         self._connection.execute(_CREATE_CAMPAIGNS_SQL)
         self._connection.execute(_CREATE_EVENTS_SQL)
         self._connection.execute(_CREATE_MEMORIES_SQL)
+        create_fieldbook_schema(self._connection)
         for statement in _INDEX_SQL:
             self._connection.execute(statement)
         self._connection.execute(_SET_META_SQL, ("schema_version", str(SCHEMA_VERSION)))
@@ -585,6 +590,12 @@ class MemoryStore:
                 self._connection.execute(_MIGRATE_V2_ADD_PROVENANCE_SQL)
             if "resolution_disposition" not in columns:
                 self._connection.execute(_MIGRATE_V2_ADD_DISPOSITION_SQL)
+
+    def _migrate_v3(self) -> None:
+        """Add fieldbook tables without rewriting v3 memory history."""
+
+        with self._connection:
+            create_fieldbook_schema(self._connection)
 
     def _append_legacy_row(self, row: sqlite3.Row) -> None:
         campaign_id = legacy_campaign_id(_row_text(row, "namespace"))
@@ -1562,6 +1573,7 @@ class ReadOnlyMemoryStore(MemoryStore):
         self._new_memory_id = new_memory_id
         self._connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
         self._connection.row_factory = sqlite3.Row
+        self.fieldbook = FieldbookStore(self._connection, self.campaign_id)
 
 
 def read_only_store(path: Path, campaign_id: str) -> ReadOnlyMemoryStore:

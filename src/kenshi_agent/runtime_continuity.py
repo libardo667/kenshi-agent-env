@@ -17,11 +17,15 @@ from .memory import RecallBudget, TieredRecall
 from .models import (
     ContinuityOperationReceipt,
     ContinuityReceiptDigest,
+    FieldbookReadReceipt,
+    FieldbookReadResult,
+    FieldbookReadStatus,
     MemoryReadReceipt,
     MemoryReadStatus,
     MemoryRecord,
     MemorySearchResult,
     RecallSummary,
+    new_fieldbook_read_receipt_id,
     new_memory_read_receipt_id,
 )
 
@@ -101,6 +105,40 @@ def build_memory_read_receipt(
         plan_outcome_ids=[
             outcome.plan_outcome_id for outcome in result.plan_outcomes
         ],
+        plan_id=plan_id,
+        plan_version=plan_version,
+        step_id=step_id,
+    )
+
+
+def build_fieldbook_read_receipt(
+    result: FieldbookReadResult,
+    *,
+    status: FieldbookReadStatus,
+    campaign_id: str | None,
+    plan_id: str,
+    plan_version: int,
+    step_id: str,
+) -> FieldbookReadReceipt:
+    """Stamp one bounded fieldbook result with exact returned identities."""
+
+    project_ids = sorted(
+        {
+            *(
+                [result.project.project_id]
+                if result.project is not None
+                else []
+            ),
+            *(entry.project_id for entry in result.entries),
+        }
+    )
+    return FieldbookReadReceipt(
+        **result.model_dump(),
+        receipt_id=new_fieldbook_read_receipt_id(),
+        status=status,
+        campaign_id=campaign_id,
+        project_ids=project_ids,
+        entry_ids=[entry.entry_id for entry in result.entries],
         plan_id=plan_id,
         plan_version=plan_version,
         step_id=step_id,

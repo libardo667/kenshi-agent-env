@@ -93,6 +93,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
         "wait",
         "skill",
         "recall_memory",
+        "read_fieldbook",
     }
     assert set(config.safety.allow_skills) == {
         "open_map",

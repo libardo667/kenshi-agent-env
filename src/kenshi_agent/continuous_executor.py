@@ -23,6 +23,7 @@ from .models import (
     ConsultAdvisorAction,
     ContinuityOperation,
     ExitCurrentBuildingAction,
+    FieldbookOperation,
     InputBoundaryDecision,
     MoveInDirectionAction,
     NativeCommandStatus,
@@ -36,6 +37,7 @@ from .models import (
     PlanPatch,
     PlanStep,
     ProduceResourceOutputAction,
+    ReadFieldbookAction,
     RecallMemoryAction,
     RequestAffordanceAction,
     ResourceTransferStatus,
@@ -106,6 +108,20 @@ class MemoryReader(Protocol):
     ) -> ActionReceipt: ...
 
 
+class FieldbookReader(Protocol):
+    """Answer one elective fieldbook read. Emits no game input."""
+
+    def __call__(
+        self,
+        action: ReadFieldbookAction,
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+    ) -> ActionReceipt: ...
+
+
 class PatchContinuityApplier(Protocol):
     """Commit a patch's continuity operations.
 
@@ -118,6 +134,7 @@ class PatchContinuityApplier(Protocol):
     def __call__(
         self,
         operations: Sequence[ContinuityOperation],
+        fieldbook_operations: Sequence[FieldbookOperation],
         observation: Observation,
         *,
         authored_context: AuthoredPlannerContext,
@@ -227,6 +244,7 @@ class ContinuousPlanExecutor:
         request_affordance: AffordanceRequester | None = None,
         apply_patch_continuity: PatchContinuityApplier | None = None,
         read_memory: MemoryReader | None = None,
+        read_fieldbook: FieldbookReader | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -241,6 +259,7 @@ class ContinuousPlanExecutor:
         self.request_affordance = request_affordance
         self.apply_patch_continuity = apply_patch_continuity
         self.read_memory = read_memory
+        self.read_fieldbook = read_fieldbook
         # Which steps of the plan currently in flight actually finished. One
         # executor owns one plan, so this is that plan's answer, and every
         # terminal result reports it rather than only why the plan stopped.
@@ -267,6 +286,7 @@ class ContinuousPlanExecutor:
             return
         self.apply_patch_continuity(
             staged_patch.patch.continuity_operations,
+            staged_patch.patch.fieldbook_operations,
             observation,
             authored_context=staged_patch.authored_context,
             plan_id=patched_plan.plan_id,
@@ -874,6 +894,16 @@ class ContinuousPlanExecutor:
         if isinstance(action, RecallMemoryAction):
             self.guard.commit(guard_reservation)
             return self._execute_memory_read_step(
+                action,
+                plan,
+                step,
+                observation,
+                budget,
+            )
+
+        if isinstance(action, ReadFieldbookAction):
+            self.guard.commit(guard_reservation)
+            return self._execute_fieldbook_read_step(
                 action,
                 plan,
                 step,
@@ -1869,6 +1899,76 @@ class ContinuousPlanExecutor:
         )
         self._event(
             "memory_read_completed",
+            plan,
+            latest,
+            step=step,
+            reason=receipt.message,
+            evidence={"controller_primitives": 0, "world_command_created": False},
+        )
+        return _StepResult(
+            observation=latest,
+            succeeded=True,
+            actions_completed=1,
+            reason=receipt.message,
+        )
+
+    def _execute_fieldbook_read_step(
+        self,
+        action: ReadFieldbookAction,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        budget: PlanBudgetLedger,
+    ) -> _StepResult:
+        """Read bounded private project context without a world command."""
+
+        self._event(
+            "plan_step_started",
+            plan,
+            observation,
+            step=step,
+            reason="Fieldbook read passed the guard and reserved one plan action.",
+            evidence={
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "remaining_actions_before_commit": budget.remaining_actions,
+            },
+        )
+        if self.read_fieldbook is None:
+            budget.release((0, 0, 0))
+            reason = "No fieldbook-read sink is attached to this runtime."
+            self._event(
+                "plan_budget_released",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            return _StepResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=0,
+                reason=reason,
+            )
+
+        receipt = self.read_fieldbook(
+            action,
+            observation,
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            step_id=step.step_id,
+        )
+        budget.commit()
+        latest = self.state_store.latest or observation
+        self._event(
+            "plan_budget_committed",
+            plan,
+            latest,
+            step=step,
+            reason="The cognitive fieldbook read consumed one bounded plan action.",
+        )
+        self._event(
+            "fieldbook_read_completed",
             plan,
             latest,
             step=step,

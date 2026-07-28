@@ -1,8 +1,6 @@
 # External planner protocol
 
-The subprocess adapter starts a new child process for each decision. This is
-slower than a persistent RPC service but gives a simple, isolated contract for
-early experiments.
+The subprocess adapter starts one isolated child process per decision.
 
 ## Request
 
@@ -34,7 +32,8 @@ Example:
   "action": {"kind": "pause", "paused": true},
   "confidence": 0.96,
   "expected_observation": "The next telemetry snapshot should report paused=true.",
-  "continuity_operations": []
+  "continuity_operations": [],
+  "fieldbook_operations": []
 }
 ```
 
@@ -79,10 +78,22 @@ deliberate citation without placing all run history in automatic context.
 Unavailable and failed reads are not evidence of an empty search and should
 not be blindly retried.
 
+`fieldbook_operations` is the planner's typed route into larger campaign-scoped
+work: named delivery dockets, route atlases, incident logs, vendor ledgers,
+equipment plans, journals, and generic projects. A bounded project index and
+one selected active summary may appear automatically. Use the zero-input
+`read_fieldbook` action to retrieve entries for one exact visible project ID or
+a bounded literal query; its runtime-owned receipt and results appear in
+exactly the next request. Observations, manifests, expenses, incidents, and
+route entries require suitable references from the exact authored context.
+Notes, decisions, and questions may be self-authored, but never override
+current telemetry, inventory, or controller-owned facts.
+
 Commit timing is exact. A plan's operations are processed after the plan passes
 every validation gate; a decision's after its action receipt; a patch's only if
-that exact patch is revalidated and becomes the active plan. A rejected plan or
-a discarded patch writes nothing.
+that exact patch is revalidated and becomes the active plan. This timing
+applies to continuity and fieldbook operations alike. A rejected plan or a
+discarded patch writes nothing.
 
 For continuous output, use `schemas/plan.schema.json` or
 `schemas/plan_patch.schema.json` according to `active_plan`. Every plan is
@@ -105,11 +116,3 @@ planner error. The runtime records it. Single-step mode produces a stop
 decision; continuous mode requests a fresh plan until
 `max_consecutive_replans` is exhausted. It never repairs arbitrary output
 silently.
-
-## Persistent service upgrade
-
-When process startup becomes material, add a separate planner implementation
-using localhost HTTP, a named pipe, or stdio JSON-RPC. Preserve the same
-`Observation`, `PlannerDecision`, `PlanEnvelope`, and `PlanPatch` schemas so
-evaluation remains comparable, and select the continuous response type from
-`active_plan` just as the hosted adapters do.

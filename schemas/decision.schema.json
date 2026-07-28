@@ -116,6 +116,62 @@
       "title": "AffordanceUrgency",
       "type": "string"
     },
+    "AppendFieldbookEntryOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "append_entry",
+          "default": "append_entry",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookEntryKind"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "project_id",
+        "kind",
+        "content"
+      ],
+      "title": "AppendFieldbookEntryOperation",
+      "type": "object"
+    },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
       "description": "Initiate dialogue with one exact currently observed dialogue target.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nThe controller issues Kenshi's native talk-to order and owns the whole\nmonitored interaction, so there is no planner-visible \"continue\napproaching\" or prerequisite unpause command.",
@@ -230,6 +286,39 @@
       "title": "ContextActionKind",
       "type": "string"
     },
+    "CreateFieldbookProjectOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "create_project",
+          "default": "create_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/FieldbookProjectKind"
+        },
+        "title": {
+          "maxLength": 120,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "summary"
+      ],
+      "title": "CreateFieldbookProjectOperation",
+      "type": "object"
+    },
     "CurrentObservationEvidence": {
       "additionalProperties": false,
       "description": "The exact observation the planner was looking at when it wrote this.",
@@ -326,6 +415,43 @@
       },
       "title": "ExitCurrentBuildingAction",
       "type": "object"
+    },
+    "FieldbookEntryKind": {
+      "enum": [
+        "note",
+        "decision",
+        "observation",
+        "incident",
+        "manifest",
+        "route_entry",
+        "expense",
+        "question"
+      ],
+      "title": "FieldbookEntryKind",
+      "type": "string"
+    },
+    "FieldbookProjectKind": {
+      "enum": [
+        "delivery_docket",
+        "route_atlas",
+        "incident_log",
+        "vendor_ledger",
+        "equipment_plan",
+        "journal",
+        "generic"
+      ],
+      "title": "FieldbookProjectKind",
+      "type": "string"
+    },
+    "FieldbookProjectStatus": {
+      "enum": [
+        "active",
+        "paused",
+        "completed",
+        "abandoned"
+      ],
+      "title": "FieldbookProjectStatus",
+      "type": "string"
     },
     "GameBinding": {
       "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Only the\nreversible ones are here: `quicksave`, `quickload`, `editor_toggle`,\n`rebuild_navmesh` and `reload_biomes` all exist in that file and are all\ndeliberately absent from this enum, because an agent running unattended on a\nstream must not be one keystroke away from overwriting a save.",
@@ -713,6 +839,54 @@
       "title": "PurchaseItemAction",
       "type": "object"
     },
+    "ReadFieldbookAction": {
+      "additionalProperties": false,
+      "description": "Electively inspect bounded private project context without game input.",
+      "properties": {
+        "kind": {
+          "const": "read_fieldbook",
+          "default": "read_fieldbook",
+          "title": "Kind",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "query": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Query"
+        },
+        "max_entries": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Entries",
+          "type": "integer"
+        }
+      },
+      "title": "ReadFieldbookAction",
+      "type": "object"
+    },
     "RecallMemoryAction": {
       "additionalProperties": false,
       "description": "Deliberately read continuity beyond what automatic context already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything. Durable memory searches active\nrecords; working-outcome searches resurface compact runtime-owned evidence\nthat scrolled out of the rich recent window.",
@@ -1028,6 +1202,32 @@
       "title": "ScrollScreenAction",
       "type": "object"
     },
+    "SelectFieldbookProjectOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "select_project",
+          "default": "select_project",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "pattern": "^fbp-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        }
+      },
+      "title": "SelectFieldbookProjectOperation",
+      "type": "object"
+    },
     "SellItemAction": {
       "additionalProperties": false,
       "description": "Sell the item in one exact cell of the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
@@ -1070,6 +1270,31 @@
         "buyer_id"
       ],
       "title": "SellItemAction",
+      "type": "object"
+    },
+    "SetFieldbookProjectStatusOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "set_project_status",
+          "default": "set_project_status",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/FieldbookProjectStatus"
+        }
+      },
+      "required": [
+        "project_id",
+        "status"
+      ],
+      "title": "SetFieldbookProjectStatusOperation",
       "type": "object"
     },
     "SetSpeedAction": {
@@ -1263,6 +1488,34 @@
       "title": "SupersedeMemoryOperation",
       "type": "object"
     },
+    "UpdateFieldbookSummaryOperation": {
+      "additionalProperties": false,
+      "properties": {
+        "operation": {
+          "const": "update_summary",
+          "default": "update_summary",
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "pattern": "^fbp-[0-9a-f]{32}$",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "project_id",
+        "summary"
+      ],
+      "title": "UpdateFieldbookSummaryOperation",
+      "type": "object"
+    },
     "UseGameBindingAction": {
       "additionalProperties": false,
       "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap, `C` the stats window, `Space` pauses under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.",
@@ -1352,6 +1605,9 @@
         },
         {
           "$ref": "#/$defs/RecallMemoryAction"
+        },
+        {
+          "$ref": "#/$defs/ReadFieldbookAction"
         },
         {
           "$ref": "#/$defs/ApproachDialogueTargetAction"
@@ -1449,6 +1705,30 @@
       },
       "maxItems": 6,
       "title": "Continuity Operations",
+      "type": "array"
+    },
+    "fieldbook_operations": {
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/CreateFieldbookProjectOperation"
+          },
+          {
+            "$ref": "#/$defs/AppendFieldbookEntryOperation"
+          },
+          {
+            "$ref": "#/$defs/UpdateFieldbookSummaryOperation"
+          },
+          {
+            "$ref": "#/$defs/SelectFieldbookProjectOperation"
+          },
+          {
+            "$ref": "#/$defs/SetFieldbookProjectStatusOperation"
+          }
+        ]
+      },
+      "maxItems": 4,
+      "title": "Fieldbook Operations",
       "type": "array"
     }
   },
