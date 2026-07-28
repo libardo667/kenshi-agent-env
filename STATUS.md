@@ -100,7 +100,10 @@ before planning and rejects native actions again at the guard and environment bo
 - A causally later observation stops stale pre-action state from satisfying a postcondition, but
   most success conditions are planner-authored. Only `controller_verified` contracts carry effect
   proof, so later correlated state can still be mistaken for the intended effect.
-- Continuity has an evidence-capability matrix and structured provenance; restart proof remains open.
+- Synthetic portable and replay evidence proves campaign-scoped continuity across real process
+  restarts, including exact-identity exclusion, bounded fieldbook reopening, current-telemetry
+  precedence, rejection correction, and evidence-backed commitment closure. No supervised live
+  restart has exercised that authority.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name, task stacks, trader
   money, occlusion, and distant world state are unavailable or unvalidated; source-scan capacity
   makes absence unknown.

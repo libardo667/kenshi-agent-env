@@ -100,5 +100,20 @@ uv run kenshi-agent fieldbook --campaign ladle-css-01 --project-id fbp-<id> # or
 Markdown output is disposable. Immutable evidence is resolved before grounding; non-effects may
 ground a failed episode, never success. See [the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
 
+## Running the portable restart evaluation
+
+```bash
+uv run python -m kenshi_agent.evals.restart_continuity --output runs/evals/<fresh-id>
+```
+
+The command refuses to overwrite evidence. It runs continuity-disabled, lifecycle-memory, and
+memory-plus-fieldbook treatments, with each phase in a separate operating-system process. Read
+`evidence.json` first; it names every artifact and contains the normalized comparison metrics.
+
+This is synthetic portable and replay evidence. It tests campaign isolation, bounded restart
+recall, exact entity identity, elective fieldbook reading, current-observation precedence,
+correction after a rejected operation, and evidence-backed closure. It sends no Kenshi input and
+does not establish live control or general game competence.
+
 `memory_events` is append-only history; `memories` is its transactional, rebuildable projection.
 Reads never change ordering or state. Closed records reject transitions; campaigns cannot cross.

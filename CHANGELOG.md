@@ -10,6 +10,12 @@
   claiming a tree they cannot name, and a zero-mutant run — which the campaign already fails
   closed on — can no longer displace a real result as a shard's newest evidence. The gate reads
   only committed inputs, so it holds on a clone with no run artifacts. `runs/` stays ignored.
+- Added a reproducible synthetic portable and replay evaluation for continuity across a real
+  operating-system process restart. Three treatments compare continuity disabled, scoped lifecycle
+  memory, and memory plus fieldbook while preserving exact manifests, campaign and entity
+  isolation, bounded elective reads, current-observation precedence, correction after rejection,
+  quantity-conserving transfer evidence, and closure provenance. Evidence bundles are
+  non-overwriting and explicitly do not claim live Kenshi control.
 - Added explicit, bounded, lossless memory compaction. The read-only operator
   proposal preserves exact source text and fingerprints durable source state;
   applying the inspected candidate re-resolves it under an immediate write
