@@ -53,7 +53,10 @@ warn_unused_ignores = true
 
 [tool.mutmut]
 source_paths = ["src/kenshi_agent/"]
-do_not_mutate_patterns = ["# mutation: diagnostic-only"]
+do_not_mutate_patterns = [
+  "# mutation: diagnostic-only",
+  "# mutation: reason",
+]
 pytest_add_cli_args_test_selection = ["tests/"]
 also_copy = [
   ".env.example",

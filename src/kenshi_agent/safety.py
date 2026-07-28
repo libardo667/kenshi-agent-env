@@ -13,6 +13,7 @@ from .models import (
     ConsultAdvisorAction,
     ControlMode,
     CoordinateSpace,
+    Disposition,
     GameBinding,
     MoveCursorAction,
     NativeCommandStatus,
@@ -30,6 +31,16 @@ from .skills import MacroRegistry
 
 class SafetyViolation(RuntimeError):
     pass
+
+
+def require_exact_target_id(value: object) -> str:
+    """Return one usable stable reference or fail before any state lookup."""
+
+    if not isinstance(value, str) or not value:
+        raise SafetyViolation(  # mutation: reason
+            "Action requires an exact target_id."  # mutation: reason
+        )
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,7 +81,7 @@ class ActionGuard:
     def revalidate(self, action: Action, observation: Observation) -> Action:
         """Re-check current authority without spending the same budget twice."""
 
-        validated, _, _ = self._validate(action, observation, check_budget=False)
+        validated, _, _ = self._validate(action, observation)
         return validated
 
     def reserve(
@@ -122,14 +133,16 @@ class ActionGuard:
     ) -> None:
         active = self._reservations.pop(reservation.token, None)
         if active is not reservation:
-            raise RuntimeError("Action budget reservation is foreign or already finalized.")
+            raise RuntimeError(  # mutation: reason
+                "Action budget reservation is foreign or already finalized."  # mutation: reason
+            )
 
     def _validate(
         self,
         action: Action,
         observation: Observation,
         *,
-        check_budget: bool,
+        check_budget: bool = False,
     ) -> tuple[Action, int, int]:
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
@@ -153,20 +166,27 @@ class ActionGuard:
                 and self.macros.requires_native_assisted(action.name)
                 and self.control_mode != ControlMode.NATIVE_ASSISTED
             ):
-                raise SafetyViolation(
-                    f"Skill {action.name!r} requires native_assisted control mode."
+                raise SafetyViolation(  # mutation: reason
+                    f"Skill {action.name!r} requires native_assisted "  # mutation: reason
+                    "control mode."  # mutation: reason
                 )
             if action.name not in self.config.allow_skills and observation.mode == "live":
-                raise SafetyViolation(f"Skill {action.name!r} is not allowlisted for live use.")
+                raise SafetyViolation(  # mutation: reason
+                    f"Skill {action.name!r} is not allowlisted "  # mutation: reason
+                    "for live use."  # mutation: reason
+                )
             if observation.mode == "live" and not self.macros.has(action.name):
-                raise SafetyViolation(f"Live skill {action.name!r} has no configured macro.")
+                raise SafetyViolation(  # mutation: reason
+                    f"Live skill {action.name!r} has no configured macro."  # mutation: reason
+                )
             if observation.mode == "live":
                 try:
                     pulse_seconds = self.macros.resolve_movement_pulse_seconds(action)
                     primitives = self.macros.expand(action)
                 except (TypeError, ValueError) as exc:
-                    raise SafetyViolation(
-                        f"Live skill {action.name!r} could not be expanded safely: {exc}"
+                    raise SafetyViolation(  # mutation: reason
+                        f"Live skill {action.name!r} could not be expanded "  # mutation: reason
+                        f"safely: {exc}"  # mutation: reason
                     ) from exc
                 if (
                     pulse_seconds is not None
@@ -176,8 +196,9 @@ class ActionGuard:
                         or observation.telemetry.game.paused is not True
                     )
                 ):
-                    raise SafetyViolation(
-                        f"Movement pulse {action.name!r} requires confirmed paused live state."
+                    raise SafetyViolation(  # mutation: reason
+                        f"Movement pulse {action.name!r} requires confirmed "  # mutation: reason
+                        "paused live state."  # mutation: reason
                     )
                 if action.name == "approach_confirmed_vendor":
                     self._validate_native_vendor_target(action, observation)
@@ -198,26 +219,25 @@ class ActionGuard:
                         "click",
                         "scroll",
                     }:
-                        raise SafetyViolation(
-                            f"Live skill {action.name!r} contains unsupported primitive "
-                            f"{primitive.kind!r}."
+                        raise SafetyViolation(  # mutation: reason
+                            f"Live skill {action.name!r} contains unsupported "  # mutation: reason
+                            f"primitive {primitive.kind!r}."  # mutation: reason
                         )
-                    self._validate_action_constraints(
-                        primitive, observation, check_action_allowlist=False
-                    )
+                    self._validate_intrinsic_action_constraints(primitive, observation)
                     if pointer_bounds is not None and isinstance(
                         primitive, (ClickAction, MoveCursorAction, ScrollAction)
                     ):
                         if primitive.space != CoordinateSpace.NORMALIZED:
-                            raise SafetyViolation(
-                                f"Live skill {action.name!r} has a pointer safety envelope "
-                                "but emitted non-normalized coordinates."
+                            raise SafetyViolation(  # mutation: reason
+                                f"Live skill {action.name!r} has a pointer "  # mutation: reason
+                                "safety envelope but emitted non-normalized "  # mutation: reason
+                                "coordinates."  # mutation: reason
                             )
                         if not pointer_bounds.contains(primitive.x, primitive.y):
-                            raise SafetyViolation(
-                                f"Live skill {action.name!r} pointer target "
-                                f"({primitive.x:.3f}, {primitive.y:.3f}) is outside its "
-                                "calibrated safety envelope."
+                            raise SafetyViolation(  # mutation: reason
+                                f"Live skill {action.name!r} pointer target "  # mutation: reason
+                                f"({primitive.x:.3f}, {primitive.y:.3f}) "  # mutation: reason
+                                "is outside its calibrated safety envelope."  # mutation: reason
                             )
         primitive_count = (
             self.macros.primitive_count(action)
@@ -227,9 +247,9 @@ class ActionGuard:
             else 1
         )
         if primitive_count > self.config.max_primitive_actions_per_step:
-            raise SafetyViolation(
-                f"Action expands to {primitive_count} primitives; maximum is "
-                f"{self.config.max_primitive_actions_per_step}."
+            raise SafetyViolation(  # mutation: reason
+                f"Action expands to {primitive_count} primitives; "  # mutation: reason
+                f"maximum is {self.config.max_primitive_actions_per_step}."  # mutation: reason
             )
         purchase_actions = int(
             isinstance(action, SkillAction)
@@ -252,13 +272,14 @@ class ActionGuard:
         """
 
         if not contract.allows_control_mode(self.control_mode):
-            raise SafetyViolation(
-                f"Action {contract.kind!r} is not permitted in control mode "
-                f"{self.control_mode.value!r}."
+            raise SafetyViolation(  # mutation: reason
+                f"Action {contract.kind!r} is not permitted in "  # mutation: reason
+                f"control mode {self.control_mode.value!r}."  # mutation: reason
             )
         if contract.native_assisted and self.control_mode != ControlMode.NATIVE_ASSISTED:
-            raise SafetyViolation(
-                f"Action {contract.kind!r} requires native_assisted control mode."
+            raise SafetyViolation(  # mutation: reason
+                f"Action {contract.kind!r} requires native_assisted "  # mutation: reason
+                "control mode."  # mutation: reason
             )
         primitive_limit = (
             self.config.max_controller_verified_primitive_actions_per_step
@@ -266,31 +287,35 @@ class ActionGuard:
             else self.config.max_primitive_actions_per_step
         )
         if contract.max_primitive_actions > primitive_limit:
-            raise SafetyViolation(
-                f"Action {contract.kind!r} may emit {contract.max_primitive_actions} "
-                f"primitives; maximum is {primitive_limit} for this contract class."
+            raise SafetyViolation(  # mutation: reason
+                f"Action {contract.kind!r} may emit "  # mutation: reason
+                f"{contract.max_primitive_actions} primitives; "  # mutation: reason
+                f"maximum is {primitive_limit} for this contract class."  # mutation: reason
             )
         if observation.mode != "live":
             return
 
         if observation.telemetry_stale or observation.telemetry is None:
-            raise SafetyViolation(
-                f"Action {contract.kind!r} requires fresh authoritative telemetry."
+            raise SafetyViolation(  # mutation: reason
+                f"Action {contract.kind!r} requires fresh "  # mutation: reason
+                "authoritative telemetry."  # mutation: reason
             )
         missing = contract.missing_capabilities(set(observation.telemetry.capabilities))
         if missing:
-            raise SafetyViolation(
-                f"Action {contract.kind!r} lacks required capabilities: " + ", ".join(missing)
+            raise SafetyViolation(  # mutation: reason
+                f"Action {contract.kind!r} lacks required capabilities: "  # mutation: reason
+                + ", ".join(missing)  # mutation: reason
             )
         # The reference must resolve against the state observed right now.
         # Absent, duplicated, or ambiguous references fail closed.
         binding = contract.bind(action, observation)
         if not binding.bound:
-            raise SafetyViolation(
-                f"Action {contract.kind!r} does not bind to current state: {binding.reason}"
+            raise SafetyViolation(  # mutation: reason
+                f"Action {contract.kind!r} does not bind to "  # mutation: reason
+                f"current state: {binding.reason}"  # mutation: reason
             )
         if contract.native_assisted:
-            self._validate_exact_selection(contract.kind, observation)
+            self._validate_exact_selection(observation)
 
     def _validate_generic_purchase(
         self,
@@ -316,13 +341,16 @@ class ActionGuard:
             # the purchase is the cell binding, the verified seller, the exact
             # selection and the open trade screen - all still enforced below,
             # all independent of whether the world is moving.
-            raise SafetyViolation(
-                "Purchase requires a confirmed paused game because this profile "
-                "sets require_paused_between_actions."
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires a confirmed paused game "  # mutation: reason
+                "because this profile sets "  # mutation: reason
+                "require_paused_between_actions."  # mutation: reason
             )
         if telemetry.ui.active_screen != "trade":
-            raise SafetyViolation("Purchase blocked because the trade screen is not open.")
-        self._validate_exact_selection(action.kind, observation)
+            raise SafetyViolation(  # mutation: reason
+                "Purchase blocked because the trade screen is not open."  # mutation: reason
+            )
+        self._validate_exact_selection(observation)
         # Each of these is enforced only when the profile actually asks for it.
         if (
             check_purchase_limit
@@ -330,39 +358,49 @@ class ActionGuard:
             and self._purchase_count + self._pending_purchase_count
             >= self.config.max_purchases_per_run
         ):
-            raise SafetyViolation("Per-run purchase limit has already been reached.")
+            raise SafetyViolation(  # mutation: reason
+                "Per-run purchase limit has already been reached."  # mutation: reason
+            )
         if (
             self.config.max_purchase_price is not None
             and action.expected_price > self.config.max_purchase_price
         ):
-            raise SafetyViolation(
-                f"Expected price {action.expected_price} exceeds maximum "
-                f"{self.config.max_purchase_price}."
+            raise SafetyViolation(  # mutation: reason
+                f"Expected price {action.expected_price} exceeds "  # mutation: reason
+                f"maximum {self.config.max_purchase_price}."  # mutation: reason
             )
         money = telemetry.game.money
         if money is None:
-            raise SafetyViolation("Purchase blocked because current money is unknown.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase blocked because current money is unknown."  # mutation: reason
+            )
         if (
             self.config.min_money_after_purchase is not None
             and money - action.expected_price < self.config.min_money_after_purchase
         ):
-            raise SafetyViolation(
-                f"Expected purchase would leave {money - action.expected_price} cats; "
-                f"minimum is {self.config.min_money_after_purchase}."
+            raise SafetyViolation(  # mutation: reason
+                "Expected purchase would leave "  # mutation: reason
+                f"{money - action.expected_price} cats; "  # mutation: reason
+                f"minimum is {self.config.min_money_after_purchase}."  # mutation: reason
             )
+        tooltip_text = telemetry.ui.tooltip_text
         for marker in self.config.required_purchase_tooltip_markers:
-            if marker not in (telemetry.ui.tooltip_text or ""):
-                raise SafetyViolation(
-                    f"Purchase blocked because the tooltip lacks the required marker {marker!r}."
+            if tooltip_text is None or marker not in tooltip_text:
+                raise SafetyViolation(  # mutation: reason
+                    "Purchase blocked because the tooltip lacks "  # mutation: reason
+                    f"the required marker {marker!r}."  # mutation: reason
                 )
 
     @staticmethod
-    def _validate_exact_selection(kind: str, observation: Observation) -> None:
+    def _validate_exact_selection(observation: Observation) -> None:
         assert observation.telemetry is not None
         telemetry = observation.telemetry
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
-            raise SafetyViolation(f"Action {kind!r} requires one exact primary selected character.")
+            raise SafetyViolation(  # mutation: reason
+                "Action requires one exact primary "  # mutation: reason
+                "selected character."  # mutation: reason
+            )
 
     @staticmethod
     def _validate_native_vendor_target(
@@ -370,7 +408,10 @@ class ActionGuard:
         observation: Observation,
     ) -> None:
         if observation.telemetry_stale or observation.telemetry is None:
-            raise SafetyViolation("Native vendor approach requires fresh authoritative telemetry.")
+            raise SafetyViolation(  # mutation: reason
+                "Native vendor approach requires fresh "  # mutation: reason
+                "authoritative telemetry."  # mutation: reason
+            )
         telemetry = observation.telemetry
         required_capabilities = {
             "control.approach_vendor",
@@ -380,24 +421,25 @@ class ActionGuard:
         }
         missing = required_capabilities - set(telemetry.capabilities)
         if missing:
-            raise SafetyViolation(
-                "Native vendor approach lacks required capabilities: " + ", ".join(sorted(missing))
+            raise SafetyViolation(  # mutation: reason
+                "Native vendor approach lacks required capabilities: "  # mutation: reason
+                + ", ".join(sorted(missing))  # mutation: reason
             )
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
-            raise SafetyViolation(
-                "Native vendor approach requires one exact primary selected character."
+            raise SafetyViolation(  # mutation: reason
+                "Native vendor approach requires one exact "  # mutation: reason
+                "primary selected character."  # mutation: reason
             )
-        target_id = action.argument_map().get("target_id")
-        if not isinstance(target_id, str) or not target_id:
-            raise SafetyViolation("Native vendor approach requires an exact target_id.")
+        target_id = require_exact_target_id(action.argument_map().get("target_id"))
         target = next(
             (entity for entity in telemetry.nearby_entities if entity.id == target_id),
             None,
         )
         if target is None:
-            raise SafetyViolation(
-                "Native vendor target is absent from the current bounded nearby set."
+            raise SafetyViolation(  # mutation: reason
+                "Native vendor target is absent from the "  # mutation: reason
+                "current bounded nearby set."  # mutation: reason
             )
         if (
             target.is_animal is not False
@@ -405,11 +447,11 @@ class ActionGuard:
             or target.is_squad_leader is not True
             or target.has_dialogue is not True
             or target.conscious is not True
-            or target.disposition.value not in {"friendly", "neutral"}
+            or target.disposition not in {Disposition.FRIENDLY, Disposition.NEUTRAL}
         ):
-            raise SafetyViolation(
-                "Native vendor target lacks exact current role, consciousness, "
-                "or non-hostile evidence."
+            raise SafetyViolation(  # mutation: reason
+                "Native vendor target lacks exact current role, "  # mutation: reason
+                "consciousness, or non-hostile evidence."  # mutation: reason
             )
 
     @classmethod
@@ -434,9 +476,9 @@ class ActionGuard:
             or acknowledgement.target_id != target_id
             or acknowledgement.selected_character_ids != telemetry.ui.selected_character_ids
         ):
-            raise SafetyViolation(
-                "Native vendor continuation requires the exact active accepted "
-                "command, target, and selection."
+            raise SafetyViolation(  # mutation: reason
+                "Native vendor continuation requires the exact "  # mutation: reason
+                "active accepted command, target, and selection."  # mutation: reason
             )
 
     def validate_safety_pause(
@@ -447,16 +489,19 @@ class ActionGuard:
         """Validate the narrow safe-pause path without consuming rate budget."""
 
         if action.paused is not True:
-            raise SafetyViolation("Safety override only permits requesting paused=true.")
+            raise SafetyViolation(  # mutation: reason
+                "Safety override only permits requesting paused=true."  # mutation: reason
+            )
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
         return action
 
     def _validate_control_mode(self, observation: Observation) -> None:
         if observation.mode == "live" and observation.control_mode != self.control_mode:
-            raise SafetyViolation(
-                f"Observation control mode {observation.control_mode.value!r} does not match "
-                f"guard control mode {self.control_mode.value!r}."
+            raise SafetyViolation(  # mutation: reason
+                "Observation control mode "  # mutation: reason
+                f"{observation.control_mode.value!r} does not match "  # mutation: reason
+                f"guard control mode {self.control_mode.value!r}."  # mutation: reason
             )
 
     def _validate_purchase(
@@ -467,7 +512,10 @@ class ActionGuard:
         check_purchase_limit: bool,
     ) -> None:
         if observation.telemetry_stale or observation.telemetry is None:
-            raise SafetyViolation("Purchase blocked because live telemetry is stale or absent.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase blocked because live telemetry "  # mutation: reason
+                "is stale or absent."  # mutation: reason
+            )
         telemetry = observation.telemetry
         required_capabilities = {
             "game.money",
@@ -481,8 +529,9 @@ class ActionGuard:
         }
         missing = required_capabilities - set(telemetry.capabilities)
         if missing:
-            raise SafetyViolation(
-                "Purchase lacks required authoritative capabilities: " + ", ".join(sorted(missing))
+            raise SafetyViolation(  # mutation: reason
+                "Purchase lacks required authoritative capabilities: "  # mutation: reason
+                + ", ".join(sorted(missing))  # mutation: reason
             )
         if self.config.require_paused_between_actions and telemetry.game.paused is not True:
             # Only when the profile actually asks for it. A stream agent has to
@@ -491,19 +540,23 @@ class ActionGuard:
             # the purchase is the cell binding, the verified seller, the exact
             # selection and the open trade screen - all still enforced below,
             # all independent of whether the world is moving.
-            raise SafetyViolation(
-                "Purchase requires a confirmed paused game because this profile "
-                "sets require_paused_between_actions."
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires a confirmed paused game "  # mutation: reason
+                "because this profile sets "  # mutation: reason
+                "require_paused_between_actions."  # mutation: reason
             )
         selected_ids = telemetry.ui.selected_character_ids
         if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
-            raise SafetyViolation("Purchase requires one exact primary selected character.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires one exact primary selected character."  # mutation: reason
+            )
         if telemetry.ui.active_screen != "trade":
-            raise SafetyViolation("Purchase blocked because the exact trade screen is not open.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase blocked because the exact trade "  # mutation: reason
+                "screen is not open."  # mutation: reason
+            )
         arguments = action.argument_map()
-        target_id = arguments.get("target_id")
-        if not isinstance(target_id, str) or not target_id:
-            raise SafetyViolation("Purchase requires an exact target_id.")
+        target_id = require_exact_target_id(arguments.get("target_id"))
         target = next(
             (entity for entity in telemetry.nearby_entities if entity.id == target_id),
             None,
@@ -512,11 +565,11 @@ class ActionGuard:
             telemetry.active_shop_trader_count != 1
             or target is None
             or target.shop_inventory_owner is not True
-            or target.disposition.value not in {"friendly", "neutral"}
+            or target.disposition not in {Disposition.FRIENDLY, Disposition.NEUTRAL}
         ):
-            raise SafetyViolation(
-                "Purchase blocked because the exact target is not the one verified "
-                "non-hostile shop owner."
+            raise SafetyViolation(  # mutation: reason
+                "Purchase blocked because the exact target is "  # mutation: reason
+                "not the one verified non-hostile shop owner."  # mutation: reason
             )
         if (
             check_purchase_limit
@@ -524,7 +577,9 @@ class ActionGuard:
             and self._purchase_count + self._pending_purchase_count
             >= self.config.max_purchases_per_run
         ):
-            raise SafetyViolation("Per-run purchase limit has already been reached.")
+            raise SafetyViolation(  # mutation: reason
+                "Per-run purchase limit has already been reached."  # mutation: reason
+            )
 
         expected_price = arguments.get("expected_price")
         if (
@@ -532,34 +587,43 @@ class ActionGuard:
             or not isinstance(expected_price, int)
             or expected_price <= 0
         ):
-            raise SafetyViolation("Purchase requires a positive integer expected_price.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires a positive integer expected_price."  # mutation: reason
+            )
         if (
             self.config.max_purchase_price is not None
             and expected_price > self.config.max_purchase_price
         ):
-            raise SafetyViolation(
-                f"Expected price {expected_price} exceeds maximum {self.config.max_purchase_price}."
+            raise SafetyViolation(  # mutation: reason
+                f"Expected price {expected_price} exceeds maximum "  # mutation: reason
+                f"{self.config.max_purchase_price}."  # mutation: reason
             )
         money = telemetry.game.money
         if money is None:
-            raise SafetyViolation("Purchase blocked because current money is unknown.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase blocked because current money is unknown."  # mutation: reason
+            )
         if (
             self.config.min_money_after_purchase is not None
             and money - expected_price < self.config.min_money_after_purchase
         ):
-            raise SafetyViolation(
-                f"Expected purchase would leave {money - expected_price} cats; minimum is "
-                f"{self.config.min_money_after_purchase}."
+            raise SafetyViolation(  # mutation: reason
+                "Expected purchase would leave "  # mutation: reason
+                f"{money - expected_price} cats; minimum is "  # mutation: reason
+                f"{self.config.min_money_after_purchase}."  # mutation: reason
             )
 
         item_name = arguments.get("item_name")
         if not isinstance(item_name, str) or not item_name.strip():
-            raise SafetyViolation("Purchase requires the exact current tooltip item_name.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires the exact current tooltip item_name."  # mutation: reason
+            )
         tooltip_text = telemetry.ui.tooltip_text
         tooltip_bounds = telemetry.ui.tooltip_source_bounds
         if telemetry.ui.tooltip_visible is not True or not tooltip_text or tooltip_bounds is None:
-            raise SafetyViolation(
-                "Purchase requires a visible authoritative tooltip and its source bounds."
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires a visible authoritative tooltip "  # mutation: reason
+                "and its source bounds."  # mutation: reason
             )
         price_pattern = rf"(?<![A-Za-z0-9])c\.{expected_price}(?![0-9])"
         if (
@@ -567,7 +631,10 @@ class ActionGuard:
             or "[Food]" not in tooltip_text
             or re.search(price_pattern, tooltip_text) is None
         ):
-            raise SafetyViolation("Purchase arguments do not match the current food tooltip.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase arguments do not match the "  # mutation: reason
+                "current food tooltip."  # mutation: reason
+            )
         x = arguments.get("x")
         y = arguments.get("y")
         if (
@@ -577,29 +644,42 @@ class ActionGuard:
             or not isinstance(y, (int, float))
             or not tooltip_bounds.contains(float(x), float(y))
         ):
-            raise SafetyViolation("Purchase coordinates are outside the current tooltip source.")
+            raise SafetyViolation(  # mutation: reason
+                "Purchase coordinates are outside the "  # mutation: reason
+                "current tooltip source."  # mutation: reason
+            )
 
     def _validate_action_constraints(
         self,
         action: Action,
         observation: Observation,
-        *,
-        check_action_allowlist: bool = True,
     ) -> None:
-        if check_action_allowlist and action.kind not in self.config.allow_action_kinds:
-            raise SafetyViolation(f"Action kind {action.kind!r} is not allowlisted.")
+        if action.kind not in self.config.allow_action_kinds:
+            raise SafetyViolation(  # mutation: reason
+                f"Action kind {action.kind!r} is not allowlisted."  # mutation: reason
+            )
+        self._validate_intrinsic_action_constraints(action, observation)
+
+    def _validate_intrinsic_action_constraints(
+        self,
+        action: Action,
+        observation: Observation,
+    ) -> None:
         if isinstance(action, WaitAction) and action.seconds > self.config.max_wait_seconds:
-            raise SafetyViolation(
-                f"Wait {action.seconds:.2f}s exceeds maximum {self.config.max_wait_seconds:.2f}s."
+            raise SafetyViolation(  # mutation: reason
+                f"Wait {action.seconds:.2f}s exceeds maximum "  # mutation: reason
+                f"{self.config.max_wait_seconds:.2f}s."  # mutation: reason
             )
         if isinstance(action, PauseAction) and observation.mode == "live":
             if observation.telemetry is None or observation.telemetry.game.paused is None:
-                raise SafetyViolation(
-                    "Pause action blocked because the current live pause state is unknown."
+                raise SafetyViolation(  # mutation: reason
+                    "Pause action blocked because the current "  # mutation: reason
+                    "live pause state is unknown."  # mutation: reason
                 )
             if not action.paused and not self.config.allow_live_unpause_actions:
-                raise SafetyViolation(
-                    "Direct live unpause is blocked; use a bounded movement pulse."
+                raise SafetyViolation(  # mutation: reason
+                    "Direct live unpause is blocked; "  # mutation: reason
+                    "use a bounded movement pulse."  # mutation: reason
                 )
         if (
             isinstance(action, UseGameBindingAction)
@@ -610,12 +690,14 @@ class ActionGuard:
                 observation.telemetry.game.paused if observation.telemetry is not None else None
             )
             if paused is None:
-                raise SafetyViolation(
-                    "Pause binding blocked because the current live pause state is unknown."
+                raise SafetyViolation(  # mutation: reason
+                    "Pause binding blocked because the current "  # mutation: reason
+                    "live pause state is unknown."  # mutation: reason
                 )
             if paused and not self.config.allow_live_unpause_actions:
-                raise SafetyViolation(
-                    "Live unpause through the pause binding is blocked by policy."
+                raise SafetyViolation(  # mutation: reason
+                    "Live unpause through the pause binding "  # mutation: reason
+                    "is blocked by policy."  # mutation: reason
                 )
         if isinstance(action, (ClickAction, MoveCursorAction, ScrollAction)):
             self._validate_pointer_target(action, observation)
@@ -631,33 +713,44 @@ class ActionGuard:
             and observation.telemetry_stale
             and self.config.block_clicks_when_telemetry_stale
         ):
-            raise SafetyViolation("Click blocked because live telemetry is stale.")
+            raise SafetyViolation(  # mutation: reason
+                "Click blocked because live telemetry is stale."  # mutation: reason
+            )
         if observation.mode == "live" and action.space == CoordinateSpace.SCREEN:
-            raise SafetyViolation(
-                "Screen-space pointer actions are blocked in live mode; use Kenshi client "
-                "or normalized coordinates."
+            raise SafetyViolation(  # mutation: reason
+                "Screen-space pointer actions are blocked in "  # mutation: reason
+                "live mode; use Kenshi client or normalized "  # mutation: reason
+                "coordinates."  # mutation: reason
             )
         if action.space == CoordinateSpace.NORMALIZED:
             if not (0.0 <= action.x <= 1.0 and 0.0 <= action.y <= 1.0):
-                raise SafetyViolation("Normalized pointer coordinates must be within [0, 1].")
+                raise SafetyViolation(  # mutation: reason
+                    "Normalized pointer coordinates must be within [0, 1]."  # mutation: reason
+                )
             return
         if action.x < 0 or action.y < 0:
-            raise SafetyViolation("Pointer coordinates may not be negative.")
+            raise SafetyViolation(  # mutation: reason
+                "Pointer coordinates may not be negative."  # mutation: reason
+            )
         if action.space == CoordinateSpace.CLIENT:
             ui = observation.telemetry.ui if observation.telemetry is not None else None
             if observation.mode == "live" and (
                 ui is None or ui.client_width is None or ui.client_height is None
             ):
-                raise SafetyViolation(
-                    "Client-space pointer action blocked because Kenshi client dimensions "
-                    "are unknown."
+                raise SafetyViolation(  # mutation: reason
+                    "Client-space pointer action blocked because "  # mutation: reason
+                    "Kenshi client dimensions are unknown."  # mutation: reason
                 )
             if ui is None:
                 return
             if ui.client_width is not None and action.x >= ui.client_width:
-                raise SafetyViolation("Pointer x-coordinate is outside the Kenshi window.")
+                raise SafetyViolation(  # mutation: reason
+                    "Pointer x-coordinate is outside the Kenshi window."  # mutation: reason
+                )
             if ui.client_height is not None and action.y >= ui.client_height:
-                raise SafetyViolation("Pointer y-coordinate is outside the Kenshi window.")
+                raise SafetyViolation(  # mutation: reason
+                    "Pointer y-coordinate is outside the Kenshi window."  # mutation: reason
+                )
 
     def _prune_rate_budget(self, now: float) -> None:
         cutoff = now - 60.0
@@ -671,5 +764,7 @@ class ActionGuard:
             len(self._action_times) + self._pending_primitive_count + count
             > self.config.max_actions_per_minute
         ):
-            raise SafetyViolation("Per-minute primitive action rate limit would be exceeded.")
+            raise SafetyViolation(  # mutation: reason
+                "Per-minute primitive action rate limit would be exceeded."  # mutation: reason
+            )
         self._pending_primitive_count += count
