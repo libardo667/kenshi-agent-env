@@ -1,7 +1,8 @@
 # Implementation status
 
-Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface lives in
-generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md).
+Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface in
+generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md);
+mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTATION.md).
 
 ## What works
 
@@ -37,14 +38,15 @@ generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/genera
   commitment. Rich windows sit over all-run compact digests returned only by elective read.
   Campaign-scoped schema 4 keeps structured provenance in append-only history and a rebuildable
   projection, with backed-up migration and read-only audit. Tiered recall reports omissions and
-  receipts; `recall_memory` returns an identified, plan-bound one-call result without game input.
-  A private fieldbook provides typed projects, evidence-bound entries, lifecycle, a selected summary,
+  receipts; `recall_memory` returns an identified, plan-bound one-call result without game input. A
+  private fieldbook provides typed projects, evidence-bound entries, lifecycle, a selected summary,
   bounded elective reads, and disposable Markdown without becoming world authority. Lossless
   operator compaction fingerprints exact active sources, presents a read-only candidate, then
-  revalidates and supersedes them atomically without deleting history. Retrieval is deterministic and
-  logged; semantic rewriting and semantic MMR are unavailable.
-- Hash-locked FCS starts install and launch with money/party proof. The continuity loop names its
-  authority shards explicitly, and the mutation campaign records strict evidence per run.
+  revalidates and supersedes them atomically without deleting history. Retrieval is deterministic
+  and logged; semantic rewriting and semantic MMR are unavailable.
+- Hash-locked FCS starts install and launch with money/party proof. Each mutation campaign records
+  the digest of the source it attests, so the generated ledger derives — rather than asserts — which
+  committed results still describe the code; editing a mutated module fails a gate.
 
 ## Live profiles
 
@@ -56,36 +58,24 @@ generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/genera
   food-procurement policies are retired.
 
 From WSL, `./dev journey` preserves exact planner argv; `./dev close` confirms pause then guards
-`WM_CLOSE`; `./dev crash` archives evidence before bounded dismissal. Supervised runs have shown
-generic approach and dialogue activation, semantic startup, inventory and trade navigation,
-one-step purchases with confirmed debits, readable world deltas, persistent continuous memory, and
-human-control handback. One run planned during native options in an unpaused world and ended
-safely paused, but proved no income or task persistence. Selling and equipping have portable
-coverage but no live proof. Native walking supports exact characters, bounded direction, and
-no-argument exits; a shared ten-second no-progress terminal prevents poisoning later movement, and
-camera follow has one obstructed-move proof. Exact contextual operation is live-proven on one
-Copper Resource via `context_task_started`, the visible `Operating machine` goal, and a safe final
-pause. A fresh zero-ore run reached Raw Iron output and opened the source, but four source-only
-transfers changed neither inventory; collection needs the separately open destination and its
-conservation proof is absent.
+`WM_CLOSE`; `./dev crash` archives evidence before bounded dismissal.
+
+Supervised runs have live-proven approach and dialogue activation, semantic startup, inventory and
+trade navigation, one-step purchases with confirmed debits, readable world deltas, persistent
+continuous memory, human-control handback, bounded native walking with camera follow, and exact
+contextual operation through `context_task_started`. Selling and equipping have portable coverage
+but no live proof.
 
 ## Native protocol 1.1.0 (supervised live-loaded)
+
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically replaces a
-complete snapshot at roughly 2 Hz. Telemetry covers pause, speed, money, game time, camera
-position and bearings; stable session-scoped squad, selection, nearby-character, dialogue-target,
-world-target and command identities; squad life/consciousness/combat state, position, resolved
-indoor membership, nutrition reserve, blood, UI-facing current goal, and bounded inventory;
-dialogue, trade, inventory, stats and management window state; up to 224 visible controls with
-window ownership and normalized bounds; nearest-first structurally reviewed mining resources from
-bounded local and outer queries; completeness markers for bounded squad/control inventories; exact
-contextual-inventory ownership; and a keyed acknowledgement ring for seven declared commands. Its
-production and inventory-opening path has live evidence; matching later destination quantity does
-not prove conserved transfer.
+complete snapshot at roughly 2 Hz, covering world/squad state, window state, bounded visible
+controls, reviewed mining resources, completeness markers, and a keyed acknowledgement ring. Field
+semantics are in [`GUIDE_TELEMETRY_PROTOCOL.md`](docs/GUIDE_TELEMETRY_PROTOCOL.md).
 
 The DLL is therefore not globally read-only. `interface_only` removes native command capabilities
 before planning and rejects native actions again at the guard and environment boundaries.
-`native_assisted` requires configuration opt-in plus a separate CLI acknowledgement. Wire
-semantics are in [`GUIDE_TELEMETRY_PROTOCOL.md`](docs/GUIDE_TELEMETRY_PROTOCOL.md).
+`native_assisted` requires configuration opt-in plus a separate CLI acknowledgement.
 
 ## Open work
 
@@ -113,7 +103,7 @@ semantics are in [`GUIDE_TELEMETRY_PROTOCOL.md`](docs/GUIDE_TELEMETRY_PROTOCOL.m
 - Continuity has an evidence-capability matrix and structured provenance; restart proof remains open.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name, task stacks, trader
   money, occlusion, and distant world state are unavailable or unvalidated; source-scan capacity
-  makes absence unknown. Fifty-six mutation shards remain unattested.
+  makes absence unknown.
 - Native identity needs validation across recruit/dismiss/reorder/KO/death, save/load, and zones;
   entity memories never cross a session identity.
 - Game bindings use a hard-coded key map, not the active `controls.cfg`. Renderer stability remains

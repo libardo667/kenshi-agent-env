@@ -39,18 +39,13 @@ Before writing, migration backs up the prior schema as `<memory-db>.vN-backup`. 
 become `keep` events under `legacy:<old-namespace>` with `legacy_unverified` authorship. Later
 migrations add structured provenance and the fieldbook without inventing evidence. All are idempotent.
 
-To read migrated rows, name their campaign explicitly:
-
-```bash
-uv run kenshi-agent memory --campaign legacy:live-longform
-```
-
 Promotion is manual because the store cannot infer which save produced them.
 
 ## Inspecting a store
 
 ```bash
 uv run kenshi-agent memory                          # every campaign
+uv run kenshi-agent memory --campaign legacy:live-longform  # migrated rows
 uv run kenshi-agent memory --campaign ladle-css-01  # active records
 uv run kenshi-agent memory --campaign ladle-css-01 --memory-id mem-<id>
 ```

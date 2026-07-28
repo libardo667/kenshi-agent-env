@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tomllib
 from contextlib import nullcontext
@@ -745,10 +746,16 @@ def test_run_artifact_preserves_exact_batch_evidence(
         counts={"killed": 2, "survived": 1},
         actionable_mutants=("kenshi_agent.env.live.x_step__mutmut_2",),
     )
+    digest = "f" * 64
 
-    artifact = campaign._write_run_artifact(tmp_path, batch, summary)
-    collision_artifact = campaign._write_run_artifact(tmp_path, batch, summary)
-    second_collision_artifact = campaign._write_run_artifact(tmp_path, batch, summary)
+    def write() -> Path:
+        return campaign._write_run_artifact(
+            tmp_path, batch, summary, source_sha256=digest
+        )
+
+    artifact = write()
+    collision_artifact = write()
+    second_collision_artifact = write()
 
     assert artifact == (tmp_path / "runs" / "mutation" / "20260727T214512Z-env-live.json")
     assert collision_artifact == (
@@ -762,6 +769,7 @@ def test_run_artifact_preserves_exact_batch_evidence(
         "completed_at": "2026-07-27T21:45:12+00:00",
         "source_path": "src/kenshi_agent/env/live.py",
         "mutant_pattern": "kenshi_agent.env.live.*",
+        "source_sha256": digest,
         "counts": {"killed": 2, "survived": 1},
         "total": 3,
         "actionable_mutants": ["kenshi_agent.env.live.x_step__mutmut_2"],
@@ -772,6 +780,62 @@ def test_run_artifact_preserves_exact_batch_evidence(
         json.loads(second_collision_artifact.read_text(encoding="utf-8"))
         == expected_payload
     )
+
+
+def test_the_source_digest_tracks_the_exact_file_it_attests(tmp_path: Path) -> None:
+    """An artifact that cannot name its tree has attested nothing.
+
+    `mutation_ledger` derives staleness from this digest alone, so a digest that
+    ignored the file's bytes, or survived a missing file, would make every
+    `attested` row in the committed ledger meaningless.
+    """
+
+    batch = MutationBatch(
+        name="memory",
+        source_path="src/kenshi_agent/memory.py",
+        mutant_pattern="kenshi_agent.memory.*",
+    )
+    source = tmp_path / batch.source_path
+    source.parent.mkdir(parents=True)
+
+    with pytest.raises(FileNotFoundError):
+        campaign.batch_source_digest(tmp_path, batch)
+
+    source.write_text("x = 1\n", encoding="utf-8")
+    before = campaign.batch_source_digest(tmp_path, batch)
+    assert before == hashlib.sha256(b"x = 1\n").hexdigest()
+
+    source.write_text("x = 2\n", encoding="utf-8")
+    assert campaign.batch_source_digest(tmp_path, batch) != before
+
+    source.write_text("x = 1\n", encoding="utf-8")
+    assert campaign.batch_source_digest(tmp_path, batch) == before
+
+
+def test_a_completed_campaign_records_the_digest_of_its_own_source(
+    tmp_path: Path,
+) -> None:
+    """The seam between the two: `main` must not write a digest of something else."""
+
+    batch = MutationBatch(
+        name="memory",
+        source_path="src/kenshi_agent/memory.py",
+        mutant_pattern="kenshi_agent.memory.*",
+    )
+    source = tmp_path / batch.source_path
+    source.parent.mkdir(parents=True)
+    source.write_text("attested = True\n", encoding="utf-8")
+    summary = MutationSummary(counts={"killed": 3}, actionable_mutants=())
+
+    artifact = campaign._write_run_artifact(
+        tmp_path,
+        batch,
+        summary,
+        source_sha256=campaign.batch_source_digest(tmp_path, batch),
+    )
+
+    payload = json.loads(artifact.read_text(encoding="utf-8"))
+    assert payload["source_sha256"] == hashlib.sha256(source.read_bytes()).hexdigest()
 
 
 def test_run_artifacts_share_their_directory_without_overwrite(
@@ -799,8 +863,8 @@ def test_run_artifacts_share_their_directory_without_overwrite(
     )
     summary = MutationSummary(counts={"killed": 1}, actionable_mutants=())
 
-    first = campaign._write_run_artifact(tmp_path, batch, summary)
-    second = campaign._write_run_artifact(tmp_path, batch, summary)
+    first = campaign._write_run_artifact(tmp_path, batch, summary, source_sha256="a")
+    second = campaign._write_run_artifact(tmp_path, batch, summary, source_sha256="a")
 
     assert first != second
     assert first.is_file()
@@ -841,7 +905,7 @@ def test_run_artifacts_use_explicit_exclusive_utf8_writes(
     )
     summary = MutationSummary(counts={"killed": 1}, actionable_mutants=())
 
-    artifact = campaign._write_run_artifact(tmp_path, batch, summary)
+    artifact = campaign._write_run_artifact(tmp_path, batch, summary, source_sha256="a")
 
     assert calls == [(artifact, ("x",), {"encoding": "utf-8"})]
     assert json.loads(written[0])["counts"] == {"killed": 1}
@@ -929,6 +993,9 @@ def test_main_gates_actionable_results_for_run_and_results_commands(
     )
     calls: list[object] = []
     dependency_calls: list[object] = []
+    source = tmp_path / batch.source_path
+    source.parent.mkdir(parents=True)
+    source.write_text("x = 1\n", encoding="utf-8")
     monkeypatch.setattr(campaign, "_repo_root", lambda: tmp_path)
 
     def fake_discover(source_root: Path) -> dict[str, MutationBatch]:
@@ -988,7 +1055,11 @@ def test_main_gates_actionable_results_for_run_and_results_commands(
         repo_root: Path,
         selected: MutationBatch,
         selected_summary: MutationSummary,
+        *,
+        source_sha256: str,
     ) -> Path:
+        # The artifact must attest the source main actually read, not a constant.
+        assert source_sha256 == hashlib.sha256(source.read_bytes()).hexdigest()
         dependency_calls.append(("write", repo_root, selected, selected_summary))
         return tmp_path / "runs" / "result.json"
 
@@ -1147,6 +1218,9 @@ def test_main_accepts_one_mutation_worker(
     )
     summary = MutationSummary(counts={"killed": 1}, actionable_mutants=())
     run_calls: list[object] = []
+    source = tmp_path / batch.source_path
+    source.parent.mkdir(parents=True)
+    source.write_text("x = 1\n", encoding="utf-8")
     monkeypatch.setattr(campaign, "_repo_root", lambda: tmp_path)
     monkeypatch.setattr(
         campaign,
@@ -1177,7 +1251,7 @@ def test_main_accepts_one_mutation_worker(
     monkeypatch.setattr(
         campaign,
         "_write_run_artifact",
-        lambda repo_root, selected, result: tmp_path / "result.json",
+        lambda repo_root, selected, result, *, source_sha256: tmp_path / "result.json",
     )
     monkeypatch.setattr(campaign, "_print_summary", lambda selected, result: None)
 

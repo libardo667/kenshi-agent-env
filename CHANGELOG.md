@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Made mutation coverage a committed, self-invalidating record instead of prose. Every campaign
+  artifact now carries the SHA-256 of the source it attests, and a generated ledger derives each
+  shard's state by digesting the module again at write time: a module edited after its campaign
+  reads `source-changed` whether or not anyone remembered to look, and a doc-drift gate fails
+  until the ledger is regenerated. Campaigns predating digests read `unverified` rather than
+  claiming a tree they cannot name, and a zero-mutant run — which the campaign already fails
+  closed on — can no longer displace a real result as a shard's newest evidence. The gate reads
+  only committed inputs, so it holds on a clone with no run artifacts. `runs/` stays ignored.
 - Added explicit, bounded, lossless memory compaction. The read-only operator
   proposal preserves exact source text and fingerprints durable source state;
   applying the inspected candidate re-resolves it under an immediate write

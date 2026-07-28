@@ -34,6 +34,11 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.doc_export import export_docs
+from kenshi_agent.mutation_ledger import (
+    LEDGER_NAME,
+    export_mutation_ledger,
+    sources_are_instrumented,
+)
 from kenshi_agent.schema_export import export_schemas
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -360,6 +365,39 @@ def test_generated_docs_are_not_stale(tmp_path: Path) -> None:
             f"docs/generated/{fresh.name} is stale; "
             "run `python scripts/export_docs.py`"
         )
+
+
+def test_the_mutation_ledger_is_not_stale(tmp_path: Path) -> None:
+    """Editing a mutated module must invalidate the claim that it was mutated.
+
+    Regeneration reads only committed inputs — the checked-in ledger and the
+    sources it digests — so this fails on a clone with no `runs/` artifacts at
+    all, which is the point: the gate cannot depend on the machine that ran the
+    campaign. `scripts/export_mutation_ledger.py` additionally folds in local
+    artifacts, which is how new evidence enters the record.
+
+    The two gates above compare *behavior*, so they hold under mutation. This one
+    compares bytes; see `sources_are_instrumented` for why that cannot.
+    """
+
+    if sources_are_instrumented(ROOT):
+        pytest.skip("mutmut instruments the sources this gate digests")
+
+    fresh = export_mutation_ledger(
+        tmp_path,
+        repo_root=ROOT,
+        existing=GENERATED_DOCS / LEDGER_NAME,
+    )
+    checked_in = GENERATED_DOCS / LEDGER_NAME
+    assert checked_in.exists(), (
+        f"{LEDGER_NAME} is generated but not checked in; "
+        "run `python scripts/export_mutation_ledger.py`"
+    )
+    assert filecmp.cmp(fresh, checked_in, shallow=False), (
+        f"docs/generated/{LEDGER_NAME} is stale — a module moved since its "
+        "mutation campaign, or new evidence has not been folded in. Run "
+        "`python scripts/export_mutation_ledger.py`."
+    )
 
 
 def test_exported_schemas_are_not_stale(tmp_path: Path) -> None:

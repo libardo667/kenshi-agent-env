@@ -20,13 +20,14 @@ direction without changing current Kenshi scope.
 | --- | --- |
 | What works right now, and what does not | [STATUS.md](STATUS.md) |
 | What the agent may author | [generated action catalog](docs/generated/ACTION_CATALOG.md) |
+| Which modules are mutation-tested against *this* tree | [generated attestation](docs/generated/MUTATION_ATTESTATION.md), and [why it is derived](docs/ADR_MUTATION_ATTESTATION.md) |
 | Why a boundary exists | `docs/ADR_*.md` |
 | How to do something | `docs/GUIDE_*.md` |
 | What happened on a given day | `git log` and `runs/<run-id>/` |
 
-Documentation hygiene is enforced by `tests/test_docs_hygiene.py` rather than by
-convention: docs are capped at 120 lines, must be a decision record, a guide, or
-generated output, and generated files fail the build when they go stale.
+Documentation hygiene is enforced by `tests/test_docs_hygiene.py` rather than by convention:
+docs are capped at 120 lines, must be a decision record, a guide, or generated output, and
+generated files fail the build when they go stale.
 
 ## Five-minute mock run
 
@@ -103,14 +104,12 @@ advisor](docs/ADR_STRATEGIC_ADVISOR.md). Broader boundaries are in
 
 ## Experimental discipline
 
-Report at least four failure categories separately: perception, planning/world
-model, action compilation or interface control, and native telemetry or
-environment.
+Report at least four failure categories separately: perception, planning/world model,
+action compilation or interface control, and native telemetry or environment.
 
-Run screenshot-only, screenshot-plus-telemetry, and telemetry-plus-skills
-conditions separately. Do not optimize against one save and then present the
-result as general play ability. `benchmarks/one_day_survival.yaml` is a starting
-point.
+Run screenshot-only, screenshot-plus-telemetry, and telemetry-plus-skills conditions
+separately. Do not optimize against one save and then present the result as general play
+ability. `benchmarks/one_day_survival.yaml` is a starting point.
 
 ## License and project status
 

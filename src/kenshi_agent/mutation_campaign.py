@@ -426,10 +426,24 @@ def _artifact_path(
     return artifact_dir / f"{artifact_stem}{suffix}.json"
 
 
+def batch_source_digest(repo_root: Path, batch: MutationBatch) -> str:
+    """Which exact source these results describe.
+
+    Without this an artifact cannot be told apart from the same artifact taken
+    four commits later, so `mutation_ledger` could not report a module edited
+    since its campaign. Fails closed on a missing source: a campaign that cannot
+    name its tree has attested nothing.
+    """
+
+    return hashlib.sha256((repo_root / batch.source_path).read_bytes()).hexdigest()
+
+
 def _write_run_artifact(
     repo_root: Path,
     batch: MutationBatch,
     summary: MutationSummary,
+    *,
+    source_sha256: str,
 ) -> Path:
     completed_at = datetime.now(UTC)
     artifact_dir = repo_root / "runs" / "mutation"
@@ -441,6 +455,7 @@ def _write_run_artifact(
         "completed_at": completed_at.isoformat(),
         "source_path": batch.source_path,
         "mutant_pattern": batch.mutant_pattern,
+        "source_sha256": source_sha256,
         "counts": summary.counts,
         "total": summary.total,
         "actionable_mutants": summary.actionable_mutants,
@@ -554,7 +569,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _assert_batch_inputs_unchanged(repo_root, workspace)
 
             summary = _read_batch_results(workspace, batch)
-            artifact = _write_run_artifact(repo_root, batch, summary)
+            artifact = _write_run_artifact(
+                repo_root,
+                batch,
+                summary,
+                source_sha256=batch_source_digest(repo_root, batch),
+            )
             _print_summary(batch, summary)
             print(f"artifact: {artifact.relative_to(repo_root)}")
             return mutation_exit_code(

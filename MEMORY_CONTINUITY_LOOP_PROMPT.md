@@ -3,12 +3,13 @@
 Copy this whole document into a capable coding agent whose working directory is the
 `kenshi-agent-env` repository root. Reuse it for successive invocations.
 
-This supersedes the earlier memory-and-continuity loop prompt. The first authority
-slice has already landed: campaign scope, runtime-owned action and plan outcomes,
-explicit memory lifecycle operations, append-only history with a rebuildable
-projection, migration, and read-only recall are real code. Do not restart that work
+This supersedes the earlier memory-and-continuity loop prompt. Slices 1 through 5 have
+landed: campaign scope, the planner-context manifest, evidence capability and canonical
+provenance, failure isolation and receipts, deterministic recall with elective search,
+the private fieldbook, and lossless compaction are real code. Do not restart that work
 or replace it with a parallel framework. **Verify the checkout** — later commits may
-have advanced past this snapshot.
+have advanced past this snapshot, and the slice numbering here was renumbered once
+already.
 
 One invocation completes **one compound vertical slice**, leaves the tree green, and
 makes one intentional commit. Do not spend an invocation renaming a field, drafting
@@ -22,7 +23,7 @@ ordinary in-game consequences into procedural paralysis; live-input authority re
 in force, but the early slices are portable and need no live input.
 
 **This document is the single source for its own rules.** Invariants are numbered
-(`I1`…`I24`) and stated once. Defects (`D1`…`D10`) and slices cite invariant numbers
+(`I1`…`I25`) and stated once. Defects (`D1`…`D10`) and slices cite invariant numbers
 rather than restating them. If you find yourself needing a rule that is not numbered
 here, that is a gap worth reporting, not a license to invent a fifth phrasing of an
 existing one.
@@ -191,6 +192,10 @@ These are normative and numbered. Cite them; do not paraphrase them.
 - **I24 — Claims carry evidence labels.** Every claim in docs, reports, and status is
   labeled portable, replay/simulated, Windows integration, native build/load, or
   supervised live. Never collapsed into "supported."
+- **I25 — Coverage claims are derived from committed inputs.** A statement that a module
+  was mutation-tested, or that N shards remain unattested, is generated and re-checked
+  against the current tree — never a number typed into prose. Evidence that lives only on
+  the machine that produced it is not a repository claim.
 
 ## Evidence: types and admissibility
 
@@ -512,7 +517,7 @@ Do not skip to the fieldbook because it is more visible. Do not reopen completed
 campaign/migration work unless a defect requires it.
 
 **The feature is complete when every slice below is `complete` and every invariant
-I1–I24 holds under test.** There is no separate completion list.
+I1–I25 holds under test.** There is no separate completion list.
 
 ### Slice 1 — planner-context authority and honest delivery
 
@@ -648,6 +653,24 @@ memory; controlled tests and A/B metrics exist.
 
 ### Slice 6 — Ladle restart evaluation
 
+**In flight, uncommitted, and red.** `src/kenshi_agent/evals/restart_continuity.py` and
+`tests/test_restart_continuity_eval.py` exist untracked and most of their contract passes.
+Finish them; do not start over. Three tests fail, and two of the causes are the same
+mistake:
+
+- `test_complete_evidence_contract_is_observable` and
+  `test_real_process_bundle_matches_the_complete_contract` assert pinned SHA-256 digests
+  of the whole bundle. The implementation moved after the digests were pinned. **A pinned
+  whole-document digest is a freshness check wearing a test costume** — it fails on every
+  change without saying which field changed or whether the change was wrong. Replace them
+  with assertions on the contract's actual shape, or generate the expected bundle.
+- `test_process_bundle_contains_only_the_declared_evidence_tree` fails because
+  `artifact_files` omits `evidence.json`; decide whether the bundle indexes itself and
+  make both sides agree.
+
+Its shard reports 158 open mutants, concentrated in `_phase_two`, `_working_outcomes`,
+`_phase_one`, and `_metrics`. Attend them before calling the slice done.
+
 A reproducible evaluation around a cargo-delivery campaign, using synthetic, mock,
 replay, fixture-attested, or live evidence at the strongest level the repository can
 honestly support.
@@ -685,6 +708,42 @@ supervision rules remain authoritative.
 Mutation testing applies to the authority seams this feature creates, not as a
 project-wide ritual that delays it. **Attend a module's shard in the same slice that
 changes it.** Do not postpone a slice until every unrelated shard is attended.
+
+### Attendance is derived, not remembered (I25)
+
+An earlier invocation added 275 lines to `runtime.py` and 100 to `continuous_executor.py`
+and attended neither shard. Nothing caught it, because the rule above was prose and the
+run artifacts were machine-local and silent about which tree they attested. Both are now
+fixed, so **do not decide from memory which shards you touched** — derive it:
+
+```bash
+git diff --name-only <slice-base> -- src/kenshi_agent   # what this slice changed
+grep '^| `' docs/generated/MUTATION_ATTESTATION.md      # what is currently attested
+```
+
+`docs/generated/MUTATION_ATTESTATION.md` is committed and regenerated by
+`python scripts/export_mutation_ledger.py`, which folds in `runs/mutation/` and then
+re-derives each shard's state by digesting the module again. A module you edited reads
+`source-changed` until you re-run its shard, and `tests/test_docs_hygiene.py` fails until
+the ledger is regenerated — so a stale claim breaks the build rather than sitting in the
+file. Regenerate and commit the ledger in the same slice.
+
+The four states mean different things and only one of them is done:
+
+- `attested` — a campaign ran and the module is byte-identical since.
+- `source-changed` — you edited it afterwards. **This is the state that must not survive
+  your commit** for any module in your slice's diff.
+- `unverified` — the campaign predates source digests. It is not a pass; re-run the shard
+  to replace it.
+- `never` — no campaign has ever been recorded. Not a pass either.
+
+`--allow-actionable` records a *classification* baseline, not a finished shard. A shard
+with open mutants is attended, not clean; the ledger's `open` column is the honest count
+and `cli` currently carries 1076 of them. Do not report a shard as done while that column
+is non-zero unless every survivor is documented as equivalent.
+
+Run campaigns on a frozen tree. `_assert_batch_inputs_unchanged` refuses a run whose
+inputs moved underneath it, so finish edits — including documentation — before starting.
 
 ### Mutation visibility is a precondition (I23)
 
@@ -798,8 +857,10 @@ detailed Ladle scenario into universal courier behavior.
   keeping intentional backwards compatibility for old logs.
 - Keep `live.longform.yaml` generic: require an explicit campaign override that fails
   closed, or add a separately named Ladle profile owning `ladle-css-01`.
-- Never hardcode test-count claims that drift; generate them or state the command and
-  dated result.
+- Never hardcode test-count or coverage claims that drift; generate them or state the
+  command and dated result. `STATUS.md` carried "Fifty-six mutation shards remain
+  unattested" while the real number was fifty; it now links the generated ledger instead
+  (I25). A count typed into prose is a claim nothing re-checks.
 - Update `STATUS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, the external planner guide, the
   campaign guide, and the continuity ADR truthfully.
 
@@ -838,7 +899,10 @@ detailed Ladle scenario into universal courier behavior.
 ## Per-invocation method
 
 1. Establish repository state: branch, `git status`, recent log, baseline, active config,
-   and whether another agent has uncommitted work.
+   and whether another agent has uncommitted work. **Another agent may be working in this
+   tree right now.** If `git status` shows changes you did not make, leave them alone,
+   stage your own paths by name rather than `git add -A`, and re-check `git status`
+   immediately before committing.
 2. Read current `campaign.py`, `continuity.py`, `memory.py`, `models.py`, `runtime.py`,
    planner adapters, observation budgeting, prompt, schemas, tests, metrics, configs, and
    continuity docs.
@@ -860,8 +924,10 @@ detailed Ladle scenario into universal courier behavior.
    examples, and docs the invariant touches.
 9. Run focused tests continuously, then full pytest, Ruff, mypy, and generated-artifact
    checks.
-10. Run mutation shards for every module this slice changed. Confirm each generated a
-    nonzero mutant count before reading its results.
+10. Freeze the tree, then run a mutation shard for **every module in
+    `git diff --name-only <slice-base> -- src/kenshi_agent`** — derived from the diff, not
+    recalled. Regenerate and commit `docs/generated/MUTATION_ATTESTATION.md`; no module in
+    your diff may still read `source-changed`, `unverified`, or `never` (I25).
 11. Inspect the diff for live databases, run artifacts, secrets, caches, generated drift,
     unrelated churn, and accidental WorldWeaver copying.
 12. Make one intentional commit. Do not push or open a PR unless separately authorized.
@@ -887,7 +953,7 @@ detailed Ladle scenario into universal courier behavior.
 - replay/simulated
 - Windows/native/live, if any
 ## Failure-isolation review
-## Mutation results (per shard: generated / killed / survived; flag any zero-mutant shard as a failure)
+## Mutation results (the ledger rows for every module in this slice's diff, plus any shard still not `attested` and why)
 ## Where I could have gone the other way
 ## Prompt/schema/example/config hygiene
 ## Not tested or not claimed
