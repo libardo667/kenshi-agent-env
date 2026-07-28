@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Classified continuity evidence by capability before rendering it. References
+  now resolve to immutable typed snapshots; facts require fresh or causally
+  adequate world evidence, episodes preserve failed/no-op/unknown attempts,
+  commitments cannot close on non-effects, hypotheses preserve a bounded
+  resolution disposition, and facts/episodes cannot be resolved. Rich recent
+  outcomes now sit over compact all-run digests that can be deliberately
+  resurfaced through `recall_memory`. Schema 3 stores versioned canonical
+  lifecycle provenance — exact operation, origin, planner context, authored and
+  commit revisions, references, resolved snapshots, plan/step, and rendered
+  grounding — with backed-up, non-inventive schema-2 migration.
 - Bound every planner output to an immutable runtime-authored context manifest.
   Hosted planners derive it from the final budgeted JSON; in-process and
   subprocess planners declare the full observation; scripted replay declares
@@ -26,7 +36,7 @@
   campaign now fails closed instead of sharing one `default` namespace across
   unrelated saves, `ephemeral: true` is the explicit opt-out, and an attested
   scenario derives a deterministic campaign from its exact save. The store is
-  versioned (schema 2) with append-only `memory_events` and a `memories`
+  versioned (now schema 3) with append-only `memory_events` and a `memories`
   projection written in the same transaction and rebuildable from history.
   `keep`, `reinforce`, `resolve`, `supersede`, and `retract` are explicit
   transitions with separate reinforced/resolved/superseded/delivered timestamps;

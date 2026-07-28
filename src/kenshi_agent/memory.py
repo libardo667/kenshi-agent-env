@@ -26,18 +26,20 @@ from typing import Any, TypeVar
 
 from .campaign import CampaignScope, CampaignScopeOrigin, legacy_campaign_id
 from .models import (
+    CanonicalMemoryProvenance,
     MemoryAuthorship,
     MemoryHistoryEntry,
     MemoryKind,
     MemoryLifecycleEvent,
     MemoryRecord,
+    MemoryResolutionDisposition,
     MemorySearchResult,
     MemoryStatus,
     RecallTier,
     new_memory_id,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Mutmut understands Python expressions, not SQL. Its SQL-string mutations are
 # either SQLite-equivalent case changes or deliberately invalid statements.
@@ -97,6 +99,7 @@ _CREATE_MEMORIES_SQL = """
         target_id TEXT NOT NULL DEFAULT '',
         salience REAL NOT NULL,
         grounding TEXT,
+        latest_provenance TEXT,
         authorship TEXT NOT NULL,
         created_run_id TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -107,9 +110,16 @@ _CREATE_MEMORIES_SQL = """
         reinforcement_count INTEGER NOT NULL DEFAULT 0,
         supersedes_id TEXT,
         superseded_by_id TEXT,
-        resolution_reason TEXT
+        resolution_reason TEXT,
+        resolution_disposition TEXT
     )
 """
+_MIGRATE_V2_ADD_PROVENANCE_SQL = (
+    "ALTER TABLE memories ADD COLUMN latest_provenance TEXT"
+)
+_MIGRATE_V2_ADD_DISPOSITION_SQL = (
+    "ALTER TABLE memories ADD COLUMN resolution_disposition TEXT"
+)
 _INDEX_SQL = (
     # Only *active* records compete for an identity. A retracted belief and its
     # later restatement are two records with the same words, and both are real.
@@ -136,6 +146,10 @@ _INDEX_SQL = (
 )
 _SET_META_SQL = "INSERT OR REPLACE INTO continuity_meta (key, value) VALUES (?, ?)"
 _GET_META_SQL = "SELECT value FROM continuity_meta WHERE key=?"
+_CONTINUITY_META_EXISTS_SQL = (
+    "SELECT 1 FROM sqlite_master "
+    "WHERE type='table' AND name='continuity_meta'"
+)
 _UPSERT_CAMPAIGN_SQL = """
     INSERT INTO campaigns (campaign_id, origin, created_at) VALUES (?, ?, ?)
     ON CONFLICT(campaign_id) DO NOTHING
@@ -148,16 +162,18 @@ _APPEND_EVENT_SQL = """
 _INSERT_MEMORY_SQL = """
     INSERT INTO memories (
         memory_id, campaign_id, kind, status, content, normalized_key, target_id,
-        salience, grounding, authorship, created_run_id, created_at,
+        salience, grounding, latest_provenance, authorship, created_run_id, created_at,
         reinforced_at, resolved_at, superseded_at, last_delivered_at,
-        reinforcement_count, supersedes_id, superseded_by_id, resolution_reason
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reinforcement_count, supersedes_id, superseded_by_id, resolution_reason,
+        resolution_disposition
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """
 _MEMORY_COLUMNS = """
     memory_id, campaign_id, kind, status, content, target_id, salience,
-    grounding, authorship, created_run_id, created_at,
+    grounding, latest_provenance, authorship, created_run_id, created_at,
     reinforced_at, resolved_at, superseded_at, last_delivered_at,
-    reinforcement_count, supersedes_id, superseded_by_id, resolution_reason
+    reinforcement_count, supersedes_id, superseded_by_id, resolution_reason,
+    resolution_disposition
 """
 _SELECT_MEMORY_SQL = f"""
     SELECT {_MEMORY_COLUMNS} FROM memories WHERE campaign_id=? AND memory_id=?
@@ -229,20 +245,24 @@ _SEARCH_SQL = f"""
 _UPDATE_REINFORCE_SQL = """
     UPDATE memories
     SET salience=?, grounding=COALESCE(?, grounding), reinforced_at=?,
+        latest_provenance=COALESCE(?, latest_provenance),
         reinforcement_count=reinforcement_count + 1
     WHERE campaign_id=? AND memory_id=?
 """
 _UPDATE_RESOLVE_SQL = """
     UPDATE memories SET status=?, resolved_at=?, resolution_reason=?,
-        grounding=COALESCE(?, grounding)
+        resolution_disposition=?, grounding=COALESCE(?, grounding),
+        latest_provenance=COALESCE(?, latest_provenance)
     WHERE campaign_id=? AND memory_id=?
 """
 _UPDATE_SUPERSEDE_SQL = """
-    UPDATE memories SET status=?, superseded_at=?, superseded_by_id=?
+    UPDATE memories SET status=?, superseded_at=?, superseded_by_id=?,
+        latest_provenance=COALESCE(?, latest_provenance)
     WHERE campaign_id=? AND memory_id=?
 """
 _UPDATE_RETRACT_SQL = """
-    UPDATE memories SET status=?, resolved_at=?, resolution_reason=?
+    UPDATE memories SET status=?, resolved_at=?, resolution_reason=?,
+        latest_provenance=COALESCE(?, latest_provenance)
     WHERE campaign_id=? AND memory_id=?
 """
 _RECORD_DELIVERY_SQL = """
@@ -437,9 +457,22 @@ class MemoryStore:
         # Back up before the first write of any kind, including the journal-mode
         # switch: an operator rolling back wants the exact file they had.
         legacy_rows = self._legacy_rows_to_migrate()
+        existing_version = (
+            None if legacy_rows is not None else self._existing_schema_version()
+        )
+        if existing_version is not None and existing_version > SCHEMA_VERSION:
+            raise MemoryStoreError(  # mutation: reason
+                f"{self.path} uses continuity schema {existing_version}, "  # mutation: reason
+                f"newer than this build's schema {SCHEMA_VERSION}; refusing "  # mutation: reason
+                "to open it with an older writer."  # mutation: reason
+            )
+        if existing_version == 2:
+            self._backup_version(2)
         self._connection.execute(_JOURNAL_MODE_SQL)
         if legacy_rows is not None:
             self._migrate_v1(legacy_rows)
+        elif existing_version == 2:
+            self._migrate_v2()
         self._create_schema()
         self._register_campaign(scope.campaign_id, scope.origin)
         self._connection.commit()
@@ -459,6 +492,26 @@ class MemoryStore:
         for statement in _INDEX_SQL:
             self._connection.execute(statement)
         self._connection.execute(_SET_META_SQL, ("schema_version", str(SCHEMA_VERSION)))
+
+    def _existing_schema_version(self) -> int | None:
+        table = self._connection.execute(
+            _CONTINUITY_META_EXISTS_SQL
+        ).fetchone()
+        if table is None:
+            return None
+        row = self._connection.execute(
+            _GET_META_SQL,
+            ("schema_version",),
+        ).fetchone()
+        return None if row is None else int(_row_text(row, "value"))
+
+    def _backup_version(self, version: int) -> Path:
+        backup = self.path.with_suffix(
+            self.path.suffix + f".v{version}-backup"
+        )
+        if not backup.exists():
+            shutil.copy2(self.path, backup)
+        return backup
 
     def _register_campaign(self, campaign_id: str, origin: CampaignScopeOrigin) -> None:
         self._connection.execute(
@@ -492,9 +545,7 @@ class MemoryStore:
                 "does not know."  # mutation: reason
             )
 
-        backup = self.path.with_suffix(self.path.suffix + ".v1-backup")
-        if not backup.exists():
-            shutil.copy2(self.path, backup)
+        self._backup_version(1)
         return list(
             self._connection.execute(
                 _LEGACY_ROWS_SQL if "target_id" in columns else _LEGACY_ROWS_UNSCOPED_SQL
@@ -521,6 +572,19 @@ class MemoryStore:
                 )
             for row in rows:
                 self._append_legacy_row(row)
+
+    def _migrate_v2(self) -> None:
+        """Add structured provenance without rewriting append-only v2 events."""
+
+        columns = {
+            _row_text(row, "name")
+            for row in self._connection.execute(_TABLE_INFO_SQL).fetchall()
+        }
+        with self._connection:
+            if "latest_provenance" not in columns:
+                self._connection.execute(_MIGRATE_V2_ADD_PROVENANCE_SQL)
+            if "resolution_disposition" not in columns:
+                self._connection.execute(_MIGRATE_V2_ADD_DISPOSITION_SQL)
 
     def _append_legacy_row(self, row: sqlite3.Row) -> None:
         campaign_id = legacy_campaign_id(_row_text(row, "namespace"))
@@ -582,9 +646,50 @@ class MemoryStore:
             "salience": record.salience,
             "target_id": record.target_id,
             "grounding": record.grounding,
+            "provenance": MemoryStore._provenance_payload(
+                record.latest_provenance
+            ),
             "authorship": record.authorship.value,
             "status": record.status.value,
             "supersedes_id": record.supersedes_id,
+        }
+
+    @staticmethod
+    def _provenance_payload(
+        provenance: CanonicalMemoryProvenance | None,
+    ) -> dict[str, Any] | None:
+        return (
+            None
+            if provenance is None
+            else provenance.model_dump(mode="json")
+        )
+
+    @staticmethod
+    def _provenance_text(
+        provenance: CanonicalMemoryProvenance | None,
+    ) -> str | None:
+        payload = MemoryStore._provenance_payload(provenance)
+        return None if payload is None else json.dumps(payload, sort_keys=True)
+
+    @staticmethod
+    def _provenance_from_payload(
+        payload: dict[str, Any],
+    ) -> CanonicalMemoryProvenance | None:
+        provenance = payload.get("provenance")
+        return (
+            None
+            if provenance is None
+            else CanonicalMemoryProvenance.model_validate(provenance)
+        )
+
+    @staticmethod
+    def _payload_with_provenance(
+        payload: dict[str, Any],
+        provenance: CanonicalMemoryProvenance | None,
+    ) -> dict[str, Any]:
+        return {
+            **payload,
+            "provenance": MemoryStore._provenance_payload(provenance),
         }
 
     def _insert_projection(self, record: MemoryRecord) -> None:
@@ -600,6 +705,7 @@ class MemoryStore:
                 record.target_id or "",
                 record.salience,
                 record.grounding,
+                self._provenance_text(record.latest_provenance),
                 record.authorship.value,
                 record.created_run_id,
                 record.created_at.isoformat(),
@@ -613,6 +719,11 @@ class MemoryStore:
                 record.supersedes_id,
                 record.superseded_by_id,
                 record.resolution_reason,
+                (
+                    None
+                    if record.resolution_disposition is None
+                    else record.resolution_disposition.value
+                ),
             ),
         )
 
@@ -626,6 +737,12 @@ class MemoryStore:
             content=_row_text(row, "content"),
             salience=_row_float(row, "salience"),
             grounding=_row_optional_text(row, "grounding"),
+            latest_provenance=(
+                None
+                if (raw_provenance := _row_optional_text(row, "latest_provenance"))
+                is None
+                else CanonicalMemoryProvenance.model_validate_json(raw_provenance)
+            ),
             authorship=MemoryAuthorship(_row_text(row, "authorship")),
             target_id=_row_optional_text(row, "target_id") or None,
             created_run_id=_row_text(row, "created_run_id"),
@@ -638,6 +755,17 @@ class MemoryStore:
             supersedes_id=_row_optional_text(row, "supersedes_id"),
             superseded_by_id=_row_optional_text(row, "superseded_by_id"),
             resolution_reason=_row_optional_text(row, "resolution_reason"),
+            resolution_disposition=(
+                None
+                if (
+                    raw_disposition := _row_optional_text(
+                        row,
+                        "resolution_disposition",
+                    )
+                )
+                is None
+                else MemoryResolutionDisposition(raw_disposition)
+            ),
         )
 
     # -- lifecycle ------------------------------------------------------
@@ -651,6 +779,7 @@ class MemoryStore:
         salience: float,
         grounding: str | None,
         target_id: str | None = None,
+        provenance: CanonicalMemoryProvenance | None = None,
     ) -> MemoryRecord:
         """Create a record, or reinforce the one that already says this.
 
@@ -667,6 +796,7 @@ class MemoryStore:
                 existing.memory_id,
                 grounding=grounding,
                 salience=max(existing.salience, salience),
+                provenance=provenance,
             )
 
         now = datetime.now(UTC)
@@ -678,6 +808,7 @@ class MemoryStore:
             content=text,
             salience=salience,
             grounding=grounding,
+            latest_provenance=provenance,
             target_id=target_id,
             created_run_id=run_id,
             created_at=now,
@@ -709,6 +840,7 @@ class MemoryStore:
         *,
         grounding: str | None,
         salience: float | None = None,
+        provenance: CanonicalMemoryProvenance | None = None,
     ) -> MemoryRecord:
         current = self._require_open(memory_id, MemoryLifecycleEvent.REINFORCE)
         now = datetime.now(UTC)
@@ -720,11 +852,21 @@ class MemoryStore:
                 MemoryLifecycleEvent.REINFORCE,
                 run_id,
                 now.isoformat(),
-                {"salience": raised, "grounding": grounding},
+                self._payload_with_provenance(
+                    {"salience": raised, "grounding": grounding},
+                    provenance,
+                ),
             )
             self._connection.execute(
                 _UPDATE_REINFORCE_SQL,
-                (raised, grounding, now.isoformat(), self.campaign_id, memory_id),
+                (
+                    raised,
+                    grounding,
+                    now.isoformat(),
+                    self._provenance_text(provenance),
+                    self.campaign_id,
+                    memory_id,
+                ),
             )
         return self._require_record(memory_id)
 
@@ -735,8 +877,32 @@ class MemoryStore:
         *,
         reason: str,
         grounding: str | None,
+        disposition: MemoryResolutionDisposition = (
+            MemoryResolutionDisposition.COMPLETED
+        ),
+        provenance: CanonicalMemoryProvenance | None = None,
     ) -> MemoryRecord:
-        self._require_open(memory_id, MemoryLifecycleEvent.RESOLVE)
+        current = self._require_open(memory_id, MemoryLifecycleEvent.RESOLVE)
+        if current.kind not in {MemoryKind.COMMITMENT, MemoryKind.HYPOTHESIS}:
+            raise MemoryTransitionError(  # mutation: reason
+                f"A {current.kind.value} cannot be resolved; supersede or "  # mutation: reason
+                "retract it instead."  # mutation: reason
+            )
+        if current.kind is MemoryKind.COMMITMENT and disposition not in {
+            MemoryResolutionDisposition.COMPLETED,
+            MemoryResolutionDisposition.ABANDONED,
+        }:
+            raise MemoryTransitionError(  # mutation: reason
+                "A commitment resolves only as completed or abandoned."  # mutation: reason
+            )
+        if current.kind is MemoryKind.HYPOTHESIS and disposition not in {
+            MemoryResolutionDisposition.CONFIRMED,
+            MemoryResolutionDisposition.REJECTED,
+            MemoryResolutionDisposition.UNKNOWN,
+        }:
+            raise MemoryTransitionError(  # mutation: reason
+                "A hypothesis resolves only as confirmed, rejected, or unknown."  # mutation: reason
+            )
         now = datetime.now(UTC)
         with self._connection:
             self._append_event(
@@ -745,7 +911,14 @@ class MemoryStore:
                 MemoryLifecycleEvent.RESOLVE,
                 run_id,
                 now.isoformat(),
-                {"reason": reason, "grounding": grounding},
+                self._payload_with_provenance(
+                    {
+                        "reason": reason,
+                        "grounding": grounding,
+                        "disposition": disposition.value,
+                    },
+                    provenance,
+                ),
             )
             self._connection.execute(
                 _UPDATE_RESOLVE_SQL,
@@ -753,7 +926,9 @@ class MemoryStore:
                     MemoryStatus.RESOLVED.value,
                     now.isoformat(),
                     reason,
+                    disposition.value,
                     grounding,
+                    self._provenance_text(provenance),
                     self.campaign_id,
                     memory_id,
                 ),
@@ -770,6 +945,7 @@ class MemoryStore:
         salience: float,
         grounding: str | None,
         target_id: str | None = None,
+        provenance: CanonicalMemoryProvenance | None = None,
     ) -> MemoryRecord:
         """Create the replacement and close the original in one transaction.
 
@@ -788,6 +964,7 @@ class MemoryStore:
             content=content.strip(),
             salience=salience,
             grounding=grounding,
+            latest_provenance=provenance,
             target_id=target_id,
             created_run_id=run_id,
             created_at=now,
@@ -800,7 +977,10 @@ class MemoryStore:
                 MemoryLifecycleEvent.SUPERSEDE,
                 run_id,
                 now.isoformat(),
-                {"superseded_by_id": replacement.memory_id},
+                self._payload_with_provenance(
+                    {"superseded_by_id": replacement.memory_id},
+                    provenance,
+                ),
             )
             self._append_event(
                 self.campaign_id,
@@ -816,6 +996,7 @@ class MemoryStore:
                     MemoryStatus.SUPERSEDED.value,
                     now.isoformat(),
                     replacement.memory_id,
+                    self._provenance_text(provenance),
                     self.campaign_id,
                     memory_id,
                 ),
@@ -823,7 +1004,14 @@ class MemoryStore:
             self._insert_projection(replacement)
         return self._require_record(replacement.memory_id)
 
-    def retract(self, run_id: str, memory_id: str, *, reason: str) -> MemoryRecord:
+    def retract(
+        self,
+        run_id: str,
+        memory_id: str,
+        *,
+        reason: str,
+        provenance: CanonicalMemoryProvenance | None = None,
+    ) -> MemoryRecord:
         self._require_open(memory_id, MemoryLifecycleEvent.RETRACT)
         now = datetime.now(UTC)
         with self._connection:
@@ -833,7 +1021,10 @@ class MemoryStore:
                 MemoryLifecycleEvent.RETRACT,
                 run_id,
                 now.isoformat(),
-                {"reason": reason},
+                self._payload_with_provenance(
+                    {"reason": reason},
+                    provenance,
+                ),
             )
             self._connection.execute(
                 _UPDATE_RETRACT_SQL,
@@ -841,6 +1032,7 @@ class MemoryStore:
                     MemoryStatus.RETRACTED.value,
                     now.isoformat(),
                     reason,
+                    self._provenance_text(provenance),
                     self.campaign_id,
                     memory_id,
                 ),
@@ -1173,6 +1365,7 @@ class MemoryStore:
                     content=payload["content"],
                     salience=payload["salience"],
                     grounding=payload["grounding"],
+                    latest_provenance=self._provenance_from_payload(payload),
                     authorship=MemoryAuthorship(payload["authorship"]),
                     target_id=payload["target_id"],
                     created_run_id=entry.run_id,
@@ -1188,19 +1381,26 @@ class MemoryStore:
                     payload["salience"],
                     payload["grounding"],
                     entry.recorded_at.isoformat(),
+                    self._provenance_text(self._provenance_from_payload(payload)),
                     entry.campaign_id,
                     entry.memory_id,
                 ),
             )
             return
         if entry.event is MemoryLifecycleEvent.RESOLVE:
+            disposition = payload.get(
+                "disposition",
+                MemoryResolutionDisposition.COMPLETED.value,
+            )
             self._connection.execute(
                 _UPDATE_RESOLVE_SQL,
                 (
                     MemoryStatus.RESOLVED.value,
                     entry.recorded_at.isoformat(),
                     payload["reason"],
+                    disposition,
                     payload["grounding"],
+                    self._provenance_text(self._provenance_from_payload(payload)),
                     entry.campaign_id,
                     entry.memory_id,
                 ),
@@ -1213,6 +1413,7 @@ class MemoryStore:
                     MemoryStatus.SUPERSEDED.value,
                     entry.recorded_at.isoformat(),
                     payload["superseded_by_id"],
+                    self._provenance_text(self._provenance_from_payload(payload)),
                     entry.campaign_id,
                     entry.memory_id,
                 ),
@@ -1225,6 +1426,7 @@ class MemoryStore:
                     MemoryStatus.RETRACTED.value,
                     entry.recorded_at.isoformat(),
                     payload["reason"],
+                    self._provenance_text(self._provenance_from_payload(payload)),
                     entry.campaign_id,
                     entry.memory_id,
                 ),

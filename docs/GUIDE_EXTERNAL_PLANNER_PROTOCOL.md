@@ -40,11 +40,12 @@ Example:
 
 The rationale must be a concise decision basis, not private chain-of-thought.
 
-`continuity_operations` is the one way to write durable memory, and it is
-optional everywhere it appears — on decisions, plans, and patches alike. Each
-operation is a `keep` of a `fact`, `episode`, `commitment`, or `hypothesis`. A
-fact or an episode must cite at least one entry in `references`, and every
-reference must be present in this exact request: `outcome_id` from
+`continuity_operations` is the one way to change durable memory, and it is
+optional everywhere it appears — on decisions, plans, and patches alike.
+Operations are `keep`, `reinforce`, `resolve`, `supersede`, and `retract`; kept
+records are `fact`, `episode`, `commitment`, or `hypothesis`. A fact or episode
+must cite at least one entry in `references`, and every reference must be
+present in this exact request: `outcome_id` from
 `recent_action_outcomes`, `plan_outcome_id` from `recent_plan_outcomes`, a
 memory `memory_id`, an advisor `brief_id`, or `{"source":
 "current_observation"}`. Issuance elsewhere in the run is not enough. The
@@ -54,6 +55,21 @@ must come from a fresh world-facing entity in this request, never remembered
 text. There is no free-text evidence field: the runtime renders grounding from
 resolved references. One invalid operation is rejected with a typed receipt
 while the surrounding decision or plan still executes.
+
+Reference existence is not evidence capability. Facts require a fresh
+observation, controller-verified world effect, or causally observed change.
+Episodes may record failed, no-op, not-executed, unknown, and plan outcomes, but
+retain that exact status. Advice, remembered belief, and plan completion cannot
+alone establish a world fact. `resolve` always requires references and accepts
+only an active commitment or hypothesis; facts and episodes use `supersede` or
+`retract`. A commitment cannot close on advice, belief, plan disposition,
+no-op, not-executed, or unknown evidence. Hypothesis resolution supplies
+`disposition: "confirmed" | "rejected" | "unknown"`.
+
+`recall_memory` defaults to `source: "durable_memory"`. Setting
+`source: "working_outcomes"` performs a bounded read of compact run-local action
+and plan digests. Returned IDs enter only the next planner manifest, allowing
+deliberate citation without placing all run history in automatic context.
 
 Commit timing is exact. A plan's operations are processed after the plan passes
 every validation gate; a decision's after its action receipt; a patch's only if

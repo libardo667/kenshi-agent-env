@@ -461,6 +461,18 @@
       "title": "MemoryKind",
       "type": "string"
     },
+    "MemoryResolutionDisposition": {
+      "description": "What resolving an intention or uncertainty actually concluded.",
+      "enum": [
+        "completed",
+        "abandoned",
+        "confirmed",
+        "rejected",
+        "unknown"
+      ],
+      "title": "MemoryResolutionDisposition",
+      "type": "string"
+    },
     "MoveInDirectionAction": {
       "additionalProperties": false,
       "description": "Walk a bearing and a distance from wherever the character is standing.\n\nThe intended destination is a point, not a person, so this action models\nmovement even when no nearby character can serve as a destination. Its\nnative request and acknowledgement deliberately carry an empty target ID;\ncommand identity is the keyed command, selected character, bearing, and\ndistance.\n\n`bearing_degrees` is clockwise from north, as read on the map: 0 north,\n90 east, 180 south, 270 west.",
@@ -703,12 +715,21 @@
     },
     "RecallMemoryAction": {
       "additionalProperties": false,
-      "description": "Deliberately read durable memory beyond what recall already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything: its result is text for the next\nplanner call, exactly like advice.",
+      "description": "Deliberately read continuity beyond what automatic context already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything. Durable memory searches active\nrecords; working-outcome searches resurface compact runtime-owned evidence\nthat scrolled out of the rich recent window.",
       "properties": {
         "kind": {
           "const": "recall_memory",
           "default": "recall_memory",
           "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "default": "durable_memory",
+          "enum": [
+            "durable_memory",
+            "working_outcomes"
+          ],
+          "title": "Source",
           "type": "string"
         },
         "query": {
@@ -904,6 +925,17 @@
           "minLength": 1,
           "title": "Reason",
           "type": "string"
+        },
+        "disposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryResolutionDisposition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "references": {
           "items": {

@@ -64,10 +64,11 @@ ROOT_DOC_CAPS: dict[str, int] = {
     # test, deliberately, where a reviewer sees it.
     "LOOP_PROMPT.md": 421,
     # A second steering document, for the memory/continuity work. Same reason
-    # as above and the same ratchet: it is copied whole into an agent, so it
-    # cannot be split, and growing it means raising this number where a
-    # reviewer sees it.
-    "MEMORY_CONTINUITY_LOOP_PROMPT.md": 1462,
+    # as above. This one has an explicitly approved larger ceiling because it
+    # is the complete executable architecture specification and must remain
+    # usable as one copied document. The exception is deliberately scoped to
+    # this path; every other document keeps its existing ceiling.
+    "MEMORY_CONTINUITY_LOOP_PROMPT.md": 1800,
 }
 
 # Not root documents, but the same reasoning: a step-by-step procedure someone

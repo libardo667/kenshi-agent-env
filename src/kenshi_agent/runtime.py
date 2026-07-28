@@ -13,7 +13,7 @@ from typing import Any, TypeVar
 
 from PIL import Image, ImageChops
 
-from .action_contracts import translate_legacy_plan_actions
+from .action_contracts import contract_for, translate_legacy_plan_actions
 from .advisor import (
     AdvisorSession,
     advisor_state_fingerprint,
@@ -2629,7 +2629,12 @@ class AgentRuntime:
         """
 
         started_at = datetime.now(UTC)
-        if self.memory is None:
+        if action.source == "working_outcomes":
+            result = self._ledger.search_outcomes(
+                query=action.query,
+                limit=action.max_records,
+            )
+        elif self.memory is None:
             result = MemorySearchResult(
                 query=action.query,
                 reason="Durable memory is disabled for this run; nothing was read.",
@@ -2694,6 +2699,26 @@ class AgentRuntime:
             telemetry_changes=telemetry_changes,
             movement_distance=movement_distance,
         )
+        contract = contract_for(receipt.action)
+        controller_verified = bool(
+            contract is not None
+            and contract.controller_verified
+            and assessment is ActionOutcomeAssessment.CHANGED
+        )
+        semantic_status: str | None = None
+        target_id: str | None = None
+        if receipt.semantic is not None:
+            target_id = receipt.semantic.target_id
+            if receipt.semantic.resource_transfer is not None:
+                semantic_status = receipt.semantic.resource_transfer.status.value
+            elif receipt.semantic.camera_recovery is not None:
+                semantic_status = receipt.semantic.camera_recovery.status.value
+        if receipt.native_acknowledgement is not None:
+            target_id = receipt.native_acknowledgement.target_id or target_id
+            semantic_status = receipt.native_acknowledgement.status.value
+        if target_id is None:
+            candidate_target = getattr(receipt.action, "target_id", None)
+            target_id = candidate_target if isinstance(candidate_target, str) else None
         outcome = ActionOutcome(
             outcome_id=self._ledger.next_action_outcome_id(),
             run_id=self.run_id,
@@ -2707,6 +2732,10 @@ class AgentRuntime:
             executed=receipt.executed,
             receipt_message=receipt.message,
             assessment=assessment,
+            causal_revision_advanced=receipt.causal_revision_advanced,
+            controller_verified=controller_verified,
+            semantic_status=semantic_status,
+            target_id=target_id,
             feedback=feedback,
             started_after_revision=receipt.started_after_revision,
             completed_at_revision=receipt.completed_at_revision,

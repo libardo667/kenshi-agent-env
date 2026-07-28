@@ -163,6 +163,49 @@
         "assessment": {
           "$ref": "#/$defs/ActionOutcomeAssessment"
         },
+        "causal_revision_advanced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Revision Advanced"
+        },
+        "controller_verified": {
+          "default": false,
+          "title": "Controller Verified",
+          "type": "boolean"
+        },
+        "semantic_status": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Status"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
         "feedback": {
           "maxLength": 1000,
           "minLength": 1,
@@ -278,6 +321,154 @@
       ],
       "title": "ActionOutcomeAssessment",
       "type": "string"
+    },
+    "ActionOutcomeDigest": {
+      "additionalProperties": false,
+      "description": "Compact immutable evidence retained for the lifetime of one run.",
+      "properties": {
+        "outcome_id": {
+          "pattern": "^ao-[1-9][0-9]{0,8}$",
+          "title": "Outcome Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "command_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command Id"
+        },
+        "action_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Action Kind",
+          "type": "string"
+        },
+        "assessment": {
+          "$ref": "#/$defs/ActionOutcomeAssessment"
+        },
+        "executed": {
+          "title": "Executed",
+          "type": "boolean"
+        },
+        "causal_revision_advanced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Revision Advanced"
+        },
+        "controller_verified": {
+          "title": "Controller Verified",
+          "type": "boolean"
+        },
+        "semantic_status": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Status"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "started_after_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed_at_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidence_summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Evidence Summary",
+          "type": "string"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome_id",
+        "run_id",
+        "plan_id",
+        "plan_version",
+        "step_id",
+        "action_kind",
+        "assessment",
+        "executed",
+        "controller_verified",
+        "evidence_summary",
+        "recorded_at"
+      ],
+      "title": "ActionOutcomeDigest",
+      "type": "object"
     },
     "ActionOutcomeEvidence": {
       "additionalProperties": false,
@@ -887,6 +1078,158 @@
       "title": "CameraState",
       "type": "object"
     },
+    "CanonicalMemoryProvenance": {
+      "additionalProperties": false,
+      "description": "The exact accepted lifecycle operation and the authority behind it.",
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeepMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/ReinforceMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/ResolveMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/SupersedeMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/RetractMemoryOperation"
+            }
+          ],
+          "title": "Operation"
+        },
+        "origin": {
+          "$ref": "#/$defs/ContinuityOrigin"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "authored_context_id": {
+          "pattern": "^pc-[1-9][0-9]{0,8}$",
+          "title": "Authored Context Id",
+          "type": "string"
+        },
+        "authored_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "commit_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        },
+        "resolved_evidence": {
+          "items": {
+            "$ref": "#/$defs/ResolvedEvidenceSnapshot"
+          },
+          "maxItems": 4,
+          "title": "Resolved Evidence",
+          "type": "array"
+        },
+        "plan_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Id"
+        },
+        "plan_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Version"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "rendered_grounding": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rendered Grounding"
+        },
+        "transition_result": {
+          "const": "applied",
+          "default": "applied",
+          "title": "Transition Result",
+          "type": "string"
+        }
+      },
+      "required": [
+        "operation",
+        "origin",
+        "run_id",
+        "authored_context_id",
+        "authored_revision",
+        "commit_revision"
+      ],
+      "title": "CanonicalMemoryProvenance",
+      "type": "object"
+    },
     "CharacterState": {
       "additionalProperties": false,
       "properties": {
@@ -1358,6 +1701,14 @@
           "default": null,
           "title": "Evidence"
         },
+        "resolved_evidence": {
+          "items": {
+            "$ref": "#/$defs/ResolvedEvidenceSnapshot"
+          },
+          "maxItems": 4,
+          "title": "Resolved Evidence",
+          "type": "array"
+        },
         "plan_id": {
           "anyOf": [
             {
@@ -1553,6 +1904,24 @@
       ],
       "title": "EquipItemAction",
       "type": "object"
+    },
+    "EvidenceAuthority": {
+      "description": "What one resolved identity is actually capable of establishing.",
+      "enum": [
+        "fresh_world_observation",
+        "verified_world_effect",
+        "observed_change",
+        "attempt_changed",
+        "attempt_no_op",
+        "attempt_not_executed",
+        "attempt_unknown",
+        "plan_disposition",
+        "agent_belief",
+        "advice",
+        "scenario_attestation"
+      ],
+      "title": "EvidenceAuthority",
+      "type": "string"
     },
     "ExitCurrentBuildingAction": {
       "additionalProperties": false,
@@ -2065,6 +2434,17 @@
           "default": null,
           "title": "Grounding"
         },
+        "latest_provenance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CanonicalMemoryProvenance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "authorship": {
           "$ref": "#/$defs/MemoryAuthorship",
           "default": "agent_authored"
@@ -2190,6 +2570,17 @@
           ],
           "default": null,
           "title": "Resolution Reason"
+        },
+        "resolution_disposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryResolutionDisposition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -2205,9 +2596,21 @@
       "title": "MemoryRecord",
       "type": "object"
     },
+    "MemoryResolutionDisposition": {
+      "description": "What resolving an intention or uncertainty actually concluded.",
+      "enum": [
+        "completed",
+        "abandoned",
+        "confirmed",
+        "rejected",
+        "unknown"
+      ],
+      "title": "MemoryResolutionDisposition",
+      "type": "string"
+    },
     "MemorySearchResult": {
       "additionalProperties": false,
-      "description": "The typed answer to one deliberate, bounded read.",
+      "description": "The typed answer to one deliberate, bounded continuity read.",
       "properties": {
         "query": {
           "maxLength": 200,
@@ -2221,6 +2624,22 @@
           },
           "maxItems": 16,
           "title": "Records",
+          "type": "array"
+        },
+        "action_outcomes": {
+          "items": {
+            "$ref": "#/$defs/ActionOutcomeDigest"
+          },
+          "maxItems": 8,
+          "title": "Action Outcomes",
+          "type": "array"
+        },
+        "plan_outcomes": {
+          "items": {
+            "$ref": "#/$defs/PlanOutcomeDigest"
+          },
+          "maxItems": 8,
+          "title": "Plan Outcomes",
           "type": "array"
         },
         "matched": {
@@ -2968,6 +3387,96 @@
       "title": "PlanOutcome",
       "type": "object"
     },
+    "PlanOutcomeDigest": {
+      "additionalProperties": false,
+      "description": "Compact immutable plan lifecycle retained for the lifetime of one run.",
+      "properties": {
+        "plan_outcome_id": {
+          "pattern": "^po-[1-9][0-9]{0,8}$",
+          "title": "Plan Outcome Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "objective": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "disposition": {
+          "$ref": "#/$defs/PlanDisposition"
+        },
+        "reason_digest": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason Digest",
+          "type": "string"
+        },
+        "completed_step_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Completed Step Ids",
+          "type": "array"
+        },
+        "actions_completed": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Actions Completed",
+          "type": "integer"
+        },
+        "terminal_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_outcome_id",
+        "run_id",
+        "plan_id",
+        "plan_version",
+        "objective",
+        "disposition",
+        "reason_digest",
+        "started_at",
+        "finished_at"
+      ],
+      "title": "PlanOutcomeDigest",
+      "type": "object"
+    },
     "PlanOutcomeEvidence": {
       "additionalProperties": false,
       "properties": {
@@ -3072,12 +3581,21 @@
     },
     "RecallMemoryAction": {
       "additionalProperties": false,
-      "description": "Deliberately read durable memory beyond what recall already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything: its result is text for the next\nplanner call, exactly like advice.",
+      "description": "Deliberately read continuity beyond what automatic context already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything. Durable memory searches active\nrecords; working-outcome searches resurface compact runtime-owned evidence\nthat scrolled out of the rich recent window.",
       "properties": {
         "kind": {
           "const": "recall_memory",
           "default": "recall_memory",
           "title": "Kind",
+          "type": "string"
+        },
+        "source": {
+          "default": "durable_memory",
+          "enum": [
+            "durable_memory",
+            "working_outcomes"
+          ],
+          "title": "Source",
           "type": "string"
         },
         "query": {
@@ -3309,6 +3827,17 @@
           "title": "Reason",
           "type": "string"
         },
+        "disposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryResolutionDisposition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "references": {
           "items": {
             "anyOf": [
@@ -3339,6 +3868,189 @@
         "reason"
       ],
       "title": "ResolveMemoryOperation",
+      "type": "object"
+    },
+    "ResolvedEvidenceSnapshot": {
+      "additionalProperties": false,
+      "description": "Typed immutable truth retained after a reference leaves planner context.",
+      "properties": {
+        "source": {
+          "enum": [
+            "current_observation",
+            "action_outcome",
+            "plan_outcome",
+            "memory",
+            "advisor_brief"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "source_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Source Id",
+          "type": "string"
+        },
+        "authority": {
+          "$ref": "#/$defs/EvidenceAuthority"
+        },
+        "authored_context_id": {
+          "pattern": "^pc-[1-9][0-9]{0,8}$",
+          "title": "Authored Context Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "world_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "assessment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActionOutcomeAssessment"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "action_kind": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Action Kind"
+        },
+        "executed": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Executed"
+        },
+        "causal_revision_advanced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal Revision Advanced"
+        },
+        "controller_verified": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Controller Verified"
+        },
+        "semantic_status": {
+          "anyOf": [
+            {
+              "maxLength": 120,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Semantic Status"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "plan_disposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PlanDisposition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memory_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "memory_status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "compact_summary": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Compact Summary",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "source_id",
+        "authority",
+        "authored_context_id",
+        "run_id",
+        "compact_summary"
+      ],
+      "title": "ResolvedEvidenceSnapshot",
       "type": "object"
     },
     "RetractMemoryOperation": {

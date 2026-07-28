@@ -30,29 +30,18 @@ The two are mutually exclusive. Resolution order:
 | mock or replay, nothing set | `run:<run-id>` | `ephemeral` |
 | **live, nothing set** | **refused** | — |
 
-A live run with durable memory enabled and no campaign identity fails before the
-run directory is used. That is deliberate: the alternative is one shared
-namespace, which is how two unrelated saves came to read each other's memories.
-The resolved campaign and its origin are logged as `campaign_scope` at run start.
-
-A scenario campaign is derived from the exact `save_id`, so repeat runs of one
-fixture accumulate while a different save stays separate.
+A live run with memory enabled and no campaign fails before creating its run
+directory. Scenario campaigns use the exact `save_id`; the resolved campaign
+and origin are logged as `campaign_scope`.
 
 ## Migrating an existing database
 
-The first open of a pre-campaign database migrates it in place:
-
-1. the file is copied to `<memory-db>.v1-backup` **before any write**, including
-   the journal-mode switch, so the backup is byte-for-byte what you had;
-2. every row becomes a `keep` event plus a projection row;
-3. rows keep `legacy_unverified` authorship — they predate grounding, and
-   nothing has checked them;
-4. rows land in `legacy:<old-namespace>`, not in whatever campaign opened the
-   file. Assigning them to a live campaign would hand one playthrough's beliefs
-   to another.
-
-Migration is idempotent: reopening does not re-run it or duplicate anything. To
-roll back, stop the agent and restore the `.v1-backup` file.
+On first open, a pre-campaign database is copied to
+`<memory-db>.v1-backup` before any write. Rows become `keep` events under
+`legacy:<old-namespace>` with `legacy_unverified` authorship, never the opening
+campaign. Schema 2 similarly gets a `.v2-backup` before schema 3 adds structured
+provenance. Old event payloads remain unstructured; migration invents no
+evidence. Both paths are idempotent. Restore the matching backup to roll back.
 
 To read migrated rows, name their campaign explicitly:
 
@@ -60,8 +49,7 @@ To read migrated rows, name their campaign explicitly:
 uv run kenshi-agent memory --campaign legacy:live-longform
 ```
 
-Deciding they belong to a real campaign is a human judgment. There is no
-automatic promotion, because the store cannot tell which save they came from.
+Promotion is manual because the store cannot infer which save produced them.
 
 ## Inspecting a store
 
@@ -76,32 +64,46 @@ believes, and cannot register a campaign that was never played.
 
 ## What a planner is shown
 
-Recall is tiered and each tier has its own budget, so the loudest tier cannot
-eat the others:
+Recall spends separate budgets in order:
 
 1. open commitments;
 2. memories bound to an entity in the *current* observation;
 3. unresolved hypotheses;
 4. general knowledge, and only this tier honours `minimum_salience`.
 
-A record belongs to exactly one tier. What was left out is reported in the
-observation's `memory_recall`, so a planner can tell "nothing else exists" from
-"more exists, not shown". `recent_continuity_receipts` carries the last few
-accepted/rejected operations so one deterministic mistake is not repeated.
+A record occupies one tier. `memory_recall` reports omissions;
+`recent_continuity_receipts` reports accepted and rejected operations. Open
+commitments and current-target memories survive payload budgeting.
 
-Open commitments and current-target memories also survive payload budgeting;
-general context is what a character budget is for.
+A planner may use `recall_memory` with `source: "durable_memory"` for a bounded
+literal record search, or `"working_outcomes"` for compact run-local digests
+outside the rich window. Results reach the next call only; only returned IDs
+enter its manifest. The read emits no game input or risk-budget cost.
 
-A planner may reach past automatic recall with the `recall_memory` action: a
-bounded literal substring search whose typed result arrives in `memory_search`
-on the next call only. It emits no game input and spends no pointer, purchase,
-or native risk budget — it costs one plan action, because deliberation is not
-free, and nothing else.
+## What evidence may establish
+
+The runtime resolves each reference to a typed immutable snapshot, validates
+what its authority can establish, and only then renders grounding:
+
+| Operation claim | Required capability |
+| --- | --- |
+| fact | fresh observation, controller-verified world effect, or causally observed change |
+| episode | observation, action attempt, or plan lifecycle outcome |
+| open commitment or hypothesis | may be self-authored |
+| resolve commitment | fresh or causally verified world evidence |
+| resolve hypothesis | observed evidence plus `confirmed`, `rejected`, or `unknown` |
+
+Non-effect evidence may ground an honest failed episode, never successful world
+proof. See [the evidence ADR](ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md).
 
 ## What the store guarantees
 
 - `memory_events` is append-only. Nothing is deleted or rewritten; resolution,
   supersession, retraction, and delivery are all explicit rows.
+- Accepted lifecycle events retain the exact operation, authored context,
+  authored and commit revisions, references, typed resolved evidence snapshots,
+  plan/step origin, and rendered grounding. The projection exposes the latest
+  provenance; full history remains authoritative.
 - `memories` is a projection, updated in the same transaction that appends the
   event. If the two ever disagree, the history wins and `rebuild_projection()`
   restores agreement.

@@ -884,15 +884,17 @@ class ConsultAdvisorAction(StrictModel):
 
 
 class RecallMemoryAction(StrictModel):
-    """Deliberately read durable memory beyond what recall already showed.
+    """Deliberately read continuity beyond what automatic context already showed.
 
     A cognitive action. It emits no controller primitives, never enters the
     environment dispatch path, spends no pointer, purchase, or native risk
-    budget, and cannot authorize anything: its result is text for the next
-    planner call, exactly like advice.
+    budget, and cannot authorize anything. Durable memory searches active
+    records; working-outcome searches resurface compact runtime-owned evidence
+    that scrolled out of the rich recent window.
     """
 
     kind: Literal["recall_memory"] = "recall_memory"
+    source: Literal["durable_memory", "working_outcomes"] = "durable_memory"
     query: str = Field(min_length=1, max_length=200)
     max_records: int = Field(default=4, ge=1, le=8)
 
@@ -1554,6 +1556,14 @@ class ActionOutcome(StrictModel):
     executed: bool
     receipt_message: str = Field(default="", max_length=2000)
     assessment: ActionOutcomeAssessment
+    # These fields survive the rich visible window in `ActionOutcomeDigest`.
+    # They distinguish "the screen looked different" from a controller-owned
+    # terminal, and preserve the exact target and causal revision basis after
+    # the full receipt is evicted.
+    causal_revision_advanced: bool | None = None
+    controller_verified: bool = False
+    semantic_status: str | None = Field(default=None, max_length=120)
+    target_id: str | None = Field(default=None, max_length=200)
     feedback: str = Field(min_length=1, max_length=1000)
     started_after_revision: WorldStateRevision | None = None
     completed_at_revision: WorldStateRevision | None = None
@@ -1588,6 +1598,49 @@ class PlanOutcome(StrictModel):
     objective: str = Field(min_length=1, max_length=1000)
     disposition: PlanDisposition
     reason: str = Field(min_length=1, max_length=1000)
+    completed_step_ids: list[str] = Field(default_factory=list, max_length=16)
+    actions_completed: int = Field(default=0, ge=0)
+    terminal_revision: WorldStateRevision | None = None
+    started_at: datetime
+    finished_at: datetime
+
+
+class ActionOutcomeDigest(StrictModel):
+    """Compact immutable evidence retained for the lifetime of one run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    outcome_id: str = Field(pattern=ACTION_OUTCOME_ID_PATTERN)
+    run_id: str = Field(min_length=1, max_length=200)
+    plan_id: str = Field(pattern=PLAN_ID_PATTERN)
+    plan_version: int = Field(ge=1)
+    step_id: str = Field(pattern=STEP_ID_PATTERN)
+    command_id: str | None = Field(default=None, max_length=80)
+    action_kind: str = Field(min_length=1, max_length=80)
+    assessment: ActionOutcomeAssessment
+    executed: bool
+    causal_revision_advanced: bool | None = None
+    controller_verified: bool
+    semantic_status: str | None = Field(default=None, max_length=120)
+    target_id: str | None = Field(default=None, max_length=200)
+    started_after_revision: WorldStateRevision | None = None
+    completed_at_revision: WorldStateRevision | None = None
+    evidence_summary: str = Field(min_length=1, max_length=500)
+    recorded_at: datetime
+
+
+class PlanOutcomeDigest(StrictModel):
+    """Compact immutable plan lifecycle retained for the lifetime of one run."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    plan_outcome_id: str = Field(pattern=PLAN_OUTCOME_ID_PATTERN)
+    run_id: str = Field(min_length=1, max_length=200)
+    plan_id: str = Field(pattern=PLAN_ID_PATTERN)
+    plan_version: int = Field(ge=1)
+    objective: str = Field(min_length=1, max_length=1000)
+    disposition: PlanDisposition
+    reason_digest: str = Field(min_length=1, max_length=1000)
     completed_step_ids: list[str] = Field(default_factory=list, max_length=16)
     actions_completed: int = Field(default=0, ge=0)
     terminal_revision: WorldStateRevision | None = None
@@ -1641,6 +1694,16 @@ outcome is not the outcome.
 """
 
 
+class MemoryResolutionDisposition(StrEnum):
+    """What resolving an intention or uncertainty actually concluded."""
+
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+    UNKNOWN = "unknown"
+
+
 class KeepMemoryOperation(StrictModel):
     """Create one durable record from something already established.
 
@@ -1675,6 +1738,7 @@ class ResolveMemoryOperation(StrictModel):
     operation: Literal["resolve"] = "resolve"
     memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
     reason: str = Field(min_length=1, max_length=1000)
+    disposition: MemoryResolutionDisposition | None = None
     references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
 
 
@@ -1724,22 +1788,6 @@ class ContinuityOperationStatus(StrEnum):
     NO_OP = "no_op"
 
 
-class ContinuityOperationReceipt(StrictModel):
-    origin: ContinuityOrigin
-    status: ContinuityOperationStatus
-    operation: ContinuityOperation
-    reason: str = Field(min_length=1, max_length=1000)
-    memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
-    evidence: str | None = Field(default=None, max_length=1000)
-    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
-    plan_version: int | None = Field(default=None, ge=1)
-    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
-    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
-    authored_revision: WorldStateRevision
-    commit_revision: WorldStateRevision
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-
-
 class MemoryStatus(StrEnum):
     """Where a record sits in its lifecycle. Only `active` reaches recall."""
 
@@ -1747,6 +1795,96 @@ class MemoryStatus(StrEnum):
     RESOLVED = "resolved"
     SUPERSEDED = "superseded"
     RETRACTED = "retracted"
+
+
+class EvidenceAuthority(StrEnum):
+    """What one resolved identity is actually capable of establishing."""
+
+    FRESH_WORLD_OBSERVATION = "fresh_world_observation"
+    VERIFIED_WORLD_EFFECT = "verified_world_effect"
+    OBSERVED_CHANGE = "observed_change"
+    ATTEMPT_CHANGED = "attempt_changed"
+    ATTEMPT_NO_OP = "attempt_no_op"
+    ATTEMPT_NOT_EXECUTED = "attempt_not_executed"
+    ATTEMPT_UNKNOWN = "attempt_unknown"
+    PLAN_DISPOSITION = "plan_disposition"
+    AGENT_BELIEF = "agent_belief"
+    ADVICE = "advice"
+    SCENARIO_ATTESTATION = "scenario_attestation"
+
+
+class ResolvedEvidenceSnapshot(StrictModel):
+    """Typed immutable truth retained after a reference leaves planner context."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal[
+        "current_observation",
+        "action_outcome",
+        "plan_outcome",
+        "memory",
+        "advisor_brief",
+    ]
+    source_id: str = Field(min_length=1, max_length=200)
+    authority: EvidenceAuthority
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    run_id: str = Field(min_length=1, max_length=200)
+    world_revision: WorldStateRevision | None = None
+    assessment: ActionOutcomeAssessment | None = None
+    action_kind: str | None = Field(default=None, max_length=80)
+    executed: bool | None = None
+    causal_revision_advanced: bool | None = None
+    controller_verified: bool | None = None
+    semantic_status: str | None = Field(default=None, max_length=120)
+    target_id: str | None = Field(default=None, max_length=200)
+    plan_disposition: PlanDisposition | None = None
+    memory_kind: MemoryKind | None = None
+    memory_status: MemoryStatus | None = None
+    compact_summary: str = Field(min_length=1, max_length=500)
+
+
+class CanonicalMemoryProvenance(StrictModel):
+    """The exact accepted lifecycle operation and the authority behind it."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    operation: ContinuityOperation
+    origin: ContinuityOrigin
+    run_id: str = Field(min_length=1, max_length=200)
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    authored_revision: WorldStateRevision
+    commit_revision: WorldStateRevision
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+    resolved_evidence: list[ResolvedEvidenceSnapshot] = Field(
+        default_factory=list,
+        max_length=4,
+    )
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    rendered_grounding: str | None = Field(default=None, max_length=1000)
+    transition_result: Literal["applied"] = "applied"
+
+
+class ContinuityOperationReceipt(StrictModel):
+    origin: ContinuityOrigin
+    status: ContinuityOperationStatus
+    operation: ContinuityOperation
+    reason: str = Field(min_length=1, max_length=1000)
+    memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
+    evidence: str | None = Field(default=None, max_length=1000)
+    resolved_evidence: list[ResolvedEvidenceSnapshot] = Field(
+        default_factory=list,
+        max_length=4,
+    )
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    authored_revision: WorldStateRevision
+    commit_revision: WorldStateRevision
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class MemoryAuthorship(StrEnum):
@@ -1781,6 +1919,9 @@ class MemoryRecord(StrictModel):
     salience: float
     # Runtime-rendered from the references that resolved. Never model-authored.
     grounding: str | None = None
+    # Exact accepted operation and typed source snapshots behind the latest
+    # grounding-bearing transition. Older provenance remains in event history.
+    latest_provenance: CanonicalMemoryProvenance | None = None
     authorship: MemoryAuthorship = MemoryAuthorship.AGENT_AUTHORED
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
     created_run_id: str
@@ -1795,6 +1936,7 @@ class MemoryRecord(StrictModel):
     supersedes_id: str | None = Field(default=None, min_length=1, max_length=80)
     superseded_by_id: str | None = Field(default=None, min_length=1, max_length=80)
     resolution_reason: str | None = Field(default=None, max_length=1000)
+    resolution_disposition: MemoryResolutionDisposition | None = None
 
 
 class RecallTier(StrEnum):
@@ -1827,10 +1969,18 @@ class RecallSummary(StrictModel):
 
 
 class MemorySearchResult(StrictModel):
-    """The typed answer to one deliberate, bounded read."""
+    """The typed answer to one deliberate, bounded continuity read."""
 
     query: str = Field(min_length=1, max_length=200)
     records: list[MemoryRecord] = Field(default_factory=list, max_length=16)
+    action_outcomes: list[ActionOutcomeDigest] = Field(
+        default_factory=list,
+        max_length=8,
+    )
+    plan_outcomes: list[PlanOutcomeDigest] = Field(
+        default_factory=list,
+        max_length=8,
+    )
     matched: int = Field(default=0, ge=0)
     truncated: bool = False
     reason: str = Field(default="", max_length=600)

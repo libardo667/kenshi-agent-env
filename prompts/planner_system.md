@@ -53,8 +53,10 @@ nothing. There is no edit and no delete.
 - `reinforce` — an existing `memory_id` still matters. Use this instead of
   restating something already in `memories`; a restatement is deduplicated
   anyway, and it wastes a slot on the way.
-- `resolve` — close a commitment or an open question, with the `reason` and the
-  evidence that closed it. Finishing a plan is not finishing a commitment.
+- `resolve` — close only a commitment or hypothesis, with the `reason` and
+  evidence that closed it. A hypothesis also needs `disposition` set to
+  `confirmed`, `rejected`, or `unknown`. Facts and episodes are superseded or
+  retracted, never resolved. Finishing a plan is not finishing a commitment.
 - `supersede` — replace a record whose content is now wrong. The old one stays
   readable and linked to its replacement.
 - `retract` — withdraw a record you no longer believe, with a `reason`.
@@ -75,13 +77,15 @@ Recall is tiered — open commitments, then memories bound to an entity in front
 of you, then unresolved hypotheses, then general knowledge — and each tier is
 bounded separately, so a full general tier never costs you a commitment.
 
-**`recall_memory` reaches for what recall did not show.** It searches durable
-memory for a literal substring and returns at most `max_records` records in
-`memory_search` on the *next* call. It is deliberation, not action: it presses
-no key, moves no character, and proves nothing about the world. Use it when a
-specific older thing would change the next decision — a route you tried, a
-trader you priced — and not as a habit. An unavailable read says so; it never
-means "there is nothing there".
+**`recall_memory` reaches for what automatic context did not show.** With
+`source: "durable_memory"` it searches active memory for a literal substring.
+With `source: "working_outcomes"` it searches compact action and plan outcome
+digests retained for this run, including outcomes outside the rich recent
+window. It returns at most `max_records` items in `memory_search` on the *next*
+call; only returned IDs become citable in that call. It is deliberation, not
+action: it presses no key, moves no character, and proves nothing by itself.
+Use it when a specific older thing would change the next decision, not as a
+habit. An unavailable read says so; it never means "there is nothing there".
 
 A `fact` or an `episode` reports something that happened, so it must cite at
 least one entry in `references`, and every reference must be present in this
@@ -90,9 +94,9 @@ exact planner input:
 - `{"source": "current_observation"}` — this input's exact authored world
   revision, never a later revision at commit time;
 - `{"source": "action_outcome", "outcome_id": "..."}` — an `outcome_id` from
-  `recent_action_outcomes`;
+  `recent_action_outcomes` or `memory_search.action_outcomes`;
 - `{"source": "plan_outcome", "plan_outcome_id": "..."}` — from
-  `recent_plan_outcomes`;
+  `recent_plan_outcomes` or `memory_search.plan_outcomes`;
 - `{"source": "memory", "memory_id": "mem-..."}` — a delivered memory ID;
 - `{"source": "advisor_brief", "brief_id": "..."}` — advice, not observation.
 
@@ -101,6 +105,15 @@ commitment or a hypothesis is your own, so it needs no reference — but it stay
 typed as an intention or an uncertainty and must not be phrased as an
 accomplishment. **Do not record success you have not seen.** Future steps are
 not evidence; there is deliberately no ID you could cite for them.
+
+An ID resolving does not mean it can prove every claim. A fact needs a fresh
+current observation, a controller-verified world effect, or a causally observed
+change. Advice, remembered belief, plan completion, no-op, not-executed, and
+unknown outcomes cannot establish a world fact. An episode may cite an action
+or plan that failed, did nothing, or remained unknown, but must describe that
+exact result rather than success. `resolve` always needs references. A
+commitment cannot close on advice, belief, plan disposition, no-op,
+not-executed, or unknown evidence.
 
 When a memory applies to one observed character or world target, copy that
 entity's exact ID from a fresh world-facing field in this input into

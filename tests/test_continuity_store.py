@@ -29,11 +29,20 @@ from kenshi_agent.memory import (
     MemoryTransitionError,
 )
 from kenshi_agent.models import (
+    CanonicalMemoryProvenance,
+    ContinuityOrigin,
+    KeepMemoryOperation,
     MemoryAuthorship,
     MemoryKind,
     MemoryLifecycleEvent,
+    MemoryResolutionDisposition,
     MemoryStatus,
+    ReinforceMemoryOperation,
+    ResolveMemoryOperation,
+    RetractMemoryOperation,
     ScenarioIdentity,
+    SupersedeMemoryOperation,
+    WorldStateRevision,
 )
 
 
@@ -58,6 +67,27 @@ def scenario(scenario_id: str = "hub-bar", save_id: str = "save-1") -> ScenarioI
         economy="broke",
         party="solo",
         time_of_day="day",
+    )
+
+
+def provenance(operation: Any, marker: str) -> CanonicalMemoryProvenance:
+    revision = WorldStateRevision(
+        telemetry_sequence=7,
+        frame_sequence=4,
+        capability_epoch=2,
+        observed_at_monotonic=1.5,
+    )
+    return CanonicalMemoryProvenance(
+        operation=operation,
+        origin=ContinuityOrigin.PLAN,
+        run_id=f"run-{marker}",
+        authored_context_id="pc-1",
+        authored_revision=revision,
+        commit_revision=revision,
+        plan_id="plan-a",
+        plan_version=1,
+        step_id=f"step-{marker}",
+        rendered_grounding=f"evidence-{marker}",
     )
 
 
@@ -232,6 +262,30 @@ def test_the_same_words_about_two_entities_stay_two_memories(tmp_path: Path) -> 
     assert first.memory_id != second.memory_id
 
 
+def test_exists_means_active_exact_id_in_this_campaign_only(tmp_path: Path) -> None:
+    path = tmp_path / "memory.sqlite3"
+    with store(path, "campaign-a") as memories:
+        active = memories.keep(
+            "run-a",
+            kind=MemoryKind.COMMITMENT,
+            content="Deliver the canisters.",
+            salience=0.5,
+            grounding=None,
+        )
+        assert memories.exists(active.memory_id)
+        assert not memories.exists("mem-missing")
+        memories.resolve(
+            "run-b",
+            active.memory_id,
+            reason="Delivered.",
+            grounding=None,
+        )
+        assert not memories.exists(active.memory_id)
+
+    with store(path, "campaign-b") as other_campaign:
+        assert not other_campaign.exists(active.memory_id)
+
+
 def test_a_commitment_is_resolved_with_a_reason_and_leaves_active_recall(
     tmp_path: Path,
 ) -> None:
@@ -258,6 +312,28 @@ def test_a_commitment_is_resolved_with_a_reason_and_leaves_active_recall(
         # Not deleted: the record and its history are still there to audit.
         assert memories.get(kept.memory_id) is not None
         assert len(memories.history(kept.memory_id)) == 2
+
+
+def test_the_store_itself_refuses_to_resolve_a_fact_or_episode(
+    tmp_path: Path,
+) -> None:
+    with store(tmp_path / "memory.sqlite3") as memories:
+        for kind in (MemoryKind.FACT, MemoryKind.EPISODE):
+            record = memories.keep(
+                "run-a",
+                kind=kind,
+                content=f"A {kind.value} is revised, not resolved.",
+                salience=0.5,
+                grounding=None,
+            )
+            with pytest.raises(MemoryTransitionError, match="cannot be resolved"):
+                memories.resolve(
+                    "run-b",
+                    record.memory_id,
+                    reason="Wrong lifecycle verb.",
+                    grounding=None,
+                )
+            assert memories.get(record.memory_id).status is MemoryStatus.ACTIVE
 
 
 def test_superseding_creates_the_replacement_and_links_both_atomically(
@@ -448,6 +524,164 @@ def test_the_projection_can_be_rebuilt_from_history_alone(tmp_path: Path) -> Non
         assert _snapshot(memories) == before
 
 
+def test_every_lifecycle_provenance_survives_history_and_projection_replay(
+    tmp_path: Path,
+) -> None:
+    """Anything accepted into history remains exact after every later write."""
+
+    with store(tmp_path / "memory.sqlite3") as memories:
+        fact_operation = KeepMemoryOperation(
+            kind=MemoryKind.FACT,
+            content="The barman offers no work.",
+        )
+        fact = memories.keep(
+            "run-keep",
+            kind=fact_operation.kind,
+            content=fact_operation.content,
+            salience=fact_operation.salience,
+            grounding="evidence-keep",
+            provenance=provenance(fact_operation, "keep"),
+        )
+        reinforce_operation = ReinforceMemoryOperation(memory_id=fact.memory_id)
+        reinforced_provenance = provenance(reinforce_operation, "reinforce")
+        reinforced = memories.keep(
+            "run-reinforce",
+            kind=fact_operation.kind,
+            content=fact_operation.content,
+            salience=0.8,
+            grounding="evidence-reinforce",
+            provenance=reinforced_provenance,
+        )
+        assert reinforced.latest_provenance == reinforced_provenance
+        assert memories.history(fact.memory_id)[-1].payload["provenance"] == (
+            reinforced_provenance.model_dump(mode="json")
+        )
+
+        commitment = memories.keep(
+            "run-commitment",
+            kind=MemoryKind.COMMITMENT,
+            content="Deliver the canisters.",
+            salience=0.8,
+            grounding=None,
+        )
+        resolve_operation = ResolveMemoryOperation(
+            memory_id=commitment.memory_id,
+            reason="The route is no longer viable.",
+            disposition=MemoryResolutionDisposition.ABANDONED,
+        )
+        resolve_provenance = provenance(resolve_operation, "resolve")
+        resolved = memories.resolve(
+            "run-resolve",
+            commitment.memory_id,
+            reason=resolve_operation.reason,
+            grounding="evidence-resolve",
+            disposition=MemoryResolutionDisposition.ABANDONED,
+            provenance=resolve_provenance,
+        )
+        resolve_payload = memories.history(commitment.memory_id)[-1].payload
+        assert resolved.latest_provenance == resolve_provenance
+        assert resolved.resolution_disposition is MemoryResolutionDisposition.ABANDONED
+        assert resolve_payload["disposition"] == "abandoned"
+        assert resolve_payload["provenance"] == resolve_provenance.model_dump(mode="json")
+
+        original = memories.keep(
+            "run-original",
+            kind=MemoryKind.FACT,
+            content="The gate is open.",
+            salience=0.5,
+            grounding=None,
+        )
+        supersede_operation = SupersedeMemoryOperation(
+            memory_id=original.memory_id,
+            kind=MemoryKind.FACT,
+            content="The gate is closed.",
+        )
+        supersede_provenance = provenance(supersede_operation, "supersede")
+        replacement = memories.supersede(
+            "run-supersede",
+            original.memory_id,
+            kind=supersede_operation.kind,
+            content=supersede_operation.content,
+            salience=supersede_operation.salience,
+            grounding="evidence-supersede",
+            provenance=supersede_provenance,
+        )
+        superseded = memories.get(original.memory_id)
+        assert superseded is not None
+        assert superseded.latest_provenance == supersede_provenance
+        assert replacement.latest_provenance == supersede_provenance
+        assert memories.history(original.memory_id)[-1].payload["provenance"] == (
+            supersede_provenance.model_dump(mode="json")
+        )
+
+        hypothesis = memories.keep(
+            "run-hypothesis",
+            kind=MemoryKind.HYPOTHESIS,
+            content="The trader might buy ore.",
+            salience=0.5,
+            grounding=None,
+        )
+        retract_operation = RetractMemoryOperation(
+            memory_id=hypothesis.memory_id,
+            reason="Disproved by observation.",
+        )
+        retract_provenance = provenance(retract_operation, "retract")
+        retracted = memories.retract(
+            "run-retract",
+            hypothesis.memory_id,
+            reason=retract_operation.reason,
+            provenance=retract_provenance,
+        )
+        assert retracted.latest_provenance == retract_provenance
+        assert memories.history(hypothesis.memory_id)[-1].payload["provenance"] == (
+            retract_provenance.model_dump(mode="json")
+        )
+
+        before = memories.all_records()
+        memories.rebuild_projection()
+        assert memories.all_records() == before
+
+
+def test_v2_resolution_without_a_disposition_replays_as_completed(
+    tmp_path: Path,
+) -> None:
+    """Schema-v2 events predate dispositions but still have one known meaning."""
+
+    with store(tmp_path / "memory.sqlite3") as memories:
+        commitment = memories.keep(
+            "run-a",
+            kind=MemoryKind.COMMITMENT,
+            content="Deliver the canisters.",
+            salience=0.8,
+            grounding=None,
+        )
+        memories.resolve(
+            "run-b",
+            commitment.memory_id,
+            reason="Delivered.",
+            grounding="evidence-resolve",
+        )
+        entry = memories.history(commitment.memory_id)[-1]
+        legacy_payload = dict(entry.payload)
+        legacy_payload.pop("disposition")
+        with memories._connection:
+            memories._connection.execute(
+                "UPDATE memory_events SET payload=? WHERE memory_id=? AND event=?",
+                (
+                    json.dumps(legacy_payload, sort_keys=True),
+                    commitment.memory_id,
+                    MemoryLifecycleEvent.RESOLVE.value,
+                ),
+            )
+
+        memories.rebuild_projection()
+        replayed = memories.get(commitment.memory_id)
+        assert replayed is not None
+        assert replayed.resolution_disposition is (
+            MemoryResolutionDisposition.COMPLETED
+        )
+
+
 class _BrokenProjectionStore(MemoryStore):
     """A store whose projection write fails after its event was appended."""
 
@@ -543,6 +777,8 @@ def _snapshot(memories: MemoryStore) -> list[tuple[Any, ...]]:
             record.supersedes_id,
             record.superseded_by_id,
             record.resolution_reason,
+            record.latest_provenance,
+            record.resolution_disposition,
         )
         for record in memories.all_records()
     ]
@@ -551,6 +787,163 @@ def _snapshot(memories: MemoryStore) -> list[tuple[Any, ...]]:
 # --------------------------------------------------------------------------
 # Legacy migration
 # --------------------------------------------------------------------------
+
+
+V2_SCHEMA = """
+    CREATE TABLE continuity_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    INSERT INTO continuity_meta VALUES ('schema_version', '2');
+    CREATE TABLE campaigns (
+        campaign_id TEXT PRIMARY KEY,
+        origin TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    );
+    INSERT INTO campaigns VALUES (
+        'ladle-css-01', 'configured', '2026-07-27T00:00:00+00:00'
+    );
+    CREATE TABLE memory_events (
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id TEXT NOT NULL REFERENCES campaigns(campaign_id),
+        memory_id TEXT NOT NULL,
+        event TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        payload TEXT NOT NULL
+    );
+    CREATE TABLE memories (
+        memory_id TEXT PRIMARY KEY,
+        campaign_id TEXT NOT NULL REFERENCES campaigns(campaign_id),
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        content TEXT NOT NULL,
+        normalized_key TEXT NOT NULL,
+        target_id TEXT NOT NULL DEFAULT '',
+        salience REAL NOT NULL,
+        grounding TEXT,
+        authorship TEXT NOT NULL,
+        created_run_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        reinforced_at TEXT,
+        resolved_at TEXT,
+        superseded_at TEXT,
+        last_delivered_at TEXT,
+        reinforcement_count INTEGER NOT NULL DEFAULT 0,
+        supersedes_id TEXT,
+        superseded_by_id TEXT,
+        resolution_reason TEXT
+    );
+"""
+
+
+def write_v2(path: Path) -> None:
+    payload = {
+        "authorship": "agent_authored",
+        "content": "The Hub has a bar.",
+        "grounding": "current_observation(telemetry_sequence=4)",
+        "kind": "fact",
+        "salience": 0.5,
+        "status": "active",
+        "supersedes_id": None,
+        "target_id": None,
+    }
+    connection = sqlite3.connect(path)
+    connection.executescript(V2_SCHEMA)
+    connection.execute(
+        "INSERT INTO memory_events "
+        "(campaign_id, memory_id, event, run_id, recorded_at, payload) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "ladle-css-01",
+            "mem-v2",
+            "keep",
+            "run-v2",
+            "2026-07-27T00:00:00+00:00",
+            json.dumps(payload, sort_keys=True),
+        ),
+    )
+    connection.execute(
+        "INSERT INTO memories VALUES "
+        "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "mem-v2",
+            "ladle-css-01",
+            "fact",
+            "active",
+            "The Hub has a bar.",
+            "fact\x1f\x1fthe hub has a bar.",
+            "",
+            0.5,
+            "current_observation(telemetry_sequence=4)",
+            "agent_authored",
+            "run-v2",
+            "2026-07-27T00:00:00+00:00",
+            None,
+            None,
+            None,
+            None,
+            0,
+            None,
+            None,
+            None,
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+
+def test_v2_migration_backs_up_and_preserves_unstructured_legacy_provenance(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "memory.sqlite3"
+    write_v2(path)
+    original = path.read_bytes()
+
+    with store(path) as memories:
+        record = memories.get("mem-v2")
+        assert record is not None
+        assert memories.schema_version == SCHEMA_VERSION
+        assert record.grounding == "current_observation(telemetry_sequence=4)"
+        assert record.latest_provenance is None
+        assert record.resolution_disposition is None
+        before = _snapshot(memories)
+        memories.rebuild_projection()
+        assert _snapshot(memories) == before
+
+    backup = path.with_suffix(path.suffix + ".v2-backup")
+    assert backup.read_bytes() == original
+
+
+@pytest.mark.parametrize(
+    "existing_column",
+    ["latest_provenance", "resolution_disposition"],
+)
+def test_v2_migration_resumes_after_either_column_was_already_added(
+    existing_column: str,
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "memory.sqlite3"
+    write_v2(path)
+    connection = sqlite3.connect(path)
+    connection.execute(f"ALTER TABLE memories ADD COLUMN {existing_column} TEXT")
+    connection.commit()
+    connection.close()
+
+    with store(path) as memories:
+        columns = [
+            row["name"]
+            for row in memories._connection.execute("PRAGMA table_info(memories)")
+        ]
+        meta = memories._connection.execute(
+            "SELECT value FROM continuity_meta WHERE key='schema_version'"
+        ).fetchone()
+        assert columns.count("latest_provenance") == 1
+        assert columns.count("resolution_disposition") == 1
+        assert meta is not None and meta["value"] == str(SCHEMA_VERSION)
+
+    with store(path) as reopened:
+        assert reopened.schema_version == SCHEMA_VERSION
 
 
 LEGACY_SCHEMA = """
@@ -861,6 +1254,31 @@ def test_history_payloads_are_stored_with_stable_key_order(tmp_path: Path) -> No
         ).fetchone()[0]
 
     assert list(json.loads(raw)) == sorted(json.loads(raw))
+
+
+def test_provenance_serialization_is_canonical_json_and_round_trips() -> None:
+    operation = KeepMemoryOperation(
+        kind=MemoryKind.FACT,
+        content="The gate is open.",
+    )
+    accepted = provenance(operation, "serialize")
+    payload = MemoryStore._provenance_payload(accepted)
+    expected = accepted.model_dump(mode="json")
+
+    assert payload == expected
+    assert payload is not None
+    assert type(payload["origin"]) is str
+    assert type(payload["operation"]["kind"]) is str
+    assert MemoryStore._provenance_from_payload({"provenance": payload}) == accepted
+    assert MemoryStore._provenance_from_payload({}) is None
+    assert MemoryStore._payload_with_provenance({"reason": "kept"}, accepted) == {
+        "reason": "kept",
+        "provenance": expected,
+    }
+    assert MemoryStore._provenance_text(accepted) == json.dumps(
+        expected,
+        sort_keys=True,
+    )
 
 
 def test_an_entity_budget_with_no_targets_returns_only_general_recall(

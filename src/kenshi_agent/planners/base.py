@@ -144,9 +144,19 @@ def planner_context_manifest(
         action_outcome_ids = {
             outcome.outcome_id for outcome in observation.recent_action_outcomes
         }
+        if observation.memory_search is not None:
+            action_outcome_ids.update(
+                outcome.outcome_id
+                for outcome in observation.memory_search.action_outcomes
+            )
         plan_outcome_ids = {
             outcome.plan_outcome_id for outcome in observation.recent_plan_outcomes
         }
+        if observation.memory_search is not None:
+            plan_outcome_ids.update(
+                outcome.plan_outcome_id
+                for outcome in observation.memory_search.plan_outcomes
+            )
         memory_ids = {record.memory_id for record in observation.memories}
         if observation.memory_search is not None:
             memory_ids.update(
@@ -174,6 +184,12 @@ def planner_context_manifest(
         search = payload.get("memory_search")
         if isinstance(search, dict):
             memory_ids.update(_string_ids(search.get("records"), "memory_id"))
+            action_outcome_ids.update(
+                _string_ids(search.get("action_outcomes"), "outcome_id")
+            )
+            plan_outcome_ids.update(
+                _string_ids(search.get("plan_outcomes"), "plan_outcome_id")
+            )
         for receipt in payload.get("recent_continuity_receipts", []):
             if isinstance(receipt, dict) and isinstance(receipt.get("memory_id"), str):
                 memory_ids.add(receipt["memory_id"])

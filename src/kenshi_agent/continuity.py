@@ -25,23 +25,32 @@ from typing import Any, Protocol
 from .memory import MemoryStore, MemoryTransitionError
 from .models import (
     ActionOutcome,
+    ActionOutcomeAssessment,
+    ActionOutcomeDigest,
     ActionOutcomeEvidence,
     AuthoredPlannerContext,
+    CanonicalMemoryProvenance,
     ContinuityOperation,
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
     ContinuityOrigin,
     CurrentObservationEvidence,
+    EvidenceAuthority,
     EvidenceReference,
     KeepMemoryOperation,
     MemoryEvidence,
     MemoryKind,
     MemoryRecord,
+    MemoryResolutionDisposition,
+    MemorySearchResult,
+    MemoryStatus,
     Observation,
     PlanDisposition,
     PlanOutcome,
+    PlanOutcomeDigest,
     PlanOutcomeEvidence,
     ReinforceMemoryOperation,
+    ResolvedEvidenceSnapshot,
     ResolveMemoryOperation,
     SupersedeMemoryOperation,
     WorldStateRevision,
@@ -58,6 +67,24 @@ MAX_PLAN_OUTCOMES = 6
 # `MemoryWrite.evidence`'s thousand-character bound. Truncating here would
 # silently shorten grounding rather than fail, so the model's bound is the bound.
 EVIDENCE_SEPARATOR = "; "
+
+FACT_AUTHORITIES = frozenset(
+    {
+        EvidenceAuthority.FRESH_WORLD_OBSERVATION,
+        EvidenceAuthority.VERIFIED_WORLD_EFFECT,
+        EvidenceAuthority.ATTEMPT_CHANGED,
+    }
+)
+EPISODE_AUTHORITIES = FACT_AUTHORITIES | frozenset(
+    {
+        EvidenceAuthority.OBSERVED_CHANGE,
+        EvidenceAuthority.ATTEMPT_NO_OP,
+        EvidenceAuthority.ATTEMPT_NOT_EXECUTED,
+        EvidenceAuthority.ATTEMPT_UNKNOWN,
+        EvidenceAuthority.PLAN_DISPOSITION,
+    }
+)
+COMMITMENT_CLOSURE_AUTHORITIES = FACT_AUTHORITIES
 
 
 class EvidenceResolutionError(ValueError):
@@ -92,8 +119,8 @@ class ContinuityLedger:
         "plan_outcome_limit",
         "_action_outcomes",
         "_plan_outcomes",
-        "_issued_action_outcome_ids",
-        "_issued_plan_outcome_ids",
+        "_action_outcome_digests",
+        "_plan_outcome_digests",
         "_action_outcomes_recorded",
         "_plan_outcomes_recorded",
     )
@@ -110,16 +137,16 @@ class ContinuityLedger:
         self.plan_outcome_limit = plan_outcome_limit
         self._action_outcomes: list[ActionOutcome] = []
         self._plan_outcomes: list[PlanOutcome] = []
-        self._issued_action_outcome_ids: set[str] = set()
-        self._issued_plan_outcome_ids: set[str] = set()
+        self._action_outcome_digests: dict[str, ActionOutcomeDigest] = {}
+        self._plan_outcome_digests: dict[str, PlanOutcomeDigest] = {}
         self._action_outcomes_recorded = 0
         self._plan_outcomes_recorded = 0
 
     def reset(self) -> None:
         self._action_outcomes.clear()
         self._plan_outcomes.clear()
-        self._issued_action_outcome_ids.clear()
-        self._issued_plan_outcome_ids.clear()
+        self._action_outcome_digests.clear()
+        self._plan_outcome_digests.clear()
         self._action_outcomes_recorded = 0
         self._plan_outcomes_recorded = 0
 
@@ -128,7 +155,25 @@ class ContinuityLedger:
         return f"ao-{self._action_outcomes_recorded}"
 
     def record_action_outcome(self, outcome: ActionOutcome) -> None:
-        self._issued_action_outcome_ids.add(outcome.outcome_id)
+        self._action_outcome_digests[outcome.outcome_id] = ActionOutcomeDigest(
+            outcome_id=outcome.outcome_id,
+            run_id=outcome.run_id,
+            plan_id=outcome.plan_id,
+            plan_version=outcome.plan_version,
+            step_id=outcome.step_id,
+            command_id=outcome.command_id,
+            action_kind=outcome.action.kind,
+            assessment=outcome.assessment,
+            executed=outcome.executed,
+            causal_revision_advanced=outcome.causal_revision_advanced,
+            controller_verified=outcome.controller_verified,
+            semantic_status=outcome.semantic_status,
+            target_id=outcome.target_id,
+            started_after_revision=outcome.started_after_revision,
+            completed_at_revision=outcome.completed_at_revision,
+            evidence_summary=outcome.feedback[:500],
+            recorded_at=outcome.recorded_at,
+        )
         self._action_outcomes.append(outcome)
         del self._action_outcomes[: -self.action_outcome_limit or None]
 
@@ -161,7 +206,20 @@ class ContinuityLedger:
             started_at=started_at,
             finished_at=finished_at,
         )
-        self._issued_plan_outcome_ids.add(outcome.plan_outcome_id)
+        self._plan_outcome_digests[outcome.plan_outcome_id] = PlanOutcomeDigest(
+            plan_outcome_id=outcome.plan_outcome_id,
+            run_id=outcome.run_id,
+            plan_id=outcome.plan_id,
+            plan_version=outcome.plan_version,
+            objective=outcome.objective,
+            disposition=outcome.disposition,
+            reason_digest=outcome.reason,
+            completed_step_ids=outcome.completed_step_ids,
+            actions_completed=outcome.actions_completed,
+            terminal_revision=outcome.terminal_revision,
+            started_at=outcome.started_at,
+            finished_at=outcome.finished_at,
+        )
         self._plan_outcomes.append(outcome)
         del self._plan_outcomes[: -self.plan_outcome_limit or None]
         return outcome
@@ -179,10 +237,75 @@ class ContinuityLedger:
         return list(self._plan_outcomes)
 
     def has_action_outcome(self, outcome_id: str) -> bool:
-        return outcome_id in self._issued_action_outcome_ids
+        return outcome_id in self._action_outcome_digests
 
     def has_plan_outcome(self, plan_outcome_id: str) -> bool:
-        return plan_outcome_id in self._issued_plan_outcome_ids
+        return plan_outcome_id in self._plan_outcome_digests
+
+    def action_outcome_digest(self, outcome_id: str) -> ActionOutcomeDigest | None:
+        return self._action_outcome_digests.get(outcome_id)
+
+    def plan_outcome_digest(self, plan_outcome_id: str) -> PlanOutcomeDigest | None:
+        return self._plan_outcome_digests.get(plan_outcome_id)
+
+    def search_outcomes(self, *, query: str, limit: int) -> MemorySearchResult:
+        """Resurface bounded compact evidence without restoring rich records."""
+
+        if limit < 1:
+            raise ValueError(  # mutation: reason
+                "outcome search limit must be at least one"  # mutation: reason
+            )
+        needle = query.casefold()
+        action_matches = [
+            digest
+            for digest in reversed(tuple(self._action_outcome_digests.values()))
+            if needle
+            in " ".join(
+                part
+                for part in (
+                    digest.outcome_id,
+                    digest.plan_id,
+                    digest.step_id,
+                    digest.command_id,
+                    digest.action_kind,
+                    digest.assessment.value,
+                    digest.semantic_status,
+                    digest.target_id,
+                    digest.evidence_summary,
+                )
+                if part is not None
+            ).casefold()
+        ]
+        plan_matches = [
+            digest
+            for digest in reversed(tuple(self._plan_outcome_digests.values()))
+            if needle
+            in " ".join(
+                (
+                    digest.plan_outcome_id,
+                    digest.plan_id,
+                    digest.objective,
+                    digest.disposition.value,
+                    digest.reason_digest,
+                    *digest.completed_step_ids,
+                )
+            ).casefold()
+        ]
+        combined = len(action_matches) + len(plan_matches)
+        shown_actions = action_matches[:limit]
+        remaining = limit - len(shown_actions)
+        shown_plans = plan_matches[:remaining]
+        return MemorySearchResult(
+            query=query,
+            action_outcomes=shown_actions,
+            plan_outcomes=shown_plans,
+            matched=combined,
+            truncated=combined > limit,
+            reason=(  # mutation: reason
+                f"{combined} retained working outcomes match {query!r}; "  # mutation: reason
+                f"{len(shown_actions) + len(shown_plans)} shown."  # mutation: reason
+            ),
+        )
 
     def action_outcome(self, outcome_id: str) -> ActionOutcome | None:
         for outcome in reversed(self._action_outcomes):
@@ -197,19 +320,20 @@ class ContinuityLedger:
         return None
 
 
-def render_evidence_reference(
+def resolve_evidence_reference(
     reference: EvidenceReference,
     *,
     authored_context: AuthoredPlannerContext,
     ledger: ContinuityLedger,
     store: MemoryStore | None,
     advisor_brief_ids: set[str],
-) -> str:
-    """Return the grounding text for one reference, or refuse to.
+) -> ResolvedEvidenceSnapshot:
+    """Resolve one identity to immutable typed authority, or refuse it.
 
     Refusal is the point. Every branch checks the authority that actually owns
     the identity, so a plausible-looking ID from another run, another campaign,
-    or nowhere at all cannot become grounding for a durable claim.
+    or nowhere at all cannot become evidence for a durable claim. Rendering is
+    a projection of this snapshot and never the validation input.
     """
 
     manifest = authored_context.manifest
@@ -219,11 +343,24 @@ def render_evidence_reference(
                 "The authored planner input did not contain "  # mutation: reason
                 "a current observation."  # mutation: reason
             )
+        if not manifest.telemetry_was_fresh:
+            raise EvidenceResolutionError(  # mutation: reason
+                "The current observation in this planner context was stale "  # mutation: reason
+                "and cannot establish a fresh world claim."  # mutation: reason
+            )
         revision = manifest.authored_revision
-        return (
-            "current_observation("
-            f"telemetry_sequence={revision.telemetry_sequence}, "
-            f"frame_sequence={revision.frame_sequence})"
+        return ResolvedEvidenceSnapshot(
+            source="current_observation",
+            source_id=f"{manifest.context_id}:current_observation",
+            authority=EvidenceAuthority.FRESH_WORLD_OBSERVATION,
+            authored_context_id=manifest.context_id,
+            run_id=manifest.run_id,
+            world_revision=revision,
+            compact_summary=(
+                "current_observation("
+                f"telemetry_sequence={revision.telemetry_sequence}, "
+                f"frame_sequence={revision.frame_sequence})"
+            ),
         )
     if isinstance(reference, ActionOutcomeEvidence):
         if reference.outcome_id not in manifest.action_outcome_ids:
@@ -231,30 +368,75 @@ def render_evidence_reference(
                 f"Action outcome {reference.outcome_id!r} was not delivered "  # mutation: reason
                 f"in planner context {manifest.context_id}."  # mutation: reason
             )
-        if not ledger.has_action_outcome(reference.outcome_id):
+        action_digest = ledger.action_outcome_digest(reference.outcome_id)
+        if action_digest is None or action_digest.run_id != manifest.run_id:
             raise EvidenceResolutionError(  # mutation: reason
                 f"No action outcome {reference.outcome_id!r} "  # mutation: reason
                 "was recorded in this run."  # mutation: reason
             )
-        outcome = ledger.action_outcome(reference.outcome_id)
-        assessment = "evicted" if outcome is None else outcome.assessment.value
-        return f"action_outcome({reference.outcome_id}: {assessment})"
+        if not action_digest.executed:
+            authority = EvidenceAuthority.ATTEMPT_NOT_EXECUTED
+        elif (
+            action_digest.controller_verified
+            and action_digest.assessment is ActionOutcomeAssessment.CHANGED
+        ):
+            authority = EvidenceAuthority.VERIFIED_WORLD_EFFECT
+        elif action_digest.assessment is ActionOutcomeAssessment.CHANGED:
+            authority = (
+                EvidenceAuthority.ATTEMPT_CHANGED
+                if action_digest.causal_revision_advanced
+                else EvidenceAuthority.OBSERVED_CHANGE
+            )
+        elif action_digest.assessment is ActionOutcomeAssessment.NO_OP:
+            authority = EvidenceAuthority.ATTEMPT_NO_OP
+        elif action_digest.assessment is ActionOutcomeAssessment.NOT_EXECUTED:
+            authority = EvidenceAuthority.ATTEMPT_NOT_EXECUTED
+        else:
+            authority = EvidenceAuthority.ATTEMPT_UNKNOWN
+        return ResolvedEvidenceSnapshot(
+            source="action_outcome",
+            source_id=action_digest.outcome_id,
+            authority=authority,
+            authored_context_id=manifest.context_id,
+            run_id=action_digest.run_id,
+            world_revision=action_digest.completed_at_revision,
+            assessment=action_digest.assessment,
+            action_kind=action_digest.action_kind,
+            executed=action_digest.executed,
+            causal_revision_advanced=action_digest.causal_revision_advanced,
+            controller_verified=action_digest.controller_verified,
+            semantic_status=action_digest.semantic_status,
+            target_id=action_digest.target_id,
+            compact_summary=(
+                f"action_outcome({action_digest.outcome_id}: "
+                f"{action_digest.assessment.value})"
+            ),
+        )
     if isinstance(reference, PlanOutcomeEvidence):
         if reference.plan_outcome_id not in manifest.plan_outcome_ids:
             raise EvidenceResolutionError(  # mutation: reason
                 f"Plan outcome {reference.plan_outcome_id!r} was not delivered "  # mutation: reason
                 f"in planner context {manifest.context_id}."  # mutation: reason
             )
-        if not ledger.has_plan_outcome(reference.plan_outcome_id):
+        plan_digest = ledger.plan_outcome_digest(reference.plan_outcome_id)
+        if plan_digest is None or plan_digest.run_id != manifest.run_id:
             raise EvidenceResolutionError(  # mutation: reason
                 f"No plan outcome {reference.plan_outcome_id!r} "  # mutation: reason
                 "was recorded in this run."  # mutation: reason
             )
-        plan_outcome = ledger.plan_outcome(reference.plan_outcome_id)
-        disposition = (
-            "evicted" if plan_outcome is None else plan_outcome.disposition.value
+        return ResolvedEvidenceSnapshot(
+            source="plan_outcome",
+            source_id=plan_digest.plan_outcome_id,
+            authority=EvidenceAuthority.PLAN_DISPOSITION,
+            authored_context_id=manifest.context_id,
+            run_id=plan_digest.run_id,
+            world_revision=plan_digest.terminal_revision,
+            plan_disposition=plan_digest.disposition,
+            compact_summary=(
+                f"plan_outcome({plan_digest.plan_outcome_id}: "
+                f"{plan_digest.disposition.value})"
+            ),
         )
-        return f"plan_outcome({reference.plan_outcome_id}: {disposition})"
     if isinstance(reference, MemoryEvidence):
         if reference.memory_id not in manifest.memory_ids:
             raise EvidenceResolutionError(  # mutation: reason
@@ -266,12 +448,23 @@ def render_evidence_reference(
                 "Durable memory is unavailable, so memory "  # mutation: reason
                 f"{reference.memory_id} cannot be cited."  # mutation: reason
             )
-        if not store.exists(reference.memory_id):
+        record = store.get(reference.memory_id)
+        if record is None or record.status is not MemoryStatus.ACTIVE:
             raise EvidenceResolutionError(  # mutation: reason
                 f"No active memory {reference.memory_id} "  # mutation: reason
                 "exists in this campaign."  # mutation: reason
             )
-        return f"memory {reference.memory_id}"
+        return ResolvedEvidenceSnapshot(
+            source="memory",
+            source_id=record.memory_id,
+            authority=EvidenceAuthority.AGENT_BELIEF,
+            authored_context_id=manifest.context_id,
+            run_id=manifest.run_id,
+            memory_kind=record.kind,
+            memory_status=record.status,
+            target_id=record.target_id,
+            compact_summary=f"memory {record.memory_id}",
+        )
     if reference.brief_id not in manifest.advisor_brief_ids:
         raise EvidenceResolutionError(  # mutation: reason
             f"Advisor brief {reference.brief_id!r} was not delivered "  # mutation: reason
@@ -284,7 +477,43 @@ def render_evidence_reference(
         )
     # Marked as advice on purpose: a strategic brief is a second opinion about
     # the world, never an observation of it.
-    return f"advisor_brief({reference.brief_id}, advice not world evidence)"
+    return ResolvedEvidenceSnapshot(
+        source="advisor_brief",
+        source_id=reference.brief_id,
+        authority=EvidenceAuthority.ADVICE,
+        authored_context_id=manifest.context_id,
+        run_id=manifest.run_id,
+        compact_summary=(
+            f"advisor_brief({reference.brief_id}, advice not world evidence)"
+        ),
+    )
+
+
+def render_evidence_snapshot(snapshot: ResolvedEvidenceSnapshot) -> str:
+    """Human-readable projection; capability checks use the typed snapshot."""
+
+    return snapshot.compact_summary
+
+
+def render_evidence_reference(
+    reference: EvidenceReference,
+    *,
+    authored_context: AuthoredPlannerContext,
+    ledger: ContinuityLedger,
+    store: MemoryStore | None,
+    advisor_brief_ids: set[str],
+) -> str:
+    """Compatibility projection for callers that only need display text."""
+
+    return render_evidence_snapshot(
+        resolve_evidence_reference(
+            reference,
+            authored_context=authored_context,
+            ledger=ledger,
+            store=store,
+            advisor_brief_ids=advisor_brief_ids,
+        )
+    )
 
 
 class ContinuityAuthority:
@@ -357,6 +586,7 @@ class ContinuityAuthority:
             *,
             memory_id: str | None = None,
             evidence: str | None = None,
+            resolved_evidence: Sequence[ResolvedEvidenceSnapshot] = (),
         ) -> ContinuityOperationReceipt:
             return ContinuityOperationReceipt(
                 origin=origin,
@@ -365,6 +595,7 @@ class ContinuityAuthority:
                 reason=reason,
                 memory_id=memory_id,
                 evidence=evidence,
+                resolved_evidence=list(resolved_evidence),
                 plan_id=plan_id,
                 plan_version=plan_version,
                 step_id=step_id,
@@ -401,8 +632,8 @@ class ContinuityAuthority:
 
         references = getattr(operation, "references", ())
         try:
-            rendered = [
-                render_evidence_reference(
+            resolved = [
+                resolve_evidence_reference(
                     reference,
                     authored_context=authored_context,
                     ledger=self.ledger,
@@ -417,6 +648,15 @@ class ContinuityAuthority:
                 str(exc),  # mutation: reason
             )
 
+        evidence_error = self._admissibility_error(operation, resolved)
+        if evidence_error is not None:
+            return receipt(
+                ContinuityOperationStatus.REJECTED,
+                evidence_error,
+                resolved_evidence=resolved,
+            )
+
+        rendered = [render_evidence_snapshot(snapshot) for snapshot in resolved]
         evidence = EVIDENCE_SEPARATOR.join(rendered) or None
         if self.store is None:
             return receipt(
@@ -424,18 +664,35 @@ class ContinuityAuthority:
                 "Durable memory is disabled for this run; "  # mutation: reason
                 "nothing was kept.",  # mutation: reason
                 evidence=evidence,
+                resolved_evidence=resolved,
             )
+
+        provenance = CanonicalMemoryProvenance(
+            operation=operation,
+            origin=origin,
+            run_id=self.run_id,
+            authored_context_id=authored_context.manifest.context_id,
+            authored_revision=authored_context.manifest.authored_revision,
+            commit_revision=commit_observation.world_revision,
+            references=list(references),
+            resolved_evidence=resolved,
+            plan_id=plan_id,
+            plan_version=plan_version,
+            step_id=step_id,
+            rendered_grounding=evidence,
+        )
 
         # Every transition below is refused rather than raised through: an
         # invalid continuity update must not take an otherwise valid game plan
         # down with it.
         try:
-            record = self._transition(operation, evidence)
+            record = self._transition(operation, evidence, provenance)
         except MemoryTransitionError as exc:
             return receipt(
                 ContinuityOperationStatus.REJECTED,
                 str(exc),  # mutation: reason
                 evidence=evidence,
+                resolved_evidence=resolved,
             )
         return receipt(
             ContinuityOperationStatus.ACCEPTED,
@@ -443,12 +700,108 @@ class ContinuityAuthority:
             f"memory {record.memory_id} ({record.status.value}).",  # mutation: reason
             memory_id=record.memory_id,
             evidence=evidence,
+            resolved_evidence=resolved,
         )
+
+    def _admissibility_error(
+        self,
+        operation: ContinuityOperation,
+        resolved: Sequence[ResolvedEvidenceSnapshot],
+    ) -> str | None:
+        """Apply the evidence-capability matrix before anything is persisted."""
+
+        authorities = {snapshot.authority for snapshot in resolved}
+        replacement_kind = (
+            operation.kind
+            if isinstance(operation, (KeepMemoryOperation, SupersedeMemoryOperation))
+            else None
+        )
+        if replacement_kind is MemoryKind.FACT and not (
+            authorities & FACT_AUTHORITIES
+        ):
+            return (  # mutation: reason
+                "A fact needs fresh world observation, a controller-verified "  # mutation: reason
+                "world effect, or a causally observed change. Advice, memory, "  # mutation: reason
+                "plan disposition, no-op, not-executed, and unknown outcomes "  # mutation: reason
+                "cannot establish it."  # mutation: reason
+            )
+        if replacement_kind is MemoryKind.EPISODE and not (
+            authorities & EPISODE_AUTHORITIES
+        ):
+            return (  # mutation: reason
+                "An episode needs a current observation, action attempt, or "  # mutation: reason
+                "plan lifecycle outcome. Advice or remembered belief alone "  # mutation: reason
+                "cannot establish that an episode occurred."  # mutation: reason
+            )
+        if not isinstance(operation, ResolveMemoryOperation):
+            return None
+        if not operation.references:
+            return (  # mutation: reason
+                "Resolve requires at least one explicit evidence reference."  # mutation: reason
+            )
+        if self.store is None:
+            return None
+        record = self.store.get(operation.memory_id)
+        if record is None or record.status is not MemoryStatus.ACTIVE:
+            # Let the transition boundary retain its canonical unknown/closed
+            # diagnostic after evidence has resolved.
+            return None
+        if record.kind not in {MemoryKind.COMMITMENT, MemoryKind.HYPOTHESIS}:
+            return (  # mutation: reason
+                f"A {record.kind.value} cannot be resolved. "  # mutation: reason
+                "Facts and episodes must be superseded or retracted "  # mutation: reason
+                "so their history remains honest."  # mutation: reason
+            )
+        if record.kind is MemoryKind.COMMITMENT:
+            disposition = (
+                operation.disposition or MemoryResolutionDisposition.COMPLETED
+            )
+            if disposition not in {
+                MemoryResolutionDisposition.COMPLETED,
+                MemoryResolutionDisposition.ABANDONED,
+            }:
+                return (  # mutation: reason
+                    "A commitment resolves only as completed or abandoned; "  # mutation: reason
+                    f"{disposition.value} is a hypothesis disposition."  # mutation: reason
+                )
+            if not authorities & COMMITMENT_CLOSURE_AUTHORITIES:
+                return (  # mutation: reason
+                    "Closing a commitment requires fresh or causally verified "  # mutation: reason
+                    "world evidence. A no-op, unknown, not-executed "  # mutation: reason
+                    "action, plan "  # mutation: reason
+                    "disposition, advice, or belief cannot prove delivery."  # mutation: reason
+                )
+            return None
+        if operation.disposition not in {
+            MemoryResolutionDisposition.CONFIRMED,
+            MemoryResolutionDisposition.REJECTED,
+            MemoryResolutionDisposition.UNKNOWN,
+        }:
+            return (  # mutation: reason
+                "Resolving a hypothesis requires disposition confirmed, "  # mutation: reason
+                "rejected, or unknown."  # mutation: reason
+            )
+        if operation.disposition is not MemoryResolutionDisposition.UNKNOWN and not (
+            authorities & FACT_AUTHORITIES
+        ):
+            return (  # mutation: reason
+                "Confirming or rejecting a hypothesis requires fresh or "  # mutation: reason
+                "causally observed world evidence."  # mutation: reason
+            )
+        if operation.disposition is MemoryResolutionDisposition.UNKNOWN and not (
+            authorities & EPISODE_AUTHORITIES
+        ):
+            return (  # mutation: reason
+                "Closing a hypothesis as unknown requires an observed attempt "  # mutation: reason
+                "or current world evidence, not advice or belief alone."  # mutation: reason
+            )
+        return None
 
     def _transition(
         self,
         operation: ContinuityOperation,
         evidence: str | None,
+        provenance: CanonicalMemoryProvenance,
     ) -> MemoryRecord:
         assert self.store is not None
         if isinstance(operation, KeepMemoryOperation):
@@ -459,6 +812,7 @@ class ContinuityAuthority:
                 salience=operation.salience,
                 grounding=evidence,
                 target_id=operation.target_id,
+                provenance=provenance,
             )
         if isinstance(operation, ReinforceMemoryOperation):
             return self.store.reinforce(
@@ -466,6 +820,7 @@ class ContinuityAuthority:
                 operation.memory_id,
                 grounding=evidence,
                 salience=operation.salience,
+                provenance=provenance,
             )
         if isinstance(operation, ResolveMemoryOperation):
             return self.store.resolve(
@@ -473,6 +828,11 @@ class ContinuityAuthority:
                 operation.memory_id,
                 reason=operation.reason,
                 grounding=evidence,
+                disposition=(
+                    operation.disposition
+                    or MemoryResolutionDisposition.COMPLETED
+                ),
+                provenance=provenance,
             )
         if isinstance(operation, SupersedeMemoryOperation):
             return self.store.supersede(
@@ -483,9 +843,11 @@ class ContinuityAuthority:
                 salience=operation.salience,
                 grounding=evidence,
                 target_id=operation.target_id,
+                provenance=provenance,
             )
         return self.store.retract(
             self.run_id,
             operation.memory_id,
             reason=operation.reason,
+            provenance=provenance,
         )

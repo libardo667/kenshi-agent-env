@@ -17,9 +17,13 @@ import pytest
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.continuity import (
+    COMMITMENT_CLOSURE_AUTHORITIES,
+    EPISODE_AUTHORITIES,
+    FACT_AUTHORITIES,
     ContinuityAuthority,
     ContinuityLedger,
     EvidenceResolutionError,
+    resolve_evidence_reference,
 )
 from kenshi_agent.continuity import (
     render_evidence_reference as _render_evidence_reference,
@@ -28,6 +32,7 @@ from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.models import (
     ActionOutcome,
     ActionOutcomeAssessment,
+    ActionOutcomeDigest,
     ActionOutcomeEvidence,
     AdvisorBriefEvidence,
     AuthoredPlannerContext,
@@ -35,16 +40,25 @@ from kenshi_agent.models import (
     ContinuityOrigin,
     ControlMode,
     CurrentObservationEvidence,
+    EvidenceAuthority,
     KeepMemoryOperation,
     MemoryEvidence,
     MemoryKind,
     MemoryRecord,
+    MemoryResolutionDisposition,
+    MemoryStatus,
     NearbyEntity,
     Observation,
     PlanDisposition,
     PlannerContextManifest,
+    PlanOutcomeDigest,
     PlanOutcomeEvidence,
+    ReinforceMemoryOperation,
+    ResolvedEvidenceSnapshot,
+    ResolveMemoryOperation,
+    RetractMemoryOperation,
     StopAction,
+    SupersedeMemoryOperation,
     TelemetrySnapshot,
     WorldStateRevision,
 )
@@ -321,6 +335,55 @@ def test_a_bounded_ledger_still_answers_for_the_evidence_it_evicted() -> None:
     ]
     assert ledger.has_action_outcome("ao-1")
     assert not ledger.has_action_outcome("ao-9")
+    digest = ledger.action_outcome_digest("ao-1")
+    assert digest is not None
+    assert digest.assessment is ActionOutcomeAssessment.NO_OP
+    assert digest.action_kind == "stop"
+    assert digest.executed is True
+
+
+def test_an_action_digest_conserves_every_field_needed_to_judge_its_authority() -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=1)
+    started = WorldStateRevision(telemetry_sequence=8, frame_sequence=4)
+    completed = WorldStateRevision(telemetry_sequence=9, frame_sequence=5)
+    outcome = action_outcome("ao-1").model_copy(
+        update={
+            "plan_id": "plan-a",
+            "plan_version": 7,
+            "step_id": "deliver",
+            "command_id": "cmd-deliver",
+            "assessment": ActionOutcomeAssessment.CHANGED,
+            "causal_revision_advanced": True,
+            "controller_verified": True,
+            "semantic_status": "context_task_started",
+            "target_id": "ore-node-7",
+            "started_after_revision": started,
+            "completed_at_revision": completed,
+            "feedback": "x" * 501,
+        }
+    )
+
+    ledger.record_action_outcome(outcome)
+
+    assert ledger.action_outcome_digest("ao-1") == ActionOutcomeDigest(
+        outcome_id="ao-1",
+        run_id="run-a",
+        plan_id="plan-a",
+        plan_version=7,
+        step_id="deliver",
+        command_id="cmd-deliver",
+        action_kind="stop",
+        assessment=ActionOutcomeAssessment.CHANGED,
+        executed=True,
+        causal_revision_advanced=True,
+        controller_verified=True,
+        semantic_status="context_task_started",
+        target_id="ore-node-7",
+        started_after_revision=started,
+        completed_at_revision=completed,
+        evidence_summary="x" * 500,
+        recorded_at=outcome.recorded_at,
+    )
 
 
 def test_a_zero_length_ledger_shows_nothing_and_still_proves_everything() -> None:
@@ -331,11 +394,95 @@ def test_a_zero_length_ledger_shows_nothing_and_still_proves_everything() -> Non
     assert ledger.has_action_outcome("ao-1")
 
 
+def test_an_explicit_outcome_read_resurfaces_an_evicted_digest_for_citation() -> None:
+    from kenshi_agent.planners.base import planner_context_manifest
+
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=1)
+    ledger.record_action_outcome(action_outcome("ao-1"))
+    ledger.record_action_outcome(action_outcome("ao-2"))
+
+    result = ledger.search_outcomes(query="ao-1", limit=1)
+    recalled = observation().model_copy(
+        update={
+            "memory_search": result,
+            "recent_action_outcomes": ledger.recent_action_outcomes,
+        }
+    )
+    manifest = planner_context_manifest(
+        recalled,
+        context_id="pc-1",
+        input_kind="full_observation",
+    )
+
+    assert [item.outcome_id for item in result.action_outcomes] == ["ao-1"]
+    assert manifest.action_outcome_ids == ["ao-1", "ao-2"]
+
+
+def test_outcome_search_reports_matches_across_both_ledgers_under_one_bound() -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=1)
+    ledger.record_action_outcome(
+        action_outcome("ao-1").model_copy(
+            update={
+                "plan_id": "plan-search",
+                "step_id": "harvest",
+                "command_id": "cmd-search",
+                "semantic_status": "ore_ready",
+                "target_id": "copper-node",
+            }
+        )
+    )
+    ledger.record_plan_outcome(
+        plan_id="plan-search",
+        plan_version=2,
+        objective="Harvest copper.",
+        disposition=PlanDisposition.FAILED,
+        reason="Inventory was full.",
+        completed_step_ids=[],
+        actions_completed=1,
+        terminal_revision=WorldStateRevision(telemetry_sequence=12),
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+    )
+
+    both = ledger.search_outcomes(query="plan-search", limit=1)
+    exact_bound = ledger.search_outcomes(query="ore_ready", limit=1)
+    action_phrase = ledger.search_outcomes(query="ao-1 plan-search", limit=2)
+    plan_phrase = ledger.search_outcomes(query="po-1 plan-search", limit=2)
+    plan_only = ledger.search_outcomes(query="FAILED", limit=2)
+    command_only = ledger.search_outcomes(query="cmd-search", limit=2)
+    action_summary = ledger.search_outcomes(query="Nothing changed", limit=2)
+    plan_objective = ledger.search_outcomes(query="Harvest copper", limit=2)
+    plan_reason = ledger.search_outcomes(query="Inventory was full", limit=2)
+    missing = ledger.search_outcomes(query="not-here", limit=2)
+
+    assert [item.outcome_id for item in both.action_outcomes] == ["ao-1"]
+    assert both.plan_outcomes == []
+    assert both.matched == 2
+    assert both.truncated is True
+    assert exact_bound.matched == 1
+    assert exact_bound.truncated is False
+    assert exact_bound.reason == "1 retained working outcomes match 'ore_ready'; 1 shown."
+    assert [item.outcome_id for item in action_phrase.action_outcomes] == ["ao-1"]
+    assert [item.plan_outcome_id for item in plan_phrase.plan_outcomes] == ["po-1"]
+    assert [item.plan_outcome_id for item in plan_only.plan_outcomes] == ["po-1"]
+    assert [item.outcome_id for item in command_only.action_outcomes] == ["ao-1"]
+    assert [item.outcome_id for item in action_summary.action_outcomes] == ["ao-1"]
+    assert [item.plan_outcome_id for item in plan_objective.plan_outcomes] == ["po-1"]
+    assert [item.plan_outcome_id for item in plan_reason.plan_outcomes] == ["po-1"]
+    assert missing.action_outcomes == []
+    assert missing.plan_outcomes == []
+    assert missing.matched == 0
+    assert missing.truncated is False
+    with pytest.raises(ValueError):
+        ledger.search_outcomes(query="anything", limit=0)
+
+
 def test_plan_outcomes_carry_the_original_objective_and_terminal_reason() -> None:
     """"Execute step X" is not a purpose. The next plan needs the real one."""
 
     ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
     started = datetime.now(UTC)
+    terminal_revision = WorldStateRevision(telemetry_sequence=9)
 
     outcome = ledger.record_plan_outcome(
         plan_id="plan-a",
@@ -345,7 +492,7 @@ def test_plan_outcomes_carry_the_original_objective_and_terminal_reason() -> Non
         reason="The gate was closed.",
         completed_step_ids=["walk", "open"],
         actions_completed=2,
-        terminal_revision=WorldStateRevision(telemetry_sequence=9),
+        terminal_revision=terminal_revision,
         started_at=started,
         finished_at=started,
     )
@@ -357,6 +504,20 @@ def test_plan_outcomes_carry_the_original_objective_and_terminal_reason() -> Non
     assert outcome.disposition is PlanDisposition.FAILED
     assert ledger.has_plan_outcome("po-1")
     assert not ledger.has_plan_outcome("po-2")
+    assert ledger.plan_outcome_digest("po-1") == PlanOutcomeDigest(
+        plan_outcome_id="po-1",
+        run_id="run-a",
+        plan_id="plan-a",
+        plan_version=2,
+        objective="Deliver six sealed slop canisters.",
+        disposition=PlanDisposition.FAILED,
+        reason_digest="The gate was closed.",
+        completed_step_ids=["walk", "open"],
+        actions_completed=2,
+        terminal_revision=terminal_revision,
+        started_at=started,
+        finished_at=started,
+    )
 
 
 def test_a_reset_run_forgets_its_working_continuity_entirely() -> None:
@@ -414,8 +575,265 @@ def test_each_evidence_kind_renders_exactly_what_its_authority_says(
             assert rendered == expected
 
 
+def test_each_evidence_reference_resolves_to_its_complete_typed_snapshot(
+    tmp_path: Path,
+) -> None:
+    current = observation()
+    revision = current.world_revision
+    action_revision = WorldStateRevision(telemetry_sequence=8, frame_sequence=6)
+    plan_revision = WorldStateRevision(telemetry_sequence=10, frame_sequence=7)
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=1)
+    ledger.record_action_outcome(
+        action_outcome("ao-1").model_copy(
+            update={
+                "assessment": ActionOutcomeAssessment.CHANGED,
+                "causal_revision_advanced": True,
+                "controller_verified": True,
+                "semantic_status": "context_task_started",
+                "target_id": "ore-node-7",
+                "completed_at_revision": action_revision,
+            }
+        )
+    )
+    ledger.record_plan_outcome(
+        plan_id="plan-a",
+        plan_version=1,
+        objective="Find work.",
+        disposition=PlanDisposition.ABANDONED,
+        reason="No work was available.",
+        completed_step_ids=[],
+        actions_completed=1,
+        terminal_revision=plan_revision,
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+    )
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        memory_id = keep_fact(
+            store,
+            "The barman declined.",
+            run_id="run-a",
+            target_id="barman-1",
+        ).memory_id
+        context = planner_context(
+            current,
+            ledger=ledger,
+            store=store,
+            brief_ids={BRIEF_ID},
+            memory_ids=(memory_id,),
+        )
+
+        snapshots = [
+            resolve_evidence_reference(
+                reference,
+                authored_context=context,
+                ledger=ledger,
+                store=store,
+                advisor_brief_ids={BRIEF_ID},
+            )
+            for reference in (
+                CurrentObservationEvidence(),
+                ActionOutcomeEvidence(outcome_id="ao-1"),
+                PlanOutcomeEvidence(plan_outcome_id="po-1"),
+                MemoryEvidence(memory_id=memory_id),
+                AdvisorBriefEvidence(brief_id=BRIEF_ID),
+            )
+        ]
+
+    assert snapshots == [
+        ResolvedEvidenceSnapshot(
+            source="current_observation",
+            source_id="pc-1:current_observation",
+            authority=EvidenceAuthority.FRESH_WORLD_OBSERVATION,
+            authored_context_id="pc-1",
+            run_id="run-a",
+            world_revision=revision,
+            compact_summary=(
+                "current_observation(telemetry_sequence=3, frame_sequence=2)"
+            ),
+        ),
+        ResolvedEvidenceSnapshot(
+            source="action_outcome",
+            source_id="ao-1",
+            authority=EvidenceAuthority.VERIFIED_WORLD_EFFECT,
+            authored_context_id="pc-1",
+            run_id="run-a",
+            world_revision=action_revision,
+            assessment=ActionOutcomeAssessment.CHANGED,
+            action_kind="stop",
+            executed=True,
+            causal_revision_advanced=True,
+            controller_verified=True,
+            semantic_status="context_task_started",
+            target_id="ore-node-7",
+            compact_summary="action_outcome(ao-1: changed)",
+        ),
+        ResolvedEvidenceSnapshot(
+            source="plan_outcome",
+            source_id="po-1",
+            authority=EvidenceAuthority.PLAN_DISPOSITION,
+            authored_context_id="pc-1",
+            run_id="run-a",
+            world_revision=plan_revision,
+            plan_disposition=PlanDisposition.ABANDONED,
+            compact_summary="plan_outcome(po-1: abandoned)",
+        ),
+        ResolvedEvidenceSnapshot(
+            source="memory",
+            source_id=memory_id,
+            authority=EvidenceAuthority.AGENT_BELIEF,
+            authored_context_id="pc-1",
+            run_id="run-a",
+            memory_kind=MemoryKind.FACT,
+            memory_status=MemoryStatus.ACTIVE,
+            target_id="barman-1",
+            compact_summary=f"memory {memory_id}",
+        ),
+        ResolvedEvidenceSnapshot(
+            source="advisor_brief",
+            source_id=BRIEF_ID,
+            authority=EvidenceAuthority.ADVICE,
+            authored_context_id="pc-1",
+            run_id="run-a",
+            compact_summary=(
+                f"advisor_brief({BRIEF_ID}, advice not world evidence)"
+            ),
+        ),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("assessment", "executed", "causal", "verified", "expected"),
+    [
+        (
+            ActionOutcomeAssessment.CHANGED,
+            True,
+            True,
+            True,
+            EvidenceAuthority.VERIFIED_WORLD_EFFECT,
+        ),
+        (
+            ActionOutcomeAssessment.CHANGED,
+            False,
+            True,
+            True,
+            EvidenceAuthority.ATTEMPT_NOT_EXECUTED,
+        ),
+        (
+            ActionOutcomeAssessment.NO_OP,
+            True,
+            False,
+            True,
+            EvidenceAuthority.ATTEMPT_NO_OP,
+        ),
+        (
+            ActionOutcomeAssessment.CHANGED,
+            True,
+            True,
+            False,
+            EvidenceAuthority.ATTEMPT_CHANGED,
+        ),
+        (
+            ActionOutcomeAssessment.CHANGED,
+            True,
+            False,
+            False,
+            EvidenceAuthority.OBSERVED_CHANGE,
+        ),
+        (
+            ActionOutcomeAssessment.NOT_EXECUTED,
+            False,
+            False,
+            False,
+            EvidenceAuthority.ATTEMPT_NOT_EXECUTED,
+        ),
+        (
+            ActionOutcomeAssessment.UNKNOWN,
+            True,
+            None,
+            False,
+            EvidenceAuthority.ATTEMPT_UNKNOWN,
+        ),
+        (
+            ActionOutcomeAssessment.UNKNOWN,
+            False,
+            None,
+            False,
+            EvidenceAuthority.ATTEMPT_NOT_EXECUTED,
+        ),
+    ],
+)
+def test_action_authority_is_the_exact_conjunction_of_controller_and_effect(
+    assessment: ActionOutcomeAssessment,
+    executed: bool,
+    causal: bool | None,
+    verified: bool,
+    expected: EvidenceAuthority,
+) -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=1)
+    ledger.record_action_outcome(
+        action_outcome().model_copy(
+            update={
+                "assessment": assessment,
+                "executed": executed,
+                "causal_revision_advanced": causal,
+                "controller_verified": verified,
+            }
+        )
+    )
+    context = planner_context(
+        observation(),
+        ledger=ledger,
+        store=None,
+        brief_ids=set(),
+    )
+
+    snapshot = resolve_evidence_reference(
+        ActionOutcomeEvidence(outcome_id="ao-1"),
+        authored_context=context,
+        ledger=ledger,
+        store=None,
+        advisor_brief_ids=set(),
+    )
+
+    assert snapshot.authority is expected
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        ActionOutcomeEvidence(outcome_id="ao-1"),
+        PlanOutcomeEvidence(plan_outcome_id="po-1"),
+        MemoryEvidence(memory_id="mem-missing"),
+    ],
+)
+def test_a_manifest_identity_without_its_authority_record_fails_closed(
+    reference: Any,
+    tmp_path: Path,
+) -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=1)
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        context = planner_context(
+            observation(),
+            ledger=ledger,
+            store=store,
+            brief_ids=set(),
+            action_outcome_ids=("ao-1",),
+            plan_outcome_ids=("po-1",),
+            memory_ids=("mem-missing",),
+        )
+        with pytest.raises(EvidenceResolutionError):
+            resolve_evidence_reference(
+                reference,
+                authored_context=context,
+                ledger=ledger,
+                store=store,
+                advisor_brief_ids=set(),
+            )
+
+
 def test_evidence_that_scrolled_out_of_the_window_renders_as_evicted() -> None:
-    """Still citable, but honest that the record itself is no longer held."""
+    """Eviction may hide detail from context, but cannot erase what happened."""
 
     ledger = ContinuityLedger(
         run_id="run-a",
@@ -450,13 +868,13 @@ def test_evidence_that_scrolled_out_of_the_window_renders_as_evicted() -> None:
             )
 
     assert render(ActionOutcomeEvidence(outcome_id="ao-1")) == (
-        "action_outcome(ao-1: evicted)"
+        "action_outcome(ao-1: no_op)"
     )
     assert render(ActionOutcomeEvidence(outcome_id="ao-2")) == (
         "action_outcome(ao-2: no_op)"
     )
     assert render(PlanOutcomeEvidence(plan_outcome_id="po-1")) == (
-        "plan_outcome(po-1: evicted)"
+        "plan_outcome(po-1: abandoned)"
     )
     assert render(PlanOutcomeEvidence(plan_outcome_id="po-2")) == (
         "plan_outcome(po-2: abandoned)"
@@ -659,6 +1077,193 @@ def test_an_ungrounded_fact_or_episode_is_rejected(
         assert store.recall(limit=8) == []
 
 
+@pytest.mark.parametrize(
+    "reference",
+    [
+        AdvisorBriefEvidence(brief_id=BRIEF_ID),
+        PlanOutcomeEvidence(plan_outcome_id="po-1"),
+    ],
+)
+def test_advice_or_plan_disposition_cannot_be_the_only_ground_for_a_fact(
+    reference: Any,
+    tmp_path: Path,
+) -> None:
+    """A recommendation or finished plan is not an observation of the world."""
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger_with_evidence(), brief_ids={BRIEF_ID})
+
+        receipt = apply_one(
+            engine,
+            keep(
+                MemoryKind.FACT,
+                "The cargo reached its destination.",
+                references=[reference],
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert len(receipt.resolved_evidence) == 1
+        assert store.recall(limit=8) == []
+
+
+def test_a_memory_only_reference_cannot_bootstrap_a_new_world_fact(
+    tmp_path: Path,
+) -> None:
+    """Agent-authored belief cannot promote itself into world evidence."""
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        prior = store.keep(
+            "run-a",
+            kind=MemoryKind.HYPOTHESIS,
+            content="The trader may have received the cargo.",
+            salience=0.5,
+            grounding=None,
+        )
+        engine, _ = authority(store, ledger_with_evidence())
+
+        receipt = apply_one(
+            engine,
+            keep(
+                MemoryKind.FACT,
+                "The trader received the cargo.",
+                references=[MemoryEvidence(memory_id=prior.memory_id)],
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert [record.kind for record in store.recall(limit=8)] == [
+            MemoryKind.HYPOTHESIS
+        ]
+
+
+def test_a_stale_observation_cannot_ground_a_fresh_world_fact(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger_with_evidence())
+
+        receipt = apply_operations(
+            engine,
+            [
+                keep(
+                    MemoryKind.FACT,
+                    "The gate is open.",
+                    references=[CurrentObservationEvidence()],
+                )
+            ],
+            origin=ContinuityOrigin.PLAN,
+            observation=observation(stale=True),
+            plan_id="plan-a",
+            plan_version=1,
+        )[0]
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert store.recall(limit=8) == []
+
+
+def test_controller_verified_world_effect_can_ground_a_fact(
+    tmp_path: Path,
+) -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(
+        action_outcome().model_copy(
+            update={
+                "assessment": ActionOutcomeAssessment.CHANGED,
+                "causal_revision_advanced": True,
+                "controller_verified": True,
+                "semantic_status": "transferred",
+                "target_id": "resource-copper",
+            }
+        )
+    )
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger)
+
+        receipt = apply_one(
+            engine,
+            keep(
+                MemoryKind.FACT,
+                "Copper was transferred from the resource.",
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.ACCEPTED
+        assert receipt.resolved_evidence[0].authority.value == (
+            "verified_world_effect"
+        )
+        assert receipt.resolved_evidence[0].semantic_status == "transferred"
+        assert receipt.resolved_evidence[0].target_id == "resource-copper"
+
+
+def test_uncausal_observed_change_cannot_ground_a_world_fact(
+    tmp_path: Path,
+) -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(
+        action_outcome().model_copy(
+            update={
+                "assessment": ActionOutcomeAssessment.CHANGED,
+                "causal_revision_advanced": None,
+                "controller_verified": False,
+            }
+        )
+    )
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger)
+
+        receipt = apply_one(
+            engine,
+            keep(
+                MemoryKind.FACT,
+                "The intended world effect happened.",
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert receipt.resolved_evidence[0].authority is (
+            EvidenceAuthority.OBSERVED_CHANGE
+        )
+        assert store.recall(limit=8) == []
+
+
+@pytest.mark.parametrize(
+    "assessment",
+    [
+        ActionOutcomeAssessment.NO_OP,
+        ActionOutcomeAssessment.NOT_EXECUTED,
+        ActionOutcomeAssessment.UNKNOWN,
+    ],
+)
+def test_failed_attempt_can_ground_an_episode_without_becoming_success(
+    assessment: ActionOutcomeAssessment,
+    tmp_path: Path,
+) -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(
+        action_outcome().model_copy(update={"assessment": assessment})
+    )
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger)
+
+        receipt = apply_one(
+            engine,
+            keep(
+                MemoryKind.EPISODE,
+                f"The attempt ended as {assessment.value}.",
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.ACCEPTED
+        assert receipt.resolved_evidence[0].assessment is assessment
+        stored = store.get(receipt.memory_id)
+        assert stored is not None and stored.latest_provenance is not None
+        assert stored.latest_provenance.resolved_evidence[0].assessment is assessment
+
+
 @pytest.mark.parametrize("kind", [MemoryKind.COMMITMENT, MemoryKind.HYPOTHESIS])
 def test_an_intention_or_an_uncertainty_may_be_self_authored(
     kind: MemoryKind,
@@ -724,8 +1329,8 @@ def test_stored_grounding_is_rendered_by_the_runtime_not_written_by_the_model(
             engine,
             [
                 keep(
-                    MemoryKind.FACT,
-                    "The barman offers no work.",
+                    MemoryKind.EPISODE,
+                    "I tried to get work from the barman and nothing changed.",
                     references=[ActionOutcomeEvidence(outcome_id="ao-1")],
                 )
             ],
@@ -920,6 +1525,9 @@ def test_a_no_op_receipt_still_reports_the_grounding_it_resolved() -> None:
     assert receipt.plan_version == 2
     assert receipt.step_id == "walk"
     assert receipt.memory_id is None
+    assert [snapshot.authority for snapshot in receipt.resolved_evidence] == [
+        EvidenceAuthority.ATTEMPT_NO_OP
+    ]
 
 
 def test_several_references_are_joined_into_one_readable_grounding(
@@ -1540,13 +2148,6 @@ def test_every_lifecycle_transition_reaches_the_store_through_apply(
     exactly the shape of the dead `PlanPatch` field this design replaced.
     """
 
-    from kenshi_agent.models import (
-        ReinforceMemoryOperation,
-        ResolveMemoryOperation,
-        RetractMemoryOperation,
-        SupersedeMemoryOperation,
-    )
-
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = lifecycle_authority(store)
 
@@ -1581,6 +2182,8 @@ def test_every_lifecycle_transition_reaches_the_store_through_apply(
         assert after_reinforce.reinforcement_count == 1
         assert after_reinforce.salience == 0.9
         assert after_reinforce.grounding == "action_outcome(ao-1: no_op)"
+        assert after_reinforce.latest_provenance is not None
+        assert after_reinforce.latest_provenance.operation.operation == "reinforce"
 
         superseded = apply_one(
             engine,
@@ -1607,13 +2210,25 @@ def test_every_lifecycle_transition_reaches_the_store_through_apply(
         assert new.grounding == (
             "current_observation(telemetry_sequence=3, frame_sequence=2)"
         )
+        assert new.latest_provenance is not None
+        assert new.latest_provenance.operation.operation == "supersede"
 
+        engine.ledger.record_action_outcome(
+            action_outcome("ao-2").model_copy(
+                update={
+                    "assessment": ActionOutcomeAssessment.CHANGED,
+                    "causal_revision_advanced": True,
+                    "controller_verified": True,
+                    "semantic_status": "cargo_delivered",
+                }
+            )
+        )
         resolved = apply_one(
             engine,
             ResolveMemoryOperation(
                 memory_id=new.memory_id,
                 reason="All five were handed over.",
-                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+                references=[ActionOutcomeEvidence(outcome_id="ao-2")],
             ),
         )
         assert resolved.status is ContinuityOperationStatus.ACCEPTED
@@ -1621,7 +2236,9 @@ def test_every_lifecycle_transition_reaches_the_store_through_apply(
         assert closed is not None
         assert closed.resolution_reason == "All five were handed over."
         # The evidence that closed it replaces the evidence that opened it.
-        assert closed.grounding == "action_outcome(ao-1: no_op)"
+        assert closed.grounding == "action_outcome(ao-2: changed)"
+        assert closed.latest_provenance is not None
+        assert closed.latest_provenance.operation.operation == "resolve"
 
         hypothesis = apply_one(
             engine,
@@ -1638,7 +2255,273 @@ def test_every_lifecycle_transition_reaches_the_store_through_apply(
         withdrawn = store.get(hypothesis.memory_id)
         assert withdrawn is not None
         assert withdrawn.resolution_reason == "Telemetry disproved it."
+        assert withdrawn.latest_provenance is not None
+        assert withdrawn.latest_provenance.operation.operation == "retract"
         assert store.recall(limit=8, target_ids={"entity-present"}, entity_limit=4) == []
+
+
+def test_resolve_requires_evidence_and_only_closes_resolvable_kinds(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+        commitment = apply_one(
+            engine,
+            keep(MemoryKind.COMMITMENT, "Deliver the cargo."),
+        )
+        fact = apply_one(
+            engine,
+            keep(
+                MemoryKind.FACT,
+                "The gate is open.",
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+
+        no_evidence = apply_one(
+            engine,
+            ResolveMemoryOperation(
+                memory_id=commitment.memory_id,
+                reason="Done.",
+            ),
+        )
+        wrong_kind = apply_one(
+            engine,
+            ResolveMemoryOperation(
+                memory_id=fact.memory_id,
+                reason="Facts are revised, not resolved.",
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+
+        assert no_evidence.status is ContinuityOperationStatus.REJECTED
+        assert wrong_kind.status is ContinuityOperationStatus.REJECTED
+        assert store.get(commitment.memory_id).status.value == "active"
+        assert store.get(fact.memory_id).status.value == "active"
+
+
+def test_evidence_capabilities_form_one_exhaustive_lifecycle_matrix(
+    tmp_path: Path,
+) -> None:
+    """Every authority is judged by kind and transition, not by its wording."""
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+        commitment = store.keep(
+            "run-a",
+            kind=MemoryKind.COMMITMENT,
+            content="Deliver the cargo.",
+            salience=0.5,
+            grounding=None,
+        )
+        hypothesis = store.keep(
+            "run-a",
+            kind=MemoryKind.HYPOTHESIS,
+            content="The gate may be open.",
+            salience=0.5,
+            grounding=None,
+        )
+        fact = keep(
+            MemoryKind.FACT,
+            "The world has this property.",
+            references=[CurrentObservationEvidence()],
+        )
+        episode = keep(
+            MemoryKind.EPISODE,
+            "This attempt occurred.",
+            references=[CurrentObservationEvidence()],
+        )
+        close_commitment = ResolveMemoryOperation(
+            memory_id=commitment.memory_id,
+            reason="The attempt ended.",
+            disposition=MemoryResolutionDisposition.COMPLETED,
+            references=[CurrentObservationEvidence()],
+        )
+        confirm_hypothesis = ResolveMemoryOperation(
+            memory_id=hypothesis.memory_id,
+            reason="The attempt answered it.",
+            disposition=MemoryResolutionDisposition.CONFIRMED,
+            references=[CurrentObservationEvidence()],
+        )
+        unknown_hypothesis = confirm_hypothesis.model_copy(
+            update={"disposition": MemoryResolutionDisposition.UNKNOWN}
+        )
+
+        for evidence_authority in EvidenceAuthority:
+            snapshot = ResolvedEvidenceSnapshot(
+                source="advisor_brief",
+                source_id=f"source-{evidence_authority.value}",
+                authority=evidence_authority,
+                authored_context_id="pc-1",
+                run_id="run-a",
+                compact_summary=evidence_authority.value,
+            )
+            resolved = [snapshot]
+
+            assert (
+                engine._admissibility_error(fact, resolved) is None
+            ) is (evidence_authority in FACT_AUTHORITIES)
+            assert (
+                engine._admissibility_error(episode, resolved) is None
+            ) is (evidence_authority in EPISODE_AUTHORITIES)
+            assert (
+                engine._admissibility_error(close_commitment, resolved) is None
+            ) is (evidence_authority in COMMITMENT_CLOSURE_AUTHORITIES)
+            assert (
+                engine._admissibility_error(confirm_hypothesis, resolved) is None
+            ) is (evidence_authority in FACT_AUTHORITIES)
+            assert (
+                engine._admissibility_error(unknown_hypothesis, resolved) is None
+            ) is (evidence_authority in EPISODE_AUTHORITIES)
+
+        missing = ResolveMemoryOperation(
+            memory_id="mem-missing",
+            reason="No such record.",
+            references=[CurrentObservationEvidence()],
+        )
+        assert engine._admissibility_error(
+            missing,
+            [
+                ResolvedEvidenceSnapshot(
+                    source="current_observation",
+                    source_id="pc-1:current_observation",
+                    authority=EvidenceAuthority.FRESH_WORLD_OBSERVATION,
+                    authored_context_id="pc-1",
+                    run_id="run-a",
+                    compact_summary="current observation",
+                )
+            ],
+        ) is None
+
+
+@pytest.mark.parametrize(
+    "assessment",
+    [
+        ActionOutcomeAssessment.NO_OP,
+        ActionOutcomeAssessment.NOT_EXECUTED,
+        ActionOutcomeAssessment.UNKNOWN,
+    ],
+)
+def test_non_effect_outcomes_cannot_close_a_world_commitment(
+    assessment: ActionOutcomeAssessment,
+    tmp_path: Path,
+) -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(
+        action_outcome().model_copy(update={"assessment": assessment})
+    )
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger)
+        kept = apply_one(
+            engine,
+            keep(MemoryKind.COMMITMENT, "Deliver the cargo."),
+        )
+
+        receipt = apply_one(
+            engine,
+            ResolveMemoryOperation(
+                memory_id=kept.memory_id,
+                reason="Delivered.",
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert store.get(kept.memory_id).status.value == "active"
+
+
+def test_hypothesis_resolution_preserves_confirmed_rejected_or_unknown(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+        missing_disposition = apply_one(
+            engine,
+            keep(MemoryKind.HYPOTHESIS, "The gate may be open."),
+        )
+        rejected = apply_one(
+            engine,
+            ResolveMemoryOperation(
+                memory_id=missing_disposition.memory_id,
+                reason="The gate is visibly closed.",
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+        assert rejected.status is ContinuityOperationStatus.REJECTED
+
+        resolved = apply_one(
+            engine,
+            ResolveMemoryOperation(
+                memory_id=missing_disposition.memory_id,
+                reason="The gate is visibly closed.",
+                disposition=MemoryResolutionDisposition.REJECTED,
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+
+        assert resolved.status is ContinuityOperationStatus.ACCEPTED
+        record = store.get(missing_disposition.memory_id)
+        assert record is not None
+        assert record.resolution_disposition is (
+            MemoryResolutionDisposition.REJECTED
+        )
+
+
+def test_accepted_lifecycle_event_persists_structured_canonical_provenance(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+
+        kept = apply_operations(
+            engine,
+            [
+                keep(
+                    MemoryKind.FACT,
+                    "The gate is open.",
+                    references=[CurrentObservationEvidence()],
+                )
+            ],
+            origin=ContinuityOrigin.PATCH,
+            observation=observation(target_ids=("entity-present",)),
+            plan_id="plan-a",
+            plan_version=3,
+            step_id="observe-gate",
+        )[0]
+
+        event = store.history(kept.memory_id)[0]
+        provenance = event.payload["provenance"]
+        assert provenance["schema_version"] == 1
+        assert provenance["operation"]["operation"] == "keep"
+        assert provenance["operation"]["kind"] == "fact"
+        assert provenance["operation"]["content"] == "The gate is open."
+        assert provenance["origin"] == "patch"
+        assert provenance["run_id"] == "run-a"
+        assert provenance["authored_context_id"] == "pc-1"
+        assert provenance["authored_revision"]["telemetry_sequence"] == 3
+        assert provenance["authored_revision"]["frame_sequence"] == 2
+        assert provenance["authored_revision"]["capability_epoch"] == 0
+        assert provenance["authored_revision"]["observed_at_monotonic"] > 0.0
+        assert provenance["commit_revision"] == provenance["authored_revision"]
+        assert provenance["references"] == [{"source": "current_observation"}]
+        assert provenance["resolved_evidence"][0]["authority"] == (
+            "fresh_world_observation"
+        )
+        assert provenance["plan_id"] == "plan-a"
+        assert provenance["plan_version"] == 3
+        assert provenance["step_id"] == "observe-gate"
+        assert provenance["rendered_grounding"] == (
+            "current_observation(telemetry_sequence=3, frame_sequence=2)"
+        )
+        assert provenance["transition_result"] == "applied"
+        before = store.get(kept.memory_id)
+        assert before is not None
+        assert before.latest_provenance is not None
+        assert before.latest_provenance.plan_id == "plan-a"
+        assert before.latest_provenance.plan_version == 3
+        assert before.latest_provenance.step_id == "observe-gate"
+        store.rebuild_projection()
+        assert store.get(kept.memory_id) == before
 
 
 def test_a_transition_on_a_closed_or_unknown_record_is_a_receipt_not_a_crash(
@@ -1692,6 +2575,9 @@ def test_a_transition_on_a_closed_or_unknown_record_is_a_receipt_not_a_crash(
         )
         assert grounded_but_closed.status is ContinuityOperationStatus.REJECTED
         assert grounded_but_closed.evidence == "action_outcome(ao-1: no_op)"
+        assert [
+            snapshot.authority for snapshot in grounded_but_closed.resolved_evidence
+        ] == [EvidenceAuthority.ATTEMPT_NO_OP]
 
         assert store.event_count() == 2
 
