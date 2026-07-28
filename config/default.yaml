@@ -151,7 +151,10 @@ safety:
 
 memory:
   enabled: true
-  run_namespace: default
+  # No campaign here: `default.yaml` runs the mock world, and a shared
+  # namespace was how unrelated saves ended up reading each other's
+  # memories. Unattested mock and replay runs are run-scoped instead.
+  campaign_id: null
   max_recalled_memories: 12
   max_entity_recalled_memories: 8
   minimum_salience: 0.15

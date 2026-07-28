@@ -281,7 +281,9 @@ safety:
 
 memory:
   enabled: true
-  run_namespace: live-longform
+  # A real save lineage, not a profile name: this is the identity that
+  # survives ordinary save progress and keeps other saves out.
+  campaign_id: ladle-css-01
   max_recalled_memories: 16
   max_entity_recalled_memories: 8
   minimum_salience: 0.2

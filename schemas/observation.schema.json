@@ -1704,6 +1704,15 @@
       "title": "LiveContinuousPolicy",
       "type": "string"
     },
+    "MemoryAuthorship": {
+      "description": "Who stands behind a record, and how much that is worth.\n\n`legacy_unverified` marks rows written before continuity had grounding at\nall. They are kept because they are real user data, not because anything\nchecked them.",
+      "enum": [
+        "agent_authored",
+        "legacy_unverified"
+      ],
+      "title": "MemoryAuthorship",
+      "type": "string"
+    },
     "MemoryKind": {
       "enum": [
         "fact",
@@ -1716,21 +1725,25 @@
     },
     "MemoryRecord": {
       "additionalProperties": false,
+      "description": "One durable record, projected from its lifecycle history.",
       "properties": {
-        "id": {
-          "title": "Id",
-          "type": "integer"
-        },
-        "namespace": {
-          "title": "Namespace",
+        "memory_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Memory Id",
           "type": "string"
         },
-        "run_id": {
-          "title": "Run Id",
+        "campaign_id": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Campaign Id",
           "type": "string"
         },
         "kind": {
           "$ref": "#/$defs/MemoryKind"
+        },
+        "status": {
+          "$ref": "#/$defs/MemoryStatus"
         },
         "content": {
           "title": "Content",
@@ -1740,7 +1753,7 @@
           "title": "Salience",
           "type": "number"
         },
-        "evidence": {
+        "grounding": {
           "anyOf": [
             {
               "type": "string"
@@ -1750,7 +1763,11 @@
             }
           ],
           "default": null,
-          "title": "Evidence"
+          "title": "Grounding"
+        },
+        "authorship": {
+          "$ref": "#/$defs/MemoryAuthorship",
+          "default": "agent_authored"
         },
         "target_id": {
           "anyOf": [
@@ -1766,10 +1783,53 @@
           "default": null,
           "title": "Target Id"
         },
+        "created_run_id": {
+          "title": "Created Run Id",
+          "type": "string"
+        },
         "created_at": {
           "format": "date-time",
           "title": "Created At",
           "type": "string"
+        },
+        "reinforced_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reinforced At"
+        },
+        "resolved_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved At"
+        },
+        "superseded_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Superseded At"
         },
         "last_delivered_at": {
           "anyOf": [
@@ -1783,19 +1843,78 @@
           ],
           "default": null,
           "title": "Last Delivered At"
+        },
+        "reinforcement_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Reinforcement Count",
+          "type": "integer"
+        },
+        "supersedes_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Supersedes Id"
+        },
+        "superseded_by_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Superseded By Id"
+        },
+        "resolution_reason": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolution Reason"
         }
       },
       "required": [
-        "id",
-        "namespace",
-        "run_id",
+        "memory_id",
+        "campaign_id",
         "kind",
+        "status",
         "content",
         "salience",
+        "created_run_id",
         "created_at"
       ],
       "title": "MemoryRecord",
       "type": "object"
+    },
+    "MemoryStatus": {
+      "description": "Where a record sits in its lifecycle. Only `active` reaches recall.",
+      "enum": [
+        "active",
+        "resolved",
+        "superseded",
+        "retracted"
+      ],
+      "title": "MemoryStatus",
+      "type": "string"
     },
     "MouseButton": {
       "enum": [

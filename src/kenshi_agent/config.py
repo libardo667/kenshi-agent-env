@@ -420,7 +420,14 @@ class SafetyConfig(ConfigModel):
 
 class MemoryConfig(ConfigModel):
     enabled: bool = True
-    run_namespace: str = "default"
+    # Whose memories these are. A profile name is not a campaign identity and
+    # neither is a character's display name: both let two unrelated saves share
+    # one memory. Live runs must state one or opt into `ephemeral`.
+    campaign_id: str | None = Field(
+        default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
+    )
+    ephemeral: bool = False
     # General memories compete by salience within this budget. Exact memories
     # for entities in the fresh current observation receive a separate bounded
     # budget so later general writes cannot erase a learned constraint.

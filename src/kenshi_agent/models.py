@@ -1476,6 +1476,16 @@ def new_command_id() -> str:
     return f"cmd-{uuid4().hex}"
 
 
+def new_memory_id() -> str:
+    """A runtime-owned durable identity, stable across processes.
+
+    Not the SQLite rowid: a memory ID is cited by planners and quoted in
+    receipts, so it must survive a projection rebuild that renumbers rows.
+    """
+
+    return f"mem-{uuid4().hex}"
+
+
 def parse_action(value: Any) -> Action:
     return ACTION_ADAPTER.validate_python(value)
 
@@ -1584,9 +1594,12 @@ class PlanOutcomeEvidence(StrictModel):
     plan_outcome_id: str = Field(pattern=PLAN_OUTCOME_ID_PATTERN)
 
 
+MEMORY_ID_PATTERN = r"^mem-[A-Za-z0-9]{1,72}$"
+
+
 class MemoryEvidence(StrictModel):
     source: Literal["memory"] = "memory"
-    memory_id: int = Field(ge=1)
+    memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
 
 
 class AdvisorBriefEvidence(StrictModel):
@@ -1630,12 +1643,55 @@ class KeepMemoryOperation(StrictModel):
     references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
 
 
-ContinuityOperation: TypeAlias = KeepMemoryOperation
-"""What a planner may do to durable memory today.
+class ReinforceMemoryOperation(StrictModel):
+    """Say an existing record still matters, without writing a second copy."""
 
-Spelled as a tagged alias rather than a bare model so that `reinforce`,
-`resolve`, `supersede`, and `retract` join the union without renaming the field
-or changing any payload already accepted.
+    operation: Literal["reinforce"] = "reinforce"
+    memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
+    salience: float | None = Field(default=None, ge=0.0, le=1.0)
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+
+
+class ResolveMemoryOperation(StrictModel):
+    """Close an open commitment or question with the evidence that closed it."""
+
+    operation: Literal["resolve"] = "resolve"
+    memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
+    reason: str = Field(min_length=1, max_length=1000)
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+
+
+class SupersedeMemoryOperation(StrictModel):
+    """Replace a record and link the old one to its replacement, atomically."""
+
+    operation: Literal["supersede"] = "supersede"
+    memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
+    kind: MemoryKind
+    content: str = Field(min_length=1, max_length=2000)
+    salience: float = Field(default=0.5, ge=0.0, le=1.0)
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+
+
+class RetractMemoryOperation(StrictModel):
+    """Withdraw a record from active recall without deleting its history."""
+
+    operation: Literal["retract"] = "retract"
+    memory_id: str = Field(pattern=MEMORY_ID_PATTERN)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
+ContinuityOperation: TypeAlias = (
+    KeepMemoryOperation
+    | ReinforceMemoryOperation
+    | ResolveMemoryOperation
+    | SupersedeMemoryOperation
+    | RetractMemoryOperation
+)
+"""Every explicit transition a planner may ask for, and nothing else.
+
+There is no edit and no delete. A belief that turns out to be wrong is
+superseded or retracted, both of which leave the original readable.
 """
 
 
@@ -1656,7 +1712,7 @@ class ContinuityOperationReceipt(StrictModel):
     status: ContinuityOperationStatus
     operation: ContinuityOperation
     reason: str = Field(min_length=1, max_length=1000)
-    memory_id: int | None = Field(default=None, ge=1)
+    memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
     evidence: str | None = Field(default=None, max_length=1000)
     plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
     plan_version: int | None = Field(default=None, ge=1)
@@ -1664,30 +1720,73 @@ class ContinuityOperationReceipt(StrictModel):
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
-class MemoryWrite(StrictModel):
-    """The store-facing record. `evidence` is runtime-rendered, never authored."""
+class MemoryStatus(StrEnum):
+    """Where a record sits in its lifecycle. Only `active` reaches recall."""
 
-    kind: MemoryKind
-    content: str = Field(min_length=1, max_length=2000)
-    salience: float = Field(default=0.5, ge=0.0, le=1.0)
-    evidence: str | None = Field(default=None, max_length=1000)
-    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    ACTIVE = "active"
+    RESOLVED = "resolved"
+    SUPERSEDED = "superseded"
+    RETRACTED = "retracted"
+
+
+class MemoryAuthorship(StrEnum):
+    """Who stands behind a record, and how much that is worth.
+
+    `legacy_unverified` marks rows written before continuity had grounding at
+    all. They are kept because they are real user data, not because anything
+    checked them.
+    """
+
+    AGENT_AUTHORED = "agent_authored"
+    LEGACY_UNVERIFIED = "legacy_unverified"
+
+
+class MemoryLifecycleEvent(StrEnum):
+    KEEP = "keep"
+    REINFORCE = "reinforce"
+    RESOLVE = "resolve"
+    SUPERSEDE = "supersede"
+    RETRACT = "retract"
+    DELIVER = "deliver"
 
 
 class MemoryRecord(StrictModel):
-    id: int
-    namespace: str
-    run_id: str
+    """One durable record, projected from its lifecycle history."""
+
+    memory_id: str = Field(min_length=1, max_length=80)
+    campaign_id: str = Field(min_length=1, max_length=80)
     kind: MemoryKind
+    status: MemoryStatus
     content: str
     salience: float
-    evidence: str | None = None
+    # Runtime-rendered from the references that resolved. Never model-authored.
+    grounding: str | None = None
+    authorship: MemoryAuthorship = MemoryAuthorship.AGENT_AUTHORED
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    created_run_id: str
     created_at: datetime
-    # When this record was last handed to a planner, which is a diagnostic and
-    # nothing more. It is deliberately absent from every ordering: reading a
-    # memory is not evidence that it matters.
+    # Four separate concepts, deliberately not one "touched at". Being read is
+    # not being reinforced, and being reinforced is not being resolved.
+    reinforced_at: datetime | None = None
+    resolved_at: datetime | None = None
+    superseded_at: datetime | None = None
     last_delivered_at: datetime | None = None
+    reinforcement_count: int = Field(default=0, ge=0)
+    supersedes_id: str | None = Field(default=None, min_length=1, max_length=80)
+    superseded_by_id: str | None = Field(default=None, min_length=1, max_length=80)
+    resolution_reason: str | None = Field(default=None, max_length=1000)
+
+
+class MemoryHistoryEntry(StrictModel):
+    """One append-only lifecycle event. Never rewritten, never deleted."""
+
+    event_id: int
+    campaign_id: str
+    memory_id: str
+    event: MemoryLifecycleEvent
+    run_id: str
+    recorded_at: datetime
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 class SkillSpec(StrictModel):

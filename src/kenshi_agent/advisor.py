@@ -485,7 +485,7 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
             {
                 "kind": memory.kind.value,
                 "content": memory.content,
-                "evidence": memory.evidence,
+                "grounding": memory.grounding,
                 "target_id": memory.target_id,
             }
             # Runtime orders exact current-target matches before the general

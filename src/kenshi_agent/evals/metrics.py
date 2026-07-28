@@ -112,6 +112,7 @@ class LogMetrics:
     continuity_operations_accepted: int = 0
     continuity_operations_rejected: int = 0
     continuity_operations_no_op: int = 0
+    memory_lifecycle_transitions: dict[str, int] = field(default_factory=dict)
     plan_outcomes: int = 0
     plans_proposed: int = 0
     plans_accepted: int = 0
@@ -188,6 +189,7 @@ def evaluate_log(path: Path) -> LogMetrics:
     strategic_planner_latencies: list[float] = []
     native_acknowledgements: dict[str, dict[str, object]] = {}
     dialogue_approaches_by_target: dict[str, int] = {}
+    transitions: dict[str, int] = {}
 
     def retain_native_acknowledgement(candidate: object) -> None:
         if not isinstance(candidate, dict):
@@ -342,9 +344,17 @@ def evaluate_log(path: Path) -> LogMetrics:
                 status = payload.get("status")
                 if status == "accepted":
                     values["continuity_operations_accepted"] += 1
-                    # An accepted keep is the only thing that reaches the store,
-                    # so this stays the count of durable writes.
-                    values["memory_writes"] += 1
+                    operation = payload.get("operation")
+                    transition = (
+                        str(operation.get("operation"))
+                        if isinstance(operation, dict)
+                        else "unknown"
+                    )
+                    transitions[transition] = transitions.get(transition, 0) + 1
+                    # `keep` is the only transition that adds a record, so this
+                    # stays the count of durable writes rather than of edits.
+                    if transition == "keep":
+                        values["memory_writes"] += 1
                 elif status == "rejected":
                     values["continuity_operations_rejected"] += 1
                 elif status == "no_op":
@@ -551,6 +561,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         return LogMetrics(
             **values,
             dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
+            memory_lifecycle_transitions=dict(sorted(transitions.items())),
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
             mean_native_ack_sequence_lag=mean_native_ack_sequence_lag,
@@ -563,6 +574,7 @@ def evaluate_log(path: Path) -> LogMetrics:
     return LogMetrics(
         **values,
         dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
+        memory_lifecycle_transitions=dict(sorted(transitions.items())),
         mean_planner_latency_seconds=fmean(ordered),
         p50_planner_latency_seconds=median(ordered),
         p95_planner_latency_seconds=ordered[p95_index],

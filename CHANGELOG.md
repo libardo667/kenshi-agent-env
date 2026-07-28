@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Scoped durable memory to an explicit campaign and gave it a real lifecycle.
+  `run_namespace` becomes `campaign_id`: a live run with memory enabled and no
+  campaign now fails closed instead of sharing one `default` namespace across
+  unrelated saves, `ephemeral: true` is the explicit opt-out, and an attested
+  scenario derives a deterministic campaign from its exact save. The store is
+  versioned (schema 2) with append-only `memory_events` and a `memories`
+  projection written in the same transaction and rebuildable from history.
+  `keep`, `reinforce`, `resolve`, `supersede`, and `retract` are explicit
+  transitions with separate reinforced/resolved/superseded/delivered timestamps;
+  exact restatement reinforces by normalized key rather than duplicating; a
+  closed record refuses further transitions and campaigns cannot reach each
+  other's records. Migration copies the database before any write, is
+  idempotent, and keeps pre-campaign rows under `legacy:<namespace>` with
+  `legacy_unverified` provenance. Added `kenshi-agent memory` for read-only
+  operator inspection that cannot register a campaign by looking at it.
 - Separated continuity into three authorities that cannot blur. Action and plan
   outcomes are runtime-owned working history with stable `ao-`/`po-` IDs and
   full plan/step/command provenance; a plan outcome carries the objective it

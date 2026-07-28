@@ -22,7 +22,7 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any, Protocol
 
-from .memory import MemoryStore
+from .memory import MemoryStore, MemoryTransitionError
 from .models import (
     ActionOutcome,
     ActionOutcomeEvidence,
@@ -32,13 +32,17 @@ from .models import (
     ContinuityOrigin,
     CurrentObservationEvidence,
     EvidenceReference,
+    KeepMemoryOperation,
     MemoryEvidence,
     MemoryKind,
-    MemoryWrite,
+    MemoryRecord,
     Observation,
     PlanDisposition,
     PlanOutcome,
     PlanOutcomeEvidence,
+    ReinforceMemoryOperation,
+    ResolveMemoryOperation,
+    SupersedeMemoryOperation,
     WorldStateRevision,
 )
 
@@ -242,7 +246,7 @@ def render_evidence_reference(
             )
         if not store.exists(reference.memory_id):
             raise EvidenceResolutionError(  # mutation: reason
-                f"No memory {reference.memory_id} "  # mutation: reason
+                f"No active memory {reference.memory_id} "  # mutation: reason
                 "exists in this campaign."  # mutation: reason
             )
         return f"memory {reference.memory_id}"
@@ -321,7 +325,7 @@ class ContinuityAuthority:
             status: ContinuityOperationStatus,
             reason: str,
             *,
-            memory_id: int | None = None,
+            memory_id: str | None = None,
             evidence: str | None = None,
         ) -> ContinuityOperationReceipt:
             return ContinuityOperationReceipt(
@@ -336,24 +340,24 @@ class ContinuityAuthority:
                 step_id=step_id,
             )
 
-        if operation.kind in GROUNDED_KINDS and not operation.references:
-            return receipt(
-                ContinuityOperationStatus.REJECTED,
-                f"A {operation.kind.value} must cite at least one "  # mutation: reason
-                "evidence reference. Use commitment for an intention "  # mutation: reason
-                "or hypothesis for an uncertainty.",  # mutation: reason
-            )
-
-        if operation.target_id is not None:
-            current = observation.current_memory_target_ids()
-            if operation.target_id not in current:
+        if isinstance(operation, (KeepMemoryOperation, SupersedeMemoryOperation)):
+            if operation.kind in GROUNDED_KINDS and not operation.references:
                 return receipt(
                     ContinuityOperationStatus.REJECTED,
-                    f"target_id {operation.target_id!r} is not an "  # mutation: reason
-                    "entity in the current observation. Copy an exact "  # mutation: reason
-                    "ID from fresh telemetry or leave it null.",  # mutation: reason
+                    f"A {operation.kind.value} must cite at least one "  # mutation: reason
+                    "evidence reference. Use commitment for an intention "  # mutation: reason
+                    "or hypothesis for an uncertainty.",  # mutation: reason
                 )
+            if operation.target_id is not None:
+                if operation.target_id not in observation.current_memory_target_ids():
+                    return receipt(
+                        ContinuityOperationStatus.REJECTED,
+                        f"target_id {operation.target_id!r} is not "  # mutation: reason
+                        "an entity in the current observation. Copy an "  # mutation: reason
+                        "exact ID from fresh telemetry or leave it null.",  # mutation: reason
+                    )
 
+        references = getattr(operation, "references", ())
         try:
             rendered = [
                 render_evidence_reference(
@@ -363,7 +367,7 @@ class ContinuityAuthority:
                     store=self.store,
                     advisor_brief_ids=self.advisor_brief_ids(),
                 )
-                for reference in operation.references
+                for reference in references
             ]
         except EvidenceResolutionError as exc:
             return receipt(
@@ -380,19 +384,67 @@ class ContinuityAuthority:
                 evidence=evidence,
             )
 
-        memory_id = self.store.add(
-            self.run_id,
-            MemoryWrite(
+        # Every transition below is refused rather than raised through: an
+        # invalid continuity update must not take an otherwise valid game plan
+        # down with it.
+        try:
+            record = self._transition(operation, evidence)
+        except MemoryTransitionError as exc:
+            return receipt(
+                ContinuityOperationStatus.REJECTED,
+                str(exc),  # mutation: reason
+                evidence=evidence,
+            )
+        return receipt(
+            ContinuityOperationStatus.ACCEPTED,
+            f"{operation.operation} applied to "  # mutation: reason
+            f"memory {record.memory_id} ({record.status.value}).",  # mutation: reason
+            memory_id=record.memory_id,
+            evidence=evidence,
+        )
+
+    def _transition(
+        self,
+        operation: ContinuityOperation,
+        evidence: str | None,
+    ) -> MemoryRecord:
+        assert self.store is not None
+        if isinstance(operation, KeepMemoryOperation):
+            return self.store.keep(
+                self.run_id,
                 kind=operation.kind,
                 content=operation.content,
                 salience=operation.salience,
-                evidence=evidence,
+                grounding=evidence,
                 target_id=operation.target_id,
-            ),
+            )
+        if isinstance(operation, ReinforceMemoryOperation):
+            return self.store.reinforce(
+                self.run_id,
+                operation.memory_id,
+                grounding=evidence,
+                salience=operation.salience,
+            )
+        if isinstance(operation, ResolveMemoryOperation):
+            return self.store.resolve(
+                self.run_id,
+                operation.memory_id,
+                reason=operation.reason,
+                grounding=evidence,
+            )
+        if isinstance(operation, SupersedeMemoryOperation):
+            return self.store.supersede(
+                self.run_id,
+                operation.memory_id,
+                kind=operation.kind,
+                content=operation.content,
+                salience=operation.salience,
+                grounding=evidence,
+                target_id=operation.target_id,
+            )
+        return self.store.retract(
+            self.run_id,
+            operation.memory_id,
+            reason=operation.reason,
         )
-        return receipt(
-            ContinuityOperationStatus.ACCEPTED,
-            f"Kept as memory {memory_id}.",  # mutation: reason
-            memory_id=memory_id,
-            evidence=evidence,
-        )
+

@@ -12,6 +12,7 @@ from kenshi_agent.action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     NATIVE_WALK_DESTINATION_REACHED_RESULT,
 )
+from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
@@ -3019,7 +3020,6 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     from datetime import UTC, datetime
 
     from kenshi_agent.continuity import ContinuityAuthority, ContinuityLedger
-    from kenshi_agent.memory import MemoryStore
     from kenshi_agent.models import (
         CurrentObservationEvidence,
         KeepMemoryOperation,
@@ -3028,7 +3028,10 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     )
     from kenshi_agent.runtime import AgentRuntime
 
-    store = MemoryStore(tmp_path / "memory.sqlite3", namespace="test")
+    store = MemoryStore(
+        tmp_path / "memory.sqlite3",
+        CampaignScope(campaign_id="test", origin=CampaignScopeOrigin.CONFIGURED),
+    )
     ledger = ContinuityLedger(run_id="continuity", action_outcome_limit=4)
     runner = object.__new__(AgentRuntime)
     runner.memory = store
@@ -3261,7 +3264,10 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
         pump_clock = ManualPumpClock()
         environment = _PatchMemoryEnvironment(clock=clock)
         planner = PatchingPlanner()
-        store = MemoryStore(tmp_path / "memory.sqlite3", namespace="patched")
+        store = MemoryStore(
+            tmp_path / "memory.sqlite3",
+            CampaignScope(campaign_id="patched", origin=CampaignScopeOrigin.CONFIGURED),
+        )
         runtime, logger = runtime_for(
             tmp_path,
             environment,
@@ -3324,7 +3330,10 @@ def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
         pump_clock = ManualPumpClock()
         environment = _PatchMemoryEnvironment(clock=plan_clock)
         planner = StalePatchPlanner()
-        store = MemoryStore(tmp_path / "memory.sqlite3", namespace="stale")
+        store = MemoryStore(
+            tmp_path / "memory.sqlite3",
+            CampaignScope(campaign_id="stale", origin=CampaignScopeOrigin.CONFIGURED),
+        )
         runtime, logger = runtime_for(
             tmp_path,
             environment,

@@ -153,7 +153,11 @@ safety:
 
 memory:
   enabled: true
-  run_namespace: live
+  # Live runs must say whose save this is. Set it to the campaign you are
+  # actually playing, or set `ephemeral: true` to keep this run's memories
+  # to itself. Leaving both unset fails closed rather than guessing.
+  campaign_id: null
+  ephemeral: true
   max_recalled_memories: 16
   max_entity_recalled_memories: 8
   minimum_salience: 0.2

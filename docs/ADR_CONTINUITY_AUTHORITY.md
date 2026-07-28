@@ -51,9 +51,15 @@ and terminal revision. The visible window is bounded; issued identities are
 remembered past eviction, so trimming what a planner is shown never turns an
 honest citation into an invention.
 
-**Durable kept memory** is reached through exactly one path,
-`ContinuityAuthority.apply`. Plans, single-step decisions, and applied patches
-all go through it, so the rules are stated once:
+**Durable kept memory** belongs to an explicit **campaign** — one save lineage,
+never a config profile name. A live run with memory enabled and no campaign
+fails closed rather than sharing a `default` namespace across unrelated saves;
+`ephemeral: true` is the explicit opt-out; an attested scenario derives a
+deterministic campaign from its exact `save_id`.
+
+It is reached through exactly one path, `ContinuityAuthority.apply`. Plans,
+single-step decisions, and applied patches all go through it, so the rules are
+stated once:
 
 - A `fact` or an `episode` must cite at least one `EvidenceReference` — a
   discriminated set of `current_observation`, `action_outcome`, `plan_outcome`,
@@ -86,21 +92,28 @@ time. `MemoryStore.record_delivery` marks that records reached an assembled
 planner payload, called from the single site where that actually happens, and
 no ordering reads it.
 
+The store is versioned (schema 2): append-only `memory_events` plus a
+`memories` projection written in the same transaction and rebuildable from
+history by `rebuild_projection()`, which is both the repair path and the proof
+that the projection is derived. `keep`, `reinforce`, `resolve`, `supersede`, and
+`retract` are explicit transitions with separate `reinforced_at`,
+`resolved_at`, `superseded_at`, and `last_delivered_at` timestamps. A closed
+record refuses every further transition, exact restatement reinforces by a
+deterministic normalized key rather than duplicating, and no campaign's
+operations can reach another's records.
+
 ## Consequences
 
 - A planner physically cannot cite the success of its own future steps: the
   identity it would need does not exist until after the action is assessed.
-- The `memories` table gains `last_delivered_at` (nullable) in place of
-  `last_accessed_at`. Legacy rows migrate with `NULL`, because the old column
-  recorded automatic recall and not delivery, and claiming otherwise would be a
-  guess dressed as a fact.
 - `memory_writes` is renamed `continuity_operations` on `PlannerDecision`,
-  `PlanEnvelope`, and `PlanPatch`, and carries a `keep` discriminator. The
-  lifecycle operations this design needs next — `reinforce`, `resolve`,
-  `supersede`, `retract` — join that union without another rename.
-- Campaign scope is still the configured `run_namespace`. This ADR does not fix
-  it; a config profile name is not a campaign identity, and unrelated saves can
-  still share a namespace.
-- Continuity operation receipts are logged and counted but are not yet surfaced
-  in the observation, so a planner does not yet see why its last operation was
+  `PlanEnvelope`, and `PlanPatch`, tagged by transition.
+- Migration copies the database before any write, is idempotent, and keeps
+  pre-campaign rows under `legacy:<namespace>` with `legacy_unverified`
+  authorship. They predate grounding, and handing them to whichever campaign
+  opens the file next would give one playthrough another's beliefs. Promoting
+  them is a human judgment; there is no automatic path.
+- Continuity receipts are logged and counted but are not yet surfaced in the
+  observation, so a planner does not yet see why its last operation was
   rejected.
+- Procedures: [GUIDE_CAMPAIGN_CONTINUITY](GUIDE_CAMPAIGN_CONTINUITY.md).

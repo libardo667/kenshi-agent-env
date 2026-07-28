@@ -201,7 +201,8 @@ safety:
 
 memory:
   enabled: true
-  run_namespace: live-burnin
+  campaign_id: null
+  ephemeral: true
   max_recalled_memories: 16
   max_entity_recalled_memories: 8
   minimum_salience: 0.2

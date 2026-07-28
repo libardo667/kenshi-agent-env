@@ -15,12 +15,18 @@ from dotenv import load_dotenv
 
 from .advisor import AdvisorSession, GuideCorpus, OpenRouterStrategyAdvisor
 from .affordance_requests import aggregate_affordance_requests
+from .campaign import CampaignScopeError, resolve_campaign_scope
 from .config import AppConfig, load_config
 from .control import Win32InputController
 from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
 from .evals import evaluate_log
 from .final_safe_state import FinalSafeStateOutcome, FinalSafeStateStatus
-from .memory import MemoryStore
+from .memory import (
+    MemoryStore,
+    read_only_campaigns,
+    read_only_schema_version,
+    read_only_store,
+)
 from .models import ControlMode, PlanningMode, ScenarioIdentity
 from .overlay import show_overlay
 from .planners import (
@@ -379,6 +385,55 @@ def _build_environment(
     raise SystemExit(f"Unsupported environment mode: {mode}")
 
 
+def _inspect_memory(args: argparse.Namespace) -> int:
+    """Read the continuity store and print it. Writes nothing, ever.
+
+    An operator auditing what an agent believes must be able to do so without
+    the act of looking changing anything - including opening a campaign that
+    did not previously exist.
+    """
+
+    config = load_config(args.config)
+    path = config.paths.memory_db
+    if not path.exists():
+        print(f"No continuity database at {path}.")
+        return 0
+
+    campaigns = read_only_campaigns(path)
+    if args.campaign is None:
+        print(f"{path} (schema {read_only_schema_version(path)})")
+        for campaign_id, origin, created_at in campaigns:
+            print(f"  {campaign_id}\t{origin}\tcreated {created_at}")
+        if not campaigns:
+            print("  (no campaigns)")
+        return 0
+
+    known = {campaign_id for campaign_id, _, _ in campaigns}
+    if args.campaign not in known:
+        print(f"No campaign {args.campaign!r} in {path}.")
+        return 1
+
+    with read_only_store(path, args.campaign) as store:
+        if args.memory_id is not None:
+            record = store.get(args.memory_id)
+            if record is None:
+                print(f"No memory {args.memory_id!r} in campaign {args.campaign!r}.")
+                return 1
+            print(json.dumps(record.model_dump(mode="json"), indent=2))
+            for entry in store.history(args.memory_id):
+                print(json.dumps(entry.model_dump(mode="json"), indent=2))
+            return 0
+        records = store.all_records()[: args.limit]
+        print(f"campaign {args.campaign}: {len(records)} shown, {store.event_count()} events")
+        for record in records:
+            print(
+                f"  {record.memory_id}\t{record.status.value}\t{record.kind.value}"
+                f"\tsalience={record.salience:.2f}"
+                f"\treinforced={record.reinforcement_count}\t{record.content[:60]}"
+            )
+    return 0
+
+
 async def _run_command(args: argparse.Namespace) -> int:
     config = _apply_run_overrides(load_config(args.config), args)
     _validate_run_platform(config, args)
@@ -388,11 +443,26 @@ async def _run_command(args: argparse.Namespace) -> int:
     run_dir.mkdir(parents=True, exist_ok=False)
     macros = MacroRegistry(config.macros)
     logger = SessionLogger(run_dir / "events.jsonl", run_id)
-    memory = (
-        MemoryStore(config.paths.memory_db, config.memory.run_namespace)
-        if config.memory.enabled
-        else None
-    )
+    memory = None
+    if config.memory.enabled:
+        try:
+            campaign = resolve_campaign_scope(
+                config.memory,
+                mode=args.mode or config.mode,
+                run_id=run_id,
+                scenario=config.runtime.scenario,
+            )
+        except CampaignScopeError as exc:
+            raise SystemExit(str(exc)) from exc
+        memory = MemoryStore(config.paths.memory_db, campaign)
+        logger.write(
+            "campaign_scope",
+            payload={
+                "campaign_id": campaign.campaign_id,
+                "origin": campaign.origin.value,
+                "schema_version": memory.schema_version,
+            },
+        )
     try:
         planner_kind = args.planner or config.planner.kind
         planner = _build_planner(config, args)
@@ -741,6 +811,21 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--mode", choices=["mock", "live", "replay"])
     doctor.add_argument("--planner", choices=planner_choices)
 
+    memory = subparsers.add_parser(
+        "memory",
+        help="Inspect durable continuity read-only: campaigns, records, history.",
+    )
+    memory.add_argument("--config", default="config/default.yaml")
+    memory.add_argument(
+        "--campaign",
+        help="Campaign to inspect. Omit to list every campaign in the database.",
+    )
+    memory.add_argument(
+        "--memory-id",
+        help="Print one record's full lifecycle history instead of the summary.",
+    )
+    memory.add_argument("--limit", type=int, default=20)
+
     validate = subparsers.add_parser("validate-telemetry", help="Validate one telemetry snapshot.")
     validate.add_argument("--config", default="config/default.yaml")
     validate.add_argument("--file")
@@ -787,6 +872,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_run_command(args))
     if args.subcommand == "doctor":
         return _doctor(args)
+    if args.subcommand == "memory":
+        return _inspect_memory(args)
     if args.subcommand == "validate-telemetry":
         return _validate_telemetry(args)
     if args.subcommand == "summarize":

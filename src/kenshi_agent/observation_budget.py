@@ -214,9 +214,9 @@ def budget_observation_payload(
             )
         )
 
-    retained_memory_ids = {int(item["id"]) for item in retained["memories"]}
+    retained_memory_ids = {str(item["memory_id"]) for item in retained["memories"]}
     for memory in sorted(original["memories"], key=_memory_sort_key, reverse=True):
-        if int(memory["id"]) in retained_memory_ids:
+        if str(memory["memory_id"]) in retained_memory_ids:
             continue
         attempt(
             _append_mutator(
@@ -415,13 +415,13 @@ def _current_memory_target_ids(original: JsonObject) -> set[str]:
     return target_ids
 
 
-def _memory_sort_key(memory: JsonObject) -> tuple[float, str, int]:
+def _memory_sort_key(memory: JsonObject) -> tuple[float, str, str]:
     """Rank by what the agent declared and when it was made, never by reads."""
 
     return (
         float(memory["salience"]),
         str(memory["created_at"]),
-        int(memory["id"]),
+        str(memory["memory_id"]),
     )
 
 

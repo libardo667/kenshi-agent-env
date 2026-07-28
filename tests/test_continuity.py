@@ -15,6 +15,7 @@ from typing import Any
 
 import pytest
 
+from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.continuity import (
     ContinuityAuthority,
     ContinuityLedger,
@@ -33,7 +34,7 @@ from kenshi_agent.models import (
     KeepMemoryOperation,
     MemoryEvidence,
     MemoryKind,
-    MemoryWrite,
+    MemoryRecord,
     NearbyEntity,
     Observation,
     PlanDisposition,
@@ -144,11 +145,29 @@ def authority(
     )
 
 
-def write_of(content: str, *, target_id: str | None = None) -> MemoryWrite:
-    return MemoryWrite(
+def open_store(path: Path, campaign_id: str = "test") -> MemoryStore:
+    identities = iter(f"mem-{index:04d}" for index in range(1, 500))
+    return MemoryStore(
+        path,
+        CampaignScope(campaign_id=campaign_id, origin=CampaignScopeOrigin.CONFIGURED),
+        memory_id_factory=lambda: next(identities),
+    )
+
+
+def keep_fact(
+    store: MemoryStore,
+    content: str,
+    *,
+    target_id: str | None = None,
+    salience: float = 0.5,
+    run_id: str = "run-a",
+) -> MemoryRecord:
+    return store.keep(
+        run_id,
         kind=MemoryKind.FACT,
         content=content,
-        salience=0.5,
+        salience=salience,
+        grounding=None,
         target_id=target_id,
     )
 
@@ -250,8 +269,8 @@ def test_each_evidence_kind_renders_exactly_what_its_authority_says(
     ledger = ledger_with_evidence()
     current = observation()
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        memory_id = store.add("run-a", write_of("A remembered fact."))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        memory_id = keep_fact(store, "A remembered fact.", run_id="run-a").memory_id
         expectations = (
             (
                 CurrentObservationEvidence(),
@@ -437,7 +456,7 @@ def test_the_current_observation_reference_carries_its_exact_revision() -> None:
     [
         ActionOutcomeEvidence(outcome_id="ao-404"),
         PlanOutcomeEvidence(plan_outcome_id="po-404"),
-        MemoryEvidence(memory_id=404),
+        MemoryEvidence(memory_id="mem-0404"),
         AdvisorBriefEvidence(brief_id=OTHER_BRIEF_ID),
     ],
 )
@@ -449,8 +468,8 @@ def test_an_invented_identity_never_resolves(
 
     ledger = ledger_with_evidence()
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        store.add("run-a", write_of("A remembered fact."))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        keep_fact(store, "A remembered fact.", run_id="run-a")
         with pytest.raises(EvidenceResolutionError):
             render_evidence_reference(
                 reference,
@@ -465,10 +484,10 @@ def test_a_memory_from_another_namespace_is_not_citable(tmp_path: Path) -> None:
     """Campaigns do not bleed, and neither do their evidence IDs."""
 
     path = tmp_path / "memory.sqlite3"
-    with MemoryStore(path, "other-campaign") as other:
-        foreign_id = other.add("run-z", write_of("Another campaign's fact."))
+    with open_store(path, "other-campaign") as other:
+        foreign_id = keep_fact(other, "Another campaign's fact.", run_id="run-z").memory_id
 
-    with MemoryStore(path, "test") as store:
+    with open_store(path, "test") as store:
         with pytest.raises(EvidenceResolutionError):
             render_evidence_reference(
                 MemoryEvidence(memory_id=foreign_id),
@@ -484,7 +503,7 @@ def test_a_memory_reference_needs_a_store_to_resolve_against() -> None:
 
     with pytest.raises(EvidenceResolutionError):
         render_evidence_reference(
-            MemoryEvidence(memory_id=1),
+            MemoryEvidence(memory_id="mem-0001"),
             observation=observation(),
             ledger=ledger_with_evidence(),
             store=None,
@@ -504,7 +523,7 @@ def test_an_ungrounded_fact_or_episode_is_rejected(
 ) -> None:
     """A plan cannot remember the delivery it is only about to attempt."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         receipts = engine.apply(
@@ -526,7 +545,7 @@ def test_an_intention_or_an_uncertainty_may_be_self_authored(
     kind: MemoryKind,
     tmp_path: Path,
 ) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         receipts = engine.apply(
@@ -548,7 +567,7 @@ def test_a_self_authored_intention_still_needs_its_stated_evidence_to_exist(
 ) -> None:
     """Zero references is permission to be self-authored, not to invent one."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         receipts = engine.apply(
@@ -577,7 +596,7 @@ def test_stored_grounding_is_rendered_by_the_runtime_not_written_by_the_model(
 
     ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
     ledger.record_action_outcome(action_outcome("ao-1"))
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ledger)
 
         engine.apply(
@@ -596,9 +615,9 @@ def test_stored_grounding_is_rendered_by_the_runtime_not_written_by_the_model(
 
         record = store.recall(limit=8)[0]
 
-    assert record.evidence is not None
-    assert "ao-1" in record.evidence
-    assert "no_op" in record.evidence
+    assert record.grounding is not None
+    assert "ao-1" in record.grounding
+    assert "no_op" in record.grounding
 
 
 def test_a_target_id_absent_from_the_fresh_observation_is_rejected(
@@ -606,7 +625,7 @@ def test_a_target_id_absent_from_the_fresh_observation_is_rejected(
 ) -> None:
     """A remembered or invented entity ID cannot bind a new memory."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
         current = observation(target_ids=("entity-present",))
 
@@ -632,7 +651,7 @@ def test_a_target_id_absent_from_the_fresh_observation_is_rejected(
 
 
 def test_stale_telemetry_offers_no_current_target_at_all(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         receipts = engine.apply(
@@ -652,7 +671,7 @@ def test_one_invalid_operation_does_not_take_the_valid_one_with_it(
 ) -> None:
     """A rejected continuity update cannot corrupt the rest of the batch."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, events = authority(
             store,
             ContinuityLedger(run_id="run-a", action_outcome_limit=4),
@@ -678,7 +697,7 @@ def test_one_invalid_operation_does_not_take_the_valid_one_with_it(
 
 
 def test_every_operation_leaves_a_receipt_naming_its_origin(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         for origin in ContinuityOrigin:
@@ -724,7 +743,7 @@ def test_a_receipt_names_the_exact_plan_step_and_grounding_it_came_from(
 ) -> None:
     """A receipt with no provenance cannot be reconciled against anything."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, events = authority(
             store,
             ContinuityLedger(run_id="run-a", action_outcome_limit=4),
@@ -778,8 +797,8 @@ def test_several_references_are_joined_into_one_readable_grounding(
     tmp_path: Path,
 ) -> None:
     ledger = ledger_with_evidence()
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        memory_id = store.add("run-a", write_of("An earlier fact."))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        memory_id = keep_fact(store, "An earlier fact.", run_id="run-a").memory_id
         engine, _ = authority(store, ledger, brief_ids={BRIEF_ID})
 
         receipt = engine.apply(
@@ -812,7 +831,7 @@ def test_several_references_are_joined_into_one_readable_grounding(
         f"memory {memory_id}; "
         f"advisor_brief({BRIEF_ID}, advice not world evidence)"
     )
-    assert stored.evidence == receipt.evidence
+    assert stored.grounding == receipt.evidence
     # The store's own bound is the bound; four references cannot approach it.
     assert len(receipt.evidence) < 1000
 
@@ -820,7 +839,7 @@ def test_several_references_are_joined_into_one_readable_grounding(
 def test_declared_salience_reaches_the_store_unchanged(tmp_path: Path) -> None:
     """Salience is the only ranking signal the agent controls."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         engine.apply(
@@ -857,7 +876,7 @@ def test_continuity_is_a_no_op_without_a_store_and_never_pretends_otherwise() ->
 
 
 def test_no_operations_produce_no_receipts(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
+    with open_store(tmp_path / "memory.sqlite3") as store:
         engine, events = authority(
             store,
             ContinuityLedger(run_id="run-a", action_outcome_limit=4),
@@ -885,9 +904,9 @@ def test_no_operations_produce_no_receipts(tmp_path: Path) -> None:
 def test_recall_writes_no_row_at_any_rate(tmp_path: Path) -> None:
     """The observation pump decorates ~10x/second. That cannot be a write."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        store.add("run-a", write_of("A general fact."))
-        store.add("run-a", write_of("A bound fact.", target_id="entity-a"))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        keep_fact(store, "A general fact.", run_id="run-a")
+        keep_fact(store, "A bound fact.", target_id="entity-a", run_id="run-a")
         before = store._connection.total_changes
 
         for _ in range(20):
@@ -899,14 +918,14 @@ def test_recall_writes_no_row_at_any_rate(tmp_path: Path) -> None:
 def test_reading_a_memory_never_raises_its_priority(tmp_path: Path) -> None:
     """Only an explicit accepted operation may reinforce."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        older = store.add("run-a", write_of("Older tied fact.", target_id="entity-older"))
-        newer = store.add("run-a", write_of("Newer tied fact.", target_id="entity-newer"))
-        assert older < newer
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        older = keep_fact(store, "Older tied fact.", target_id="entity-older")
+        newer = keep_fact(store, "Newer tied fact.", target_id="entity-newer")
+        assert older.created_at <= newer.created_at
 
         for _ in range(5):
             store.recall(limit=0, target_ids={"entity-older"}, entity_limit=1)
-        store.record_delivery([older])
+        store.record_delivery("run-a", [older.memory_id])
 
         records = store.recall(
             limit=0,
@@ -920,12 +939,12 @@ def test_reading_a_memory_never_raises_its_priority(tmp_path: Path) -> None:
 def test_delivery_is_recorded_only_when_a_planner_payload_is_assembled(
     tmp_path: Path,
 ) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        memory_id = store.add("run-a", write_of("A fact."))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        memory_id = keep_fact(store, "A fact.", run_id="run-a").memory_id
 
         assert store.recall(limit=4)[0].last_delivered_at is None
 
-        store.record_delivery([memory_id])
+        store.record_delivery("run-a", [memory_id])
         delivered = store.recall(limit=4)[0].last_delivered_at
 
     assert delivered is not None
@@ -933,11 +952,11 @@ def test_delivery_is_recorded_only_when_a_planner_payload_is_assembled(
 
 
 def test_delivery_time_never_reorders_general_recall(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        first = store.add("run-a", write_of("First fact."))
-        store.add("run-a", write_of("Second fact."))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        first = keep_fact(store, "First fact.", run_id="run-a").memory_id
+        keep_fact(store, "Second fact.", run_id="run-a")
 
-        store.record_delivery([first])
+        store.record_delivery("run-a", [first])
 
         assert [record.content for record in store.recall(limit=4)] == [
             "Second fact.",
@@ -946,24 +965,24 @@ def test_delivery_time_never_reorders_general_recall(tmp_path: Path) -> None:
 
 
 def test_recording_delivery_of_nothing_touches_nothing(tmp_path: Path) -> None:
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        store.add("run-a", write_of("A fact."))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        keep_fact(store, "A fact.", run_id="run-a")
         before = store._connection.total_changes
 
-        store.record_delivery([])
+        store.record_delivery("run-a", [])
 
         assert store._connection.total_changes == before
 
 
 def test_delivery_cannot_reach_another_campaigns_record(tmp_path: Path) -> None:
     path = tmp_path / "memory.sqlite3"
-    with MemoryStore(path, "other-campaign") as other:
-        foreign_id = other.add("run-z", write_of("Another campaign's fact."))
+    with open_store(path, "other-campaign") as other:
+        foreign_id = keep_fact(other, "Another campaign's fact.", run_id="run-z").memory_id
 
-    with MemoryStore(path, "test") as store:
-        store.record_delivery([foreign_id])
+    with open_store(path, "test") as store:
+        store.record_delivery("run-a", [foreign_id])
 
-    with MemoryStore(path, "other-campaign") as other:
+    with open_store(path, "other-campaign") as other:
         assert other.recall(limit=4)[0].last_delivered_at is None
 
 
@@ -1040,7 +1059,7 @@ def test_a_single_step_decision_keeps_only_what_the_receipt_supports(
             )
 
     async def scenario() -> None:
-        with MemoryStore(tmp_path / "memory.sqlite3", "single") as store:
+        with open_store(tmp_path / "memory.sqlite3", "single") as store:
             runtime, logger = _single_step_runtime(tmp_path, ClaimingPlanner(), store)
             try:
                 summary = await runtime.run(max_steps=1)
@@ -1085,9 +1104,9 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
     from kenshi_agent.config import PlanningConfig
     from kenshi_agent.runtime import AgentRuntime
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "pump") as store:
-        store.add("run-a", write_of("A general fact."))
-        store.add("run-a", write_of("A bound fact.", target_id="entity-a"))
+    with open_store(tmp_path / "memory.sqlite3", "pump") as store:
+        keep_fact(store, "A general fact.", run_id="run-a")
+        keep_fact(store, "A bound fact.", target_id="entity-a", run_id="run-a")
 
         runner = object.__new__(AgentRuntime)
         runner.memory = store
@@ -1111,10 +1130,13 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
 def test_delivery_marks_every_record_it_was_given(tmp_path: Path) -> None:
     """One placeholder per ID: a single-ID test would never notice the join."""
 
-    with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        ids = [store.add("run-a", write_of(f"Fact {index}.")) for index in range(4)]
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        ids = [
+            keep_fact(store, f"Fact {index}.", run_id="run-a").memory_id
+            for index in range(4)
+        ]
 
-        store.record_delivery(ids[:3])
+        store.record_delivery("run-a", ids[:3])
         delivered = {
             record.content: record.last_delivered_at is not None
             for record in store.recall(limit=8)
@@ -1128,61 +1150,231 @@ def test_delivery_marks_every_record_it_was_given(tmp_path: Path) -> None:
     }
 
 
-def test_a_bound_memory_keeps_its_entity_through_the_delivery_migration(
+# --------------------------------------------------------------------------
+# The planner-facing lifecycle
+# --------------------------------------------------------------------------
+
+
+def lifecycle_authority(
+    store: MemoryStore,
+) -> tuple[ContinuityAuthority, list[tuple[str, dict[str, Any]]]]:
+    return authority(store, ledger_with_evidence(), brief_ids={BRIEF_ID})
+
+
+def apply_one(engine: ContinuityAuthority, operation: Any) -> Any:
+    return engine.apply(
+        [operation],
+        origin=ContinuityOrigin.PLAN,
+        observation=observation(target_ids=("entity-present",)),
+        plan_id="plan-a",
+        plan_version=1,
+    )[0]
+
+
+def test_every_lifecycle_transition_reaches_the_store_through_apply(
     tmp_path: Path,
 ) -> None:
-    """The shape that had `target_id` but tracked read time, not delivery.
+    """`_transition` is the whole planner-facing surface of the lifecycle.
 
-    Rebuilding must carry every exact identity across. Dropping them would
-    quietly turn one entity's memory into general knowledge about everyone.
+    Testing only `keep` would leave four transitions wired to nothing, which is
+    exactly the shape of the dead `PlanPatch` field this design replaced.
     """
 
-    import sqlite3
-
-    path = tmp_path / "memory.sqlite3"
-    connection = sqlite3.connect(path)
-    connection.executescript(
-        """
-        CREATE TABLE memories (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            namespace TEXT NOT NULL,
-            run_id TEXT NOT NULL,
-            kind TEXT NOT NULL,
-            content TEXT NOT NULL,
-            salience REAL NOT NULL,
-            evidence TEXT,
-            created_at TEXT NOT NULL,
-            last_accessed_at TEXT NOT NULL,
-            active INTEGER NOT NULL DEFAULT 1,
-            target_id TEXT NOT NULL DEFAULT '',
-            UNIQUE(namespace, kind, content, target_id)
-        );
-        INSERT INTO memories (
-            namespace, run_id, kind, content, salience, evidence,
-            created_at, last_accessed_at, active, target_id
-        ) VALUES
-        ('test', 'legacy', 'fact', 'This barman offers no work.', 0.5, 'seen',
-         '2026-07-26T00:00:00+00:00', '2026-07-27T00:00:00+00:00', 1,
-         'entity-barman'),
-        ('test', 'legacy', 'fact', 'The Hub has a bar.', 0.5, NULL,
-         '2026-07-26T00:00:00+00:00', '2026-07-27T00:00:00+00:00', 1, '');
-        """
+    from kenshi_agent.models import (
+        ReinforceMemoryOperation,
+        ResolveMemoryOperation,
+        RetractMemoryOperation,
+        SupersedeMemoryOperation,
     )
-    connection.commit()
-    connection.close()
 
-    with MemoryStore(path, "test") as store:
-        general = store.recall(limit=8)
-        bound = store.recall(limit=0, target_ids={"entity-barman"}, entity_limit=4)
-    # A second open must not migrate again or duplicate anything.
-    with MemoryStore(path, "test") as reopened:
-        again = reopened.recall(limit=8)
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
 
-    assert [record.content for record in general] == ["The Hub has a bar."]
-    assert [record.target_id for record in bound] == ["entity-barman"]
-    assert bound[0].content == "This barman offers no work."
-    assert bound[0].evidence == "seen"
-    # The old column recorded automatic recall, not delivery to a planner.
-    assert bound[0].last_delivered_at is None
-    assert general[0].last_delivered_at is None
-    assert [record.content for record in again] == ["The Hub has a bar."]
+        kept = apply_one(
+            engine,
+            keep(
+                MemoryKind.COMMITMENT,
+                "Deliver six sealed slop canisters.",
+                target_id="entity-present",
+                salience=0.6,
+            ),
+        )
+        assert kept.status is ContinuityOperationStatus.ACCEPTED
+        record = store.get(kept.memory_id)
+        assert record is not None
+        assert record.content == "Deliver six sealed slop canisters."
+        assert record.target_id == "entity-present"
+        assert record.salience == 0.6
+
+        reinforced = apply_one(
+            engine,
+            ReinforceMemoryOperation(
+                memory_id=kept.memory_id,
+                salience=0.9,
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+        assert reinforced.status is ContinuityOperationStatus.ACCEPTED
+        assert reinforced.memory_id == kept.memory_id
+        after_reinforce = store.get(kept.memory_id)
+        assert after_reinforce is not None
+        assert after_reinforce.reinforcement_count == 1
+        assert after_reinforce.salience == 0.9
+        assert after_reinforce.grounding == "action_outcome(ao-1: no_op)"
+
+        superseded = apply_one(
+            engine,
+            SupersedeMemoryOperation(
+                memory_id=kept.memory_id,
+                kind=MemoryKind.COMMITMENT,
+                content="Deliver five canisters; one was lost.",
+                salience=0.7,
+                target_id="entity-present",
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+        assert superseded.status is ContinuityOperationStatus.ACCEPTED
+        assert superseded.memory_id != kept.memory_id
+        old = store.get(kept.memory_id)
+        new = store.get(superseded.memory_id)
+        assert old is not None and new is not None
+        assert old.superseded_by_id == new.memory_id
+        assert new.supersedes_id == kept.memory_id
+        assert new.content == "Deliver five canisters; one was lost."
+        assert new.salience == 0.7
+        assert new.target_id == "entity-present"
+
+        assert new.grounding == (
+            "current_observation(telemetry_sequence=3, frame_sequence=2)"
+        )
+
+        resolved = apply_one(
+            engine,
+            ResolveMemoryOperation(
+                memory_id=new.memory_id,
+                reason="All five were handed over.",
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+        assert resolved.status is ContinuityOperationStatus.ACCEPTED
+        closed = store.get(new.memory_id)
+        assert closed is not None
+        assert closed.resolution_reason == "All five were handed over."
+        # The evidence that closed it replaces the evidence that opened it.
+        assert closed.grounding == "action_outcome(ao-1: no_op)"
+
+        hypothesis = apply_one(
+            engine,
+            keep(MemoryKind.HYPOTHESIS, "The trader may buy ore."),
+        )
+        retracted = apply_one(
+            engine,
+            RetractMemoryOperation(
+                memory_id=hypothesis.memory_id,
+                reason="Telemetry disproved it.",
+            ),
+        )
+        assert retracted.status is ContinuityOperationStatus.ACCEPTED
+        withdrawn = store.get(hypothesis.memory_id)
+        assert withdrawn is not None
+        assert withdrawn.resolution_reason == "Telemetry disproved it."
+        assert store.recall(limit=8, target_ids={"entity-present"}, entity_limit=4) == []
+
+
+def test_a_transition_on_a_closed_or_unknown_record_is_a_receipt_not_a_crash(
+    tmp_path: Path,
+) -> None:
+    """Invariant: a rejected continuity update cannot corrupt gameplay."""
+
+    from kenshi_agent.models import (
+        ReinforceMemoryOperation,
+        ResolveMemoryOperation,
+        RetractMemoryOperation,
+        SupersedeMemoryOperation,
+    )
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+        kept = apply_one(engine, keep(MemoryKind.COMMITMENT, "Deliver the cargo."))
+        apply_one(
+            engine,
+            RetractMemoryOperation(memory_id=kept.memory_id, reason="Abandoned."),
+        )
+
+        closed_and_unknown = [
+            ReinforceMemoryOperation(memory_id=kept.memory_id),
+            ResolveMemoryOperation(memory_id=kept.memory_id, reason="Done."),
+            SupersedeMemoryOperation(
+                memory_id=kept.memory_id,
+                kind=MemoryKind.COMMITMENT,
+                content="A replacement.",
+            ),
+            RetractMemoryOperation(memory_id=kept.memory_id, reason="Again."),
+            ReinforceMemoryOperation(memory_id="mem-0404"),
+            ResolveMemoryOperation(memory_id="mem-0404", reason="Done."),
+            RetractMemoryOperation(memory_id="mem-0404", reason="Gone."),
+        ]
+        for operation in closed_and_unknown:
+            receipt = apply_one(engine, operation)
+            assert receipt.status is ContinuityOperationStatus.REJECTED
+            assert receipt.memory_id is None
+            # The references resolved; it was the transition that was refused,
+            # and the receipt has to say which of the two failed.
+            assert receipt.evidence is None
+            assert receipt.plan_id == "plan-a"
+
+        grounded_but_closed = apply_one(
+            engine,
+            ReinforceMemoryOperation(
+                memory_id=kept.memory_id,
+                references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+            ),
+        )
+        assert grounded_but_closed.status is ContinuityOperationStatus.REJECTED
+        assert grounded_but_closed.evidence == "action_outcome(ao-1: no_op)"
+
+        assert store.event_count() == 2
+
+
+def test_a_superseding_replacement_is_held_to_the_same_grounding_rules(
+    tmp_path: Path,
+) -> None:
+    """A replacement fact is still a fact, and still needs evidence."""
+
+    from kenshi_agent.models import SupersedeMemoryOperation
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+        kept = apply_one(
+            engine,
+            keep(
+                MemoryKind.FACT,
+                "The gate is open.",
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+
+        ungrounded = apply_one(
+            engine,
+            SupersedeMemoryOperation(
+                memory_id=kept.memory_id,
+                kind=MemoryKind.FACT,
+                content="The gate is closed and I already went through it.",
+            ),
+        )
+        remembered_entity = apply_one(
+            engine,
+            SupersedeMemoryOperation(
+                memory_id=kept.memory_id,
+                kind=MemoryKind.FACT,
+                content="The gate is closed at night.",
+                target_id="entity-remembered",
+                references=[CurrentObservationEvidence()],
+            ),
+        )
+
+        assert ungrounded.status is ContinuityOperationStatus.REJECTED
+        assert remembered_entity.status is ContinuityOperationStatus.REJECTED
+        original = store.get(kept.memory_id)
+        assert original is not None
+        assert original.status.value == "active"

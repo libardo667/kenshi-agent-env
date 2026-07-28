@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MacroConfig, MockConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment, MockEnvironment
 from kenshi_agent.final_safe_state import (
@@ -185,7 +186,13 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             max_actions_per_minute=500,
         )
         logger = SessionLogger(tmp_path / "events.jsonl", run_id)
-        memory = MemoryStore(tmp_path / "memory.sqlite3", "test")
+        memory = MemoryStore(
+            tmp_path / "memory.sqlite3",
+            CampaignScope(
+                campaign_id="test",
+                origin=CampaignScopeOrigin.CONFIGURED,
+            ),
+        )
         try:
             runtime = AgentRuntime(
                 run_id=run_id,

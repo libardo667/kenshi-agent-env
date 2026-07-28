@@ -2492,7 +2492,10 @@ class AgentRuntime:
         """
 
         if self.memory is not None and observation.memories:
-            self.memory.record_delivery([record.id for record in observation.memories])
+            self.memory.record_delivery(
+                self.run_id,
+                [record.memory_id for record in observation.memories],
+            )
         return await self.planner.decide(observation)
 
     def _record_action_outcome(

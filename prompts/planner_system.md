@@ -38,16 +38,30 @@ read all three. If the history shows you already tried something, do not
 silently try it again — either continue it or choose differently, and say
 which.
 
-Write to durable memory with `continuity_operations`. Each is an explicit
-`keep`, and each is optional: a plan with nothing worth keeping writes nothing.
+Write to durable memory with `continuity_operations`. Each names an explicit
+transition, and each is optional: a plan with nothing worth keeping writes
+nothing. There is no edit and no delete.
 
-- `commitment` — what you intend to do next, especially across more than one
-  plan ("after this, leave the bar and look for work in the town").
-- `hypothesis` — something you suspect but have not established.
-- `fact` — something you learned that is expensive to rediscover ("the barman
-  offers no work").
-- `episode` — an event or attempt, including one that failed or was
-  inconclusive.
+- `keep` — create a record. Its `kind` is one of:
+  - `commitment` — what you intend to do next, especially across more than one
+    plan ("after this, leave the bar and look for work in the town");
+  - `hypothesis` — something you suspect but have not established;
+  - `fact` — something you learned that is expensive to rediscover ("the barman
+    offers no work");
+  - `episode` — an event or attempt, including one that failed or was
+    inconclusive.
+- `reinforce` — an existing `memory_id` still matters. Use this instead of
+  restating something already in `memories`; a restatement is deduplicated
+  anyway, and it wastes a slot on the way.
+- `resolve` — close a commitment or an open question, with the `reason` and the
+  evidence that closed it. Finishing a plan is not finishing a commitment.
+- `supersede` — replace a record whose content is now wrong. The old one stays
+  readable and linked to its replacement.
+- `retract` — withdraw a record you no longer believe, with a `reason`.
+
+Every `memory_id` must come from `memories` in this observation. A closed
+record (resolved, superseded, retracted) refuses every further transition, and
+so does one belonging to another campaign.
 
 A `fact` or an `episode` reports something that happened, so it must cite at
 least one entry in `references`, and every reference must be an ID the runtime

@@ -18,6 +18,7 @@ from kenshi_agent.models import (
     LiveContinuousPolicy,
     MemoryKind,
     MemoryRecord,
+    MemoryStatus,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeControlState,
@@ -251,13 +252,14 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
     ]
     memories = [
         MemoryRecord(
-            id=index,
-            namespace="test",
-            run_id="budget-run",
+            memory_id=f"mem-{index:04d}",
+            campaign_id="test",
+            status=MemoryStatus.ACTIVE,
+            created_run_id="budget-run",
             kind=MemoryKind.FACT,
             content=f"Memory {index} — 記憶 " + "m" * 400,
             salience=index / 20,
-            evidence="Deterministic test evidence.",
+            grounding="Deterministic test grounding.",
             created_at=_NOW,
             last_delivered_at=_NOW,
         )
@@ -402,13 +404,14 @@ def test_semantic_budget_preserves_critical_fields_and_reports_omissions() -> No
 def test_semantic_budget_never_discards_a_current_target_memory() -> None:
     observation = _oversized_observation()
     target_memory = MemoryRecord(
-        id=100,
-        namespace="test",
-        run_id="budget-run",
+        memory_id="mem-0100",
+        campaign_id="test",
+        status=MemoryStatus.ACTIVE,
+        created_run_id="budget-run",
         kind=MemoryKind.FACT,
         content="This exact barman has no affordable work.",
         salience=0.0,
-        evidence="Earlier dialogue reached its terminal unaffordable branch.",
+        grounding="Earlier dialogue reached its terminal unaffordable branch.",
         target_id=_TARGET_ID,
         created_at=_NOW,
         last_delivered_at=_NOW,

@@ -1,12 +1,40 @@
+"""The canonical durable-continuity store.
+
+One SQLite database, one authority. Inside it, two things with different jobs:
+
+- `memory_events` is append-only history. Every keep, reinforce, resolve,
+  supersede, retract, and delivery is a row that is never rewritten and never
+  deleted. It is what the store actually knows.
+- `memories` is a projection of that history, kept current inside the same
+  transaction that appends to it, and rebuildable from scratch. It exists so
+  recall is a query rather than a replay.
+
+If the projection ever disagrees with the history, the history wins, and
+`rebuild_projection()` is how you say so. Nothing else may write either table.
+"""
+
 from __future__ import annotations
 
+import json
+import shutil
 import sqlite3
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TypeVar
+from typing import Any, TypeVar
 
-from .models import MemoryKind, MemoryRecord, MemoryWrite
+from .campaign import CampaignScope, CampaignScopeOrigin, legacy_campaign_id
+from .models import (
+    MemoryAuthorship,
+    MemoryHistoryEntry,
+    MemoryKind,
+    MemoryLifecycleEvent,
+    MemoryRecord,
+    MemoryStatus,
+    new_memory_id,
+)
+
+SCHEMA_VERSION = 2
 
 # Mutmut understands Python expressions, not SQL. Its SQL-string mutations are
 # either SQLite-equivalent case changes or deliberately invalid statements.
@@ -14,102 +42,203 @@ from .models import MemoryKind, MemoryRecord, MemoryWrite
 # pragma: no mutate start
 _JOURNAL_MODE_SQL = "PRAGMA journal_mode=WAL"
 _FOREIGN_KEYS_SQL = "PRAGMA foreign_keys=ON"
-_CREATE_TABLE_SQL = """
-    CREATE TABLE IF NOT EXISTS memories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        namespace TEXT NOT NULL,
-        run_id TEXT NOT NULL,
-        kind TEXT NOT NULL,
-        content TEXT NOT NULL,
-        salience REAL NOT NULL,
-        evidence TEXT,
-        created_at TEXT NOT NULL,
-        last_delivered_at TEXT,
-        active INTEGER NOT NULL DEFAULT 1,
-        target_id TEXT NOT NULL DEFAULT '',
-        UNIQUE(namespace, kind, content, target_id)
-    )
-"""
+_FOREIGN_KEYS_STATE_SQL = "PRAGMA foreign_keys"
 _TABLE_INFO_SQL = "PRAGMA table_info(memories)"
-_ALTER_LEGACY_TABLE_SQL = "ALTER TABLE memories RENAME TO memories_legacy"
-# Legacy `last_accessed_at` recorded automatic recall, not delivery to a
-# planner, so it is not carried forward as one. Unknown stays unknown.
-_MIGRATE_SCOPED_ROWS_SQL = """
-    INSERT INTO memories (
-        id, namespace, run_id, kind, content, salience, evidence,
-        created_at, last_delivered_at, active, target_id
-    )
-    SELECT
-        id, namespace, run_id, kind, content, salience, evidence,
-        created_at, NULL, active, target_id
-    FROM memories_legacy
-"""
-# The oldest shape predates target identity, so every one of its rows becomes an
-# unbound general memory rather than a memory about some arbitrary entity.
-_MIGRATE_UNSCOPED_ROWS_SQL = """
-    INSERT INTO memories (
-        id, namespace, run_id, kind, content, salience, evidence,
-        created_at, last_delivered_at, active, target_id
-    )
-    SELECT
-        id, namespace, run_id, kind, content, salience, evidence,
-        created_at, NULL, active, ''
-    FROM memories_legacy
-"""
-_DROP_LEGACY_TABLE_SQL = "DROP TABLE memories_legacy"
-_UPSERT_SQL = """
-    INSERT INTO memories (
-        namespace, run_id, kind, content, salience, evidence,
-        created_at, active, target_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)
-    ON CONFLICT(namespace, kind, content, target_id) DO UPDATE SET
-        salience = MAX(memories.salience, excluded.salience),
-        evidence = COALESCE(excluded.evidence, memories.evidence),
-        active = 1
-"""
-_RESOLVE_UPSERT_SQL = """
-    SELECT id FROM memories
-    WHERE namespace=? AND kind=? AND content=? AND target_id=?
-"""
-_GENERAL_WHERE_SQL = "namespace=? AND active=1 AND salience>=? AND target_id=''"
-_QUERY_FILTER_SQL = " AND content LIKE ?"
-# Ordered by what the agent declared and when the record was made, never by
-# when it was last read. Reading is not evidence of importance, and ranking by
-# read time made a memory that kept surfacing keep surfacing.
-_GENERAL_RECALL_SQL = """
-    SELECT id, namespace, run_id, kind, content, salience, evidence,
-           created_at, last_delivered_at, target_id
+_LEGACY_NAMESPACES_SQL = "SELECT DISTINCT namespace FROM memories"
+_LEGACY_ROWS_SQL = """
+    SELECT namespace, run_id, kind, content, salience, evidence,
+           created_at, active, target_id
     FROM memories
-    WHERE {where}
-    ORDER BY salience DESC, created_at DESC, id DESC
-    LIMIT ?
+    ORDER BY id
 """
-_ENTITY_WHERE_SQL = "namespace=? AND active=1 AND target_id IN ({placeholders})"
-_ENTITY_RECALL_SQL = """
-    SELECT id, namespace, run_id, kind, content, salience, evidence,
-           created_at, last_delivered_at, target_id
+_LEGACY_ROWS_UNSCOPED_SQL = """
+    SELECT namespace, run_id, kind, content, salience, evidence,
+           created_at, active, '' AS target_id
     FROM memories
-    WHERE {where}
-    ORDER BY salience DESC, created_at DESC, id DESC
-    LIMIT ?
+    ORDER BY id
 """
-_EXISTS_SQL = "SELECT 1 FROM memories WHERE namespace=? AND id=? AND active=1"
-_RECORD_DELIVERY_SQL = (
-    "UPDATE memories SET last_delivered_at=? "
-    "WHERE namespace=? AND id IN ({placeholders})"
+_DROP_LEGACY_TABLE_SQL = "DROP TABLE memories"
+
+_CREATE_META_SQL = """
+    CREATE TABLE IF NOT EXISTS continuity_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )
+"""
+_CREATE_CAMPAIGNS_SQL = """
+    CREATE TABLE IF NOT EXISTS campaigns (
+        campaign_id TEXT PRIMARY KEY,
+        origin TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+"""
+_CREATE_EVENTS_SQL = """
+    CREATE TABLE IF NOT EXISTS memory_events (
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        campaign_id TEXT NOT NULL REFERENCES campaigns(campaign_id),
+        memory_id TEXT NOT NULL,
+        event TEXT NOT NULL,
+        run_id TEXT NOT NULL,
+        recorded_at TEXT NOT NULL,
+        payload TEXT NOT NULL
+    )
+"""
+_CREATE_MEMORIES_SQL = """
+    CREATE TABLE IF NOT EXISTS memories (
+        memory_id TEXT PRIMARY KEY,
+        campaign_id TEXT NOT NULL REFERENCES campaigns(campaign_id),
+        kind TEXT NOT NULL,
+        status TEXT NOT NULL,
+        content TEXT NOT NULL,
+        normalized_key TEXT NOT NULL,
+        target_id TEXT NOT NULL DEFAULT '',
+        salience REAL NOT NULL,
+        grounding TEXT,
+        authorship TEXT NOT NULL,
+        created_run_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        reinforced_at TEXT,
+        resolved_at TEXT,
+        superseded_at TEXT,
+        last_delivered_at TEXT,
+        reinforcement_count INTEGER NOT NULL DEFAULT 0,
+        supersedes_id TEXT,
+        superseded_by_id TEXT,
+        resolution_reason TEXT
+    )
+"""
+_INDEX_SQL = (
+    # Only *active* records compete for an identity. A retracted belief and its
+    # later restatement are two records with the same words, and both are real.
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS memories_campaign_active_key
+    ON memories (campaign_id, normalized_key) WHERE status = 'active'
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS memories_campaign_rank
+    ON memories (campaign_id, status, target_id, salience DESC, created_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS memories_campaign_target
+    ON memories (campaign_id, status, target_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS memory_events_campaign_order
+    ON memory_events (campaign_id, event_id)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS memory_events_memory_order
+    ON memory_events (memory_id, event_id)
+    """,
 )
-_CREATED_INDEX_SQL = """
-    CREATE INDEX IF NOT EXISTS memories_namespace_rank
-    ON memories (namespace, active, target_id, salience DESC, created_at DESC)
+_SET_META_SQL = "INSERT OR REPLACE INTO continuity_meta (key, value) VALUES (?, ?)"
+_GET_META_SQL = "SELECT value FROM continuity_meta WHERE key=?"
+_UPSERT_CAMPAIGN_SQL = """
+    INSERT INTO campaigns (campaign_id, origin, created_at) VALUES (?, ?, ?)
+    ON CONFLICT(campaign_id) DO NOTHING
 """
-_TARGET_INDEX_SQL = """
-    CREATE INDEX IF NOT EXISTS memories_namespace_target
-    ON memories (namespace, active, target_id)
+_APPEND_EVENT_SQL = """
+    INSERT INTO memory_events
+        (campaign_id, memory_id, event, run_id, recorded_at, payload)
+    VALUES (?, ?, ?, ?, ?, ?)
+"""
+_INSERT_MEMORY_SQL = """
+    INSERT INTO memories (
+        memory_id, campaign_id, kind, status, content, normalized_key, target_id,
+        salience, grounding, authorship, created_run_id, created_at,
+        reinforced_at, resolved_at, superseded_at, last_delivered_at,
+        reinforcement_count, supersedes_id, superseded_by_id, resolution_reason
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+"""
+_MEMORY_COLUMNS = """
+    memory_id, campaign_id, kind, status, content, target_id, salience,
+    grounding, authorship, created_run_id, created_at,
+    reinforced_at, resolved_at, superseded_at, last_delivered_at,
+    reinforcement_count, supersedes_id, superseded_by_id, resolution_reason
+"""
+_SELECT_MEMORY_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories WHERE campaign_id=? AND memory_id=?
+"""
+_SELECT_ACTIVE_BY_KEY_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE campaign_id=? AND normalized_key=? AND status='active'
+"""
+_SELECT_ALL_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories WHERE campaign_id=? ORDER BY memory_id
+"""
+_GENERAL_WHERE_SQL = (
+    "campaign_id=? AND status='active' AND salience>=? AND target_id=''"
+)
+_QUERY_FILTER_SQL = " AND content LIKE ?"
+# Ordered by what the agent declared, how often it explicitly reinforced, and
+# when the record was made - never by when it was last read.
+_GENERAL_RECALL_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE {{where}}
+    ORDER BY salience DESC, created_at DESC, memory_id DESC
+    LIMIT ?
+"""
+_ENTITY_WHERE_SQL = (
+    "campaign_id=? AND status='active' AND target_id IN ({placeholders})"
+)
+_ENTITY_RECALL_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE {{where}}
+    ORDER BY salience DESC, created_at DESC, memory_id DESC
+    LIMIT ?
+"""
+_UPDATE_REINFORCE_SQL = """
+    UPDATE memories
+    SET salience=?, grounding=COALESCE(?, grounding), reinforced_at=?,
+        reinforcement_count=reinforcement_count + 1
+    WHERE campaign_id=? AND memory_id=?
+"""
+_UPDATE_RESOLVE_SQL = """
+    UPDATE memories SET status=?, resolved_at=?, resolution_reason=?,
+        grounding=COALESCE(?, grounding)
+    WHERE campaign_id=? AND memory_id=?
+"""
+_UPDATE_SUPERSEDE_SQL = """
+    UPDATE memories SET status=?, superseded_at=?, superseded_by_id=?
+    WHERE campaign_id=? AND memory_id=?
+"""
+_UPDATE_RETRACT_SQL = """
+    UPDATE memories SET status=?, resolved_at=?, resolution_reason=?
+    WHERE campaign_id=? AND memory_id=?
+"""
+_RECORD_DELIVERY_SQL = """
+    UPDATE memories SET last_delivered_at=?
+    WHERE campaign_id=? AND memory_id IN ({placeholders})
+"""
+_SELECT_HISTORY_SQL = """
+    SELECT event_id, campaign_id, memory_id, event, run_id, recorded_at, payload
+    FROM memory_events WHERE campaign_id=? AND memory_id=? ORDER BY event_id
+"""
+_SELECT_CAMPAIGN_EVENTS_SQL = """
+    SELECT event_id, campaign_id, memory_id, event, run_id, recorded_at, payload
+    FROM memory_events WHERE campaign_id=? ORDER BY event_id
+"""
+_COUNT_EVENTS_SQL = "SELECT COUNT(*) AS total FROM memory_events WHERE campaign_id=?"
+_DELETE_PROJECTION_SQL = "DELETE FROM memories WHERE campaign_id=?"
+_SELECT_CAMPAIGNS_SQL = """
+    SELECT campaign_id, origin, created_at FROM campaigns ORDER BY campaign_id
 """
 # pragma: no mutate end
 
 _SQLiteValue = bytes | float | int | str | None
 _Identity = TypeVar("_Identity", int, str)
+
+_CLOSED_STATUSES = frozenset(
+    {MemoryStatus.RESOLVED, MemoryStatus.SUPERSEDED, MemoryStatus.RETRACTED}
+)
+
+
+class MemoryTransitionError(ValueError):
+    """A lifecycle transition was refused: unknown, foreign, or already closed."""
+
+
+class MemoryStoreError(RuntimeError):
+    """The store could not be opened or migrated safely."""
 
 
 def _row_value(row: sqlite3.Row, column: str) -> _SQLiteValue:
@@ -141,6 +270,7 @@ def _row_float(row: sqlite3.Row, column: str) -> float:
     return float(value)
 
 
+
 def _row_text(row: sqlite3.Row, column: str) -> str:
     value = _row_value(row, column)
     if not isinstance(value, str):
@@ -159,6 +289,11 @@ def _row_optional_text(row: sqlite3.Row, column: str) -> str | None:
     )
 
 
+def _row_time(row: sqlite3.Row, column: str) -> datetime | None:
+    value = _row_optional_text(row, column)
+    return None if value is None else datetime.fromisoformat(value)
+
+
 def _partition_target_ids(
     target_ids: Sequence[_Identity],
     chunk_size: int,
@@ -173,93 +308,504 @@ def _partition_target_ids(
     ]
 
 
+def normalized_key(kind: MemoryKind, content: str, target_id: str | None) -> str:
+    """The deterministic identity of "the same thing said again".
+
+    Deliberately mechanical - kind, squashed whitespace, case, and exact target.
+    Anything cleverer would be a provider-dependent similarity judgment at the
+    storage boundary, which is the one place that must not have opinions.
+    """
+
+    squashed = " ".join(content.split()).casefold()
+    return f"{kind.value}\x1f{target_id or ''}\x1f{squashed}"
+
+
 class MemoryStore:
     _TARGET_QUERY_CHUNK_SIZE = 500
 
-    def __init__(self, path: Path, namespace: str) -> None:
+    def __init__(
+        self,
+        path: Path,
+        scope: CampaignScope,
+        *,
+        memory_id_factory: Callable[[], str] = new_memory_id,
+    ) -> None:
         self.path = path
-        self.namespace = namespace
+        self.campaign_id = scope.campaign_id
+        self._new_memory_id = memory_id_factory
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self.path)
         self._connection.row_factory = sqlite3.Row
-        self._connection.execute(_JOURNAL_MODE_SQL)
         self._connection.execute(_FOREIGN_KEYS_SQL)
-        self._create_table()
-        self._migrate_legacy_table()
-        self._create_indexes()
+        # Back up before the first write of any kind, including the journal-mode
+        # switch: an operator rolling back wants the exact file they had.
+        legacy_rows = self._legacy_rows_to_migrate()
+        self._connection.execute(_JOURNAL_MODE_SQL)
+        if legacy_rows is not None:
+            self._migrate_v1(legacy_rows)
+        self._create_schema()
+        self._register_campaign(scope.campaign_id, scope.origin)
         self._connection.commit()
 
-    def _create_table(self) -> None:
-        self._connection.execute(_CREATE_TABLE_SQL)
+    # -- schema ---------------------------------------------------------
 
-    def _create_indexes(self) -> None:
-        self._connection.execute(_CREATED_INDEX_SQL)
-        self._connection.execute(_TARGET_INDEX_SQL)
+    @property
+    def schema_version(self) -> int:
+        row = self._connection.execute(_GET_META_SQL, ("schema_version",)).fetchone()
+        return SCHEMA_VERSION if row is None else int(_row_text(row, "value"))
 
-    def _columns(self) -> set[str]:
-        return {
+    def _create_schema(self) -> None:
+        self._connection.execute(_CREATE_META_SQL)
+        self._connection.execute(_CREATE_CAMPAIGNS_SQL)
+        self._connection.execute(_CREATE_EVENTS_SQL)
+        self._connection.execute(_CREATE_MEMORIES_SQL)
+        for statement in _INDEX_SQL:
+            self._connection.execute(statement)
+        self._connection.execute(_SET_META_SQL, ("schema_version", str(SCHEMA_VERSION)))
+
+    def _register_campaign(self, campaign_id: str, origin: CampaignScopeOrigin) -> None:
+        self._connection.execute(
+            _UPSERT_CAMPAIGN_SQL,
+            (campaign_id, origin.value, self._now()),
+        )
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.now(UTC).isoformat()
+
+    # -- migration ------------------------------------------------------
+
+    def _legacy_rows_to_migrate(self) -> list[sqlite3.Row] | None:
+        """Read a pre-campaign `memories` table, and back the file up first.
+
+        Returns `None` when there is nothing to migrate. Performs no write, so
+        the backup it takes is the file exactly as the operator left it.
+        """
+
+        columns = {
             _row_text(row, "name")
             for row in self._connection.execute(_TABLE_INFO_SQL).fetchall()
         }
+        if not columns or "memory_id" in columns:
+            return None
+        if "namespace" not in columns:
+            raise MemoryStoreError(  # mutation: reason
+                f"{self.path} holds an unrecognized `memories` "  # mutation: reason
+                "table; refusing to migrate a shape this build "  # mutation: reason
+                "does not know."  # mutation: reason
+            )
 
-    def _migrate_legacy_table(self) -> None:
-        """Rebuild an older table once, preserving every row and its identity.
+        backup = self.path.with_suffix(self.path.suffix + ".v1-backup")
+        if not backup.exists():
+            shutil.copy2(self.path, backup)
+        return list(
+            self._connection.execute(
+                _LEGACY_ROWS_SQL if "target_id" in columns else _LEGACY_ROWS_UNSCOPED_SQL
+            ).fetchall()
+        )
 
-        Two shapes predate this one: a table with no `target_id`, whose
-        three-column UNIQUE constraint silently merged the same fact learned
-        about two different entities, and a table whose `last_accessed_at` was
-        rewritten by every automatic recall. Adding columns would leave the old
-        constraint in force and would carry a read timestamp forward as if it
-        were a delivery, so the table is rebuilt instead.
+    def _migrate_v1(self, rows: Sequence[sqlite3.Row]) -> None:
+        """Fold pre-campaign rows into history, once, in one transaction.
+
+        The old rows are real user data with no grounding and no campaign, so
+        they keep both facts: `legacy_unverified` authorship, and a campaign
+        named after the profile that wrote them rather than whichever save
+        happens to open the file next. Assigning them to a live campaign would
+        hand one playthrough's beliefs to another.
         """
 
-        columns = self._columns()
-        if "last_delivered_at" in columns:
-            return
-
         with self._connection:
-            self._connection.execute(_ALTER_LEGACY_TABLE_SQL)
-            self._create_table()
-            self._connection.execute(
-                _MIGRATE_SCOPED_ROWS_SQL
-                if "target_id" in columns
-                else _MIGRATE_UNSCOPED_ROWS_SQL
-            )
             self._connection.execute(_DROP_LEGACY_TABLE_SQL)
+            self._create_schema()
+            for namespace in sorted({_row_text(row, "namespace") for row in rows}):
+                self._register_campaign(
+                    legacy_campaign_id(namespace),
+                    CampaignScopeOrigin.LEGACY,
+                )
+            for row in rows:
+                self._append_legacy_row(row)
 
-    def add(self, run_id: str, write: MemoryWrite) -> int:
-        now = datetime.now(UTC).isoformat()
+    def _append_legacy_row(self, row: sqlite3.Row) -> None:
+        campaign_id = legacy_campaign_id(_row_text(row, "namespace"))
+        record = MemoryRecord(
+            memory_id=self._new_memory_id(),
+            campaign_id=campaign_id,
+            kind=MemoryKind(_row_text(row, "kind")),
+            status=(
+                MemoryStatus.ACTIVE
+                if _row_int(row, "active")
+                else MemoryStatus.RETRACTED
+            ),
+            content=_row_text(row, "content"),
+            salience=_row_float(row, "salience"),
+            grounding=_row_optional_text(row, "evidence"),
+            authorship=MemoryAuthorship.LEGACY_UNVERIFIED,
+            target_id=_row_optional_text(row, "target_id") or None,
+            created_run_id=_row_text(row, "run_id"),
+            created_at=datetime.fromisoformat(_row_text(row, "created_at")),
+        )
+        self._append_event(
+            campaign_id,
+            record.memory_id,
+            MemoryLifecycleEvent.KEEP,
+            record.created_run_id,
+            record.created_at.isoformat(),
+            self._keep_payload(record),
+        )
+        self._insert_projection(record)
+
+    # -- events and projection -----------------------------------------
+
+    def _append_event(
+        self,
+        campaign_id: str,
+        memory_id: str,
+        event: MemoryLifecycleEvent,
+        run_id: str,
+        recorded_at: str,
+        payload: dict[str, Any],
+    ) -> None:
         self._connection.execute(
-            _UPSERT_SQL,
+            _APPEND_EVENT_SQL,
             (
-                self.namespace,
+                campaign_id,
+                memory_id,
+                event.value,
                 run_id,
-                write.kind.value,
-                write.content.strip(),
-                write.salience,
-                write.evidence,
-                now,
-                write.target_id or "",
+                recorded_at,
+                json.dumps(payload, sort_keys=True),
             ),
         )
-        self._connection.commit()
-        # sqlite3.lastrowid is the last INSERT on the connection, not
-        # necessarily the row updated by this upsert. After inserting another
-        # memory, updating an older one otherwise reports the intervening ID.
-        row = self._connection.execute(
-            _RESOLVE_UPSERT_SQL,
+
+    @staticmethod
+    def _keep_payload(record: MemoryRecord) -> dict[str, Any]:
+        return {
+            "kind": record.kind.value,
+            "content": record.content,
+            "salience": record.salience,
+            "target_id": record.target_id,
+            "grounding": record.grounding,
+            "authorship": record.authorship.value,
+            "status": record.status.value,
+            "supersedes_id": record.supersedes_id,
+        }
+
+    def _insert_projection(self, record: MemoryRecord) -> None:
+        self._connection.execute(
+            _INSERT_MEMORY_SQL,
             (
-                self.namespace,
-                write.kind.value,
-                write.content.strip(),
-                write.target_id or "",
+                record.memory_id,
+                record.campaign_id,
+                record.kind.value,
+                record.status.value,
+                record.content,
+                normalized_key(record.kind, record.content, record.target_id),
+                record.target_id or "",
+                record.salience,
+                record.grounding,
+                record.authorship.value,
+                record.created_run_id,
+                record.created_at.isoformat(),
+                None if record.reinforced_at is None else record.reinforced_at.isoformat(),
+                None if record.resolved_at is None else record.resolved_at.isoformat(),
+                None if record.superseded_at is None else record.superseded_at.isoformat(),
+                None
+                if record.last_delivered_at is None
+                else record.last_delivered_at.isoformat(),
+                record.reinforcement_count,
+                record.supersedes_id,
+                record.superseded_by_id,
+                record.resolution_reason,
             ),
-        ).fetchone()
-        if row is None:
-            raise RuntimeError(  # mutation: diagnostic-only
-                "Memory upsert succeeded but could not resolve its id."
+        )
+
+    @staticmethod
+    def _record(row: sqlite3.Row) -> MemoryRecord:
+        return MemoryRecord(
+            memory_id=_row_text(row, "memory_id"),
+            campaign_id=_row_text(row, "campaign_id"),
+            kind=MemoryKind(_row_text(row, "kind")),
+            status=MemoryStatus(_row_text(row, "status")),
+            content=_row_text(row, "content"),
+            salience=_row_float(row, "salience"),
+            grounding=_row_optional_text(row, "grounding"),
+            authorship=MemoryAuthorship(_row_text(row, "authorship")),
+            target_id=_row_optional_text(row, "target_id") or None,
+            created_run_id=_row_text(row, "created_run_id"),
+            created_at=datetime.fromisoformat(_row_text(row, "created_at")),
+            reinforced_at=_row_time(row, "reinforced_at"),
+            resolved_at=_row_time(row, "resolved_at"),
+            superseded_at=_row_time(row, "superseded_at"),
+            last_delivered_at=_row_time(row, "last_delivered_at"),
+            reinforcement_count=_row_int(row, "reinforcement_count"),
+            supersedes_id=_row_optional_text(row, "supersedes_id"),
+            superseded_by_id=_row_optional_text(row, "superseded_by_id"),
+            resolution_reason=_row_optional_text(row, "resolution_reason"),
+        )
+
+    # -- lifecycle ------------------------------------------------------
+
+    def keep(
+        self,
+        run_id: str,
+        *,
+        kind: MemoryKind,
+        content: str,
+        salience: float,
+        grounding: str | None,
+        target_id: str | None = None,
+    ) -> MemoryRecord:
+        """Create a record, or reinforce the one that already says this.
+
+        Exact restatement is deduplicated by a deterministic normalized key, not
+        by similarity: the storage boundary must not need a model to decide
+        whether two sentences mean the same thing.
+        """
+
+        text = content.strip()
+        existing = self._active_by_key(normalized_key(kind, text, target_id))
+        if existing is not None:
+            return self.reinforce(
+                run_id,
+                existing.memory_id,
+                grounding=grounding,
+                salience=max(existing.salience, salience),
             )
-        return _row_int(row, "id")
+
+        now = datetime.now(UTC)
+        record = MemoryRecord(
+            memory_id=self._new_memory_id(),
+            campaign_id=self.campaign_id,
+            kind=kind,
+            status=MemoryStatus.ACTIVE,
+            content=text,
+            salience=salience,
+            grounding=grounding,
+            target_id=target_id,
+            created_run_id=run_id,
+            created_at=now,
+        )
+        return self._commit_keep(record, run_id, now)
+
+    def _commit_keep(
+        self,
+        record: MemoryRecord,
+        run_id: str,
+        now: datetime,
+    ) -> MemoryRecord:
+        with self._connection:
+            self._append_event(
+                record.campaign_id,
+                record.memory_id,
+                MemoryLifecycleEvent.KEEP,
+                run_id,
+                now.isoformat(),
+                self._keep_payload(record),
+            )
+            self._insert_projection(record)
+        return record
+
+    def reinforce(
+        self,
+        run_id: str,
+        memory_id: str,
+        *,
+        grounding: str | None,
+        salience: float | None = None,
+    ) -> MemoryRecord:
+        current = self._require_open(memory_id, MemoryLifecycleEvent.REINFORCE)
+        now = datetime.now(UTC)
+        raised = current.salience if salience is None else max(current.salience, salience)
+        with self._connection:
+            self._append_event(
+                self.campaign_id,
+                memory_id,
+                MemoryLifecycleEvent.REINFORCE,
+                run_id,
+                now.isoformat(),
+                {"salience": raised, "grounding": grounding},
+            )
+            self._connection.execute(
+                _UPDATE_REINFORCE_SQL,
+                (raised, grounding, now.isoformat(), self.campaign_id, memory_id),
+            )
+        return self._require_record(memory_id)
+
+    def resolve(
+        self,
+        run_id: str,
+        memory_id: str,
+        *,
+        reason: str,
+        grounding: str | None,
+    ) -> MemoryRecord:
+        self._require_open(memory_id, MemoryLifecycleEvent.RESOLVE)
+        now = datetime.now(UTC)
+        with self._connection:
+            self._append_event(
+                self.campaign_id,
+                memory_id,
+                MemoryLifecycleEvent.RESOLVE,
+                run_id,
+                now.isoformat(),
+                {"reason": reason, "grounding": grounding},
+            )
+            self._connection.execute(
+                _UPDATE_RESOLVE_SQL,
+                (
+                    MemoryStatus.RESOLVED.value,
+                    now.isoformat(),
+                    reason,
+                    grounding,
+                    self.campaign_id,
+                    memory_id,
+                ),
+            )
+        return self._require_record(memory_id)
+
+    def supersede(
+        self,
+        run_id: str,
+        memory_id: str,
+        *,
+        kind: MemoryKind,
+        content: str,
+        salience: float,
+        grounding: str | None,
+        target_id: str | None = None,
+    ) -> MemoryRecord:
+        """Create the replacement and close the original in one transaction.
+
+        Two calls would leave a window where both are active, or where the old
+        one is closed and nothing replaced it. Neither is a state this store
+        admits.
+        """
+
+        self._require_open(memory_id, MemoryLifecycleEvent.SUPERSEDE)
+        now = datetime.now(UTC)
+        replacement = MemoryRecord(
+            memory_id=self._new_memory_id(),
+            campaign_id=self.campaign_id,
+            kind=kind,
+            status=MemoryStatus.ACTIVE,
+            content=content.strip(),
+            salience=salience,
+            grounding=grounding,
+            target_id=target_id,
+            created_run_id=run_id,
+            created_at=now,
+            supersedes_id=memory_id,
+        )
+        with self._connection:
+            self._append_event(
+                self.campaign_id,
+                memory_id,
+                MemoryLifecycleEvent.SUPERSEDE,
+                run_id,
+                now.isoformat(),
+                {"superseded_by_id": replacement.memory_id},
+            )
+            self._append_event(
+                self.campaign_id,
+                replacement.memory_id,
+                MemoryLifecycleEvent.KEEP,
+                run_id,
+                now.isoformat(),
+                self._keep_payload(replacement),
+            )
+            self._connection.execute(
+                _UPDATE_SUPERSEDE_SQL,
+                (
+                    MemoryStatus.SUPERSEDED.value,
+                    now.isoformat(),
+                    replacement.memory_id,
+                    self.campaign_id,
+                    memory_id,
+                ),
+            )
+            self._insert_projection(replacement)
+        return self._require_record(replacement.memory_id)
+
+    def retract(self, run_id: str, memory_id: str, *, reason: str) -> MemoryRecord:
+        self._require_open(memory_id, MemoryLifecycleEvent.RETRACT)
+        now = datetime.now(UTC)
+        with self._connection:
+            self._append_event(
+                self.campaign_id,
+                memory_id,
+                MemoryLifecycleEvent.RETRACT,
+                run_id,
+                now.isoformat(),
+                {"reason": reason},
+            )
+            self._connection.execute(
+                _UPDATE_RETRACT_SQL,
+                (
+                    MemoryStatus.RETRACTED.value,
+                    now.isoformat(),
+                    reason,
+                    self.campaign_id,
+                    memory_id,
+                ),
+            )
+        return self._require_record(memory_id)
+
+    def _require_open(
+        self,
+        memory_id: str,
+        event: MemoryLifecycleEvent,
+    ) -> MemoryRecord:
+        record = self.get(memory_id)
+        if record is None:
+            raise MemoryTransitionError(  # mutation: reason
+                f"No memory {memory_id!r} exists in "  # mutation: reason
+                f"campaign {self.campaign_id!r}."  # mutation: reason
+            )
+        if record.status in _CLOSED_STATUSES:
+            raise MemoryTransitionError(  # mutation: reason
+                f"Memory {memory_id!r} is {record.status.value} and "  # mutation: reason
+                f"cannot be {event.value}d."  # mutation: reason
+            )
+        return record
+
+    def _require_record(self, memory_id: str) -> MemoryRecord:
+        record = self.get(memory_id)
+        if record is None:
+            raise MemoryTransitionError(  # mutation: reason
+                f"Memory {memory_id!r} vanished mid-transition."  # mutation: reason
+            )
+        return record
+
+    # -- reads ----------------------------------------------------------
+
+    def get(self, memory_id: str) -> MemoryRecord | None:
+        row = self._connection.execute(
+            _SELECT_MEMORY_SQL,
+            (self.campaign_id, memory_id),
+        ).fetchone()
+        return None if row is None else self._record(row)
+
+    def exists(self, memory_id: str) -> bool:
+        """Whether this campaign owns an active record with this exact ID."""
+
+        record = self.get(memory_id)
+        return record is not None and record.status is MemoryStatus.ACTIVE
+
+    def _active_by_key(self, key: str) -> MemoryRecord | None:
+        row = self._connection.execute(
+            _SELECT_ACTIVE_BY_KEY_SQL,
+            (self.campaign_id, key),
+        ).fetchone()
+        return None if row is None else self._record(row)
+
+    def all_records(self) -> list[MemoryRecord]:
+        return [
+            self._record(row)
+            for row in self._connection.execute(
+                _SELECT_ALL_SQL,
+                (self.campaign_id,),
+            ).fetchall()
+        ]
 
     def recall(
         self,
@@ -278,7 +824,7 @@ class MemoryStore:
         # General recall contains only unbound knowledge. Entity-bound facts
         # must never leak onto a different same-named or later-session entity;
         # they reappear only through an exact current target ID.
-        parameters: list[object] = [self.namespace, minimum_salience]
+        parameters: list[object] = [self.campaign_id, minimum_salience]
         where = _GENERAL_WHERE_SQL
         if query:
             where += _QUERY_FILTER_SQL
@@ -291,76 +837,46 @@ class MemoryStore:
 
         entity_rows: list[sqlite3.Row] = []
         exact_target_ids = sorted({target_id for target_id in target_ids if target_id})
-        if entity_limit:
-            if exact_target_ids:
-                candidates: dict[int, sqlite3.Row] = {}
-                for chunk in _partition_target_ids(
-                    exact_target_ids,
-                    self._TARGET_QUERY_CHUNK_SIZE,
-                ):
-                    placeholders = ",".join("?" for _ in chunk)
-                    entity_parameters: list[object] = [self.namespace, *chunk]
-                    entity_where = _ENTITY_WHERE_SQL.format(
-                        placeholders=placeholders
-                    )
-                    if query:
-                        entity_where += _QUERY_FILTER_SQL
-                        entity_parameters.append(f"%{query}%")
-                    entity_parameters.append(entity_limit)
-                    rows = self._connection.execute(
-                        _ENTITY_RECALL_SQL.format(where=entity_where),
-                        entity_parameters,
-                    ).fetchall()
-                    candidates.update(
-                        (_row_int(row, "id"), row) for row in rows
-                    )
-                entity_rows = sorted(
-                    candidates.values(),
-                    key=lambda row: (
-                        _row_float(row, "salience"),
-                        _row_text(row, "created_at"),
-                        _row_int(row, "id"),
-                    ),
-                    reverse=True,
-                )[:entity_limit]
+        # Guarded on the identities, not the budget: an empty `IN ()` is a
+        # syntax error, while a zero budget is already enforced by `LIMIT`.
+        if exact_target_ids:
+            candidates: dict[str, sqlite3.Row] = {}
+            for chunk in _partition_target_ids(
+                exact_target_ids,
+                self._TARGET_QUERY_CHUNK_SIZE,
+            ):
+                placeholders = ",".join("?" for _ in chunk)
+                entity_parameters: list[object] = [self.campaign_id, *chunk]
+                entity_where = _ENTITY_WHERE_SQL.format(placeholders=placeholders)
+                if query:
+                    entity_where += _QUERY_FILTER_SQL
+                    entity_parameters.append(f"%{query}%")
+                entity_parameters.append(entity_limit)
+                rows = self._connection.execute(
+                    _ENTITY_RECALL_SQL.format(where=entity_where),
+                    entity_parameters,
+                ).fetchall()
+                candidates.update((_row_text(row, "memory_id"), row) for row in rows)
+            entity_rows = sorted(
+                candidates.values(),
+                key=lambda row: (
+                    _row_float(row, "salience"),
+                    _row_text(row, "created_at"),
+                    _row_text(row, "memory_id"),
+                ),
+                reverse=True,
+            )[:entity_limit]
 
         # Exact target matches lead so downstream bounded consumers cannot
         # accidentally slice them away in favor of general salience.
-        rows = [*entity_rows, *general_rows]
+        #
         # No write here, at any rate. `_with_memories` decorates every pumped
         # observation - around ten a second in a live run - and this used to
         # open a write transaction each time, refreshing the very timestamp the
         # ordering above then read back. Reading is not reinforcement.
-        return [self._record(row) for row in rows]
+        return [self._record(row) for row in (*entity_rows, *general_rows)]
 
-    @staticmethod
-    def _record(row: sqlite3.Row) -> MemoryRecord:
-        delivered = _row_optional_text(row, "last_delivered_at")
-        return MemoryRecord(
-            id=_row_int(row, "id"),
-            namespace=_row_text(row, "namespace"),
-            run_id=_row_text(row, "run_id"),
-            kind=MemoryKind(_row_text(row, "kind")),
-            content=_row_text(row, "content"),
-            salience=_row_float(row, "salience"),
-            evidence=_row_optional_text(row, "evidence"),
-            target_id=_row_optional_text(row, "target_id") or None,
-            created_at=datetime.fromisoformat(_row_text(row, "created_at")),
-            last_delivered_at=(
-                None if delivered is None else datetime.fromisoformat(delivered)
-            ),
-        )
-
-    def exists(self, memory_id: int) -> bool:
-        """Whether this campaign owns an active record with this exact ID."""
-
-        row = self._connection.execute(
-            _EXISTS_SQL,
-            (self.namespace, memory_id),
-        ).fetchone()
-        return row is not None
-
-    def record_delivery(self, memory_ids: Sequence[int]) -> None:
+    def record_delivery(self, run_id: str, memory_ids: Sequence[str]) -> None:
         """Note that these records reached an assembled planner payload.
 
         A diagnostic, and only that: no ordering reads `last_delivered_at`, so
@@ -370,14 +886,152 @@ class MemoryStore:
         ids = list(memory_ids)
         if not ids:
             return
-        now = datetime.now(UTC).isoformat()
-        for chunk in _partition_target_ids(ids, self._TARGET_QUERY_CHUNK_SIZE):
-            placeholders = ",".join("?" for _ in chunk)
-            self._connection.execute(
-                _RECORD_DELIVERY_SQL.format(placeholders=placeholders),
-                [now, self.namespace, *chunk],
+        now = self._now()
+        with self._connection:
+            for memory_id in ids:
+                self._append_event(
+                    self.campaign_id,
+                    memory_id,
+                    MemoryLifecycleEvent.DELIVER,
+                    run_id,
+                    now,
+                    {},
+                )
+            for chunk in _partition_target_ids(ids, self._TARGET_QUERY_CHUNK_SIZE):
+                placeholders = ",".join("?" for _ in chunk)
+                self._connection.execute(
+                    _RECORD_DELIVERY_SQL.format(placeholders=placeholders),
+                    [now, self.campaign_id, *chunk],
+                )
+
+    def history(self, memory_id: str) -> list[MemoryHistoryEntry]:
+        return [
+            self._history_entry(row)
+            for row in self._connection.execute(
+                _SELECT_HISTORY_SQL,
+                (self.campaign_id, memory_id),
+            ).fetchall()
+        ]
+
+    def event_count(self) -> int:
+        row = self._connection.execute(
+            _COUNT_EVENTS_SQL,
+            (self.campaign_id,),
+        ).fetchone()
+        return _row_int(row, "total")
+
+
+    @staticmethod
+    def _history_entry(row: sqlite3.Row) -> MemoryHistoryEntry:
+        payload = json.loads(_row_text(row, "payload"))
+        return MemoryHistoryEntry(
+            event_id=_row_int(row, "event_id"),
+            campaign_id=_row_text(row, "campaign_id"),
+            memory_id=_row_text(row, "memory_id"),
+            event=MemoryLifecycleEvent(_row_text(row, "event")),
+            run_id=_row_text(row, "run_id"),
+            recorded_at=datetime.fromisoformat(_row_text(row, "recorded_at")),
+            payload=payload,
+        )
+
+    # -- projection rebuild ---------------------------------------------
+
+    def rebuild_projection(self) -> int:
+        """Discard the projection and replay this campaign's history over it.
+
+        The only supported repair. It is also the proof that the projection is
+        derived rather than authoritative: if replay does not reproduce the
+        current rows exactly, something wrote state that history never saw.
+        """
+
+        events = [
+            self._history_entry(row)
+            for row in self._connection.execute(
+                _SELECT_CAMPAIGN_EVENTS_SQL,
+                (self.campaign_id,),
+            ).fetchall()
+        ]
+        with self._connection:
+            self._connection.execute(_DELETE_PROJECTION_SQL, (self.campaign_id,))
+            for entry in events:
+                self._replay(entry)
+        return len(events)
+
+    def _replay(self, entry: MemoryHistoryEntry) -> None:
+        payload = entry.payload
+        if entry.event is MemoryLifecycleEvent.KEEP:
+            self._insert_projection(
+                MemoryRecord(
+                    memory_id=entry.memory_id,
+                    campaign_id=entry.campaign_id,
+                    kind=MemoryKind(payload["kind"]),
+                    status=MemoryStatus(payload["status"]),
+                    content=payload["content"],
+                    salience=payload["salience"],
+                    grounding=payload["grounding"],
+                    authorship=MemoryAuthorship(payload["authorship"]),
+                    target_id=payload["target_id"],
+                    created_run_id=entry.run_id,
+                    created_at=entry.recorded_at,
+                    supersedes_id=payload["supersedes_id"],
+                )
             )
-        self._connection.commit()
+            return
+        if entry.event is MemoryLifecycleEvent.REINFORCE:
+            self._connection.execute(
+                _UPDATE_REINFORCE_SQL,
+                (
+                    payload["salience"],
+                    payload["grounding"],
+                    entry.recorded_at.isoformat(),
+                    entry.campaign_id,
+                    entry.memory_id,
+                ),
+            )
+            return
+        if entry.event is MemoryLifecycleEvent.RESOLVE:
+            self._connection.execute(
+                _UPDATE_RESOLVE_SQL,
+                (
+                    MemoryStatus.RESOLVED.value,
+                    entry.recorded_at.isoformat(),
+                    payload["reason"],
+                    payload["grounding"],
+                    entry.campaign_id,
+                    entry.memory_id,
+                ),
+            )
+            return
+        if entry.event is MemoryLifecycleEvent.SUPERSEDE:
+            self._connection.execute(
+                _UPDATE_SUPERSEDE_SQL,
+                (
+                    MemoryStatus.SUPERSEDED.value,
+                    entry.recorded_at.isoformat(),
+                    payload["superseded_by_id"],
+                    entry.campaign_id,
+                    entry.memory_id,
+                ),
+            )
+            return
+        if entry.event is MemoryLifecycleEvent.RETRACT:
+            self._connection.execute(
+                _UPDATE_RETRACT_SQL,
+                (
+                    MemoryStatus.RETRACTED.value,
+                    entry.recorded_at.isoformat(),
+                    payload["reason"],
+                    entry.campaign_id,
+                    entry.memory_id,
+                ),
+            )
+            return
+        self._connection.execute(
+            _RECORD_DELIVERY_SQL.format(placeholders="?"),
+            [entry.recorded_at.isoformat(), entry.campaign_id, entry.memory_id],
+        )
+
+    # -- lifecycle of the handle ----------------------------------------
 
     def close(self) -> None:
         self._connection.close()
@@ -387,3 +1041,62 @@ class MemoryStore:
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
         self.close()
+
+
+# -- read-only operator inspection --------------------------------------
+
+
+def read_only_campaigns(path: Path) -> list[tuple[str, str, str]]:
+    """Every campaign in a database, without opening or creating one.
+
+    `MemoryStore.__init__` registers its campaign, which is right for a run and
+    wrong for an audit: looking must not invent a campaign that was never
+    played.
+    """
+
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        return [
+            (
+                _row_text(row, "campaign_id"),
+                _row_text(row, "origin"),
+                _row_text(row, "created_at"),
+            )
+            for row in connection.execute(_SELECT_CAMPAIGNS_SQL).fetchall()
+        ]
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        connection.close()
+
+
+def read_only_schema_version(path: Path) -> int | None:
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    connection.row_factory = sqlite3.Row
+    try:
+        row = connection.execute(_GET_META_SQL, ("schema_version",)).fetchone()
+    except sqlite3.OperationalError:
+        return None
+    finally:
+        connection.close()
+    return None if row is None else int(_row_text(row, "value"))
+
+
+class ReadOnlyMemoryStore(MemoryStore):
+    """A store handle that cannot write, for operator inspection.
+
+    It reuses every read path rather than reimplementing the queries, because a
+    second set of queries is a second answer waiting to disagree.
+    """
+
+    def __init__(self, path: Path, campaign_id: str) -> None:
+        self.path = path
+        self.campaign_id = campaign_id
+        self._new_memory_id = new_memory_id
+        self._connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        self._connection.row_factory = sqlite3.Row
+
+
+def read_only_store(path: Path, campaign_id: str) -> ReadOnlyMemoryStore:
+    return ReadOnlyMemoryStore(path, campaign_id)
