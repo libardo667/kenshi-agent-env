@@ -5,9 +5,10 @@ from ..models import (
     ConditionKind,
     ConditionOperator,
     ConditionPath,
+    CurrentObservationEvidence,
     IdempotencyPolicy,
+    KeepMemoryOperation,
     MemoryKind,
-    MemoryWrite,
     Observation,
     PauseAction,
     PlanEnvelope,
@@ -84,16 +85,16 @@ class HeuristicPlanner(Planner):
                 expected_observation=(
                     "The hostile should disappear and location should become The Hub."
                 ),
-                memory_writes=[
-                    MemoryWrite(
+                continuity_operations=[
+                    KeepMemoryOperation(
                         kind=MemoryKind.EPISODE,
                         content=(
                             f"Encountered {hostile.name} near "
                             f"{telemetry.game.location_name or 'an unknown place'}."
                         ),
                         salience=0.55,
-                        evidence="Visible hostile in telemetry.",
                         target_id=hostile.id,
+                        references=[CurrentObservationEvidence()],
                     )
                 ],
             )

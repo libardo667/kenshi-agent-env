@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.config import PlanningConfig
+from kenshi_agent.continuity import ContinuityLedger
 from kenshi_agent.evals import evaluate_log
 from kenshi_agent.memory import MemoryStore, _partition_target_ids
 from kenshi_agent.models import (
@@ -104,7 +105,7 @@ def test_recall_round_trips_owned_fields_without_crossing_namespaces(
     assert record.evidence == "telemetry sequence 4"
     assert record.target_id is None
     assert record.created_at.utcoffset() == timedelta(0)
-    assert record.last_accessed_at.utcoffset() == timedelta(0)
+    assert record.last_delivered_at is None
 
 
 def test_query_filters_general_and_exact_entity_recall(tmp_path: Path) -> None:
@@ -133,7 +134,7 @@ def test_query_filters_general_and_exact_entity_recall(tmp_path: Path) -> None:
     ]
 
 
-def test_entity_recall_orders_globally_by_salience_then_recent_access(
+def test_entity_recall_orders_globally_by_salience_then_creation(
     tmp_path: Path,
 ) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
@@ -173,6 +174,9 @@ def test_entity_recall_orders_globally_by_salience_then_recent_access(
                 target_id="entity-newer",
             ),
         )
+        # Recalling one of the tied records used to promote it above the other,
+        # because the ordering read the timestamp that recall itself had just
+        # rewritten. Reading is not reinforcement, so this must change nothing.
         store.recall(
             limit=0,
             target_ids={"entity-older"},
@@ -192,23 +196,27 @@ def test_entity_recall_orders_globally_by_salience_then_recent_access(
 
     assert [record.target_id for record in records] == [
         "entity-high",
-        "entity-older",
         "entity-newer",
+        "entity-older",
     ]
 
 
-def test_recall_persists_a_later_utc_access_time(tmp_path: Path) -> None:
+def test_delivery_is_recorded_in_utc_and_only_by_delivery(tmp_path: Path) -> None:
     with MemoryStore(tmp_path / "memory.sqlite3", "test") as store:
-        store.add(
+        memory_id = store.add(
             "run-a",
             MemoryWrite(kind=MemoryKind.FACT, content="Remember this."),
         )
 
         first = store.recall(limit=1)[0]
         second = store.recall(limit=1)[0]
+        store.record_delivery([memory_id])
+        delivered = store.recall(limit=1)[0]
 
-    assert second.last_accessed_at > first.last_accessed_at
-    assert second.last_accessed_at.utcoffset() == timedelta(0)
+    assert first.last_delivered_at is None
+    assert second.last_delivered_at is None
+    assert delivered.last_delivered_at is not None
+    assert delivered.last_delivered_at.utcoffset() == timedelta(0)
 
 
 def test_target_partitions_conserve_every_identity_once() -> None:
@@ -281,7 +289,7 @@ def test_current_target_memory_survives_general_recall_overflow(
         runner.entity_memory_limit = 2
         runner.minimum_memory_salience = 0.5
         runner.action_outcome_limit = 0
-        runner._action_outcomes = []
+        runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
         runner.advisor = None
         runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
@@ -328,7 +336,7 @@ def test_target_memory_never_attaches_by_name_or_stale_identity(
         runner.entity_memory_limit = 2
         runner.minimum_memory_salience = 0.0
         runner.action_outcome_limit = 0
-        runner._action_outcomes = []
+        runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
         runner.advisor = None
         runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
@@ -482,7 +490,7 @@ def test_entity_recall_reduces_repeated_approaches_in_controlled_policy(
         runner.entity_memory_limit = entity_limit
         runner.minimum_memory_salience = 0.0
         runner.action_outcome_limit = 0
-        runner._action_outcomes = []
+        runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
         runner.advisor = None
         runner._affordance_requests = []
         runner.planning_config = PlanningConfig()

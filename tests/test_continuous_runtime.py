@@ -16,6 +16,7 @@ from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
 from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.memory import MemoryStore
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -436,6 +437,7 @@ def runtime_for(
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     max_native_assisted_actions_per_plan: int = 0,
     max_actions_per_minute: int = 500,
+    memory: MemoryStore | None = None,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry(
         {
@@ -477,8 +479,8 @@ def runtime_for(
         guard=ActionGuard(safety, macros, control_mode=control_mode),
         reflexes=ReflexEngine(),
         logger=logger,
-        memory=None,
-        memory_limit=0,
+        memory=memory,
+        memory_limit=0 if memory is None else 12,
         minimum_memory_salience=0.0,
         planning_config=PlanningConfig(
             mode=PlanningMode.CONTINUOUS,
@@ -3003,21 +3005,43 @@ def test_a_malformed_planner_response_is_retried_not_fatal(tmp_path: Path) -> No
 def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> None:  # type: ignore[no-untyped-def]
     """Continuity was structurally impossible, not merely neglected.
 
-    `memory_writes` existed only on `PlannerDecision`, which single-step runs
-    use, so a continuous run recalled the memory store into every observation
-    and could never put anything into it. An intention died with the plan that
-    held it, and the next plan re-derived a goal from whatever was on screen -
-    which in a bar is the barman, every time.
+    Continuity operations existed only on `PlannerDecision`, which single-step
+    runs use, so a continuous run recalled the memory store into every
+    observation and could never put anything into it. An intention died with
+    the plan that held it, and the next plan re-derived a goal from whatever
+    was on screen - which in a bar is the barman, every time.
+
+    The plan's own operations are durable. Its objective is not: it used to be
+    written as an automatic "Set out to…" episode, which filed a claim about
+    unfinished work under the kind reserved for things that happened. Purpose
+    is working history now, and it is recorded once the plan has ended.
     """
+    from datetime import UTC, datetime
+
+    from kenshi_agent.continuity import ContinuityAuthority, ContinuityLedger
     from kenshi_agent.memory import MemoryStore
-    from kenshi_agent.models import MemoryKind, MemoryWrite
+    from kenshi_agent.models import (
+        CurrentObservationEvidence,
+        KeepMemoryOperation,
+        MemoryKind,
+        PlanDisposition,
+    )
     from kenshi_agent.runtime import AgentRuntime
 
     store = MemoryStore(tmp_path / "memory.sqlite3", namespace="test")
+    ledger = ContinuityLedger(run_id="continuity", action_outcome_limit=4)
     runner = object.__new__(AgentRuntime)
     runner.memory = store
     runner.run_id = "continuity"
     runner.logger = SimpleNamespace(write=lambda *a, **k: None)
+    runner._ledger = ledger
+    runner._continuity = ContinuityAuthority(
+        run_id="continuity",
+        store=store,
+        ledger=ledger,
+        logger=runner.logger,
+        advisor_brief_ids=set,
+    )
 
     basis = Observation(
         run_id="continuity",
@@ -3029,23 +3053,42 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     plan = two_step_plan(basis).model_copy(
         update={
             "objective": "Leave the bar and look for paying work in town.",
-            "memory_writes": [
-                MemoryWrite(
+            "continuity_operations": [
+                KeepMemoryOperation(
                     kind=MemoryKind.FACT,
                     content="The barman offers no work.",
                     salience=0.8,
+                    references=[CurrentObservationEvidence()],
                 )
             ],
         }
     )
-    runner._remember_plan(plan)
+    runner._apply_plan_continuity(plan, basis)
 
-    # Recalled at the live profile's floor, so both actually reach a planner.
+    # Recalled at the live profile's floor, so it actually reaches a planner.
     recalled = [record.content for record in store.recall(limit=16, minimum_salience=0.2)]
-    assert "The barman offers no work." in recalled
-    assert any("Leave the bar and look for paying work" in item for item in recalled), (
-        "the objective must be recorded without the planner having to think to write it"
+    assert recalled == ["The barman offers no work."]
+    assert not any(item.startswith("Set out to") for item in recalled)
+
+    started = datetime.now(UTC)
+    runner._record_plan_outcome(
+        plan,
+        disposition=PlanDisposition.FAILED,
+        reason="The exit was never reached.",
+        completed_step_ids=["first"],
+        actions_completed=1,
+        observation=basis,
+        started_at=started,
     )
+    outcome = ledger.recent_plan_outcomes[-1]
+
+    assert outcome.objective == "Leave the bar and look for paying work in town."
+    assert outcome.reason == "The exit was never reached."
+    assert outcome.disposition is PlanDisposition.FAILED
+    # Working history, not durable belief: nothing new reached the store.
+    assert [record.content for record in store.recall(limit=16)] == [
+        "The barman offers no work."
+    ]
 
 
 def test_a_handback_sets_a_stopped_world_running_again() -> None:
@@ -3121,3 +3164,254 @@ def test_a_handback_does_not_disturb_a_world_already_running() -> None:
         telemetry=TelemetrySnapshot(sequence=1, game=GameState(loaded=True, paused=False)),
     )
     assert asyncio.run(runtime._restore_running_world(None, already)) is already
+
+
+def _keep_a_route_lesson() -> object:
+    """One grounded keep, cited against the observation the patch was written on."""
+
+    from kenshi_agent.models import (
+        CurrentObservationEvidence,
+        KeepMemoryOperation,
+        MemoryKind,
+    )
+
+    return KeepMemoryOperation(
+        kind=MemoryKind.FACT,
+        content="The speed change had to be revised mid-option.",
+        salience=0.8,
+        references=[CurrentObservationEvidence()],
+    )
+
+
+class _PatchMemoryEnvironment(RevisionEnvironment):
+    def __init__(self, *, clock: FakeClock) -> None:
+        super().__init__(clock=clock)
+        self.movement_started = asyncio.Event()
+        self.release_movement = asyncio.Event()
+
+    async def observe_without_capture(self) -> Observation:
+        self.sequence += 1
+        return self.observation()
+
+    async def step(self, action: Action) -> Transition:
+        if not isinstance(action, SkillAction):
+            return await super().step(action)
+        self.actions.append(action)
+        self.movement_started.set()
+        await self.release_movement.wait()
+        self.step_index += 1
+        self.sequence += 1
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                control_mode=ControlMode.INTERFACE_ONLY,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                primitive_actions=2,
+                message="fake movement completed and remained paused",
+            ),
+            observation=self.observation(),
+        )
+
+
+def _future_speed_patch(current: Observation, step_id: str) -> PlanPatch:
+    assert current.active_plan is not None
+    return PlanPatch(
+        schema_version="1.0",
+        plan_id=current.active_plan.plan_id,
+        based_on_plan_version=current.active_plan.plan_version,
+        based_on_revision=current.world_revision,
+        replace_future_steps=[
+            PlanStep(
+                step_id=step_id,
+                action=SetSpeedAction(speed=3),
+                preconditions=[condition("telemetry.game.paused", True, "game.pause")],
+                success_conditions=[
+                    condition("telemetry.game.speed_multiplier", 3.0, "game.speed")
+                ],
+                failure_conditions=[],
+                timeout_seconds=1.0,
+                retry_budget=0,
+                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+            )
+        ],
+        rationale="The future speed choice can be updated without restarting movement.",
+        continuity_operations=[_keep_a_route_lesson()],  # type: ignore[list-item]
+    )
+
+
+def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) -> None:
+    """A patch's continuity was in the schema and was committed nowhere."""
+
+    class PatchingPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.advisory_returned = asyncio.Event()
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return patchable_movement_plan(current)
+            self.advisory_returned.set()
+            return _future_speed_patch(current, "patched-speed")
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = _PatchMemoryEnvironment(clock=clock)
+        planner = PatchingPlanner()
+        store = MemoryStore(tmp_path / "memory.sqlite3", namespace="patched")
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            memory=store,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
+            for _ in range(5):
+                await asyncio.sleep(0)
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            environment.release_movement.set()
+            await asyncio.wait_for(run, timeout=1.0)
+            kept = [record.content for record in store.recall(limit=8)]
+        finally:
+            store.close()
+            logger.close()
+
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "plan_patched" for event in events) == 1
+        assert kept == ["The speed change had to be revised mid-option."]
+        receipts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "continuity_receipt"
+        ]
+        assert [receipt["origin"] for receipt in receipts] == ["patch"]
+        assert receipts[0]["status"] == "accepted"
+
+    asyncio.run(scenario())
+
+
+def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
+    """The patch that never took effect must leave no trace in memory."""
+
+    class StalePatchPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.advisory_returned = asyncio.Event()
+            self.advisory_started = asyncio.Event()
+            self.release_advisory = asyncio.Event()
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return patchable_movement_plan(current)
+            self.advisory_started.set()
+            await self.release_advisory.wait()
+            self.advisory_returned.set()
+            return _future_speed_patch(current, "stale-speed")
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = _PatchMemoryEnvironment(clock=plan_clock)
+        planner = StalePatchPlanner()
+        store = MemoryStore(tmp_path / "memory.sqlite3", namespace="stale")
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            memory=store,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            await asyncio.wait_for(planner.advisory_started.wait(), timeout=1.0)
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            planner.release_advisory.set()
+            await asyncio.wait_for(planner.advisory_returned.wait(), timeout=1.0)
+            await asyncio.sleep(0)
+            environment.release_movement.set()
+            await asyncio.wait_for(run, timeout=1.0)
+            kept = store.recall(limit=8)
+        finally:
+            store.close()
+            logger.close()
+
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 1
+        assert sum(event["event_type"] == "plan_patched" for event in events) == 0
+        assert kept == []
+        assert not any(
+            event["event_type"] == "continuity_receipt" for event in events
+        )
+
+    asyncio.run(scenario())
+
+
+def test_a_finished_plan_hands_its_purpose_to_the_next_planner(tmp_path: Path) -> None:
+    """The next plan must not have to reconstruct purpose from "Execute step X"."""
+
+    seen: list[list[dict[str, object]]] = []
+
+    class TwoPlanPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            seen.append(
+                [
+                    outcome.model_dump(mode="json")
+                    for outcome in current.recent_plan_outcomes
+                ]
+            )
+            if self.calls == 1:
+                return two_step_plan(current).model_copy(
+                    update={"objective": "Leave the bar and look for paying work."}
+                )
+            return PlannerDecision(
+                intent="Stop after one plan.",
+                rationale="One plan is enough for this scenario.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = TwoPlanPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            await runtime.run(max_steps=4)
+        finally:
+            logger.close()
+
+        assert seen[0] == []
+        assert seen[1], "the second planner call saw no plan outcome at all"
+        first = seen[1][0]
+        assert first["objective"] == "Leave the bar and look for paying work."
+        assert first["plan_outcome_id"] == "po-1"
+        assert first["disposition"] in {"completed", "failed", "terminated"}
+        assert first["reason"]
+
+        events = read_events(tmp_path / "events.jsonl")
+        outcomes = [
+            event["payload"] for event in events if event["event_type"] == "plan_outcome"
+        ]
+        assert len(outcomes) == 1
+        assert evaluate_log(tmp_path / "events.jsonl").plan_outcomes == 1
+
+    asyncio.run(scenario())

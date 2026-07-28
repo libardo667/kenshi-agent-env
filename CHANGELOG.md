@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Separated continuity into three authorities that cannot blur. Action and plan
+  outcomes are runtime-owned working history with stable `ao-`/`po-` IDs and
+  full plan/step/command provenance; a plan outcome carries the objective it
+  set out to do and why it ended. Durable memory is reached only through
+  `ContinuityAuthority`: facts and episodes must cite resolvable evidence IDs,
+  the stored grounding is rendered by the runtime rather than authored, a
+  `target_id` must be in the current observation, and every operation returns an
+  accepted/rejected/no-op receipt that fails independently. Plans commit after
+  validation, single-step decisions after their receipt, and patches only when
+  the exact patch is applied — `PlanPatch` continuity was previously dead
+  schema. Renamed `memory_writes` to `continuity_operations` with a `keep`
+  discriminator. Removed the automatic "Set out to…" durable episode, which was
+  a claim about unfinished work filed as an event. Recall no longer writes:
+  ordering uses declared salience and creation time, and `last_delivered_at`
+  (nullable, migrated as `NULL` from the old `last_accessed_at`) is recorded
+  only where a planner payload is actually assembled.
 - Added bounded continuous planning: typed plans and future-only patches,
   causal revisions, valued state deltas, option lifecycle, persistent plan
   memory, an independent safety supervisor, and final input-lease

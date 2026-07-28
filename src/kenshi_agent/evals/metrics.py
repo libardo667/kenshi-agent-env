@@ -25,6 +25,10 @@ class _MetricValues(TypedDict):
     observations: int
     stale_observations: int
     memory_writes: int
+    continuity_operations_accepted: int
+    continuity_operations_rejected: int
+    continuity_operations_no_op: int
+    plan_outcomes: int
     plans_proposed: int
     plans_accepted: int
     plans_rejected: int
@@ -105,6 +109,10 @@ class LogMetrics:
     observations: int = 0
     stale_observations: int = 0
     memory_writes: int = 0
+    continuity_operations_accepted: int = 0
+    continuity_operations_rejected: int = 0
+    continuity_operations_no_op: int = 0
+    plan_outcomes: int = 0
     plans_proposed: int = 0
     plans_accepted: int = 0
     plans_rejected: int = 0
@@ -206,6 +214,10 @@ def evaluate_log(path: Path) -> LogMetrics:
         "observations": 0,
         "stale_observations": 0,
         "memory_writes": 0,
+        "continuity_operations_accepted": 0,
+        "continuity_operations_rejected": 0,
+        "continuity_operations_no_op": 0,
+        "plan_outcomes": 0,
         "plans_proposed": 0,
         "plans_accepted": 0,
         "plans_rejected": 0,
@@ -326,8 +338,19 @@ def evaluate_log(path: Path) -> LogMetrics:
                         if isinstance(acknowledgements, list):
                             for acknowledgement in acknowledgements:
                                 retain_native_acknowledgement(acknowledgement)
-            elif event_type == "memory_written":
-                values["memory_writes"] += 1
+            elif event_type == "continuity_receipt":
+                status = payload.get("status")
+                if status == "accepted":
+                    values["continuity_operations_accepted"] += 1
+                    # An accepted keep is the only thing that reaches the store,
+                    # so this stays the count of durable writes.
+                    values["memory_writes"] += 1
+                elif status == "rejected":
+                    values["continuity_operations_rejected"] += 1
+                elif status == "no_op":
+                    values["continuity_operations_no_op"] += 1
+            elif event_type == "plan_outcome":
+                values["plan_outcomes"] += 1
             elif event_type == "plan_proposed":
                 values["plans_proposed"] += 1
             elif event_type == "plan_accepted":

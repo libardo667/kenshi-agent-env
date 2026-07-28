@@ -2,7 +2,48 @@
   "$defs": {
     "ActionOutcome": {
       "additionalProperties": false,
+      "description": "One attempted action and what the world did about it.\n\n`outcome_id` is runtime-owned. A planner may cite it as evidence for a\nlater memory, which is only sound because the planner cannot mint one: an\noutcome exists after its action has already been assessed, so a plan\nphysically cannot cite the success of its own future steps.",
       "properties": {
+        "outcome_id": {
+          "pattern": "^ao-[1-9][0-9]{0,8}$",
+          "title": "Outcome Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "step_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "command_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command Id"
+        },
         "step_index": {
           "minimum": 0,
           "title": "Step Index",
@@ -125,6 +166,33 @@
           "title": "Feedback",
           "type": "string"
         },
+        "started_after_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "completed_at_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        },
         "visual_change_fraction": {
           "anyOf": [
             {
@@ -184,6 +252,10 @@
         }
       },
       "required": [
+        "outcome_id",
+        "run_id",
+        "plan_id",
+        "step_id",
         "step_index",
         "intent",
         "action",
@@ -1699,10 +1771,18 @@
           "title": "Created At",
           "type": "string"
         },
-        "last_accessed_at": {
-          "format": "date-time",
-          "title": "Last Accessed At",
-          "type": "string"
+        "last_delivered_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Last Delivered At"
         }
       },
       "required": [
@@ -1712,8 +1792,7 @@
         "kind",
         "content",
         "salience",
-        "created_at",
-        "last_accessed_at"
+        "created_at"
       ],
       "title": "MemoryRecord",
       "type": "object"
@@ -2326,6 +2405,106 @@
         "context_action"
       ],
       "title": "PerformContextAction",
+      "type": "object"
+    },
+    "PlanDisposition": {
+      "enum": [
+        "completed",
+        "failed",
+        "abandoned",
+        "terminated"
+      ],
+      "title": "PlanDisposition",
+      "type": "string"
+    },
+    "PlanOutcome": {
+      "additionalProperties": false,
+      "description": "Why a plan ended, in terms of what it originally set out to do.\n\nWithout this the next planner reconstructs purpose from \"Execute step X\",\nwhich is not a purpose. The objective is copied from the plan that carried\nit, and the reason is the executor's terminal verdict — neither is written\nby a model after the fact.",
+      "properties": {
+        "plan_outcome_id": {
+          "pattern": "^po-[1-9][0-9]{0,8}$",
+          "title": "Plan Outcome Id",
+          "type": "string"
+        },
+        "run_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Run Id",
+          "type": "string"
+        },
+        "plan_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+          "title": "Plan Id",
+          "type": "string"
+        },
+        "plan_version": {
+          "minimum": 1,
+          "title": "Plan Version",
+          "type": "integer"
+        },
+        "objective": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Objective",
+          "type": "string"
+        },
+        "disposition": {
+          "$ref": "#/$defs/PlanDisposition"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "completed_step_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Completed Step Ids",
+          "type": "array"
+        },
+        "actions_completed": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Actions Completed",
+          "type": "integer"
+        },
+        "terminal_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_outcome_id",
+        "run_id",
+        "plan_id",
+        "plan_version",
+        "objective",
+        "disposition",
+        "reason",
+        "started_at",
+        "finished_at"
+      ],
+      "title": "PlanOutcome",
       "type": "object"
     },
     "PlanningMode": {
@@ -3639,6 +3818,14 @@
       },
       "maxItems": 100,
       "title": "Recent Action Outcomes",
+      "type": "array"
+    },
+    "recent_plan_outcomes": {
+      "items": {
+        "$ref": "#/$defs/PlanOutcome"
+      },
+      "maxItems": 8,
+      "title": "Recent Plan Outcomes",
       "type": "array"
     },
     "planner_feedback": {

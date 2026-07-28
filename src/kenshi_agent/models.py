@@ -1500,7 +1500,27 @@ class ActionOutcomeAssessment(StrEnum):
     UNKNOWN = "unknown"
 
 
+ACTION_OUTCOME_ID_PATTERN = r"^ao-[1-9][0-9]{0,8}$"
+PLAN_OUTCOME_ID_PATTERN = r"^po-[1-9][0-9]{0,8}$"
+PLAN_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,95}$"
+STEP_ID_PATTERN = r"^[A-Za-z][A-Za-z0-9_-]{0,63}$"
+
+
 class ActionOutcome(StrictModel):
+    """One attempted action and what the world did about it.
+
+    `outcome_id` is runtime-owned. A planner may cite it as evidence for a
+    later memory, which is only sound because the planner cannot mint one: an
+    outcome exists after its action has already been assessed, so a plan
+    physically cannot cite the success of its own future steps.
+    """
+
+    outcome_id: str = Field(pattern=ACTION_OUTCOME_ID_PATTERN)
+    run_id: str = Field(min_length=1, max_length=200)
+    plan_id: str = Field(pattern=PLAN_ID_PATTERN)
+    plan_version: int = Field(default=1, ge=1)
+    step_id: str = Field(pattern=STEP_ID_PATTERN)
+    command_id: str | None = Field(default=None, max_length=80)
     step_index: int = Field(ge=0)
     intent: str = Field(min_length=1, max_length=1000)
     action: Action
@@ -1508,6 +1528,9 @@ class ActionOutcome(StrictModel):
     receipt_message: str = Field(default="", max_length=2000)
     assessment: ActionOutcomeAssessment
     feedback: str = Field(min_length=1, max_length=1000)
+    started_after_revision: WorldStateRevision | None = None
+    completed_at_revision: WorldStateRevision | None = None
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     visual_change_fraction: float | None = Field(default=None, ge=0.0, le=1.0)
     telemetry_changes: list[str] = Field(default_factory=list, max_length=30)
     selected_character_name: str | None = Field(default=None, max_length=200)
@@ -1515,14 +1538,139 @@ class ActionOutcome(StrictModel):
     position_after: Vec3 | None = None
 
 
+class PlanDisposition(StrEnum):
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ABANDONED = "abandoned"
+    TERMINATED = "terminated"
+
+
+class PlanOutcome(StrictModel):
+    """Why a plan ended, in terms of what it originally set out to do.
+
+    Without this the next planner reconstructs purpose from "Execute step X",
+    which is not a purpose. The objective is copied from the plan that carried
+    it, and the reason is the executor's terminal verdict — neither is written
+    by a model after the fact.
+    """
+
+    plan_outcome_id: str = Field(pattern=PLAN_OUTCOME_ID_PATTERN)
+    run_id: str = Field(min_length=1, max_length=200)
+    plan_id: str = Field(pattern=PLAN_ID_PATTERN)
+    plan_version: int = Field(ge=1)
+    objective: str = Field(min_length=1, max_length=1000)
+    disposition: PlanDisposition
+    reason: str = Field(min_length=1, max_length=1000)
+    completed_step_ids: list[str] = Field(default_factory=list, max_length=16)
+    actions_completed: int = Field(default=0, ge=0)
+    terminal_revision: WorldStateRevision | None = None
+    started_at: datetime
+    finished_at: datetime
+
+
+class CurrentObservationEvidence(StrictModel):
+    """The exact observation the planner was looking at when it wrote this."""
+
+    source: Literal["current_observation"] = "current_observation"
+
+
+class ActionOutcomeEvidence(StrictModel):
+    source: Literal["action_outcome"] = "action_outcome"
+    outcome_id: str = Field(pattern=ACTION_OUTCOME_ID_PATTERN)
+
+
+class PlanOutcomeEvidence(StrictModel):
+    source: Literal["plan_outcome"] = "plan_outcome"
+    plan_outcome_id: str = Field(pattern=PLAN_OUTCOME_ID_PATTERN)
+
+
+class MemoryEvidence(StrictModel):
+    source: Literal["memory"] = "memory"
+    memory_id: int = Field(ge=1)
+
+
+class AdvisorBriefEvidence(StrictModel):
+    """Advice, not world evidence. Rendered as such wherever it is stored."""
+
+    source: Literal["advisor_brief"] = "advisor_brief"
+    brief_id: str = Field(pattern=r"^advisor-[0-9a-f]{32}$")
+
+
+EvidenceReference: TypeAlias = (
+    CurrentObservationEvidence
+    | ActionOutcomeEvidence
+    | PlanOutcomeEvidence
+    | MemoryEvidence
+    | AdvisorBriefEvidence
+)
+"""Every identity a continuity operation may cite, and nothing else.
+
+Each branch names an authority that already exists at the moment the operation
+is processed. There is deliberately no free-text branch: a sentence claiming an
+outcome is not the outcome.
+"""
+
+
+class KeepMemoryOperation(StrictModel):
+    """Create one durable record from something already established.
+
+    `evidence` is absent on purpose. The stored grounding string is rendered by
+    the runtime from `references` after each one resolves, so a record can
+    never describe proof it does not have.
+    """
+
+    operation: Literal["keep"] = "keep"
+    kind: MemoryKind
+    content: str = Field(min_length=1, max_length=2000)
+    salience: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Opaque identity copied exactly from the current observation. Display
+    # names are intentionally insufficient: two Barmen may share one, and a
+    # later identity session may reuse the same role for another character.
+    target_id: str | None = Field(default=None, min_length=1, max_length=200)
+    references: list[EvidenceReference] = Field(default_factory=list, max_length=4)
+
+
+ContinuityOperation: TypeAlias = KeepMemoryOperation
+"""What a planner may do to durable memory today.
+
+Spelled as a tagged alias rather than a bare model so that `reinforce`,
+`resolve`, `supersede`, and `retract` join the union without renaming the field
+or changing any payload already accepted.
+"""
+
+
+class ContinuityOrigin(StrEnum):
+    DECISION = "decision"
+    PLAN = "plan"
+    PATCH = "patch"
+
+
+class ContinuityOperationStatus(StrEnum):
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    NO_OP = "no_op"
+
+
+class ContinuityOperationReceipt(StrictModel):
+    origin: ContinuityOrigin
+    status: ContinuityOperationStatus
+    operation: ContinuityOperation
+    reason: str = Field(min_length=1, max_length=1000)
+    memory_id: int | None = Field(default=None, ge=1)
+    evidence: str | None = Field(default=None, max_length=1000)
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class MemoryWrite(StrictModel):
+    """The store-facing record. `evidence` is runtime-rendered, never authored."""
+
     kind: MemoryKind
     content: str = Field(min_length=1, max_length=2000)
     salience: float = Field(default=0.5, ge=0.0, le=1.0)
     evidence: str | None = Field(default=None, max_length=1000)
-    # Opaque identity copied exactly from the current observation. Display
-    # names are intentionally insufficient: two Barmen may share one, and a
-    # later identity session may reuse the same role for another character.
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
 
 
@@ -1536,7 +1684,10 @@ class MemoryRecord(StrictModel):
     evidence: str | None = None
     target_id: str | None = Field(default=None, min_length=1, max_length=200)
     created_at: datetime
-    last_accessed_at: datetime
+    # When this record was last handed to a planner, which is a diagnostic and
+    # nothing more. It is deliberately absent from every ordering: reading a
+    # memory is not evidence that it matters.
+    last_delivered_at: datetime | None = None
 
 
 class SkillSpec(StrictModel):
@@ -2101,13 +2252,17 @@ class PlanEnvelope(StrictModel):
     max_wall_seconds: float = Field(gt=0.0, le=120.0)
     max_game_seconds: float = Field(gt=0.0, le=3600.0)
     risk_budget: RiskBudget
-    # A continuous planner had nowhere to write anything down: `memory_writes`
+    # A continuous planner had nowhere to write anything down: continuity
     # existed only on `PlannerDecision`, which single-step runs use, so the
     # memory store was recalled into every observation and could never be
     # filled. An intention therefore died with the plan that held it, and the
     # next plan re-derived a goal from whatever was on screen - which in a bar
-    # is the barman, every time.
-    memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
+    # is the barman, every time. Processed only after this plan passes every
+    # validation gate; a rejected plan contributes nothing.
+    continuity_operations: list[ContinuityOperation] = Field(
+        default_factory=list,
+        max_length=6,
+    )
 
     @model_validator(mode="after")
     def validate_graph_and_action_bound(self) -> PlanEnvelope:
@@ -2164,7 +2319,13 @@ class PlanPatch(StrictModel):
     )
     replace_future_steps: list[PlanStep] = Field(min_length=1, max_length=8)
     rationale: str = Field(min_length=1, max_length=1000)
-    memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
+    # Committed at the exact moment this patch is revalidated and becomes the
+    # active plan. A staged patch that is rejected, superseded, or discarded
+    # contributes nothing.
+    continuity_operations: list[ContinuityOperation] = Field(
+        default_factory=list,
+        max_length=6,
+    )
 
 
 class ActivePlanContext(StrictModel):
@@ -2195,6 +2356,9 @@ class Observation(StrictModel):
     objective: str | None = Field(default=None, max_length=1000)
     active_plan: ActivePlanContext | None = None
     recent_action_outcomes: list[ActionOutcome] = Field(default_factory=list, max_length=100)
+    # Why previous plans ended, in terms of what they set out to do. Working
+    # history, not durable memory: it is runtime-owned and dies with the run.
+    recent_plan_outcomes: list[PlanOutcome] = Field(default_factory=list, max_length=8)
     # Why the previous planner response could not be used. Without it a planner
     # that makes one deterministic mistake remakes it on every retry: a live run
     # ended after 21 identical validation failures, each replanned from an
@@ -2733,7 +2897,11 @@ class PlannerDecision(StrictModel):
     action: PlannerAction
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     expected_observation: str | None = Field(default=None, max_length=1000)
-    memory_writes: list[MemoryWrite] = Field(default_factory=list, max_length=6)
+    # Committed after this action's receipt, never before it.
+    continuity_operations: list[ContinuityOperation] = Field(
+        default_factory=list,
+        max_length=6,
+    )
 
 
 PlannerOutput: TypeAlias = PlannerDecision | PlanEnvelope | PlanPatch

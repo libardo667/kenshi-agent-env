@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
@@ -19,6 +19,7 @@ from .advisor import (
     disabled_advisor_availability,
 )
 from .config import PlanningConfig
+from .continuity import ContinuityAuthority, ContinuityLedger
 from .continuous_executor import (
     AdvisorActionResult,
     AffordanceRequestActionResult,
@@ -50,16 +51,18 @@ from .models import (
     CharacterState,
     CommandDispatchContext,
     ConsultAdvisorAction,
+    ContinuityOperation,
+    ContinuityOrigin,
     ControlMode,
     InputBoundaryDecision,
     LiveContinuousPolicy,
-    MemoryKind,
-    MemoryWrite,
     NearbyEntity,
     Observation,
     PauseAction,
+    PlanDisposition,
     PlanEnvelope,
     PlannerDecision,
+    PlannerOutput,
     PlanningMode,
     PlanPatch,
     PlanStep,
@@ -154,7 +157,18 @@ class AgentRuntime:
         self.minimum_memory_salience = minimum_memory_salience
         self.action_outcome_limit = action_outcome_limit
         self.control_mode = control_mode
-        self._action_outcomes: list[ActionOutcome] = []
+        self._ledger = ContinuityLedger(
+            run_id=run_id,
+            action_outcome_limit=action_outcome_limit,
+        )
+        self._advisor_brief_ids: set[str] = set()
+        self._continuity = ContinuityAuthority(
+            run_id=run_id,
+            store=memory,
+            ledger=self._ledger,
+            logger=logger,
+            advisor_brief_ids=lambda: self._advisor_brief_ids,
+        )
         self.reporter = reporter
         self.planning_config = planning_config or PlanningConfig()
         self.planning_clock = planning_clock or SystemPlanningClock()
@@ -258,7 +272,8 @@ class AgentRuntime:
         stop_reason = "Maximum step count reached."
         observation: Observation | None = None
         try:
-            self._action_outcomes.clear()
+            self._ledger.reset()
+            self._advisor_brief_ids.clear()
             self._affordance_requests.clear()
             self._affordance_requests_issued = 0
             observation = await self.environment.reset(seed=seed)
@@ -287,6 +302,7 @@ class AgentRuntime:
 
             for _ in range(max_steps):
                 planning_started = monotonic()
+                step_id = f"step-{observation.step_index}"
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
                 decision_source = "planner"
@@ -296,7 +312,7 @@ class AgentRuntime:
                     decision_source = "reflex"
                 else:
                     try:
-                        planner_output = await self.planner.decide(observation)
+                        planner_output = await self._decide(observation)
                         if isinstance(planner_output, PlannerDecision):
                             decision = planner_output
                         else:
@@ -380,11 +396,16 @@ class AgentRuntime:
                         observation,
                         plan_id="single-step",
                         plan_version=1,
-                        step_id=f"step-{observation.step_index}",
+                        step_id=step_id,
                     )
                     steps_completed += 1
                     observation = advisor_result.observation
-                    self._store_memories(decision)
+                    self._apply_decision_continuity(
+                        decision,
+                        observation,
+                        plan_id="single-step",
+                        step_id=step_id,
+                    )
                     self._log_observation(observation)
                     stop_reason = advisor_result.receipt.message
                     continue
@@ -396,11 +417,16 @@ class AgentRuntime:
                         observation,
                         plan_id="single-step",
                         plan_version=1,
-                        step_id=f"step-{observation.step_index}",
+                        step_id=step_id,
                     )
                     steps_completed += 1
                     observation = affordance_result.observation
-                    self._store_memories(decision)
+                    self._apply_decision_continuity(
+                        decision,
+                        observation,
+                        plan_id="single-step",
+                        step_id=step_id,
+                    )
                     self._log_observation(observation)
                     stop_reason = affordance_result.receipt.message
                     continue
@@ -415,7 +441,7 @@ class AgentRuntime:
                     token = ExecutionToken(
                         plan_id="single-step",
                         plan_version=1,
-                        step_id=f"step-{observation.step_index}",
+                        step_id=step_id,
                         command_id=dispatch_context.command_id,
                         control_mode=self.control_mode,
                         validated_revision=observation.world_revision,
@@ -524,9 +550,20 @@ class AgentRuntime:
                     transition.receipt,
                     observation,
                     transition.observation,
+                    plan_id="single-step",
+                    plan_version=1,
+                    step_id=step_id,
+                    command_id=dispatch_context.command_id,
                 )
-                self._store_memories(decision)
                 observation = self._with_memories(transition.observation)
+                # After the receipt, not before it: a single-step write used to
+                # be able to claim an outcome the receipt did not prove.
+                self._apply_decision_continuity(
+                    decision,
+                    observation,
+                    plan_id="single-step",
+                    step_id=step_id,
+                )
                 self._log_observation(observation)
 
                 if transition.terminated:
@@ -626,7 +663,8 @@ class AgentRuntime:
             identical_replan_failures = 0
 
         try:
-            self._action_outcomes.clear()
+            self._ledger.reset()
+            self._advisor_brief_ids.clear()
             self._affordance_requests.clear()
             self._affordance_requests_issued = 0
             observation = self._with_memories(await self.environment.reset(seed=seed))
@@ -731,17 +769,21 @@ class AgentRuntime:
                     continue
 
                 planning_started = monotonic()
-                planner_observation = (
-                    observation.model_copy(update={"planner_feedback": planner_feedback})
-                    if planner_feedback is not None
-                    else observation
-                )
+                # Redecorated here rather than relying on whichever publish
+                # happened last: a plan outcome recorded after the executor
+                # returned must reach the planner that replaces that plan, with
+                # or without an observation pump running.
+                planner_observation = self._with_memories(observation)
+                if planner_feedback is not None:
+                    planner_observation = planner_observation.model_copy(
+                        update={"planner_feedback": planner_feedback}
+                    )
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
                 planner_source = "planner"
                 try:
                     output, preemption = await self._race_with_safety_supervisor(
-                        self.planner.decide(planner_observation),
+                        self._decide(planner_observation),
                         safety_supervisor,
                     )
                     if preemption is not None:
@@ -1067,7 +1109,11 @@ class AgentRuntime:
                         terminated = True
                     continue
 
-                self._remember_plan(plan)
+                # Only now: after schema, causal basis, assumptions, control
+                # mode, graph, and budget validation have all passed. A plan
+                # that never became executable contributes no continuity.
+                self._apply_plan_continuity(plan, observation)
+                plan_started_at = datetime.now(UTC)
                 self._plan_event(
                     "plan_accepted",
                     plan_id=plan.plan_id,
@@ -1092,9 +1138,10 @@ class AgentRuntime:
                     state_store=state_store,
                     observe_transition=self._observe_plan_transition,
                     planning_config=self.planning_config,
-                    concurrent_planner=self.planner.decide,
+                    concurrent_planner=self._decide,
                     consult_advisor=self._execute_advisor_action,
                     request_affordance=self._execute_affordance_request_action,
+                    apply_patch_continuity=self._apply_patch_continuity,
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(
@@ -1119,6 +1166,18 @@ class AgentRuntime:
                             "control_mode": observation.control_mode.value,
                         },
                     )
+                    self._record_plan_outcome(
+                        plan,
+                        disposition=PlanDisposition.ABANDONED,
+                        reason=(
+                            f"Safety preempted the plan ({preemption.cause.value}): "
+                            f"{preemption.reason}"
+                        ),
+                        completed_step_ids=(),
+                        actions_completed=0,
+                        observation=preemption.observation,
+                        started_at=plan_started_at,
+                    )
                     (
                         observation,
                         completed,
@@ -1138,6 +1197,21 @@ class AgentRuntime:
                 observation = result.observation
                 steps_completed += result.actions_completed
                 stop_reason = result.reason
+                self._record_plan_outcome(
+                    plan,
+                    disposition=(
+                        PlanDisposition.TERMINATED
+                        if result.terminated
+                        else PlanDisposition.COMPLETED
+                        if result.completed
+                        else PlanDisposition.FAILED
+                    ),
+                    reason=result.reason,
+                    completed_step_ids=result.completed_step_ids,
+                    actions_completed=result.actions_completed,
+                    observation=observation,
+                    started_at=plan_started_at,
+                )
                 if result.terminated:
                     terminated = True
                     success = result.success
@@ -1898,6 +1972,9 @@ class AgentRuntime:
             transition,
             command_id=command_id,
             action_start_revision=action_start_revision,
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            step_id=step.step_id,
         )
 
     def _record_transition(
@@ -1908,6 +1985,9 @@ class AgentRuntime:
         *,
         command_id: str | None = None,
         action_start_revision: WorldStateRevision | None = None,
+        plan_id: str = "single-step",
+        plan_version: int = 1,
+        step_id: str | None = None,
     ) -> Observation:
         candidate = self._with_memories(transition.observation)
         update: StoreUpdate | None = None
@@ -1957,8 +2037,11 @@ class AgentRuntime:
             receipt,
             before,
             latest,
+            plan_id=plan_id,
+            plan_version=plan_version,
+            step_id=step_id or f"step-{before.step_index}",
+            command_id=command_id,
         )
-        self._store_memories(decision)
         latest = self._with_memories(latest)
         if self._state_store is None:
             self._log_observation(latest)
@@ -2092,9 +2175,8 @@ class AgentRuntime:
         updates: dict[str, object] = {
             "planning_mode": self.planning_config.mode,
             "live_execution_policy": self.planning_config.live_execution_policy,
-            "recent_action_outcomes": self._action_outcomes[-self.action_outcome_limit :]
-            if self.action_outcome_limit > 0
-            else [],
+            "recent_action_outcomes": self._ledger.recent_action_outcomes,
+            "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
             "advisor": (
                 self.advisor.availability(observation)
                 if self.advisor is not None
@@ -2254,6 +2336,10 @@ class AgentRuntime:
             AdvisorConsultStatus.ANSWERED,
             AdvisorConsultStatus.FAILED,
         }
+        if evidence.brief is not None:
+            # Only a brief this run actually issued may later be cited as the
+            # source of a memory, and only ever as advice.
+            self._advisor_brief_ids.add(evidence.brief.brief_id)
         receipt = ActionReceipt(
             action=action,
             control_mode=self.control_mode,
@@ -2303,45 +2389,111 @@ class AgentRuntime:
             latest = self._state_store.decorate_latest(latest)
         return AdvisorActionResult(observation=latest, receipt=receipt)
 
-    def _remember_plan(self, plan: PlanEnvelope) -> None:
-        """Record what this plan was for, and anything it asked to remember.
+    def _apply_plan_continuity(
+        self,
+        plan: PlanEnvelope,
+        observation: Observation,
+    ) -> None:
+        """Commit an accepted plan's continuity, and nothing about its future.
 
-        The objective is written automatically rather than left to the planner
-        to note, because continuity is not something to be relied on the model
-        choosing to do. Without it an agent that decided to "go find work
-        elsewhere" had no trace of that decision once the plan carrying it
-        finished, and went back to the only person it could see.
+        This used to also write an automatic "Set out to: <objective>" episode,
+        on the theory that continuity is too important to leave to the model.
+        But that was a durable claim about work not yet done, filed under the
+        kind reserved for events that happened. Plan purpose is working history
+        now: `_record_plan_outcome` files the original objective once the plan
+        has actually ended, with the reason it ended.
         """
 
-        if self.memory is None:
-            return
-        self._store_memories(plan)
-        # The automatic trace is a safety net for a planner that did not think
-        # to leave one. A plan that recorded its own commitment has already said
-        # what it is doing, better than this would, and writing both put two
-        # near-identical entries into a recall list of sixteen - which is how a
-        # useful fact gets pushed out by a restatement of the obvious.
-        if any(write.kind is MemoryKind.COMMITMENT for write in plan.memory_writes):
-            return
-        self.memory.add(
-            self.run_id,
-            MemoryWrite(
-                kind=MemoryKind.EPISODE,
-                content=f"Set out to: {plan.objective}",
-                salience=0.4,
-                evidence=f"plan {plan.plan_id} v{plan.plan_version}",
-            ),
+        self._continuity.apply(
+            plan.continuity_operations,
+            origin=ContinuityOrigin.PLAN,
+            observation=observation,
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
         )
 
-    def _store_memories(self, decision: PlannerDecision | PlanEnvelope | PlanPatch) -> None:
-        if self.memory is None:
-            return
-        for write in decision.memory_writes:
-            memory_id = self.memory.add(self.run_id, write)
-            self.logger.write(
-                "memory_written",
-                payload={"memory_id": memory_id, "memory": write.model_dump(mode="json")},
-            )
+    def _apply_decision_continuity(
+        self,
+        decision: PlannerDecision,
+        observation: Observation,
+        *,
+        plan_id: str,
+        step_id: str,
+    ) -> None:
+        self._continuity.apply(
+            decision.continuity_operations,
+            origin=ContinuityOrigin.DECISION,
+            observation=observation,
+            plan_id=plan_id,
+            plan_version=1,
+            step_id=step_id,
+        )
+
+    def _apply_patch_continuity(
+        self,
+        operations: Sequence[ContinuityOperation],
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str | None,
+    ) -> None:
+        """Commit a patch's continuity only where the patch itself took effect.
+
+        Called by the executor at the exact point a revalidated patch becomes
+        the active plan. A staged patch that is later rejected, superseded, or
+        discarded never reaches here, so it leaves no trace in durable memory.
+        """
+
+        self._continuity.apply(
+            operations,
+            origin=ContinuityOrigin.PATCH,
+            observation=observation,
+            plan_id=plan_id,
+            plan_version=plan_version,
+            step_id=step_id,
+        )
+
+    def _record_plan_outcome(
+        self,
+        plan: PlanEnvelope,
+        *,
+        disposition: PlanDisposition,
+        reason: str,
+        completed_step_ids: Sequence[str],
+        actions_completed: int,
+        observation: Observation,
+        started_at: datetime,
+    ) -> None:
+        outcome = self._ledger.record_plan_outcome(
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            objective=plan.objective,
+            disposition=disposition,
+            reason=self._bounded_text(reason, 1000),
+            completed_step_ids=completed_step_ids,
+            actions_completed=actions_completed,
+            terminal_revision=observation.world_revision,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+        )
+        self.logger.write(
+            "plan_outcome",
+            step_index=observation.step_index,
+            payload=outcome,
+        )
+
+    async def _decide(self, observation: Observation) -> PlannerOutput:
+        """Assemble a planner payload, marking exactly what it carried.
+
+        Delivery is recorded here and only here: this is the one place a
+        memory actually reaches a planner. It is a diagnostic - no ordering
+        reads it - so a memory cannot become important by being read.
+        """
+
+        if self.memory is not None and observation.memories:
+            self.memory.record_delivery([record.id for record in observation.memories])
+        return await self.planner.decide(observation)
 
     def _record_action_outcome(
         self,
@@ -2349,6 +2501,11 @@ class AgentRuntime:
         receipt: ActionReceipt,
         before: Observation,
         after: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+        command_id: str | None = None,
     ) -> None:
         visual_change = self._visual_change_fraction(before, after)
         telemetry_changes = self._telemetry_changes(before.telemetry, after.telemetry)
@@ -2363,6 +2520,12 @@ class AgentRuntime:
             movement_distance=movement_distance,
         )
         outcome = ActionOutcome(
+            outcome_id=self._ledger.next_action_outcome_id(),
+            run_id=self.run_id,
+            plan_id=plan_id,
+            plan_version=plan_version,
+            step_id=step_id,
+            command_id=command_id or receipt.command_id,
             step_index=before.step_index,
             intent=decision.intent,
             action=receipt.action,
@@ -2370,6 +2533,8 @@ class AgentRuntime:
             receipt_message=receipt.message,
             assessment=assessment,
             feedback=feedback,
+            started_after_revision=receipt.started_after_revision,
+            completed_at_revision=receipt.completed_at_revision,
             visual_change_fraction=visual_change,
             telemetry_changes=telemetry_changes,
             selected_character_name=(
@@ -2382,7 +2547,7 @@ class AgentRuntime:
             position_before=(selected_before.position if selected_before is not None else None),
             position_after=(selected_after.position if selected_after is not None else None),
         )
-        self._action_outcomes.append(outcome)
+        self._ledger.record_action_outcome(outcome)
         self.logger.write("action_outcome", step_index=before.step_index, payload=outcome)
 
     @classmethod

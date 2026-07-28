@@ -142,6 +142,11 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
     store = WorldStateStore()
     first = store.publish(observation(1)).observation
     outcome = ActionOutcome(
+        outcome_id="ao-1",
+        run_id="world-state",
+        plan_id="single-step",
+        plan_version=1,
+        step_id="step-0",
         step_index=0,
         intent="Pause safely.",
         action=StopAction(reason="unused"),

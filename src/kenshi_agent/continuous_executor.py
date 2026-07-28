@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable, Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from .action_contracts import ActionExecution, contract_for
 from .config import PlanningConfig
@@ -19,6 +19,7 @@ from .models import (
     ConditionEvaluation,
     ConditionResult,
     ConsultAdvisorAction,
+    ContinuityOperation,
     ExitCurrentBuildingAction,
     InputBoundaryDecision,
     MoveInDirectionAction,
@@ -89,6 +90,27 @@ AffordanceRequester = Callable[
 ]
 
 
+class PatchContinuityApplier(Protocol):
+    """Commit a patch's continuity operations.
+
+    Called at the exact point a revalidated patch becomes the active plan, and
+    nowhere else. A staged patch that is rejected, superseded, or discarded
+    never reaches it, which is what keeps a discarded advisory out of durable
+    memory.
+    """
+
+    def __call__(
+        self,
+        operations: Sequence[ContinuityOperation],
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str | None,
+    ) -> None: ...
+
+
+
 @dataclass(frozen=True, slots=True)
 class PlanExecutionResult:
     observation: Observation
@@ -98,6 +120,9 @@ class PlanExecutionResult:
     success: bool | None
     reason: str
     reflex_decision: PlannerDecision | None = None
+    # Which steps actually finished, so the plan outcome can say what was done
+    # rather than only why the plan stopped.
+    completed_step_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +207,7 @@ class ContinuousPlanExecutor:
         concurrent_planner: ConcurrentPlanner | None = None,
         consult_advisor: AdvisorConsultant | None = None,
         request_affordance: AffordanceRequester | None = None,
+        apply_patch_continuity: PatchContinuityApplier | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -194,6 +220,38 @@ class ContinuousPlanExecutor:
         self.concurrent_planner = concurrent_planner
         self.consult_advisor = consult_advisor
         self.request_affordance = request_affordance
+        self.apply_patch_continuity = apply_patch_continuity
+        # Which steps of the plan currently in flight actually finished. One
+        # executor owns one plan, so this is that plan's answer, and every
+        # terminal result reports it rather than only why the plan stopped.
+        self._completed_step_ids: tuple[str, ...] = ()
+
+    def _commit_patch_continuity(
+        self,
+        patch: PlanPatch,
+        patched_plan: PlanEnvelope,
+        observation: Observation,
+        *,
+        step_id: str,
+    ) -> None:
+        """Commit a patch's continuity at the moment the patch takes effect.
+
+        `PlanPatch.memory_writes` was in the schema and was never committed
+        anywhere - a model-authored field with no reader, which is worse than
+        an absent one because it looks like it works. It commits here, once,
+        and only for the exact patch that survived revalidation and is now the
+        active plan.
+        """
+
+        if self.apply_patch_continuity is None:
+            return
+        self.apply_patch_continuity(
+            patch.continuity_operations,
+            observation,
+            plan_id=patched_plan.plan_id,
+            plan_version=patched_plan.plan_version,
+            step_id=step_id,
+        )
 
     def _action_authority_error(
         self,
@@ -247,6 +305,7 @@ class ContinuousPlanExecutor:
         step_id: str | None = plan.entry_step_id
         actions_completed = 0
         completed_step_ids: set[str] = set()
+        self._completed_step_ids = ()
 
         self._event(
             "plan_started",
@@ -313,6 +372,7 @@ class ContinuousPlanExecutor:
                     success=None,
                     reason=aborted.reason,
                     reflex_decision=reflex,
+                    completed_step_ids=self._completed_step_ids,
                 )
 
             assumptions = evaluate_conditions(plan.assumptions, observation)
@@ -435,6 +495,12 @@ class ContinuousPlanExecutor:
                         patched_plan.plan_version,
                         observation.world_revision,
                     )
+                    self._commit_patch_continuity(
+                        step_result.staged_patch.patch,
+                        patched_plan,
+                        observation,
+                        step_id=step.step_id,
+                    )
                     plan = patched_plan
                     by_id = {item.step_id: item for item in plan.steps}
                     step_id = plan.entry_step_id
@@ -478,8 +544,12 @@ class ContinuousPlanExecutor:
                             terminated=True,
                             success=step_result.success,
                             reason=step_result.reason,
+                            completed_step_ids=tuple(
+                                sorted(completed_step_ids | {step.step_id})
+                            ),
                         )
                     completed_step_ids.add(step.step_id)
+                    self._completed_step_ids = tuple(sorted(completed_step_ids))
                     if step_result.staged_patch is not None:
                         budget_reason = self._budget_stop_reason(
                             plan,
@@ -523,6 +593,12 @@ class ContinuousPlanExecutor:
                             self.state_store.apply_plan_patch(
                                 patched_plan.plan_version,
                                 observation.world_revision,
+                            )
+                            self._commit_patch_continuity(
+                                step_result.staged_patch.patch,
+                                patched_plan,
+                                observation,
+                                step_id=step.step_id,
                             )
                             plan = patched_plan
                             by_id = {item.step_id: item for item in plan.steps}
@@ -646,6 +722,7 @@ class ContinuousPlanExecutor:
             terminated=False,
             success=None,
             reason="Plan completed.",
+            completed_step_ids=self._completed_step_ids,
         )
 
     def _resolve_approach_params(self, action: Action) -> ApproachOptionParams | None:
@@ -2329,6 +2406,7 @@ class ContinuousPlanExecutor:
             terminated=terminated,
             success=success,
             reason=reason,
+            completed_step_ids=self._completed_step_ids,
         )
 
     @staticmethod
@@ -2370,6 +2448,7 @@ class ContinuousPlanExecutor:
             success=result.success,
             reason=result.reason,
             reflex_decision=decision,
+            completed_step_ids=result.completed_step_ids,
         )
 
     def _event(

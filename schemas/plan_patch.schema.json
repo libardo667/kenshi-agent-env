@@ -1,5 +1,26 @@
 {
   "$defs": {
+    "ActionOutcomeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "action_outcome",
+          "default": "action_outcome",
+          "title": "Source",
+          "type": "string"
+        },
+        "outcome_id": {
+          "pattern": "^ao-[1-9][0-9]{0,8}$",
+          "title": "Outcome Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome_id"
+      ],
+      "title": "ActionOutcomeEvidence",
+      "type": "object"
+    },
     "ActivateVisibleControlAction": {
       "additionalProperties": false,
       "description": "Activate exactly one control the interface currently advertises.\n\nThe arguments are an exact current label and role, not coordinates: the\nbounds come from telemetry and are re-resolved inside the input lease. The\naction knows nothing about which screen, which conversation, or which option\nindex it is activating.",
@@ -37,6 +58,28 @@
         "exact_label"
       ],
       "title": "ActivateVisibleControlAction",
+      "type": "object"
+    },
+    "AdvisorBriefEvidence": {
+      "additionalProperties": false,
+      "description": "Advice, not world evidence. Rendered as such wherever it is stored.",
+      "properties": {
+        "source": {
+          "const": "advisor_brief",
+          "default": "advisor_brief",
+          "title": "Source",
+          "type": "string"
+        },
+        "brief_id": {
+          "pattern": "^advisor-[0-9a-f]{32}$",
+          "title": "Brief Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_id"
+      ],
+      "title": "AdvisorBriefEvidence",
       "type": "object"
     },
     "AdvisorFocus": {
@@ -265,6 +308,20 @@
       ],
       "title": "ContextActionKind",
       "type": "string"
+    },
+    "CurrentObservationEvidence": {
+      "additionalProperties": false,
+      "description": "The exact observation the planner was looking at when it wrote this.",
+      "properties": {
+        "source": {
+          "const": "current_observation",
+          "default": "current_observation",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "title": "CurrentObservationEvidence",
+      "type": "object"
     },
     "DismissScreenAction": {
       "additionalProperties": false,
@@ -530,19 +587,16 @@
       "title": "InterruptPolicy",
       "type": "string"
     },
-    "MemoryKind": {
-      "enum": [
-        "fact",
-        "episode",
-        "commitment",
-        "hypothesis"
-      ],
-      "title": "MemoryKind",
-      "type": "string"
-    },
-    "MemoryWrite": {
+    "KeepMemoryOperation": {
       "additionalProperties": false,
+      "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
       "properties": {
+        "operation": {
+          "const": "keep",
+          "default": "keep",
+          "title": "Operation",
+          "type": "string"
+        },
         "kind": {
           "$ref": "#/$defs/MemoryKind"
         },
@@ -559,19 +613,6 @@
           "title": "Salience",
           "type": "number"
         },
-        "evidence": {
-          "anyOf": [
-            {
-              "maxLength": 1000,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Evidence"
-        },
         "target_id": {
           "anyOf": [
             {
@@ -585,14 +626,69 @@
           ],
           "default": null,
           "title": "Target Id"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
         }
       },
       "required": [
         "kind",
         "content"
       ],
-      "title": "MemoryWrite",
+      "title": "KeepMemoryOperation",
       "type": "object"
+    },
+    "MemoryEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "memory",
+          "default": "memory",
+          "title": "Source",
+          "type": "string"
+        },
+        "memory_id": {
+          "minimum": 1,
+          "title": "Memory Id",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory_id"
+      ],
+      "title": "MemoryEvidence",
+      "type": "object"
+    },
+    "MemoryKind": {
+      "enum": [
+        "fact",
+        "episode",
+        "commitment",
+        "hypothesis"
+      ],
+      "title": "MemoryKind",
+      "type": "string"
     },
     "MoveInDirectionAction": {
       "additionalProperties": false,
@@ -746,6 +842,27 @@
         "context_action"
       ],
       "title": "PerformContextAction",
+      "type": "object"
+    },
+    "PlanOutcomeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "plan_outcome",
+          "default": "plan_outcome",
+          "title": "Source",
+          "type": "string"
+        },
+        "plan_outcome_id": {
+          "pattern": "^po-[1-9][0-9]{0,8}$",
+          "title": "Plan Outcome Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_outcome_id"
+      ],
+      "title": "PlanOutcomeEvidence",
       "type": "object"
     },
     "PlanStep": {
@@ -1448,12 +1565,12 @@
       "title": "Rationale",
       "type": "string"
     },
-    "memory_writes": {
+    "continuity_operations": {
       "items": {
-        "$ref": "#/$defs/MemoryWrite"
+        "$ref": "#/$defs/KeepMemoryOperation"
       },
       "maxItems": 6,
-      "title": "Memory Writes",
+      "title": "Continuity Operations",
       "type": "array"
     }
   },

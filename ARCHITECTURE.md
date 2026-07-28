@@ -109,4 +109,5 @@ telemetry.
 | Reporting a missing capability | [ADR_RUNTIME_AFFORDANCE_REQUESTS](docs/ADR_RUNTIME_AFFORDANCE_REQUESTS.md) |
 | Action-outcome continuity between calls | [ADR_ACTION_LEDGER](docs/ADR_ACTION_LEDGER.md) |
 | Exact entity memory retrieval | [ADR_ENTITY_SCOPED_MEMORY](docs/ADR_ENTITY_SCOPED_MEMORY.md) |
+| Continuity authority and commit timing | [ADR_CONTINUITY_AUTHORITY](docs/ADR_CONTINUITY_AUTHORITY.md) |
 | Camera lock and bounded recovery | [ADR_CAMERA_VIEW](docs/ADR_CAMERA_VIEW.md) |

@@ -32,11 +32,28 @@ Example:
   "action": {"kind": "pause", "paused": true},
   "confidence": 0.96,
   "expected_observation": "The next telemetry snapshot should report paused=true.",
-  "memory_writes": []
+  "continuity_operations": []
 }
 ```
 
 The rationale must be a concise decision basis, not private chain-of-thought.
+
+`continuity_operations` is the one way to write durable memory, and it is
+optional everywhere it appears — on decisions, plans, and patches alike. Each
+operation is a `keep` of a `fact`, `episode`, `commitment`, or `hypothesis`. A
+fact or an episode must cite at least one entry in `references`, and every
+reference must be an identity the runtime already advertised: `outcome_id` from
+`recent_action_outcomes`, `plan_outcome_id` from `recent_plan_outcomes`, an
+existing memory `id`, an advisor `brief_id`, or `{"source":
+"current_observation"}`. There is no free-text evidence field: the stored
+grounding is rendered by the runtime from the references that resolved. An
+operation citing an identity the runtime did not issue is rejected on its own,
+with a typed receipt, while the surrounding decision or plan still executes.
+
+Commit timing is exact. A plan's operations are processed after the plan passes
+every validation gate; a decision's after its action receipt; a patch's only if
+that exact patch is revalidated and becomes the active plan. A rejected plan or
+a discarded patch writes nothing.
 
 For continuous output, use `schemas/plan.schema.json` or
 `schemas/plan_patch.schema.json` according to `active_plan`. Every plan is

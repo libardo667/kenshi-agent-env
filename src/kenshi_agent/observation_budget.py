@@ -10,6 +10,7 @@ JsonObject = dict[str, Any]
 _ROOT_COLLECTION_PATHS = (
     "events",
     "recent_action_outcomes",
+    "recent_plan_outcomes",
     "available_skills",
     "skill_specs",
     "memories",
@@ -205,6 +206,14 @@ def budget_observation_payload(
             )
         )
 
+    for plan_outcome in reversed(original["recent_plan_outcomes"][:-1]):
+        attempt(
+            _prepend_mutator(
+                "recent_plan_outcomes",
+                plan_outcome,
+            )
+        )
+
     retained_memory_ids = {int(item["id"]) for item in retained["memories"]}
     for memory in sorted(original["memories"], key=_memory_sort_key, reverse=True):
         if int(memory["id"]) in retained_memory_ids:
@@ -259,6 +268,14 @@ def irreducible_payload(
     retained["recent_action_outcomes"] = (
         [deepcopy(original["recent_action_outcomes"][-1])]
         if original["recent_action_outcomes"]
+        else []
+    )
+    # The most recent plan outcome carries the objective the agent was last
+    # pursuing and why it stopped. Dropping it first would leave the planner
+    # replanning against a purpose it can no longer see.
+    retained["recent_plan_outcomes"] = (
+        [deepcopy(original["recent_plan_outcomes"][-1])]
+        if original["recent_plan_outcomes"]
         else []
     )
     retained["available_skills"] = []
@@ -399,9 +416,11 @@ def _current_memory_target_ids(original: JsonObject) -> set[str]:
 
 
 def _memory_sort_key(memory: JsonObject) -> tuple[float, str, int]:
+    """Rank by what the agent declared and when it was made, never by reads."""
+
     return (
         float(memory["salience"]),
-        str(memory["last_accessed_at"]),
+        str(memory["created_at"]),
         int(memory["id"]),
     )
 

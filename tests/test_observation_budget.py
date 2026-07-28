@@ -211,6 +211,12 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
 
     outcomes = [
         ActionOutcome(
+            outcome_id=f"ao-{index + 1}",
+            run_id="budget",
+            plan_id="single-step",
+            plan_version=1,
+            step_id=f"step-{index}",
+            recorded_at=_NOW,
             step_index=index,
             intent=f"Outcome intent {index}: " + "i" * 300,
             action=SkillAction(
@@ -253,7 +259,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             salience=index / 20,
             evidence="Deterministic test evidence.",
             created_at=_NOW,
-            last_accessed_at=_NOW,
+            last_delivered_at=_NOW,
         )
         for index in range(20)
     ]
@@ -405,7 +411,7 @@ def test_semantic_budget_never_discards_a_current_target_memory() -> None:
         evidence="Earlier dialogue reached its terminal unaffordable branch.",
         target_id=_TARGET_ID,
         created_at=_NOW,
-        last_accessed_at=_NOW,
+        last_delivered_at=_NOW,
     )
     observation = observation.model_copy(
         update={"memories": [target_memory, *observation.memories]}

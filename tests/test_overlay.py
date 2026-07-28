@@ -26,7 +26,7 @@ def test_format_event_renders_decision_for_overlay() -> None:
                         "args": {"x": 0.45, "y": 0.5},
                     },
                     "confidence": 0.75,
-                    "memory_writes": [],
+                    "continuity_operations": [],
                 },
             },
         }
