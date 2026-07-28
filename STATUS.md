@@ -38,7 +38,9 @@ in generated [catalog](docs/generated/ACTION_CATALOG.md) and
   independent receipts, exact commit timing, and a read-only recall. Durable memory is
   campaign-scoped — a live run without a campaign fails closed — in a versioned store: append-only
   history plus a rebuildable projection, explicit keep/reinforce/resolve/supersede/retract,
-  backed-up idempotent migration, and `kenshi-agent memory` for read-only audit.
+  backed-up idempotent migration, and `kenshi-agent memory` for read-only audit. Recall is
+  tiered and bounded per tier, states what it omitted, and surfaces continuity receipts;
+  `recall_memory` is a bounded elective read that emits no game input.
 - Hash-locked FCS starts install and launch with money/party proof. Mutation testing partitions
   every Python module; six attended shards are clean.
 

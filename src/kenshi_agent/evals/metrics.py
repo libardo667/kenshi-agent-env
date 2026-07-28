@@ -29,6 +29,9 @@ class _MetricValues(TypedDict):
     continuity_operations_rejected: int
     continuity_operations_no_op: int
     plan_outcomes: int
+    memory_reads: int
+    memory_read_records: int
+    memory_read_truncations: int
     plans_proposed: int
     plans_accepted: int
     plans_rejected: int
@@ -114,6 +117,9 @@ class LogMetrics:
     continuity_operations_no_op: int = 0
     memory_lifecycle_transitions: dict[str, int] = field(default_factory=dict)
     plan_outcomes: int = 0
+    memory_reads: int = 0
+    memory_read_records: int = 0
+    memory_read_truncations: int = 0
     plans_proposed: int = 0
     plans_accepted: int = 0
     plans_rejected: int = 0
@@ -220,6 +226,9 @@ def evaluate_log(path: Path) -> LogMetrics:
         "continuity_operations_rejected": 0,
         "continuity_operations_no_op": 0,
         "plan_outcomes": 0,
+        "memory_reads": 0,
+        "memory_read_records": 0,
+        "memory_read_truncations": 0,
         "plans_proposed": 0,
         "plans_accepted": 0,
         "plans_rejected": 0,
@@ -361,6 +370,15 @@ def evaluate_log(path: Path) -> LogMetrics:
                     values["continuity_operations_no_op"] += 1
             elif event_type == "plan_outcome":
                 values["plan_outcomes"] += 1
+            elif event_type == "memory_read":
+                values["memory_reads"] += 1
+                result = payload.get("result")
+                if isinstance(result, dict):
+                    records = result.get("records")
+                    if isinstance(records, list):
+                        values["memory_read_records"] += len(records)
+                    if result.get("truncated") is True:
+                        values["memory_read_truncations"] += 1
             elif event_type == "plan_proposed":
                 values["plans_proposed"] += 1
             elif event_type == "plan_accepted":

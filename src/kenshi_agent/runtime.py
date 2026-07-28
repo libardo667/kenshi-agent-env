@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import deque
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
@@ -36,7 +37,7 @@ from .final_safe_state import (
     FinalSafeStateStatus,
 )
 from .input_boundary import ExecutionToken
-from .memory import MemoryStore
+from .memory import MemoryStore, RecallBudget
 from .models import (
     Action,
     ActionOutcome,
@@ -52,10 +53,12 @@ from .models import (
     CommandDispatchContext,
     ConsultAdvisorAction,
     ContinuityOperation,
+    ContinuityOperationReceipt,
     ContinuityOrigin,
     ControlMode,
     InputBoundaryDecision,
     LiveContinuousPolicy,
+    MemorySearchResult,
     NearbyEntity,
     Observation,
     PauseAction,
@@ -66,6 +69,8 @@ from .models import (
     PlanningMode,
     PlanPatch,
     PlanStep,
+    RecallMemoryAction,
+    RecallSummary,
     RecoverCameraViewAction,
     RequestAffordanceAction,
     ScenarioIdentity,
@@ -99,6 +104,10 @@ _WorkResult = TypeVar("_WorkResult")
 
 # How many distinct capability gaps stay visible to the planner at once.
 MAX_RETAINED_AFFORDANCE_REQUESTS = 32
+
+# How many continuity receipts a planner sees. Enough to stop repeating one
+# deterministic mistake; not enough to become a second, rival history.
+MAX_SURFACED_CONTINUITY_RECEIPTS = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +143,8 @@ class AgentRuntime:
         memory_limit: int,
         minimum_memory_salience: float,
         entity_memory_limit: int = 8,
+        commitment_memory_limit: int = 4,
+        hypothesis_memory_limit: int = 2,
         action_outcome_limit: int = 12,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         reporter: ConsoleDecisionReporter | None = None,
@@ -161,6 +172,19 @@ class AgentRuntime:
             run_id=run_id,
             action_outcome_limit=action_outcome_limit,
         )
+        self._recall_budget = RecallBudget(
+            commitments=commitment_memory_limit,
+            current_target=entity_memory_limit,
+            open_hypotheses=hypothesis_memory_limit,
+            general=memory_limit,
+            minimum_salience=minimum_memory_salience,
+        )
+        # Bounded and short: these exist so a deterministic invalid update is
+        # not repeated, not as a second history.
+        self._continuity_receipts: deque[ContinuityOperationReceipt] = deque(
+            maxlen=MAX_SURFACED_CONTINUITY_RECEIPTS
+        )
+        self._pending_memory_search: MemorySearchResult | None = None
         self._advisor_brief_ids: set[str] = set()
         self._continuity = ContinuityAuthority(
             run_id=run_id,
@@ -274,6 +298,8 @@ class AgentRuntime:
         try:
             self._ledger.reset()
             self._advisor_brief_ids.clear()
+            self._continuity_receipts.clear()
+            self._pending_memory_search = None
             self._affordance_requests.clear()
             self._affordance_requests_issued = 0
             observation = await self.environment.reset(seed=seed)
@@ -408,6 +434,27 @@ class AgentRuntime:
                     )
                     self._log_observation(observation)
                     stop_reason = advisor_result.receipt.message
+                    continue
+
+                if isinstance(action, RecallMemoryAction):
+                    self.guard.commit(guard_reservation)
+                    read_receipt = self._execute_memory_read(
+                        action,
+                        observation,
+                        plan_id="single-step",
+                        plan_version=1,
+                        step_id=step_id,
+                    )
+                    steps_completed += 1
+                    observation = self._with_memories(observation)
+                    self._apply_decision_continuity(
+                        decision,
+                        observation,
+                        plan_id="single-step",
+                        step_id=step_id,
+                    )
+                    self._log_observation(observation)
+                    stop_reason = read_receipt.message
                     continue
 
                 if isinstance(action, RequestAffordanceAction):
@@ -665,6 +712,8 @@ class AgentRuntime:
         try:
             self._ledger.reset()
             self._advisor_brief_ids.clear()
+            self._continuity_receipts.clear()
+            self._pending_memory_search = None
             self._affordance_requests.clear()
             self._affordance_requests_issued = 0
             observation = self._with_memories(await self.environment.reset(seed=seed))
@@ -1142,6 +1191,7 @@ class AgentRuntime:
                     consult_advisor=self._execute_advisor_action,
                     request_affordance=self._execute_affordance_request_action,
                     apply_patch_continuity=self._apply_patch_continuity,
+                    read_memory=self._execute_memory_read,
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(
@@ -2177,21 +2227,28 @@ class AgentRuntime:
             "live_execution_policy": self.planning_config.live_execution_policy,
             "recent_action_outcomes": self._ledger.recent_action_outcomes,
             "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
+            "recent_continuity_receipts": list(self._continuity_receipts),
             "advisor": (
                 self.advisor.availability(observation)
                 if self.advisor is not None
                 else disabled_advisor_availability()
             ),
             "affordance_requests": list(self._affordance_requests),
+            "memory_search": self._pending_memory_search,
         }
-        if self.memory is not None and (
-            self.memory_limit > 0 or self.entity_memory_limit > 0
-        ):
-            updates["memories"] = self.memory.recall(
-                limit=self.memory_limit,
-                minimum_salience=self.minimum_memory_salience,
+        if self.memory is not None:
+            recalled = self.memory.recall_tiered(
+                budget=self._recall_budget,
                 target_ids=observation.current_memory_target_ids(),
-                entity_limit=self.entity_memory_limit,
+            )
+            updates["memories"] = recalled.records
+            updates["memory_recall"] = RecallSummary(
+                omitted={
+                    tier: count
+                    for tier, count in recalled.omitted.items()
+                    if count
+                },
+                total_omitted=recalled.total_omitted,
             )
         return observation.model_copy(update=updates)
 
@@ -2404,12 +2461,14 @@ class AgentRuntime:
         has actually ended, with the reason it ended.
         """
 
-        self._continuity.apply(
-            plan.continuity_operations,
-            origin=ContinuityOrigin.PLAN,
-            observation=observation,
-            plan_id=plan.plan_id,
-            plan_version=plan.plan_version,
+        self._surface(
+            self._continuity.apply(
+                plan.continuity_operations,
+                origin=ContinuityOrigin.PLAN,
+                observation=observation,
+                plan_id=plan.plan_id,
+                plan_version=plan.plan_version,
+            )
         )
 
     def _apply_decision_continuity(
@@ -2420,13 +2479,15 @@ class AgentRuntime:
         plan_id: str,
         step_id: str,
     ) -> None:
-        self._continuity.apply(
-            decision.continuity_operations,
-            origin=ContinuityOrigin.DECISION,
-            observation=observation,
-            plan_id=plan_id,
-            plan_version=1,
-            step_id=step_id,
+        self._surface(
+            self._continuity.apply(
+                decision.continuity_operations,
+                origin=ContinuityOrigin.DECISION,
+                observation=observation,
+                plan_id=plan_id,
+                plan_version=1,
+                step_id=step_id,
+            )
         )
 
     def _apply_patch_continuity(
@@ -2445,14 +2506,21 @@ class AgentRuntime:
         discarded never reaches here, so it leaves no trace in durable memory.
         """
 
-        self._continuity.apply(
-            operations,
-            origin=ContinuityOrigin.PATCH,
-            observation=observation,
-            plan_id=plan_id,
-            plan_version=plan_version,
-            step_id=step_id,
+        self._surface(
+            self._continuity.apply(
+                operations,
+                origin=ContinuityOrigin.PATCH,
+                observation=observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+            )
         )
+
+    def _surface(self, receipts: Sequence[ContinuityOperationReceipt]) -> None:
+        """Keep the newest receipts where the next planner will see them."""
+
+        self._continuity_receipts.extend(receipts)
 
     def _record_plan_outcome(
         self,
@@ -2489,6 +2557,10 @@ class AgentRuntime:
         Delivery is recorded here and only here: this is the one place a
         memory actually reaches a planner. It is a diagnostic - no ordering
         reads it - so a memory cannot become important by being read.
+
+        A requested read is consumed here too. It answers exactly the planner
+        call that asked for it, and is not left lying around to be re-read as
+        if it were fresh.
         """
 
         if self.memory is not None and observation.memories:
@@ -2496,7 +2568,65 @@ class AgentRuntime:
                 self.run_id,
                 [record.memory_id for record in observation.memories],
             )
+        self._pending_memory_search = None
         return await self.planner.decide(observation)
+
+    def _execute_memory_read(
+        self,
+        action: RecallMemoryAction,
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+    ) -> ActionReceipt:
+        """Answer one deliberate read. Emits nothing into the game.
+
+        Unavailability is reported as unavailability. A read that could not
+        happen must not read as "there is nothing there".
+        """
+
+        started_at = datetime.now(UTC)
+        if self.memory is None:
+            result = MemorySearchResult(
+                query=action.query,
+                reason="Durable memory is disabled for this run; nothing was read.",
+            )
+        else:
+            result = self.memory.search(
+                query=action.query,
+                limit=action.max_records,
+            )
+        self._pending_memory_search = result
+        receipt = ActionReceipt(
+            action=action,
+            control_mode=self.control_mode,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            primitive_actions=0,
+            message=result.reason,
+        )
+        self.logger.write(
+            "memory_read",
+            step_index=observation.step_index,
+            payload={
+                "plan_id": plan_id,
+                "plan_version": plan_version,
+                "step_id": step_id,
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "result": result.model_dump(mode="json"),
+            },
+        )
+        self.logger.write(
+            "action_receipt",
+            step_index=observation.step_index,
+            payload=receipt,
+        )
+        return receipt
 
     def _record_action_outcome(
         self,

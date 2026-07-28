@@ -22,7 +22,7 @@ from kenshi_agent.continuity import (
     EvidenceResolutionError,
     render_evidence_reference,
 )
-from kenshi_agent.memory import MemoryStore
+from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.models import (
     ActionOutcome,
     ActionOutcomeAssessment,
@@ -30,6 +30,7 @@ from kenshi_agent.models import (
     AdvisorBriefEvidence,
     ContinuityOperationStatus,
     ContinuityOrigin,
+    ControlMode,
     CurrentObservationEvidence,
     KeepMemoryOperation,
     MemoryEvidence,
@@ -1110,10 +1111,15 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
 
         runner = object.__new__(AgentRuntime)
         runner.memory = store
-        runner.memory_limit = 8
-        runner.entity_memory_limit = 4
-        runner.minimum_memory_salience = 0.0
+        runner._recall_budget = RecallBudget(
+            commitments=4,
+            current_target=4,
+            open_hypotheses=2,
+            general=8,
+        )
         runner.advisor = None
+        runner._continuity_receipts = []
+        runner._pending_memory_search = None
         runner._affordance_requests = []
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
         runner.planning_config = PlanningConfig()
@@ -1378,3 +1384,201 @@ def test_a_superseding_replacement_is_held_to_the_same_grounding_rules(
         original = store.get(kept.memory_id)
         assert original is not None
         assert original.status.value == "active"
+
+
+# --------------------------------------------------------------------------
+# The elective read, end to end
+# --------------------------------------------------------------------------
+
+
+def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
+    tmp_path: Path,
+) -> None:
+    """Reaching for a memory is deliberation, not an action.
+
+    It must emit no primitive, answer only the call that asked, and then stop
+    answering — a stale read lying around reads as a fresh one.
+    """
+
+    import asyncio
+    import json
+
+    from kenshi_agent.models import (
+        PlannerDecision,
+        RecallMemoryAction,
+        StopAction,
+    )
+    from kenshi_agent.planners.base import Planner
+
+    seen: list[Any] = []
+
+    class ReadingPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> Any:
+            self.calls += 1
+            seen.append(current.memory_search)
+            if self.calls == 1:
+                return PlannerDecision(
+                    intent="Look up what I know about the gate.",
+                    rationale="Automatic recall did not surface it.",
+                    action=RecallMemoryAction(query="gate", max_records=2),
+                    confidence=1.0,
+                )
+            return PlannerDecision(
+                intent="Stop.",
+                rationale="The lookup answered the question.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        with open_store(tmp_path / "memory.sqlite3", "reader") as store:
+            keep_fact(store, "The gate at Squin closes at night.")
+            planner = ReadingPlanner()
+            runtime, logger = _single_step_runtime(tmp_path, planner, store)
+            runtime.guard.config.allow_action_kinds.append("recall_memory")
+            try:
+                summary = await runtime.run(max_steps=3)
+            finally:
+                logger.close()
+
+        assert summary.steps_completed == 2
+        assert seen[0] is None, "nothing was requested before the first call"
+        assert seen[1] is not None, "the read never reached the planner that asked"
+        assert [record.content for record in seen[1].records] == [
+            "The gate at Squin closes at night."
+        ]
+        assert seen[1].truncated is False
+        assert len(seen) == 2
+
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "events.jsonl").read_text().splitlines()
+        ]
+        reads = [
+            event["payload"] for event in events if event["event_type"] == "memory_read"
+        ]
+        assert len(reads) == 1
+        assert reads[0]["controller_primitives"] == 0
+        assert reads[0]["world_command_created"] is False
+        read_receipts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "action_receipt"
+            and event["payload"]["action"]["kind"] == "recall_memory"
+        ]
+        assert len(read_receipts) == 1
+        assert read_receipts[0]["primitive_actions"] == 0
+
+    asyncio.run(scenario())
+
+
+def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
+    tmp_path: Path,
+) -> None:
+    """Unknown stays unknown: an unavailable read is not "there is nothing"."""
+
+    from kenshi_agent.models import RecallMemoryAction
+    from kenshi_agent.runtime import AgentRuntime
+
+    runner = object.__new__(AgentRuntime)
+    runner.memory = None
+    runner.run_id = "reader"
+    runner.control_mode = ControlMode.INTERFACE_ONLY
+    runner.logger = SimpleNamespace(write=lambda *a, **k: None)
+    runner._pending_memory_search = None
+
+    receipt = AgentRuntime._execute_memory_read(
+        runner,
+        RecallMemoryAction(query="gate"),
+        observation(),
+        plan_id="single-step",
+        plan_version=1,
+        step_id="step-0",
+    )
+
+    assert runner._pending_memory_search is not None
+    assert runner._pending_memory_search.records == []
+    assert "disabled" in runner._pending_memory_search.reason
+    assert receipt.primitive_actions == 0
+
+
+def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
+    tmp_path: Path,
+) -> None:
+    from kenshi_agent.config import PlanningConfig
+    from kenshi_agent.memory import RecallBudget
+    from kenshi_agent.runtime import AgentRuntime
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+        engine, _ = authority(store, ledger)
+        runner = object.__new__(AgentRuntime)
+        runner.memory = store
+        runner.run_id = "run-a"
+        runner.advisor = None
+        runner.logger = SimpleNamespace(write=lambda *a, **k: None)
+        runner._ledger = ledger
+        runner._continuity = engine
+        runner._affordance_requests = []
+        runner._pending_memory_search = None
+        runner._continuity_receipts = []
+        runner.planning_config = PlanningConfig()
+        runner._recall_budget = RecallBudget(
+            commitments=4,
+            current_target=4,
+            open_hypotheses=2,
+            general=8,
+        )
+
+        runner._apply_decision_continuity(
+            SimpleNamespace(  # type: ignore[arg-type]
+                continuity_operations=[keep(MemoryKind.FACT, "Unsupported claim.")]
+            ),
+            observation(),
+            plan_id="single-step",
+            step_id="step-0",
+        )
+        decorated = runner._with_memories(observation())
+
+    assert [receipt.status for receipt in decorated.recent_continuity_receipts] == [
+        ContinuityOperationStatus.REJECTED
+    ]
+    assert "must cite" in decorated.recent_continuity_receipts[0].reason
+
+
+def test_omitted_general_memories_are_declared_in_the_observation(
+    tmp_path: Path,
+) -> None:
+    from kenshi_agent.config import PlanningConfig
+    from kenshi_agent.memory import RecallBudget
+    from kenshi_agent.models import RecallTier
+    from kenshi_agent.runtime import AgentRuntime
+
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        for index in range(5):
+            keep_fact(store, f"General fact {index}.")
+
+        runner = object.__new__(AgentRuntime)
+        runner.memory = store
+        runner.advisor = None
+        runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=0)
+        runner._affordance_requests = []
+        runner._continuity_receipts = []
+        runner._pending_memory_search = None
+        runner.planning_config = PlanningConfig()
+        runner._recall_budget = RecallBudget(
+            commitments=1,
+            current_target=1,
+            open_hypotheses=1,
+            general=2,
+        )
+
+        decorated = runner._with_memories(observation())
+
+    assert len(decorated.memories) == 2
+    assert decorated.memory_recall.total_omitted == 3
+    assert decorated.memory_recall.omitted[RecallTier.GENERAL] == 3
+    assert decorated.memory_recall.complete is False

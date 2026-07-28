@@ -160,6 +160,10 @@ memory:
   ephemeral: true
   max_recalled_memories: 16
   max_entity_recalled_memories: 8
+  # Open commitments and unresolved hypotheses get protected space so a
+  # loud general fact cannot push out what the plan is actually for.
+  max_commitment_memories: 4
+  max_hypothesis_memories: 2
   minimum_salience: 0.2
 
 macros:

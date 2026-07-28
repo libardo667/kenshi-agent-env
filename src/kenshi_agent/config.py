@@ -428,11 +428,16 @@ class MemoryConfig(ConfigModel):
         pattern=r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$",
     )
     ephemeral: bool = False
-    # General memories compete by salience within this budget. Exact memories
-    # for entities in the fresh current observation receive a separate bounded
-    # budget so later general writes cannot erase a learned constraint.
+    # Recall is tiered, and each tier has its own budget so that the loudest
+    # one cannot eat the others. Open commitments and memories bound to an
+    # entity in the fresh current observation are what a plan cannot safely
+    # proceed without, so they never compete with general knowledge for a slot.
     max_recalled_memories: int = Field(default=12, ge=0, le=100)
     max_entity_recalled_memories: int = Field(default=8, ge=0, le=100)
+    max_commitment_memories: int = Field(default=4, ge=0, le=32)
+    max_hypothesis_memories: int = Field(default=2, ge=0, le=32)
+    # Applied to general recall only. A survival constraint is not less
+    # important for being unexciting.
     minimum_salience: float = Field(default=0.15, ge=0.0, le=1.0)
 
 

@@ -286,7 +286,7 @@ def irreducible_payload(
             (
                 deepcopy(memory)
                 for memory in original["memories"]
-                if memory.get("target_id") in current_target_ids
+                if _decision_critical(memory, current_target_ids)
             ),
             key=_memory_sort_key,
             reverse=True,
@@ -390,6 +390,20 @@ def irreducible_payload(
         }
     )
     return retained
+
+
+def _decision_critical(memory: JsonObject, current_target_ids: set[str]) -> bool:
+    """Whether dropping this memory could make the next plan unsafe or amnesiac.
+
+    Two kinds survive budgeting: what the agent is currently committed to, and
+    what it knows about an entity in front of it right now. Everything else is
+    context, and context is what a budget is for.
+    """
+
+    return (
+        memory.get("kind") == "commitment"
+        or memory.get("target_id") in current_target_ids
+    )
 
 
 def _current_memory_target_ids(original: JsonObject) -> set[str]:

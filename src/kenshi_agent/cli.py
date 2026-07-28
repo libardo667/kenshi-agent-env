@@ -494,6 +494,8 @@ async def _run_command(args: argparse.Namespace) -> int:
             memory=memory,
             memory_limit=config.memory.max_recalled_memories,
             entity_memory_limit=config.memory.max_entity_recalled_memories,
+            commitment_memory_limit=config.memory.max_commitment_memories,
+            hypothesis_memory_limit=config.memory.max_hypothesis_memories,
             minimum_memory_salience=config.memory.minimum_salience,
             action_outcome_limit=config.runtime.observation_memory_limit,
             control_mode=run_control_mode,

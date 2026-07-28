@@ -20,6 +20,7 @@ from .models import (
     Observation,
     PauseAction,
     PurchaseItemAction,
+    RecallMemoryAction,
     RequestAffordanceAction,
     ScrollAction,
     SkillAction,
@@ -243,7 +244,10 @@ class ActionGuard:
             self.macros.primitive_count(action)
             if primitives is not None
             else 0
-            if isinstance(action, (ConsultAdvisorAction, RequestAffordanceAction))
+            if isinstance(
+                action,
+                (ConsultAdvisorAction, RequestAffordanceAction, RecallMemoryAction),
+            )
             else 1
         )
         if primitive_count > self.config.max_primitive_actions_per_step:

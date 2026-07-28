@@ -19,6 +19,7 @@ import json
 import shutil
 import sqlite3
 from collections.abc import Callable, Collection, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
@@ -30,7 +31,9 @@ from .models import (
     MemoryKind,
     MemoryLifecycleEvent,
     MemoryRecord,
+    MemorySearchResult,
     MemoryStatus,
+    RecallTier,
     new_memory_id,
 )
 
@@ -166,16 +169,21 @@ _SELECT_ACTIVE_BY_KEY_SQL = f"""
 _SELECT_ALL_SQL = f"""
     SELECT {_MEMORY_COLUMNS} FROM memories WHERE campaign_id=? ORDER BY memory_id
 """
+# Ordered by what the agent declared, how often it explicitly reinforced, and
+# when the record was made - never by when it was last read. Ties break on the
+# runtime-owned ID so repeated recalls of identical records cannot reorder.
+_RANK_SQL = """
+    ORDER BY salience DESC, reinforcement_count DESC, created_at DESC,
+             memory_id DESC
+"""
 _GENERAL_WHERE_SQL = (
     "campaign_id=? AND status='active' AND salience>=? AND target_id=''"
 )
 _QUERY_FILTER_SQL = " AND content LIKE ?"
-# Ordered by what the agent declared, how often it explicitly reinforced, and
-# when the record was made - never by when it was last read.
 _GENERAL_RECALL_SQL = f"""
     SELECT {_MEMORY_COLUMNS} FROM memories
     WHERE {{where}}
-    ORDER BY salience DESC, created_at DESC, memory_id DESC
+    {_RANK_SQL}
     LIMIT ?
 """
 _ENTITY_WHERE_SQL = (
@@ -184,8 +192,39 @@ _ENTITY_WHERE_SQL = (
 _ENTITY_RECALL_SQL = f"""
     SELECT {_MEMORY_COLUMNS} FROM memories
     WHERE {{where}}
-    ORDER BY salience DESC, created_at DESC, memory_id DESC
+    {_RANK_SQL}
     LIMIT ?
+"""
+# Tiers select without a LIMIT so the omitted count is the truth rather than
+# "at least the budget". Each tier is bounded in Python, after exclusion.
+_COMMITMENT_TIER_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE campaign_id=? AND status='active' AND kind='commitment'
+    {_RANK_SQL}
+"""
+_TARGET_TIER_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE campaign_id=? AND status='active' AND target_id IN ({{placeholders}})
+    {_RANK_SQL}
+"""
+_HYPOTHESIS_TIER_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE campaign_id=? AND status='active' AND kind='hypothesis'
+    {_RANK_SQL}
+"""
+# Commitments and hypotheses have their own tiers. Letting an overflowing
+# commitment tier spill into the general budget would mean the loudest tier
+# quietly eats the others, which is what tiering exists to prevent.
+_GENERAL_TIER_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE campaign_id=? AND status='active' AND salience>=? AND target_id=''
+      AND kind NOT IN ('commitment', 'hypothesis')
+    {_RANK_SQL}
+"""
+_SEARCH_SQL = f"""
+    SELECT {_MEMORY_COLUMNS} FROM memories
+    WHERE campaign_id=? AND status='active' AND content LIKE ? ESCAPE '\\'
+    {_RANK_SQL}
 """
 _UPDATE_REINFORCE_SQL = """
     UPDATE memories
@@ -231,6 +270,46 @@ _Identity = TypeVar("_Identity", int, str)
 _CLOSED_STATUSES = frozenset(
     {MemoryStatus.RESOLVED, MemoryStatus.SUPERSEDED, MemoryStatus.RETRACTED}
 )
+
+
+@dataclass(frozen=True, slots=True)
+class RecallBudget:
+    """How much of a bounded context window each tier may spend.
+
+    Separate numbers rather than one total, because the point of tiering is
+    that an open commitment does not compete with general knowledge for the
+    same slot.
+    """
+
+    commitments: int
+    current_target: int
+    open_hypotheses: int
+    general: int
+    minimum_salience: float = 0.0
+
+    def of(self, tier: RecallTier) -> int:
+        return {
+            RecallTier.COMMITMENT: self.commitments,
+            RecallTier.CURRENT_TARGET: self.current_target,
+            RecallTier.OPEN_HYPOTHESIS: self.open_hypotheses,
+            RecallTier.GENERAL: self.general,
+        }[tier]
+
+
+@dataclass(frozen=True, slots=True)
+class TieredRecall:
+    """What recall chose, why, and what it left behind."""
+
+    records: list[MemoryRecord]
+    tiers: dict[str, RecallTier]
+    omitted: dict[RecallTier, int]
+
+    def tier_of(self, memory_id: str) -> RecallTier:
+        return self.tiers[memory_id]
+
+    @property
+    def total_omitted(self) -> int:
+        return sum(self.omitted.values())
 
 
 class MemoryTransitionError(ValueError):
@@ -306,6 +385,24 @@ def _partition_target_ids(
         target_ids[offset : offset + chunk_size]
         for offset in range(0, len(target_ids), chunk_size)
     ]
+
+
+def _rank_key(row: sqlite3.Row) -> tuple[float, int, str, str]:
+    """The Python mirror of `_RANK_SQL`, for rows merged across queries."""
+
+    return (
+        _row_float(row, "salience"),
+        _row_int(row, "reinforcement_count"),
+        _row_text(row, "created_at"),
+        _row_text(row, "memory_id"),
+    )
+
+
+def _escape_like(query: str) -> str:
+    """Make a planner's literal query safe for `LIKE ... ESCAPE`."""
+
+    escaped = query.replace("\\", "\\\\")
+    return escaped.replace("%", "\\%").replace("_", "\\_")
 
 
 def normalized_key(kind: MemoryKind, content: str, target_id: str | None) -> str:
@@ -875,6 +972,113 @@ class MemoryStore:
         # open a write transaction each time, refreshing the very timestamp the
         # ordering above then read back. Reading is not reinforcement.
         return [self._record(row) for row in (*entity_rows, *general_rows)]
+
+    def recall_tiered(
+        self,
+        *,
+        budget: RecallBudget,
+        target_ids: Collection[str] = (),
+    ) -> TieredRecall:
+        """Spend a bounded context window in a fixed, deterministic order.
+
+        Tiers are selected whole and bounded afterwards, so the omitted count is
+        the real number rather than "at least the budget". A record belongs to
+        exactly one tier — a commitment about the entity in front of you is a
+        commitment, and counting it twice would spend the budget twice.
+
+        Only the general tier honours the salience floor. A survival constraint
+        is not less important for being unexciting, and neither is an open
+        commitment.
+        """
+
+        exact_target_ids = sorted({target_id for target_id in target_ids if target_id})
+        selections: list[tuple[RecallTier, list[sqlite3.Row]]] = [
+            (
+                RecallTier.COMMITMENT,
+                self._rows(_COMMITMENT_TIER_SQL, (self.campaign_id,)),
+            ),
+            (RecallTier.CURRENT_TARGET, self._target_rows(exact_target_ids)),
+            (
+                RecallTier.OPEN_HYPOTHESIS,
+                self._rows(_HYPOTHESIS_TIER_SQL, (self.campaign_id,)),
+            ),
+            (
+                RecallTier.GENERAL,
+                self._rows(
+                    _GENERAL_TIER_SQL,
+                    (self.campaign_id, budget.minimum_salience),
+                ),
+            ),
+        ]
+
+        records: list[MemoryRecord] = []
+        tiers: dict[str, RecallTier] = {}
+        omitted: dict[RecallTier, int] = {}
+        for tier, rows in selections:
+            allowance = budget.of(tier)
+            taken = 0
+            skipped = 0
+            for row in rows:
+                memory_id = _row_text(row, "memory_id")
+                if memory_id in tiers:
+                    continue
+                if taken < allowance:
+                    records.append(self._record(row))
+                    tiers[memory_id] = tier
+                    taken += 1
+                else:
+                    skipped += 1
+            omitted[tier] = skipped
+        return TieredRecall(records=records, tiers=tiers, omitted=omitted)
+
+    def _rows(self, sql: str, parameters: Sequence[object]) -> list[sqlite3.Row]:
+        return list(self._connection.execute(sql, parameters).fetchall())
+
+    def _target_rows(self, exact_target_ids: Sequence[str]) -> list[sqlite3.Row]:
+        if not exact_target_ids:
+            return []
+        candidates: dict[str, sqlite3.Row] = {}
+        for chunk in _partition_target_ids(
+            exact_target_ids,
+            self._TARGET_QUERY_CHUNK_SIZE,
+        ):
+            placeholders = ",".join("?" for _ in chunk)
+            candidates.update(
+                (_row_text(row, "memory_id"), row)
+                for row in self._connection.execute(
+                    _TARGET_TIER_SQL.format(placeholders=placeholders),
+                    (self.campaign_id, *chunk),
+                ).fetchall()
+            )
+        return sorted(candidates.values(), key=_rank_key, reverse=True)
+
+    def search(self, *, query: str, limit: int) -> MemorySearchResult:
+        """One deliberate, bounded read of material outside automatic recall.
+
+        Emits no game input and spends no risk budget: this is the agent
+        choosing to look something up, not choosing to do something. The query
+        is matched literally — `%` and `_` are SQL wildcards, and a planner's
+        query is not SQL.
+        """
+
+        if limit < 1:
+            raise ValueError(  # mutation: reason
+                "memory search limit must be at least one"  # mutation: reason
+            )
+        rows = self._rows(
+            _SEARCH_SQL,
+            (self.campaign_id, f"%{_escape_like(query)}%"),
+        )
+        return MemorySearchResult(
+            query=query,
+            records=[self._record(row) for row in rows[:limit]],
+            matched=len(rows),
+            truncated=len(rows) > limit,
+            reason=(  # mutation: reason
+                f"{len(rows)} active records match {query!r}; "  # mutation: reason
+                f"{min(len(rows), limit)} shown."  # mutation: reason
+            ),
+        )
 
     def record_delivery(self, run_id: str, memory_ids: Sequence[str]) -> None:
         """Note that these records reached an assembled planner payload.

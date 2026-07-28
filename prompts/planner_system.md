@@ -63,6 +63,24 @@ Every `memory_id` must come from `memories` in this observation. A closed
 record (resolved, superseded, retracted) refuses every further transition, and
 so does one belonging to another campaign.
 
+`recent_continuity_receipts` says what happened to your last operations. A
+`rejected` receipt names exactly what was wrong; fix it or drop it rather than
+sending the same operation again.
+
+`memory_recall` says what recall left out. `total_omitted: 0` means you are
+seeing everything; a nonzero count means more exists that you were not shown.
+Recall is tiered — open commitments, then memories bound to an entity in front
+of you, then unresolved hypotheses, then general knowledge — and each tier is
+bounded separately, so a full general tier never costs you a commitment.
+
+**`recall_memory` reaches for what recall did not show.** It searches durable
+memory for a literal substring and returns at most `max_records` records in
+`memory_search` on the *next* call. It is deliberation, not action: it presses
+no key, moves no character, and proves nothing about the world. Use it when a
+specific older thing would change the next decision — a route you tried, a
+trader you priced — and not as a habit. An unavailable read says so; it never
+means "there is nothing there".
+
 A `fact` or an `episode` reports something that happened, so it must cite at
 least one entry in `references`, and every reference must be an ID the runtime
 already advertised in this observation:

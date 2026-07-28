@@ -35,6 +35,7 @@ from .models import (
     PlanPatch,
     PlanStep,
     ProduceResourceOutputAction,
+    RecallMemoryAction,
     RequestAffordanceAction,
     ResourceTransferStatus,
     SkillAction,
@@ -88,6 +89,20 @@ AffordanceRequester = Callable[
     [RequestAffordanceAction, Observation, str, int, str],
     Coroutine[Any, Any, "AffordanceRequestActionResult"],
 ]
+
+
+class MemoryReader(Protocol):
+    """Answer one elective memory read. Emits no game input."""
+
+    def __call__(
+        self,
+        action: RecallMemoryAction,
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+    ) -> ActionReceipt: ...
 
 
 class PatchContinuityApplier(Protocol):
@@ -208,6 +223,7 @@ class ContinuousPlanExecutor:
         consult_advisor: AdvisorConsultant | None = None,
         request_affordance: AffordanceRequester | None = None,
         apply_patch_continuity: PatchContinuityApplier | None = None,
+        read_memory: MemoryReader | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -221,6 +237,7 @@ class ContinuousPlanExecutor:
         self.consult_advisor = consult_advisor
         self.request_affordance = request_affordance
         self.apply_patch_continuity = apply_patch_continuity
+        self.read_memory = read_memory
         # Which steps of the plan currently in flight actually finished. One
         # executor owns one plan, so this is that plan's answer, and every
         # terminal result reports it rather than only why the plan stopped.
@@ -843,6 +860,16 @@ class ContinuousPlanExecutor:
         if isinstance(action, RequestAffordanceAction):
             self.guard.commit(guard_reservation)
             return await self._execute_affordance_request_step(
+                action,
+                plan,
+                step,
+                observation,
+                budget,
+            )
+
+        if isinstance(action, RecallMemoryAction):
+            self.guard.commit(guard_reservation)
+            return self._execute_memory_read_step(
                 action,
                 plan,
                 step,
@@ -1775,6 +1802,80 @@ class ContinuousPlanExecutor:
             succeeded=succeeded,
             actions_completed=1,
             reason=reason,
+        )
+
+    def _execute_memory_read_step(
+        self,
+        action: RecallMemoryAction,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        budget: PlanBudgetLedger,
+    ) -> _StepResult:
+        """Read durable memory without creating a world command.
+
+        Spends one bounded plan action, because deliberation is not free, but
+        no pointer, purchase, or native risk: nothing reaches the game.
+        """
+
+        self._event(
+            "plan_step_started",
+            plan,
+            observation,
+            step=step,
+            reason="Memory read passed the guard and reserved one plan action.",
+            evidence={
+                "controller_primitives": 0,
+                "world_command_created": False,
+                "remaining_actions_before_commit": budget.remaining_actions,
+            },
+        )
+        if self.read_memory is None:
+            budget.release((0, 0, 0))
+            reason = "No memory-read sink is attached to this runtime."
+            self._event(
+                "plan_budget_released",
+                plan,
+                observation,
+                step=step,
+                reason=reason,
+            )
+            return _StepResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=0,
+                reason=reason,
+            )
+
+        receipt = self.read_memory(
+            action,
+            observation,
+            plan_id=plan.plan_id,
+            plan_version=plan.plan_version,
+            step_id=step.step_id,
+        )
+        budget.commit()
+        latest = self.state_store.latest or observation
+        self._event(
+            "plan_budget_committed",
+            plan,
+            latest,
+            step=step,
+            reason="The cognitive read consumed one bounded plan action.",
+        )
+        self._event(
+            "memory_read_completed",
+            plan,
+            latest,
+            step=step,
+            reason=receipt.message,
+            evidence={"controller_primitives": 0, "world_command_created": False},
+        )
+        return _StepResult(
+            observation=latest,
+            succeeded=True,
+            actions_completed=1,
+            reason=receipt.message,
         )
 
     async def _execute_movement_option(

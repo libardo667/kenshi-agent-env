@@ -79,6 +79,9 @@
               "$ref": "#/$defs/RequestAffordanceAction"
             },
             {
+              "$ref": "#/$defs/RecallMemoryAction"
+            },
+            {
               "$ref": "#/$defs/KeyAction"
             },
             {
@@ -275,6 +278,27 @@
       ],
       "title": "ActionOutcomeAssessment",
       "type": "string"
+    },
+    "ActionOutcomeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "action_outcome",
+          "default": "action_outcome",
+          "title": "Source",
+          "type": "string"
+        },
+        "outcome_id": {
+          "pattern": "^ao-[1-9][0-9]{0,8}$",
+          "title": "Outcome Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome_id"
+      ],
+      "title": "ActionOutcomeEvidence",
+      "type": "object"
     },
     "ActivateVisibleControlAction": {
       "additionalProperties": false,
@@ -569,6 +593,28 @@
         "model"
       ],
       "title": "AdvisorBrief",
+      "type": "object"
+    },
+    "AdvisorBriefEvidence": {
+      "additionalProperties": false,
+      "description": "Advice, not world evidence. Rendered as such wherever it is stored.",
+      "properties": {
+        "source": {
+          "const": "advisor_brief",
+          "default": "advisor_brief",
+          "title": "Source",
+          "type": "string"
+        },
+        "brief_id": {
+          "pattern": "^advisor-[0-9a-f]{32}$",
+          "title": "Brief Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_id"
+      ],
+      "title": "AdvisorBriefEvidence",
       "type": "object"
     },
     "AdvisorFocus": {
@@ -1251,6 +1297,139 @@
       "title": "ContextActionKind",
       "type": "string"
     },
+    "ContinuityOperationReceipt": {
+      "additionalProperties": false,
+      "properties": {
+        "origin": {
+          "$ref": "#/$defs/ContinuityOrigin"
+        },
+        "status": {
+          "$ref": "#/$defs/ContinuityOperationStatus"
+        },
+        "operation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeepMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/ReinforceMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/ResolveMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/SupersedeMemoryOperation"
+            },
+            {
+              "$ref": "#/$defs/RetractMemoryOperation"
+            }
+          ],
+          "title": "Operation"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "memory_id": {
+          "anyOf": [
+            {
+              "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Id"
+        },
+        "evidence": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence"
+        },
+        "plan_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Id"
+        },
+        "plan_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Version"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "recorded_at": {
+          "format": "date-time",
+          "title": "Recorded At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "status",
+        "operation",
+        "reason"
+      ],
+      "title": "ContinuityOperationReceipt",
+      "type": "object"
+    },
+    "ContinuityOperationStatus": {
+      "enum": [
+        "accepted",
+        "rejected",
+        "no_op"
+      ],
+      "title": "ContinuityOperationStatus",
+      "type": "string"
+    },
+    "ContinuityOrigin": {
+      "enum": [
+        "decision",
+        "plan",
+        "patch"
+      ],
+      "title": "ContinuityOrigin",
+      "type": "string"
+    },
     "ControlMode": {
       "enum": [
         "interface_only",
@@ -1267,6 +1446,20 @@
       ],
       "title": "CoordinateSpace",
       "type": "string"
+    },
+    "CurrentObservationEvidence": {
+      "additionalProperties": false,
+      "description": "The exact observation the planner was looking at when it wrote this.",
+      "properties": {
+        "source": {
+          "const": "current_observation",
+          "default": "current_observation",
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "title": "CurrentObservationEvidence",
+      "type": "object"
     },
     "DismissScreenAction": {
       "additionalProperties": false,
@@ -1667,6 +1860,78 @@
       "title": "InventoryItem",
       "type": "object"
     },
+    "KeepMemoryOperation": {
+      "additionalProperties": false,
+      "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
+      "properties": {
+        "operation": {
+          "const": "keep",
+          "default": "keep",
+          "title": "Operation",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MemoryKind"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "salience": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Salience",
+          "type": "number"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind",
+        "content"
+      ],
+      "title": "KeepMemoryOperation",
+      "type": "object"
+    },
     "KeyAction": {
       "additionalProperties": false,
       "properties": {
@@ -1712,6 +1977,27 @@
       ],
       "title": "MemoryAuthorship",
       "type": "string"
+    },
+    "MemoryEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "memory",
+          "default": "memory",
+          "title": "Source",
+          "type": "string"
+        },
+        "memory_id": {
+          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+          "title": "Memory Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_id"
+      ],
+      "title": "MemoryEvidence",
+      "type": "object"
     },
     "MemoryKind": {
       "enum": [
@@ -1903,6 +2189,48 @@
         "created_at"
       ],
       "title": "MemoryRecord",
+      "type": "object"
+    },
+    "MemorySearchResult": {
+      "additionalProperties": false,
+      "description": "The typed answer to one deliberate, bounded read.",
+      "properties": {
+        "query": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "records": {
+          "items": {
+            "$ref": "#/$defs/MemoryRecord"
+          },
+          "maxItems": 16,
+          "title": "Records",
+          "type": "array"
+        },
+        "matched": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Matched",
+          "type": "integer"
+        },
+        "truncated": {
+          "default": false,
+          "title": "Truncated",
+          "type": "boolean"
+        },
+        "reason": {
+          "default": "",
+          "maxLength": 600,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "MemorySearchResult",
       "type": "object"
     },
     "MemoryStatus": {
@@ -2626,6 +2954,27 @@
       "title": "PlanOutcome",
       "type": "object"
     },
+    "PlanOutcomeEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "plan_outcome",
+          "default": "plan_outcome",
+          "title": "Source",
+          "type": "string"
+        },
+        "plan_outcome_id": {
+          "pattern": "^po-[1-9][0-9]{0,8}$",
+          "title": "Plan Outcome Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "plan_outcome_id"
+      ],
+      "title": "PlanOutcomeEvidence",
+      "type": "object"
+    },
     "PlanningMode": {
       "enum": [
         "single_step",
@@ -2707,6 +3056,71 @@
       "title": "PurchaseItemAction",
       "type": "object"
     },
+    "RecallMemoryAction": {
+      "additionalProperties": false,
+      "description": "Deliberately read durable memory beyond what recall already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything: its result is text for the next\nplanner call, exactly like advice.",
+      "properties": {
+        "kind": {
+          "const": "recall_memory",
+          "default": "recall_memory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "max_records": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Records",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "RecallMemoryAction",
+      "type": "object"
+    },
+    "RecallSummary": {
+      "additionalProperties": false,
+      "description": "What automatic recall left out, stated rather than implied.\n\nA planner that cannot tell \"nothing else exists\" from \"more exists, not\nshown\" will conclude the first and stop looking.",
+      "properties": {
+        "omitted": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "propertyNames": {
+            "$ref": "#/$defs/RecallTier"
+          },
+          "title": "Omitted",
+          "type": "object"
+        },
+        "total_omitted": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Total Omitted",
+          "type": "integer"
+        }
+      },
+      "title": "RecallSummary",
+      "type": "object"
+    },
+    "RecallTier": {
+      "description": "Why a record was chosen, in the order the tiers are spent.\n\nThe order is the policy: a plan cannot safely proceed without its open\ncommitments or what it knows about the entity in front of it, so those are\nnot allowed to compete with general knowledge for the same slots.",
+      "enum": [
+        "commitment",
+        "current_target",
+        "open_hypothesis",
+        "general"
+      ],
+      "title": "RecallTier",
+      "type": "string"
+    },
     "RecoverCameraViewAction": {
       "additionalProperties": false,
       "description": "Ask the controller to restore a usable character-following world view.\n\nThis action intentionally has no camera parameters. The caller identifies\nthe problem; the controller owns the bounded follow, floor, zoom, orbit,\ncapture, and scoring transaction and reports its terminal outcome.",
@@ -2719,6 +3133,66 @@
         }
       },
       "title": "RecoverCameraViewAction",
+      "type": "object"
+    },
+    "ReinforceMemoryOperation": {
+      "additionalProperties": false,
+      "description": "Say an existing record still matters, without writing a second copy.",
+      "properties": {
+        "operation": {
+          "const": "reinforce",
+          "default": "reinforce",
+          "title": "Operation",
+          "type": "string"
+        },
+        "memory_id": {
+          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "salience": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Salience"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "memory_id"
+      ],
+      "title": "ReinforceMemoryOperation",
       "type": "object"
     },
     "RequestAffordanceAction": {
@@ -2798,6 +3272,88 @@
         "evidence"
       ],
       "title": "RequestAffordanceAction",
+      "type": "object"
+    },
+    "ResolveMemoryOperation": {
+      "additionalProperties": false,
+      "description": "Close an open commitment or question with the evidence that closed it.",
+      "properties": {
+        "operation": {
+          "const": "resolve",
+          "default": "resolve",
+          "title": "Operation",
+          "type": "string"
+        },
+        "memory_id": {
+          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "memory_id",
+        "reason"
+      ],
+      "title": "ResolveMemoryOperation",
+      "type": "object"
+    },
+    "RetractMemoryOperation": {
+      "additionalProperties": false,
+      "description": "Withdraw a record from active recall without deleting its history.",
+      "properties": {
+        "operation": {
+          "const": "retract",
+          "default": "retract",
+          "title": "Operation",
+          "type": "string"
+        },
+        "memory_id": {
+          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "memory_id",
+        "reason"
+      ],
+      "title": "RetractMemoryOperation",
       "type": "object"
     },
     "ScrollAction": {
@@ -3164,6 +3720,84 @@
         "reason"
       ],
       "title": "StopAction",
+      "type": "object"
+    },
+    "SupersedeMemoryOperation": {
+      "additionalProperties": false,
+      "description": "Replace a record and link the old one to its replacement, atomically.",
+      "properties": {
+        "operation": {
+          "const": "supersede",
+          "default": "supersede",
+          "title": "Operation",
+          "type": "string"
+        },
+        "memory_id": {
+          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
+          "title": "Memory Id",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/MemoryKind"
+        },
+        "content": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        },
+        "salience": {
+          "default": 0.5,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Salience",
+          "type": "number"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "references": {
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/CurrentObservationEvidence"
+              },
+              {
+                "$ref": "#/$defs/ActionOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/PlanOutcomeEvidence"
+              },
+              {
+                "$ref": "#/$defs/MemoryEvidence"
+              },
+              {
+                "$ref": "#/$defs/AdvisorBriefEvidence"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "title": "References",
+          "type": "array"
+        }
+      },
+      "required": [
+        "memory_id",
+        "kind",
+        "content"
+      ],
+      "title": "SupersedeMemoryOperation",
       "type": "object"
     },
     "TelemetrySnapshot": {
@@ -3947,6 +4581,14 @@
       "title": "Recent Plan Outcomes",
       "type": "array"
     },
+    "recent_continuity_receipts": {
+      "items": {
+        "$ref": "#/$defs/ContinuityOperationReceipt"
+      },
+      "maxItems": 8,
+      "title": "Recent Continuity Receipts",
+      "type": "array"
+    },
     "planner_feedback": {
       "anyOf": [
         {
@@ -3988,6 +4630,20 @@
       },
       "title": "Memories",
       "type": "array"
+    },
+    "memory_recall": {
+      "$ref": "#/$defs/RecallSummary"
+    },
+    "memory_search": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MemorySearchResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "advisor": {
       "$ref": "#/$defs/AdvisorAvailability"

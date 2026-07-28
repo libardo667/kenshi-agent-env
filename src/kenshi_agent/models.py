@@ -882,6 +882,20 @@ class ConsultAdvisorAction(StrictModel):
     focus: AdvisorFocus = AdvisorFocus.NEXT_GOAL
 
 
+class RecallMemoryAction(StrictModel):
+    """Deliberately read durable memory beyond what recall already showed.
+
+    A cognitive action. It emits no controller primitives, never enters the
+    environment dispatch path, spends no pointer, purchase, or native risk
+    budget, and cannot authorize anything: its result is text for the next
+    planner call, exactly like advice.
+    """
+
+    kind: Literal["recall_memory"] = "recall_memory"
+    query: str = Field(min_length=1, max_length=200)
+    max_records: int = Field(default=4, ge=1, le=8)
+
+
 class AffordanceUrgency(StrEnum):
     SURVIVAL_CRITICAL = "survival_critical"
     BLOCKS_CURRENT_GOAL = "blocks_current_goal"
@@ -1361,6 +1375,7 @@ PlannerControlAction: TypeAlias = (
     | WaitAction
     | ConsultAdvisorAction
     | RequestAffordanceAction
+    | RecallMemoryAction
 )
 """Planner-layer intentions that touch no game object and bind to no reference."""
 
@@ -1395,6 +1410,7 @@ Action: TypeAlias = (
     | WaitAction
     | ConsultAdvisorAction
     | RequestAffordanceAction
+    | RecallMemoryAction
     | KeyAction
     | HotkeyAction
     | MoveCursorAction
@@ -1775,6 +1791,45 @@ class MemoryRecord(StrictModel):
     supersedes_id: str | None = Field(default=None, min_length=1, max_length=80)
     superseded_by_id: str | None = Field(default=None, min_length=1, max_length=80)
     resolution_reason: str | None = Field(default=None, max_length=1000)
+
+
+class RecallTier(StrEnum):
+    """Why a record was chosen, in the order the tiers are spent.
+
+    The order is the policy: a plan cannot safely proceed without its open
+    commitments or what it knows about the entity in front of it, so those are
+    not allowed to compete with general knowledge for the same slots.
+    """
+
+    COMMITMENT = "commitment"
+    CURRENT_TARGET = "current_target"
+    OPEN_HYPOTHESIS = "open_hypothesis"
+    GENERAL = "general"
+
+
+class RecallSummary(StrictModel):
+    """What automatic recall left out, stated rather than implied.
+
+    A planner that cannot tell "nothing else exists" from "more exists, not
+    shown" will conclude the first and stop looking.
+    """
+
+    omitted: dict[RecallTier, int] = Field(default_factory=dict)
+    total_omitted: int = Field(default=0, ge=0)
+
+    @property
+    def complete(self) -> bool:
+        return self.total_omitted == 0
+
+
+class MemorySearchResult(StrictModel):
+    """The typed answer to one deliberate, bounded read."""
+
+    query: str = Field(min_length=1, max_length=200)
+    records: list[MemoryRecord] = Field(default_factory=list, max_length=16)
+    matched: int = Field(default=0, ge=0)
+    truncated: bool = False
+    reason: str = Field(default="", max_length=600)
 
 
 class MemoryHistoryEntry(StrictModel):
@@ -2458,6 +2513,12 @@ class Observation(StrictModel):
     # Why previous plans ended, in terms of what they set out to do. Working
     # history, not durable memory: it is runtime-owned and dies with the run.
     recent_plan_outcomes: list[PlanOutcome] = Field(default_factory=list, max_length=8)
+    # Why the last continuity operations were accepted or refused. Without this
+    # a planner that makes one deterministic mistake remakes it every plan.
+    recent_continuity_receipts: list[ContinuityOperationReceipt] = Field(
+        default_factory=list,
+        max_length=8,
+    )
     # Why the previous planner response could not be used. Without it a planner
     # that makes one deterministic mistake remakes it on every retry: a live run
     # ended after 21 identical validation failures, each replanned from an
@@ -2473,6 +2534,12 @@ class Observation(StrictModel):
     available_skills: list[str] = Field(default_factory=list)
     skill_specs: list[SkillSpec] = Field(default_factory=list)
     memories: list[MemoryRecord] = Field(default_factory=list)
+    # What automatic recall left out, so "nothing else" and "more, not shown"
+    # are distinguishable.
+    memory_recall: RecallSummary = Field(default_factory=RecallSummary)
+    # The typed result of an elective `recall_memory`, carried to exactly the
+    # next planner call that asked for it.
+    memory_search: MemorySearchResult | None = None
     advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
     affordance_requests: list[AffordanceRequestRecord] = Field(
         default_factory=list,

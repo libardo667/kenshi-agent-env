@@ -3038,6 +3038,7 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     runner.run_id = "continuity"
     runner.logger = SimpleNamespace(write=lambda *a, **k: None)
     runner._ledger = ledger
+    runner._continuity_receipts = []
     runner._continuity = ContinuityAuthority(
         run_id="continuity",
         store=store,

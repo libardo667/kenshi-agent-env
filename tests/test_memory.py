@@ -8,7 +8,7 @@ from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.continuity import ContinuityLedger
 from kenshi_agent.evals import evaluate_log
-from kenshi_agent.memory import MemoryStore, _partition_target_ids
+from kenshi_agent.memory import MemoryStore, RecallBudget, _partition_target_ids
 from kenshi_agent.models import (
     ActionReceipt,
     ApproachDialogueTargetAction,
@@ -196,12 +196,18 @@ def test_current_target_memory_survives_general_recall_overflow(
 
         runner = object.__new__(AgentRuntime)
         runner.memory = store
-        runner.memory_limit = 2
-        runner.entity_memory_limit = 2
-        runner.minimum_memory_salience = 0.5
+        runner._recall_budget = RecallBudget(
+            commitments=2,
+            current_target=2,
+            open_hypotheses=2,
+            general=2,
+            minimum_salience=0.5,
+        )
         runner.action_outcome_limit = 0
         runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
         runner.advisor = None
+        runner._continuity_receipts = []
+        runner._pending_memory_search = None
         runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
 
@@ -236,12 +242,17 @@ def test_target_memory_never_attaches_by_name_or_stale_identity(
 
         runner = object.__new__(AgentRuntime)
         runner.memory = store
-        runner.memory_limit = 2
-        runner.entity_memory_limit = 2
-        runner.minimum_memory_salience = 0.0
+        runner._recall_budget = RecallBudget(
+            commitments=2,
+            current_target=2,
+            open_hypotheses=2,
+            general=2,
+        )
         runner.action_outcome_limit = 0
         runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
         runner.advisor = None
+        runner._continuity_receipts = []
+        runner._pending_memory_search = None
         runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
 
@@ -314,12 +325,17 @@ def test_entity_recall_reduces_repeated_approaches_in_controlled_policy(
     def run_condition(name: str, entity_limit: int) -> int:
         runner = object.__new__(AgentRuntime)
         runner.memory = store
-        runner.memory_limit = 0
-        runner.entity_memory_limit = entity_limit
-        runner.minimum_memory_salience = 0.0
+        runner._recall_budget = RecallBudget(
+            commitments=0,
+            current_target=entity_limit,
+            open_hypotheses=0,
+            general=0,
+        )
         runner.action_outcome_limit = 0
         runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
         runner.advisor = None
+        runner._continuity_receipts = []
+        runner._pending_memory_search = None
         runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
         context = runner._with_memories(observation)

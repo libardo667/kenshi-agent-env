@@ -682,6 +682,36 @@
       "title": "PurchaseItemAction",
       "type": "object"
     },
+    "RecallMemoryAction": {
+      "additionalProperties": false,
+      "description": "Deliberately read durable memory beyond what recall already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything: its result is text for the next\nplanner call, exactly like advice.",
+      "properties": {
+        "kind": {
+          "const": "recall_memory",
+          "default": "recall_memory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "max_records": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Records",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "RecallMemoryAction",
+      "type": "object"
+    },
     "RecoverCameraViewAction": {
       "additionalProperties": false,
       "description": "Ask the controller to restore a usable character-following world view.\n\nThis action intentionally has no camera parameters. The caller identifies\nthe problem; the controller owns the bounded follow, floor, zoom, orbit,\ncapture, and scoring transaction and reports its terminal outcome.",
@@ -1069,6 +1099,9 @@
     },
     {
       "$ref": "#/$defs/RequestAffordanceAction"
+    },
+    {
+      "$ref": "#/$defs/RecallMemoryAction"
     },
     {
       "$ref": "#/$defs/KeyAction"

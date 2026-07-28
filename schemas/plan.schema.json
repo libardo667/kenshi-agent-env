@@ -905,6 +905,9 @@
               "$ref": "#/$defs/RequestAffordanceAction"
             },
             {
+              "$ref": "#/$defs/RecallMemoryAction"
+            },
+            {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
             },
             {
@@ -1115,6 +1118,36 @@
         "seller_id"
       ],
       "title": "PurchaseItemAction",
+      "type": "object"
+    },
+    "RecallMemoryAction": {
+      "additionalProperties": false,
+      "description": "Deliberately read durable memory beyond what recall already showed.\n\nA cognitive action. It emits no controller primitives, never enters the\nenvironment dispatch path, spends no pointer, purchase, or native risk\nbudget, and cannot authorize anything: its result is text for the next\nplanner call, exactly like advice.",
+      "properties": {
+        "kind": {
+          "const": "recall_memory",
+          "default": "recall_memory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "query": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Query",
+          "type": "string"
+        },
+        "max_records": {
+          "default": 4,
+          "maximum": 8,
+          "minimum": 1,
+          "title": "Max Records",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "query"
+      ],
+      "title": "RecallMemoryAction",
       "type": "object"
     },
     "RecoverCameraViewAction": {

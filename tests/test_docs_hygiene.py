@@ -70,6 +70,14 @@ ROOT_DOC_CAPS: dict[str, int] = {
     "MEMORY_CONTINUITY_LOOP_PROMPT.md": 724,
 }
 
+# Not root documents, but the same reasoning: a step-by-step procedure someone
+# follows at the FCS keyboard cannot be split without making them chase it
+# across files, and shortening it is how build guides start lying. Same ratchet
+# as above: growing one means raising its number here, where a reviewer sees it.
+PROCEDURE_DOC_CAPS: dict[str, int] = {
+    "docs/GUIDE_LADLE_START.md": 236,
+}
+
 ROOT_DOC_EXEMPTIONS: dict[str, str] = {
     "CHANGELOG.md": "an append-only history is meant to grow",
 }
@@ -111,6 +119,8 @@ def _rejected_documents(root: Path) -> list[str]:
 
 
 def _ceiling(relative: str) -> int:
+    if relative in PROCEDURE_DOC_CAPS:
+        return PROCEDURE_DOC_CAPS[relative]
     return ROOT_DOC_CAPS.get(relative, DOC_LINE_CAP)
 
 
