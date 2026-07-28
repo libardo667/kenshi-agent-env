@@ -36,16 +36,15 @@ launcher without a pseudo-terminal:
   --planner-script scripts/live_direction_smoke_planner.py \
   --planner-arg=--bearing --planner-arg=100 \
   --planner-arg=--distance --planner-arg=350 \
+  --campaign ladle-css-01 \
   --continuous --execute --native-assisted \
   --acknowledge-continuous-live --exclusive
 ```
 
-`journey` defaults to `config/live.longform.yaml`; the other commands default to
-`config/live.burnin.yaml`. An explicit repository-relative `--config` is
-translated by the wrapper. Do not substitute direct Windows-Python invocations,
-manually written native request files, ad-hoc input snippets, or PTY launch
-attempts. If `./dev` cannot express or complete the run, repair that supported
-path before treating a workaround as evidence.
+`journey` defaults to campaign-neutral `config/live.longform.yaml`; pass `--campaign <save-lineage>` or an attested `--scenario`. Other commands default to
+`config/live.burnin.yaml`; explicit repository-relative configs are translated.
+Do not substitute direct Windows-Python, native-file, input-snippet, or PTY workarounds.
+If `./dev` cannot complete the run, repair that supported path before claiming evidence.
 
 The live profiles require the checked-in 30 fps renderer profile and an active
 1920x1080 external display. Actual `launch` and executing `journey` commands

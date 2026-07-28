@@ -821,16 +821,19 @@ class MemoryStore:
         run_id: str,
         now: datetime,
     ) -> MemoryRecord:
-        with self._connection:
-            self._append_event(
-                record.campaign_id,
-                record.memory_id,
-                MemoryLifecycleEvent.KEEP,
-                run_id,
-                now.isoformat(),
-                self._keep_payload(record),
-            )
-            self._insert_projection(record)
+        try:
+            with self._connection:
+                self._append_event(
+                    record.campaign_id,
+                    record.memory_id,
+                    MemoryLifecycleEvent.KEEP,
+                    run_id,
+                    now.isoformat(),
+                    self._keep_payload(record),
+                )
+                self._insert_projection(record)
+        except sqlite3.IntegrityError as exc:
+            self._raise_expected_integrity_conflict(exc)
         return record
 
     def reinforce(
@@ -868,7 +871,21 @@ class MemoryStore:
                     memory_id,
                 ),
             )
-        return self._require_record(memory_id)
+        return current.model_copy(
+            update={
+                "salience": raised,
+                "grounding": (
+                    current.grounding if grounding is None else grounding
+                ),
+                "latest_provenance": (
+                    current.latest_provenance
+                    if provenance is None
+                    else provenance
+                ),
+                "reinforced_at": now,
+                "reinforcement_count": current.reinforcement_count + 1,
+            }
+        )
 
     def resolve(
         self,
@@ -933,7 +950,22 @@ class MemoryStore:
                     memory_id,
                 ),
             )
-        return self._require_record(memory_id)
+        return current.model_copy(
+            update={
+                "status": MemoryStatus.RESOLVED,
+                "resolved_at": now,
+                "resolution_reason": reason,
+                "resolution_disposition": disposition,
+                "grounding": (
+                    current.grounding if grounding is None else grounding
+                ),
+                "latest_provenance": (
+                    current.latest_provenance
+                    if provenance is None
+                    else provenance
+                ),
+            }
+        )
 
     def supersede(
         self,
@@ -955,6 +987,14 @@ class MemoryStore:
         """
 
         self._require_open(memory_id, MemoryLifecycleEvent.SUPERSEDE)
+        replacement_key = normalized_key(kind, content, target_id)
+        conflicting = self._active_by_key(replacement_key)
+        if conflicting is not None and conflicting.memory_id != memory_id:
+            raise MemoryTransitionError(  # mutation: reason
+                f"Campaign {self.campaign_id!r} already has an active memory "  # mutation: reason
+                "with that normalized identity; supersede or retract the "  # mutation: reason
+                f"conflicting memory {conflicting.memory_id!r} first."  # mutation: reason
+            )
         now = datetime.now(UTC)
         replacement = MemoryRecord(
             memory_id=self._new_memory_id(),
@@ -970,39 +1010,42 @@ class MemoryStore:
             created_at=now,
             supersedes_id=memory_id,
         )
-        with self._connection:
-            self._append_event(
-                self.campaign_id,
-                memory_id,
-                MemoryLifecycleEvent.SUPERSEDE,
-                run_id,
-                now.isoformat(),
-                self._payload_with_provenance(
-                    {"superseded_by_id": replacement.memory_id},
-                    provenance,
-                ),
-            )
-            self._append_event(
-                self.campaign_id,
-                replacement.memory_id,
-                MemoryLifecycleEvent.KEEP,
-                run_id,
-                now.isoformat(),
-                self._keep_payload(replacement),
-            )
-            self._connection.execute(
-                _UPDATE_SUPERSEDE_SQL,
-                (
-                    MemoryStatus.SUPERSEDED.value,
-                    now.isoformat(),
-                    replacement.memory_id,
-                    self._provenance_text(provenance),
+        try:
+            with self._connection:
+                self._append_event(
                     self.campaign_id,
                     memory_id,
-                ),
-            )
-            self._insert_projection(replacement)
-        return self._require_record(replacement.memory_id)
+                    MemoryLifecycleEvent.SUPERSEDE,
+                    run_id,
+                    now.isoformat(),
+                    self._payload_with_provenance(
+                        {"superseded_by_id": replacement.memory_id},
+                        provenance,
+                    ),
+                )
+                self._append_event(
+                    self.campaign_id,
+                    replacement.memory_id,
+                    MemoryLifecycleEvent.KEEP,
+                    run_id,
+                    now.isoformat(),
+                    self._keep_payload(replacement),
+                )
+                self._connection.execute(
+                    _UPDATE_SUPERSEDE_SQL,
+                    (
+                        MemoryStatus.SUPERSEDED.value,
+                        now.isoformat(),
+                        replacement.memory_id,
+                        self._provenance_text(provenance),
+                        self.campaign_id,
+                        memory_id,
+                    ),
+                )
+                self._insert_projection(replacement)
+        except sqlite3.IntegrityError as exc:
+            self._raise_expected_integrity_conflict(exc)
+        return replacement
 
     def retract(
         self,
@@ -1012,7 +1055,7 @@ class MemoryStore:
         reason: str,
         provenance: CanonicalMemoryProvenance | None = None,
     ) -> MemoryRecord:
-        self._require_open(memory_id, MemoryLifecycleEvent.RETRACT)
+        current = self._require_open(memory_id, MemoryLifecycleEvent.RETRACT)
         now = datetime.now(UTC)
         with self._connection:
             self._append_event(
@@ -1037,7 +1080,18 @@ class MemoryStore:
                     memory_id,
                 ),
             )
-        return self._require_record(memory_id)
+        return current.model_copy(
+            update={
+                "status": MemoryStatus.RETRACTED,
+                "resolved_at": now,
+                "resolution_reason": reason,
+                "latest_provenance": (
+                    current.latest_provenance
+                    if provenance is None
+                    else provenance
+                ),
+            }
+        )
 
     def _require_open(
         self,
@@ -1057,13 +1111,19 @@ class MemoryStore:
             )
         return record
 
-    def _require_record(self, memory_id: str) -> MemoryRecord:
-        record = self.get(memory_id)
-        if record is None:
+    @staticmethod
+    def _raise_expected_integrity_conflict(exc: sqlite3.IntegrityError) -> None:
+        """Translate uniqueness races without disguising other store failures."""
+
+        if exc.sqlite_errorcode in {
+            sqlite3.SQLITE_CONSTRAINT_PRIMARYKEY,
+            sqlite3.SQLITE_CONSTRAINT_UNIQUE,
+        }:
             raise MemoryTransitionError(  # mutation: reason
-                f"Memory {memory_id!r} vanished mid-transition."  # mutation: reason
-            )
-        return record
+                "The continuity transition conflicts with an existing "  # mutation: reason
+                "runtime or normalized memory identity."  # mutation: reason
+            ) from exc
+        raise exc
 
     # -- reads ----------------------------------------------------------
 

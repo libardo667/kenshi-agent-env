@@ -54,6 +54,7 @@ warn_unused_ignores = true
 [tool.mutmut]
 source_paths = ["src/kenshi_agent/"]
 do_not_mutate_patterns = [
+  "# pragma: no mutate",
   "# mutation: diagnostic-only",
   "# mutation: reason",
 ]

@@ -110,5 +110,6 @@ telemetry.
 | Action-outcome continuity between calls | [ADR_ACTION_LEDGER](docs/ADR_ACTION_LEDGER.md) |
 | Exact entity memory retrieval | [ADR_ENTITY_SCOPED_MEMORY](docs/ADR_ENTITY_SCOPED_MEMORY.md) |
 | Continuity authority and commit timing | [ADR_CONTINUITY_AUTHORITY](docs/ADR_CONTINUITY_AUTHORITY.md) |
+| Continuity store failure isolation and planner feedback | [ADR_CONTINUITY_FAILURE_ISOLATION](docs/ADR_CONTINUITY_FAILURE_ISOLATION.md) |
 | Campaign scope, migration, inspection | [GUIDE_CAMPAIGN_CONTINUITY](docs/GUIDE_CAMPAIGN_CONTINUITY.md) |
 | Camera lock and bounded recovery | [ADR_CAMERA_VIEW](docs/ADR_CAMERA_VIEW.md) |

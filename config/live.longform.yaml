@@ -281,9 +281,9 @@ safety:
 
 memory:
   enabled: true
-  # A real save lineage, not a profile name: this is the identity that
-  # survives ordinary save progress and keeps other saves out.
-  campaign_id: ladle-css-01
+  # This profile is generic and cannot choose a save lineage. Pass
+  # `./dev journey --campaign <save-lineage>` or use an attested scenario.
+  campaign_id: null
   max_recalled_memories: 16
   max_entity_recalled_memories: 8
   # Open commitments and unresolved hypotheses get protected space so a

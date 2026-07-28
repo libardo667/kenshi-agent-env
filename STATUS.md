@@ -46,7 +46,8 @@ in generated [catalog](docs/generated/ACTION_CATALOG.md) and
 ## Live profiles
 
 - `config/live.longform.yaml` — open-ended supervised `native_assisted`, continuous, unpaused
-  profile with dialogue, memory, advisor, and acknowledgements.
+  profile with dialogue, memory, advisor, and acknowledgements. It is campaign-neutral;
+  `./dev journey` requires an explicit `--campaign` or attested scenario for durable memory.
 - `config/live.dialogue.yaml` — shorter stop-motion proof profile.
 - `config/live.burnin.yaml` — legacy single-step calibrated profile; its continuous and
   food-procurement policies are retired.

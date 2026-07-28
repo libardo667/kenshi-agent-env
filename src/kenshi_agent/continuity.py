@@ -18,6 +18,7 @@ instead of drifting into three implementations.
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any, Protocol
@@ -54,6 +55,7 @@ from .models import (
     ResolveMemoryOperation,
     SupersedeMemoryOperation,
     WorldStateRevision,
+    new_continuity_receipt_id,
 )
 
 # A fact or an episode reports something that happened; it must point at what
@@ -522,7 +524,15 @@ class ContinuityAuthority:
     Deliberately not a dataclass, for the same reason as `ContinuityLedger`.
     """
 
-    __slots__ = ("run_id", "store", "ledger", "logger", "advisor_brief_ids")
+    __slots__ = (
+        "run_id",
+        "store",
+        "ledger",
+        "logger",
+        "advisor_brief_ids",
+        "_reads_degraded_reason",
+        "_writes_degraded_reason",
+    )
 
     def __init__(
         self,
@@ -538,6 +548,39 @@ class ContinuityAuthority:
         self.ledger = ledger
         self.logger = logger
         self.advisor_brief_ids = advisor_brief_ids
+        self._reads_degraded_reason: str | None = None
+        self._writes_degraded_reason: str | None = None
+
+    @property
+    def reads_degraded_reason(self) -> str | None:
+        return self._reads_degraded_reason
+
+    @property
+    def writes_degraded_reason(self) -> str | None:
+        return self._writes_degraded_reason
+
+    def quarantine_reads_after_store_failure(self, exc: sqlite3.Error) -> str:
+        """Disable reads and writes when a read can no longer be trusted."""
+
+        if self._reads_degraded_reason is None:
+            self._reads_degraded_reason = (
+                "Durable continuity reads and writes are disabled for this run "
+                "after an unexpected store failure "
+                f"({type(exc).__name__}: {exc})."
+            )
+        if self._writes_degraded_reason is None:
+            self._writes_degraded_reason = self._reads_degraded_reason
+        return self._reads_degraded_reason
+
+    def quarantine_writes_after_store_failure(self, exc: sqlite3.Error) -> str:
+        """Disable later writes while preserving the first exact store failure."""
+
+        if self._writes_degraded_reason is None:
+            self._writes_degraded_reason = (
+                "Durable continuity writes are disabled for this run after "
+                f"an unexpected store failure ({type(exc).__name__}: {exc})."
+            )
+        return self._writes_degraded_reason
 
     def apply(
         self,
@@ -580,20 +623,26 @@ class ContinuityAuthority:
         plan_version: int | None,
         step_id: str | None,
     ) -> ContinuityOperationReceipt:
+        receipt_id = new_continuity_receipt_id()
+
         def receipt(
             status: ContinuityOperationStatus,
             reason: str,
             *,
             memory_id: str | None = None,
+            memory_status: MemoryStatus | None = None,
             evidence: str | None = None,
             resolved_evidence: Sequence[ResolvedEvidenceSnapshot] = (),
+            writes_degraded: bool = False,
         ) -> ContinuityOperationReceipt:
             return ContinuityOperationReceipt(
+                receipt_id=receipt_id,
                 origin=origin,
                 status=status,
                 operation=operation,
                 reason=reason,
                 memory_id=memory_id,
+                memory_status=memory_status,
                 evidence=evidence,
                 resolved_evidence=list(resolved_evidence),
                 plan_id=plan_id,
@@ -602,12 +651,40 @@ class ContinuityAuthority:
                 authored_context_id=authored_context.manifest.context_id,
                 authored_revision=authored_context.manifest.authored_revision,
                 commit_revision=commit_observation.world_revision,
+                writes_degraded=writes_degraded,
+            )
+
+        def store_failure(
+            exc: sqlite3.Error,
+            *,
+            evidence: str | None = None,
+            resolved_evidence: Sequence[ResolvedEvidenceSnapshot] = (),
+            read_failed: bool = False,
+        ) -> ContinuityOperationReceipt:
+            reason = (
+                self.quarantine_reads_after_store_failure(exc)
+                if read_failed
+                else self.quarantine_writes_after_store_failure(exc)
+            )
+            return receipt(
+                ContinuityOperationStatus.FAILED,
+                reason,
+                evidence=evidence,
+                resolved_evidence=resolved_evidence,
+                writes_degraded=True,
             )
 
         if authored_context.manifest.run_id != self.run_id:
             return receipt(
                 ContinuityOperationStatus.REJECTED,
                 "The planner context belongs to another run.",  # mutation: reason
+            )
+
+        if self._writes_degraded_reason is not None:
+            return receipt(
+                ContinuityOperationStatus.FAILED,
+                self._writes_degraded_reason,
+                writes_degraded=True,
             )
 
         if isinstance(operation, (KeepMemoryOperation, SupersedeMemoryOperation)):
@@ -647,8 +724,17 @@ class ContinuityAuthority:
                 ContinuityOperationStatus.REJECTED,
                 str(exc),  # mutation: reason
             )
+        except sqlite3.Error as exc:
+            return store_failure(exc, read_failed=True)
 
-        evidence_error = self._admissibility_error(operation, resolved)
+        try:
+            evidence_error = self._admissibility_error(operation, resolved)
+        except sqlite3.Error as exc:
+            return store_failure(
+                exc,
+                resolved_evidence=resolved,
+                read_failed=True,
+            )
         if evidence_error is not None:
             return receipt(
                 ContinuityOperationStatus.REJECTED,
@@ -694,11 +780,18 @@ class ContinuityAuthority:
                 evidence=evidence,
                 resolved_evidence=resolved,
             )
+        except sqlite3.Error as exc:
+            return store_failure(
+                exc,
+                evidence=evidence,
+                resolved_evidence=resolved,
+            )
         return receipt(
             ContinuityOperationStatus.ACCEPTED,
             f"{operation.operation} applied to "  # mutation: reason
             f"memory {record.memory_id} ({record.status.value}).",  # mutation: reason
             memory_id=record.memory_id,
+            memory_status=record.status,
             evidence=evidence,
             resolved_evidence=resolved,
         )

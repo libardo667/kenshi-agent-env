@@ -71,9 +71,12 @@ Recall spends separate budgets in order:
 3. unresolved hypotheses;
 4. general knowledge, and only this tier honours `minimum_salience`.
 
-A record occupies one tier. `memory_recall` reports omissions;
-`recent_continuity_receipts` reports accepted and rejected operations. Open
-commitments and current-target memories survive payload budgeting.
+A record occupies one tier. `memory_recall` reports omissions; identified
+`recent_continuity_receipts` report accepted, rejected, no-op, or failed. Fix a
+rejection; failure quarantines writes. Tight budgets preserve the latest adverse
+receipt, while open commitments and current-target memories also survive.
+Persistent read/write degradation reasons distinguish quarantine from an empty
+result; read failure disables both paths without stopping play or blind retries.
 
 A planner may use `recall_memory` with `source: "durable_memory"` for a bounded
 literal record search, or `"working_outcomes"` for compact run-local digests

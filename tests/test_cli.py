@@ -80,7 +80,7 @@ def test_aggregate_affordances_cli_refuses_to_imply_no_demand_without_logs(
 def test_project_env_loads_openai_key_from_current_repo_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "Path", SimpleNamespace(cwd=lambda: tmp_path))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     (tmp_path / ".env").write_text("OPENAI_API_KEY=test-from-file\n", encoding="utf-8")
 
@@ -93,7 +93,7 @@ def test_project_env_loads_openai_key_from_current_repo_root(
 def test_project_env_does_not_override_explicit_environment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "Path", SimpleNamespace(cwd=lambda: tmp_path))
     monkeypatch.setenv("OPENAI_API_KEY", "test-from-process")
     (tmp_path / ".env").write_text("OPENAI_API_KEY=test-from-file\n", encoding="utf-8")
 
@@ -105,14 +105,17 @@ def test_project_env_does_not_override_explicit_environment(
 def test_cli_loads_project_env_before_dispatch(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    (tmp_path / ".env").write_text("OPENAI_API_KEY=test-before-dispatch\n", encoding="utf-8")
+
+    def fake_load_project_env() -> Path:
+        monkeypatch.setenv("OPENAI_API_KEY", "test-before-dispatch")
+        return tmp_path / ".env"
 
     def fake_doctor(_: object) -> int:
         assert os.environ["OPENAI_API_KEY"] == "test-before-dispatch"
         return 0
 
+    monkeypatch.setattr(cli, "_load_project_env", fake_load_project_env)
     monkeypatch.setattr(cli, "_doctor", fake_doctor)
 
     assert cli.main(["doctor"]) == 0
@@ -224,6 +227,31 @@ def test_run_objective_override_is_ephemeral() -> None:
 
     assert overridden.runtime.objective == "Inspect the bar entrance."
     assert config.runtime.objective == original
+
+
+def test_run_without_any_override_returns_the_original_config() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "default.yaml")
+
+    assert cli._apply_run_overrides(config, SimpleNamespace()) is config
+
+
+def test_run_campaign_override_is_explicit_and_ephemeral() -> None:
+    root = Path(__file__).resolve().parents[1]
+    config = load_config(root / "config" / "live.longform.yaml")
+    assert config.memory.campaign_id is None
+
+    overridden = cli._apply_run_overrides(
+        config,
+        SimpleNamespace(
+            objective=None,
+            planning_mode=None,
+            campaign="ladle-css-01",
+        ),
+    )
+
+    assert overridden.memory.campaign_id == "ladle-css-01"
+    assert config.memory.campaign_id is None
 
 
 def test_run_planning_mode_override_is_ephemeral() -> None:

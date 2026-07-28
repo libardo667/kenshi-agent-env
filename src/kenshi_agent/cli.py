@@ -180,6 +180,7 @@ def _controller_kwargs(config: AppConfig, args: argparse.Namespace) -> _Controll
 def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConfig:
     objective = getattr(args, "objective", None)
     planning_mode = getattr(args, "planning_mode", None)
+    campaign = getattr(args, "campaign", None)
     scenario_values = {
         "scenario_id": getattr(args, "scenario_id", None),
         "save_id": getattr(args, "save_id", None),
@@ -195,15 +196,17 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
     attestation_path = getattr(args, "scenario_attestation", None)
     if attestation_path is not None and supplied_scenario_values:
         raise SystemExit(
-            "--scenario-attestation cannot be combined with manual scenario labels."
+            "--scenario-attestation cannot be combined with manual "  # mutation: diagnostic-only
+            "scenario labels."  # mutation: diagnostic-only
         )
     if supplied_scenario_values and len(supplied_scenario_values) != len(
         scenario_values
     ):
         missing = sorted(set(scenario_values) - set(supplied_scenario_values))
         raise SystemExit(
-            "A scenario declaration requires all scenario fields; missing: "
-            + ", ".join(missing)
+            "A scenario declaration requires all scenario fields; "  # mutation: diagnostic-only
+            "missing: "  # mutation: diagnostic-only
+            + ", ".join(missing)  # mutation: diagnostic-only
         )
     scenario: ScenarioIdentity | None = None
     scenario_attestation = None
@@ -213,15 +216,22 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
                 Path(attestation_path).expanduser().resolve()
             )
         except ScenarioFixtureError as exc:
-            raise SystemExit(str(exc)) from exc
+            raise SystemExit(str(exc)) from exc  # mutation: diagnostic-only
         scenario = scenario_attestation.scenario
     if supplied_scenario_values:
         try:
             scenario = ScenarioIdentity.model_validate(scenario_values)
         except ValueError as exc:
-            raise SystemExit(f"Invalid scenario declaration: {exc}") from exc
+            raise SystemExit(  # mutation: diagnostic-only
+                f"Invalid scenario declaration: {exc}"  # mutation: diagnostic-only
+            ) from exc
 
-    if objective is None and planning_mode is None and scenario is None:
+    if (
+        objective is None
+        and planning_mode is None
+        and campaign is None
+        and scenario is None
+    ):
         return config
     updates: dict[str, object] = {}
     runtime_updates: dict[str, object] = {}
@@ -236,6 +246,13 @@ def _apply_run_overrides(config: AppConfig, args: argparse.Namespace) -> AppConf
     if planning_mode is not None:
         updates["planning"] = config.planning.model_copy(
             update={"mode": PlanningMode(planning_mode)}
+        )
+    if campaign is not None:
+        updates["memory"] = type(config.memory).model_validate(
+            {
+                **config.memory.model_dump(),
+                "campaign_id": campaign,
+            }
         )
     return config.model_copy(update=updates)
 
@@ -733,6 +750,13 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--objective",
         help="Override the configured objective for this run only.",
+    )
+    run.add_argument(
+        "--campaign",
+        help=(
+            "Explicit save-lineage identity for durable continuity in this run. "
+            "Generic live profiles intentionally do not choose one."
+        ),
     )
     run.add_argument("--scenario-id")
     run.add_argument(

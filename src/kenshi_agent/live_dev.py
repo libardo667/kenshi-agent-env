@@ -2099,6 +2099,8 @@ def _journey_argv(
     ]
     if args.objective:
         argv.extend(["--objective", args.objective])
+    if args.campaign:
+        argv.extend(["--campaign", args.campaign])
     if scenario_attestation is not None:
         argv.extend(["--scenario-attestation", str(scenario_attestation)])
     else:
@@ -2397,6 +2399,13 @@ def build_parser() -> argparse.ArgumentParser:
     journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
     journey.add_argument("--config", required=True)
     journey.add_argument("--objective")
+    journey.add_argument(
+        "--campaign",
+        help=(
+            "Explicit save-lineage identity for durable continuity. Required "
+            "when the generic profile has memory enabled without an attested scenario."
+        ),
+    )
     journey.add_argument(
         "--scenario",
         help=(

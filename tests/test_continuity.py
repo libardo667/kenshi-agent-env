@@ -8,6 +8,8 @@ memory changes nothing.
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -44,6 +46,7 @@ from kenshi_agent.models import (
     KeepMemoryOperation,
     MemoryEvidence,
     MemoryKind,
+    MemoryLifecycleEvent,
     MemoryRecord,
     MemoryResolutionDisposition,
     MemoryStatus,
@@ -1445,6 +1448,308 @@ def test_every_operation_leaves_a_receipt_naming_its_origin(tmp_path: Path) -> N
             assert receipts[0].memory_id is not None
 
 
+def test_every_operation_receives_one_unique_runtime_owned_receipt_id(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(
+            store,
+            ContinuityLedger(run_id="run-a", action_outcome_limit=4),
+        )
+        receipts = apply_operations(
+            engine,
+            [
+                keep(MemoryKind.COMMITMENT, "Deliver the copper."),
+                keep(MemoryKind.FACT, "An unsupported world claim."),
+                keep(MemoryKind.HYPOTHESIS, "The trader may buy copper."),
+            ],
+            origin=ContinuityOrigin.PLAN,
+            observation=observation(),
+        )
+
+    receipt_ids = [receipt.receipt_id for receipt in receipts]
+    assert len(receipt_ids) == len(set(receipt_ids)) == 3
+    assert all(
+        receipt_id.startswith("cor-") and len(receipt_id) == 36
+        for receipt_id in receipt_ids
+    )
+
+
+def test_receipt_digest_preserves_exact_corrective_and_result_context(
+    tmp_path: Path,
+) -> None:
+    current = observation()
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(
+            store,
+            ContinuityLedger(run_id="run-a", action_outcome_limit=4),
+        )
+        receipt = apply_operations(
+            engine,
+            [
+                keep(
+                    MemoryKind.FACT,
+                    "The gate is open.",
+                    references=[CurrentObservationEvidence()],
+                )
+            ],
+            origin=ContinuityOrigin.PATCH,
+            observation=current,
+            plan_id="plan-a",
+            plan_version=3,
+            step_id="inspect-gate",
+        )[0]
+
+    digest = receipt.digest()
+    assert digest.receipt_id == receipt.receipt_id
+    assert digest.origin is ContinuityOrigin.PATCH
+    assert digest.operation == "keep"
+    assert digest.status is ContinuityOperationStatus.ACCEPTED
+    assert digest.reason == receipt.reason
+    assert digest.memory_id == receipt.memory_id
+    assert digest.memory_status is MemoryStatus.ACTIVE
+    assert digest.authored_context_id == "pc-1"
+    assert digest.authored_revision == current.world_revision
+    assert digest.commit_revision == current.world_revision
+    assert digest.plan_id == "plan-a"
+    assert digest.plan_version == 3
+    assert digest.step_id == "inspect-gate"
+    assert digest.evidence_summary == receipt.evidence
+    assert digest.recorded_at == receipt.recorded_at
+    assert not digest.writes_degraded
+
+
+class _FailingProjectionStore(MemoryStore):
+    """Inject one unexpected database failure after event append."""
+
+    projection_attempts = 0
+
+    def _insert_projection(self, record: MemoryRecord) -> None:
+        self.projection_attempts += 1
+        raise sqlite3.OperationalError("injected projection failure")
+
+
+class _FailingReadStore(MemoryStore):
+    """Inject an unexpected database failure at an authority read boundary."""
+
+    def get(self, memory_id: str) -> MemoryRecord | None:
+        raise sqlite3.OperationalError("injected continuity read failure")
+
+
+class _FailingDeliveryStore(MemoryStore):
+    """Inject an unexpected failure in the diagnostic delivery write."""
+
+    delivery_attempts = 0
+
+    def record_delivery(self, run_id: str, memory_ids: Sequence[str]) -> None:
+        self.delivery_attempts += 1
+        raise sqlite3.OperationalError("injected delivery failure")
+
+
+class _FailingRecallStore(MemoryStore):
+    """Inject one read-side failure before automatic recall can return."""
+
+    recall_attempts = 0
+
+    def recall_tiered(self, **kwargs: Any) -> Any:
+        self.recall_attempts += 1
+        raise sqlite3.DatabaseError("injected recall failure")
+
+
+class _FailingSearchStore(MemoryStore):
+    """Inject one read-side failure in an elective memory search."""
+
+    search_attempts = 0
+
+    def search(self, *, query: str, limit: int) -> Any:
+        self.search_attempts += 1
+        raise sqlite3.DatabaseError("injected search failure")
+
+
+def test_evidence_resolution_store_failure_preserves_the_exact_diagnostic(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "memory.sqlite3"
+    with _FailingReadStore(
+        path,
+        CampaignScope(campaign_id="test", origin=CampaignScopeOrigin.CONFIGURED),
+        memory_id_factory=lambda: "mem-0001",
+    ) as store:
+        cited = keep_fact(store, "The earlier route was unsafe.")
+        engine, _ = authority(
+            store,
+            ContinuityLedger(run_id="run-a", action_outcome_limit=4),
+        )
+        receipt = apply_operations(
+            engine,
+            [
+                keep(
+                    MemoryKind.HYPOTHESIS,
+                    "The route may still be unsafe.",
+                    references=[MemoryEvidence(memory_id=cited.memory_id)],
+                )
+            ],
+            origin=ContinuityOrigin.PLAN,
+            observation=observation(),
+        )[0]
+
+        expected_reason = (
+            "Durable continuity reads and writes are disabled for this run "
+            "after "
+            "an unexpected store failure "
+            "(OperationalError: injected continuity read failure)."
+        )
+        assert receipt.status is ContinuityOperationStatus.FAILED
+        assert receipt.reason == expected_reason
+        assert receipt.evidence is None
+        assert receipt.resolved_evidence == []
+        assert receipt.writes_degraded
+        assert engine.reads_degraded_reason == expected_reason
+        assert engine.writes_degraded_reason == expected_reason
+
+
+def test_admissibility_store_failure_retains_already_resolved_evidence(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "memory.sqlite3"
+    with open_store(path) as initial:
+        commitment = initial.keep(
+            "run-a",
+            kind=MemoryKind.COMMITMENT,
+            content="Deliver the copper.",
+            salience=0.5,
+            grounding=None,
+        )
+
+    with _FailingReadStore(
+        path,
+        CampaignScope(campaign_id="test", origin=CampaignScopeOrigin.CONFIGURED),
+    ) as store:
+        engine, _ = authority(
+            store,
+            ContinuityLedger(run_id="run-a", action_outcome_limit=4),
+        )
+        receipt = apply_operations(
+            engine,
+            [
+                ResolveMemoryOperation(
+                    memory_id=commitment.memory_id,
+                    reason="The copper was delivered.",
+                    references=[CurrentObservationEvidence()],
+                )
+            ],
+            origin=ContinuityOrigin.PLAN,
+            observation=observation(),
+        )[0]
+
+        expected_reason = (
+            "Durable continuity reads and writes are disabled for this run "
+            "after "
+            "an unexpected store failure "
+            "(OperationalError: injected continuity read failure)."
+        )
+        assert receipt.status is ContinuityOperationStatus.FAILED
+        assert receipt.reason == expected_reason
+        assert receipt.evidence is None
+        assert len(receipt.resolved_evidence) == 1
+        assert receipt.resolved_evidence[0].authority is (
+            EvidenceAuthority.FRESH_WORLD_OBSERVATION
+        )
+        assert receipt.writes_degraded
+        assert engine.reads_degraded_reason == expected_reason
+        assert engine.writes_degraded_reason == expected_reason
+
+
+def test_unexpected_store_failure_is_failed_rolled_back_and_quarantines_writes(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "memory.sqlite3"
+    identities = iter(f"mem-{index:04d}" for index in range(1, 10))
+    with _FailingProjectionStore(
+        path,
+        CampaignScope(campaign_id="test", origin=CampaignScopeOrigin.CONFIGURED),
+        memory_id_factory=lambda: next(identities),
+    ) as store:
+        engine, events = authority(
+            store,
+            ContinuityLedger(run_id="run-a", action_outcome_limit=4),
+        )
+        receipts = apply_operations(
+            engine,
+            [
+                keep(
+                    MemoryKind.FACT,
+                    "The gate is open.",
+                    references=[CurrentObservationEvidence()],
+                ),
+                keep(MemoryKind.HYPOTHESIS, "The trader may buy copper."),
+            ],
+            origin=ContinuityOrigin.PLAN,
+            observation=observation(),
+        )
+
+        assert [receipt.status.value for receipt in receipts] == ["failed", "failed"]
+        assert all(receipt.memory_id is None for receipt in receipts)
+        assert all(receipt.writes_degraded for receipt in receipts)
+        expected_reason = (
+            "Durable continuity writes are disabled for this run after "
+            "an unexpected store failure "
+            "(OperationalError: injected projection failure)."
+        )
+        assert receipts[0].reason == expected_reason
+        assert receipts[1].reason == expected_reason
+        assert receipts[0].evidence == (
+            "current_observation(telemetry_sequence=3, frame_sequence=2)"
+        )
+        assert len(receipts[0].resolved_evidence) == 1
+        assert receipts[0].resolved_evidence[0].authority is (
+            EvidenceAuthority.FRESH_WORLD_OBSERVATION
+        )
+        assert receipts[1].evidence is None
+        assert receipts[1].resolved_evidence == []
+        assert engine.writes_degraded_reason == expected_reason
+        assert store.projection_attempts == 1
+        assert store.event_count() == 0
+        logged = [payload["payload"] for event, payload in events if event == "continuity_receipt"]
+        assert [item["status"] for item in logged] == ["failed", "failed"]
+
+    with open_store(path) as reopened:
+        assert reopened.event_count() == 0
+        assert reopened.all_records() == []
+
+
+def test_store_quarantine_preserves_the_first_failure_per_health_boundary(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(
+            store,
+            ContinuityLedger(run_id="run-a", action_outcome_limit=0),
+        )
+
+        first_write = engine.quarantine_writes_after_store_failure(
+            sqlite3.OperationalError("first write")
+        )
+        repeated_write = engine.quarantine_writes_after_store_failure(
+            sqlite3.DatabaseError("later write")
+        )
+        first_read = engine.quarantine_reads_after_store_failure(
+            sqlite3.DatabaseError("first read")
+        )
+        repeated_read = engine.quarantine_reads_after_store_failure(
+            sqlite3.OperationalError("later read")
+        )
+
+    assert first_write == repeated_write
+    assert "OperationalError: first write" in first_write
+    assert "later write" not in first_write
+    assert first_read == repeated_read
+    assert "DatabaseError: first read" in first_read
+    assert "later read" not in first_read
+    assert engine.writes_degraded_reason == first_write
+    assert engine.reads_degraded_reason == first_read
+
+
 @pytest.mark.parametrize(
     ("operation", "expected_status", "has_memory_id", "expected_evidence"),
     [
@@ -1888,6 +2193,267 @@ def test_single_step_current_observation_stays_bound_to_the_planners_revision(
     asyncio.run(scenario())
 
 
+def test_runtime_continuity_receipt_feedback_remains_bounded(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from kenshi_agent.models import PlannerDecision
+    from kenshi_agent.planners.base import Planner
+
+    class ManyInvalidOperationsPlanner(Planner):
+        async def decide(self, current: Observation) -> Any:
+            return PlannerDecision(
+                intent="Stop after exercising bounded continuity feedback.",
+                rationale="Each unsupported fact should receive its own receipt.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+                continuity_operations=[
+                    keep(MemoryKind.FACT, f"Unsupported fact {index}.")
+                    for index in range(6)
+                ],
+            )
+
+    async def scenario() -> None:
+        with open_store(tmp_path / "memory.sqlite3", "single") as store:
+            runtime, logger = _single_step_runtime(
+                tmp_path,
+                ManyInvalidOperationsPlanner(),
+                store,
+            )
+            try:
+                await runtime.run(max_steps=1)
+            finally:
+                logger.close()
+
+            assert len(runtime._continuity_receipts) == 4
+            assert all(
+                receipt.status is ContinuityOperationStatus.REJECTED
+                for receipt in runtime._continuity_receipts
+            )
+            assert len(
+                {receipt.receipt_id for receipt in runtime._continuity_receipts}
+            ) == 4
+
+    asyncio.run(scenario())
+
+
+def test_degraded_writer_does_not_record_later_planner_delivery(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+
+    from kenshi_agent.models import NoopAction, PlannerDecision
+    from kenshi_agent.planners.base import Planner
+
+    class TwoTurnPlanner(Planner):
+        calls = 0
+
+        async def decide(self, current: Observation) -> Any:
+            self.calls += 1
+            if self.calls == 1:
+                return PlannerDecision(
+                    intent="Continue after the continuity failure.",
+                    rationale="Gameplay remains valid even if memory writing fails.",
+                    action=NoopAction(reason="continue"),
+                    confidence=1.0,
+                    continuity_operations=[
+                        keep(MemoryKind.COMMITMENT, "Deliver the copper.")
+                    ],
+                )
+            return PlannerDecision(
+                intent="Stop.",
+                rationale="The second planner turn observed degraded continuity.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        path = tmp_path / "memory.sqlite3"
+        with open_store(path, "single") as initial:
+            delivered = keep_fact(initial, "An existing route fact.")
+
+        ids = iter(f"mem-failure-{index}" for index in range(1, 10))
+        with _FailingProjectionStore(
+            path,
+            CampaignScope(
+                campaign_id="single",
+                origin=CampaignScopeOrigin.CONFIGURED,
+            ),
+            memory_id_factory=lambda: next(ids),
+        ) as store:
+            runtime, logger = _single_step_runtime(tmp_path, TwoTurnPlanner(), store)
+            try:
+                await runtime.run(max_steps=2)
+            finally:
+                logger.close()
+
+            delivery_events = [
+                entry
+                for entry in store.history(delivered.memory_id)
+                if entry.event is MemoryLifecycleEvent.DELIVER
+            ]
+            assert len(delivery_events) == 1
+            assert runtime._continuity.writes_degraded_reason is not None
+
+    asyncio.run(scenario())
+
+
+def test_delivery_diagnostic_failure_never_cancels_gameplay_and_reaches_next_planner(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+    import json
+
+    from kenshi_agent.models import NoopAction, PlannerDecision
+    from kenshi_agent.planners.base import Planner
+
+    class TwoTurnPlanner(Planner):
+        seen_degraded_reasons: list[str | None] = []
+
+        async def decide(self, current: Observation) -> Any:
+            self.seen_degraded_reasons.append(
+                current.continuity_writes_degraded_reason
+            )
+            if len(self.seen_degraded_reasons) == 1:
+                return PlannerDecision(
+                    intent="Continue despite a diagnostic write failure.",
+                    rationale="World control does not depend on delivery bookkeeping.",
+                    action=NoopAction(reason="continue"),
+                    confidence=1.0,
+                )
+            return PlannerDecision(
+                intent="Stop after observing the quarantined store.",
+                rationale="The degraded state reached the next planner.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        path = tmp_path / "memory.sqlite3"
+        with open_store(path, "single") as initial:
+            keep_fact(initial, "A route fact that will be delivered.")
+
+        with _FailingDeliveryStore(
+            path,
+            CampaignScope(
+                campaign_id="single",
+                origin=CampaignScopeOrigin.CONFIGURED,
+            ),
+        ) as store:
+            runtime, logger = _single_step_runtime(tmp_path, TwoTurnPlanner(), store)
+            try:
+                summary = await runtime.run(max_steps=2)
+            finally:
+                logger.close()
+
+            expected_reason = (
+                "Durable continuity writes are disabled for this run after "
+                "an unexpected store failure "
+                "(OperationalError: injected delivery failure)."
+            )
+            assert summary.steps_completed == 2
+            assert TwoTurnPlanner.seen_degraded_reasons == [None, expected_reason]
+            assert store.delivery_attempts == 1
+            assert runtime._continuity.writes_degraded_reason == expected_reason
+
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        failures = [
+            event for event in events if event["event_type"] == "continuity_store_failed"
+        ]
+        assert len(failures) == 1
+        assert failures[0]["payload"] == {
+            "boundary": "record_delivery",
+            "reason": expected_reason,
+        }
+
+    asyncio.run(scenario())
+
+
+def test_automatic_recall_failure_quarantines_reads_and_writes_without_stopping_play(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+    import json
+
+    from kenshi_agent.models import NoopAction, PlannerDecision
+    from kenshi_agent.planners.base import Planner
+
+    class TwoTurnPlanner(Planner):
+        seen_health: list[tuple[str | None, str | None]] = []
+
+        async def decide(self, current: Observation) -> Any:
+            self.seen_health.append(
+                (
+                    current.continuity_reads_degraded_reason,
+                    current.continuity_writes_degraded_reason,
+                )
+            )
+            if len(self.seen_health) == 1:
+                return PlannerDecision(
+                    intent="Continue after recall became unavailable.",
+                    rationale="Current world control remains independent.",
+                    action=NoopAction(reason="continue"),
+                    confidence=1.0,
+                )
+            return PlannerDecision(
+                intent="Stop after the health state remained stable.",
+                rationale="The store was not retried blindly.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        path = tmp_path / "memory.sqlite3"
+        with open_store(path, "single") as initial:
+            keep_fact(initial, "A route fact that cannot be recalled.")
+
+        with _FailingRecallStore(
+            path,
+            CampaignScope(
+                campaign_id="single",
+                origin=CampaignScopeOrigin.CONFIGURED,
+            ),
+        ) as store:
+            runtime, logger = _single_step_runtime(tmp_path, TwoTurnPlanner(), store)
+            try:
+                summary = await runtime.run(max_steps=2)
+            finally:
+                logger.close()
+
+            expected_reason = (
+                "Durable continuity reads and writes are disabled for this run "
+                "after an unexpected store failure "
+                "(DatabaseError: injected recall failure)."
+            )
+            assert summary.steps_completed == 2
+            assert TwoTurnPlanner.seen_health == [
+                (expected_reason, expected_reason),
+                (expected_reason, expected_reason),
+            ]
+            assert store.recall_attempts == 1
+            assert runtime._continuity.reads_degraded_reason == expected_reason
+            assert runtime._continuity.writes_degraded_reason == expected_reason
+
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
+        ]
+        failures = [
+            event for event in events if event["event_type"] == "continuity_store_failed"
+        ]
+        assert len(failures) == 1
+        assert failures[0]["payload"] == {
+            "boundary": "automatic_recall",
+            "reason": expected_reason,
+        }
+
+    asyncio.run(scenario())
+
+
 def test_an_issued_but_undelivered_outcome_cannot_ground_a_fact(
     tmp_path: Path,
 ) -> None:
@@ -1973,6 +2539,7 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
         runner._pending_memory_search = None
         runner._affordance_requests = []
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+        runner._continuity, _ = authority(store, runner._ledger)
         runner.planning_config = PlanningConfig()
 
         current = observation(target_ids=("entity-a",))
@@ -2582,6 +3149,41 @@ def test_a_transition_on_a_closed_or_unknown_record_is_a_receipt_not_a_crash(
         assert store.event_count() == 2
 
 
+def test_active_key_conflict_is_a_rejected_receipt_with_no_partial_transition(
+    tmp_path: Path,
+) -> None:
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = lifecycle_authority(store)
+        original = apply_one(
+            engine,
+            keep(MemoryKind.COMMITMENT, "Deliver the copper."),
+        )
+        conflicting = apply_one(
+            engine,
+            keep(MemoryKind.COMMITMENT, "Sell the copper."),
+        )
+        before_original = store.get(original.memory_id)
+        before_conflicting = store.get(conflicting.memory_id)
+        events_before = store.event_count()
+
+        receipt = apply_one(
+            engine,
+            SupersedeMemoryOperation(
+                memory_id=original.memory_id,
+                kind=MemoryKind.COMMITMENT,
+                content=" SELL   THE COPPER. ",
+            ),
+        )
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert receipt.memory_id is None
+        assert "active memory" in receipt.reason
+        assert conflicting.memory_id in receipt.reason
+        assert store.get(original.memory_id) == before_original
+        assert store.get(conflicting.memory_id) == before_conflicting
+        assert store.event_count() == events_before
+
+
 def test_a_superseding_replacement_is_held_to_the_same_grounding_rules(
     tmp_path: Path,
 ) -> None:
@@ -2745,11 +3347,83 @@ def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
     assert receipt.primitive_actions == 0
 
 
+def test_elective_memory_search_failure_is_typed_and_quarantined(
+    tmp_path: Path,
+) -> None:
+    from kenshi_agent.models import RecallMemoryAction
+    from kenshi_agent.runtime import AgentRuntime
+
+    path = tmp_path / "memory.sqlite3"
+    with _FailingSearchStore(
+        path,
+        CampaignScope(campaign_id="reader", origin=CampaignScopeOrigin.CONFIGURED),
+    ) as store:
+        ledger = ContinuityLedger(run_id="reader", action_outcome_limit=0)
+        engine, _ = authority(store, ledger)
+        events: list[tuple[str, dict[str, Any]]] = []
+        runner = object.__new__(AgentRuntime)
+        runner.memory = store
+        runner.run_id = "reader"
+        runner.control_mode = ControlMode.INTERFACE_ONLY
+        runner._continuity = engine
+        runner.logger = SimpleNamespace(
+            write=lambda event_type, **kwargs: events.append((event_type, kwargs))
+        )
+        runner._pending_memory_search = None
+
+        receipt = AgentRuntime._execute_memory_read(
+            runner,
+            RecallMemoryAction(query="gate"),
+            observation(),
+            plan_id="single-step",
+            plan_version=1,
+            step_id="step-0",
+        )
+        repeated = AgentRuntime._execute_memory_read(
+            runner,
+            RecallMemoryAction(query="gate"),
+            observation(),
+            plan_id="single-step",
+            plan_version=1,
+            step_id="step-1",
+        )
+
+        expected_reason = (
+            "Durable continuity reads and writes are disabled for this run "
+            "after an unexpected store failure "
+            "(DatabaseError: injected search failure)."
+        )
+        assert store.search_attempts == 1
+        assert runner._pending_memory_search is not None
+        assert runner._pending_memory_search.records == []
+        assert runner._pending_memory_search.reason == expected_reason
+        assert receipt.message == expected_reason
+        assert repeated.message == expected_reason
+        assert receipt.primitive_actions == 0
+        assert engine.reads_degraded_reason == expected_reason
+        assert engine.writes_degraded_reason == expected_reason
+        failures = [
+            payload
+            for event_type, payload in events
+            if event_type == "continuity_store_failed"
+        ]
+        assert failures == [
+            {
+                "step_index": 0,
+                "payload": {
+                    "boundary": "elective_memory_search",
+                    "reason": expected_reason,
+                },
+            }
+        ]
+
+
 def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
     tmp_path: Path,
 ) -> None:
     from kenshi_agent.config import PlanningConfig
     from kenshi_agent.memory import RecallBudget
+    from kenshi_agent.planners.base import planner_context_manifest
     from kenshi_agent.runtime import AgentRuntime
 
     with open_store(tmp_path / "memory.sqlite3") as store:
@@ -2793,7 +3467,16 @@ def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
     assert [receipt.status for receipt in decorated.recent_continuity_receipts] == [
         ContinuityOperationStatus.REJECTED
     ]
-    assert "must cite" in decorated.recent_continuity_receipts[0].reason
+    rejected = decorated.recent_continuity_receipts[0]
+    assert rejected.receipt_id.startswith("cor-")
+    assert rejected.operation == "keep"
+    assert "must cite" in rejected.reason
+    manifest = planner_context_manifest(
+        decorated,
+        context_id="pc-2",
+        input_kind="full_observation",
+    )
+    assert manifest.continuity_receipt_ids == [rejected.receipt_id]
 
 
 def test_omitted_general_memories_are_declared_in_the_observation(
@@ -2812,6 +3495,7 @@ def test_omitted_general_memories_are_declared_in_the_observation(
         runner.memory = store
         runner.advisor = None
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=0)
+        runner._continuity, _ = authority(store, runner._ledger)
         runner._affordance_requests = []
         runner._continuity_receipts = []
         runner._pending_memory_search = None

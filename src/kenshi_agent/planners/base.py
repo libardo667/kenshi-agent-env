@@ -137,6 +137,7 @@ def planner_context_manifest(
         action_outcome_ids: set[str] = set()
         plan_outcome_ids: set[str] = set()
         memory_ids: set[str] = set()
+        continuity_receipt_ids: set[str] = set()
         advisor_brief_ids: set[str] = set()
         current_target_ids: set[str] = set()
         current_observation_delivered = False
@@ -167,6 +168,10 @@ def planner_context_manifest(
             for receipt in observation.recent_continuity_receipts
             if receipt.memory_id is not None
         )
+        continuity_receipt_ids = {
+            receipt.receipt_id
+            for receipt in observation.recent_continuity_receipts
+        }
         latest_brief = observation.advisor.latest_brief
         advisor_brief_ids = (
             {latest_brief.brief_id} if latest_brief is not None else set()
@@ -193,6 +198,10 @@ def planner_context_manifest(
         for receipt in payload.get("recent_continuity_receipts", []):
             if isinstance(receipt, dict) and isinstance(receipt.get("memory_id"), str):
                 memory_ids.add(receipt["memory_id"])
+        continuity_receipt_ids = _string_ids(
+            payload.get("recent_continuity_receipts"),
+            "receipt_id",
+        )
         advisor = payload.get("advisor")
         latest_brief = advisor.get("latest_brief") if isinstance(advisor, dict) else None
         advisor_brief_ids = (
@@ -217,6 +226,7 @@ def planner_context_manifest(
         action_outcome_ids=sorted(action_outcome_ids),
         plan_outcome_ids=sorted(plan_outcome_ids),
         memory_ids=sorted(memory_ids),
+        continuity_receipt_ids=sorted(continuity_receipt_ids),
         advisor_brief_ids=sorted(advisor_brief_ids),
         candidate_memory_count=len(candidate_memory_ids),
         payload_characters=payload_characters,

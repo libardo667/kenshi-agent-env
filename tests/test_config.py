@@ -312,3 +312,17 @@ def test_live_profiles_allowlist_every_planner_visible_action(
         )
         # And it still must not allowlist raw controller primitives.
         assert not allowed & {"click", "key", "hotkey", "move_cursor", "scroll"}
+
+
+def test_generic_longform_profile_does_not_claim_a_specific_save_campaign(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    config = load_config(root / "config" / "live.longform.yaml")
+
+    assert config.memory.enabled
+    assert config.memory.campaign_id is None
+    assert not config.memory.ephemeral

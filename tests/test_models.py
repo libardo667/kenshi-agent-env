@@ -27,6 +27,25 @@ from kenshi_agent.models import (
 from kenshi_agent.schema_export import export_schemas
 
 
+def test_checked_in_jsonl_planner_examples_parse_as_current_decisions() -> None:
+    examples = Path(__file__).resolve().parents[1] / "examples"
+    planner_examples = sorted(examples.glob("*.jsonl"))
+    assert planner_examples
+
+    for path in planner_examples:
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(),
+            start=1,
+        ):
+            if line.strip():
+                try:
+                    PlannerDecision.model_validate_json(line)
+                except ValidationError as exc:
+                    raise AssertionError(
+                        f"{path.name}:{line_number} is not a current planner decision"
+                    ) from exc
+
+
 def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
     entity = NearbyEntity(id="nearby:0", name="Bar Trader", kind="character")
 

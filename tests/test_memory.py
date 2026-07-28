@@ -1,12 +1,13 @@
 import sqlite3
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import PlanningConfig
-from kenshi_agent.continuity import ContinuityLedger
+from kenshi_agent.continuity import ContinuityAuthority, ContinuityLedger
 from kenshi_agent.evals import evaluate_log
 from kenshi_agent.memory import MemoryStore, RecallBudget, _partition_target_ids
 from kenshi_agent.models import (
@@ -47,6 +48,20 @@ def keep(
         salience=salience,
         grounding=grounding,
         target_id=target_id,
+    )
+
+
+def attach_continuity(
+    runner: AgentRuntime,
+    store: MemoryStore,
+    ledger: ContinuityLedger,
+) -> None:
+    runner._continuity = ContinuityAuthority(
+        run_id=ledger.run_id,
+        store=store,
+        ledger=ledger,
+        logger=SimpleNamespace(write=lambda *args, **kwargs: None),
+        advisor_brief_ids=set,
     )
 
 
@@ -205,6 +220,7 @@ def test_current_target_memory_survives_general_recall_overflow(
         )
         runner.action_outcome_limit = 0
         runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
+        attach_continuity(runner, store, runner._ledger)
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None
@@ -250,6 +266,7 @@ def test_target_memory_never_attaches_by_name_or_stale_identity(
         )
         runner.action_outcome_limit = 0
         runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
+        attach_continuity(runner, store, runner._ledger)
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None
@@ -333,6 +350,7 @@ def test_entity_recall_reduces_repeated_approaches_in_controlled_policy(
         )
         runner.action_outcome_limit = 0
         runner._ledger = ContinuityLedger(run_id="run-b", action_outcome_limit=0)
+        attach_continuity(runner, store, runner._ledger)
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None

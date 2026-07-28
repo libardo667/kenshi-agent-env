@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from copy import deepcopy
+from math import inf
 from typing import Any
 
 JsonObject = dict[str, Any]
@@ -11,6 +12,7 @@ _ROOT_COLLECTION_PATHS = (
     "events",
     "recent_action_outcomes",
     "recent_plan_outcomes",
+    "recent_continuity_receipts",
     "available_skills",
     "skill_specs",
     "memories",
@@ -214,6 +216,30 @@ def budget_observation_payload(
             )
         )
 
+    retained_receipt_ids = {
+        str(receipt["receipt_id"])
+        for receipt in retained["recent_continuity_receipts"]
+    }
+    for receipt in reversed(original["recent_continuity_receipts"]):
+        receipt_id = str(receipt["receipt_id"])
+        if receipt_id in retained_receipt_ids:
+            continue
+        wanted_ids = retained_receipt_ids | {receipt_id}
+        attempt(
+            _set_mutator(
+                "recent_continuity_receipts",
+                [
+                    item
+                    for item in original["recent_continuity_receipts"]
+                    if str(item["receipt_id"]) in wanted_ids
+                ],
+            )
+        )
+        retained_receipt_ids = {
+            str(item["receipt_id"])
+            for item in retained["recent_continuity_receipts"]
+        }
+
     retained_memory_ids = {str(item["memory_id"]) for item in retained["memories"]}
     for memory in sorted(original["memories"], key=_memory_sort_key, reverse=True):
         if str(memory["memory_id"]) in retained_memory_ids:
@@ -262,7 +288,7 @@ def irreducible_payload(
     retained = {
         key: deepcopy(value)
         for key, value in original.items()
-        if key not in {*_ROOT_COLLECTION_PATHS, "telemetry"}
+        if key not in _ROOT_COLLECTION_PATHS
     }
     retained["events"] = []
     retained["recent_action_outcomes"] = (
@@ -277,6 +303,20 @@ def irreducible_payload(
         [deepcopy(original["recent_plan_outcomes"][-1])]
         if original["recent_plan_outcomes"]
         else []
+    )
+    receipts = original["recent_continuity_receipts"]
+    latest_adverse = next(
+        (
+            receipt
+            for receipt in reversed(receipts)
+            if receipt["status"] in {"rejected", "failed"}
+        ),
+        None,
+    )
+    retained["recent_continuity_receipts"] = (
+        [deepcopy(latest_adverse)]
+        if latest_adverse is not None
+        else ([deepcopy(receipts[-1])] if receipts else [])
     )
     retained["available_skills"] = []
     retained["skill_specs"] = []
@@ -297,7 +337,6 @@ def irreducible_payload(
 
     telemetry = original.get("telemetry")
     if not isinstance(telemetry, dict):
-        retained["telemetry"] = telemetry
         return retained
 
     ui = telemetry["ui"]
@@ -335,28 +374,11 @@ def irreducible_payload(
     retained_ui["dialogue_options"] = None if ui["dialogue_options"] is None else []
     retained_ui["visible_controls"] = None if ui["visible_controls"] is None else []
 
-    retained_native = {
-        key: deepcopy(value)
-        for key, value in native.items()
-        if key != "acknowledgements"
-    }
+    retained_native = deepcopy(native)
     retained_native["acknowledgements"] = critical_acknowledgements
 
-    retained["telemetry"] = {
-        key: deepcopy(value)
-        for key, value in telemetry.items()
-        if key
-        not in {
-            "capabilities",
-            "camera",
-            "ui",
-            "native_control",
-            "squad",
-            "nearby_entities",
-            "world_targets",
-            "warnings",
-        }
-    }
+    retained["telemetry"] = deepcopy(telemetry)
+    del retained["telemetry"]["camera"]
     retained["telemetry"].update(
         {
             "capabilities": [],
@@ -621,6 +643,11 @@ def _outcome_target_ids(outcome: JsonObject) -> set[str]:
     return ids
 
 
+# `json.dumps` intentionally treats `ensure_ascii=False` and `None` identically.
+# Exact Unicode, key-order, and separator behavior is asserted at this adapter's
+# boundary; mutating inside the stdlib delegation only manufactures equivalent
+# keyword-value mutants.
+# pragma: no mutate start
 def _canonical_json(value: Any) -> str:
     return json.dumps(
         value,
@@ -628,6 +655,7 @@ def _canonical_json(value: Any) -> str:
         separators=(",", ":"),
         sort_keys=True,
     )
+# pragma: no mutate end
 
 
 def _compact_json(value: Any) -> str:
@@ -641,7 +669,7 @@ def _entity_sort_key(entity: JsonObject) -> tuple[str, str]:
 def _nearby_sort_key(entity: JsonObject) -> tuple[float, str, str]:
     distance = entity["distance"]
     return (
-        float("inf") if distance is None else float(distance),
+        inf if distance is None else float(distance),
         str(entity["id"]),
         _canonical_json(entity),
     )

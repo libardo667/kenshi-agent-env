@@ -308,6 +308,7 @@ def test_a_commitment_is_resolved_with_a_reason_and_leaves_active_recall(
         assert resolved.status is MemoryStatus.RESOLVED
         assert resolved.resolved_at is not None
         assert resolved.resolution_reason == "All six were handed over."
+        assert resolved == memories.get(kept.memory_id)
         assert memories.recall(limit=8) == []
         # Not deleted: the record and its history are still there to audit.
         assert memories.get(kept.memory_id) is not None
@@ -367,6 +368,51 @@ def test_superseding_creates_the_replacement_and_links_both_atomically(
     assert [record.memory_id for record in active] == [new.memory_id]
 
 
+def test_superseding_to_an_existing_active_key_is_a_domain_rejection(
+    tmp_path: Path,
+) -> None:
+    """A normalized-key conflict must not escape or partially close either record."""
+
+    with store(tmp_path / "memory.sqlite3") as memories:
+        original = memories.keep(
+            "run-a",
+            kind=MemoryKind.COMMITMENT,
+            content="Deliver the copper.",
+            salience=0.6,
+            grounding=None,
+        )
+        conflicting = memories.keep(
+            "run-a",
+            kind=MemoryKind.COMMITMENT,
+            content="Sell the copper.",
+            salience=0.7,
+            grounding=None,
+        )
+        before_original = memories.get(original.memory_id)
+        before_conflicting = memories.get(conflicting.memory_id)
+        before_original_history = memories.history(original.memory_id)
+        before_conflicting_history = memories.history(conflicting.memory_id)
+
+        with pytest.raises(
+            MemoryTransitionError,
+            match="already has an active memory with that normalized identity",
+        ):
+            memories.supersede(
+                "run-b",
+                original.memory_id,
+                kind=MemoryKind.COMMITMENT,
+                content="  SELL   THE COPPER. ",
+                salience=0.8,
+                grounding=None,
+            )
+
+        assert memories.get(original.memory_id) == before_original
+        assert memories.get(conflicting.memory_id) == before_conflicting
+        assert memories.history(original.memory_id) == before_original_history
+        assert memories.history(conflicting.memory_id) == before_conflicting_history
+        assert memories.event_count() == 2
+
+
 def test_a_retracted_memory_leaves_recall_but_not_history(tmp_path: Path) -> None:
     with store(tmp_path / "memory.sqlite3") as memories:
         kept = memories.keep(
@@ -377,11 +423,16 @@ def test_a_retracted_memory_leaves_recall_but_not_history(tmp_path: Path) -> Non
             grounding=None,
         )
 
-        memories.retract("run-b", kept.memory_id, reason="Disproved by telemetry.")
+        retracted = memories.retract(
+            "run-b",
+            kept.memory_id,
+            reason="Disproved by telemetry.",
+        )
         record = memories.get(kept.memory_id)
 
         assert memories.recall(limit=8) == []
         assert record is not None
+        assert retracted == record
         assert record.status is MemoryStatus.RETRACTED
         assert [event.event for event in memories.history(kept.memory_id)] == [
             MemoryLifecycleEvent.KEEP,
@@ -689,6 +740,13 @@ class _BrokenProjectionStore(MemoryStore):
         raise sqlite3.OperationalError("projection write failed")
 
 
+class _BlindActiveKeyStore(MemoryStore):
+    """Model a uniqueness race after the optimistic identity preflight."""
+
+    def _active_by_key(self, key: str) -> None:
+        return None
+
+
 def test_a_failed_write_leaves_neither_an_event_nor_a_projection_row(
     tmp_path: Path,
 ) -> None:
@@ -721,6 +779,82 @@ def test_a_failed_write_leaves_neither_an_event_nor_a_projection_row(
         ]
         assert len(reopened.history(kept.memory_id)) == events_before
         assert reopened.event_count() == 1
+
+
+@pytest.mark.parametrize("transition", ["keep", "supersede"])
+@pytest.mark.parametrize("conflict", ["runtime_id", "normalized_key"])
+def test_expected_integrity_races_are_domain_rejections_and_atomic(
+    transition: str,
+    conflict: str,
+    tmp_path: Path,
+) -> None:
+    """Both reviewed identities fail closed without leaking a SQLite exception."""
+
+    path = tmp_path / "memory.sqlite3"
+    ids = iter(["mem-0001", "mem-0002"])
+    with MemoryStore(path, scope(), memory_id_factory=lambda: next(ids)) as memories:
+        protected = memories.keep(
+            "run-a",
+            kind=MemoryKind.FACT,
+            content="The protected identity.",
+            salience=0.5,
+            grounding=None,
+        )
+        original = memories.keep(
+            "run-a",
+            kind=MemoryKind.FACT,
+            content="The original identity.",
+            salience=0.5,
+            grounding=None,
+        )
+        records_before = memories.all_records()
+        histories_before = {
+            record.memory_id: memories.history(record.memory_id)
+            for record in records_before
+        }
+        events_before = memories.event_count()
+
+    attempted_content = (
+        protected.content if conflict == "normalized_key" else "A fresh identity."
+    )
+    attempted_id = protected.memory_id if conflict == "runtime_id" else "mem-9999"
+    store_type: type[MemoryStore] = (
+        _BlindActiveKeyStore if conflict == "normalized_key" else MemoryStore
+    )
+    with store_type(
+        path,
+        scope(),
+        memory_id_factory=lambda: attempted_id,
+    ) as racing:
+        with pytest.raises(
+            MemoryTransitionError,
+            match="continuity transition conflicts",
+        ):
+            if transition == "keep":
+                racing.keep(
+                    "run-b",
+                    kind=MemoryKind.FACT,
+                    content=attempted_content,
+                    salience=0.6,
+                    grounding=None,
+                )
+            else:
+                racing.supersede(
+                    "run-b",
+                    original.memory_id,
+                    kind=MemoryKind.FACT,
+                    content=attempted_content,
+                    salience=0.6,
+                    grounding=None,
+                )
+
+    with store(path) as reopened:
+        assert reopened.all_records() == records_before
+        assert reopened.event_count() == events_before
+        assert {
+            record.memory_id: reopened.history(record.memory_id)
+            for record in reopened.all_records()
+        } == histories_before
 
 
 def test_foreign_keys_stay_enforced(tmp_path: Path) -> None:
@@ -1234,6 +1368,46 @@ def test_a_supersede_carries_its_grounding_onto_the_replacement(
 
     assert replacement.grounding == "current_observation(telemetry_sequence=9)"
     assert replacement.target_id == "entity-gate"
+
+
+def test_supersede_identity_includes_the_replacement_target(tmp_path: Path) -> None:
+    """Equal words about different entities are not a normalized-key conflict."""
+
+    with store(tmp_path / "memory.sqlite3") as memories:
+        unbound = memories.keep(
+            "run-a",
+            kind=MemoryKind.FACT,
+            content="The gate is closed at night.",
+            salience=0.5,
+            grounding=None,
+        )
+        original = memories.keep(
+            "run-a",
+            kind=MemoryKind.FACT,
+            content="The gate is open.",
+            salience=0.5,
+            grounding=None,
+            target_id="entity-gate-a",
+        )
+        replacement = memories.supersede(
+            "run-b",
+            original.memory_id,
+            kind=MemoryKind.FACT,
+            content=unbound.content,
+            salience=0.6,
+            grounding=None,
+            target_id="entity-gate-b",
+        )
+
+        assert replacement == memories.get(replacement.memory_id)
+        assert {
+            record.memory_id
+            for record in memories.all_records()
+            if record.status is MemoryStatus.ACTIVE
+        } == {
+            unbound.memory_id,
+            replacement.memory_id,
+        }
 
 
 def test_history_payloads_are_stored_with_stable_key_order(tmp_path: Path) -> None:

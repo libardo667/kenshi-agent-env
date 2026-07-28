@@ -1640,34 +1640,50 @@
       "title": "ContextActionKind",
       "type": "string"
     },
-    "ContinuityOperationReceipt": {
+    "ContinuityOperationStatus": {
+      "enum": [
+        "accepted",
+        "rejected",
+        "no_op",
+        "failed"
+      ],
+      "title": "ContinuityOperationStatus",
+      "type": "string"
+    },
+    "ContinuityOrigin": {
+      "enum": [
+        "decision",
+        "plan",
+        "patch"
+      ],
+      "title": "ContinuityOrigin",
+      "type": "string"
+    },
+    "ContinuityReceiptDigest": {
       "additionalProperties": false,
+      "description": "Bounded planner feedback for one full continuity operation receipt.",
       "properties": {
+        "receipt_id": {
+          "pattern": "^cor-[0-9a-f]{32}$",
+          "title": "Receipt Id",
+          "type": "string"
+        },
         "origin": {
           "$ref": "#/$defs/ContinuityOrigin"
         },
+        "operation": {
+          "enum": [
+            "keep",
+            "reinforce",
+            "resolve",
+            "supersede",
+            "retract"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
         "status": {
           "$ref": "#/$defs/ContinuityOperationStatus"
-        },
-        "operation": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/KeepMemoryOperation"
-            },
-            {
-              "$ref": "#/$defs/ReinforceMemoryOperation"
-            },
-            {
-              "$ref": "#/$defs/ResolveMemoryOperation"
-            },
-            {
-              "$ref": "#/$defs/SupersedeMemoryOperation"
-            },
-            {
-              "$ref": "#/$defs/RetractMemoryOperation"
-            }
-          ],
-          "title": "Operation"
         },
         "reason": {
           "maxLength": 1000,
@@ -1688,26 +1704,27 @@
           "default": null,
           "title": "Memory Id"
         },
-        "evidence": {
+        "memory_status": {
           "anyOf": [
             {
-              "maxLength": 1000,
-              "type": "string"
+              "$ref": "#/$defs/MemoryStatus"
             },
             {
               "type": "null"
             }
           ],
-          "default": null,
-          "title": "Evidence"
+          "default": null
         },
-        "resolved_evidence": {
-          "items": {
-            "$ref": "#/$defs/ResolvedEvidenceSnapshot"
-          },
-          "maxItems": 4,
-          "title": "Resolved Evidence",
-          "type": "array"
+        "authored_context_id": {
+          "pattern": "^pc-[1-9][0-9]{0,8}$",
+          "title": "Authored Context Id",
+          "type": "string"
+        },
+        "authored_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "commit_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
         },
         "plan_id": {
           "anyOf": [
@@ -1748,16 +1765,23 @@
           "default": null,
           "title": "Step Id"
         },
-        "authored_context_id": {
-          "pattern": "^pc-[1-9][0-9]{0,8}$",
-          "title": "Authored Context Id",
-          "type": "string"
+        "evidence_summary": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Summary"
         },
-        "authored_revision": {
-          "$ref": "#/$defs/WorldStateRevision"
-        },
-        "commit_revision": {
-          "$ref": "#/$defs/WorldStateRevision"
+        "writes_degraded": {
+          "default": false,
+          "title": "Writes Degraded",
+          "type": "boolean"
         },
         "recorded_at": {
           "format": "date-time",
@@ -1766,34 +1790,18 @@
         }
       },
       "required": [
+        "receipt_id",
         "origin",
-        "status",
         "operation",
+        "status",
         "reason",
         "authored_context_id",
         "authored_revision",
-        "commit_revision"
+        "commit_revision",
+        "recorded_at"
       ],
-      "title": "ContinuityOperationReceipt",
+      "title": "ContinuityReceiptDigest",
       "type": "object"
-    },
-    "ContinuityOperationStatus": {
-      "enum": [
-        "accepted",
-        "rejected",
-        "no_op"
-      ],
-      "title": "ContinuityOperationStatus",
-      "type": "string"
-    },
-    "ContinuityOrigin": {
-      "enum": [
-        "decision",
-        "plan",
-        "patch"
-      ],
-      "title": "ContinuityOrigin",
-      "type": "string"
     },
     "ControlMode": {
       "enum": [
@@ -5309,11 +5317,37 @@
     },
     "recent_continuity_receipts": {
       "items": {
-        "$ref": "#/$defs/ContinuityOperationReceipt"
+        "$ref": "#/$defs/ContinuityReceiptDigest"
       },
       "maxItems": 8,
       "title": "Recent Continuity Receipts",
       "type": "array"
+    },
+    "continuity_writes_degraded_reason": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Continuity Writes Degraded Reason"
+    },
+    "continuity_reads_degraded_reason": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Continuity Reads Degraded Reason"
     },
     "planner_feedback": {
       "anyOf": [

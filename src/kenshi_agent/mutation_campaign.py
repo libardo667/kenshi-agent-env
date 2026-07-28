@@ -18,12 +18,23 @@ import subprocess
 import sys
 import tomllib
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import BinaryIO
+
+if sys.platform == "win32":  # pragma: no cover - exercised by Windows development
+    import msvcrt
+else:  # pragma: no cover - exercised through the public lock on POSIX
+    import fcntl
 
 _EXCLUDED_MODULE_FILES = frozenset({"__init__.py", "__main__.py"})
+_GENERATED_INPUT_DIRECTORIES = frozenset(
+    {"__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache"}
+)
+_GENERATED_INPUT_SUFFIXES = frozenset({".pyc", ".pyo"})
 _RESULT_LINE = re.compile(r"^\s+(\S+): (.+)$")
 _CLEAN_STATUSES = frozenset({"caught by type check", "killed"})
 
@@ -43,6 +54,55 @@ class MutationSummary:
     @property
     def total(self) -> int:
         return sum(self.counts.values())
+
+
+class MutationCampaignStateError(RuntimeError):
+    """A campaign could not produce trustworthy evidence from its workspace."""
+
+
+def _lock_handle(handle: BinaryIO) -> None:
+    """Acquire one non-blocking cross-process byte-range lock."""
+
+    if sys.platform == "win32":  # pragma: no mutate
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)  # pragma: no mutate
+    else:  # pragma: no cover - platform adapter
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_handle(handle: BinaryIO) -> None:
+    """Release a lock acquired by `_lock_handle`."""
+
+    if sys.platform == "win32":  # pragma: no mutate
+        handle.seek(0)  # pragma: no mutate
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)  # pragma: no mutate
+    else:  # pragma: no cover - platform adapter
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def _batch_workspace_lock(workspace: Path) -> Iterator[None]:
+    """Fail closed when another process is using the same batch workspace."""
+
+    workspace.mkdir(parents=True, exist_ok=True)
+    handle = (workspace / ".campaign.lock").open("a+b")
+    try:
+        handle.seek(0, 2)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        try:
+            _lock_handle(handle)
+        except OSError as exc:
+            raise MutationCampaignStateError(
+                f"mutation batch workspace {workspace.name!r} is already in use"
+            ) from exc
+        try:
+            yield
+        finally:
+            _unlock_handle(handle)
+    finally:
+        handle.close()
 
 
 # These files are an internal UTF-8, human-readable cache format. Tests cover
@@ -159,7 +219,16 @@ def _input_digest(repo_root: Path, anchors: set[str]) -> str:
     for anchor in sorted(anchors):
         path = repo_root / anchor
         if path.is_dir():
-            paths.extend(candidate for candidate in sorted(path.rglob("*")) if candidate.is_file())
+            paths.extend(
+                candidate
+                for candidate in sorted(path.rglob("*"))
+                if candidate.is_file()
+                and candidate.suffix not in _GENERATED_INPUT_SUFFIXES
+                and not any(
+                    part in _GENERATED_INPUT_DIRECTORIES
+                    for part in candidate.relative_to(path).parts[:-1]
+                )
+            )
         elif path.is_file():
             paths.append(path)
     for path in paths:
@@ -170,6 +239,31 @@ def _input_digest(repo_root: Path, anchors: set[str]) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")  # pragma: no mutate
     return digest.hexdigest()
+
+
+def _input_fingerprint(repo_root: Path) -> dict[str, str]:
+    original = _read_utf8(repo_root / "pyproject.toml")
+    anchors = _configured_project_anchors(tomllib.loads(original))
+    return {"digest": _input_digest(repo_root, anchors)}
+
+
+def _assert_batch_inputs_unchanged(repo_root: Path, workspace: Path) -> None:
+    """Refuse evidence when a symlinked campaign input changed mid-run."""
+
+    try:
+        expected = json.loads(
+            _read_utf8(workspace / "input-fingerprint.json")
+        )
+    except (FileNotFoundError, json.JSONDecodeError) as exc:
+        raise MutationCampaignStateError(
+            "mutation input fingerprint vanished or became unreadable"
+        ) from exc
+    actual = _input_fingerprint(repo_root)
+    if expected != actual:
+        raise MutationCampaignStateError(
+            "project inputs changed while mutmut was running; "
+            "discard this run and retry from a stable tree"
+        )
 
 
 def _ensure_project_symlink(repo_root: Path, workspace: Path, anchor: str) -> None:
@@ -190,6 +284,43 @@ def _ensure_project_symlink(repo_root: Path, workspace: Path, anchor: str) -> No
         raise ValueError(f"mutation workspace path {destination} is not a managed symlink")
         # pragma: no mutate end
     destination.symlink_to(source, target_is_directory=source.is_dir())
+
+
+def _invalidate_batch_cache(workspace: Path, batch: MutationBatch) -> None:
+    """Discard every generated file whose meaning depends on campaign inputs."""
+
+    mutants = workspace / "mutants"
+    generated_source = mutants / batch.source_path
+    for path in (
+        mutants / "mutmut-stats.json",
+        generated_source,
+        Path(f"{generated_source}.meta"),
+    ):
+        path.unlink(missing_ok=True)
+
+
+def _batch_cache_is_complete(workspace: Path, batch: MutationBatch) -> bool:
+    """Reject partial mutmut output left by an interrupted generation pass."""
+
+    mutants = workspace / "mutants"
+    stats = mutants / "mutmut-stats.json"
+    generated_source = mutants / batch.source_path
+    generated_metadata = Path(f"{generated_source}.meta")
+    cache_paths = (stats, generated_source, generated_metadata)
+    if not any(path.exists() for path in cache_paths):
+        return True
+    if not all(path.is_file() for path in cache_paths):
+        return False
+    if generated_source.stat().st_size == 0:
+        return False
+    try:
+        metadata = json.loads(_read_utf8(generated_metadata))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(metadata, dict):
+        return False
+    exit_codes = metadata.get("exit_code_by_key")
+    return isinstance(exit_codes, dict) and bool(exit_codes)
 
 
 def prepare_batch_workspace(repo_root: Path, batch: MutationBatch) -> Path:
@@ -215,8 +346,8 @@ def prepare_batch_workspace(repo_root: Path, batch: MutationBatch) -> Path:
         previous = json.loads(_read_utf8(fingerprint_path))
     except (FileNotFoundError, json.JSONDecodeError):
         pass
-    if previous != fingerprint:
-        (workspace / "mutants" / "mutmut-stats.json").unlink(missing_ok=True)
+    if previous != fingerprint or not _batch_cache_is_complete(workspace, batch):
+        _invalidate_batch_cache(workspace, batch)
     _write_utf8(fingerprint_path, _pretty_json(fingerprint))
     return workspace
 
@@ -286,6 +417,15 @@ def _read_batch_results(
     )
 
 
+def _artifact_path(
+    artifact_dir: Path,
+    artifact_stem: str,
+    collision_index: int,
+) -> Path:
+    suffix = "" if collision_index == 0 else f"-{collision_index}"
+    return artifact_dir / f"{artifact_stem}{suffix}.json"
+
+
 def _write_run_artifact(
     repo_root: Path,
     batch: MutationBatch,
@@ -295,7 +435,7 @@ def _write_run_artifact(
     artifact_dir = repo_root / "runs" / "mutation"
     artifact_dir.mkdir(parents=True, exist_ok=True)
     timestamp = completed_at.strftime("%Y%m%dT%H%M%SZ")
-    artifact = artifact_dir / f"{timestamp}-{batch.name.replace('.', '-')}.json"
+    artifact_stem = f"{timestamp}-{batch.name.replace('.', '-')}"
     payload = {
         "batch": batch.name,
         "completed_at": completed_at.isoformat(),
@@ -305,9 +445,26 @@ def _write_run_artifact(
         "total": summary.total,
         "actionable_mutants": summary.actionable_mutants,
     }
-    with artifact.open("x", encoding="utf-8") as handle:
-        handle.write(_pretty_json(payload))
-    return artifact
+    collision_index = 0
+    artifact = _artifact_path(artifact_dir, artifact_stem, collision_index)
+    while True:
+        try:
+            with artifact.open("x", encoding="utf-8") as handle:
+                handle.write(_pretty_json(payload))
+        except FileExistsError:
+            collision_index += 1
+            next_artifact = _artifact_path(
+                artifact_dir,
+                artifact_stem,
+                collision_index,
+            )
+            if next_artifact == artifact:
+                raise RuntimeError(  # mutation: diagnostic-only
+                    "mutation artifact collision resolution repeated a candidate"
+                ) from None
+            artifact = next_artifact
+            continue
+        return artifact
 
 
 def _print_summary(batch: MutationBatch, summary: MutationSummary) -> None:
@@ -372,34 +529,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         # pragma: no mutate end
 
-    workspace = prepare_batch_workspace(repo_root, batch)
-    if args.command == "run":
-        if args.max_children < 1:
-            parser.error(  # mutation: diagnostic-only
-                "--max-children must be positive"
-            )
-        completed = subprocess.run(
-            [
-                _mutmut_executable(),
-                "run",
-                "--max-children",
-                str(args.max_children),
-                batch.mutant_pattern,
-            ],
-            cwd=workspace,
-            check=False,
-        )
-        if completed.returncode != 0:
-            return completed.returncode
+    workspace = repo_root / ".mutation-workspaces" / batch.name
+    try:
+        with _batch_workspace_lock(workspace):
+            workspace = prepare_batch_workspace(repo_root, batch)
+            if args.command == "run":
+                if args.max_children < 1:
+                    parser.error(  # mutation: diagnostic-only
+                        "--max-children must be positive"
+                    )
+                completed = subprocess.run(
+                    [
+                        _mutmut_executable(),
+                        "run",
+                        "--max-children",
+                        str(args.max_children),
+                        batch.mutant_pattern,
+                    ],
+                    cwd=workspace,
+                    check=False,
+                )
+                if completed.returncode != 0:
+                    return completed.returncode
+                _assert_batch_inputs_unchanged(repo_root, workspace)
 
-    summary = _read_batch_results(workspace, batch)
-    artifact = _write_run_artifact(repo_root, batch, summary)
-    _print_summary(batch, summary)
-    print(f"artifact: {artifact.relative_to(repo_root)}")
-    return mutation_exit_code(
-        summary,
-        allow_actionable=args.allow_actionable,
-    )
+            summary = _read_batch_results(workspace, batch)
+            artifact = _write_run_artifact(repo_root, batch, summary)
+            _print_summary(batch, summary)
+            print(f"artifact: {artifact.relative_to(repo_root)}")
+            return mutation_exit_code(
+                summary,
+                allow_actionable=args.allow_actionable,
+            )
+    except MutationCampaignStateError as exc:
+        print(
+            f"mutation campaign refused: {exc}",
+            file=sys.stderr,
+        )
+        return 2
 
 
 # Console-script behavior is exercised through main; this is import-time plumbing.

@@ -53,8 +53,11 @@ current observation reference is permanently bound to this request's
 `world_revision`; a later commit observation cannot rewrite it. A `target_id`
 must come from a fresh world-facing entity in this request, never remembered
 text. There is no free-text evidence field: the runtime renders grounding from
-resolved references. One invalid operation is rejected with a typed receipt
-while the surrounding decision or plan still executes.
+resolved references. One invalid operation is rejected with a runtime-identified
+typed receipt while the surrounding decision or plan still executes. An
+unexpected store failure is `failed`, rolls back, and quarantines later
+continuity writes for that run. The next input carries a bounded receipt digest
+so the exact rejected operation can be corrected rather than repeated.
 
 Reference existence is not evidence capability. Facts require a fresh
 observation, controller-verified world effect, or causally observed change.

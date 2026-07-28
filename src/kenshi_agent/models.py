@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+from bisect import bisect_right
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from math import inf
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal, TypeAlias, cast
+from typing import Any, Literal, TypeAlias
 from uuid import uuid4
 
 from pydantic import (
@@ -361,7 +363,7 @@ class WorldTarget(StrictModel):
 def _nearest_first(entities: list[NearbyEntity]) -> list[NearbyEntity]:
     return sorted(
         entities,
-        key=lambda entity: entity.distance if entity.distance is not None else float("inf"),
+        key=lambda entity: entity.distance if entity.distance is not None else inf,
     )
 
 
@@ -495,29 +497,19 @@ def budgeted_visible_controls(
     one the planner will not author, never one it may author blindly.
     """
 
-    if limit <= 0:
-        return []
-    if len(controls) <= limit:
-        return list(controls)
-
     by_role: dict[str, list[VisibleUIControl]] = {}
     for control in controls:
         by_role.setdefault(control.role, []).append(control)
+    if not by_role:
+        return []
 
-    chosen: list[VisibleUIControl] = []
-    cursors = dict.fromkeys(by_role, 0)
-    while len(chosen) < limit:
-        progressed = False
-        for role, bucket in by_role.items():
-            if len(chosen) >= limit:
-                break
-            index = cursors[role]
-            if index < len(bucket):
-                chosen.append(bucket[index])
-                cursors[role] = index + 1
-                progressed = True
-        if not progressed:
-            break
+    effective_limit = max(0, limit)
+    chosen = [
+        bucket[round_index]
+        for round_index in range(max(len(bucket) for bucket in by_role.values()))
+        for bucket in by_role.values()
+        if round_index < len(bucket)
+    ][:effective_limit]
 
     positions = {id(control): order for order, control in enumerate(controls)}
     chosen.sort(key=lambda control: positions[id(control)])
@@ -1505,6 +1497,12 @@ def new_memory_id() -> str:
     return f"mem-{uuid4().hex}"
 
 
+def new_continuity_receipt_id() -> str:
+    """A runtime-owned identity for one attempted continuity operation."""
+
+    return f"cor-{uuid4().hex}"
+
+
 def parse_action(value: Any) -> Action:
     return ACTION_ADAPTER.validate_python(value)
 
@@ -1786,6 +1784,7 @@ class ContinuityOperationStatus(StrEnum):
     ACCEPTED = "accepted"
     REJECTED = "rejected"
     NO_OP = "no_op"
+    FAILED = "failed"
 
 
 class MemoryStatus(StrEnum):
@@ -1867,12 +1866,35 @@ class CanonicalMemoryProvenance(StrictModel):
     transition_result: Literal["applied"] = "applied"
 
 
+class ContinuityReceiptDigest(StrictModel):
+    """Bounded planner feedback for one full continuity operation receipt."""
+
+    receipt_id: str = Field(pattern=r"^cor-[0-9a-f]{32}$")
+    origin: ContinuityOrigin
+    operation: Literal["keep", "reinforce", "resolve", "supersede", "retract"]
+    status: ContinuityOperationStatus
+    reason: str = Field(min_length=1, max_length=1000)
+    memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
+    memory_status: MemoryStatus | None = None
+    authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
+    authored_revision: WorldStateRevision
+    commit_revision: WorldStateRevision
+    plan_id: str | None = Field(default=None, pattern=PLAN_ID_PATTERN)
+    plan_version: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, pattern=STEP_ID_PATTERN)
+    evidence_summary: str | None = Field(default=None, max_length=500)
+    writes_degraded: bool = False
+    recorded_at: datetime
+
+
 class ContinuityOperationReceipt(StrictModel):
+    receipt_id: str = Field(pattern=r"^cor-[0-9a-f]{32}$")
     origin: ContinuityOrigin
     status: ContinuityOperationStatus
     operation: ContinuityOperation
     reason: str = Field(min_length=1, max_length=1000)
     memory_id: str | None = Field(default=None, pattern=MEMORY_ID_PATTERN)
+    memory_status: MemoryStatus | None = None
     evidence: str | None = Field(default=None, max_length=1000)
     resolved_evidence: list[ResolvedEvidenceSnapshot] = Field(
         default_factory=list,
@@ -1884,7 +1906,30 @@ class ContinuityOperationReceipt(StrictModel):
     authored_context_id: str = Field(pattern=r"^pc-[1-9][0-9]{0,8}$")
     authored_revision: WorldStateRevision
     commit_revision: WorldStateRevision
+    writes_degraded: bool = False
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    def digest(self) -> ContinuityReceiptDigest:
+        return ContinuityReceiptDigest(
+            receipt_id=self.receipt_id,
+            origin=self.origin,
+            operation=self.operation.operation,
+            status=self.status,
+            reason=self.reason,
+            memory_id=self.memory_id,
+            memory_status=self.memory_status,
+            authored_context_id=self.authored_context_id,
+            authored_revision=self.authored_revision,
+            commit_revision=self.commit_revision,
+            plan_id=self.plan_id,
+            plan_version=self.plan_version,
+            step_id=self.step_id,
+            evidence_summary=(
+                None if self.evidence is None else self.evidence[:500]
+            ),
+            writes_degraded=self.writes_degraded,
+            recorded_at=self.recorded_at,
+        )
 
 
 class MemoryAuthorship(StrEnum):
@@ -2079,6 +2124,7 @@ class PlannerContextManifest(StrictModel):
     action_outcome_ids: list[str] = Field(default_factory=list, max_length=100)
     plan_outcome_ids: list[str] = Field(default_factory=list, max_length=8)
     memory_ids: list[str] = Field(default_factory=list, max_length=128)
+    continuity_receipt_ids: list[str] = Field(default_factory=list, max_length=8)
     advisor_brief_ids: list[str] = Field(default_factory=list, max_length=8)
     candidate_memory_count: int = Field(default=0, ge=0)
     payload_characters: int | None = Field(default=None, ge=0)
@@ -2400,8 +2446,8 @@ class Condition(RootModel[ConditionValue]):
     """One schema branch whose fields can only express that condition's meaning."""
 
     def __init__(self, **data: Any) -> None:
-        payload = data["root"] if set(data) == {"root"} else data
-        super().__init__(root=cast(ConditionValue, payload))
+        payload: Any = data
+        super().__init__(root=payload)
 
     @model_validator(mode="before")
     @classmethod
@@ -2413,8 +2459,11 @@ class Condition(RootModel[ConditionValue]):
         if not isinstance(value, Mapping):
             return value
         data = dict(value)
-        if set(data) == {"root"} and isinstance(data["root"], Mapping):
-            data = dict(data["root"])
+        if set(data) == {"root"}:
+            nested = data["root"]
+            if not isinstance(nested, Mapping):
+                return nested
+            data = dict(nested)
 
         kind = data.get("kind")
         required = [
@@ -2675,6 +2724,32 @@ class ActivePlanContext(StrictModel):
     remaining_actions: int = Field(ge=0, le=16)
 
 
+def _resolved_planner_payload_chars(max_chars: int | None) -> int:
+    """Resolve the public default inside mutation-visible behavior."""
+
+    return 24000 if max_chars is None else max_chars
+
+
+def _planner_json(value: Any) -> str:
+    """Render the canonical human-readable planner document."""
+
+    # pragma: no mutate start
+    return json.dumps(
+        value,
+        indent=2,
+        # `json.dumps` treats None exactly like False for this flag.
+        ensure_ascii=False,
+    )
+    # pragma: no mutate end
+
+
+def _json_model(value: BaseModel) -> dict[str, Any]:
+    """Project a model through its canonical JSON representation."""
+
+    result: dict[str, Any] = json.loads(value.model_dump_json())
+    return result
+
+
 class Observation(StrictModel):
     run_id: str
     step_index: int = Field(ge=0)
@@ -2698,9 +2773,20 @@ class Observation(StrictModel):
     recent_plan_outcomes: list[PlanOutcome] = Field(default_factory=list, max_length=8)
     # Why the last continuity operations were accepted or refused. Without this
     # a planner that makes one deterministic mistake remakes it every plan.
-    recent_continuity_receipts: list[ContinuityOperationReceipt] = Field(
+    recent_continuity_receipts: list[ContinuityReceiptDigest] = Field(
         default_factory=list,
         max_length=8,
+    )
+    # A diagnostic store write can fail without being a planner-authored
+    # operation, so it has no operation receipt. Keep the quarantined state
+    # explicit until the run ends instead of making absence look healthy.
+    continuity_writes_degraded_reason: str | None = Field(
+        default=None,
+        max_length=1000,
+    )
+    continuity_reads_degraded_reason: str | None = Field(
+        default=None,
+        max_length=1000,
     )
     # Why the previous planner response could not be used. Without it a planner
     # that makes one deterministic mistake remakes it on every retry: a live run
@@ -2990,7 +3076,7 @@ class Observation(StrictModel):
             }
             if contract.kind == "use_game_binding":
                 entry["binding_success_conditions"] = {
-                    binding.value: condition.model_dump(mode="json")
+                    binding.value: _json_model(condition)
                     for binding, condition in GAME_BINDING_SUCCESS_CONDITIONS.items()
                 }
             digest.append(entry)
@@ -3015,14 +3101,14 @@ class Observation(StrictModel):
             "control_mode": self.control_mode.value,
             "planning_mode": self.planning_mode.value,
             "live_execution_policy": self.live_execution_policy.value,
-            "world_revision": self.world_revision.model_dump(mode="json"),
+            "world_revision": _json_model(self.world_revision),
             "telemetry_stale": self.telemetry_stale,
             "telemetry_age_seconds": self.telemetry_age_seconds,
             "events": list(self.events),
             "objective": self.objective,
-            "advisor": self.advisor.model_dump(mode="json"),
+            "advisor": _json_model(self.advisor),
             "affordance_requests": [
-                request.model_dump(mode="json") for request in self.affordance_requests
+                _json_model(request) for request in self.affordance_requests
             ],
             "digest": True,
         }
@@ -3086,7 +3172,7 @@ class Observation(StrictModel):
             },
             # The evaluator reconstructs native command causality from these, so
             # they are kept whole rather than counted.
-            "native_control": telemetry.native_control.model_dump(mode="json"),
+            "native_control": _json_model(telemetry.native_control),
             "active_shop_trader_count": telemetry.active_shop_trader_count,
             "nearby_entity_count": len(telemetry.nearby_entities),
             "dialogue_target_count": len(dialogue_targets(telemetry.nearby_entities)),
@@ -3106,7 +3192,7 @@ class Observation(StrictModel):
                     "blood": selected.blood,
                     "bleeding_rate": selected.bleeding_rate,
                     "position": (
-                        selected.position.model_dump(mode="json")
+                        _json_model(selected.position)
                         if selected.position is not None
                         else None
                     ),
@@ -3142,36 +3228,45 @@ class Observation(StrictModel):
         floor = irreducible_payload(payload)
         owners = self.window_owners()
 
-        def fits(limit: int) -> list[dict[str, Any]] | None:
-            candidate = self.visible_control_digest(limit)
-            floor["visible_controls"] = group_controls_by_window(candidate, owners)
-            if len(json.dumps(floor, indent=2, ensure_ascii=False)) > max_chars:
-                return None
-            return candidate
+        def rendered_size(candidate: list[dict[str, Any]]) -> int:
+            # This scratch document is measured and discarded. Any same-length
+            # spelling has identical behavior, so keep the canonical key out of
+            # the mutation signal while testing its consumer at planner_payload.
+            # pragma: no mutate start
+            floor["visible_controls"] = group_controls_by_window(
+                candidate,
+                owners,
+            )
+            # pragma: no mutate end
+            return len(_planner_json(floor))
 
-        everything = fits(MAX_DIGESTED_VISIBLE_CONTROLS)
-        if everything is not None:
-            return everything
+        controls = (
+            self.telemetry.ui.visible_controls
+            if self.telemetry is not None
+            and self.telemetry.ui.visible_controls is not None
+            else []
+        )
+        candidates = [self.visible_control_digest(0)]
+        for limit, _control in enumerate(
+            controls[:MAX_DIGESTED_VISIBLE_CONTROLS],
+            start=1,
+        ):
+            candidates.append(self.visible_control_digest(limit))
 
-        # Serialized size grows with the limit, so bisect for the largest
-        # role-balanced selection that still fits rather than walking up to it -
-        # this runs on every observation, at telemetry cadence.
-        fitted: list[dict[str, Any]] = []
-        low, high = 0, MAX_DIGESTED_VISIBLE_CONTROLS
-        while low < high:
-            middle = (low + high + 1) // 2
-            candidate = fits(middle)
-            if candidate is None:
-                high = middle - 1
-            else:
-                fitted = candidate
-                low = middle
-        return fitted
+        fitted_index = max(
+            0,
+            bisect_right(
+                [rendered_size(candidate) for candidate in candidates],
+                max_chars,
+            )
+            - 1,
+        )
+        return candidates[fitted_index]
 
     def planner_payload(
         self,
         *,
-        max_chars: int = 24000,
+        max_chars: int | None = None,
         max_context_chars: int = MAX_PLANNER_CONTEXT_CHARS,
     ) -> str:
         """Render this observation for the planner within a character budget.
@@ -3190,6 +3285,7 @@ class Observation(StrictModel):
         so, rather than quietly dropping controls.
         """
 
+        max_chars = _resolved_planner_payload_chars(max_chars)
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         # Surface the deterministic talk-target list the planner must trust
         # rather than re-derive. A top-level non-collection key is preserved
@@ -3201,19 +3297,30 @@ class Observation(StrictModel):
 
         controls = self.visible_control_digest()
         floor = irreducible_payload(payload)
-        floor["visible_controls"] = []
         # A budget too small for the safety envelope is still a hard
         # configuration error. Current-target memories, like controls, may push
         # past the spending preference because silently dropping them changes
         # the planner's effective state.
+        # pragma: no mutate start
         safety_floor = irreducible_payload(
             payload,
+            # None is deliberately equivalent to False at this bool boundary.
             preserve_current_target_memories=False,
         )
+        # pragma: no mutate end
+        # These two scratch documents are measured and discarded. The canonical
+        # key itself is asserted on the final planner payload below.
+        # pragma: no mutate start
         safety_floor["visible_controls"] = []
-        safety_required = len(json.dumps(safety_floor, indent=2, ensure_ascii=False))
-        floor["visible_controls"] = group_controls_by_window(controls, self.window_owners())
-        required = len(json.dumps(floor, indent=2, ensure_ascii=False))
+        # pragma: no mutate end
+        safety_required = len(_planner_json(safety_floor))
+        # pragma: no mutate start
+        floor["visible_controls"] = group_controls_by_window(
+            controls,
+            self.window_owners(),
+        )
+        # pragma: no mutate end
+        required = len(_planner_json(floor))
         if max_chars < safety_required:
             required = max_chars
         if required > max_context_chars:
@@ -3232,7 +3339,7 @@ class Observation(StrictModel):
             controls = shown
 
         payload["visible_controls"] = group_controls_by_window(controls, self.window_owners())
-        text = json.dumps(payload, indent=2, ensure_ascii=False)
+        text = _planner_json(payload)
         return budget_observation_payload(
             payload,
             full_text=text,

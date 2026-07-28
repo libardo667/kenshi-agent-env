@@ -57,6 +57,7 @@ from .models import (
     ContinuityOperation,
     ContinuityOperationReceipt,
     ContinuityOrigin,
+    ContinuityReceiptDigest,
     ControlMode,
     InputBoundaryDecision,
     LiveContinuousPolicy,
@@ -71,7 +72,6 @@ from .models import (
     PlanPatch,
     PlanStep,
     RecallMemoryAction,
-    RecallSummary,
     RecoverCameraViewAction,
     RequestAffordanceAction,
     ScenarioIdentity,
@@ -87,6 +87,12 @@ from .planners import Planner
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
+from .runtime_continuity import (
+    continuity_receipt_digests,
+    recall_for_observation,
+    record_planner_delivery,
+    search_durable_memory,
+)
 from .safety import ActionGuard, SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
 from .scenario_fixtures import ScenarioAttestation
@@ -182,7 +188,7 @@ class AgentRuntime:
         )
         # Bounded and short: these exist so a deterministic invalid update is
         # not repeated, not as a second history.
-        self._continuity_receipts: deque[ContinuityOperationReceipt] = deque(
+        self._continuity_receipts: deque[ContinuityReceiptDigest] = deque(
             maxlen=MAX_SURFACED_CONTINUITY_RECEIPTS
         )
         self._pending_memory_search: MemorySearchResult | None = None
@@ -2245,6 +2251,12 @@ class AgentRuntime:
             "recent_action_outcomes": self._ledger.recent_action_outcomes,
             "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
             "recent_continuity_receipts": list(self._continuity_receipts),
+            "continuity_writes_degraded_reason": (
+                self._continuity.writes_degraded_reason
+            ),
+            "continuity_reads_degraded_reason": (
+                self._continuity.reads_degraded_reason
+            ),
             "advisor": (
                 self.advisor.availability(observation)
                 if self.advisor is not None
@@ -2254,19 +2266,29 @@ class AgentRuntime:
             "memory_search": self._pending_memory_search,
         }
         if self.memory is not None:
-            recalled = self.memory.recall_tiered(
+            recalled = recall_for_observation(
+                self.memory,
+                self._continuity,
                 budget=self._recall_budget,
                 target_ids=observation.current_memory_target_ids(),
             )
             updates["memories"] = recalled.records
-            updates["memory_recall"] = RecallSummary(
-                omitted={
-                    tier: count
-                    for tier, count in recalled.omitted.items()
-                    if count
-                },
-                total_omitted=recalled.total_omitted,
+            updates["memory_recall"] = recalled.summary
+            updates["continuity_reads_degraded_reason"] = (
+                recalled.reads_degraded_reason
             )
+            updates["continuity_writes_degraded_reason"] = (
+                recalled.writes_degraded_reason
+            )
+            if recalled.failure is not None:
+                self.logger.write(
+                    "continuity_store_failed",
+                    step_index=observation.step_index,
+                    payload={
+                        "boundary": recalled.failure.boundary,
+                        "reason": recalled.failure.reason,
+                    },
+                )
         return observation.model_copy(update=updates)
 
     async def _execute_affordance_request_action(
@@ -2550,7 +2572,7 @@ class AgentRuntime:
     def _surface(self, receipts: Sequence[ContinuityOperationReceipt]) -> None:
         """Keep the newest receipts where the next planner will see them."""
 
-        self._continuity_receipts.extend(receipts)
+        self._continuity_receipts.extend(continuity_receipt_digests(receipts))
 
     def _record_plan_outcome(
         self,
@@ -2604,11 +2626,22 @@ class AgentRuntime:
             step_index=observation.step_index,
             payload=manifest.model_dump(mode="json"),
         )
-        if self.memory is not None and manifest.memory_ids:
-            self.memory.record_delivery(
-                self.run_id,
-                manifest.memory_ids,
+        if self.memory is not None:
+            failure = record_planner_delivery(
+                self.memory,
+                self._continuity,
+                run_id=self.run_id,
+                memory_ids=manifest.memory_ids,
             )
+            if failure is not None:
+                self.logger.write(
+                    "continuity_store_failed",
+                    step_index=observation.step_index,
+                    payload={
+                        "boundary": failure.boundary,
+                        "reason": failure.reason,
+                    },
+                )
         self._pending_memory_search = None
         output = await self.planner.decide_prepared(prepared)
         return AuthoredPlannerOutput(output=output, context=prepared.context)
@@ -2640,10 +2673,22 @@ class AgentRuntime:
                 reason="Durable memory is disabled for this run; nothing was read.",
             )
         else:
-            result = self.memory.search(
+            search = search_durable_memory(
+                self.memory,
+                self._continuity,
                 query=action.query,
                 limit=action.max_records,
             )
+            result = search.result
+            if search.failure is not None:
+                self.logger.write(
+                    "continuity_store_failed",
+                    step_index=observation.step_index,
+                    payload={
+                        "boundary": search.failure.boundary,
+                        "reason": search.failure.reason,
+                    },
+                )
         self._pending_memory_search = result
         receipt = ActionReceipt(
             action=action,

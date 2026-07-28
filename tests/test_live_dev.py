@@ -1768,6 +1768,15 @@ def test_journey_continuous_flag_passes_planning_mode() -> None:
     assert argv[argv.index("--planning-mode") + 1] == "continuous"
 
 
+def test_journey_passes_an_explicit_campaign_to_the_core_run() -> None:
+    argv = _journey_argv(
+        _journey_args("--campaign", "ladle-css-01"),
+        "campaign-run",
+    )
+
+    assert argv[argv.index("--campaign") + 1] == "ladle-css-01"
+
+
 def test_journey_continuous_does_not_imply_the_acknowledgement() -> None:
     # --continuous alone must never silently grant the continuous-live ack; the
     # run command then refuses live-continuous execution, preserving the gate.

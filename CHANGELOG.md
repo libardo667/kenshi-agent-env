@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Isolated continuity transition failures from gameplay. Every operation now
+  receives a runtime-owned receipt ID and an accepted, rejected, no-op, or
+  failed status. Expected active-key conflicts become typed rejections with
+  atomic rollback; unexpected SQLite failures roll back, quarantine later
+  writes for the run, and remain planner-visible through bounded receipt
+  digests whose exact delivered IDs enter the planner manifest. Tight payloads
+  preserve the latest adverse receipt, reports count all four statuses, legacy
+  `memory_written` logs remain readable, read-side failures quarantine both
+  reads and writes without stopping gameplay, diagnostic-delivery failures no
+  longer cancel planner calls, and generic long-form runs now require an
+  explicit campaign or attested scenario instead of silently using Ladle.
 - Classified continuity evidence by capability before rendering it. References
   now resolve to immutable typed snapshots; facts require fresh or causally
   adequate world evidence, episodes preserve failed/no-op/unknown attempts,

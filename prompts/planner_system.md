@@ -69,7 +69,16 @@ further transition, and so does one belonging to another campaign.
 
 `recent_continuity_receipts` says what happened to your last operations. A
 `rejected` receipt names exactly what was wrong; fix it or drop it rather than
-sending the same operation again.
+sending the same operation again. A `failed` receipt means the runtime
+quarantined continuity writes after an unexpected store failure; continue
+playing from current world evidence without claiming that later memory changes
+were kept.
+
+`continuity_writes_degraded_reason` remains populated after any unsafe durable
+write boundary. `continuity_reads_degraded_reason` means durable recall and
+search are also unavailable; do not repeat the read or treat an empty memory
+list as proof that nothing was known. Current Kenshi telemetry remains
+authoritative.
 
 `memory_recall` says what recall left out. `total_omitted: 0` means you are
 seeing everything; a nonzero count means more exists that you were not shown.
@@ -97,7 +106,8 @@ exact planner input:
   `recent_action_outcomes` or `memory_search.action_outcomes`;
 - `{"source": "plan_outcome", "plan_outcome_id": "..."}` — from
   `recent_plan_outcomes` or `memory_search.plan_outcomes`;
-- `{"source": "memory", "memory_id": "mem-..."}` — a delivered memory ID;
+- `{"source": "memory", "memory_id": "mem-0123456789abcdef0123456789abcdef"}` —
+  a delivered memory ID copied exactly from this input;
 - `{"source": "advisor_brief", "brief_id": "..."}` — advice, not observation.
 
 Never invent an ID or cite one merely because it existed earlier in the run. A

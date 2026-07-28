@@ -19,15 +19,13 @@ class _MetricValues(TypedDict):
     dry_run_actions: int
     executed_actions: int
     primitive_actions: int
-    dialogue_approach_attempts: int
-    repeated_dialogue_approach_attempts: int
-    max_dialogue_approach_attempts_per_target: int
     observations: int
     stale_observations: int
-    memory_writes: int
+    continuity_memories_kept: int
     continuity_operations_accepted: int
     continuity_operations_rejected: int
     continuity_operations_no_op: int
+    continuity_operations_failed: int
     plan_outcomes: int
     memory_reads: int
     memory_read_records: int
@@ -58,7 +56,6 @@ class _MetricValues(TypedDict):
     command_mismatches: int
     command_receipts: int
     command_receipts_with_post_revision: int
-    native_command_acknowledgements: int
     native_commands_accepted: int
     native_commands_completed: int
     native_commands_rejected: int
@@ -111,10 +108,11 @@ class LogMetrics:
     dialogue_approach_attempts_by_target: dict[str, int] = field(default_factory=dict)
     observations: int = 0
     stale_observations: int = 0
-    memory_writes: int = 0
+    continuity_memories_kept: int = 0
     continuity_operations_accepted: int = 0
     continuity_operations_rejected: int = 0
     continuity_operations_no_op: int = 0
+    continuity_operations_failed: int = 0
     memory_lifecycle_transitions: dict[str, int] = field(default_factory=dict)
     plan_outcomes: int = 0
     memory_reads: int = 0
@@ -190,6 +188,15 @@ class LogMetrics:
     option_success_percentage: float | None = None
 
 
+def _json_lines(path: Path) -> list[str]:
+    """Read one JSONL artifact with an explicit, platform-independent codec."""
+
+    # Encoding-name capitalization is equivalent, while omitting the codec is
+    # locale-dependent. Keep this standard-library adapter outside mutation
+    # scoring so the campaign measures evaluator behavior, not codec aliases.
+    return path.read_text(encoding="utf-8").splitlines()  # pragma: no mutate
+
+
 def evaluate_log(path: Path) -> LogMetrics:
     decision_planner_latencies: list[float] = []
     strategic_planner_latencies: list[float] = []
@@ -216,15 +223,13 @@ def evaluate_log(path: Path) -> LogMetrics:
         "dry_run_actions": 0,
         "executed_actions": 0,
         "primitive_actions": 0,
-        "dialogue_approach_attempts": 0,
-        "repeated_dialogue_approach_attempts": 0,
-        "max_dialogue_approach_attempts_per_target": 0,
         "observations": 0,
         "stale_observations": 0,
-        "memory_writes": 0,
+        "continuity_memories_kept": 0,
         "continuity_operations_accepted": 0,
         "continuity_operations_rejected": 0,
         "continuity_operations_no_op": 0,
+        "continuity_operations_failed": 0,
         "plan_outcomes": 0,
         "memory_reads": 0,
         "memory_read_records": 0,
@@ -255,7 +260,6 @@ def evaluate_log(path: Path) -> LogMetrics:
         "command_mismatches": 0,
         "command_receipts": 0,
         "command_receipts_with_post_revision": 0,
-        "native_command_acknowledgements": 0,
         "native_commands_accepted": 0,
         "native_commands_completed": 0,
         "native_commands_rejected": 0,
@@ -289,244 +293,245 @@ def evaluate_log(path: Path) -> LogMetrics:
         "steps_completed": None,
         "stop_reason": None,
     }
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            record = json.loads(line)
-            event_type = record.get("event_type")
-            payload = record.get("payload") or {}
-            if event_type == "run_started":
-                control_mode = payload.get("control_mode")
-                values["control_mode"] = str(control_mode) if control_mode is not None else None
-            elif event_type == "decision":
-                values["decisions"] += 1
-                source = payload.get("source")
-                if source == "reflex":
-                    values["reflex_decisions"] += 1
-                if source == "planner_error":
-                    values["planner_errors"] += 1
-                latency = payload.get("planner_latency_seconds")
-                if latency is not None and source != "reflex":
-                    decision_planner_latencies.append(float(latency))
-            elif event_type == "strategic_planner_call":
-                values["strategic_planner_calls"] += 1
-                latency = payload.get("planner_latency_seconds")
-                if latency is not None:
-                    strategic_planner_latencies.append(float(latency))
-            elif event_type == "action_receipt":
-                values["action_receipts"] += 1
-                values["primitive_actions"] += int(payload.get("primitive_actions", 0))
-                action = payload.get("action")
-                if (
-                    isinstance(action, dict)
-                    and action.get("kind") == "approach_dialogue_target"
-                    and isinstance(action.get("target_id"), str)
-                    and action["target_id"]
-                ):
-                    target_id = action["target_id"]
-                    dialogue_approaches_by_target[target_id] = (
-                        dialogue_approaches_by_target.get(target_id, 0) + 1
-                    )
-                if payload.get("dry_run"):
-                    values["dry_run_actions"] += 1
-                if payload.get("executed"):
-                    values["executed_actions"] += 1
-                if payload.get("command_id") is not None:
-                    values["command_receipts"] += 1
-                    if payload.get("causal_revision_advanced") is True:
-                        values["command_receipts_with_post_revision"] += 1
-                retain_native_acknowledgement(payload.get("native_acknowledgement"))
-            elif event_type == "action_rejected":
-                values["rejected_actions"] += 1
-            elif event_type == "observation":
-                values["observations"] += 1
-                if payload.get("telemetry_stale"):
-                    values["stale_observations"] += 1
-                telemetry = payload.get("telemetry")
-                if isinstance(telemetry, dict):
-                    native_control = telemetry.get("native_control")
-                    if isinstance(native_control, dict):
-                        acknowledgements = native_control.get("acknowledgements")
-                        if isinstance(acknowledgements, list):
-                            for acknowledgement in acknowledgements:
-                                retain_native_acknowledgement(acknowledgement)
-            elif event_type == "continuity_receipt":
-                status = payload.get("status")
-                if status == "accepted":
-                    values["continuity_operations_accepted"] += 1
-                    operation = payload.get("operation")
-                    transition = (
-                        str(operation.get("operation"))
-                        if isinstance(operation, dict)
-                        else "unknown"
-                    )
-                    transitions[transition] = transitions.get(transition, 0) + 1
-                    # `keep` is the only transition that adds a record, so this
-                    # stays the count of durable writes rather than of edits.
-                    if transition == "keep":
-                        values["memory_writes"] += 1
-                elif status == "rejected":
-                    values["continuity_operations_rejected"] += 1
-                elif status == "no_op":
-                    values["continuity_operations_no_op"] += 1
-            elif event_type == "plan_outcome":
-                values["plan_outcomes"] += 1
-            elif event_type == "memory_read":
-                values["memory_reads"] += 1
-                result = payload.get("result")
-                if isinstance(result, dict):
-                    records = result.get("records")
-                    if isinstance(records, list):
-                        values["memory_read_records"] += len(records)
-                    if result.get("truncated") is True:
-                        values["memory_read_truncations"] += 1
-            elif event_type == "plan_proposed":
-                values["plans_proposed"] += 1
-            elif event_type == "plan_accepted":
-                values["plans_accepted"] += 1
-            elif event_type == "plan_rejected":
-                values["plans_rejected"] += 1
-            elif event_type == "plan_completed":
-                values["plans_completed"] += 1
-            elif event_type == "plan_aborted":
-                values["plans_aborted"] += 1
-            elif event_type == "plan_step_started":
-                values["plan_steps_started"] += 1
-            elif event_type == "plan_step_succeeded":
-                values["plan_steps_succeeded"] += 1
-            elif event_type == "plan_step_failed":
-                values["plan_steps_failed"] += 1
-            elif event_type in {"plan_step_cancelled", "plan_step_interrupted"}:
-                values["plan_steps_cancelled"] += 1
-            elif event_type == "plan_budget_reserved":
-                values["budget_reservations"] += 1
-            elif event_type == "plan_budget_committed":
-                values["budget_commits"] += 1
-            elif event_type == "plan_budget_released":
-                values["budget_releases"] += 1
-            elif event_type == "input_boundary_revalidated":
-                values["input_boundary_revalidations"] += 1
-            elif event_type == "input_boundary_rejected":
-                values["input_boundary_rejections"] += 1
-            elif event_type == "safety_supervisor_preempted":
-                values["safety_supervisor_preemptions"] += 1
-            elif event_type == "strategic_planner_cancelled":
-                values["strategic_planner_cancellations"] += 1
-            elif event_type == "advisor_result":
-                values["advisor_requests"] += 1
-                evidence = payload.get("evidence")
-                status = evidence.get("status") if isinstance(evidence, dict) else None
-                if status in {"answered", "failed"}:
-                    values["advisor_hosted_calls"] += 1
-                if status == "answered":
-                    values["advisor_answers"] += 1
-                elif status == "failed":
-                    values["advisor_failures"] += 1
-                else:
-                    values["advisor_suppressions"] += 1
-            elif event_type == "affordance_request":
-                values["affordance_requests"] += 1
-                evidence = payload.get("evidence")
-                status = evidence.get("status") if isinstance(evidence, dict) else None
-                if status == "duplicate":
-                    values["affordance_request_duplicates"] += 1
-            elif event_type == "plan_execution_cancelled":
-                values["plan_execution_cancellations"] += 1
-            elif event_type == "safety_cleanup_started":
-                values["safety_cleanups_started"] += 1
-            elif event_type == "safety_cleanup_completed":
-                values["safety_cleanups_completed"] += 1
-            elif event_type == "safety_cleanup_failed":
-                values["safety_cleanups_failed"] += 1
-            elif event_type == "safety_supervisor_terminal":
-                values["safety_supervisor_terminals"] += 1
-                if payload.get("status") == "safe_paused":
-                    values["safety_supervisor_safe_paused"] += 1
-            elif event_type in {"plan_patch_staged", "plan_interrupt_staged"}:
-                values["plan_patches_staged"] += 1
-            elif event_type == "plan_patched":
-                values["plan_patches_applied"] += 1
-            elif event_type == "plan_patch_rejected":
-                values["plan_patches_rejected"] += 1
-            elif event_type == "concurrent_planner_discarded":
-                values["concurrent_planner_discards"] += 1
-            elif event_type == "option_prepared":
-                values["options_prepared"] += 1
-            elif event_type == "option_started":
-                values["options_started"] += 1
-            elif event_type == "option_progress":
-                values["option_progress_updates"] += 1
-            elif event_type == "option_succeeded":
-                values["options_succeeded"] += 1
-            elif event_type == "option_failed":
-                values["options_failed"] += 1
-            elif event_type in {"option_cancelled", "option_interrupted"}:
-                values["options_cancelled"] += 1
-            elif event_type == "world_state_update":
-                if payload.get("sequence_status") == "duplicate":
-                    values["sequence_stall_incidents"] += 1
-                values["transient_events_lost"] = max(
-                    values["transient_events_lost"],
-                    int(payload.get("transient_events_lost", 0)),
+    for line in _json_lines(path):
+        record = json.loads(line)
+        event_type = record.get("event_type")
+        payload = record.get("payload") or {}
+        if event_type == "run_started":
+            control_mode = payload.get("control_mode")
+            values["control_mode"] = str(control_mode) if control_mode is not None else None
+        elif event_type == "decision":
+            values["decisions"] += 1
+            source = payload.get("source")
+            if source == "reflex":
+                values["reflex_decisions"] += 1
+            if source == "planner_error":
+                values["planner_errors"] += 1
+            latency = payload.get("planner_latency_seconds")
+            if latency is not None and source != "reflex":
+                decision_planner_latencies.append(float(latency))
+        elif event_type == "strategic_planner_call":
+            values["strategic_planner_calls"] += 1
+            latency = payload.get("planner_latency_seconds")
+            if latency is not None:
+                strategic_planner_latencies.append(float(latency))
+        elif event_type == "action_receipt":
+            values["action_receipts"] += 1
+            values["primitive_actions"] += int(payload.get("primitive_actions", 0))
+            action = payload.get("action")
+            if (
+                isinstance(action, dict)
+                and action.get("kind") == "approach_dialogue_target"
+                and isinstance(action.get("target_id"), str)
+                and action["target_id"]
+            ):
+                target_id = action["target_id"]
+                dialogue_approaches_by_target[target_id] = (
+                    dialogue_approaches_by_target.get(target_id, 0) + 1
                 )
-                values["subscriber_update_drops"] = max(
-                    values["subscriber_update_drops"],
-                    int(payload.get("subscriber_update_drops", 0)),
+            if payload.get("dry_run"):
+                values["dry_run_actions"] += 1
+            if payload.get("executed"):
+                values["executed_actions"] += 1
+            if payload.get("command_id") is not None:
+                values["command_receipts"] += 1
+                if payload.get("causal_revision_advanced") is True:
+                    values["command_receipts_with_post_revision"] += 1
+            retain_native_acknowledgement(payload.get("native_acknowledgement"))
+        elif event_type == "action_rejected":
+            values["rejected_actions"] += 1
+        elif event_type == "observation":
+            values["observations"] += 1
+            if payload.get("telemetry_stale"):
+                values["stale_observations"] += 1
+            telemetry = payload.get("telemetry")
+            if isinstance(telemetry, dict):
+                native_control = telemetry.get("native_control")
+                if isinstance(native_control, dict):
+                    acknowledgements = native_control.get("acknowledgements")
+                    if isinstance(acknowledgements, list):
+                        for acknowledgement in acknowledgements:
+                            retain_native_acknowledgement(acknowledgement)
+        elif event_type == "continuity_receipt":
+            status = payload.get("status")
+            if status == "accepted":
+                values["continuity_operations_accepted"] += 1
+                operation = payload.get("operation")
+                transition = (
+                    str(operation.get("operation")) if isinstance(operation, dict) else "unknown"
                 )
-                values["observation_pump_errors"] = max(
-                    values["observation_pump_errors"],
-                    int(payload.get("observation_pump_errors", 0)),
+                transitions[transition] = transitions.get(transition, 0) + 1
+                # `keep` is the only transition that adds a record, so this
+                # stays the count of durable writes rather than of edits.
+                if transition == "keep":
+                    values["continuity_memories_kept"] += 1
+            elif status == "rejected":
+                values["continuity_operations_rejected"] += 1
+            elif status == "no_op":
+                values["continuity_operations_no_op"] += 1
+            elif status == "failed":
+                values["continuity_operations_failed"] += 1
+        elif event_type == "memory_written":
+            # Compatibility for logs emitted before typed continuity
+            # receipts existed. Current reports use the continuity name.
+            values["continuity_memories_kept"] += 1
+        elif event_type == "plan_outcome":
+            values["plan_outcomes"] += 1
+        elif event_type == "memory_read":
+            values["memory_reads"] += 1
+            result = payload.get("result")
+            if isinstance(result, dict):
+                records = result.get("records")
+                if isinstance(records, list):
+                    values["memory_read_records"] += len(records)
+                if result.get("truncated") is True:
+                    values["memory_read_truncations"] += 1
+        elif event_type == "plan_proposed":
+            values["plans_proposed"] += 1
+        elif event_type == "plan_accepted":
+            values["plans_accepted"] += 1
+        elif event_type == "plan_rejected":
+            values["plans_rejected"] += 1
+        elif event_type == "plan_completed":
+            values["plans_completed"] += 1
+        elif event_type == "plan_aborted":
+            values["plans_aborted"] += 1
+        elif event_type == "plan_step_started":
+            values["plan_steps_started"] += 1
+        elif event_type == "plan_step_succeeded":
+            values["plan_steps_succeeded"] += 1
+        elif event_type == "plan_step_failed":
+            values["plan_steps_failed"] += 1
+        elif event_type in {"plan_step_cancelled", "plan_step_interrupted"}:
+            values["plan_steps_cancelled"] += 1
+        elif event_type == "plan_budget_reserved":
+            values["budget_reservations"] += 1
+        elif event_type == "plan_budget_committed":
+            values["budget_commits"] += 1
+        elif event_type == "plan_budget_released":
+            values["budget_releases"] += 1
+        elif event_type == "input_boundary_revalidated":
+            values["input_boundary_revalidations"] += 1
+        elif event_type == "input_boundary_rejected":
+            values["input_boundary_rejections"] += 1
+        elif event_type == "safety_supervisor_preempted":
+            values["safety_supervisor_preemptions"] += 1
+        elif event_type == "strategic_planner_cancelled":
+            values["strategic_planner_cancellations"] += 1
+        elif event_type == "advisor_result":
+            values["advisor_requests"] += 1
+            evidence = payload.get("evidence")
+            status = evidence.get("status") if isinstance(evidence, dict) else None
+            if status in {"answered", "failed"}:
+                values["advisor_hosted_calls"] += 1
+            if status == "answered":
+                values["advisor_answers"] += 1
+            elif status == "failed":
+                values["advisor_failures"] += 1
+            else:
+                values["advisor_suppressions"] += 1
+        elif event_type == "affordance_request":
+            values["affordance_requests"] += 1
+            evidence = payload.get("evidence")
+            status = evidence.get("status") if isinstance(evidence, dict) else None
+            if status == "duplicate":
+                values["affordance_request_duplicates"] += 1
+        elif event_type == "plan_execution_cancelled":
+            values["plan_execution_cancellations"] += 1
+        elif event_type == "safety_cleanup_started":
+            values["safety_cleanups_started"] += 1
+        elif event_type == "safety_cleanup_completed":
+            values["safety_cleanups_completed"] += 1
+        elif event_type == "safety_cleanup_failed":
+            values["safety_cleanups_failed"] += 1
+        elif event_type == "safety_supervisor_terminal":
+            values["safety_supervisor_terminals"] += 1
+            if payload.get("status") == "safe_paused":
+                values["safety_supervisor_safe_paused"] += 1
+        elif event_type in {"plan_patch_staged", "plan_interrupt_staged"}:
+            values["plan_patches_staged"] += 1
+        elif event_type == "plan_patched":
+            values["plan_patches_applied"] += 1
+        elif event_type == "plan_patch_rejected":
+            values["plan_patches_rejected"] += 1
+        elif event_type == "concurrent_planner_discarded":
+            values["concurrent_planner_discards"] += 1
+        elif event_type == "option_prepared":
+            values["options_prepared"] += 1
+        elif event_type == "option_started":
+            values["options_started"] += 1
+        elif event_type == "option_progress":
+            values["option_progress_updates"] += 1
+        elif event_type == "option_succeeded":
+            values["options_succeeded"] += 1
+        elif event_type == "option_failed":
+            values["options_failed"] += 1
+        elif event_type in {"option_cancelled", "option_interrupted"}:
+            values["options_cancelled"] += 1
+        elif event_type == "world_state_update":
+            if payload.get("sequence_status") == "duplicate":
+                values["sequence_stall_incidents"] += 1
+            values["transient_events_lost"] = max(
+                values["transient_events_lost"],
+                int(payload.get("transient_events_lost", 0)),
+            )
+            values["subscriber_update_drops"] = max(
+                values["subscriber_update_drops"],
+                int(payload.get("subscriber_update_drops", 0)),
+            )
+            values["observation_pump_errors"] = max(
+                values["observation_pump_errors"],
+                int(payload.get("observation_pump_errors", 0)),
+            )
+        elif event_type == "world_state_event":
+            if payload.get("event_type") == "observation_event":
+                values["transient_events_retained"] += 1
+        elif event_type == "world_state_finished":
+            values["sequence_stall_incidents"] = max(
+                values["sequence_stall_incidents"],
+                int(payload.get("sequence_stall_incidents", 0)),
+            )
+            values["transient_events_retained"] = max(
+                values["transient_events_retained"],
+                int(payload.get("transient_events_retained", 0)),
+            )
+            for field_name in (
+                "transient_events_lost",
+                "revision_regressions",
+                "revision_conflicts",
+                "entity_lifetimes_started",
+                "entity_lifetimes_ended",
+                "command_mismatches",
+            ):
+                values[field_name] = max(
+                    values[field_name],
+                    int(payload.get(field_name, 0)),
                 )
-            elif event_type == "world_state_event":
-                if payload.get("event_type") == "observation_event":
-                    values["transient_events_retained"] += 1
-            elif event_type == "world_state_finished":
-                values["sequence_stall_incidents"] = max(
-                    values["sequence_stall_incidents"],
-                    int(payload.get("sequence_stall_incidents", 0)),
-                )
-                values["transient_events_retained"] = max(
-                    values["transient_events_retained"],
-                    int(payload.get("transient_events_retained", 0)),
-                )
-                for field_name in (
-                    "transient_events_lost",
-                    "revision_regressions",
-                    "revision_conflicts",
-                    "entity_lifetimes_started",
-                    "entity_lifetimes_ended",
-                    "command_mismatches",
-                ):
-                    values[field_name] = max(
-                        values[field_name],
-                        int(payload.get(field_name, 0)),
-                    )
-                values["subscriber_update_drops"] = max(
-                    values["subscriber_update_drops"],
-                    int(payload.get("subscriber_drops", 0)),
-                )
-                values["observation_pump_errors"] = max(
-                    values["observation_pump_errors"],
-                    int(payload.get("pump_errors", 0)),
-                )
-            elif event_type == "run_finished":
-                control_mode = payload.get("control_mode")
-                if control_mode is not None:
-                    values["control_mode"] = str(control_mode)
-                values["success"] = payload.get("success")
-                values["steps_completed"] = payload.get("steps_completed")
-                values["stop_reason"] = payload.get("stop_reason")
+            values["subscriber_update_drops"] = max(
+                values["subscriber_update_drops"],
+                int(payload.get("subscriber_drops", 0)),
+            )
+            values["observation_pump_errors"] = max(
+                values["observation_pump_errors"],
+                int(payload.get("pump_errors", 0)),
+            )
+        elif event_type == "run_finished":
+            control_mode = payload.get("control_mode")
+            if control_mode is not None:
+                values["control_mode"] = str(control_mode)
+            values["success"] = payload.get("success")
+            values["steps_completed"] = payload.get("steps_completed")
+            values["stop_reason"] = payload.get("stop_reason")
     if values["strategic_planner_calls"] == 0:
         values["strategic_planner_calls"] = max(
             0,
             values["decisions"] - values["reflex_decisions"],
         )
-    values["dialogue_approach_attempts"] = sum(
-        dialogue_approaches_by_target.values()
-    )
-    values["repeated_dialogue_approach_attempts"] = sum(
+    dialogue_approach_attempts = sum(dialogue_approaches_by_target.values())
+    repeated_dialogue_approach_attempts = sum(
         max(0, count - 1) for count in dialogue_approaches_by_target.values()
     )
-    values["max_dialogue_approach_attempts_per_target"] = max(
+    max_dialogue_approach_attempts_per_target = max(
         dialogue_approaches_by_target.values(),
         default=0,
     )
@@ -556,7 +561,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         acknowledged = acknowledgement.get("acknowledged_at_telemetry_sequence")
         if isinstance(basis, int) and isinstance(acknowledged, int):
             native_ack_lags.append(float(acknowledged - basis))
-    values["native_command_acknowledgements"] = len(native_acknowledgements)
+    native_command_acknowledgement_count = len(native_acknowledgements)
     native_completion_percentage = (
         100.0 * values["native_commands_completed"] / values["native_commands_accepted"]
         if values["native_commands_accepted"]
@@ -578,8 +583,12 @@ def evaluate_log(path: Path) -> LogMetrics:
     if not planner_latencies:
         return LogMetrics(
             **values,
+            dialogue_approach_attempts=dialogue_approach_attempts,
+            repeated_dialogue_approach_attempts=repeated_dialogue_approach_attempts,
+            max_dialogue_approach_attempts_per_target=(max_dialogue_approach_attempts_per_target),
             dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
             memory_lifecycle_transitions=dict(sorted(transitions.items())),
+            native_command_acknowledgements=native_command_acknowledgement_count,
             actions_per_strategic_planner_call=actions_per_call,
             receipts_with_post_command_revision_percentage=(causal_receipt_percentage),
             mean_native_ack_sequence_lag=mean_native_ack_sequence_lag,
@@ -591,8 +600,12 @@ def evaluate_log(path: Path) -> LogMetrics:
     p95_index = max(0, ceil(len(ordered) * 0.95) - 1)
     return LogMetrics(
         **values,
+        dialogue_approach_attempts=dialogue_approach_attempts,
+        repeated_dialogue_approach_attempts=repeated_dialogue_approach_attempts,
+        max_dialogue_approach_attempts_per_target=(max_dialogue_approach_attempts_per_target),
         dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
         memory_lifecycle_transitions=dict(sorted(transitions.items())),
+        native_command_acknowledgements=native_command_acknowledgement_count,
         mean_planner_latency_seconds=fmean(ordered),
         p50_planner_latency_seconds=median(ordered),
         p95_planner_latency_seconds=ordered[p95_index],
@@ -637,36 +650,32 @@ def replay_plan_lifecycle(path: Path) -> dict[str, PlanLifecycle]:
         "plan_completed": "completed",
         "plan_aborted": "aborted",
     }
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            record = json.loads(line)
-            event_type = record.get("event_type")
-            if event_type not in status_by_event:
-                continue
-            payload = record.get("payload") or {}
-            plan_id = payload.get("plan_id")
-            if not isinstance(plan_id, str):
-                continue
-            lifecycle = plans.setdefault(plan_id, PlanLifecycle(plan_id=plan_id))
-            version = payload.get("plan_version")
-            if isinstance(version, int):
-                lifecycle.plan_version = version
-            step_id = payload.get("step_id")
-            if isinstance(step_id, str):
-                lifecycle.active_step_id = step_id
-                if (
-                    event_type == "plan_step_succeeded"
-                    and step_id not in lifecycle.succeeded_step_ids
-                ):
-                    lifecycle.succeeded_step_ids.append(step_id)
-                elif event_type == "plan_step_failed" and step_id not in lifecycle.failed_step_ids:
-                    lifecycle.failed_step_ids.append(step_id)
-                elif (
-                    event_type in {"plan_step_cancelled", "plan_step_interrupted"}
-                    and step_id not in lifecycle.cancelled_step_ids
-                ):
-                    lifecycle.cancelled_step_ids.append(step_id)
-            lifecycle.status = status_by_event[event_type]
-            if event_type in {"plan_rejected", "plan_completed", "plan_aborted"}:
-                lifecycle.active_step_id = None
+    for line in _json_lines(path):
+        record = json.loads(line)
+        event_type = record.get("event_type")
+        if event_type not in status_by_event:
+            continue
+        payload = record.get("payload") or {}
+        plan_id = payload.get("plan_id")
+        if not isinstance(plan_id, str):
+            continue
+        lifecycle = plans.setdefault(plan_id, PlanLifecycle(plan_id=plan_id))
+        version = payload.get("plan_version")
+        if isinstance(version, int):
+            lifecycle.plan_version = version
+        step_id = payload.get("step_id")
+        if isinstance(step_id, str):
+            lifecycle.active_step_id = step_id
+            if event_type == "plan_step_succeeded" and step_id not in lifecycle.succeeded_step_ids:
+                lifecycle.succeeded_step_ids.append(step_id)
+            elif event_type == "plan_step_failed" and step_id not in lifecycle.failed_step_ids:
+                lifecycle.failed_step_ids.append(step_id)
+            elif (
+                event_type in {"plan_step_cancelled", "plan_step_interrupted"}
+                and step_id not in lifecycle.cancelled_step_ids
+            ):
+                lifecycle.cancelled_step_ids.append(step_id)
+        lifecycle.status = status_by_event[event_type]
+        if event_type in {"plan_rejected", "plan_completed", "plan_aborted"}:
+            lifecycle.active_step_id = None
     return plans

@@ -10,6 +10,9 @@ from typing import Any
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
+    ContinuityOperationStatus,
+    ContinuityOrigin,
+    ContinuityReceiptDigest,
     Disposition,
     LiveContinuousPolicy,
     MemoryKind,
@@ -123,6 +126,24 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
             max_plan_steps=4,
         )
         == 8192
+    )
+    # Even a plan reporting no remaining actions still needs room for one
+    # bounded replacement step.
+    assert (
+        output_token_budget(
+            config,
+            observation(
+                active_plan=ActivePlanContext(
+                    plan_id="active-plan",
+                    plan_version=1,
+                    objective="Repair the empty future.",
+                    active_step_id="move",
+                    remaining_actions=0,
+                )
+            ),
+            max_plan_steps=4,
+        )
+        == 6144
     )
 
 
@@ -297,6 +318,61 @@ def test_memory_text_cannot_smuggle_target_authority_into_a_budgeted_input() -> 
 
     assert manifest.memory_ids == ["mem-remembered"]
     assert manifest.current_target_ids == []
+
+
+def test_manifest_names_only_continuity_receipts_in_the_final_payload() -> None:
+    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
+    receipts = [
+        ContinuityReceiptDigest(
+            receipt_id=f"cor-{index:032x}",
+            origin=ContinuityOrigin.PLAN,
+            operation="keep",
+            status=status,
+            reason=reason,
+            memory_id=memory_id,
+            memory_status=(
+                MemoryStatus.ACTIVE if memory_id is not None else None
+            ),
+            authored_context_id="pc-1",
+            authored_revision=current.world_revision,
+            commit_revision=current.world_revision,
+            recorded_at=datetime.now(UTC),
+        )
+        for index, status, reason, memory_id in (
+            (
+                1,
+                ContinuityOperationStatus.REJECTED,
+                "The fact lacked evidence.",
+                None,
+            ),
+            (
+                2,
+                ContinuityOperationStatus.ACCEPTED,
+                "The commitment was kept.",
+                "mem-accepted",
+            ),
+        )
+    ]
+    current = current.model_copy(
+        update={"recent_continuity_receipts": receipts}
+    )
+    payload = {
+        "world_revision": current.world_revision.model_dump(mode="json"),
+        "recent_continuity_receipts": [
+            receipts[1].model_dump(mode="json"),
+        ],
+    }
+
+    manifest = planner_context_manifest(
+        current,
+        context_id="pc-2",
+        input_kind="budgeted_json",
+        payload=payload,
+    )
+
+    assert manifest.continuity_receipt_ids == [receipts[1].receipt_id]
+    assert manifest.memory_ids == ["mem-accepted"]
+    assert receipts[0].receipt_id not in manifest.continuity_receipt_ids
 
 
 def test_only_the_active_policy_section_reaches_the_model() -> None:
