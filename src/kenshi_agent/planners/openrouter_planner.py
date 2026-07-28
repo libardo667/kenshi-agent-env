@@ -17,7 +17,13 @@ from ..models import (
     PlannerOutput,
     PlanPatch,
 )
-from .base import Planner, instructions_for_policy, structured_output_model
+from .base import (
+    Planner,
+    PreparedPlannerInput,
+    instructions_for_policy,
+    prepared_budgeted_input,
+    structured_output_model,
+)
 from .schema_dialect import portable_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -79,7 +85,31 @@ class OpenRouterPlanner(Planner):
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
 
+    def prepare_input(
+        self,
+        observation: Observation,
+        *,
+        context_id: str,
+    ) -> PreparedPlannerInput:
+        payload = observation.planner_payload(
+            max_chars=self.config.max_observation_chars,
+            max_context_chars=self.config.max_context_chars,
+        )
+        return prepared_budgeted_input(
+            observation,
+            context_id=context_id,
+            payload=payload,
+        )
+
     async def decide(self, observation: Observation) -> PlannerOutput:
+        return await self.decide_prepared(
+            self.prepare_input(observation, context_id="pc-1")
+        )
+
+    async def decide_prepared(self, prepared: PreparedPlannerInput) -> PlannerOutput:
+        observation = prepared.context.observation
+        if prepared.payload is None:
+            raise RuntimeError("OpenRouter planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
         if output_model is PlanPatch:
             request = (
@@ -99,10 +129,7 @@ class OpenRouterPlanner(Planner):
                 "text": (
                     request
                     + f"Return the {output_model.__name__} schema only.\n\n"
-                    + observation.planner_payload(
-                        max_chars=self.config.max_observation_chars,
-                        max_context_chars=self.config.max_context_chars,
-                    )
+                    + prepared.payload
                 ),
             }
         ]

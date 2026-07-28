@@ -35,14 +35,14 @@ in generated [catalog](docs/generated/ACTION_CATALOG.md) and
 - [Continuity](docs/ADR_CONTINUITY_AUTHORITY.md) separates world evidence, runtime-owned working
   history (`ao-`/`po-` outcomes with provenance and each plan's original objective), and durable
   memory written only through `ContinuityAuthority`: cited evidence IDs, rendered grounding,
-  independent receipts, exact commit timing, and a read-only recall. Durable memory is
-  campaign-scoped — a live run without a campaign fails closed — in a versioned store: append-only
-  history plus a rebuildable projection, explicit keep/reinforce/resolve/supersede/retract,
-  backed-up idempotent migration, and `kenshi-agent memory` for read-only audit. Recall is
-  tiered and bounded per tier, states what it omitted, and surfaces continuity receipts;
-  `recall_memory` is a bounded elective read that emits no game input.
-- Hash-locked FCS starts install and launch with money/party proof. Mutation testing partitions
-  every Python module; six attended shards are clean.
+  exact planner-context manifests, immutable authored revisions, independent receipts with separate
+  commit revisions, exact commit timing, and read-only recall. Durable memory is campaign-scoped —
+  a live run without a campaign fails closed — in a versioned store with append-only history,
+  rebuildable projection, explicit transitions, backed-up migration, and read-only audit. Recall is
+  tiered and bounded, states what it omitted, and surfaces receipts; `recall_memory` is a bounded
+  elective read that emits no game input.
+- Hash-locked FCS starts install and launch with money/party proof. The mutation campaign is
+  permanently bounded to nine named authority modules and records strict evidence per run.
 
 ## Live profiles
 
@@ -107,7 +107,8 @@ semantics are in [`GUIDE_TELEMETRY_PROTOCOL.md`](docs/GUIDE_TELEMETRY_PROTOCOL.m
 - A causally later observation stops stale pre-action state from satisfying a postcondition, but
   most success conditions are planner-authored. Only `controller_verified` contracts carry effect
   proof, so later correlated state can still be mistaken for the intended effect.
-- Continuity receipts are logged but not yet surfaced to the planner.
+- Continuity can bind exact delivered IDs and revisions, but evidence still lacks an explicit
+  capability matrix, structured provenance nodes, and a fieldbook.
 - Body-part wounds, bleeding rate, being eaten, imprisonment, location name, task stacks, trader
   money, occlusion, and distant world state are unavailable or unvalidated; source-scan capacity
   makes absence unknown. Fifty-six mutation shards remain unattested.

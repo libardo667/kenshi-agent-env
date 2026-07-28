@@ -26,6 +26,7 @@ from .memory import MemoryStore, MemoryTransitionError
 from .models import (
     ActionOutcome,
     ActionOutcomeEvidence,
+    AuthoredPlannerContext,
     ContinuityOperation,
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
@@ -199,7 +200,7 @@ class ContinuityLedger:
 def render_evidence_reference(
     reference: EvidenceReference,
     *,
-    observation: Observation,
+    authored_context: AuthoredPlannerContext,
     ledger: ContinuityLedger,
     store: MemoryStore | None,
     advisor_brief_ids: set[str],
@@ -211,14 +212,25 @@ def render_evidence_reference(
     or nowhere at all cannot become grounding for a durable claim.
     """
 
+    manifest = authored_context.manifest
     if isinstance(reference, CurrentObservationEvidence):
-        revision = observation.world_revision
+        if not manifest.current_observation_delivered:
+            raise EvidenceResolutionError(  # mutation: reason
+                "The authored planner input did not contain "  # mutation: reason
+                "a current observation."  # mutation: reason
+            )
+        revision = manifest.authored_revision
         return (
             "current_observation("
             f"telemetry_sequence={revision.telemetry_sequence}, "
             f"frame_sequence={revision.frame_sequence})"
         )
     if isinstance(reference, ActionOutcomeEvidence):
+        if reference.outcome_id not in manifest.action_outcome_ids:
+            raise EvidenceResolutionError(  # mutation: reason
+                f"Action outcome {reference.outcome_id!r} was not delivered "  # mutation: reason
+                f"in planner context {manifest.context_id}."  # mutation: reason
+            )
         if not ledger.has_action_outcome(reference.outcome_id):
             raise EvidenceResolutionError(  # mutation: reason
                 f"No action outcome {reference.outcome_id!r} "  # mutation: reason
@@ -228,6 +240,11 @@ def render_evidence_reference(
         assessment = "evicted" if outcome is None else outcome.assessment.value
         return f"action_outcome({reference.outcome_id}: {assessment})"
     if isinstance(reference, PlanOutcomeEvidence):
+        if reference.plan_outcome_id not in manifest.plan_outcome_ids:
+            raise EvidenceResolutionError(  # mutation: reason
+                f"Plan outcome {reference.plan_outcome_id!r} was not delivered "  # mutation: reason
+                f"in planner context {manifest.context_id}."  # mutation: reason
+            )
         if not ledger.has_plan_outcome(reference.plan_outcome_id):
             raise EvidenceResolutionError(  # mutation: reason
                 f"No plan outcome {reference.plan_outcome_id!r} "  # mutation: reason
@@ -239,6 +256,11 @@ def render_evidence_reference(
         )
         return f"plan_outcome({reference.plan_outcome_id}: {disposition})"
     if isinstance(reference, MemoryEvidence):
+        if reference.memory_id not in manifest.memory_ids:
+            raise EvidenceResolutionError(  # mutation: reason
+                f"Memory {reference.memory_id!r} was not delivered "  # mutation: reason
+                f"in planner context {manifest.context_id}."  # mutation: reason
+            )
         if store is None:
             raise EvidenceResolutionError(  # mutation: reason
                 "Durable memory is unavailable, so memory "  # mutation: reason
@@ -250,6 +272,11 @@ def render_evidence_reference(
                 "exists in this campaign."  # mutation: reason
             )
         return f"memory {reference.memory_id}"
+    if reference.brief_id not in manifest.advisor_brief_ids:
+        raise EvidenceResolutionError(  # mutation: reason
+            f"Advisor brief {reference.brief_id!r} was not delivered "  # mutation: reason
+            f"in planner context {manifest.context_id}."  # mutation: reason
+        )
     if reference.brief_id not in advisor_brief_ids:
         raise EvidenceResolutionError(  # mutation: reason
             f"No advisor brief {reference.brief_id!r} "  # mutation: reason
@@ -288,7 +315,8 @@ class ContinuityAuthority:
         operations: Sequence[ContinuityOperation],
         *,
         origin: ContinuityOrigin,
-        observation: Observation,
+        authored_context: AuthoredPlannerContext,
+        commit_observation: Observation,
         plan_id: str | None = None,
         plan_version: int | None = None,
         step_id: str | None = None,
@@ -298,7 +326,8 @@ class ContinuityAuthority:
             receipt = self._apply_one(
                 operation,
                 origin=origin,
-                observation=observation,
+                authored_context=authored_context,
+                commit_observation=commit_observation,
                 plan_id=plan_id,
                 plan_version=plan_version,
                 step_id=step_id,
@@ -306,7 +335,7 @@ class ContinuityAuthority:
             receipts.append(receipt)
             self.logger.write(
                 "continuity_receipt",
-                step_index=observation.step_index,
+                step_index=commit_observation.step_index,
                 payload=receipt.model_dump(mode="json"),
             )
         return receipts
@@ -316,7 +345,8 @@ class ContinuityAuthority:
         operation: ContinuityOperation,
         *,
         origin: ContinuityOrigin,
-        observation: Observation,
+        authored_context: AuthoredPlannerContext,
+        commit_observation: Observation,
         plan_id: str | None,
         plan_version: int | None,
         step_id: str | None,
@@ -338,6 +368,15 @@ class ContinuityAuthority:
                 plan_id=plan_id,
                 plan_version=plan_version,
                 step_id=step_id,
+                authored_context_id=authored_context.manifest.context_id,
+                authored_revision=authored_context.manifest.authored_revision,
+                commit_revision=commit_observation.world_revision,
+            )
+
+        if authored_context.manifest.run_id != self.run_id:
+            return receipt(
+                ContinuityOperationStatus.REJECTED,
+                "The planner context belongs to another run.",  # mutation: reason
             )
 
         if isinstance(operation, (KeepMemoryOperation, SupersedeMemoryOperation)):
@@ -349,7 +388,10 @@ class ContinuityAuthority:
                     "or hypothesis for an uncertainty.",  # mutation: reason
                 )
             if operation.target_id is not None:
-                if operation.target_id not in observation.current_memory_target_ids():
+                if (
+                    operation.target_id
+                    not in authored_context.manifest.current_target_ids
+                ):
                     return receipt(
                         ContinuityOperationStatus.REJECTED,
                         f"target_id {operation.target_id!r} is not "  # mutation: reason
@@ -362,7 +404,7 @@ class ContinuityAuthority:
             rendered = [
                 render_evidence_reference(
                     reference,
-                    observation=observation,
+                    authored_context=authored_context,
                     ledger=self.ledger,
                     store=self.store,
                     advisor_brief_ids=self.advisor_brief_ids(),
@@ -447,4 +489,3 @@ class ContinuityAuthority:
             operation.memory_id,
             reason=operation.reason,
         )
-

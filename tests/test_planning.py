@@ -31,6 +31,7 @@ from kenshi_agent.models import (
     Observation,
     PauseAction,
     PlanEnvelope,
+    PlannerDecision,
     PlanningMode,
     PlanPatch,
     PlanStep,
@@ -38,6 +39,7 @@ from kenshi_agent.models import (
     RiskBudget,
     SetSpeedAction,
     SkillAction,
+    StopAction,
     TelemetrySnapshot,
     UIState,
     Vec3,
@@ -2014,6 +2016,45 @@ def test_scripted_and_subprocess_adapters_parse_continuous_plan(
 
     assert isinstance(scripted_output, PlanEnvelope)
     assert isinstance(subprocess_output, PlanEnvelope)
+
+
+def test_planner_adapters_declare_the_representation_they_consume(
+    tmp_path: Path,
+) -> None:
+    current = observation()
+    script_path = tmp_path / "decision.jsonl"
+    script_path.write_text(
+        PlannerDecision(
+            intent="Stop.",
+            rationale="The adapter contract is under test.",
+            action=StopAction(reason="done"),
+            confidence=1.0,
+        ).model_dump_json()
+        + "\n",
+        encoding="utf-8",
+    )
+
+    heuristic = HeuristicPlanner().prepare_input(current, context_id="pc-1")
+    subprocess = SubprocessPlanner(["unused"]).prepare_input(
+        current,
+        context_id="pc-2",
+    )
+    scripted = ScriptedPlanner(script_path).prepare_input(
+        current,
+        context_id="pc-3",
+    )
+
+    assert heuristic.context.manifest.input_kind == "full_observation"
+    assert subprocess.context.manifest.input_kind == "full_observation"
+    assert heuristic.context.manifest.current_observation_delivered is True
+    assert subprocess.context.manifest.current_observation_delivered is True
+    assert scripted.context.manifest.input_kind == "scripted"
+    assert scripted.context.manifest.current_observation_delivered is False
+    assert scripted.context.manifest.current_target_ids == []
+    assert scripted.context.manifest.action_outcome_ids == []
+    assert scripted.context.manifest.plan_outcome_ids == []
+    assert scripted.context.manifest.memory_ids == []
+    assert scripted.context.manifest.advisor_brief_ids == []
 
 
 def test_subprocess_adapter_parses_a_patch_for_the_exact_active_plan() -> None:

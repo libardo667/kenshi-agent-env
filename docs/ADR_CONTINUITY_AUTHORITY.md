@@ -47,9 +47,16 @@ every plan outcome, both with full provenance: run, plan, version, step,
 command, action-start and completion revisions, timestamps. A plan outcome
 carries the plan's *original objective* alongside its disposition
 (`completed`, `failed`, `abandoned`, `terminated`), reason, completed step IDs,
-and terminal revision. The visible window is bounded; issued identities are
-remembered past eviction, so trimming what a planner is shown never turns an
-honest citation into an invention.
+and terminal revision. The visible window is bounded; issuance alone is not
+citation authority after an item leaves the planner's input.
+
+Every planner call pairs its final input and parsed output with an immutable
+`PlannerContextManifest`: the authored revision and only the current entities,
+outcomes, memories, and advisor briefs actually delivered. That means final
+budgeted JSON for hosted planners, full observations for in-process and
+subprocess planners, and no observation IDs for a script consuming only its
+file. Validation through patch application carries this exact context; a later
+commit revision cannot rewrite it.
 
 **Durable kept memory** belongs to an explicit **campaign** — one save lineage,
 never a config profile name. A live run with memory enabled and no campaign
@@ -67,8 +74,8 @@ stated once:
   owns it. An advisor brief renders as advice, never as observation.
 - A `commitment` or a `hypothesis` may be self-authored, but if it does cite a
   reference, that reference must still resolve.
-- A `target_id` must name an entity in the *current* observation. Stale
-  telemetry offers none.
+- A `target_id` must name an entity in the authored input's fresh, world-facing
+  observation fields. Remembered text and stale telemetry grant no authority.
 - The stored `evidence` string is rendered by the runtime from the references
   that resolved. There is no free-text branch, so a record cannot describe
   proof it does not have.
@@ -87,16 +94,12 @@ The automatic `Set out to:` episode is gone. Plan purpose is working history
 now: it is recorded by `_record_plan_outcome` once the plan has ended, with the
 reason it ended.
 
-Recall is read-only. Ordering is `salience, created_at, id` — never a read
-time. `MemoryStore.record_delivery` marks that records reached an assembled
-planner payload, called from the single site where that actually happens, and
-no ordering reads it.
+Recall is read-only and ordered by `salience, created_at, id`, never read time.
+`record_delivery` marks only records in the final planner-context manifest.
 
-The store is versioned (schema 2): append-only `memory_events` plus a
-`memories` projection written in the same transaction and rebuildable from
-history by `rebuild_projection()`, which is both the repair path and the proof
-that the projection is derived. `keep`, `reinforce`, `resolve`, `supersede`, and
-`retract` are explicit transitions with separate `reinforced_at`,
+The versioned store pairs append-only `memory_events` with a transactionally
+written, rebuildable `memories` projection.
+All five transitions have separate `reinforced_at`,
 `resolved_at`, `superseded_at`, and `last_delivered_at` timestamps. A closed
 record refuses every further transition, exact restatement reinforces by a
 deterministic normalized key rather than duplicating, and no campaign's
@@ -113,7 +116,5 @@ operations can reach another's records.
   authorship. They predate grounding, and handing them to whichever campaign
   opens the file next would give one playthrough another's beliefs. Promoting
   them is a human judgment; there is no automatic path.
-- Continuity receipts are logged and counted but are not yet surfaced in the
-  observation, so a planner does not yet see why its last operation was
-  rejected.
+- The next observation surfaces bounded receipts with authored and commit revisions.
 - Procedures: [GUIDE_CAMPAIGN_CONTINUITY](GUIDE_CAMPAIGN_CONTINUITY.md).

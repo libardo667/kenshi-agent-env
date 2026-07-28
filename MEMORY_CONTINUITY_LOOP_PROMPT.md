@@ -1,545 +1,1153 @@
-# Engineering loop — evidence-grounded memory, continuity, and fieldbook
+# Engineering loop — harden evidence-grounded continuity, add the fieldbook, and prove long-horizon play
 
 Copy this entire document into a capable coding agent whose working directory is
 the `kenshi-agent-env` repository root. Reuse the same prompt for successive
-invocations. Treat the current checkout, `git log`, `STATUS.md`, generated
-schemas, and tests as the source of truth. The description below names the
-starting defects visible in the July 27 snapshot; verify every one before acting.
+invocations.
+
+This prompt **supersedes the earlier memory-and-continuity loop prompt**. The
+first major authority slice has already landed in the reviewed checkout: campaign
+scope, runtime-owned action and plan outcomes, explicit memory lifecycle
+operations, append-only history plus a rebuildable projection, migration, and
+read-only recall are real code now. Do not restart that work or replace it with a
+new parallel framework. Verify the current checkout because later commits may
+have advanced beyond the snapshot described here.
 
 One invocation completes **one compound vertical slice**, leaves the tree green,
-and makes a single intentional commit. Do not fragment one invariant across a
-series of micro-commits or spend an invocation only renaming classes, drafting an
-ADR, or adding unused scaffolding.
+and makes one intentional commit. Do not spend an invocation merely renaming a
+field, drafting an ADR, adding unused abstractions, or fixing one example file
+while a related invariant remains broken. Conversely, do not mix unrelated
+renderer, movement, combat, or native-protocol work into this feature.
+
+Work with high agency. Inspect, decide, implement, test, document, and commit.
+Do not stop for naming approval when this prompt already establishes the policy.
+Do not turn ordinary in-game consequences into a reason for procedural paralysis;
+existing live-input authority remains in force, but most work in the early slices
+is portable and requires no live input at all.
 
 ## Mission
 
-Build a robust continuity system that lets a Kenshi-playing agent distinguish:
+Finish a continuity system that lets a Kenshi-playing agent distinguish:
 
 1. what the game and controller actually proved;
-2. what it recently tried and why;
-3. what it has deliberately chosen to remember;
-4. what commitment it is currently carrying;
-5. what larger body of work it may deliberately reopen later.
+2. what it recently attempted and what happened;
+3. what it deliberately chose to remember;
+4. which commitments and unresolved questions remain open;
+5. what larger bodies of work it may deliberately reopen later;
+6. which exact pieces of context were actually shown to the planner that authored
+   a continuity operation.
 
-The result is not “put more history in the prompt.” It is a truthful boundary
-among **world evidence**, **working continuity**, **durable kept memory**, and a
-private **fieldbook**.
+The result is not “increase the memory limit.” It is a truthful, inspectable
+boundary among **world evidence**, **working continuity**, **durable kept
+memory**, and a private **fieldbook**.
 
 The feature is complete when an agent such as Ladle can pursue a delivery over
-many plans and process restarts, remember grounded route lessons, maintain a
-bounded delivery docket and route atlas, correct or supersede old beliefs, and
-still treat current Kenshi telemetry as authoritative when its notes disagree.
+many plans and real process restarts, retain grounded route lessons, maintain a
+bounded delivery docket and route atlas, correct or supersede old beliefs, see
+why a continuity operation was rejected, and still treat current Kenshi
+telemetry as authoritative when its own notes disagree.
 
 This is not a generic cognitive-architecture rewrite. Do not import affective
 substrates, simulated needs, souls, pulses, reveries, or WorldWeaver's broad
-resident runtime. Strengthen the existing Kenshi planner/executor architecture.
+resident runtime. Strengthen the existing Kenshi planner, executor, observation,
+logging, and evaluation architecture.
 
-## Current starting point to verify
+## Operating posture
 
-Inspect the checkout rather than trusting this summary. In the reviewed snapshot:
+- Treat the current checkout, `git log`, `STATUS.md`, `CHANGELOG.md`, generated
+  schemas, tests, and run evidence as the source of truth.
+- Preserve working behavior unless a migration or contract change is explicitly
+  required by the invariants below.
+- Fix classes of defects, not one reproduction. If one continuity path can bind
+  to a later observation, inspect plan, decision, patch, rebase, advisor, replay,
+  and subprocess paths for the same mistake.
+- Prefer a complete vertical invariant across models, runtime, store, planner
+  adapters, observation budgeting, schema, tests, metrics, and documentation over
+  a locally elegant but unused class.
+- Keep one canonical authority. A new side file, cache, Markdown export, or
+  embedding index must never become an independent source of memory truth.
+- Do not store or request private chain-of-thought. Persist concise explicit
+  facts, episodes, commitments, hypotheses, decisions, observations, questions,
+  and project notes only.
+- Use coding agents aggressively, but remain accountable for the semantics. A
+  passing test that proves the wrong contract is not progress.
 
-- `recent_action_outcomes` is a useful bounded per-journey working ledger, with
-  the long-form profile retaining sixteen entries, but `ActionOutcome` has no
-  stable outcome ID or explicit plan/step provenance.
-- `MemoryStore` is one SQLite table keyed by namespace, kind, content, and exact
-  optional target ID. General recall is salience/access ordered; exact current
-  entity memories receive a separate budget.
-- `MemoryStore.recall()` updates `last_accessed_at`, and `_with_memories()` is also
-  used by the high-frequency observation pump. Merely decorating observations can
-  therefore mutate the database and repeatedly refresh recalled rows before a
-  planner actually sees them.
-- Continuous `_remember_plan()` stores a plan's `memory_writes` immediately after
-  plan validation and before execution. It also creates an automatic “Set out
-  to…” episode when no commitment was supplied.
-- Single-step memory writes are committed after dispatch, but the free-text write
-  can still claim an outcome the receipt did not prove.
-- `PlanPatch.memory_writes` exists in the schema but is not clearly committed at
-  the exact point where a staged patch is accepted and applied. No model-authored
-  continuity field may remain decorative or dead.
-- Durable scope is a static configured `run_namespace`; it is not a stable
-  campaign/save-lineage identity. This can mix unrelated characters or saves.
-- `prompts/memory_compactor.md` exists, but compaction is not an end-to-end
-  lifecycle with provenance, atomic supersession, and a recorded model policy.
-- Exact entity-scoped recall, stale-telemetry exclusion, observation-budget
-  preservation of current-target memories, generated schemas, and strict hosted
-  planner contracts are valuable existing work. Preserve them.
+## Definition of complete
 
-## Selective WorldWeaver reference
+The overall feature is complete only when all of the following are true:
 
-When a sibling checkout is available, inspect these as design evidence only:
+- every planner-authored continuity operation is paired with the exact planner
+  context that made its references available;
+- `current_observation` can never silently rebind from the planner-visible state
+  to a later commit-time state;
+- a planner can cite only IDs actually present in its delivered context, not any
+  plausible ID that happens to exist elsewhere in the run or database;
+- evidence is classified by what it can establish, not merely by whether its ID
+  exists;
+- no-op, unknown, not-executed, advice-only, memory-only, or stale evidence can
+  establish a successful world-effect fact or close a world-effect commitment;
+- commitment and hypothesis resolution requires explicit closure evidence;
+- expected storage conflicts become typed continuity receipts and never escape as
+  raw SQLite errors or partially applied transitions;
+- evicted working outcomes retain enough immutable digest data to remain
+  auditable and, when deliberately resurfaced, citable;
+- canonical memory history retains structured references and resolved evidence
+  snapshots, not only a flattened prose grounding string;
+- delivery diagnostics name only the memories and other continuity records that
+  were actually included in the final planner input;
+- recent continuity receipts are visible to the next planner under a bounded
+  policy;
+- all checked-in examples, prompts, configs, schemas, docs, and metrics use the
+  current contract;
+- a structured fieldbook exists with bounded automatic indexing and elective
+  reads, without becoming physical Kenshi inventory;
+- deterministic recall and search work without embeddings;
+- optional compaction and semantic retrieval are explicit, logged treatments;
+- a restart-spanning Ladle evaluation demonstrates continuity behavior without
+  overstating general gameplay competence.
 
-- `worldweaver/ww_agent/src/runtime/memory.py`
-- `worldweaver/ww_agent/src/runtime/workshop.py`
-- `worldweaver/ww_agent/src/runtime/reference_core.py`
-- `worldweaver/ww_agent/src/runtime/process_state.py`
-- `worldweaver/ww_agent/src/runtime/ledger.py`
-- `worldweaver/research/audits/cognitive-core/memory-identity-and-authority.md`
-- `worldweaver/research/audits/cognitive-core/model-authorship-self-feedback-and-dead-schema.md`
-- `worldweaver/prune/majors/135-let-residents-make-real-hearth-belongings-and-carry-them-between-worlds.md`
+## Implemented foundation to verify and preserve
 
-WorldWeaver is a quarry, not a template. Keep these lessons:
+Inspect the checkout before acting. In the reviewed post-first-slice snapshot,
+the following foundation exists and should be treated as protected unless a
+specific defect below requires an evolution:
 
-- deliberate keeps differ from automatically retained history;
-- re-keeping may reinforce without duplicating;
-- relevance plus diversity can improve bounded recall;
-- private work needs a structurally bounded home;
-- one explicit open activity can survive a restart;
-- a project index is better than injecting every private excerpt into every
-  prompt;
-- written descriptions do not create physical world objects;
-- a side file that can independently inject memory is a second authority;
-- embedding configuration is cognitive policy and must be explicit and logged.
+### Campaign scope
 
-Do **not** copy the legacy side-store authority, automatic workshop summaries,
-mixed-authority pulse schema, broad cognitive core, or code wholesale. Reimplement
-needed ideas under this repository's own design and license.
+- `src/kenshi_agent/campaign.py` resolves an explicit configured campaign,
+  explicit ephemeral run, deterministic scenario/save campaign, or mock/replay
+  run scope.
+- A live run with durable memory and no defensible campaign identity fails
+  closed instead of sharing a global default namespace.
+- Legacy rows migrate into `legacy:<namespace>` rather than being assigned to
+  whichever save opens the database first.
+
+### Runtime-owned working continuity
+
+- `ContinuityLedger` issues stable run-local `ao-...` action-outcome IDs and
+  `po-...` plan-outcome IDs.
+- `ActionOutcome` carries plan, step, command, assessment, revisions, and
+  feedback.
+- `PlanOutcome` retains the original objective, disposition, completed steps,
+  terminal reason, and terminal revision.
+
+### One continuity authority
+
+- `ContinuityAuthority` is the route from planner-authored continuity operations
+  into durable memory.
+- The planner uses explicit `keep`, `reinforce`, `resolve`, `supersede`, and
+  `retract` operations rather than free-text `memory_writes`.
+- Facts and episodes currently require at least one reference; commitments and
+  hypotheses may be authored as intention or uncertainty.
+- Exact target-bound writes require an ID from fresh observed entities.
+- Every operation produces an accepted, rejected, or no-op receipt and is logged.
+
+### Versioned canonical store
+
+- `memory_events` is append-only history.
+- `memories` is a rebuildable projection updated transactionally with history.
+- Recall is read-only and no longer refreshes the ranking merely because the
+  observation pump runs.
+- Exact restatements reinforce by deterministic normalized key.
+- Closed records refuse later transitions.
+- Migration backs up the legacy database, preserves old rows as
+  `legacy_unverified`, and is intended to be idempotent.
+- `kenshi-agent memory` provides read-only operator inspection.
+
+### Better commit timing
+
+- Accepted plans process continuity only after plan validation.
+- Single-step decisions process continuity after their action receipt.
+- Plan patches process continuity only when the exact patch is actually applied.
+- Rejected, stale, discarded, or superseded patches contribute no durable
+  continuity.
+- The automatic durable `Set out to: ...` episode has been removed; plan purpose
+  now lives in runtime-owned plan outcomes.
+
+### Existing boundaries to keep
+
+- Exact entity-scoped recall never reactivates by display name or fuzzy match.
+- Stale telemetry provides no current target IDs.
+- Current-target memories receive protected observation-budget treatment.
+- Current telemetry, current references, action contracts, input-lease
+  revalidation, and controller receipts remain authoritative over memory.
+- Generated schemas and hosted planner contracts are strict and must remain
+  provider-portable.
+
+If any of these are absent in the actual checkout, classify them as regression or
+partial completion. Repair them in dependency order rather than building later
+features atop a missing foundation.
+
+## Current reviewed defects — reproduce before fixing
+
+The following issues were observed in the reviewed snapshot. Do not trust the
+summary blindly: first add or run a focused reproduction against the current
+checkout. If a later commit already fixed one, cite the code and test proving it
+and move to the next incomplete dependency.
+
+### P0. Planner-visible observation can be rebound at commit time
+
+`CurrentObservationEvidence` currently contains only the literal source name.
+`render_evidence_reference()` renders whichever `Observation` is passed when the
+operation commits.
+
+In single-step mode, the planner authors the operation from the pre-action
+observation, but the runtime applies it after dispatch using the post-action
+observation. A planner-visible telemetry/frame revision of `1/1` can therefore be
+stored as `current_observation(2/2)`, even though the planner never saw revision
+`2/2` when it wrote the claim.
+
+The same class of bug can occur around rebase, concurrent patch planning,
+advisor latency, observation-pump advancement, and any future delayed sidecar.
+
+Required invariant:
+
+> A continuity operation resolves `current_observation`, exact target IDs, and
+> every advertised evidence ID against the immutable planner context from which
+> that exact output was authored. Commit-time state may decide whether the
+> operation is still applicable, but it may never silently substitute itself as
+> the source.
+
+A runtime-stamped authored context is preferable to trusting the model to copy a
+revision correctly. An explicit revision field is acceptable only when the
+runtime also captures and validates the actual authored basis.
+
+### P0. Issued IDs are not the same as delivered IDs
+
+The current authority checks whether an action outcome was ever issued in the
+run, whether a memory exists in the campaign, and whether an advisor brief was
+ever issued. That is weaker than the planner contract.
+
+A planner must be able to cite only references that were actually delivered in
+the context used for that planner call. Sequential IDs are guessable, and a
+stored memory ID or old output ID may exist without being present in the current
+prompt.
+
+Required invariant:
+
+> Every planner response is paired with a runtime-owned manifest of the exact
+> continuity IDs and exact world revision included in its final input. Evidence
+> resolution checks that manifest, not merely global existence.
+
+An elective read may deliberately place an older memory, outcome, or project
+entry into a later manifest. Without such a read, an evicted or omitted record is
+not silently citable.
+
+### P0. Delivery is currently recorded before final budgeting
+
+`AgentRuntime._decide()` currently marks every `observation.memories` record as
+“delivered” before hosted planner adapters call `Observation.planner_payload()`.
+Observation budgeting may then omit some or all general memories.
+
+A small budget can produce a final hosted payload containing zero memories while
+the database records every recalled memory as delivered.
+
+Required invariant:
+
+> “Delivered” means included in the exact final planner input submitted to or
+> consumed by that planner implementation. It does not mean present on an
+> unbudgeted `Observation` object.
+
+This must work across OpenAI, OpenRouter, subprocess, scripted, heuristic, replay,
+and future planner adapters. Different planner types may legitimately consume
+different representations, but each must produce an honest context manifest.
+
+### P0. A commitment can be resolved without evidence
+
+`ResolveMemoryOperation.references` currently defaults to an empty list, and the
+authority accepts an unsupported reason such as `Delivered.`. Because plan-level
+continuity is processed before plan execution, a plan can close a commitment in
+the same response that merely proposes to satisfy it.
+
+Required invariant:
+
+- `resolve` always requires explicit references;
+- only record kinds whose lifecycle can meaningfully close are resolvable;
+- commitments and unresolved hypotheses/questions may resolve;
+- facts and episodes are corrected by supersession or retraction, not marked
+  “resolved” as though they were tasks;
+- a world-effect commitment requires at least one closure-capable item of world
+  evidence already available in the authored planner context;
+- plan acceptance, a free-text reason, advice, another belief, or a no-op cannot
+  close it.
+
+### P0. Evidence existence is checked, but evidence capability is not
+
+The current runtime can accept a fact or episode grounded only by:
+
+- an advisor brief;
+- another memory, including a hypothesis;
+- a commitment;
+- a no-op action outcome;
+- an unknown or not-executed action outcome;
+- a plan outcome whose plan ended but whose world objective was not causally
+  established;
+- or an evicted outcome rendered only as `evicted`.
+
+A generic runtime cannot prove arbitrary natural-language entailment. Do not add
+an LLM “truth judge” and pretend it solves this. The runtime can, however,
+classify evidence by what it is structurally capable of establishing and reject
+obviously invalid combinations.
+
+Required invariant:
+
+> Evidence references resolve to typed immutable snapshots with explicit
+> authority/capability, not immediately to strings. Operation validation uses
+> those capabilities before rendering a human-readable summary.
+
+The minimum evidence policy is specified below.
+
+### P0. Evicted outcomes retain identity but lose meaningful provenance
+
+`ContinuityLedger` retains sets of issued IDs after full outcomes leave the
+visible window. Later rendering becomes:
+
+```text
+action_outcome(ao-1: evicted)
+```
+
+That proves only that an ID once existed. It loses action kind, assessment,
+execution status, semantic terminal, target, and revisions—the very information
+needed to decide whether it can ground anything.
+
+Required invariant:
+
+> Full recent outcomes may be bounded, but every issued outcome retains a compact
+> immutable evidence digest for the lifetime of the run. Eviction removes rich
+> display detail, not authority metadata.
+
+The digest must remain bounded per record and should not copy screenshots or full
+observations. Session logs may preserve the full record.
+
+### P0. Canonical memory history flattens structured evidence
+
+Continuity receipts contain typed references at application time, but the memory
+store primarily persists a rendered grounding string. If session logs disappear,
+the canonical memory event history cannot reconstruct which exact structured
+references, assessments, semantic statuses, planner context, and revisions
+produced the record.
+
+Required invariant:
+
+> Canonical lifecycle history stores the planner-authored operation, authored
+> context identity, exact structured references, runtime-resolved evidence
+> snapshots, origin, plan/step provenance, and a rendered summary. The prose
+> summary is a projection for humans, not the sole durable provenance.
+
+A projection rebuild must reproduce the same current memory state and preserve
+all source links.
+
+### P0. An expected uniqueness conflict can escape as raw SQLite failure
+
+A reproducible sequence is:
+
+1. keep active memory A;
+2. keep active memory B;
+3. supersede A with replacement content whose normalized active key equals B.
+
+The unique active-memory index raises `sqlite3.IntegrityError`. The transaction
+rolls back, but the error escapes `ContinuityAuthority` because only
+`MemoryTransitionError` is handled.
+
+Required invariant:
+
+> Expected semantic/storage conflicts become typed rejected continuity receipts,
+> leave both event history and projection unchanged, and do not invalidate an
+> otherwise valid game action or plan.
+
+Do not indiscriminately swallow database corruption. Distinguish expected
+constraint/transition conflicts from unexpected store failure. An unexpected
+failure must roll back, produce explicit diagnostics, quarantine or disable
+continuity for the run if necessary, and never masquerade as a normal rejection.
+
+### P1. Continuity receipts are logged but invisible to the planner
+
+The next planner cannot see that its previous operation was rejected, accepted as
+a reinforcement, or changed a memory ID. A deterministic invalid operation may
+therefore repeat.
+
+Required invariant:
+
+- every receipt receives a runtime-owned ID;
+- a bounded recent receipt digest reaches the next planner;
+- at least the latest rejected/failed receipt survives observation budgeting;
+- receipts are working continuity, not durable memory;
+- a receipt grants no game-action authority;
+- planner guidance explains how to respond to rejection instead of blindly
+  repeating it.
+
+### P1. Contract and repository hygiene drift remains
+
+The reviewed checkout contains small but real drift:
+
+- `prompts/planner_system.md` shows a numeric memory ID in an example even though
+  the schema requires a string `mem-...` ID;
+- checked-in JSONL examples still emit removed `memory_writes` fields and fail
+  strict current parsing;
+- comments and some metrics retain old terminology;
+- `config/live.longform.yaml` is described as generic but hardcodes
+  `campaign_id: ladle-css-01`, allowing an unrelated save opened with that
+  profile to inherit Ladle's continuity;
+- documentation includes stale test-count claims;
+- there is no repository-wide test loading every checked-in planner example
+  against its current declared output model.
+
+Fix these in the same slice as the contract they belong to. Do not spend a whole
+invocation on cosmetic drift alone.
 
 ## Authority model
 
-The following four layers are mandatory. Exact class and table names may differ,
-but their authority must not blur.
+The following layers are mandatory and must stay distinct.
 
 ### 1. World evidence
 
-Telemetry, screenshots, world-state revisions, exact current references, action
-receipts, controller-owned semantic evidence, action outcomes, and scenario
-attestations are the only evidence that can establish game state or game effects.
+Telemetry, screenshots, world-state revisions, current exact references, action
+receipts, controller-owned semantic evidence, native acknowledgements, scenario
+attestations, and runtime-assessed outcomes are the only evidence that can
+establish game state or game effects.
 
 World evidence answers questions such as:
 
-- Is the cargo currently in inventory?
+- Is cargo currently visible in a complete inventory export?
 - Did money increase?
-- Did this exact command receive a causally later terminal?
-- Is this the same currently observed entity?
-- Did the selected character move or become unconscious?
+- Did this exact command receive a causally later terminal acknowledgement?
+- Is this exact entity currently present in fresh telemetry?
+- Did source quantity fall while destination quantity rose by the same amount?
 
 ### 2. Working continuity
 
-This is bounded, recent, and primarily run-scoped. It includes action outcomes
-and plan outcomes: what was attempted, why, whether it changed anything, which
-plan and step owned it, and why a plan completed, failed, or was abandoned.
+Working continuity is bounded, recent, runtime-owned, and primarily run-scoped.
+It includes:
 
-Working continuity is not durable belief. It prevents local repetition and gives
-the next plan a truthful account of recent work.
+- action outcomes;
+- plan outcomes;
+- continuity operation receipts;
+- elective memory/fieldbook read receipts;
+- the planner-context manifest associated with each planner output.
+
+It says what was attempted, what was shown, what changed, and why work ended. It
+is not durable belief.
 
 ### 3. Durable kept memory
 
-This is campaign-scoped, agent-selected continuity: facts, episodes,
-commitments, and hypotheses that may affect later decisions. Every memory is an
-agent-authored record with explicit grounding and lifecycle. It is never raw
-world authority.
+Durable memory is campaign-scoped, agent-authored continuity: facts, episodes,
+commitments, and hypotheses that may affect later decisions. Every active record
+has explicit lifecycle and structured provenance. It remains secondary to current
+world evidence.
 
 ### 4. Private fieldbook
 
-This is a larger campaign-scoped workspace for named, continuing bodies of work:
-delivery dockets, route atlases, incident logs, vendor notes, equipment plans,
-or other projects. Ordinary observations contain only a bounded project index
-and, at most, one explicitly selected active-project summary. Full entries are
-available only through an elective bounded read.
+The fieldbook is a larger campaign-scoped workspace for named continuing bodies
+of work: delivery dockets, route atlases, incident logs, vendor notes, equipment
+plans, and other projects.
+
+Ordinary observations contain only a bounded project index and perhaps one
+explicitly selected active project summary. Full entries are available only
+through an elective bounded read.
 
 The fieldbook is not Kenshi inventory. A note saying “six slop canisters” cannot
 create, preserve, transfer, sell, or deliver six in-game items.
 
 ## Non-negotiable invariants
 
-1. **Current world evidence wins.** Memory and fieldbook text may guide inquiry;
-   they never override fresh telemetry, exact current references, controller
-   receipts, or safety state.
-2. **Continuity grants no action authority.** A remembered target ID, cell label,
-   coordinate, window, or capability cannot authorize a later action. Every game
-   action still binds and revalidates against the current observation and input
-   lease.
-3. **No future success enters memory.** A plan cannot store “I delivered the
-   cargo,” “the purchase succeeded,” or an equivalent episode before already
-   visible evidence exists. The current plan's future steps cannot be cited as
-   evidence.
-4. **Epistemic kinds remain distinct.** A commitment is an intention; a
-   hypothesis is uncertain; a fact is agent-authored text grounded in observed
-   evidence; an episode records an event or attempt and preserves inconclusive or
-   failed status where applicable.
-5. **Source references are real and runtime-owned.** Planner-authored continuity
-   may cite only exact evidence IDs advertised in the current observation. It may
-   never invent outcome, event, memory, project, entity, or revision IDs.
-6. **Entity memories remain exact and lifetime-bounded.** Names, roles, positions,
-   and similarity never reactivate a target-bound memory. Stale telemetry offers
-   no current target IDs.
-7. **Campaigns do not bleed.** Unrelated saves, fixtures, characters, and test
-   runs never share durable memory or fieldbook projects merely because they use
-   the same config profile or display name.
-8. **Recall is not reinforcement.** Reading or decorating an observation may
-   record diagnostics, but it cannot increase priority or importance. Only an
-   explicit accepted reinforce operation does that.
-9. **Automatic context is bounded.** Open commitments and exact current-target
-   constraints may receive protected space. General memories and project indexes
-   remain bounded. Full fieldbook entries are elective.
-10. **One canonical continuity authority.** Do not create a JSONL sidecar or
-    Markdown file that can independently inject memory or project state. Derived
-    indexes and human-readable exports are disposable and rebuildable.
-11. **Unknown stays unknown.** Missing provenance, a lost receipt, an unavailable
-    fieldbook read, or a malformed compaction cannot become success, absence, or a
-    confident fact.
-12. **No hidden chain-of-thought persistence.** Store explicit concise records,
-    decisions, observations, questions, and project notes. Never request or save
-    private reasoning traces.
-13. **No opaque forgetting.** Automatic recall may omit old records, but durable
-    records are not silently deleted or semantically rewritten. Resolution,
-    supersession, retraction, abandonment, and compaction are explicit events.
-14. **Embeddings are optional retrieval infrastructure.** They never decide
-    whether a memory may exist. Their provider, model, thresholds, candidate
-    budget, and diversity policy are recorded per run; their cache is disposable.
-15. **A rejected continuity update cannot corrupt gameplay.** Structurally invalid
-    planner output still fails normal schema validation. A semantically invalid
-    sidecar operation is rejected with a typed receipt and feedback, while an
-    otherwise valid game plan remains eligible to execute unless that operation
-    was itself required to define the plan's scope.
+1. **Current world evidence wins.** Memory and fieldbook may guide inquiry but
+   never override fresh telemetry, current exact references, controller receipts,
+   or safety state.
+2. **Authored context is immutable.** Continuity references resolve against the
+   exact context delivered to the planner that authored them, never whichever
+   observation happens to exist later.
+3. **Delivered means actually delivered.** An ID is citable only when the final
+   planner input manifest says it was included, or a later elective read placed
+   it into a new manifest.
+4. **Continuity grants no action authority.** A remembered target ID, cell label,
+   coordinate, window, key, or capability never authorizes a later game action.
+5. **No future success enters memory.** A plan cannot cite or store the success
+   of its own future steps. Those runtime-owned IDs do not exist yet.
+6. **Epistemic kinds remain distinct.** Commitment is intention; hypothesis is
+   uncertainty; fact is an agent-authored claim grounded in world-capable
+   evidence; episode records an observed event or attempt and preserves its
+   failure/unknown status.
+7. **Evidence capability matters.** An existing ID is not automatically adequate
+   proof. Advice, beliefs, no-ops, unknowns, and procedural completion retain
+   their limits.
+8. **Resolution is earned.** A commitment or hypothesis closes only with explicit
+   already-delivered closure evidence. A reason string is not evidence.
+9. **Entity identity stays exact and lifetime-bounded.** Names, roles, positions,
+   and similarity never reactivate an entity-bound memory.
+10. **Campaigns do not bleed.** Unrelated saves, fixtures, characters, and tests
+    never share private continuity merely because they use the same config file.
+11. **Recall is not reinforcement.** Reading, prompting, budgeting, and
+    observation decoration cannot increase a memory's importance.
+12. **Automatic context is bounded.** Exact current-target constraints and open
+    commitments may receive protected space. General memories, receipts, and
+    project indexes remain bounded.
+13. **One canonical continuity authority.** No JSONL side store, Markdown export,
+    embedding cache, or session log may independently inject durable state.
+14. **Unknown stays unknown.** Incomplete inventory, stale telemetry, missing
+    outcome detail, failed reads, and ambiguous references do not become absence,
+    loss, success, or certainty.
+15. **No opaque forgetting.** Records may leave automatic recall, but deletion,
+    semantic rewriting, resolution, supersession, and retraction are explicit.
+16. **Embeddings are optional retrieval infrastructure.** They never decide
+    whether a memory may be stored or whether a claim is true.
+17. **Continuity failure is isolated.** A semantically invalid sidecar operation
+    receives a typed receipt and does not cancel otherwise valid gameplay.
+    Unexpected store failure remains explicit and cannot partially apply.
+18. **Structured provenance survives.** Human-readable grounding is derived from
+    structured canonical evidence, not the other way around.
+19. **No hidden reasoning persistence.** Do not store private chain-of-thought or
+    ask models to reveal it.
+20. **Tests prove behavior.** Avoid source-text assertions where an executable
+    contract can be tested.
 
-## Required target contracts
+## Planner-context authority
 
-Choose concise names consistent with the repository, but implement these
-semantics end to end.
+Introduce one runtime-owned concept representing exactly what a planner call
+received. Exact names may differ; the semantics may not.
 
-### Runtime-owned evidence identities
+A useful shape is:
 
-Every action outcome must have a stable runtime-owned ID and enough provenance
-to identify its source:
+```python
+class PlannerContextManifest:
+    context_id: str
+    run_id: str
+    authored_revision: WorldStateRevision
+    telemetry_was_fresh: bool
+    action_outcome_ids: tuple[str, ...]
+    plan_outcome_ids: tuple[str, ...]
+    memory_ids: tuple[str, ...]
+    advisor_brief_ids: tuple[str, ...]
+    continuity_receipt_ids: tuple[str, ...]
+    fieldbook_project_ids: tuple[str, ...]
+    fieldbook_read_receipt_ids: tuple[str, ...]
+    created_at: datetime
+```
 
-- run ID;
-- plan ID and version when applicable;
-- step ID or single-step identity;
-- command ID when one exists;
-- action-start and completed world revisions when available;
-- typed assessment and semantic receipt status;
+The exact fields may evolve, but the manifest must satisfy these rules:
+
+- it is runtime-owned and immutable;
+- it corresponds to one planner invocation;
+- it records the exact world revision and exact continuity IDs in the final input;
+- the planner output is paired with that manifest through parsing, validation,
+  rebase, execution, and sidecar application;
+- `current_observation` resolves to `authored_revision` from this manifest;
+- exact target IDs are validated against the fresh authored observation, not a
+  later commit observation;
+- evidence IDs must appear in this manifest or in a typed read result included by
+  this manifest;
+- commit-time observation may be recorded separately for audit but cannot replace
+  the authored basis;
+- a stale authored observation cannot ground a fresh-current-state fact;
+- the manifest itself is working history and may be logged without becoming
+  durable memory.
+
+### Honest payload assembly
+
+Do not continue marking delivery in `AgentRuntime._decide()` before planner
+adapters budget or serialize their input.
+
+Create one authoritative preparation seam that yields both:
+
+1. the final representation consumed by that planner; and
+2. the manifest of records actually included.
+
+Possible implementations include a `PreparedPlannerInput`, `PlannerCallContext`,
+or planner-returned input receipt. Choose the smallest design that works across
+all planners without duplicated semantics.
+
+For hosted text planners, `Observation.planner_payload()` or its replacement
+should return the rendered text **and** an inclusion manifest. For in-process
+heuristic/scripted planners, the full observation they receive may legitimately
+make all attached records delivered. For subprocess planners, be explicit about
+whether the process receives full observation JSON or a budgeted representation.
+
+Record delivery only after the final representation exists and immediately before
+or as it is handed to the planner. Define the metric precisely as “included in
+planner input,” not “provider certainly read every token.” A failed provider call
+may still have an input receipt; distinguish attempted submission from a parsed
+planner response where useful.
+
+## Typed evidence vocabulary
+
+Resolve each reference into an immutable structured snapshot before validating an
+operation. A useful internal shape is:
+
+```python
+class ResolvedEvidenceSnapshot:
+    source: str
+    source_id: str
+    authority: EvidenceAuthority
+    authored_context_id: str
+    run_id: str
+    world_revision: WorldStateRevision | None
+    assessment: str | None
+    action_kind: str | None
+    executed: bool | None
+    causal_revision_advanced: bool | None
+    semantic_status: str | None
+    plan_disposition: str | None
+    memory_kind: str | None
+    memory_status: str | None
+    compact_summary: str
+```
+
+Do not copy arbitrary whole observations into the memory database. Store the
+minimum immutable facts needed to interpret the reference later.
+
+### Evidence authority classes
+
+Use an enum or equally explicit policy. At minimum distinguish:
+
+- `fresh_world_observation` — exact fresh state at an authored revision;
+- `verified_world_effect` — controller-owned terminal or causally supported
+  observed effect;
+- `observed_change` — runtime saw tracked change but may not prove the intended
+  goal caused it;
+- `attempt_changed` — an action executed and something changed;
+- `attempt_no_op` — action executed but no material tracked effect followed;
+- `attempt_not_executed` — executor did not perform it;
+- `attempt_unknown` — outcome could not be verified;
+- `plan_disposition` — the plan ended in a particular way; not automatically a
+  world-effect proof;
+- `agent_belief` — an existing memory, with its kind and status;
+- `advice` — an advisor brief; never direct world evidence;
+- `scenario_attestation` — exact fixture identity where applicable, not a claim
+  about an action effect.
+
+Exact enum names may differ. Do not collapse them into one boolean `supported`.
+
+### Minimum admissibility matrix
+
+#### Keep or supersede a fact
+
+Requires at least one delivered reference capable of describing already-observed
+world state or effect:
+
+- fresh exact current observation;
+- controller-verified semantic effect;
+- causally later action outcome whose structured status is adequate for the
+  claim class.
+
+An advisor brief, existing memory, hypothesis, commitment, plan outcome, no-op,
+not-executed outcome, or unknown outcome may supplement context but cannot be the
+sole grounding for a new fact.
+
+The runtime cannot prove that arbitrary prose perfectly follows from the source.
+Do not pretend otherwise. Preserve the source statuses in the planner-visible
+receipt so misleading prose is inspectable.
+
+#### Keep or supersede an episode
+
+Requires an observed event source:
+
+- action outcome;
+- plan outcome;
+- or fresh current observation where the episode is already visible.
+
+A failed, no-op, or unknown attempt may legitimately ground an episode **about
+that attempt**, but its snapshot and rendered grounding must preserve
+`no_op`, `not_executed`, or `unknown`. It cannot be normalized into success.
+
+Advice or memory alone cannot establish that an episode happened.
+
+#### Keep a commitment
+
+May be self-authored after the containing decision/plan/patch has itself passed
+its applicable acceptance boundary. References are optional because it is an
+intention, not a world fact.
+
+A commitment must be specific enough to close or abandon later. Avoid automatic
+commitments for every micro-plan; one ongoing objective should be reinforced or
+updated rather than multiplied.
+
+#### Keep a hypothesis
+
+May be self-authored with no references. References may explain what prompted it.
+It remains explicitly uncertain regardless of source quality until a separate
+operation resolves, supersedes, or retracts it.
+
+#### Reinforce
+
+Reinforcement means the agent deliberately chose the record again. It must never
+happen because the observation pump recalled the record.
+
+When references are supplied, persist their structured snapshots. Reinforcing a
+fact with advice-only or belief-only evidence may increase declared importance
+but must not be described as new world confirmation. Consider separate
+`salience` and `confidence` if the current model needs that distinction; do not
+let one number imply both importance and truth.
+
+#### Resolve
+
+Only active commitments and active hypotheses/questions are resolvable.
+`references` is non-empty.
+
+For a commitment involving a world effect—deliver, purchase, earn, recruit,
+arrive, transfer, equip, escape—at least one reference must be fresh world state
+or adequate world-effect evidence. Advice, memory, a no-op, an unknown attempt,
+or plan completion alone cannot close it.
+
+For a hypothesis, resolution must preserve whether the evidence confirmed,
+rejected, or left it unknown. If one `resolve` verb cannot express that honestly,
+add a bounded typed resolution disposition.
+
+#### Retract
+
+Retraction may remain agent-authored with a reason, because it withdraws a belief
+rather than establishing a new world fact. It never deletes history.
+
+#### Supersede
+
+The replacement is validated under the rules of its new kind. The old record and
+replacement transition atomically. A conflicting active replacement key produces
+a rejected receipt and no state change.
+
+## Working continuity digests
+
+Keep the full recent `ActionOutcome` and `PlanOutcome` windows for planner context,
+but retain compact immutable digests for every ID issued during the run.
+
+An action-outcome digest needs at least:
+
+- outcome ID and run ID;
+- plan ID/version and step ID;
+- action kind;
+- exact target/semantic identity when applicable;
+- executed flag and assessment;
+- command ID;
+- action-start and completion revisions;
+- controller-owned semantic terminal/status where present;
+- short bounded evidence summary;
+- recorded timestamp.
+
+A plan-outcome digest needs at least:
+
+- plan outcome ID;
+- original objective;
+- disposition;
+- completed step IDs or count;
+- actions completed;
+- terminal revision;
+- terminal reason digest;
 - timestamps.
 
-Add a bounded plan-outcome ledger with runtime-owned IDs, original plan objective,
-completion/failure/abandonment reason, completed step IDs, and terminal revision.
-Do not make the next planner reconstruct a plan's purpose from “Execute step X.”
+Do not retain screenshots, full telemetry, or unbounded prose in the digest.
+A run with a large action budget should remain reasonable in memory. If an
+indexed run-local SQLite table or session-log index is cleaner than an unbounded
+Python dictionary, use it, but do not create a second durable belief authority.
 
-### Evidence references
+Automatic planner context still shows only the bounded recent window. Older
+digests become citable only when an explicit bounded read/search puts them into a
+new planner context manifest.
 
-Continuity operations use a strict discriminated union of bounded references such
-as:
+## Canonical memory provenance
 
-- current observation/world revision;
-- action outcome ID;
-- plan outcome ID;
-- existing memory ID;
-- advisor brief ID, clearly marked as advice rather than world evidence;
-- scenario attestation ID or equivalent stable fixture evidence where useful.
+Evolve the schema version transactionally. The append-only event must retain
+structured evidence, not merely `grounding: str`.
 
-A reference is validated against the exact current observation or continuity
-store before an operation commits. Store its source run and minimum immutable
-metadata needed for later audit, but do not copy current world state into a rival
-authority.
+For every lifecycle transition, persist at least:
 
-### Memory lifecycle
+- memory ID and campaign ID;
+- lifecycle event and exact planner-authored operation;
+- origin: decision, plan, patch, compaction, or operator migration;
+- source run ID;
+- plan ID/version and step ID where applicable;
+- authored planner context ID and authored world revision;
+- commit-time world revision where applicable;
+- exact planner-authored reference union;
+- runtime-resolved evidence snapshots;
+- rendered human-readable grounding;
+- status/transition result;
+- timestamp;
+- predecessor/successor links.
 
-Replace or evolve plain `memory_writes` into strict typed operations. At minimum:
+The current `memories` projection may retain a bounded latest grounding summary
+for recall. The full structured event remains canonical.
 
-- `keep` — create a new record;
-- `reinforce` — explicitly refresh an existing record without duplicating it;
-- `resolve` — close an open commitment or question with evidence/reason;
-- `supersede` — create a replacement and link the old record to it atomically;
-- `retract` or `release` — remove a record from active recall without deleting
-  history.
+Projection rebuild must reproduce:
 
-A memory record needs at least:
+- lifecycle status;
+- content, kind, salience, and target;
+- reinforcement count and timestamps;
+- resolution reason/disposition;
+- supersession links;
+- latest delivered timestamp where that diagnostic remains part of projection;
+- structured source links needed by operator inspection.
 
-- runtime-owned memory ID and campaign scope;
-- kind: fact, episode, commitment, or hypothesis;
-- active lifecycle status;
-- content and optional exact target ID;
-- grounding/authorship classification;
-- source references;
-- confidence where uncertainty is meaningful;
-- created, reinforced, resolved, superseded, and recalled timestamps as separate
-  concepts;
-- reinforcement count;
-- links to predecessor/successor records.
+Migration requirements:
 
-Exact duplicate reinforcement may use a deterministic normalized key. Do not add
-provider-dependent semantic deduplication to the storage boundary.
+- preserve v1 and v2 data;
+- back up before destructive schema change or use an equally strong transactional
+  migration/rollback path;
+- mark old flattened grounding honestly as legacy/unstructured provenance;
+- do not invent structured references for old rows;
+- make reopening idempotent;
+- test projection rebuild after migration.
 
-### Canonical store
+## Store failure isolation
 
-Evolve `MemoryStore` into one versioned continuity store, or build an equally
-clear single-authority replacement. Prefer one SQLite database with:
+At the store boundary:
 
-- an append-only lifecycle event/history table;
-- a rebuildable current memory projection;
-- campaign-scope metadata;
-- fieldbook projects and append-only entries;
-- schema versioning and transactional migration.
+- preflight expected active-key conflicts when practical;
+- translate expected `sqlite3.IntegrityError` constraints into
+  `MemoryTransitionError` or an equally typed domain rejection;
+- guarantee event and projection rollback together;
+- preserve both old and conflicting active records after rejection;
+- emit a continuity receipt with the exact reason;
+- continue otherwise valid gameplay.
 
-All event append and projection updates occur in one transaction. A failed write,
-invalid transition, process interruption, or projection rebuild must neither
-partially apply nor lose the old state. SQLite foreign keys remain enabled.
+For unexpected I/O, corruption, or database failure:
 
-Do not run tests against the user's live memory database. Provide a tested,
-idempotent migration with an exact backup or explicit preflight path. Legacy rows
-must be preserved with honest `legacy_unverified` provenance and must not be
-silently assigned to an unrelated new campaign.
+- roll back;
+- log a distinct store failure, not an ordinary semantic rejection;
+- do not claim that memory changed;
+- disable/quarantine further continuity writes for the run when continued writes
+  cannot be trusted;
+- keep reads only if their integrity is still defensible;
+- report the degraded state to the planner/operator;
+- do not silently delete or recreate the live database.
 
-### Campaign identity
+Add a distinct `failed` receipt status if accepted/rejected/no-op cannot describe
+this honestly.
 
-Add an explicit stable `campaign_id` or equivalent. A config profile name is not
-campaign identity. A character display name is not campaign identity. An exact
-fixture `save_id` may seed a controlled experiment, but long-running save lineage
-needs an explicit campaign identity that survives ordinary save progress.
+## Planner-visible continuity receipts
 
-Expected policy:
+Add a bounded runtime-owned receipt ledger. A receipt digest should include:
 
-- durable continuity enabled in live mode requires an explicit campaign ID, or
-  an explicit ephemeral/run-scoped mode;
-- attested scenario tests may use a deterministic scenario campaign;
-- mock and replay tests provide their own scope;
-- a missing scope fails closed or becomes explicitly ephemeral, never global
-  `default` memory.
+- receipt ID;
+- operation and origin;
+- accepted, rejected, no-op, or failed status;
+- reason;
+- resulting memory ID/status where any;
+- authored context ID/revision;
+- plan/step provenance;
+- compact evidence summary;
+- timestamp.
 
-### Planner continuity output
+Observation policy:
 
-Planner decisions, plans, and patches need one coherent continuity sidecar.
-Avoid three subtly different implementations.
+- surface a small recent list;
+- preserve the latest rejected/failed receipt through budgeting;
+- do not surface an unbounded operation history;
+- clear nothing merely because it was shown;
+- do not rank durable memory by receipt visibility.
 
-Commit timing is exact:
+Planner guidance must tell the model to correct the exact rejected operation and
+not repeat it unchanged. A successful receipt may provide a new `memory_id` for a
+later reinforce/resolve/supersede operation.
 
-- a plan's continuity operations are processed only after the plan passes schema,
-  current-basis, graph, condition, control-mode, and budget validation;
-- a staged concurrent patch contributes no continuity until that exact patch is
-  revalidated and actually applied;
-- a rejected, stale, foreign, or discarded patch contributes nothing;
-- facts and episodes may cite only evidence already visible before the operation;
-- commitments and hypotheses may be self-authored but remain typed as intention
-  or uncertainty;
-- plan/objective audit events are runtime-owned working history, not synthetic
-  durable episodes.
+## Recall and elective search
 
-Every operation produces an accepted/rejected/no-op receipt. Surface recent
-receipts to the planner so a deterministic invalid update is not repeated.
+The current read-only exact-target/general recall is a good base but not the final
+policy.
 
-### Recall
+Implement a deterministic default before semantic retrieval. Recommended tier
+order:
 
-Implement a deterministic default recall policy before semantic retrieval.
-Recommended tier order:
-
-1. active commitments relevant to the current campaign;
-2. memories bound to exact current target IDs;
+1. active ongoing commitments relevant to the campaign;
+2. exact memories bound to IDs in the fresh authored observation;
 3. unresolved high-priority hypotheses or survival constraints;
-4. remaining general records ranked by declared salience, explicit
-   reinforcement, lifecycle, and recency of creation/reinforcement — not recency
-   of automatic recall;
-5. optional relevance-selected records for remaining slots.
+4. remaining general active records ranked by declared salience, explicit
+   reinforcement, lifecycle, and creation/reinforcement time—not delivery time;
+5. optional relevance-selected records for any remaining slots.
 
-Recall must be a read-only operation in the observation pump. If “delivered to a
-planner” diagnostics are useful, mark delivery only when a planner payload is
-actually assembled, and do not use that timestamp for importance ranking.
+Do not let one tier consume an unbounded number of slots. Exact-target and open
+commitment guarantees should be explicit in observation-budget tests.
 
-Add an elective bounded memory search/read path for material outside automatic
-recall. It emits zero game input, cannot authorize an action, and returns a typed
-bounded result to the next planner call. Literal/FTS search is a valid first
-implementation; do not add an embedding dependency merely to ship search.
+Add an elective bounded memory search/read action after the provenance foundation
+is correct. It must:
 
-### Fieldbook
+- emit zero keyboard, mouse, or native primitives;
+- create no world command;
+- spend no pointer, purchase, or native risk budget;
+- search only the current campaign unless an operator tool explicitly says
+  otherwise;
+- return typed result IDs, source metadata, and honest truncation;
+- place returned IDs into the next planner-context manifest so they become
+  citable;
+- never authorize an action by itself.
 
-Use a structured campaign-scoped store rather than arbitrary planner-selected
-filesystem paths. At minimum support:
+SQLite FTS5, deterministic token matching, or bounded `LIKE` search is sufficient
+for the first implementation. Do not add an embedding dependency merely to ship
+search.
+
+## Private fieldbook
+
+Build the fieldbook only after the P0 provenance and failure-isolation defects are
+closed.
+
+Use the same campaign scope and one canonical structured store. At minimum
+support:
 
 - create project;
 - append entry;
 - update bounded summary or status;
 - set or clear one active project;
 - complete, pause, or abandon project;
-- inspect one project or query its entries through an elective bounded read.
+- inspect one project or search its entries through an elective bounded read.
 
-Project status should be explicit, such as active, paused, completed, or
-abandoned. Entries should carry runtime-owned IDs, timestamps, source references,
-and a bounded type such as note, decision, observation, incident, manifest, or
-route entry.
+Useful project types include:
 
-Ordinary observations expose only a bounded index: project ID, title, kind,
-status, short summary, last update, and perhaps one active project. Do not inject
-latest excerpts from every project. A requested read receives a hard character
-and entry limit with honest truncation metadata.
+- delivery docket;
+- route atlas;
+- incident log;
+- vendor ledger;
+- equipment plan;
+- journal;
+- generic project.
 
-Fieldbook writes are local cognitive side effects, not game actions. They emit no
-keyboard, mouse, or native primitives and spend no pointer, purchase, or native
-risk budget. Invalid fieldbook operations fail independently and visibly.
+Project statuses should be explicit: active, paused, completed, abandoned.
+Entries carry runtime-owned IDs, timestamps, origin/context provenance, source
+references where applicable, and a bounded type such as note, decision,
+observation, incident, manifest, route entry, expense, or question.
 
-A human-readable Markdown export may be added as a generated view, but SQLite
-remains authoritative and deleting the export changes no behavior.
+### Automatic fieldbook context
 
-### Compaction
+Ordinary observations expose only a bounded index:
 
-Wire `prompts/memory_compactor.md` only after lifecycle, provenance, scope, and
-projection rebuilding are complete. Otherwise remove or clearly mark it inert.
+```text
+project ID
+title
+kind
+status
+short summary
+entry count
+last update
+active-project marker
+```
+
+Do not automatically inject the latest prose excerpt from every project. That
+creates a self-feedback loop where writing makes the topic more visible, which
+causes more writing.
+
+At most one explicitly selected active project may receive a bounded summary in
+automatic context. Full entries are elective.
+
+### Fieldbook reads and writes
+
+Reads and writes are cognitive side effects handled by the runtime, not by
+`AgentEnvironment` and not as game input.
+
+They must:
+
+- emit zero controller primitives;
+- create no Kenshi command;
+- have typed receipts;
+- respect campaign scope;
+- use runtime-owned project/entry IDs rather than arbitrary paths;
+- have hard entry and character limits;
+- report truncation honestly;
+- follow plan/decision/patch commit timing;
+- fail independently from gameplay.
+
+A human-readable Markdown export may exist as a disposable generated view.
+Deleting or editing that export must not change canonical fieldbook state.
+
+### Physical-world boundary
+
+A fieldbook manifest is not inventory. Current Kenshi telemetry remains the
+source of truth for cargo.
+
+Do not add a Python shadow inventory. A future physical “Courier's Ledger” FCS
+item may gate access to detailed fieldbook content only as a separate experiment
+with fresh complete inventory evidence and, ideally, stable item-instance
+identity. It is not required for the first fieldbook slice.
+
+## Compaction
+
+Wire `prompts/memory_compactor.md` only after lifecycle, structured provenance,
+planner-context authority, deterministic recall, and fieldbook are complete.
+Otherwise keep it clearly inert or remove stale claims that it is active.
 
 Compaction must be explicit and bounded:
 
 - exact source memory IDs are selected;
-- no cross-campaign compaction;
-- no merging different exact target IDs;
-- no merging incompatible kinds or epistemic statuses;
+- all sources belong to one campaign;
+- incompatible exact target IDs do not merge;
+- incompatible kinds or epistemic statuses do not merge;
 - unresolved commitments and unresolved hypotheses are excluded by default;
 - the output preserves uncertainty and the weakest relevant confidence;
 - the compactor returns a strict candidate, not a direct mutation;
 - malformed, truncated, refused, or semantically invalid output changes nothing;
-- applying a candidate atomically creates the replacement and supersedes the
-  exact sources;
+- applying a candidate atomically creates a replacement and supersedes the exact
+  sources;
+- source history is never deleted;
 - provider, model, prompt hash/version, parameters, and source IDs are logged;
-- dry-run and inspection are supported.
+- dry-run and operator inspection are supported.
 
-Compaction must never delete the source history.
+Do not let compaction turn several failed or inconclusive attempts into a durable
+success lesson.
 
-### Optional semantic retrieval
+## Optional semantic retrieval
 
-Ship deterministic recall first. Then add semantic MMR retrieval only as a
-switchable treatment:
+Ship deterministic recall and search first. Add semantic retrieval only as an
+explicit switchable treatment:
 
-- exact-target and active-commitment tiers remain deterministic and lead;
+- exact-target and open-commitment tiers remain deterministic and lead;
 - candidate pool and top-k are bounded;
 - diversity coefficient and minimum relevance are configured and logged;
-- cache keys include memory revision/content hash plus provider/model;
-- cached vectors are a disposable index;
-- a missing provider falls back honestly to deterministic recall;
-- semantic similarity does not suppress storage or prove contradiction, truth,
-  identity, or importance;
+- provider/model, dimensions, thresholds, and fallback are in run metadata;
+- cache keys include memory revision/content hash and provider/model;
+- cached vectors are disposable and rebuildable;
+- unavailable embeddings fall back honestly to deterministic recall;
+- similarity does not suppress storage admission;
+- similarity does not prove identity, contradiction, truth, confidence, or
+  importance;
 - tests use a deterministic fake embedder;
-- run metadata makes retrieval-policy changes visible in evaluation.
+- A/B evaluation compares retrieval policy, not preferred prose style.
+
+WorldWeaver's relevance-plus-diversity logic is design evidence, not code to copy
+blindly. Its historical side-store and provider-dependent storage filter are not
+the target architecture.
 
 ## Dependency-ordered work queue
 
-At the start of every invocation, classify each slice as absent, partial, or
-complete from code and tests. Work on the first incomplete dependency. Do not
-skip ahead to embeddings or a pretty fieldbook UI.
+At the start of every invocation, classify each slice as `absent`, `partial`, or
+`complete`, with exact code/tests. Select the **first incomplete dependency**.
 
-### Slice 1 — repair authority and timing
+Do not skip to the fieldbook because it is more visible. Do not reopen completed
+campaign/migration work unless a defect requires it.
 
-Deliver one coherent vertical change that:
+### Slice 1 — exact planner-context authority and honest delivery
 
-- gives action outcomes stable IDs and explicit plan/step provenance;
-- adds bounded plan outcomes carrying original objectives and terminal reasons;
-- makes observation-pump recall read-only;
-- removes recall-time priority reinforcement;
-- establishes strict evidence-reference models;
-- prevents continuous plans from committing facts/episodes about future work;
-- removes the automatic “Set out to…” durable episode or replaces it with honest
-  working plan history;
-- gives accepted plans, single-step decisions, and actually applied patches one
-  consistent continuity-operation path;
-- proves rejected/stale/discarded patches write nothing;
-- eliminates any dead continuity schema field.
+Complete one end-to-end planner-context manifest and authored-basis path.
 
-Do not stop after adding IDs or models. Wire planner schemas, runtime application,
-logs, observations, and tests in the same slice.
+Required outcomes:
 
-### Slice 2 — canonical scoped lifecycle store
+- every planner output is paired with the exact manifest that produced it;
+- `current_observation` resolves to the authored basis, not commit-time state;
+- exact target validation uses the fresh authored observation;
+- only delivered IDs are citable;
+- final budgeting returns an inclusion manifest;
+- delivery events match the exact IDs in the final planner input;
+- all planner implementations have explicit honest semantics;
+- rebase, delayed advisor, patch, single-step, replay, and subprocess paths are
+  covered;
+- no observation-pump write regression.
 
-Deliver:
+Include the straightforward prompt/example/config fixes that directly depend on
+this contract, but do not let cosmetic cleanup replace the slice.
 
-- explicit campaign scope resolution;
-- versioned SQLite schema;
-- append-only lifecycle history plus rebuildable projection;
-- keep/reinforce/resolve/supersede/retract transitions;
-- exact duplicate reinforcement without duplication;
-- separate recalled versus reinforced timestamps;
-- transactionality and foreign-key invariants;
-- legacy migration, backup/preflight, rollback, idempotency, and scope honesty;
-- read-only inspection/doctor commands suitable for operator audit.
+### Slice 2 — evidence capability, closure rules, and canonical provenance
 
-Do not preserve the old table as a second live authority.
+Required outcomes:
 
-### Slice 3 — bounded recall and planner delivery
+- references resolve to typed evidence snapshots;
+- fact/episode/commitment/hypothesis admissibility follows the matrix above;
+- resolve requires closure evidence and applies only to resolvable kinds;
+- no-op, unknown, advice-only, belief-only, or procedural completion cannot prove
+  successful world effects;
+- full recent outcomes plus compact all-run digests exist;
+- evicted references retain meaningful assessment and revisions;
+- canonical memory events store structured operation/context/evidence provenance;
+- projection rebuild and migration preserve it;
+- operator inspection can show both structured sources and rendered grounding.
 
-Deliver:
+### Slice 3 — transition failure isolation and planner feedback
 
-- deterministic tiered recall;
-- protected open commitments and exact current-target constraints;
-- general-memory bounds and honest omission metadata;
-- continuity operation receipts in later planner context;
-- a bounded elective memory search/read action or equivalent current architecture;
-- observation-budget rules that preserve requested reads and decision-critical
-  continuity without allowing unbounded context;
-- no database write on each observation-pump tick;
-- metrics and deterministic retrieval tests.
+Required outcomes:
 
-Update the planner prompt so `memories` is no longer described as the only thing
-between plans if working plan outcomes and fieldbook index now also exist.
+- expected unique-key and transition conflicts return typed rejected receipts;
+- unexpected store failure is distinct, rolled back, and explicitly degraded;
+- no invalid continuity operation cancels otherwise valid gameplay;
+- receipt IDs and bounded receipt digests reach the next planner;
+- latest rejected/failed receipt survives budgeting;
+- metrics and reports count accepted/rejected/no-op/failed operations accurately;
+- all checked-in planner examples parse against current models;
+- old `memory_writes` terminology is removed from current outputs while old log
+  readers retain deliberate compatibility where needed;
+- generic long-form config no longer silently hardcodes Ladle's campaign; add a
+  Ladle-specific profile or explicit override path instead;
+- prompt examples use real string memory IDs;
+- generated schemas/docs and test-count claims are current.
 
-### Slice 4 — private fieldbook and open work
+### Slice 4 — deterministic recall, elective memory search, and fieldbook
 
-Deliver:
+This may be one large compound slice or two coherent invocations—one for
+read/search and one for fieldbook—if the current tree makes that boundary real.
+Do not split it into model-only, table-only, and prompt-only micro-slices.
 
-- project and entry store;
-- lifecycle operations and receipts;
-- one explicit active project;
-- bounded automatic index only;
-- elective bounded project inspection;
-- planner sidecar updates with source validation;
-- no arbitrary filesystem paths;
-- no game-input or risk-budget effects;
-- current telemetry overriding contradictory manifest/route notes;
-- read-only operator inspection and optional generated export.
+Required outcomes:
 
-Prove that a project can continue across process restart without injecting every
-entry into every prompt.
+- protected open-commitment and exact-target recall tiers;
+- deterministic bounded search/read with typed read receipts;
+- returned read IDs become citable only in the next manifest;
+- campaign-scoped fieldbook projects and append-only entries;
+- bounded project index and one active project;
+- elective project reads;
+- zero game input and zero game-risk spend;
+- fieldbook text cannot create or override inventory;
+- restart persistence and campaign isolation;
+- migration, schema, CLI/operator inspection, metrics, prompt, and docs complete.
 
-### Slice 5 — compaction and retrieval treatment
+### Slice 5 — compaction and optional semantic retrieval
 
-Deliver compaction first, then optional semantic retrieval. Keep them independent
-so each can be ablated.
+Required outcomes:
 
-- compaction candidate lifecycle, dry-run, apply, rollback, and provenance;
-- source history retained and projection rebuildable;
-- provider/model/prompt policy receipts;
-- deterministic recall remains the default/control;
-- optional semantic MMR retrieval with disposable cache and explicit run metadata;
-- no semantic filtering at storage time.
+- provenance-preserving candidate compaction and atomic application;
+- deterministic recall remains default;
+- semantic MMR retrieval is optional, explicit, logged, and disposable;
+- storage admission remains deterministic;
+- provider outage falls back without changing canonical memory;
+- controlled tests and A/B metrics exist.
 
-### Slice 6 — evaluation and strongest safe proof
+### Slice 6 — Ladle restart evaluation and strongest safe proof
 
-Create a deterministic Ladle continuity harness and paired evaluations. It must
-span multiple plans and a process/store restart.
+Create a reproducible evaluation around a cargo-delivery campaign. Use synthetic,
+mock, replay, fixture-attested, or live evidence at the strongest level the
+repository can honestly support.
 
-Minimum scenario:
+The evaluation must include at least:
 
-1. Campaign `ladle-css-01` adopts a commitment to deliver six sealed slop
-   canisters and creates `delivery-001`.
-2. A route attempt produces a no-op or failure outcome with a stable evidence ID.
-3. A later plan records the incident without claiming delivery, updates the route
-   project, and chooses a materially different method.
-4. The process closes and reopens the same campaign store.
-5. The next planner receives the open commitment and bounded project index, can
-   electively inspect the route/delivery records, and does not repeat the failed
-   action unchanged.
-6. Current telemetry reports five canisters while an old fieldbook entry says six;
-   current telemetry wins, and no delivery is claimed.
-7. A same-named trader with a different exact entity ID does not receive the old
-   entity-bound memory.
-8. A different campaign receives none of Ladle's private continuity.
-9. Resolving the delivery closes the commitment with cited evidence; compaction,
-   when enabled, preserves the original source records and uncertainty.
+1. a campaign-scoped open commitment to deliver a fixed cargo quantity;
+2. multiple plans and action outcomes, including at least one no-op, failed, or
+   inconclusive attempt;
+3. route or incident details written to the fieldbook rather than all compressed
+   into memory;
+4. a real process restart using the same campaign ID;
+5. the second process receiving the unresolved commitment and bounded project
+   index;
+6. an elective read of relevant route/delivery material;
+7. current telemetry disagreeing with an old note, with telemetry winning;
+8. a same-named different entity receiving no old exact-entity memory;
+9. a different campaign receiving none of Ladle's continuity;
+10. commitment resolution only after cited closure-capable evidence;
+11. exact planner-context and delivery manifests in the evidence bundle;
+12. continuity rejection feedback causing a corrected next operation rather than
+    unchanged repetition.
 
 Compare at least:
 
-- current baseline/continuity disabled;
-- scoped lifecycle memory enabled;
+- continuity disabled or pre-feature baseline;
+- scoped lifecycle memory;
 - memory plus fieldbook;
-- deterministic recall versus semantic recall, if semantic retrieval exists.
+- deterministic versus semantic retrieval, only if semantic retrieval exists.
 
-Measure repeated no-ops, resumed commitments, stale-memory corrections,
-unsupported success claims, cross-scope leaks, fieldbook reads, prompt size,
-operation rejection rate, and restart continuity. Do not use preferred prose or
-personality resemblance as the success metric.
+Measure:
+
+- repeated no-ops;
+- resumed commitments;
+- stale-memory corrections;
+- unsupported success claims;
+- cross-campaign leaks;
+- evidence-reference rejection rate;
+- continuity-operation correction after rejection;
+- fieldbook reads and prompt cost;
+- exact delivered-memory counts;
+- restart continuity;
+- eventual delivery status.
+
+Do not use personality resemblance or preferred prose as the success metric.
+Do not claim general Kenshi competence from one successful delivery.
 
 After portable and replay evidence is green, run the strongest safe supported
-integration proof. A useful live endpoint is: same explicit campaign ID across
+integration proof. A useful live endpoint is the same explicit campaign across
 two supported `./dev journey` processes, with the second planner demonstrably
-receiving and using a grounded unresolved commitment or route lesson. Do not
-claim improved gameplay competence from one run.
+receiving and using a grounded unresolved commitment or route lesson. Existing
+live input acknowledgements and human supervision rules remain authoritative.
 
-## Testing requirements
+## Required behavioral tests
 
-Run the existing baseline before editing:
+Run the current baseline before editing:
 
 ```bash
 uv run pytest -q
@@ -547,144 +1155,270 @@ uv run ruff check .
 uv run mypy src
 ```
 
-A dependency outage is not a green baseline; record it and run the strongest
-available focused tests without pretending the full gate passed.
+If dependency infrastructure is unavailable, record the exact failure and run the
+strongest available focused suite. A package mirror outage is not a green full
+baseline.
 
-For every slice:
+The following tests, or behaviorally equivalent tests, are required across the
+relevant slices.
 
-- write a failing behavioral test first and observe it fail;
-- include success, invalid transition, unknown/missing evidence, stale identity,
-  cross-campaign, rollback, and restart paths where applicable;
-- test both `single_step` and `continuous` semantics;
-- test PlanPatch staging, rejection, discard, and actual application;
-- preserve provider-portable hosted schemas and run
-  `tests/test_hosted_planner_contract.py` after any planner-model change;
-- regenerate and staleness-check all JSON Schemas and generated docs;
-- test observation reduction at budgets just below and above each required
-  continuity surface;
-- use injected clocks/ID factories where determinism matters;
-- test SQLite migration against realistic legacy rows and interrupted/failed
-  transactions;
-- rebuild projections from canonical history and compare exact current state;
-- verify deleting a derived index/cache/export changes no canonical result;
-- test no input primitives and no risk-budget spend for continuity reads/writes;
-- add metrics tests for every new event and receipt;
-- avoid source-text assertions; exercise behavior.
+### Authored context and delivery
 
-Mutation testing is required on the new authority seams, not as a project-wide
-ritual. At minimum target mutations that would:
+- pre-action revision `1/1`, post-action revision `2/2`: a decision's
+  `current_observation` grounding remains `1/1`;
+- an operation cannot cite an ID issued in the run but absent from its planner
+  manifest;
+- an operation may cite an older record after an explicit read places it in a
+  later manifest;
+- stale authored telemetry cannot ground a fresh-state fact or exact target;
+- a rebased plan never silently rebases its continuity evidence;
+- a staged patch's manifest stays paired with that exact patch through application;
+- rejected/discarded patch continuity contributes nothing;
+- final payload budgets that include 0, 1, N, and all memories create matching
+  delivery events exactly;
+- delivery semantics are tested for OpenAI/OpenRouter preparation without live
+  provider calls, subprocess, scripted, heuristic, and replay paths;
+- planner failure after input preparation is recorded honestly without inventing
+  a successful parsed output.
 
-- accept a foreign or nonexistent evidence ID;
-- commit a stale/discarded patch's operations;
-- treat recall as reinforcement;
-- leak another campaign's record;
+### Evidence capability
+
+- advisor-only fact rejected;
+- memory-only fact rejected;
+- hypothesis-only fact rejected;
+- no-op-only successful fact rejected;
+- unknown/not-executed outcome cannot close a commitment;
+- plan completion alone cannot prove a world delivery;
+- failed/no-op action outcome may ground an episode that remains explicitly
+  failed/no-op;
+- fresh exact observation may ground a fact about that observation;
+- controller-verified transfer evidence may close a transfer commitment;
+- commitment keep without world evidence is accepted as intention;
+- hypothesis keep without world evidence is accepted as uncertainty;
+- resolve with empty references rejected;
+- resolve of fact/episode rejected in favor of supersede/retract;
+- resolved hypothesis preserves confirmed/rejected/unknown disposition if added;
+- evidence IDs from another run/campaign rejected;
+- exact target memory never attaches by name or stale identity.
+
+### Working outcome retention
+
+- with action-outcome visible limit 1, `ao-1` retains a compact digest after
+  `ao-2` evicts its full record;
+- the digest preserves action kind, assessment, execution, semantic status, and
+  revisions;
+- an explicit read can resurface the digest under a bounded result;
+- eviction never changes a `no_op` into generic “exists” evidence;
+- large action budgets remain within an explicit memory/performance bound.
+
+### Store and lifecycle
+
+- superseding A with B's active normalized key returns a rejected receipt and
+  leaves A and B unchanged;
+- event append and projection update roll back together on injected failure;
+- an unexpected database failure produces a distinct failed/degraded state;
+- closed records refuse invalid transitions;
+- cross-campaign IDs are unreachable;
+- v1/v2 migration is idempotent and preserves honest legacy provenance;
+- projection rebuild reproduces exact current state and structured evidence;
+- read-only CLI inspection creates no campaign and writes nothing;
+- deleting derived caches or Markdown exports changes no canonical result.
+
+### Receipts and budgets
+
+- every operation receives one receipt ID;
+- latest rejected/failed receipt survives a tight observation budget;
+- accepted receipt exposes the resulting memory ID;
+- the next planner can correct the exact rejected operation;
+- receipt visibility does not reinforce durable memory;
+- receipt collections remain bounded.
+
+### Fieldbook
+
+- project creation, append, status, active selection, read, pause, complete, and
+  abandon round-trip;
+- project and entry IDs are runtime-owned;
+- campaign isolation and restart persistence;
+- automatic context contains index metadata but not every full entry;
+- elective read is bounded and reports truncation;
+- fieldbook operations emit zero controller primitives and no world command;
+- arbitrary paths cannot escape or bypass the structured store;
+- Markdown export is disposable;
+- a fieldbook manifest saying six items cannot change telemetry inventory;
+- incomplete inventory remains unknown rather than lost.
+
+### Repository contract hygiene
+
+- every checked-in JSONL planner example parses against the current strict model;
+- generated schemas are fresh;
+- planner prompt examples pass a lightweight contract test or fixture parse;
+- current configs cannot silently share a named real campaign unless explicitly
+  documented as campaign-specific;
+- old log/eval compatibility is deliberate and tested rather than accidental.
+
+## Mutation testing
+
+Use mutation testing on the new authority seams, not as a project-wide ritual
+that delays the feature.
+
+At minimum kill mutations that would:
+
+- substitute commit-time observation for authored observation;
+- accept an issued-but-not-delivered evidence ID;
+- mark omitted memories as delivered;
+- treat advisor or memory evidence as world evidence;
+- allow a no-op to close a commitment;
+- allow empty-reference resolution;
+- resolve a fact or episode;
+- discard an evicted outcome's assessment;
+- flatten structured evidence out of canonical history;
+- partially append without projection update, or vice versa;
+- let a unique-key conflict escape as raw SQLite error;
+- hide the latest rejected receipt under budgeting;
+- leak another campaign's record or fieldbook project;
 - reactivate by display name;
-- allow a fact with only future evidence;
-- skip a supersession/retraction status check;
-- partially append without updating projection, or vice versa;
-- surface all fieldbook excerpts automatically;
-- treat a fieldbook manifest as inventory;
+- surface every fieldbook excerpt automatically;
+- treat fieldbook prose as inventory;
 - delete compaction sources;
 - let embedding availability change storage admission.
 
-Kill those mutants or explain why a generated equivalent is non-actionable. Do
-not postpone the feature until every unrelated module shard is mutated.
+Kill those mutants or document a genuinely equivalent/non-actionable mutation.
+Do not postpone the slice until every unrelated module shard is attended.
 
 ## Performance and observation-budget rules
 
-- The observation pump may run around ten times per second; continuity decoration
+- The observation pump may run around ten times per second. Continuity decoration
   must not perform write transactions at that rate.
-- Add indexes for campaign, status, kind, target ID, project, and ordered lifecycle
-  queries. Avoid full-table scans in ordinary recall.
-- Bound all automatic collections and all elective read results.
-- Preserve the latest action/plan outcome, open commitments, and exact current
-  target memories before optional general context.
-- A deliberately requested memory or fieldbook read must either fit its documented
-  bound or return typed truncation/unavailability; do not silently drop the chosen
-  source.
-- Log retrieval latency/candidate counts cheaply enough to diagnose regressions,
-  without logging hidden reasoning.
+- Build the planner-context manifest once per planner call, not per pump tick.
+- Add indexes for campaign, lifecycle status, kind, target, project, entry order,
+  and deterministic search.
+- Bound all automatic collections and elective read results.
+- Preserve the latest action/plan outcome, latest rejected/failed continuity
+  receipt, open commitments, and exact current-target memories before optional
+  general context.
+- A deliberately requested read must either fit its documented bound or return
+  typed truncation/unavailability. Do not silently drop the chosen source.
+- Outcome digests must be compact enough for the maximum supported run budget;
+  measure the memory cost rather than assuming.
+- Log candidate counts, included IDs, payload characters, and retrieval latency
+  cheaply enough to diagnose regressions.
+- Do not log hidden reasoning.
 
-## Planner-prompt rules
+## Planner-prompt contract
 
-Update `prompts/planner_system.md` when the live contract changes. The prompt must
-teach, without pretending semantic guarantees the runtime cannot enforce:
+Update `prompts/planner_system.md` whenever the live contract changes. Teach the
+planner clearly without claiming semantic enforcement the runtime does not have.
 
-- world evidence is authoritative;
-- working outcomes, kept memory, and fieldbook are different;
-- facts/episodes cite prior/current evidence IDs;
-- commitments and hypotheses retain their epistemic status;
-- current target IDs are copied only from fresh observation;
-- old IDs, cell labels, coordinates, and capabilities never authorize action;
+The prompt must explain:
+
+- world evidence, working outcomes, durable memory, receipts, and fieldbook are
+  different;
+- `current_observation` means the exact authored planner context, not a later
+  observation;
+- only IDs present in the current payload/read results may be cited;
+- facts and episodes cite already available evidence;
+- no-op/unknown/not-executed/advice/belief evidence retains its limits;
+- commitments and hypotheses remain intention/uncertainty;
+- resolution requires closure evidence;
+- exact target IDs come only from fresh current observation;
+- old IDs, cell labels, coordinates, keys, and capabilities never authorize
+  action;
 - continuity operations are optional and concise;
-- an invalid continuity operation may be rejected independently;
-- full project content is reached for only when useful;
-- finishing a plan is not automatically finishing a commitment or project;
-- no unsupported success claims;
-- no duplicate restatements merely to keep them visible.
+- invalid operations may be rejected independently;
+- recent receipts explain what to correct;
+- full project content is elective;
+- finishing a plan does not automatically finish a commitment or project;
+- current telemetry overrides old notes;
+- duplicate restatements are not needed to keep a record visible.
 
-Keep examples minimal and provider-portable. Do not turn a detailed Ladle example
-into a universal policy that makes every agent behave like a courier.
+Use correct examples:
+
+```json
+{"source": "memory", "memory_id": "mem-example"}
+```
+
+Never use a numeric memory ID. Keep examples minimal and provider-portable. Do
+not turn a detailed Ladle scenario into universal courier behavior.
+
+## Schema, example, config, and metrics hygiene
+
+- Regenerate `decision`, `plan`, `plan_patch`, `observation`, and any new
+  continuity/fieldbook schemas from models.
+- Add staleness gates for generated artifacts.
+- Replace current example `memory_writes` with `continuity_operations` or omit the
+  empty field.
+- Add one test that loads every checked-in planner JSONL file.
+- Remove stale comments describing dead `PlanPatch.memory_writes` behavior after
+  preserving historical context in ADR/changelog.
+- Rename current metrics toward `continuity_operations_*` and memory lifecycle
+  transitions. Keep intentional backwards compatibility when evaluating old logs.
+- Keep generic `live.longform.yaml` generic. Either require an explicit campaign
+  override/fail closed or add a separately named Ladle profile that owns
+  `ladle-css-01`.
+- Do not hardcode test-count claims that immediately drift; generate them or state
+  the command and dated result.
+- Update `STATUS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, external planner guide,
+  campaign guide, and continuity ADR truthfully.
 
 ## Documentation discipline
 
-Follow the repository's existing hygiene rules.
-
-- Write a concise ADR for the continuity authority model and another only when a
-  later durable decision genuinely needs one. ADRs are decisions, not progress
-  logs.
-- Add a guide for campaign scope, migration, inspection, and evaluation if the
-  operator needs a procedure.
-- Generate any catalog/schema tables that restate code.
-- Update `STATUS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, config examples, and
-  planner protocol docs truthfully.
-- Do not create a growing engineering diary or a giant memory-design scrapbook.
-- Label evidence as portable, replay/simulated, Windows integration, native
-  build/load, or supervised live.
+- Amend the existing continuity ADR when tightening the same accepted authority
+  decision. Write a new ADR only for a genuinely new durable decision such as the
+  planner-context manifest or fieldbook authority.
+- ADRs record decisions and consequences, not an engineering diary.
+- Guides cover operator procedures: campaign naming, migration, inspection,
+  fieldbook use, evaluation, and recovery.
+- Reports hold run-specific analysis and evidence.
+- Generate tables/catalogs that restate code.
+- Label every claim as portable, replay/simulated, Windows integration,
+  native-build/load, or supervised live evidence.
+- Do not claim live continuity competence until a live run actually exercises it.
 
 ## Implementation style
 
-- Build on current Pydantic, SQLite, runtime, observation-budget, planner-schema,
-  logging, and evaluation seams. Do not create a second unintegrated agent loop.
+- Build on current Pydantic models, SQLite store, runtime, observation budgeting,
+  planner adapters, logging, and eval seams.
 - Prefer strict discriminated unions and runtime-owned IDs.
-- Prefer explicit columns and typed payloads. Use bounded JSON only where it is an
-  immutable event payload, not as an excuse to skip schema design.
-- Avoid a new dependency when standard-library SQLite and current packages are
+- Prefer explicit columns and typed event payloads. Bounded JSON is acceptable as
+  immutable lifecycle payload, not as an excuse to skip schema design.
+- Avoid new dependencies when standard-library SQLite and current packages are
   sufficient.
-- Do not preserve obsolete behavior merely because it exists in an unreleased
-  schema. Preserve real user data and replay evidence through one explicit
-  compatibility/migration boundary, then remove the parallel path.
-- Fix the whole class of a discovered bug. If observation decoration mutates
-  memory, do not merely lower the pump rate.
-- Make reasonable design decisions without stopping for naming approval. Record
-  genuine durable choices in an ADR and proceed.
-- One invocation may touch models, store, runtime, prompt, schema, tests, config,
-  metrics, and docs when that is required to finish one vertical invariant.
-- Do not commit after every test tweak. Make one commit after the complete slice
-  is green and reviewed.
+- Preserve real user data through one explicit versioned migration, then remove
+  parallel compatibility paths from current authoring.
+- Do not copy WorldWeaver code wholesale. Its kept-memory relevance and workshop
+  concepts are design evidence; its duplicate side authority and recursive
+  prompt feedback are warnings.
+- Fix the whole class of a discovered bug. Do not merely move the single-step
+  call site while patches remain vulnerable.
+- One slice may touch models, store, runtime, planners, prompt, schemas, tests,
+  config, metrics, CLI, and docs when that is required for one invariant.
+- Do not commit after every test tweak. Make one intentional commit when the
+  vertical slice is complete.
 
 ## Per-invocation method
 
 1. Establish repository state: branch, `git status`, recent log, current baseline,
    active config, and whether another agent has uncommitted work.
-2. Read the current memory/runtime/models/prompt/observation-budget/tests plus the
-   selective WorldWeaver references relevant to the next slice.
-3. Classify all six queue slices as absent, partial, or complete and cite concrete
-   code/tests for the first incomplete dependency.
-4. State one compound slice with problem, scope, non-goals, and acceptance
-   criteria. Do not ask for approval when the prompt already resolves the policy.
-5. Write failing tests and watch them fail.
-6. Implement the complete vertical path, including migrations, schemas, prompt,
-   logs, metrics, and docs touched by the invariant.
-7. Run focused tests continuously, then full pytest/Ruff/mypy and generated-artifact
-   checks.
-8. Run targeted mutation tests for the new authority seams.
-9. Inspect the diff for live database files, run artifacts, secrets, caches,
-   generated drift, unrelated churn, and accidental WorldWeaver code copying.
-10. Make one intentional commit for the finished slice. Do not push or open a PR
-    unless separately authorized.
-11. Report what is now proven, what is only designed, what could not be run, and
-    the exact next incomplete dependency.
+2. Read current `campaign.py`, `continuity.py`, `memory.py`, `models.py`,
+   `runtime.py`, planner adapters, observation budgeting, prompt, schemas, tests,
+   metrics, configs, and continuity docs.
+3. Reproduce each reviewed defect relevant to the first incomplete slice. If one
+   is already fixed, cite the exact test and implementation.
+4. Classify all six queue slices as absent, partial, or complete.
+5. State one compound slice with problem, scope, non-goals, and behavioral
+   acceptance criteria. Do not ask for approval when the policy is already here.
+6. Write failing behavioral tests and observe the intended failures.
+7. Implement the whole vertical path, including migration, schemas, prompt,
+   metrics, examples, and docs touched by the invariant.
+8. Run focused tests continuously, then full pytest, Ruff, mypy, and generated
+   artifact checks.
+9. Run targeted mutation tests for the new authority seams.
+10. Inspect the diff for live databases, run artifacts, secrets, caches, generated
+    drift, unrelated churn, and accidental WorldWeaver copying.
+11. Make one intentional commit. Do not push or open a PR unless separately
+    authorized.
+12. Report what is proven, what is only designed, what could not run, and the
+    exact next incomplete dependency.
 
 ## Required final report
 
@@ -692,17 +1426,20 @@ Follow the repository's existing hygiene rules.
 # Memory and Continuity Loop Result
 
 ## Slice completed
-## Completion-matrix status
+## Completion matrix
+## Defects reproduced before the change
 ## Why this dependency came next
 ## Changes
+## Authored-context and evidence-authority review
 ## Data migration and compatibility
+## Planner payload and observation-budget review
 ## Evidence
 - portable
 - replay/simulated
 - Windows/native/live, if any
-## Authority and safety review
-## Performance and prompt-budget review
+## Failure-isolation review
 ## Mutation results
+## Prompt/schema/example/config hygiene
 ## Not tested or not claimed
 ## Working-tree and commit state
 ## Next slice and its first failing invariant
@@ -710,15 +1447,16 @@ Follow the repository's existing hygiene rules.
 
 ## Stop conditions
 
-Stop after the selected slice is complete, green, reviewed, and committed. Also
-stop with a precise report when an actual dependency/platform failure prevents
-the next safe local step, a live action needs authorization not present, or
-unrelated working-tree changes make the target files unsafe.
+Stop after the selected compound slice is complete, green, reviewed, and
+committed. Also stop with a precise report when an actual dependency/platform
+failure prevents the next safe local step, a live action needs authorization not
+present, or unrelated working-tree changes make the target files unsafe.
 
-Do not stop merely because the design is broad, the migration is difficult, or
-WorldWeaver is messy. Do not skip to a prettier later phase. Deliver the strongest
-complete increment at the first unmet dependency, then leave the next invariant
-exact.
+Do not stop merely because the design is broad, migration is difficult,
+WorldWeaver is messy, or the issue touches several modules. Do not skip to a
+prettier later phase. Deliver the strongest complete increment at the first unmet
+dependency and leave the next invariant exact.
 
 Begin now by establishing repository state, running the baseline, verifying the
-starting defects, and selecting the first incomplete dependency-ordered slice.
+implemented foundation, reproducing the first incomplete reviewed defect, and
+selecting the first dependency-ordered slice.

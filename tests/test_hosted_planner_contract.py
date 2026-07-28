@@ -3,13 +3,19 @@ from __future__ import annotations
 import asyncio
 import collections
 import json
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
+    Disposition,
     LiveContinuousPolicy,
+    MemoryKind,
+    MemoryRecord,
+    MemoryStatus,
+    NearbyEntity,
     Observation,
     PlanEnvelope,
     PlannerDecision,
@@ -18,8 +24,13 @@ from kenshi_agent.models import (
     StopAction,
     TelemetrySnapshot,
     UIState,
+    WorldStateRevision,
 )
-from kenshi_agent.planners.base import output_token_budget, structured_output_model
+from kenshi_agent.planners.base import (
+    output_token_budget,
+    planner_context_manifest,
+    structured_output_model,
+)
 from kenshi_agent.planners.openai_planner import OpenAIPlanner
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 
@@ -204,6 +215,88 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     parsed_payload = json.loads(planner_payload)
     assert len(planner_payload) <= 4000
     assert parsed_payload["observation_budget"]["truncated"] is True
+
+
+def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> None:
+    memories = [
+        MemoryRecord(
+            memory_id=f"mem-{index}",
+            campaign_id="test",
+            kind=MemoryKind.FACT,
+            status=MemoryStatus.ACTIVE,
+            content=f"Fact {index}: " + "x" * 1200,
+            salience=index / 10,
+            created_run_id="run-a",
+            created_at=datetime.now(UTC),
+        )
+        for index in range(8)
+    ]
+    oversized = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+        update={
+            "events": ["nested Unicode 食料 " + "x" * 500 for _ in range(20)],
+            "memories": memories,
+        }
+    )
+
+    for planner_type in (OpenAIPlanner, OpenRouterPlanner):
+        planner = object.__new__(planner_type)
+        planner.config = PlannerConfig(
+            include_screenshot=False,
+            max_observation_chars=4000,
+        )
+
+        prepared = planner.prepare_input(oversized, context_id="pc-1")
+
+        assert prepared.payload is not None
+        payload = json.loads(prepared.payload)
+        included = {record["memory_id"] for record in payload["memories"]}
+        assert set(prepared.context.manifest.memory_ids) == included
+        assert included < {record.memory_id for record in memories}
+        assert prepared.context.manifest.payload_characters == len(prepared.payload)
+
+
+def test_memory_text_cannot_smuggle_target_authority_into_a_budgeted_input() -> None:
+    """Only world-facing fields can deliver an entity as currently present."""
+
+    telemetry = TelemetrySnapshot(
+        sequence=7,
+        nearby_entities=[
+            NearbyEntity(
+                id="entity-remembered",
+                name="Remembered drifter",
+                disposition=Disposition.NEUTRAL,
+                distance=5.0,
+                visible=True,
+            )
+        ],
+    )
+    current = observation(planning_mode=PlanningMode.SINGLE_STEP).model_copy(
+        update={
+            "world_revision": WorldStateRevision(telemetry_sequence=7),
+            "telemetry": telemetry,
+        }
+    )
+    assert current.current_memory_target_ids() == {"entity-remembered"}
+    payload = {
+        "world_revision": current.world_revision.model_dump(mode="json"),
+        "memories": [
+            {
+                "memory_id": "mem-remembered",
+                "target_id": "entity-remembered",
+                "content": "I once saw this entity.",
+            }
+        ],
+    }
+
+    manifest = planner_context_manifest(
+        current,
+        context_id="pc-1",
+        input_kind="budgeted_json",
+        payload=payload,
+    )
+
+    assert manifest.memory_ids == ["mem-remembered"]
+    assert manifest.current_target_ids == []
 
 
 def test_only_the_active_policy_section_reaches_the_model() -> None:

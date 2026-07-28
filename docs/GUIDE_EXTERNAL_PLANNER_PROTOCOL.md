@@ -8,7 +8,9 @@ early experiments.
 
 The child's stdin receives exactly one UTF-8 JSON line containing the complete
 `Observation` schema. `screenshot_path` refers to a local file available to the
-child process.
+child process. The runtime records this subprocess call as a `full_observation`
+planner context before launch; if the child fails, that attempted input remains
+diagnosable without becoming a successful decision.
 
 ## Response
 
@@ -42,13 +44,16 @@ The rationale must be a concise decision basis, not private chain-of-thought.
 optional everywhere it appears — on decisions, plans, and patches alike. Each
 operation is a `keep` of a `fact`, `episode`, `commitment`, or `hypothesis`. A
 fact or an episode must cite at least one entry in `references`, and every
-reference must be an identity the runtime already advertised: `outcome_id` from
-`recent_action_outcomes`, `plan_outcome_id` from `recent_plan_outcomes`, an
-existing memory `id`, an advisor `brief_id`, or `{"source":
-"current_observation"}`. There is no free-text evidence field: the stored
-grounding is rendered by the runtime from the references that resolved. An
-operation citing an identity the runtime did not issue is rejected on its own,
-with a typed receipt, while the surrounding decision or plan still executes.
+reference must be present in this exact request: `outcome_id` from
+`recent_action_outcomes`, `plan_outcome_id` from `recent_plan_outcomes`, a
+memory `memory_id`, an advisor `brief_id`, or `{"source":
+"current_observation"}`. Issuance elsewhere in the run is not enough. The
+current observation reference is permanently bound to this request's
+`world_revision`; a later commit observation cannot rewrite it. A `target_id`
+must come from a fresh world-facing entity in this request, never remembered
+text. There is no free-text evidence field: the runtime renders grounding from
+resolved references. One invalid operation is rejected with a typed receipt
+while the surrounding decision or plan still executes.
 
 Commit timing is exact. A plan's operations are processed after the plan passes
 every validation gate; a decision's after its action receipt; a patch's only if

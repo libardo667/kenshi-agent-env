@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from ..models import (
+    AuthoredPlannerContext,
     Observation,
     PlanEnvelope,
     PlannerDecision,
@@ -11,7 +12,7 @@ from ..models import (
     PlanPatch,
     StopAction,
 )
-from .base import Planner
+from .base import Planner, PreparedPlannerInput, planner_context_manifest
 
 
 class ScriptedPlanner(Planner):
@@ -53,3 +54,22 @@ class ScriptedPlanner(Planner):
         decision = self._decisions[self._index]
         self._index += 1
         return decision
+
+    def prepare_input(
+        self,
+        observation: Observation,
+        *,
+        context_id: str,
+    ) -> PreparedPlannerInput:
+        """A script consumes its file, not IDs from the current observation."""
+
+        return PreparedPlannerInput(
+            context=AuthoredPlannerContext(
+                manifest=planner_context_manifest(
+                    observation,
+                    context_id=context_id,
+                    input_kind="scripted",
+                ),
+                observation=observation,
+            )
+        )

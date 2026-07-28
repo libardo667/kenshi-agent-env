@@ -3021,10 +3021,12 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
 
     from kenshi_agent.continuity import ContinuityAuthority, ContinuityLedger
     from kenshi_agent.models import (
+        AuthoredPlannerContext,
         CurrentObservationEvidence,
         KeepMemoryOperation,
         MemoryKind,
         PlanDisposition,
+        PlannerContextManifest,
     )
     from kenshi_agent.runtime import AgentRuntime
 
@@ -3067,7 +3069,21 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
             ],
         }
     )
-    runner._apply_plan_continuity(plan, basis)
+    runner._apply_plan_continuity(
+        plan,
+        basis,
+        authored_context=AuthoredPlannerContext(
+            manifest=PlannerContextManifest(
+                context_id="pc-1",
+                run_id="continuity",
+                authored_revision=basis.world_revision,
+                current_observation_delivered=True,
+                telemetry_was_fresh=True,
+                input_kind="full_observation",
+            ),
+            observation=basis,
+        ),
+    )
 
     # Recalled at the live profile's floor, so it actually reaches a planner.
     recalled = [record.content for record in store.recall(limit=16, minimum_salience=0.2)]
@@ -3301,8 +3317,16 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
             for event in events
             if event["event_type"] == "continuity_receipt"
         ]
+        contexts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "planner_context_prepared"
+        ]
         assert [receipt["origin"] for receipt in receipts] == ["patch"]
         assert receipts[0]["status"] == "accepted"
+        assert receipts[0]["authored_context_id"] == contexts[1]["context_id"]
+        assert receipts[0]["authored_revision"] == contexts[1]["authored_revision"]
+        assert receipts[0]["commit_revision"] != receipts[0]["authored_revision"]
 
     asyncio.run(scenario())
 

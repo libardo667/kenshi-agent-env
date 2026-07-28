@@ -14,6 +14,8 @@ from .models import (
     Action,
     ActionReceipt,
     ActivePlanContext,
+    AuthoredPlannerContext,
+    AuthoredPlannerOutput,
     CameraRecoveryStatus,
     CommandDispatchContext,
     ConditionEvaluation,
@@ -31,7 +33,6 @@ from .models import (
     PerformContextAction,
     PlanEnvelope,
     PlannerDecision,
-    PlannerOutput,
     PlanPatch,
     PlanStep,
     ProduceResourceOutputAction,
@@ -79,7 +80,7 @@ TransitionObserver = Callable[
 ]
 ConcurrentPlanner = Callable[
     [Observation],
-    Coroutine[Any, Any, PlannerOutput],
+    Coroutine[Any, Any, AuthoredPlannerOutput],
 ]
 AdvisorConsultant = Callable[
     [ConsultAdvisorAction, Observation, str, int, str],
@@ -119,6 +120,7 @@ class PatchContinuityApplier(Protocol):
         operations: Sequence[ContinuityOperation],
         observation: Observation,
         *,
+        authored_context: AuthoredPlannerContext,
         plan_id: str,
         plan_version: int,
         step_id: str | None,
@@ -169,6 +171,7 @@ class _StepResult:
 class _StagedPatch:
     patch: PlanPatch
     planner_observation: Observation
+    authored_context: AuthoredPlannerContext
 
     @property
     def interrupts_active_step(self) -> bool:
@@ -245,7 +248,7 @@ class ContinuousPlanExecutor:
 
     def _commit_patch_continuity(
         self,
-        patch: PlanPatch,
+        staged_patch: _StagedPatch,
         patched_plan: PlanEnvelope,
         observation: Observation,
         *,
@@ -263,8 +266,9 @@ class ContinuousPlanExecutor:
         if self.apply_patch_continuity is None:
             return
         self.apply_patch_continuity(
-            patch.continuity_operations,
+            staged_patch.patch.continuity_operations,
             observation,
+            authored_context=staged_patch.authored_context,
             plan_id=patched_plan.plan_id,
             plan_version=patched_plan.plan_version,
             step_id=step_id,
@@ -513,7 +517,7 @@ class ContinuousPlanExecutor:
                         observation.world_revision,
                     )
                     self._commit_patch_continuity(
-                        step_result.staged_patch.patch,
+                        step_result.staged_patch,
                         patched_plan,
                         observation,
                         step_id=step.step_id,
@@ -612,7 +616,7 @@ class ContinuousPlanExecutor:
                                 observation.world_revision,
                             )
                             self._commit_patch_continuity(
-                                step_result.staged_patch.patch,
+                                step_result.staged_patch,
                                 patched_plan,
                                 observation,
                                 step_id=step.step_id,
@@ -1905,7 +1909,7 @@ class ContinuousPlanExecutor:
         )
         subscription = self.state_store.subscribe()
         update_task: asyncio.Task[Any] | None = asyncio.create_task(subscription.get())
-        planner_task: asyncio.Task[PlannerOutput] | None = None
+        planner_task: asyncio.Task[AuthoredPlannerOutput] | None = None
         planner_observation: Observation | None = None
         planner_started_at: float | None = None
         staged_patch: _StagedPatch | None = None
@@ -2096,7 +2100,7 @@ class ContinuousPlanExecutor:
         )
         subscription = self.state_store.subscribe()
         update_task: asyncio.Task[Any] | None = asyncio.create_task(subscription.get())
-        planner_task: asyncio.Task[PlannerOutput] | None = None
+        planner_task: asyncio.Task[AuthoredPlannerOutput] | None = None
         planner_observation: Observation | None = None
         planner_started_at: float | None = None
         staged_patch: _StagedPatch | None = None
@@ -2327,7 +2331,7 @@ class ContinuousPlanExecutor:
 
     def _consume_concurrent_planner_result(
         self,
-        planner_task: asyncio.Task[PlannerOutput],
+        planner_task: asyncio.Task[AuthoredPlannerOutput],
         plan: PlanEnvelope,
         step: PlanStep,
         planner_observation: Observation,
@@ -2338,7 +2342,8 @@ class ContinuousPlanExecutor:
         planner_latency_seconds: float,
     ) -> _StagedPatch | None:
         try:
-            output = planner_task.result()
+            authored_output = planner_task.result()
+            output = authored_output.output
         except Exception as exc:
             self.logger.write(
                 "strategic_planner_call",
@@ -2430,6 +2435,7 @@ class ContinuousPlanExecutor:
         return _StagedPatch(
             patch=output.model_copy(deep=True),
             planner_observation=planner_observation.model_copy(deep=True),
+            authored_context=authored_output.context,
         )
 
     def _budget_stop_reason(

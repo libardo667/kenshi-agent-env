@@ -13,7 +13,14 @@ from ..models import (
     PlannerOutput,
     PlanPatch,
 )
-from .base import Planner, instructions_for_policy, output_token_budget, structured_output_model
+from .base import (
+    Planner,
+    PreparedPlannerInput,
+    instructions_for_policy,
+    output_token_budget,
+    prepared_budgeted_input,
+    structured_output_model,
+)
 
 
 class OpenAIPlanner(Planner):
@@ -37,7 +44,31 @@ class OpenAIPlanner(Planner):
         self.client: Any = AsyncOpenAI()
         self.max_plan_steps = max_plan_steps
 
+    def prepare_input(
+        self,
+        observation: Observation,
+        *,
+        context_id: str,
+    ) -> PreparedPlannerInput:
+        payload = observation.planner_payload(
+            max_chars=self.config.max_observation_chars,
+            max_context_chars=self.config.max_context_chars,
+        )
+        return prepared_budgeted_input(
+            observation,
+            context_id=context_id,
+            payload=payload,
+        )
+
     async def decide(self, observation: Observation) -> PlannerOutput:
+        return await self.decide_prepared(
+            self.prepare_input(observation, context_id="pc-1")
+        )
+
+    async def decide_prepared(self, prepared: PreparedPlannerInput) -> PlannerOutput:
+        observation = prepared.context.observation
+        if prepared.payload is None:
+            raise RuntimeError("OpenAI planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
         if output_model is PlanPatch:
             request = (
@@ -57,10 +88,7 @@ class OpenAIPlanner(Planner):
                 "text": (
                     request
                     + f"Return the {output_model.__name__} schema only.\n\n"
-                    + observation.planner_payload(
-                        max_chars=self.config.max_observation_chars,
-                        max_context_chars=self.config.max_context_chars,
-                    )
+                    + prepared.payload
                 ),
             }
         ]

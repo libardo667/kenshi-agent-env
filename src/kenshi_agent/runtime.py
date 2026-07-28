@@ -48,6 +48,8 @@ from .models import (
     AffordanceRequestEvidence,
     AffordanceRequestRecord,
     AffordanceRequestStatus,
+    AuthoredPlannerContext,
+    AuthoredPlannerOutput,
     CameraRecoveryStatus,
     CharacterState,
     CommandDispatchContext,
@@ -65,7 +67,6 @@ from .models import (
     PlanDisposition,
     PlanEnvelope,
     PlannerDecision,
-    PlannerOutput,
     PlanningMode,
     PlanPatch,
     PlanStep,
@@ -186,6 +187,7 @@ class AgentRuntime:
         )
         self._pending_memory_search: MemorySearchResult | None = None
         self._advisor_brief_ids: set[str] = set()
+        self._planner_contexts_issued = 0
         self._continuity = ContinuityAuthority(
             run_id=run_id,
             store=memory,
@@ -298,6 +300,7 @@ class AgentRuntime:
         try:
             self._ledger.reset()
             self._advisor_brief_ids.clear()
+            self._planner_contexts_issued = 0
             self._continuity_receipts.clear()
             self._pending_memory_search = None
             self._affordance_requests.clear()
@@ -329,6 +332,7 @@ class AgentRuntime:
             for _ in range(max_steps):
                 planning_started = monotonic()
                 step_id = f"step-{observation.step_index}"
+                authored_context: AuthoredPlannerContext | None = None
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
                 decision_source = "planner"
@@ -338,7 +342,9 @@ class AgentRuntime:
                     decision_source = "reflex"
                 else:
                     try:
-                        planner_output = await self._decide(observation)
+                        authored_output = await self._decide(observation)
+                        planner_output = authored_output.output
+                        authored_context = authored_output.context
                         if isinstance(planner_output, PlannerDecision):
                             decision = planner_output
                         else:
@@ -429,6 +435,7 @@ class AgentRuntime:
                     self._apply_decision_continuity(
                         decision,
                         observation,
+                        authored_context=authored_context,
                         plan_id="single-step",
                         step_id=step_id,
                     )
@@ -450,6 +457,7 @@ class AgentRuntime:
                     self._apply_decision_continuity(
                         decision,
                         observation,
+                        authored_context=authored_context,
                         plan_id="single-step",
                         step_id=step_id,
                     )
@@ -471,6 +479,7 @@ class AgentRuntime:
                     self._apply_decision_continuity(
                         decision,
                         observation,
+                        authored_context=authored_context,
                         plan_id="single-step",
                         step_id=step_id,
                     )
@@ -608,6 +617,7 @@ class AgentRuntime:
                 self._apply_decision_continuity(
                     decision,
                     observation,
+                    authored_context=authored_context,
                     plan_id="single-step",
                     step_id=step_id,
                 )
@@ -712,6 +722,7 @@ class AgentRuntime:
         try:
             self._ledger.reset()
             self._advisor_brief_ids.clear()
+            self._planner_contexts_issued = 0
             self._continuity_receipts.clear()
             self._pending_memory_search = None
             self._affordance_requests.clear()
@@ -831,7 +842,7 @@ class AgentRuntime:
                     self.reporter.planning_started(observation.step_index)
                 planner_source = "planner"
                 try:
-                    output, preemption = await self._race_with_safety_supervisor(
+                    authored_output, preemption = await self._race_with_safety_supervisor(
                         self._decide(planner_observation),
                         safety_supervisor,
                     )
@@ -877,7 +888,9 @@ class AgentRuntime:
                         )
                         steps_completed += completed
                         continue
-                    assert output is not None
+                    assert authored_output is not None
+                    output = authored_output.output
+                    authored_context = authored_output.context
                 except Exception as exc:
                     # A malformed planner response is one bad answer, not a
                     # reason to end a session meant to run continuously. Ask
@@ -1161,7 +1174,11 @@ class AgentRuntime:
                 # Only now: after schema, causal basis, assumptions, control
                 # mode, graph, and budget validation have all passed. A plan
                 # that never became executable contributes no continuity.
-                self._apply_plan_continuity(plan, observation)
+                self._apply_plan_continuity(
+                    plan,
+                    observation,
+                    authored_context=authored_context,
+                )
                 plan_started_at = datetime.now(UTC)
                 self._plan_event(
                     "plan_accepted",
@@ -2450,6 +2467,8 @@ class AgentRuntime:
         self,
         plan: PlanEnvelope,
         observation: Observation,
+        *,
+        authored_context: AuthoredPlannerContext,
     ) -> None:
         """Commit an accepted plan's continuity, and nothing about its future.
 
@@ -2465,7 +2484,8 @@ class AgentRuntime:
             self._continuity.apply(
                 plan.continuity_operations,
                 origin=ContinuityOrigin.PLAN,
-                observation=observation,
+                authored_context=authored_context,
+                commit_observation=observation,
                 plan_id=plan.plan_id,
                 plan_version=plan.plan_version,
             )
@@ -2476,14 +2496,22 @@ class AgentRuntime:
         decision: PlannerDecision,
         observation: Observation,
         *,
+        authored_context: AuthoredPlannerContext | None,
         plan_id: str,
         step_id: str,
     ) -> None:
+        if not decision.continuity_operations:
+            return
+        if authored_context is None:
+            raise RuntimeError(
+                "Planner-authored continuity has no authored planner context."
+            )
         self._surface(
             self._continuity.apply(
                 decision.continuity_operations,
                 origin=ContinuityOrigin.DECISION,
-                observation=observation,
+                authored_context=authored_context,
+                commit_observation=observation,
                 plan_id=plan_id,
                 plan_version=1,
                 step_id=step_id,
@@ -2495,6 +2523,7 @@ class AgentRuntime:
         operations: Sequence[ContinuityOperation],
         observation: Observation,
         *,
+        authored_context: AuthoredPlannerContext,
         plan_id: str,
         plan_version: int,
         step_id: str | None,
@@ -2510,7 +2539,8 @@ class AgentRuntime:
             self._continuity.apply(
                 operations,
                 origin=ContinuityOrigin.PATCH,
-                observation=observation,
+                authored_context=authored_context,
+                commit_observation=observation,
                 plan_id=plan_id,
                 plan_version=plan_version,
                 step_id=step_id,
@@ -2551,7 +2581,7 @@ class AgentRuntime:
             payload=outcome,
         )
 
-    async def _decide(self, observation: Observation) -> PlannerOutput:
+    async def _decide(self, observation: Observation) -> AuthoredPlannerOutput:
         """Assemble a planner payload, marking exactly what it carried.
 
         Delivery is recorded here and only here: this is the one place a
@@ -2563,13 +2593,25 @@ class AgentRuntime:
         if it were fresh.
         """
 
-        if self.memory is not None and observation.memories:
+        self._planner_contexts_issued += 1
+        prepared = self.planner.prepare_input(
+            observation,
+            context_id=f"pc-{self._planner_contexts_issued}",
+        )
+        manifest = prepared.context.manifest
+        self.logger.write(
+            "planner_context_prepared",
+            step_index=observation.step_index,
+            payload=manifest.model_dump(mode="json"),
+        )
+        if self.memory is not None and manifest.memory_ids:
             self.memory.record_delivery(
                 self.run_id,
-                [record.memory_id for record in observation.memories],
+                manifest.memory_ids,
             )
         self._pending_memory_search = None
-        return await self.planner.decide(observation)
+        output = await self.planner.decide_prepared(prepared)
+        return AuthoredPlannerOutput(output=output, context=prepared.context)
 
     def _execute_memory_read(
         self,

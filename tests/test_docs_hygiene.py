@@ -67,7 +67,7 @@ ROOT_DOC_CAPS: dict[str, int] = {
     # as above and the same ratchet: it is copied whole into an agent, so it
     # cannot be split, and growing it means raising this number where a
     # reviewer sees it.
-    "MEMORY_CONTINUITY_LOOP_PROMPT.md": 724,
+    "MEMORY_CONTINUITY_LOOP_PROMPT.md": 1462,
 }
 
 # Not root documents, but the same reasoning: a step-by-step procedure someone

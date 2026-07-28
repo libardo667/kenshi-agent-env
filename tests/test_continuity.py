@@ -20,7 +20,9 @@ from kenshi_agent.continuity import (
     ContinuityAuthority,
     ContinuityLedger,
     EvidenceResolutionError,
-    render_evidence_reference,
+)
+from kenshi_agent.continuity import (
+    render_evidence_reference as _render_evidence_reference,
 )
 from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.models import (
@@ -28,6 +30,7 @@ from kenshi_agent.models import (
     ActionOutcomeAssessment,
     ActionOutcomeEvidence,
     AdvisorBriefEvidence,
+    AuthoredPlannerContext,
     ContinuityOperationStatus,
     ContinuityOrigin,
     ControlMode,
@@ -39,6 +42,7 @@ from kenshi_agent.models import (
     NearbyEntity,
     Observation,
     PlanDisposition,
+    PlannerContextManifest,
     PlanOutcomeEvidence,
     StopAction,
     TelemetrySnapshot,
@@ -143,6 +147,117 @@ def authority(
             advisor_brief_ids=lambda: brief_ids or set(),
         ),
         written,
+    )
+
+
+def planner_context(
+    current: Observation,
+    *,
+    ledger: ContinuityLedger,
+    store: MemoryStore | None,
+    brief_ids: set[str],
+    action_outcome_ids: tuple[str, ...] | None = None,
+    plan_outcome_ids: tuple[str, ...] | None = None,
+    memory_ids: tuple[str, ...] | None = None,
+    advisor_brief_ids: tuple[str, ...] | None = None,
+) -> AuthoredPlannerContext:
+    """A test planner input containing exactly the records named here."""
+
+    return AuthoredPlannerContext(
+        manifest=PlannerContextManifest(
+            context_id="pc-1",
+            run_id=current.run_id,
+            authored_revision=current.world_revision,
+            current_observation_delivered=True,
+            telemetry_was_fresh=(
+                current.telemetry is not None and not current.telemetry_stale
+            ),
+            input_kind="full_observation",
+            current_target_ids=sorted(current.current_memory_target_ids()),
+            action_outcome_ids=list(
+                action_outcome_ids
+                if action_outcome_ids is not None
+                else tuple(
+                    outcome.outcome_id for outcome in ledger.recent_action_outcomes
+                )
+            ),
+            plan_outcome_ids=list(
+                plan_outcome_ids
+                if plan_outcome_ids is not None
+                else tuple(
+                    outcome.plan_outcome_id for outcome in ledger.recent_plan_outcomes
+                )
+            ),
+            memory_ids=list(
+                memory_ids
+                if memory_ids is not None
+                else tuple(
+                    record.memory_id
+                    for record in (store.recall(limit=128) if store is not None else [])
+                )
+            ),
+            advisor_brief_ids=list(
+                advisor_brief_ids
+                if advisor_brief_ids is not None
+                else tuple(sorted(brief_ids))
+            ),
+        ),
+        observation=current,
+    )
+
+
+def render_evidence_reference(
+    reference: Any,
+    *,
+    observation: Observation,
+    ledger: ContinuityLedger,
+    store: MemoryStore | None,
+    advisor_brief_ids: set[str],
+    action_outcome_ids: tuple[str, ...] | None = None,
+    plan_outcome_ids: tuple[str, ...] | None = None,
+) -> str:
+    return _render_evidence_reference(
+        reference,
+        authored_context=planner_context(
+            observation,
+            ledger=ledger,
+            store=store,
+            brief_ids=advisor_brief_ids,
+            action_outcome_ids=action_outcome_ids,
+            plan_outcome_ids=plan_outcome_ids,
+        ),
+        ledger=ledger,
+        store=store,
+        advisor_brief_ids=advisor_brief_ids,
+    )
+
+
+def apply_operations(
+    engine: ContinuityAuthority,
+    operations: list[Any],
+    *,
+    origin: ContinuityOrigin,
+    observation: Observation,
+    plan_id: str | None = None,
+    plan_version: int | None = None,
+    step_id: str | None = None,
+    action_outcome_ids: tuple[str, ...] | None = None,
+) -> list[Any]:
+    brief_ids = engine.advisor_brief_ids()
+    return engine.apply(
+        operations,
+        origin=origin,
+        authored_context=planner_context(
+            observation,
+            ledger=engine.ledger,
+            store=engine.store,
+            brief_ids=brief_ids,
+            action_outcome_ids=action_outcome_ids,
+        ),
+        commit_observation=observation,
+        plan_id=plan_id,
+        plan_version=plan_version,
+        step_id=step_id,
     )
 
 
@@ -323,14 +438,16 @@ def test_evidence_that_scrolled_out_of_the_window_renders_as_evicted() -> None:
             finished_at=datetime.now(UTC),
         )
 
-    def render(reference: Any) -> str:
-        return render_evidence_reference(
-            reference,
-            observation=observation(),
-            ledger=ledger,
-            store=None,
-            advisor_brief_ids=set(),
-        )
+        def render(reference: Any) -> str:
+            return render_evidence_reference(
+                reference,
+                observation=observation(),
+                ledger=ledger,
+                store=None,
+                advisor_brief_ids=set(),
+                action_outcome_ids=("ao-1", "ao-2"),
+                plan_outcome_ids=("po-1", "po-2"),
+            )
 
     assert render(ActionOutcomeEvidence(outcome_id="ao-1")) == (
         "action_outcome(ao-1: evicted)"
@@ -527,7 +644,8 @@ def test_an_ungrounded_fact_or_episode_is_rejected(
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
-        receipts = engine.apply(
+        receipts = apply_operations(
+            engine,
             [keep(kind, "I delivered the cargo.")],
             origin=ContinuityOrigin.PLAN,
             observation=observation(),
@@ -549,7 +667,8 @@ def test_an_intention_or_an_uncertainty_may_be_self_authored(
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
-        receipts = engine.apply(
+        receipts = apply_operations(
+            engine,
             [keep(kind, "Next: leave the bar and look for work.")],
             origin=ContinuityOrigin.PLAN,
             observation=observation(),
@@ -571,7 +690,8 @@ def test_a_self_authored_intention_still_needs_its_stated_evidence_to_exist(
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
-        receipts = engine.apply(
+        receipts = apply_operations(
+            engine,
             [
                 keep(
                     MemoryKind.COMMITMENT,
@@ -600,7 +720,8 @@ def test_stored_grounding_is_rendered_by_the_runtime_not_written_by_the_model(
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ledger)
 
-        engine.apply(
+        apply_operations(
+            engine,
             [
                 keep(
                     MemoryKind.FACT,
@@ -630,14 +751,16 @@ def test_a_target_id_absent_from_the_fresh_observation_is_rejected(
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
         current = observation(target_ids=("entity-present",))
 
-        rejected = engine.apply(
+        rejected = apply_operations(
+            engine,
             [keep(MemoryKind.COMMITMENT, "Trade here.", target_id="entity-remembered")],
             origin=ContinuityOrigin.PLAN,
             observation=current,
             plan_id="plan-a",
             plan_version=1,
         )
-        accepted = engine.apply(
+        accepted = apply_operations(
+            engine,
             [keep(MemoryKind.COMMITMENT, "Trade here.", target_id="entity-present")],
             origin=ContinuityOrigin.PLAN,
             observation=current,
@@ -655,7 +778,8 @@ def test_stale_telemetry_offers_no_current_target_at_all(tmp_path: Path) -> None
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
-        receipts = engine.apply(
+        receipts = apply_operations(
+            engine,
             [keep(MemoryKind.COMMITMENT, "Trade here.", target_id="entity-present")],
             origin=ContinuityOrigin.PLAN,
             observation=observation(target_ids=("entity-present",), stale=True),
@@ -678,7 +802,8 @@ def test_one_invalid_operation_does_not_take_the_valid_one_with_it(
             ContinuityLedger(run_id="run-a", action_outcome_limit=4),
         )
 
-        receipts = engine.apply(
+        receipts = apply_operations(
+            engine,
             [
                 keep(MemoryKind.FACT, "Unsupported claim."),
                 keep(MemoryKind.COMMITMENT, "Leave the bar."),
@@ -702,7 +827,8 @@ def test_every_operation_leaves_a_receipt_naming_its_origin(tmp_path: Path) -> N
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
         for origin in ContinuityOrigin:
-            receipts = engine.apply(
+            receipts = apply_operations(
+                engine,
                 [keep(MemoryKind.COMMITMENT, f"Intent from {origin.value}.")],
                 origin=origin,
                 observation=observation(),
@@ -750,7 +876,8 @@ def test_a_receipt_names_the_exact_plan_step_and_grounding_it_came_from(
             ContinuityLedger(run_id="run-a", action_outcome_limit=4),
         )
 
-        receipt = engine.apply(
+        receipt = apply_operations(
+            engine,
             [operation],
             origin=ContinuityOrigin.PATCH,
             observation=observation().model_copy(update={"step_index": 7}),
@@ -771,7 +898,8 @@ def test_a_receipt_names_the_exact_plan_step_and_grounding_it_came_from(
 def test_a_no_op_receipt_still_reports_the_grounding_it_resolved() -> None:
     engine, _ = authority(None, ledger_with_evidence())
 
-    receipt = engine.apply(
+    receipt = apply_operations(
+        engine,
         [
             keep(
                 MemoryKind.EPISODE,
@@ -802,7 +930,8 @@ def test_several_references_are_joined_into_one_readable_grounding(
         memory_id = keep_fact(store, "An earlier fact.", run_id="run-a").memory_id
         engine, _ = authority(store, ledger, brief_ids={BRIEF_ID})
 
-        receipt = engine.apply(
+        receipt = apply_operations(
+            engine,
             [
                 keep(
                     MemoryKind.EPISODE,
@@ -843,7 +972,8 @@ def test_declared_salience_reaches_the_store_unchanged(tmp_path: Path) -> None:
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
-        engine.apply(
+        apply_operations(
+            engine,
             [
                 keep(MemoryKind.COMMITMENT, "Low priority.", salience=0.1),
                 keep(MemoryKind.COMMITMENT, "High priority.", salience=0.9),
@@ -864,7 +994,8 @@ def test_declared_salience_reaches_the_store_unchanged(tmp_path: Path) -> None:
 def test_continuity_is_a_no_op_without_a_store_and_never_pretends_otherwise() -> None:
     engine, _ = authority(None, ContinuityLedger(run_id="run-a", action_outcome_limit=4))
 
-    receipts = engine.apply(
+    receipts = apply_operations(
+        engine,
         [keep(MemoryKind.COMMITMENT, "Leave the bar.")],
         origin=ContinuityOrigin.PLAN,
         observation=observation(),
@@ -884,7 +1015,8 @@ def test_no_operations_produce_no_receipts(tmp_path: Path) -> None:
         )
 
         assert (
-            engine.apply(
+            apply_operations(
+                engine,
                 [],
                 origin=ContinuityOrigin.PATCH,
                 observation=observation(),
@@ -1099,6 +1231,117 @@ def test_a_single_step_decision_keeps_only_what_the_receipt_supports(
     asyncio.run(scenario())
 
 
+def test_single_step_current_observation_stays_bound_to_the_planners_revision(
+    tmp_path: Path,
+) -> None:
+    """Dispatch may advance the world, but it cannot rewrite authored evidence."""
+
+    import asyncio
+
+    from kenshi_agent.models import PlannerDecision
+    from kenshi_agent.planners.base import Planner
+
+    class RevisionClaimingPlanner(Planner):
+        seen_revision: WorldStateRevision | None = None
+
+        async def decide(self, current: Observation) -> Any:
+            self.seen_revision = current.world_revision
+            return PlannerDecision(
+                intent="Stop and keep what was visible before stopping.",
+                rationale="The fact cites the exact observation used for this decision.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+                continuity_operations=[
+                    keep(
+                        MemoryKind.FACT,
+                        "The mock character was visible.",
+                        references=[CurrentObservationEvidence()],
+                    )
+                ],
+            )
+
+    async def scenario() -> None:
+        with open_store(tmp_path / "memory.sqlite3", "single") as store:
+            planner = RevisionClaimingPlanner()
+            runtime, logger = _single_step_runtime(tmp_path, planner, store)
+            try:
+                await runtime.run(max_steps=1)
+            finally:
+                logger.close()
+            record = store.recall(limit=8)[0]
+
+        assert planner.seen_revision is not None
+        assert record.grounding == (
+            "current_observation("
+            f"telemetry_sequence={planner.seen_revision.telemetry_sequence}, "
+            f"frame_sequence={planner.seen_revision.frame_sequence})"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_an_issued_but_undelivered_outcome_cannot_ground_a_fact(
+    tmp_path: Path,
+) -> None:
+    """Existence in the run is weaker than presence in the authored context."""
+
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(action_outcome("ao-1"))
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger)
+        current = observation()
+
+        receipt = engine.apply(
+            [
+                keep(
+                    MemoryKind.FACT,
+                    "The action succeeded.",
+                    references=[ActionOutcomeEvidence(outcome_id="ao-1")],
+                )
+            ],
+            origin=ContinuityOrigin.DECISION,
+            authored_context=planner_context(
+                current,
+                ledger=ledger,
+                store=store,
+                brief_ids=set(),
+                # Deliberately absent from the input delivered to the author.
+                action_outcome_ids=(),
+            ),
+            commit_observation=current,
+        )[0]
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert store.recall(limit=8) == []
+
+
+def test_a_planner_context_from_another_run_has_no_continuity_authority(
+    tmp_path: Path,
+) -> None:
+    """Run identity is an authority boundary, not receipt decoration."""
+
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    with open_store(tmp_path / "memory.sqlite3") as store:
+        engine, _ = authority(store, ledger)
+        foreign = observation().model_copy(update={"run_id": "run-b"})
+
+        receipt = engine.apply(
+            [keep(MemoryKind.COMMITMENT, "Continue the foreign run's plan.")],
+            origin=ContinuityOrigin.DECISION,
+            authored_context=planner_context(
+                foreign,
+                ledger=ledger,
+                store=store,
+                brief_ids=set(),
+            ),
+            commit_observation=observation(),
+        )[0]
+
+        assert receipt.status is ContinuityOperationStatus.REJECTED
+        assert receipt.reason == "The planner context belongs to another run."
+        assert store.recall(limit=8) == []
+
+
 def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> None:
     """`_with_memories` runs about ten times a second in a live run."""
 
@@ -1156,6 +1399,116 @@ def test_delivery_marks_every_record_it_was_given(tmp_path: Path) -> None:
     }
 
 
+def test_runtime_records_delivery_from_the_final_prepared_input_only(
+    tmp_path: Path,
+) -> None:
+    import asyncio
+    import json
+
+    from kenshi_agent.models import PlannerDecision
+    from kenshi_agent.planners.base import (
+        Planner,
+        PreparedPlannerInput,
+        prepared_budgeted_input,
+    )
+
+    class BudgetingPlanner(Planner):
+        included_memory_ids: set[str] = set()
+
+        def prepare_input(
+            self,
+            current: Observation,
+            *,
+            context_id: str,
+        ) -> PreparedPlannerInput:
+            for budget in range(4000, 60001, 1000):
+                payload = current.planner_payload(max_chars=budget)
+                document = json.loads(payload)
+                included = {
+                    record["memory_id"] for record in document["memories"]
+                }
+                if included < {
+                    record.memory_id for record in current.memories
+                }:
+                    self.included_memory_ids = included
+                    return prepared_budgeted_input(
+                        current,
+                        context_id=context_id,
+                        payload=payload,
+                    )
+            raise AssertionError("test setup did not force any memory omission")
+
+        async def decide(self, current: Observation) -> Any:
+            return PlannerDecision(
+                intent="Stop.",
+                rationale="The delivery manifest has been captured.",
+                action=StopAction(reason="done"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        with open_store(tmp_path / "memory.sqlite3", "delivery") as store:
+            for index in range(8):
+                keep_fact(store, f"Fact {index}: " + "x" * 1200)
+            planner = BudgetingPlanner()
+            runtime, logger = _single_step_runtime(tmp_path, planner, store)
+            try:
+                await runtime.run(max_steps=1)
+            finally:
+                logger.close()
+            delivered = {
+                record.memory_id
+                for record in store.recall(limit=16)
+                if record.last_delivered_at is not None
+            }
+            all_ids = {record.memory_id for record in store.recall(limit=16)}
+
+        assert delivered == planner.included_memory_ids
+        assert delivered != all_ids
+
+    asyncio.run(scenario())
+
+
+def test_planner_context_is_logged_before_a_provider_failure(tmp_path: Path) -> None:
+    import asyncio
+    import json
+
+    from kenshi_agent.planners.base import Planner
+
+    class FailingPlanner(Planner):
+        async def decide(self, current: Observation) -> Any:
+            raise RuntimeError("provider unavailable")
+
+    async def scenario() -> None:
+        with open_store(tmp_path / "memory.sqlite3", "failure") as store:
+            runtime, logger = _single_step_runtime(tmp_path, FailingPlanner(), store)
+            try:
+                await runtime.run(max_steps=1)
+            finally:
+                logger.close()
+
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "events.jsonl").read_text().splitlines()
+        ]
+        context_index = next(
+            index
+            for index, event in enumerate(events)
+            if event["event_type"] == "planner_context_prepared"
+        )
+        failure_index = next(
+            index
+            for index, event in enumerate(events)
+            if event["event_type"] == "planner_error"
+        )
+        context = events[context_index]["payload"]
+        assert context["context_id"] == "pc-1"
+        assert context["input_kind"] == "full_observation"
+        assert context_index < failure_index
+
+    asyncio.run(scenario())
+
+
 # --------------------------------------------------------------------------
 # The planner-facing lifecycle
 # --------------------------------------------------------------------------
@@ -1168,7 +1521,8 @@ def lifecycle_authority(
 
 
 def apply_one(engine: ContinuityAuthority, operation: Any) -> Any:
-    return engine.apply(
+    return apply_operations(
+        engine,
         [operation],
         origin=ContinuityOrigin.PLAN,
         observation=observation(target_ids=("entity-present",)),
@@ -1532,12 +1886,19 @@ def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
             open_hypotheses=2,
             general=8,
         )
+        current = observation()
 
         runner._apply_decision_continuity(
             SimpleNamespace(  # type: ignore[arg-type]
                 continuity_operations=[keep(MemoryKind.FACT, "Unsupported claim.")]
             ),
-            observation(),
+            current,
+            authored_context=planner_context(
+                current,
+                ledger=ledger,
+                store=store,
+                brief_ids=set(),
+            ),
             plan_id="single-step",
             step_id="step-0",
         )

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Bound every planner output to an immutable runtime-authored context manifest.
+  Hosted planners derive it from the final budgeted JSON; in-process and
+  subprocess planners declare the full observation; scripted replay declares
+  no observation authority. Continuity accepts only IDs actually delivered in
+  that context, keeps `current_observation` tied to its authored revision
+  through dispatch, rebase, and concurrent patch application, records the
+  later commit revision separately, and marks delivery only after final input
+  assembly.
 - Made recall a bounded, deterministic policy instead of one salience query.
   Tiers run open commitments, then current-target memories, then unresolved
   hypotheses, then general knowledge, each with its own budget so the loudest
@@ -112,8 +120,9 @@
 - Regenerated every checked-in JSON Schema from the current models, adding the
   expanded action catalog, movement request fields, inventory/combat/UI facts,
   and current plan/receipt structures while removing the retired inspect action.
-- Added `uv.lock`. The current portable baseline is 541 passing tests with
-  clean Ruff and strict mypy over 58 source files.
+- Added `uv.lock`; the portable baseline is gated by the checked-in test,
+  lint, type, generated-artifact, and mutation commands rather than a
+  hand-maintained test count.
 
 ## 0.1.0 — scaffold
 

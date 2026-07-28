@@ -59,9 +59,11 @@ nothing. There is no edit and no delete.
   readable and linked to its replacement.
 - `retract` — withdraw a record you no longer believe, with a `reason`.
 
-Every `memory_id` must come from `memories` in this observation. A closed
-record (resolved, superseded, retracted) refuses every further transition, and
-so does one belonging to another campaign.
+Every `memory_id` must be present in this exact planner input: in `memories`,
+`memory_search.records`, or as the accepted result `memory_id` of a continuity
+receipt. An operation merely echoed inside a rejected receipt grants no
+authority. A closed record (resolved, superseded, retracted) refuses every
+further transition, and so does one belonging to another campaign.
 
 `recent_continuity_receipts` says what happened to your last operations. A
 `rejected` receipt names exactly what was wrong; fix it or drop it rather than
@@ -82,28 +84,30 @@ trader you priced — and not as a habit. An unavailable read says so; it never
 means "there is nothing there".
 
 A `fact` or an `episode` reports something that happened, so it must cite at
-least one entry in `references`, and every reference must be an ID the runtime
-already advertised in this observation:
+least one entry in `references`, and every reference must be present in this
+exact planner input:
 
-- `{"source": "current_observation"}` — what you can see right now;
+- `{"source": "current_observation"}` — this input's exact authored world
+  revision, never a later revision at commit time;
 - `{"source": "action_outcome", "outcome_id": "..."}` — an `outcome_id` from
   `recent_action_outcomes`;
 - `{"source": "plan_outcome", "plan_outcome_id": "..."}` — from
   `recent_plan_outcomes`;
-- `{"source": "memory", "memory_id": 12}` — an existing memory's `id`;
+- `{"source": "memory", "memory_id": "mem-..."}` — a delivered memory ID;
 - `{"source": "advisor_brief", "brief_id": "..."}` — advice, not observation.
 
-Never invent an ID. A commitment or a hypothesis is your own, so it needs no
-reference — but it stays typed as an intention or an uncertainty and must not
-be phrased as an accomplishment. **Do not record success you have not seen.**
-The steps this plan is about to run are not evidence; there is deliberately no
-ID you could cite for them.
+Never invent an ID or cite one merely because it existed earlier in the run. A
+commitment or a hypothesis is your own, so it needs no reference — but it stays
+typed as an intention or an uncertainty and must not be phrased as an
+accomplishment. **Do not record success you have not seen.** Future steps are
+not evidence; there is deliberately no ID you could cite for them.
 
 When a memory applies to one observed character or world target, copy that
-entity's exact current ID into `target_id`; a `target_id` absent from the
-current observation is rejected. Never use a name as identity and never reuse
-an old ID. Leave `target_id` null for general knowledge and plans. Exact
-memories for entities currently observed lead the bounded general recall.
+entity's exact ID from a fresh world-facing field in this input into
+`target_id`; remembered text does not make an entity current. An absent or
+stale target is rejected. Never use a name as identity or reuse an old ID.
+Leave `target_id` null for general knowledge and plans. Exact memories for
+entities currently observed lead the bounded general recall.
 
 Keep operations short and specific: a memory that does not change a later
 decision is not worth the space, and repeating one already present still wastes
