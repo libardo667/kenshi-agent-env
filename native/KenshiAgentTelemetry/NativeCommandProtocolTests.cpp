@@ -153,7 +153,29 @@ namespace
 
     int TestInventoryScreenSemantics()
     {
+        using KenshiAgentTelemetry::IsRegisteredShopInventoryOpen;
         using KenshiAgentTelemetry::IsTradeInventoryOpen;
+
+        for (int ordinaryOwnerInventory = 0;
+             ordinaryOwnerInventory <= 1;
+             ++ordinaryOwnerInventory)
+        {
+            for (int shopInventoryObject = 0;
+                 shopInventoryObject <= 1;
+                 ++shopInventoryObject)
+            {
+                const bool expected = shopInventoryObject != 0;
+                const bool actual = IsRegisteredShopInventoryOpen(
+                    ordinaryOwnerInventory != 0,
+                    shopInventoryObject != 0);
+                if (actual != expected)
+                {
+                    return Fail(
+                        "shop trade authority did not follow the registered "
+                        "inventory object");
+                }
+            }
+        }
 
         for (int anyInventory = 0; anyInventory <= 1; ++anyInventory)
         {

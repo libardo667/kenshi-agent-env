@@ -2809,14 +2809,13 @@ namespace
         // inventory to be open still mislabeled later character, resource, and
         // corpse inventories as commerce. The trader's exact inventory window
         // must itself still be among the open windows.
-        Character* inventoryTrader =
-            gui != NULL
-                ? gui->inventoryWindowTrader.getCharacter()
-                : NULL;
+        const hand* inventoryTraderHandle =
+            gui != NULL ? &gui->inventoryWindowTrader : NULL;
         const bool traderInventoryOpen =
             gui != NULL &&
-            inventoryTrader != NULL &&
-            gui->hasInventoryWindowOpen(inventoryTrader->getHandle());
+            inventoryTraderHandle != NULL &&
+            !inventoryTraderHandle->isNull() &&
+            gui->hasInventoryWindowOpen(*inventoryTraderHandle);
         bool registeredShopInventoryOpen = false;
         if (gui != NULL && g_shopTraderRegistryReady)
         {
@@ -2825,8 +2824,18 @@ namespace
                  ++index)
             {
                 Character* owner = g_trackedShopTraders[index].owner;
-                if (owner != NULL &&
-                    gui->hasInventoryWindowOpen(owner->getHandle()))
+                ShopTrader* inventoryObject =
+                    g_trackedShopTraders[index].object;
+                const bool ownerCharacterInventoryOpen =
+                    owner != NULL &&
+                    gui->hasInventoryWindowOpen(owner->getHandle());
+                const bool shopInventoryObjectOpen =
+                    inventoryObject != NULL &&
+                    gui->hasInventoryWindowOpen(
+                        inventoryObject->getHandle());
+                if (KenshiAgentTelemetry::IsRegisteredShopInventoryOpen(
+                        ownerCharacterInventoryOpen,
+                        shopInventoryObjectOpen))
                 {
                     registeredShopInventoryOpen = true;
                     break;
