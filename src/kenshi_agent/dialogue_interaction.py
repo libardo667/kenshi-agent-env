@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from .action_contracts import ActionContract, contract_for
 from .models import (
+    GAME_BINDING_VERIFICATION_PATHS,
     TIME_GAME_BINDINGS,
     TOGGLE_GAME_BINDINGS,
     Action,
@@ -193,7 +194,12 @@ def _step_action_errors(
     # live purchases in a row moved no money, each reported success because the
     # plan's own conditions never looked at money, and the agent went back to
     # the same shelf because nothing it could see said otherwise.
-    missing_verification = contract.verification_paths - {
+    verification_paths = set(contract.verification_paths)
+    if isinstance(action, UseGameBindingAction):
+        binding_path = GAME_BINDING_VERIFICATION_PATHS.get(action.binding)
+        if binding_path is not None:
+            verification_paths.add(binding_path.value)
+    missing_verification = verification_paths - {
         condition.path for condition in step.success_conditions if condition.path
     }
     if missing_verification:

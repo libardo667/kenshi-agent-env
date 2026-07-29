@@ -23,6 +23,7 @@ from kenshi_agent.models import (
     GameState,
     Observation,
     TelemetrySnapshot,
+    UIState,
     UseGameBindingAction,
     WorldStateRevision,
 )
@@ -37,8 +38,13 @@ def observation(*, loaded: bool = True, stale: bool = False) -> Observation:
         telemetry=TelemetrySnapshot(
             sequence=7,
             captured_at=datetime.now(UTC),
-            capabilities=["game.pause"],
+            capabilities=["game.pause", "ui.inventory"],
             game=GameState(loaded=loaded, paused=True),
+            ui=UIState(
+                open_inventory_windows=0,
+                management_screen_open=False,
+                stats_window_open=False,
+            ),
         ),
         telemetry_stale=stale,
         objective="Play Kenshi.",
@@ -91,6 +97,18 @@ def test_raw_time_keys_are_absent_from_planner_bindings() -> None:
         "speed_2",
         "speed_3",
     } & set(binding_action["available_bindings"])
+    inventory_condition = binding_action["binding_success_conditions"][
+        "toggle_inventory"
+    ]
+    assert inventory_condition["path"] == "telemetry.ui.open_inventory_windows"
+    assert inventory_condition["operator"] == "not_equals"
+    assert inventory_condition["expected"] == 0
+    assert not {
+        "pause",
+        "speed_1",
+        "speed_2",
+        "speed_3",
+    } & set(binding_action["binding_success_conditions"])
 
 
 @pytest.mark.parametrize(
@@ -114,6 +132,46 @@ def test_raw_time_key_cannot_bind_as_a_planner_affordance(
 
     assert not result.bound
     assert "set_speed" in result.reason
+
+
+def test_inventory_binding_must_verify_the_inventory_signal() -> None:
+    from kenshi_agent.dialogue_interaction import _step_action_errors
+    from kenshi_agent.models import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+        ControlMode,
+        IdempotencyPolicy,
+        PlanStep,
+    )
+
+    unrelated_screen = Condition(
+        kind=ConditionKind.FIELD,
+        path="telemetry.ui.active_screen",
+        operator=ConditionOperator.EQUALS,
+        expected="trade",
+        max_age_seconds=2.0,
+    )
+    step = PlanStep(
+        step_id="open-inventory",
+        action=UseGameBindingAction(
+            binding=GameBinding.TOGGLE_INVENTORY,
+            expected_effect="open the selected character inventory",
+        ),
+        preconditions=[unrelated_screen],
+        success_conditions=[unrelated_screen],
+        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+        retry_budget=0,
+        timeout_seconds=10.0,
+    )
+
+    errors = _step_action_errors(
+        step,
+        observation(),
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        require_binding=False,
+    )
+    assert any("telemetry.ui.open_inventory_windows" in error for error in errors)
 
 
 def test_a_binding_binds_on_a_loaded_game() -> None:

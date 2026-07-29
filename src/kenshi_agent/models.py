@@ -2990,6 +2990,12 @@ class FieldConditionPath(StrEnum):
 ConditionPath = FieldConditionPath
 _ALLOWED_CONDITION_PATHS = frozenset(path.value for path in FieldConditionPath)
 
+GAME_BINDING_VERIFICATION_PATHS: dict[GameBinding, FieldConditionPath] = {
+    GameBinding.TOGGLE_INVENTORY: FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
+    GameBinding.TOGGLE_MAP: FieldConditionPath.TELEMETRY_UI_MANAGEMENT_SCREEN_OPEN,
+    GameBinding.TOGGLE_STATS: FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
+}
+
 
 def _is_field_condition_path(value: object) -> bool:
     return isinstance(value, str) and value in _ALLOWED_CONDITION_PATHS
@@ -3158,6 +3164,42 @@ class Condition(RootModel[ConditionValue]):
     @property
     def required_capabilities(self) -> list[str]:
         return getattr(self.root, "required_capabilities", [])
+
+
+def _game_binding_success_condition(
+    binding: GameBinding,
+    telemetry: TelemetrySnapshot | None,
+) -> Condition | None:
+    """Describe the exact observable state one reversible binding must change."""
+
+    if telemetry is None:
+        return None
+    if binding is GameBinding.TOGGLE_INVENTORY:
+        current = telemetry.ui.open_inventory_windows
+        if current is None:
+            return None
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=GAME_BINDING_VERIFICATION_PATHS[binding],
+            operator=ConditionOperator.NOT_EQUALS,
+            expected=current,
+            max_age_seconds=3.0,
+        )
+    if binding is GameBinding.TOGGLE_MAP:
+        current = telemetry.ui.management_screen_open
+    elif binding is GameBinding.TOGGLE_STATS:
+        current = telemetry.ui.stats_window_open
+    else:
+        return None
+    if current is None:
+        return None
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=GAME_BINDING_VERIFICATION_PATHS[binding],
+        operator=ConditionOperator.EQUALS,
+        expected=not current,
+        max_age_seconds=3.0,
+    )
 
 
 class ConditionEvaluation(StrictModel):
@@ -3702,6 +3744,18 @@ class Observation(StrictModel):
                     for binding in GameBinding
                     if binding not in TIME_GAME_BINDINGS
                 ]
+                entry["binding_success_conditions"] = {
+                    binding.value: _json_model(condition)
+                    for binding in GameBinding
+                    if binding not in TIME_GAME_BINDINGS
+                    and (
+                        condition := _game_binding_success_condition(
+                            binding,
+                            self.telemetry,
+                        )
+                    )
+                    is not None
+                }
             digest.append(entry)
         return digest
 

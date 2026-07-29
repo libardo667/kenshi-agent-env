@@ -374,8 +374,8 @@ yourself, in whatever order the current evidence supports.
   proven from that condition; use it only when the task can tolerate an
   explicitly uncertain effect.
 - Set `expected_effect` on every binding to the change you expect in one phrase,
-  and back it with a success condition that checks it, such as
-  `telemetry.ui.active_screen` or `telemetry.game.paused`.
+  and copy the binding's exact current `binding_success_conditions` entry when
+  one is provided. Otherwise back it with a condition on the field it changes.
 - **A purchase or a sale must prove itself.** Give any `purchase_item` or
   `sell_item` step a success condition on `telemetry.game.money` — less_than the
   current amount for a buy, greater_than for a sell. The receipt cannot see
