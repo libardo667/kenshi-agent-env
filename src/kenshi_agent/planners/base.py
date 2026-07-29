@@ -9,6 +9,7 @@ from typing import Any, Literal
 
 from ..config import PlannerConfig
 from ..models import (
+    PLANNER_CONTROL_ACTION_KINDS,
     AuthoredPlannerContext,
     LiveContinuousPolicy,
     Observation,
@@ -26,6 +27,11 @@ HostedPlannerFailureCategory = Literal[
     "empty_response",
     "malformed_structured_output",
 ]
+PLANNER_SYSTEM_CHARACTER_BUDGET: dict[LiveContinuousPolicy, int] = {
+    LiveContinuousPolicy.DISABLED: 8_000,
+    LiveContinuousPolicy.DIALOGUE_INTERACTION_V1: 12_000,
+}
+PLANNER_STATIC_PREFIX_CHARACTER_BUDGET = 50_000
 
 _POLICY_SECTION = re.compile(
     r"<!-- policy:(?P<policy>[a-z0-9_,]+) -->\n(?P<body>.*?)<!-- /policy -->\n",
@@ -55,6 +61,77 @@ def structured_output_model(observation: Observation) -> PlannerOutputModel:
     if observation.active_plan is not None:
         return PlanPatch
     return PlanEnvelope
+
+
+def planner_action_kinds(observation: Observation) -> frozenset[str]:
+    """Actions the current authored context permits the planner to return.
+
+    Game/UI intentions come from the same capability- and state-filtered
+    contract projection placed in the observation. Planner controls are the
+    explicit schema-level exception. Legacy skills remain available only
+    outside the generic live semantic-action policy.
+    """
+
+    kinds = set(PLANNER_CONTROL_ACTION_KINDS)
+    kinds.update(
+        str(entry["kind"])
+        for entry in observation.semantic_action_digest()
+    )
+    generic_live_policy = (
+        observation.mode == "live"
+        and observation.live_execution_policy
+        is LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
+    )
+    if observation.available_skills and not generic_live_policy:
+        kinds.add("skill")
+    return frozenset(kinds)
+
+
+def planner_output_action_kinds(output: PlannerOutput) -> frozenset[str]:
+    """Return every action kind authored by one structured planner output."""
+
+    if isinstance(output, PlannerDecision):
+        return frozenset({output.action.kind})
+    if isinstance(output, PlanEnvelope):
+        return frozenset(step.action.kind for step in output.steps)
+    return frozenset(step.action.kind for step in output.replace_future_steps)
+
+
+def validate_planner_output_surface(
+    output: PlannerOutput,
+    *,
+    allowed_action_kinds: frozenset[str],
+) -> None:
+    """Fail closed if fallback decoding authored an unavailable action."""
+
+    unauthorized = planner_output_action_kinds(output) - allowed_action_kinds
+    if unauthorized:
+        raise ValueError(
+            "planner output contains action kinds not authorable from this "
+            "observation: " + ", ".join(sorted(unauthorized))
+        )
+
+
+def validate_planner_prompt_budget(
+    *,
+    policy: LiveContinuousPolicy,
+    system_characters: int,
+    schema_characters: int,
+) -> None:
+    """Keep static planner context on a reviewed, ratcheted budget."""
+
+    system_budget = PLANNER_SYSTEM_CHARACTER_BUDGET[policy]
+    if system_characters > system_budget:
+        raise ValueError(
+            f"{policy.value} planner instructions use {system_characters} "
+            f"characters; budget is {system_budget}"
+        )
+    static_characters = system_characters + schema_characters
+    if static_characters > PLANNER_STATIC_PREFIX_CHARACTER_BUDGET:
+        raise ValueError(
+            f"planner system plus schema use {static_characters} characters; "
+            f"budget is {PLANNER_STATIC_PREFIX_CHARACTER_BUDGET}"
+        )
 
 
 def output_token_budget(
@@ -377,6 +454,8 @@ class HostedPlannerCallDiagnostics:
     native_finish_reason: str | None = None
     segment_native_finish_reasons: tuple[str | None, ...] = ()
     provider_error_type: str | None = None
+    cached_tokens: int | None = None
+    cache_write_tokens: int | None = None
 
     def event_payload(self) -> dict[str, Any]:
         return {

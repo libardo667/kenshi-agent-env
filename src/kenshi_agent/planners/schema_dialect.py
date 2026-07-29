@@ -18,6 +18,7 @@ model afterwards either way.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from functools import lru_cache
 from typing import Any
 
@@ -110,3 +111,95 @@ def portable_response_format(model: type[BaseModel]) -> dict[str, Any]:
             "schema": _sanitize(to_strict_json_schema(model)),
         },
     }
+
+
+def _action_union(schema: dict[str, Any]) -> dict[str, Any]:
+    root_action = schema.get("properties", {}).get("action")
+    if isinstance(root_action, dict) and isinstance(root_action.get("anyOf"), list):
+        return root_action
+    plan_step = schema.get("$defs", {}).get("PlanStep", {})
+    step_action = plan_step.get("properties", {}).get("action")
+    if isinstance(step_action, dict) and isinstance(step_action.get("anyOf"), list):
+        return step_action
+    raise RuntimeError("planner output schema has no action union to project")
+
+
+def _definition_references(node: Any) -> set[str]:
+    if isinstance(node, list):
+        return set().union(*(_definition_references(item) for item in node), set())
+    if not isinstance(node, dict):
+        return set()
+    references = {
+        value.rsplit("/", 1)[-1]
+        for key, value in node.items()
+        if key == "$ref"
+        and isinstance(value, str)
+        and value.startswith("#/$defs/")
+    }
+    return references | set().union(
+        *(
+            _definition_references(value)
+            for key, value in node.items()
+            if key != "$defs"
+        ),
+        set(),
+    )
+
+
+def _prune_unreachable_definitions(schema: dict[str, Any]) -> None:
+    definitions = schema.get("$defs")
+    if not isinstance(definitions, dict):
+        return
+    root = {key: value for key, value in schema.items() if key != "$defs"}
+    reachable = _definition_references(root)
+    frontier = set(reachable)
+    while frontier:
+        name = frontier.pop()
+        definition = definitions.get(name)
+        if definition is None:
+            raise RuntimeError(f"planner schema references missing definition {name!r}")
+        discovered = _definition_references(definition) - reachable
+        reachable.update(discovered)
+        frontier.update(discovered)
+    schema["$defs"] = {
+        name: definition
+        for name, definition in definitions.items()
+        if name in reachable
+    }
+
+
+def _build_projected_response_format(
+    model: type[BaseModel],
+    *,
+    allowed_action_kinds: frozenset[str],
+) -> dict[str, Any]:
+    """Project structured decoding onto the observation's authorable actions."""
+
+    response_format = deepcopy(portable_response_format(model))
+    schema = response_format["json_schema"]["schema"]
+    definitions = schema["$defs"]
+    action_union = _action_union(schema)
+    branches = []
+    for branch in action_union["anyOf"]:
+        definition_name = branch["$ref"].rsplit("/", 1)[-1]
+        definition = definitions[definition_name]
+        kind_values = definition["properties"]["kind"]["enum"]
+        if kind_values[0] in allowed_action_kinds:
+            branches.append(branch)
+    if not branches:
+        raise RuntimeError("planner action projection removed every action branch")
+    action_union["anyOf"] = branches
+    _prune_unreachable_definitions(schema)
+    return response_format
+
+
+@lru_cache(maxsize=128)
+def projected_response_format(
+    model: type[BaseModel],
+    *,
+    allowed_action_kinds: frozenset[str],
+) -> dict[str, Any]:
+    return _build_projected_response_format(
+        model,
+        allowed_action_kinds=allowed_action_kinds,
+    )

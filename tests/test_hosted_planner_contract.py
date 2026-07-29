@@ -29,6 +29,7 @@ from kenshi_agent.models import (
     PlanPatch,
     PlanStep,
     RiskBudget,
+    SkillAction,
     StopAction,
     TelemetrySnapshot,
     UIState,
@@ -37,11 +38,15 @@ from kenshi_agent.models import (
 from kenshi_agent.planners.base import (
     HostedPlannerResponseError,
     output_token_budget,
+    planner_action_kinds,
     planner_context_manifest,
     structured_output_model,
+    validate_planner_output_surface,
+    validate_planner_prompt_budget,
 )
 from kenshi_agent.planners.openai_planner import OpenAIPlanner
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
+from kenshi_agent.planners.schema_dialect import projected_response_format
 
 
 def observation(
@@ -292,7 +297,16 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
                     SimpleNamespace(
                         message=SimpleNamespace(content=plan.model_dump_json())
                     )
-                ]
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=1200,
+                    completion_tokens=200,
+                    total_tokens=1400,
+                    prompt_tokens_details=SimpleNamespace(
+                        cached_tokens=900,
+                        cache_write_tokens=0,
+                    ),
+                ),
             )
 
     completions = FakeCompletions()
@@ -319,6 +333,72 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert completions.kwargs["temperature"] == 0.1
     assert completions.kwargs["extra_body"]["provider"]["require_parameters"] is True
     assert completions.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
+    assert completions.kwargs["extra_body"]["session_id"] == "kenshi:hosted-contract"
+    system_blocks = completions.kwargs["messages"][0]["content"]
+    assert system_blocks[-1]["cache_control"] == {"type": "ephemeral"}
+    sent_schema = completions.kwargs["response_format"]["json_schema"]["schema"]
+    assert _schema_action_kinds(sent_schema, PlanEnvelope) == planner_action_kinds(
+        current
+    )
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert diagnostics.cached_tokens == 900
+    assert diagnostics.cache_write_tokens == 0
+
+
+def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() -> None:
+    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
+
+    class IgnoresProjectedSchema:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            del kwargs
+            decision = PlannerDecision(
+                intent="Use an unavailable macro.",
+                rationale="The provider ignored its projected action schema.",
+                action=SkillAction(name="not_advertised"),
+            )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=decision.model_dump_json())
+                    )
+                ]
+            )
+
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(include_screenshot=False)
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=IgnoresProjectedSchema()),
+    )
+
+    with pytest.raises(HostedPlannerResponseError) as captured:
+        asyncio.run(planner.decide(current))
+
+    assert captured.value.category == "malformed_structured_output"
+
+
+def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
+    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
+    decision = PlannerDecision(
+        intent="Use an unavailable macro.",
+        rationale="The SDK schema is broader than the authored context.",
+        action=SkillAction(name="not_advertised"),
+    )
+
+    class ParsedUnavailableAction:
+        async def parse(self, **kwargs: Any) -> SimpleNamespace:
+            del kwargs
+            return SimpleNamespace(output_parsed=decision, output_text="")
+
+    planner = object.__new__(OpenAIPlanner)
+    planner.config = PlannerConfig(include_screenshot=False)
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(responses=ParsedUnavailableAction())
+    planner.max_plan_steps = 4
+
+    with pytest.raises(ValueError, match="not authorable.*skill"):
+        asyncio.run(planner.decide(current))
 
 
 def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> None:
@@ -758,6 +838,44 @@ def test_only_the_active_policy_section_reaches_the_model() -> None:
     assert len(disabled) < len(instructions)
 
 
+def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> None:
+    """A new rule or action must pay for itself instead of silently expanding."""
+
+    from pathlib import Path
+
+    from kenshi_agent.action_contracts import ACTION_CONTRACTS
+    from kenshi_agent.models import PLANNER_CONTROL_ACTION_KINDS
+    from kenshi_agent.planners.base import instructions_for_policy
+
+    root = Path(__file__).resolve().parents[1]
+    instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
+    generic_actions = frozenset(
+        set(PLANNER_CONTROL_ACTION_KINDS)
+        | {
+            kind
+            for kind, contract in ACTION_CONTRACTS.items()
+            if contract.planner_visible
+        }
+    )
+    policy_actions = {
+        LiveContinuousPolicy.DIALOGUE_INTERACTION_V1: generic_actions,
+        LiveContinuousPolicy.DISABLED: generic_actions | {"skill"},
+    }
+
+    for policy, allowed_action_kinds in policy_actions.items():
+        system_characters = len(instructions_for_policy(instructions, policy))
+        for model in (PlannerDecision, PlanEnvelope, PlanPatch):
+            schema = projected_response_format(
+                model,
+                allowed_action_kinds=allowed_action_kinds,
+            )["json_schema"]["schema"]
+            validate_planner_prompt_budget(
+                policy=policy,
+                system_characters=system_characters,
+                schema_characters=len(json.dumps(schema)),
+            )
+
+
 def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
     """Each of these cost a live run to discover, so pin them here.
 
@@ -790,6 +908,96 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
                 walk(value)
 
         walk(schema)
+
+
+def _schema_action_kinds(schema: dict[str, Any], model: type[Any]) -> set[str]:
+    if model is PlannerDecision:
+        action_schema = schema["properties"]["action"]
+    else:
+        action_schema = schema["$defs"]["PlanStep"]["properties"]["action"]
+    return {
+        schema["$defs"][branch["$ref"].rsplit("/", 1)[-1]]
+        ["properties"]["kind"]["enum"][0]
+        for branch in action_schema["anyOf"]
+    }
+
+
+def test_projected_schema_matches_the_exact_authorable_action_surface() -> None:
+    """Decoding must not advertise actions the observation would reject."""
+
+    current = observation().model_copy(
+        update={
+            "telemetry": TelemetrySnapshot(
+                ui=UIState(active_screen="world"),
+                capabilities=["ui.visible_controls"],
+            )
+        }
+    )
+    allowed = planner_action_kinds(current)
+    schema = projected_response_format(
+        PlanEnvelope,
+        allowed_action_kinds=allowed,
+    )["json_schema"]["schema"]
+
+    assert _schema_action_kinds(schema, PlanEnvelope) == allowed
+    assert "activate_visible_control" in allowed
+    assert "move_in_direction" not in allowed
+    assert "skill" not in allowed
+
+
+def test_projected_schema_retains_only_reachable_definitions() -> None:
+    """Removing an action branch must remove its otherwise-dead schema too."""
+
+    current = observation()
+    schema = projected_response_format(
+        PlanEnvelope,
+        allowed_action_kinds=planner_action_kinds(current),
+    )["json_schema"]["schema"]
+    definitions = schema["$defs"]
+
+    def references(node: Any) -> set[str]:
+        if isinstance(node, list):
+            return set().union(*(references(item) for item in node), set())
+        if not isinstance(node, dict):
+            return set()
+        found = {
+            value.rsplit("/", 1)[-1]
+            for key, value in node.items()
+            if key == "$ref"
+            and isinstance(value, str)
+            and value.startswith("#/$defs/")
+        }
+        return found | set().union(
+            *(references(value) for key, value in node.items() if key != "$defs"),
+            set(),
+        )
+
+    root = {key: value for key, value in schema.items() if key != "$defs"}
+    reachable = references(root)
+    frontier = set(reachable)
+    while frontier:
+        name = frontier.pop()
+        discovered = references(definitions[name]) - reachable
+        reachable.update(discovered)
+        frontier.update(discovered)
+
+    assert set(definitions) == reachable
+    assert "SkillAction" not in definitions
+
+
+def test_output_surface_check_rejects_a_schema_valid_unadvertised_action() -> None:
+    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
+    output = PlannerDecision(
+        intent="Use an unavailable macro.",
+        rationale="This is structurally valid but not currently authorable.",
+        action=SkillAction(name="not_advertised"),
+    )
+
+    with pytest.raises(ValueError, match="not authorable.*skill"):
+        validate_planner_output_surface(
+            output,
+            allowed_action_kinds=planner_action_kinds(current),
+        )
 
 
 def test_a_discriminator_stays_required_and_fully_specified() -> None:
@@ -916,11 +1124,29 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
     assert "response_format" not in completions.calls[1]
     prompted = completions.calls[1]["messages"][-1]["content"][0]["text"]
     assert "JSON Schema" in prompted and '"properties"' in prompted
+    assert completions.calls[1]["messages"][-1]["content"][0][
+        "cache_control"
+    ] == {"type": "ephemeral"}
 
     # The lesson sticks: the second decision does not retry the refused form.
     assert isinstance(asyncio.run(planner.decide(single_step)), PlannerDecision)
     assert len(completions.calls) == 3
     assert "response_format" not in completions.calls[2]
+
+    # A different projected action surface gets its own constrained-decoding
+    # attempt; one oversized schema must not poison every smaller schema.
+    expanded = single_step.model_copy(
+        update={
+            "telemetry": TelemetrySnapshot(
+                ui=UIState(active_screen="world"),
+                capabilities=["ui.visible_controls"],
+            )
+        }
+    )
+    assert isinstance(asyncio.run(planner.decide(expanded)), PlannerDecision)
+    assert len(completions.calls) == 5
+    assert "response_format" in completions.calls[3]
+    assert "response_format" not in completions.calls[4]
 
 
 def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:

@@ -18,8 +18,10 @@ from .base import (
     PreparedPlannerInput,
     instructions_for_policy,
     output_token_budget,
+    planner_action_kinds,
     prepared_budgeted_input,
     structured_output_model,
+    validate_planner_output_surface,
 )
 
 
@@ -125,7 +127,12 @@ class OpenAIPlanner(Planner):
             if not response.output_text:
                 raise RuntimeError("OpenAI response contained neither parsed output nor text.")
             parsed = output_model.model_validate_json(response.output_text)
-        return output_model.model_validate(parsed)
+        output = output_model.model_validate(parsed)
+        validate_planner_output_surface(
+            output,
+            allowed_action_kinds=planner_action_kinds(observation),
+        )
+        return output
 
     @staticmethod
     def _data_url(path: Path) -> str:

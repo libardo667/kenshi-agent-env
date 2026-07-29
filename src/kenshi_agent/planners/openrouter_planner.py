@@ -9,7 +9,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from ..config import PlannerConfig
 from ..hosted_continuation import (
@@ -30,10 +30,13 @@ from .base import (
     PreparedPlannerInput,
     instructions_for_policy,
     output_token_budget,
+    planner_action_kinds,
     prepared_budgeted_input,
     structured_output_model,
+    validate_planner_output_surface,
+    validate_planner_prompt_budget,
 )
-from .schema_dialect import portable_response_format
+from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
 # are worth matching narrowly: a 400 for any other reason is a real failure and
@@ -137,6 +140,8 @@ def _aggregate_diagnostics(
         completion_tokens=_sum_optional(segments, "completion_tokens"),
         reasoning_tokens=_sum_optional(segments, "reasoning_tokens"),
         total_tokens=_sum_optional(segments, "total_tokens"),
+        cached_tokens=_sum_optional(segments, "cached_tokens"),
+        cache_write_tokens=_sum_optional(segments, "cache_write_tokens"),
         response_characters=response_characters,
         system_characters=segments[0].system_characters,
         observation_characters=segments[0].observation_characters,
@@ -163,9 +168,6 @@ class OpenRouterPlanner(Planner):
 
     max_plan_steps: int = 4
 
-    # Flipped for the rest of the run the first time a provider refuses to
-    # compile the schema, so the cost of discovering it is paid once.
-    _schema_in_prompt: bool = False
     _last_call_diagnostics: HostedPlannerCallDiagnostics | None = None
     _last_sent_messages: list[dict[str, Any]] | None = None
 
@@ -190,6 +192,9 @@ class OpenRouterPlanner(Planner):
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
         self.max_plan_steps = max_plan_steps
+        self._schema_prompt_fallbacks: set[
+            tuple[str, frozenset[str]]
+        ] = set()
 
     def prepare_input(
         self,
@@ -219,6 +224,16 @@ class OpenRouterPlanner(Planner):
         if prepared.payload is None:
             raise RuntimeError("OpenRouter planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
+        allowed_action_kinds = planner_action_kinds(observation)
+        schema_surface = (output_model.__name__, allowed_action_kinds)
+        schema_prompt_fallbacks = getattr(
+            self,
+            "_schema_prompt_fallbacks",
+            None,
+        )
+        if schema_prompt_fallbacks is None:
+            schema_prompt_fallbacks = set()
+            self._schema_prompt_fallbacks = schema_prompt_fallbacks
         if output_model is PlanPatch:
             request = (
                 "Return one PlanPatch grounded in active_plan and the exact "
@@ -267,24 +282,46 @@ class OpenRouterPlanner(Planner):
         )
         extra["temperature"] = self.config.temperature
 
+        system_instructions = instructions_for_policy(
+            self.instructions,
+            observation.live_execution_policy,
+        )
+        schema_characters = len(
+            json.dumps(
+                projected_response_format(
+                    output_model,
+                    allowed_action_kinds=allowed_action_kinds,
+                )["json_schema"]["schema"]
+            )
+        )
+        validate_planner_prompt_budget(
+            policy=observation.live_execution_policy,
+            system_characters=len(system_instructions),
+            schema_characters=schema_characters,
+        )
         messages: list[dict[str, Any]] = [
             {
                 "role": "system",
-                "content": instructions_for_policy(
-                    self.instructions,
-                    observation.live_execution_policy,
-                ),
+                "content": [
+                    {
+                        "type": "text",
+                        "text": system_instructions,
+                        "cache_control": {"type": "ephemeral"},
+                    }
+                ],
             },
             {"role": "user", "content": content},
         ]
 
         schema_refusal_count = 0
         async with asyncio.timeout(self.config.timeout_seconds):
-            if self._schema_in_prompt:
+            if schema_surface in schema_prompt_fallbacks:
                 response = await self._request(
                     messages,
                     output_model,
                     extra,
+                    allowed_action_kinds=allowed_action_kinds,
+                    session_id=observation.run_id,
                     observation_characters=len(prepared.payload),
                 )
             else:
@@ -293,6 +330,8 @@ class OpenRouterPlanner(Planner):
                         messages,
                         output_model,
                         extra,
+                        allowed_action_kinds=allowed_action_kinds,
+                        session_id=observation.run_id,
                         constrained=True,
                         observation_characters=len(prepared.payload),
                     )
@@ -304,11 +343,13 @@ class OpenRouterPlanner(Planner):
                     # into a decoding grammar, and this catalog is over the cap.
                     # Asking in the prompt still gets a conforming answer, and
                     # the reply is validated against the model either way.
-                    self._schema_in_prompt = True
+                    schema_prompt_fallbacks.add(schema_surface)
                     response = await self._request(
                         messages,
                         output_model,
                         extra,
+                        allowed_action_kinds=allowed_action_kinds,
+                        session_id=observation.run_id,
                         observation_characters=len(prepared.payload),
                     )
 
@@ -352,6 +393,8 @@ class OpenRouterPlanner(Planner):
                     continuation_messages,
                     output_model,
                     extra,
+                    allowed_action_kinds=allowed_action_kinds,
+                    session_id=observation.run_id,
                     continuation=True,
                     observation_characters=len(prepared.payload),
                 )
@@ -366,8 +409,13 @@ class OpenRouterPlanner(Planner):
         if not combined_response:
             raise HostedPlannerResponseError("empty_response", diagnostics)
         try:
-            return output_model.model_validate_json(_json_body(combined_response))
-        except ValidationError as exc:
+            output = output_model.model_validate_json(_json_body(combined_response))
+            validate_planner_output_surface(
+                output,
+                allowed_action_kinds=allowed_action_kinds,
+            )
+            return output
+        except ValueError as exc:
             raise HostedPlannerResponseError(
                 "malformed_structured_output",
                 diagnostics,
@@ -379,12 +427,17 @@ class OpenRouterPlanner(Planner):
         output_model: type[BaseModel],
         extra: dict[str, Any],
         *,
+        allowed_action_kinds: frozenset[str],
+        session_id: str,
         constrained: bool = False,
         continuation: bool = False,
         observation_characters: int,
     ) -> Any:
         """Ask for `output_model`, constraining decoding only if asked to."""
-        response_format = portable_response_format(output_model)
+        response_format = projected_response_format(
+            output_model,
+            allowed_action_kinds=allowed_action_kinds,
+        )
         schema = json.dumps(response_format["json_schema"]["schema"])
         kwargs: dict[str, Any] = {}
         if constrained:
@@ -403,12 +456,14 @@ class OpenRouterPlanner(Planner):
                                 f"Reply with JSON only, no prose, conforming exactly to "
                                 f"this {output_model.__name__} JSON Schema:\n\n{schema}"
                             ),
+                            "cache_control": {"type": "ephemeral"},
                         },
                         *messages[-1]["content"],
                     ],
                 },
             ]
         extra_body: dict[str, Any] = {
+            "session_id": f"kenshi:{session_id}"[:256],
             "provider": {
                 "sort": self.config.openrouter_provider_sort,
                 "require_parameters": self.config.openrouter_require_parameters,
@@ -428,6 +483,7 @@ class OpenRouterPlanner(Planner):
         message = choice.message
         response_content = message.content if isinstance(message.content, str) else ""
         usage = _field(response, "usage")
+        prompt_details = _field(usage, "prompt_tokens_details")
         completion_details = _field(usage, "completion_tokens_details")
         response_model = _field(response, "model")
         provider_name = _field(response, "provider")
@@ -483,6 +539,11 @@ class OpenRouterPlanner(Planner):
                 provider_error_type
                 if isinstance(provider_error_type, str)
                 else None
+            ),
+            cached_tokens=_integer_field(prompt_details, "cached_tokens"),
+            cache_write_tokens=_integer_field(
+                prompt_details,
+                "cache_write_tokens",
             ),
         )
         return response
