@@ -84,9 +84,9 @@ useful only when relevant to the journey’s actual objective.
 3. Run the portable baseline: `uv run pytest -q`; `uv run ruff check .`; `uv run mypy src`. If an
    environment-specific dependency prevents the normal command, identify that exactly and run the strongest
    honest subset; do not relabel it as the full gate.
-4. Before live work, run the supported preflight. Use `./dev play`, `./dev journey`, `./dev scenario`,
-   `./dev recover`, and `./dev crash` rather than direct Python, raw request files, manual SendInput
-   snippets, or PTYs.
+4. Before live work, run `./dev launch --preflight-only`. Use `./dev play`, `./dev journey`,
+   `./dev scenario`, `./dev recover`, and `./dev crash` rather than direct Python, raw request files,
+   manual SendInput snippets, or PTYs.
 5. Give every live run a descriptive unique run ID. Preserve its raw bundle. Never edit old run evidence in
    place.
 
@@ -198,33 +198,24 @@ terminals and scenario-specific milestones; report ambiguous progress as ambiguo
 These were present in the reviewed checkout. They are candidates, not eternal facts. Verify each against
 current code and newer run evidence.
 
-1. `live_dev` gives journey/play `--steps` a default of 8 and `--planner` a default of OpenAI, then always
-   forwards both. That silently overrides the long-form profile’s configured step budget and planner route
-   when the user omits those flags. Optional CLI overrides should not replace profile values merely because
-   argparse supplied a default.
-2. Continuous runtime treats a `PlanPatch` received with no matching active plan as terminal. The nearby
-   malformed-response test explicitly describes “a patch with no plan to patch” as a recoverable bad answer,
-   but does not exercise that case. A stale or malformed patch should receive bounded attributable rejection
-   and fresh planning, not kill an otherwise viable stream.
-3. The OpenRouter playing adapter does not currently send the configured dynamic output-token budget; the
-   OpenAI adapter does. The long-form config also says temperature is parsed but not sent. Provider behavior
-   must match reported configuration or report the unsupported field honestly.
-4. The evaluator records many lifecycle metrics but does not currently aggregate `action_outcome`
+1. The evaluator records many lifecycle metrics but does not currently aggregate `action_outcome`
    assessments or generic repeated semantic actions. Long runs can therefore look healthy while spending
    most of their time in no-op or repeated-action loops.
-5. At the reviewed revision, the recurring planner system prompt is roughly 45.8 KB and the plan schema
-   roughly 61.5 KB. OpenRouter’s unconstrained fallback inserts that schema into the request. Measure actual
-   request sizes, latency, truncation, and model behavior before compressing; then remove redundant runtime
-   law from recurring context only where the model does not need it to choose valid semantic actions.
-6. The advisor has produced EOF-truncated structured JSON in a live call. A failed advisory must be
-   attributable and boundedly recoverable without inventing a brief or ending gameplay.
-7. Source defaults identify telemetry protocol 1.3.0 while prominent historical prose still centers 1.2.0.
-   Do not spend a gameplay slice on prose alone, but correct the authority trail when touching the relevant
-   contract.
-
-Unless newer evidence identifies an earlier blocker, close candidates 1 and 2 before interpreting very long
-run results: a run command that is not what it claims and a single malformed patch that kills the stream
-both contaminate the experiment.
+2. Run `live-advisor-background-20260729-r5` measured 41.9 KB of recurring system instructions, 39.6 KB
+   of compact plan schema, and 65.7-76.3 KB of observation/context on the stalled purchase turn. Ordinary
+   requests used roughly 47-51k prompt tokens. Two truncated responses plus exact continuation consumed
+   95-102k prompt tokens and took roughly 40-44 seconds. The immediate purchase failure was a false native
+   trade-screen label, not prompt length, but recurring context amplified it into seven near-identical
+   replans. Measure the component and ablation effects before compressing; remove redundant runtime law only
+   where the model does not need it to choose valid semantic actions.
+3. Fresh game starts have been launched under the same configured `fresh-funded-solo` campaign even when
+   they create different characters and save lineages. The resulting journal includes earlier characters,
+   completed recruitment, purchases, and still-open commitments. Personal continuity must not cross a fresh
+   start merely because the fixture class is the same; reusable play knowledge needs a separate honest home.
+4. Background advisory is supervised-live proven in `live-advisor-background-20260729-r5`: two requests
+   queued with zero controller primitives, foreground movement continued while each was pending, and each
+   source-attributed brief reached later planner observations. Exact EOF-suffix continuation remains
+   portable/hosted evidence only; this run did not exercise malformed EOF recovery.
 
 ## Fix the class, not the final symptom
 
