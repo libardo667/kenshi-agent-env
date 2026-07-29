@@ -1,7 +1,8 @@
 # Implementation status
 
 Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface in
-generated [catalog](docs/generated/ACTION_CATALOG.md) and [coverage](docs/generated/UI_AFFORDANCE_COVERAGE.md);
+generated [catalog](docs/generated/ACTION_CATALOG.md), game-derived [binding parity](docs/generated/GAME_BINDING_PARITY.md),
+and the narrower [modeled-interface audit](docs/generated/MODELED_INTERFACE_AUDIT.md);
 mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTATION.md).
 
 ## What works

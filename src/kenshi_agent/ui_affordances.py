@@ -1,4 +1,4 @@
-"""What the agent can *do* to Kenshi's interface, and what it still cannot.
+"""What the agent can do inside the interface families already modeled.
 
 `fact_coverage` answers "what can the agent know?". This is its other half:
 what can the agent *operate*? An agent that can read a shop perfectly and has
@@ -26,10 +26,10 @@ keeps being wrong. Three mechanisms, in descending order of reliability:
 * `PIXEL` — click a calibrated screen coordinate. Breaks on resolution change,
   UI layout change, and anything overlapping. Always a stopgap.
 
-The registry is hand-written from Kenshi's own GUI surface (`ForgottenGUI`,
-`InventoryGUI`, `GameWorld` in KenshiLib) rather than from our action catalog,
-so it can express affordances we have *not* built. That is the entire point: a
-map drawn only from what we already do would always report full coverage.
+This registry is hand-written and therefore cannot be the denominator for game
+parity. It remains useful as a navigation audit inside the interface families
+we already know, especially for detecting missing exits. Game-derived source
+adapters own parity and expansion detection.
 """
 
 from __future__ import annotations
@@ -406,8 +406,9 @@ class AffordanceReport:
     def as_lines(self) -> list[str]:
         total = len(self.covered) + len(self.missing)
         lines = [
-            f"covered   {len(self.covered):3d} / {total}",
-            f"missing   {len(self.missing):3d}",
+            f"modeled rows  {total:3d}",
+            f"implemented   {len(self.covered):3d}",
+            f"unimplemented {len(self.missing):3d}",
             f"stranding {len(self.stranding_gaps):3d}  (missing exits)",
             f"on pixels {len(self.pixel_dependencies):3d}  (covered, but fragile)",
             "",

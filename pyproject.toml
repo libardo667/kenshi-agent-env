@@ -67,6 +67,7 @@ also_copy = [
   "config/",
   "docs/",
   "examples/",
+  "game_sources/",
   "knowledge/",
   "native/",
   "prompts/",
