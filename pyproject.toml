@@ -60,6 +60,7 @@ do_not_mutate_patterns = [
 ]
 pytest_add_cli_args_test_selection = ["tests/"]
 also_copy = [
+  "dev",
   ".env.example",
   ".githooks/",
   ".gitignore",
