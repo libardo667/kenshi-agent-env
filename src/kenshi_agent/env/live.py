@@ -949,6 +949,52 @@ class LiveEnvironment(AgentEnvironment):
             f"({expected:g}x) after two idempotent selections."
         )
 
+    async def _establish_native_running_state(
+        self,
+        acknowledgement: NativeCommandAcknowledgement,
+        *,
+        timeout_seconds: float = 3.0,
+    ) -> tuple[int, NativeCommandAcknowledgement | None]:
+        """Start at 1x unless this exact native command finishes first."""
+
+        expected = GAME_SPEED_MULTIPLIER_BY_GEAR[1]
+        primitive_count = 0
+        for _attempt in range(2):
+            primitive_count += await self._execute_speed_key(1)
+            deadline = time.monotonic() + timeout_seconds
+            while True:
+                try:
+                    result = self.telemetry_reader.read()
+                except TelemetryReadError:
+                    result = None
+                if result is not None and not result.stale:
+                    current = self._matching_native_acknowledgement(
+                        result.snapshot,
+                        acknowledgement,
+                    )
+                    if (
+                        current is not None
+                        and current.status
+                        in {
+                            NativeCommandStatus.CANCELLED,
+                            NativeCommandStatus.COMPLETED,
+                        }
+                    ):
+                        return primitive_count, current
+                    if (
+                        result.snapshot.game.paused is False
+                        and result.snapshot.game.speed_multiplier == expected
+                    ):
+                        return primitive_count, None
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                await asyncio.sleep(min(0.05, remaining))
+        raise RuntimeError(
+            "Kenshi did not confirm native movement running at speed gear 1 "
+            f"({expected:g}x) after two idempotent selections."
+        )
+
     async def _execute_speed_key(self, gear: int) -> int:
         if self.controller.emergency_stop_pressed(self.emergency_stop_key):
             raise RuntimeError(
@@ -2377,6 +2423,37 @@ class LiveEnvironment(AgentEnvironment):
             }
         )
 
+    @staticmethod
+    def _accepted_native_terminal_receipt(
+        *,
+        action: Action,
+        command: CommandDispatchContext,
+        started: datetime,
+        primitive_count: int,
+        messages: list[str],
+        acknowledgement: NativeCommandAcknowledgement,
+        semantic: SemanticActionReceipt | None,
+    ) -> ActionReceipt:
+        return ActionReceipt(
+            action=action,
+            command_id=command.command_id,
+            started_after_revision=command.based_on_revision,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=primitive_count,
+            message=" ".join(messages),
+            error_type=(
+                "NativeCommandCancelled"
+                if acknowledgement.status is NativeCommandStatus.CANCELLED
+                else None
+            ),
+            native_acknowledgement=acknowledgement,
+            semantic=semantic,
+        )
+
     async def _execute_native_approach(
         self,
         action: Action,
@@ -2476,23 +2553,13 @@ class LiveEnvironment(AgentEnvironment):
             NativeCommandStatus.CANCELLED,
             NativeCommandStatus.COMPLETED,
         }:
-            return ActionReceipt(
+            return self._accepted_native_terminal_receipt(
                 action=action,
-                command_id=command.command_id,
-                started_after_revision=command.based_on_revision,
-                accepted=True,
-                executed=True,
-                dry_run=False,
-                started_at=started,
-                finished_at=datetime.now(UTC),
-                primitive_actions=primitive_count,
-                message=" ".join(messages),
-                error_type=(
-                    "NativeCommandCancelled"
-                    if acknowledgement.status == NativeCommandStatus.CANCELLED
-                    else None
-                ),
-                native_acknowledgement=acknowledgement,
+                command=command,
+                started=started,
+                primitive_count=primitive_count,
+                messages=messages,
+                acknowledgement=acknowledgement,
                 semantic=semantic,
             )
         if accepted_is_terminal_error:
@@ -2557,18 +2624,39 @@ class LiveEnvironment(AgentEnvironment):
                 )
             try:
                 if paused:
-                    unpause_count, unpause_control = await self._execute_pause_request(
-                        False
+                    # A relative-pointer trip to the Play button can consume the
+                    # native command's paused-order watchdog after acceptance.
+                    # Gear 1 is an idempotent running-state selector, and the
+                    # native-aware playback helper composes running confirmation
+                    # with the same command's exact terminal.
+                    running_count, playback_terminal = (
+                        await self._establish_native_running_state(
+                            acknowledgement
+                        )
                     )
-                    primitive_count += unpause_count
-                    if not await self._wait_for_pause_state(False):
-                        raise RuntimeError(
-                            "Native movement did not confirm Kenshi running after "
-                            f"using {unpause_control}."
+                    primitive_count += running_count
+                    if playback_terminal is not None:
+                        acknowledgement = playback_terminal
+                        messages.append(
+                            "The keyed native command reached its terminal while "
+                            "playback ownership was being established; that "
+                            "terminal takes precedence over running-state "
+                            "confirmation: "
+                            f"{playback_terminal.status.value} "
+                            f"({playback_terminal.reason or 'no reason'})."
+                        )
+                        return self._accepted_native_terminal_receipt(
+                            action=action,
+                            command=command,
+                            started=started,
+                            primitive_count=primitive_count,
+                            messages=messages,
+                            acknowledgement=acknowledgement,
+                            semantic=semantic,
                         )
                     messages.append(
-                        f"Started the paused world with {unpause_control}; the "
-                        "monitored option now owns the running movement."
+                        "Started the paused world at speed gear 1; the monitored "
+                        "option now owns the running movement."
                     )
                 if running_speed_gear != 1:
                     primitive_count += await self._establish_playback_gear(
@@ -2597,24 +2685,13 @@ class LiveEnvironment(AgentEnvironment):
                     "precedence over an intermediate running-state confirmation: "
                     f"{terminal.status.value} ({terminal.reason or 'no reason'})."
                 )
-                return ActionReceipt(
+                return self._accepted_native_terminal_receipt(
                     action=action,
-                    command_id=command.command_id,
-                    started_after_revision=command.based_on_revision,
-                    accepted=True,
-                    executed=True,
-                    dry_run=False,
-                    started_at=started,
-                    finished_at=datetime.now(UTC),
-                    primitive_actions=primitive_count,
-                    message=" ".join(messages),
-                    error_type=(
-                        "NativeCommandCancelled"
-                        if acknowledgement.status
-                        is NativeCommandStatus.CANCELLED
-                        else None
-                    ),
-                    native_acknowledgement=acknowledgement,
+                    command=command,
+                    started=started,
+                    primitive_count=primitive_count,
+                    messages=messages,
+                    acknowledgement=acknowledgement,
                     semantic=semantic,
                 )
             return ActionReceipt(
@@ -3033,7 +3110,17 @@ class LiveEnvironment(AgentEnvironment):
             return None
         if result.stale:
             return None
-        current = result.snapshot.native_control.acknowledgement_for(
+        return self._matching_native_acknowledgement(
+            result.snapshot,
+            previous,
+        )
+
+    @staticmethod
+    def _matching_native_acknowledgement(
+        snapshot: TelemetrySnapshot,
+        previous: NativeCommandAcknowledgement,
+    ) -> NativeCommandAcknowledgement | None:
+        current = snapshot.native_control.acknowledgement_for(
             previous.command_id
         )
         if current is None:

@@ -2248,6 +2248,68 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
     asyncio.run(scenario())
 
 
+def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        environment.macros = MacroRegistry(
+            {
+                "approach_confirmed_vendor": MacroConfig(
+                    requires_native_assisted=True,
+                    movement_pulse_seconds=0.01,
+                    movement_pulse_min_seconds=0.005,
+                    movement_pulse_max_seconds=0.02,
+                    actions=[
+                        {
+                            "kind": "hotkey",
+                            "keys": ["ctrl", "shift", "f10"],
+                            "hold_seconds": 0.01,
+                        }
+                    ],
+                ),
+                # This is the live profile's current relative-pointer route.
+                # Native movement must not spend its pause watchdog walking the
+                # cursor to this button after the order has been accepted.
+                "unpause_game": MacroConfig(
+                    actions=[
+                        {
+                            "kind": "click",
+                            "x": 0.792,
+                            "y": 0.723,
+                            "space": "normalized",
+                            "button": "left",
+                        }
+                    ]
+                ),
+            }
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "require_paused_between_actions": False,
+                "unpause_skill": "unpause_game",
+            }
+        )
+        environment._NATIVE_DIALOGUE_SETTLE_SECONDS = 0.0
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            ApproachDialogueTargetAction(target_id="entity-vendor"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "9" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert telemetry.paused is False
+        assert [action.kind for action in controller.actions] == ["hotkey", "key"]
+        assert controller.actions[-1] == KeyAction(key="f2")
+        assert "speed gear 1" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
 def test_direction_does_not_adopt_an_active_order_for_another_vector(
     tmp_path: Path,
 ) -> None:
