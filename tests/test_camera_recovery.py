@@ -240,6 +240,22 @@ class CameraCapture:
                         (x, y, x + 7, y + 7),
                         fill=colors[((x // 8) + 2 * (y // 8)) % len(colors)],
                     )
+        elif self.mode == "usable_follow":
+            draw = ImageDraw.Draw(image)
+            colors = [
+                (60, 70, 80),
+                (100, 110, 120),
+                (140, 150, 160),
+                (80, 120, 80),
+                (160, 100, 80),
+                (80, 80, 150),
+            ]
+            for y in range(0, 360, 16):
+                for x in range(0, 640, 16):
+                    draw.rectangle(
+                        (x, y, x + 15, y + 15),
+                        fill=colors[((x // 16) + 2 * (y // 16)) % len(colors)],
+                    )
         output = self.path / f"candidate_{sequence:06d}.png"
         image.save(output)
         digest = hashlib.sha256(output.read_bytes()).hexdigest()
@@ -485,6 +501,31 @@ def test_already_clear_emits_zero_input_and_returns_scored_evidence(
         assert evidence.primitive_actions == 0
         assert evidence.candidates[0].clear
         assert evidence.candidates[0].screenshot_path.exists()
+
+    asyncio.run(scenario())
+
+
+def test_anchored_structured_view_below_cosmetic_threshold_emits_zero_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _, controller = camera_environment(
+            tmp_path,
+            mode="usable_follow",
+        )
+        await environment.reset()
+        transition = await environment.step(RecoverCameraViewAction())
+
+        evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
+        assert evidence is not None
+        initial = evidence.candidates[0]
+        assert initial.score < evidence.clear_score_threshold
+        assert initial.selected_world_label_visible
+        assert initial.anchor_distance == pytest.approx(0.0)
+        assert initial.clear
+        assert evidence.status is CameraRecoveryStatus.ALREADY_CLEAR
+        assert evidence.primitive_actions == 0
+        assert controller.actions == []
 
     asyncio.run(scenario())
 

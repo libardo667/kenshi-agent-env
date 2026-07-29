@@ -11,6 +11,11 @@ from .models import CameraFrameScore, Observation, normalize_control_label
 
 WORLD_ROI = (0.12, 0.05, 0.90, 0.72)
 SCORE_SIZE = (160, 90)
+USABLE_STRUCTURE_SCORE_FLOOR = 0.60
+USABLE_EDGE_DENSITY_FLOOR = 0.40
+USABLE_CONTRAST_FLOOR = 0.50
+USABLE_NONFLAT_FRACTION_FLOOR = 0.50
+USABLE_INVERSE_DOMINANT_COLOR_FLOOR = 0.60
 
 
 def score_camera_observation(
@@ -25,10 +30,11 @@ def score_camera_observation(
 
     The metric rewards visible structure, contrast, and color variation in the
     central world viewport. It penalizes the large flat/dominant-color regions
-    produced when the camera is inside a wall or roof. A visually varied frame
-    is only accepted as clear when telemetry also shows the selected
-    character's world label and the camera remains anchored near that
-    character.
+    produced when the camera is inside a wall or roof. A frame is accepted when
+    it either clears the high composite threshold or has balanced minimum
+    structure across independent dimensions. Both paths also require telemetry
+    to show the selected character's world label and keep the camera anchored
+    near that character.
     """
 
     if observation.screenshot_path is None or observation.screenshot_sha256 is None:
@@ -140,11 +146,20 @@ def score_camera_observation(
         delta_z = telemetry.camera.center.z - selected_character.position.z
         anchor_distance = math.hypot(delta_x, delta_z)
 
-    clear = (
-        score >= clear_score_threshold
-        and selected_world_label_visible
+    anchored = (
+        selected_world_label_visible
         and anchor_distance is not None
         and anchor_distance <= anchor_max_distance
+    )
+    balanced_world_structure = (
+        score >= USABLE_STRUCTURE_SCORE_FLOOR
+        and edge_density >= USABLE_EDGE_DENSITY_FLOOR
+        and contrast >= USABLE_CONTRAST_FLOOR
+        and nonflat_fraction >= USABLE_NONFLAT_FRACTION_FLOOR
+        and inverse_dominant_color >= USABLE_INVERSE_DOMINANT_COLOR_FLOOR
+    )
+    clear = anchored and (
+        score >= clear_score_threshold or balanced_world_structure
     )
     return CameraFrameScore(
         candidate=candidate,
