@@ -65,7 +65,20 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
         captured_at=datetime.now(UTC),
         source="kenshilib-plugin",
     ).model_dump(mode="json")
-    payload["capabilities"] = ["ui.inventory", "ui.dialogue", "nearby.characters"]
+    payload["capabilities"] = [
+        "game.location",
+        "game.location.identity",
+        "ui.inventory",
+        "ui.dialogue",
+        "nearby.characters",
+    ]
+    payload["game"] = {
+        "loaded": True,
+        "paused": True,
+        "location_id": "entity-squin",
+        "location_name": "Squin",
+        "inside_town_walls": True,
+    }
     payload["ui"] = {
         "active_screen": "trade",
         "modal_open": True,
@@ -103,6 +116,14 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
             "mining_resource_level": 0.8,
         }
     ]
+    payload["known_map_destinations"] = [
+        {
+            "id": "entity-squin",
+            "name": "Squin",
+            "distance": 1300.0,
+            "has_gates": True,
+        }
+    ]
     payload["active_shop_trader_count"] = 1
     payload["native_control"] = {
         "available": True,
@@ -116,6 +137,10 @@ def test_reader_accepts_native_nearby_character_and_ui_signals(tmp_path: Path) -
     result = TelemetryReader(path, max_age_seconds=5, retries=1).read()
 
     assert result.snapshot.ui.active_screen == "trade"
+    assert result.snapshot.game.location_id == "entity-squin"
+    assert result.snapshot.game.location_name == "Squin"
+    assert result.snapshot.game.inside_town_walls is True
+    assert result.snapshot.known_map_destinations[0].has_gates is True
     assert result.snapshot.nearby_entities[0].kind == "character"
     assert result.snapshot.nearby_entities[0].shop_inventory_owner is True
     assert result.snapshot.nearby_entities[0].is_squad_leader is True

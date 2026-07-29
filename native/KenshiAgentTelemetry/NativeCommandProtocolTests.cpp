@@ -283,6 +283,95 @@ namespace
         return 0;
     }
 
+    int TestNativeMapTravelEntry()
+    {
+        using KenshiAgentTelemetry::EvaluateNativeMapTravel;
+        using KenshiAgentTelemetry::MAP_TRAVEL_CANCEL_UNCONFIRMED;
+        using KenshiAgentTelemetry::MAP_TRAVEL_COMPLETE;
+        using KenshiAgentTelemetry::MAP_TRAVEL_CONTINUE;
+        using KenshiAgentTelemetry::MAP_TRAVEL_ISSUE_INTERIOR_ORDER;
+
+        if (EvaluateNativeMapTravel(
+                false,
+                true,
+                false,
+                true,
+                false) != MAP_TRAVEL_ISSUE_INTERIOR_ORDER)
+        {
+            return Fail(
+                "an exterior gate waypoint masqueraded as settlement arrival");
+        }
+        if (EvaluateNativeMapTravel(
+                true,
+                true,
+                false,
+                true,
+                false) != MAP_TRAVEL_ISSUE_INTERIOR_ORDER)
+        {
+            return Fail(
+                "town-border membership bypassed the gated entry boundary");
+        }
+        if (EvaluateNativeMapTravel(
+                true,
+                true,
+                true,
+                false,
+                true) != MAP_TRAVEL_CONTINUE)
+        {
+            return Fail(
+                "a transient wall crossing completed an unfinished interior leg");
+        }
+        if (EvaluateNativeMapTravel(
+                true,
+                true,
+                true,
+                true,
+                false) != MAP_TRAVEL_ISSUE_INTERIOR_ORDER)
+        {
+            return Fail(
+                "a wall crossing bypassed the controller-owned interior leg");
+        }
+        if (EvaluateNativeMapTravel(
+                true,
+                true,
+                true,
+                true,
+                true) != MAP_TRAVEL_COMPLETE)
+        {
+            return Fail(
+                "a completed interior leg with exact wall proof did not complete");
+        }
+        if (EvaluateNativeMapTravel(
+                true,
+                false,
+                false,
+                false,
+                false) != MAP_TRAVEL_COMPLETE)
+        {
+            return Fail("exact membership did not complete an ungated town");
+        }
+        if (EvaluateNativeMapTravel(
+                false,
+                true,
+                true,
+                false,
+                true) != MAP_TRAVEL_CONTINUE)
+        {
+            return Fail("inside-walls state from another town completed travel");
+        }
+        if (EvaluateNativeMapTravel(
+                false,
+                true,
+                false,
+                true,
+                true) != MAP_TRAVEL_CANCEL_UNCONFIRMED)
+        {
+            return Fail(
+                "an exhausted interior leg invented unconfirmed town entry");
+        }
+        return 0;
+    }
+
     int TestNativeMovementStallTiming()
     {
         using KenshiAgentTelemetry::NativeMovementStallWindow;
@@ -612,6 +701,9 @@ int main(int argc, char** argv)
     const int completionResult = TestNativeDirectionCompletion();
     if (completionResult != 0)
         return completionResult;
+    const int mapTravelResult = TestNativeMapTravelEntry();
+    if (mapTravelResult != 0)
+        return mapTravelResult;
     const int stallResult = TestNativeMovementStallTiming();
     if (stallResult != 0)
         return stallResult;

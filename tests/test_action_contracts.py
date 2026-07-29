@@ -88,6 +88,7 @@ def observation(
     control_mode: ControlMode = ControlMode.NATIVE_ASSISTED,
     world_targets: list[WorldTarget] | None = None,
     active_shop_trader_count: int = 0,
+    game: GameState | None = None,
 ) -> Observation:
     return Observation(
         run_id="contract-test",
@@ -99,7 +100,7 @@ def observation(
             sequence=10,
             identity_session_id="session-contract-test",
             capabilities=capabilities if capabilities is not None else APPROACH_CAPABILITIES,
-            game=GameState(loaded=True, paused=True),
+            game=game or GameState(loaded=True, paused=True),
             ui=ui or UIState(visible_controls=controls),
             active_shop_trader_count=active_shop_trader_count,
             squad=squad or [],
@@ -1017,6 +1018,90 @@ def test_map_travel_cannot_bind_a_destination_already_reached() -> None:
             observation=state,
         )
     }
+
+
+def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> None:
+    state = observation(
+        capabilities=[
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "game.location",
+            "game.location.identity",
+            "identity.stable_handles",
+            "squad.health",
+        ],
+        squad=[
+            CharacterState(
+                id="entity-selected",
+                name="Streak",
+                selected=True,
+            )
+        ],
+        ui=UIState(
+            selected_character_id="entity-selected",
+            selected_character_ids=["entity-selected"],
+        ),
+        game=GameState(
+            loaded=True,
+            paused=True,
+            location_id="entity-known-town",
+            location_name="Squin",
+            inside_town_walls=True,
+        ),
+    )
+    assert state.telemetry is not None
+    state.telemetry.known_map_destinations = [
+        KnownMapDestination(
+            id="entity-known-town",
+            name="Squin",
+            distance=1300.0,
+            has_gates=True,
+        )
+    ]
+    action = TravelToMapDestinationAction(destination_id="entity-known-town")
+
+    contract = contract_for(action)
+
+    assert contract is not None
+    binding = contract.bind(action, state)
+    assert not binding.bound
+    assert "already inside" in binding.reason
+    assert "travel_to_map_destination" not in {
+        item.kind
+        for item in planner_visible_contracts(
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            capabilities=set(state.telemetry.capabilities),
+            observation=state,
+        )
+    }
+
+    state.telemetry.game = state.telemetry.game.model_copy(
+        update={"inside_town_walls": False}
+    )
+    assert contract.bind(action, state).bound
+
+    state.telemetry.game = state.telemetry.game.model_copy(
+        update={
+            "location_id": "entity-other-town",
+            "location_name": "Admag",
+            "inside_town_walls": True,
+        }
+    )
+    assert contract.bind(action, state).bound
+
+    state.telemetry.game = state.telemetry.game.model_copy(
+        update={
+            "location_id": "entity-known-town",
+            "location_name": "Squin",
+            "inside_town_walls": False,
+        }
+    )
+    state.telemetry.known_map_destinations[0] = (
+        state.telemetry.known_map_destinations[0].model_copy(
+            update={"has_gates": False}
+        )
+    )
+    assert not contract.bind(action, state).bound
 
 
 class TestLegacyCompatibilityAdapter:

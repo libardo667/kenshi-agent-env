@@ -2955,6 +2955,18 @@
           "default": null,
           "title": "Money"
         },
+        "location_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Location Id"
+        },
         "location_name": {
           "anyOf": [
             {
@@ -2966,6 +2978,18 @@
           ],
           "default": null,
           "title": "Location Name"
+        },
+        "inside_town_walls": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inside Town Walls"
         }
       },
       "title": "GameState",
@@ -3292,6 +3316,18 @@
           "minimum": 0.0,
           "title": "Distance",
           "type": "number"
+        },
+        "has_gates": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Has Gates"
         }
       },
       "required": [
@@ -5865,7 +5901,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.3.1",
+          "default": "1.4.0",
           "title": "Protocol Version",
           "type": "string"
         },

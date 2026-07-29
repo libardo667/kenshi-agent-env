@@ -2425,7 +2425,7 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
         "selected": selected.model_dump(mode="json") if selected else None,
         "barman": barman.model_dump(mode="json") if barman else None,
         "known_map_destinations": [
-            destination.model_dump(mode="json")
+            destination.model_dump(mode="json", exclude_none=True)
             for destination in snapshot.known_map_destinations
         ],
         "world_target_count": len(snapshot.world_targets),

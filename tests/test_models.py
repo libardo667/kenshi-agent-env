@@ -12,6 +12,7 @@ from kenshi_agent.models import (
     ConditionKind,
     ConditionOperator,
     ContextActionKind,
+    GameState,
     KnownMapDestination,
     NearbyEntity,
     NoopAction,
@@ -70,6 +71,7 @@ def test_known_map_destination_is_a_first_class_observed_identity() -> None:
             "id": "entity-known-town",
             "name": "The Hub",
             "distance": 1250.0,
+            "has_gates": False,
         }
     ]
 
@@ -78,6 +80,32 @@ def test_known_map_destination_is_a_first_class_observed_identity() -> None:
     assert snapshot.known_map_destinations[0].id == "entity-known-town"
     assert snapshot.known_map_destinations[0].name == "The Hub"
     assert snapshot.known_map_destinations[0].distance == 1250.0
+    assert snapshot.known_map_destinations[0].has_gates is False
+
+
+def test_location_capability_requires_one_complete_exact_town_observation() -> None:
+    with pytest.raises(ValidationError, match="populated together"):
+        TelemetrySnapshot(
+            capabilities=["game.location", "game.location.identity"],
+            game=GameState(
+                loaded=True,
+                location_id="entity-squin",
+                location_name="Squin",
+            ),
+        )
+
+    snapshot = TelemetrySnapshot(
+        capabilities=["game.location", "game.location.identity"],
+        game=GameState(
+            loaded=True,
+            location_id="entity-squin",
+            location_name="Squin",
+            inside_town_walls=False,
+        ),
+    )
+
+    assert snapshot.game.location_id == "entity-squin"
+    assert snapshot.game.inside_town_walls is False
 
 
 def test_known_map_destination_digest_separates_identity_from_travel_eligibility() -> None:
@@ -106,6 +134,56 @@ def test_known_map_destination_digest_separates_identity_from_travel_eligibility
             "id": "far",
             "name": "Squin",
             "distance": 17500.0,
+            "travel_available": True,
+        },
+    ]
+
+
+def test_known_map_destination_digest_marks_exact_current_town_reached() -> None:
+    state = Observation(
+        run_id="map-location-digest",
+        step_index=0,
+        mode="mock",
+        world_revision=WorldStateRevision(telemetry_sequence=1),
+        telemetry=TelemetrySnapshot(
+            sequence=1,
+            capabilities=["game.location", "game.location.identity"],
+            game=GameState(
+                loaded=True,
+                location_id="entity-squin",
+                location_name="Squin",
+                inside_town_walls=True,
+            ),
+            known_map_destinations=[
+                KnownMapDestination(
+                    id="entity-squin",
+                    name="Squin",
+                    distance=1300.0,
+                    has_gates=True,
+                ),
+                KnownMapDestination(
+                    id="entity-admag",
+                    name="Admag",
+                    distance=9000.0,
+                    has_gates=True,
+                ),
+            ],
+        ),
+    )
+
+    assert state.known_map_destination_digest() == [
+        {
+            "id": "entity-squin",
+            "name": "Squin",
+            "distance": 1300.0,
+            "has_gates": True,
+            "travel_available": False,
+        },
+        {
+            "id": "entity-admag",
+            "name": "Admag",
+            "distance": 9000.0,
+            "has_gates": True,
             "travel_available": True,
         },
     ]

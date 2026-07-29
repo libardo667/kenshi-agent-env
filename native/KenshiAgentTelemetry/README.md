@@ -73,6 +73,14 @@ arguments:
   capped at 2,000 units, and completes inside the fixed arrival tolerance or
   after crossing the intended destination plane. Its request and acknowledgement
   carry an empty target plus the exact bearing and distance.
+- `travel_to_map_destination` resolves one exact discovered town and approaches
+  its direction-dependent gate waypoint. A gated town then receives one
+  controller-owned interior order; completion requires that order to finish
+  while the exact town is the selected character's current location and Kenshi
+  reports the character inside its walls. Crossing the wall predicate does not
+  terminate the interior order. An ungated town requires exact current-location
+  identity. A reached interior leg without that evidence cancels rather than
+  inventing arrival.
 - `exit_current_building` requires the selected character's indoor handle to
   resolve to a valid building, then resolves its current unlocked exit and
   outside point without accepting model-authored geometry.
@@ -107,8 +115,8 @@ a person or coordinate. World targets combine a 400-unit local scan and a
 objects, and warn if either source scan reaches capacity.
 
 It explicitly leaves body-part wounds, bleeding rate, getting-eaten state,
-imprisonment/enslavement, the internal task stack, location name, distant world
-state, and geometry occlusion unavailable or unvalidated. KenshiLib's raw
+imprisonment/enslavement, the internal task stack, distant world state, and
+geometry occlusion unavailable or unvalidated. KenshiLib's raw
 `isGettingEaten` byte is not exported because live validation found it set on a
 healthy new character. The `food_items` scalar remains for compatibility but
 has disagreed with named inventory in live evidence; consumers must prefer the

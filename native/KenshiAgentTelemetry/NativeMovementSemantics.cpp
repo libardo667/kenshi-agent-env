@@ -201,6 +201,38 @@ namespace KenshiAgentTelemetry
         return progressX * goalX + progressZ * goalZ >= goalLengthSquared;
     }
 
+    bool IsNativeMapDestinationPresentlyReached(
+        bool currentTownIdentityMatches,
+        bool destinationHasGates,
+        bool insideTownWalls)
+    {
+        return currentTownIdentityMatches &&
+               (!destinationHasGates || insideTownWalls);
+    }
+
+    NativeMapTravelDecision EvaluateNativeMapTravel(
+        bool currentTownIdentityMatches,
+        bool destinationHasGates,
+        bool insideTownWalls,
+        bool currentLegReached,
+        bool interiorLegIssued)
+    {
+        const bool destinationReached =
+            IsNativeMapDestinationPresentlyReached(
+                currentTownIdentityMatches,
+                destinationHasGates,
+                insideTownWalls);
+        if (!destinationHasGates && destinationReached)
+            return MAP_TRAVEL_COMPLETE;
+        if (!currentLegReached)
+            return MAP_TRAVEL_CONTINUE;
+        if (!interiorLegIssued)
+            return MAP_TRAVEL_ISSUE_INTERIOR_ORDER;
+        return destinationReached
+            ? MAP_TRAVEL_COMPLETE
+            : MAP_TRAVEL_CANCEL_UNCONFIRMED;
+    }
+
     bool ShouldMaintainCameraFollow(
         bool commandActive,
         bool exactSelectionResolved,

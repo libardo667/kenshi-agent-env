@@ -99,6 +99,33 @@ namespace KenshiAgentTelemetry
         float currentX,
         float currentZ);
 
+    enum NativeMapTravelDecision
+    {
+        MAP_TRAVEL_CONTINUE,
+        MAP_TRAVEL_ISSUE_INTERIOR_ORDER,
+        MAP_TRAVEL_COMPLETE,
+        MAP_TRAVEL_CANCEL_UNCONFIRMED
+    };
+
+    // Current-town identity is a present-tense fact used both for issue-time
+    // rejection and terminal revalidation. A gated town additionally requires
+    // an inside-walls observation.
+    bool IsNativeMapDestinationPresentlyReached(
+        bool currentTownIdentityMatches,
+        bool destinationHasGates,
+        bool insideTownWalls);
+
+    // Map markers resolve to direction-dependent gate waypoints. In a gated
+    // town, crossing the wall predicate is only a transition: the controller
+    // must finish its subsequent interior leg while exact town and wall facts
+    // remain true before reporting settlement arrival.
+    NativeMapTravelDecision EvaluateNativeMapTravel(
+        bool currentTownIdentityMatches,
+        bool destinationHasGates,
+        bool insideTownWalls,
+        bool currentLegReached,
+        bool interiorLegIssued);
+
     // Camera ownership follows native command ownership. Reassert follow only
     // while one command is active and the current exact selection still owns
     // that command; any ambiguity or selection drift fails closed.

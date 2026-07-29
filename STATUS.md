@@ -106,7 +106,7 @@ before planning and rejects native actions again at the guard and environment bo
   restarts, including exact-identity exclusion, bounded fieldbook reopening, current-telemetry
   precedence, rejection correction, and evidence-backed commitment closure. No supervised live
   restart has exercised that authority.
-- Body-part wounds, bleeding rate, being eaten, imprisonment, location name, task stacks, trader
+- Body-part wounds, bleeding rate, being eaten, imprisonment, task stacks, trader
   money, occlusion, and distant world state are unavailable or unvalidated; source-scan capacity
   makes absence unknown.
 - Native identity needs validation across recruit/dismiss/reorder/KO/death, save/load, and zones;

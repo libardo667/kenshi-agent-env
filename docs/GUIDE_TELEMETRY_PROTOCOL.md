@@ -80,6 +80,13 @@ maximum result count, `warnings` says
 queries as nearest-first, so absence at source capacity remains unknown even
 though the retained recognized targets are sorted.
 
+## Settlement location and map travel
+
+`game.location` gates the display name; `game.location.identity` gates the
+all-null-or-complete exact ID/name/inside-walls tuple. Map destinations expose
+`has_gates`. Entry and terminal semantics are fixed by
+[settlement entry ownership](ADR_SETTLEMENT_ENTRY.md).
+
 ## Partial and unknown values
 
 Omit or null what is unavailable. Do not serialize unknown health as zero, an
@@ -105,16 +112,9 @@ the internal task stack or hidden task-scoring mechanics.
 
 ## Threading
 
-Sample Kenshi objects only on a verified game/UI thread. The plug-in uses
-separate Kenshi-owned `TitleScreen::update` and `PlayerInterface::update` hooks.
-The title hook emits only title state and bounded visible controls and must not
-dereference `GameWorld`, player, camera, entity, or native-command state. The
-player hook emits loaded-game state only after `GameWorld::initialized`.
-Serialize a plain copy; never dereference Kenshi or MyGUI objects from a
-background writer thread. A future worker may write copied bytes but must not
-retain game pointers.
+Sample Kenshi objects only on a verified game/UI thread. The title hook emits
+only title state and bounded controls; the player hook waits for initialized
+loaded-game state. Serialize a plain copy and never retain Kenshi or MyGUI
+pointers in a background writer.
 
-## Privacy
-
-Telemetry and screenshots can contain names, save details, dialogue, and
-user-authored mod content; treat run directories as private by default.
+Telemetry and screenshots can contain private game or user-authored content.

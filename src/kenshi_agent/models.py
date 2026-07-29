@@ -371,6 +371,7 @@ class KnownMapDestination(StrictModel):
     id: str = Field(min_length=1, max_length=200)
     name: str = Field(min_length=1, max_length=200)
     distance: float = Field(ge=0.0)
+    has_gates: bool | None = None
 
 
 # This is intentionally a planner-policy radius, not a duplicate of the native
@@ -380,7 +381,34 @@ class KnownMapDestination(StrictModel):
 MINIMUM_REMOTE_MAP_TRAVEL_DISTANCE = 50.0
 
 
-def map_destination_travel_available(destination: KnownMapDestination) -> bool:
+def map_destination_already_reached(
+    destination: KnownMapDestination,
+    *,
+    current_location_id: str | None = None,
+    inside_town_walls: bool | None = None,
+    location_authoritative: bool = False,
+) -> bool:
+    return (
+        location_authoritative
+        and current_location_id == destination.id
+        and (inside_town_walls is True or destination.has_gates is False)
+    )
+
+
+def map_destination_travel_available(
+    destination: KnownMapDestination,
+    *,
+    current_location_id: str | None = None,
+    inside_town_walls: bool | None = None,
+    location_authoritative: bool = False,
+) -> bool:
+    if map_destination_already_reached(
+        destination,
+        current_location_id=current_location_id,
+        inside_town_walls=inside_town_walls,
+        location_authoritative=location_authoritative,
+    ):
+        return False
     return destination.distance > MINIMUM_REMOTE_MAP_TRAVEL_DISTANCE
 
 
@@ -418,7 +446,9 @@ class GameState(StrictModel):
     minute: int | None = Field(default=None, ge=0, le=59)
     elapsed_minutes: float | None = Field(default=None, ge=0)
     money: int | None = None
+    location_id: str | None = None
     location_name: str | None = None
+    inside_town_walls: bool | None = None
 
 
 class CameraState(StrictModel):
@@ -783,7 +813,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.3.1"
+    protocol_version: str = "1.4.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -812,6 +842,18 @@ class TelemetrySnapshot(StrictModel):
 
     @model_validator(mode="after")
     def stable_identity_must_be_complete_and_consistent(self) -> TelemetrySnapshot:
+        location = self.game
+        if "game.location.identity" in self.capabilities:
+            populated_location_fields = (
+                location.location_id is not None,
+                location.location_name is not None,
+                location.inside_town_walls is not None,
+            )
+            if any(populated_location_fields) and not all(populated_location_fields):
+                raise ValueError(
+                    "game.location.identity requires location_id, location_name, "
+                    "and inside_town_walls to be populated together"
+                )
         if "identity.stable_handles" not in self.capabilities:
             return self
         if not self.identity_session_id:
@@ -3600,9 +3642,16 @@ class Observation(StrictModel):
         if self.telemetry is None or self.telemetry_stale:
             return []
         return [
-            destination.model_dump(mode="json")
+            destination.model_dump(mode="json", exclude_none=True)
             | {
-                "travel_available": map_destination_travel_available(destination),
+                "travel_available": map_destination_travel_available(
+                    destination,
+                    current_location_id=self.telemetry.game.location_id,
+                    inside_town_walls=self.telemetry.game.inside_town_walls,
+                    location_authoritative=(
+                        "game.location.identity" in self.telemetry.capabilities
+                    ),
+                ),
             }
             for destination in sorted(
                 self.telemetry.known_map_destinations,
@@ -3875,7 +3924,15 @@ class Observation(StrictModel):
                 "money": telemetry.game.money,
                 "elapsed_minutes": telemetry.game.elapsed_minutes,
                 "location_name": telemetry.game.location_name,
-            },
+            }
+            | (
+                {
+                    "location_id": telemetry.game.location_id,
+                    "inside_town_walls": telemetry.game.inside_town_walls,
+                }
+                if "game.location.identity" in telemetry.capabilities
+                else {}
+            ),
             "ui": {
                 "active_screen": telemetry.ui.active_screen,
                 "modal_open": telemetry.ui.modal_open,

@@ -15,6 +15,8 @@ namespace KenshiAgentTelemetry
             "game.speed",
             "game.money",
             "game.time",
+            "game.location",
+            "game.location.identity",
             "camera.position",
             "squad.basic",
             "squad.hunger",

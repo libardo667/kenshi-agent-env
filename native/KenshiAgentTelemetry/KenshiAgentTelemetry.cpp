@@ -125,7 +125,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.3.1";
+    const char* PROTOCOL_VERSION = "1.4.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -152,6 +152,7 @@ namespace
         bool isWalk;
         bool hasFixedDestination;
         bool isMapTravel;
+        bool mapInteriorOrderIssued;
         // A parameter-free building exit succeeds after the selected character
         // remains outside every building or tightly reaches the native-resolved
         // outside-door point. Kenshi can retain its indoor handle across a
@@ -242,6 +243,7 @@ namespace
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
+        g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
@@ -495,6 +497,7 @@ namespace
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
+        g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
@@ -676,6 +679,7 @@ namespace
         std::string id;
         std::string name;
         float distance;
+        bool hasGates;
     };
 
     bool KnownMapDestinationNearestFirst(
@@ -716,6 +720,7 @@ namespace
             snapshot.name = name;
             snapshot.distance =
                 Distance(town->getPosition(), selectedPosition);
+            snapshot.hasGates = town->hasGates();
             destinations.push_back(snapshot);
         }
         std::sort(
@@ -1766,13 +1771,14 @@ namespace
                 FinishActiveNativeCommand("cancelled", "selection_mismatch");
                 return;
             }
+            TownBase* mapTown = NULL;
             if (g_activeNativeCommand.isMapTravel)
             {
-                TownBase* town =
+                mapTown =
                     g_activeNativeCommand.targetHandle.getTown();
-                if (town == NULL ||
-                    !town->isValid() ||
-                    StableEntityId(town->getHandle()) !=
+                if (mapTown == NULL ||
+                    !mapTown->isValid() ||
+                    StableEntityId(mapTown->getHandle()) !=
                         g_activeNativeCommand.targetId)
                 {
                     FinishActiveNativeCommand(
@@ -1780,7 +1786,7 @@ namespace
                         "target_lifetime_changed");
                     return;
                 }
-                if (!IsKnownMapDestination(town))
+                if (!IsKnownMapDestination(mapTown))
                 {
                     FinishActiveNativeCommand(
                         "cancelled",
@@ -1808,6 +1814,86 @@ namespace
                 destinationZ = followPosition.z;
             }
             const Ogre::Vector3 here = walker->getPosition();
+            if (mapTown != NULL)
+            {
+                TownBase* currentTown =
+                    walker->getCurrentTownLocation();
+                const bool currentTownIdentityMatches =
+                    currentTown != NULL &&
+                    currentTown->isValid() &&
+                    StableEntityId(currentTown->getHandle()) ==
+                        g_activeNativeCommand.targetId;
+                const bool currentLegReached =
+                    KenshiAgentTelemetry::HasReachedFixedDirectionDestination(
+                        g_activeNativeCommand.originX,
+                        g_activeNativeCommand.originZ,
+                        destinationX,
+                        destinationZ,
+                        here.x,
+                        here.z);
+                const KenshiAgentTelemetry::NativeMapTravelDecision decision =
+                    KenshiAgentTelemetry::EvaluateNativeMapTravel(
+                        currentTownIdentityMatches,
+                        mapTown->hasGates(),
+                        walker->amInsideTownWalls() != 0,
+                        currentLegReached,
+                        g_activeNativeCommand.mapInteriorOrderIssued);
+                if (decision == KenshiAgentTelemetry::MAP_TRAVEL_COMPLETE)
+                {
+                    if (ou != NULL && !ou->isPaused())
+                    {
+                        // Long travel is one controller-owned option. Return
+                        // the newly usable town state deliberately to planning.
+                        ou->togglePause(true);
+                    }
+                    FinishActiveNativeCommand(
+                        "completed",
+                        "map_destination_reached");
+                    return;
+                }
+                if (decision ==
+                    KenshiAgentTelemetry::MAP_TRAVEL_ISSUE_INTERIOR_ORDER)
+                {
+                    const Ogre::Vector3 interior =
+                        mapTown->getPosition();
+                    player->newPlayerTaskSelectedCharacters(
+                        MOVE_CUS_ORDERED,
+                        hand(),
+                        NULL,
+                        interior,
+                        false);
+                    g_activeNativeCommand.mapInteriorOrderIssued = true;
+                    g_activeNativeCommand.originX = here.x;
+                    g_activeNativeCommand.originZ = here.z;
+                    g_activeNativeCommand.destinationX = interior.x;
+                    g_activeNativeCommand.destinationZ = interior.z;
+                    g_lastNativeCommandResult =
+                        "map_destination_entry_issued";
+                    KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                        g_activeNativeCommand.stallWindow);
+                    return;
+                }
+                if (decision ==
+                    KenshiAgentTelemetry::MAP_TRAVEL_CANCEL_UNCONFIRMED)
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "map_destination_entry_unconfirmed");
+                    return;
+                }
+                if (KenshiAgentTelemetry::ObserveNativeMovementStall(
+                        g_activeNativeCommand.stallWindow,
+                        false,
+                        here.x,
+                        here.z,
+                        GetTickCount()))
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "movement_stalled");
+                }
+                return;
+            }
             bool buildingExitIndoors = false;
             if (g_activeNativeCommand.isBuildingExit)
             {
@@ -1863,25 +1949,11 @@ namespace
             }
             if (arrived)
             {
-                const bool mapTravel =
-                    g_activeNativeCommand.isMapTravel;
-                if (mapTravel &&
-                    ou != NULL &&
-                    !ou->isPaused())
-                {
-                    // Long travel is a single controller-owned option. Pause at
-                    // its terminal boundary so the next state is deliberately
-                    // returned to planning rather than letting an old plan run
-                    // on after arrival.
-                    ou->togglePause(true);
-                }
                 FinishActiveNativeCommand(
                     "completed",
                     g_activeNativeCommand.isBuildingExit
                         ? "outside_door_destination_reached"
-                        : (mapTravel
-                            ? "map_destination_reached"
-                            : "walk_destination_reached"));
+                        : "walk_destination_reached");
                 return;
             }
             if (KenshiAgentTelemetry::ObserveNativeMovementStall(
@@ -2210,6 +2282,7 @@ namespace
             g_activeNativeCommand.isWalk = false;
             g_activeNativeCommand.hasFixedDestination = false;
             g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
             g_activeNativeCommand.isResourceProduction =
@@ -2255,6 +2328,22 @@ namespace
                 RejectNativeCommand(request, "selection_mismatch");
                 return;
             }
+            TownBase* currentTown = walker->getCurrentTownLocation();
+            const bool currentTownIdentityMatches =
+                currentTown != NULL &&
+                currentTown->isValid() &&
+                StableEntityId(currentTown->getHandle()) ==
+                    request.targetId;
+            if (KenshiAgentTelemetry::IsNativeMapDestinationPresentlyReached(
+                    currentTownIdentityMatches,
+                    target->hasGates(),
+                    walker->amInsideTownWalls() != 0))
+            {
+                RejectNativeCommand(
+                    request,
+                    "target_already_reached");
+                return;
+            }
 
             const Ogre::Vector3 origin = walker->getPosition();
             const Ogre::Vector3 waypoint =
@@ -2285,6 +2374,7 @@ namespace
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isMapTravel = true;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
             g_activeNativeCommand.isResourceProduction = false;
@@ -2348,6 +2438,7 @@ namespace
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
             g_activeNativeCommand.isResourceProduction = false;
@@ -2447,6 +2538,7 @@ namespace
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
             g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
             g_activeNativeCommand.isBuildingExit = true;
             g_activeNativeCommand.isContextAction = false;
             g_activeNativeCommand.isResourceProduction = false;
@@ -2513,6 +2605,7 @@ namespace
         g_activeNativeCommand.isWalk = isMove;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
+        g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
@@ -2636,6 +2729,28 @@ namespace
         else if (characters != NULL && characters->size() > 0 && (*characters)[0] != NULL)
             money = (*characters)[0]->getMoney();
 
+        TownBase* currentTown = NULL;
+        std::string currentTownId;
+        std::string currentTownName;
+        bool insideTownWalls = false;
+        if (selected != NULL && selected->isValid())
+        {
+            TownBase* candidate = selected->getCurrentTownLocation();
+            if (candidate != NULL && candidate->isValid())
+            {
+                const std::string candidateId =
+                    StableEntityId(candidate->getHandle());
+                const std::string candidateName = candidate->getKnownName();
+                if (!candidateId.empty() && !candidateName.empty())
+                {
+                    currentTown = candidate;
+                    currentTownId = candidateId;
+                    currentTownName = candidateName;
+                    insideTownWalls = selected->amInsideTownWalls() != 0;
+                }
+            }
+        }
+
         json << "{";
         json << "\"protocol_version\":\"" << PROTOCOL_VERSION << "\",";
         json << "\"sequence\":" << ++g_sequence << ",";
@@ -2658,6 +2773,21 @@ namespace
         json << "\"elapsed_minutes\":";
         if (ou != NULL)
             json << ou->getTimeStamp_inGameHours().getTotalMinutes();
+        else
+            json << "null";
+        json << ",\"location_id\":";
+        if (currentTown != NULL)
+            json << "\"" << JsonEscape(currentTownId) << "\"";
+        else
+            json << "null";
+        json << ",\"location_name\":";
+        if (currentTown != NULL)
+            json << "\"" << JsonEscape(currentTownName) << "\"";
+        else
+            json << "null";
+        json << ",\"inside_town_walls\":";
+        if (currentTown != NULL)
+            json << JsonBool(insideTownWalls);
         else
             json << "null";
         json << "},";
@@ -3153,6 +3283,8 @@ namespace
                      << JsonEscape(destination.id) << "\",";
                 json << "\"name\":\""
                      << JsonEscape(destination.name) << "\",";
+                json << "\"has_gates\":"
+                     << JsonBool(destination.hasGates) << ",";
                 json << "\"distance\":"
                      << destination.distance;
                 json << "}";
@@ -3162,7 +3294,7 @@ namespace
         json << "\"warnings\":["
              << "\"Partial telemetry only: body-part wounds, bleeding rate, "
              << "getting-eaten state, imprisonment/enslavement, "
-             << "location name, distant world state, and click-target occlusion "
+             << "distant world state, and click-target occlusion "
              << "are not exported or validated. "
              << "The food_items scalar is not authoritative over the named inventory list. "
              << "A visible nearby entity is rendered inside the current viewport, but "

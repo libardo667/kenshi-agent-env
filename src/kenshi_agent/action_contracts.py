@@ -78,6 +78,7 @@ from .models import (
     WorldTarget,
     dialogue_targets,
     game_binding_success_condition,
+    map_destination_already_reached,
     map_destination_travel_available,
     normalize_control_label,
 )
@@ -700,7 +701,29 @@ def bind_travel_to_map_destination(
             "markers; an ambiguous reference fails closed."
         )
     destination = matches[0]
-    if not map_destination_travel_available(destination):
+    location_authoritative = "game.location.identity" in telemetry.capabilities
+    if map_destination_already_reached(
+        destination,
+        current_location_id=telemetry.game.location_id,
+        inside_town_walls=telemetry.game.inside_town_walls,
+        location_authoritative=location_authoritative,
+    ):
+        boundary = (
+            "already inside"
+            if telemetry.game.inside_town_walls is True
+            else "already within"
+        )
+        return _unbound(
+            f"Destination {destination.name!r} ({destination.id}) is {boundary} "
+            "the exact current town; another map-scale order would repeat a "
+            "reached destination rather than make progress."
+        )
+    if not map_destination_travel_available(
+        destination,
+        current_location_id=telemetry.game.location_id,
+        inside_town_walls=telemetry.game.inside_town_walls,
+        location_authoritative=location_authoritative,
+    ):
         return _unbound(
             f"Destination {destination.name!r} ({destination.id}) is already local "
             f"at map distance {destination.distance:.0f}; another map-scale order "
@@ -720,13 +743,20 @@ def bind_travel_to_map_destination(
 
 def map_travel_is_currently_authorable(observation: Observation) -> bool:
     telemetry = observation.telemetry
+    if telemetry is None:
+        return False
+    location_authoritative = "game.location.identity" in telemetry.capabilities
     return bool(
-        telemetry is not None
-        and not observation.telemetry_stale
+        not observation.telemetry_stale
         and telemetry.game.loaded is True
         and len([character for character in telemetry.squad if character.selected]) == 1
         and any(
-            map_destination_travel_available(destination)
+            map_destination_travel_available(
+                destination,
+                current_location_id=telemetry.game.location_id,
+                inside_town_walls=telemetry.game.inside_town_walls,
+                location_authoritative=location_authoritative,
+            )
             for destination in telemetry.known_map_destinations
         )
     )
@@ -1981,9 +2011,10 @@ TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
     summary=(
         "Travel to one exact settlement marker the player has already "
         "discovered. Native code re-resolves the marker, selects Kenshi's "
-        "waypoint, issues one order, aligns the follow camera behind the route, "
-        "and owns arrival. The controller runs long travel at 5x and pauses at "
-        "the terminal boundary."
+        "direction-dependent gate waypoint, continues through a gated entrance, "
+        "aligns the follow camera behind the route, and owns arrival until exact "
+        "current-town evidence is usable. The controller runs long travel at 5x "
+        "and pauses at the terminal boundary."
     ),
     argument_source=(
         "destination_id must be copied exactly from a known_map_destinations "
