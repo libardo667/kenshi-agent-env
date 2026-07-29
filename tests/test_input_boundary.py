@@ -175,6 +175,7 @@ def token_for(
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     assumptions: tuple[Condition, ...] | None = None,
     preconditions: tuple[Condition, ...] | None = None,
+    failure_conditions: tuple[Condition, ...] | None = None,
     max_telemetry_age_seconds: float | None = 3.0,
 ) -> ExecutionToken:
     return ExecutionToken(
@@ -196,6 +197,7 @@ def token_for(
             if preconditions is not None
             else (selection_condition(),)
         ),
+        failure_conditions=failure_conditions or (),
     )
 
 
@@ -326,6 +328,7 @@ async def dispatch_with_blocking_lease(
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     assumptions: tuple[Condition, ...] | None = None,
     preconditions: tuple[Condition, ...] | None = None,
+    failure_conditions: tuple[Condition, ...] | None = None,
     action: object | None = None,
 ) -> tuple[BlockingLeaseController, object]:
     """Start a dispatch, swap canonical state while the lease waits, release it."""
@@ -342,6 +345,7 @@ async def dispatch_with_blocking_lease(
         control_mode=control_mode,
         assumptions=assumptions,
         preconditions=preconditions,
+        failure_conditions=failure_conditions,
     )
 
     task = asyncio.create_task(
@@ -382,6 +386,26 @@ def test_state_change_during_lease_wait_emits_zero_primitives(tmp_path: Path) ->
         assert boundary.validated_revision.telemetry_sequence == 10
         assert boundary.boundary_revision.telemetry_sequence == 11
         assert "precondition" in boundary.reason
+
+    asyncio.run(scenario())
+
+
+def test_failure_condition_becoming_true_during_lease_emits_zero_primitives(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        controller, transition = await dispatch_with_blocking_lease(
+            tmp_path,
+            conflict=observation(sequence=11, selected_id="char-2"),
+            assumptions=(),
+            preconditions=(),
+            failure_conditions=(selection_condition("char-2"),),
+        )
+
+        assert controller.actions == []
+        boundary = transition.receipt.input_boundary  # type: ignore[attr-defined]
+        assert boundary.decision is InputBoundaryDecision.REJECTED
+        assert "failure condition became true" in boundary.reason
 
     asyncio.run(scenario())
 

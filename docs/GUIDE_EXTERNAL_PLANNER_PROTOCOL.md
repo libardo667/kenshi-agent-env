@@ -96,19 +96,20 @@ applies to continuity and fieldbook operations alike. A rejected plan or a
 discarded patch writes nothing.
 
 For continuous output, use `schemas/plan.schema.json` or
-`schemas/plan_patch.schema.json` according to `active_plan`. Every plan is
-bounded and acyclic, binds its control mode and causal revision, declares typed
-assumptions, preconditions and postconditions, and carries action, wall-clock,
-game-time, and risk budgets. During a monitored option, a patch may change only
-future steps unless the exact active step opts into interruption and the
-replacement begins with a causally confirmed pause handoff. The executor—not
-the child process—owns active state, retries, branches, budget accounting,
-condition evaluation, cancellation, and postcondition polling. A snapshot at or
-before the action-start revision cannot confirm success. Deterministic action
-effects are derived by the runtime from the immediate pre-dispatch observation
-or settled by a controller terminal. Only genuinely ambiguous effects retain
-planner-authored postconditions, for which a later snapshot satisfies the
-temporal fence but is not itself proof of causation.
+`schemas/plan_patch.schema.json` according to `active_plan`. Plans are bounded,
+acyclic, revision-bound, and budgeted. A patch changes only future steps unless
+the active step permits interruption and its replacement begins with a confirmed
+pause handoff. The executor owns active state, retries, branches, budgets,
+conditions, cancellation, and polling. Only a later snapshot can confirm an
+ambiguous planner-authored postcondition; deterministic effects come from the
+dispatch baseline or a controller terminal.
+
+`failure_conditions` are optional future abort states, not duplicated
+preconditions or success. They must remain definitively false through the final
+input lease; otherwise no input is emitted. Exact duplicates are normalized.
+
+`known_map_destinations` retains every discovered marker. Copy only one with
+`travel_available: true` into `travel_to_map_destination`; false means already local.
 
 ## Errors
 

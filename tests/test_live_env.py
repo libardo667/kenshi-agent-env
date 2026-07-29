@@ -1029,6 +1029,7 @@ class NativeAckController(PulseController):
         status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
         acknowledgement_command_id: str | None = None,
         open_dialogue_on_hotkey: bool = False,
+        complete_map_travel_on_unpause: bool = False,
         reason: str | None = None,
     ) -> None:
         super().__init__(telemetry)
@@ -1036,6 +1037,7 @@ class NativeAckController(PulseController):
         self.status = status
         self.acknowledgement_command_id = acknowledgement_command_id
         self.open_dialogue_on_hotkey = open_dialogue_on_hotkey
+        self.complete_map_travel_on_unpause = complete_map_travel_on_unpause
         self.reason = reason
         self.request_seen_before_hotkey = False
         self.request: NativeCommandRequest | None = None
@@ -1090,7 +1092,36 @@ class NativeAckController(PulseController):
                     )
                 ],
             )
-        return await super().execute(action)
+        receipt = await super().execute(action)
+        if (
+            self.complete_map_travel_on_unpause
+            and isinstance(action, KeyAction)
+            and action.key in {"space", "f2"}
+            and self.request is not None
+        ):
+            request = self.request
+            basis = request.based_on_revision.telemetry_sequence
+            assert basis is not None
+            acknowledgement_sequence = max(self.telemetry.sequence + 1, basis + 2)
+            self.telemetry.paused = True
+            self.telemetry.native_control = NativeControlState(
+                available=True,
+                acknowledgements=[
+                    NativeCommandAcknowledgement(
+                        command_id=request.command_id,
+                        command=request.command,
+                        status=NativeCommandStatus.COMPLETED,
+                        reason="map_destination_reached",
+                        target_id=request.target_id,
+                        selected_character_ids=request.selected_character_ids,
+                        based_on_telemetry_sequence=basis,
+                        acknowledged_at_telemetry_sequence=acknowledgement_sequence,
+                        accepted_at_telemetry_sequence=acknowledgement_sequence,
+                        terminal_at_telemetry_sequence=acknowledgement_sequence,
+                    )
+                ],
+            )
+        return receipt
 
 
 def native_vendor_environment(
@@ -1099,6 +1130,7 @@ def native_vendor_environment(
     status: NativeCommandStatus = NativeCommandStatus.ACCEPTED,
     acknowledgement_command_id: str | None = None,
     open_dialogue_on_hotkey: bool = False,
+    complete_map_travel_on_unpause: bool = False,
     reason: str | None = None,
 ) -> tuple[LiveEnvironment, NativePulseTelemetry, NativeAckController]:
     telemetry_path = tmp_path / "telemetry.latest.json"
@@ -1110,6 +1142,7 @@ def native_vendor_environment(
         status=status,
         acknowledgement_command_id=acknowledgement_command_id,
         open_dialogue_on_hotkey=open_dialogue_on_hotkey,
+        complete_map_travel_on_unpause=complete_map_travel_on_unpause,
         reason=reason,
     )
     registry = MacroRegistry(
@@ -2059,6 +2092,74 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert [
             action.kind for action in controller.actions
         ] == ["hotkey", "key", "key"]
+
+    asyncio.run(scenario())
+
+
+def test_map_arrival_terminal_wins_race_with_running_confirmation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Arrival may re-pause the same tick that the controller starts time."""
+
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            complete_map_travel_on_unpause=True,
+        )
+        telemetry.capabilities = [
+            "game.pause",
+            "game.speed",
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "identity.stable_handles",
+            "squad.health",
+        ]
+        telemetry.known_map_destinations = [
+            KnownMapDestination(
+                id="entity-known-town",
+                name="The Hub",
+                distance=5.0,
+            )
+        ]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "require_paused_between_actions": False,
+            }
+        )
+
+        async def immediate_pause_check(
+            expected: bool,
+            *,
+            timeout_seconds: float = 3.0,
+        ) -> bool:
+            del timeout_seconds
+            return telemetry.paused is expected
+
+        monkeypatch.setattr(
+            environment,
+            "_wait_for_pause_state",
+            immediate_pause_check,
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            TravelToMapDestinationAction(destination_id="entity-known-town"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "a" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        acknowledgement = transition.receipt.native_acknowledgement
+        assert transition.receipt.accepted
+        assert transition.receipt.executed
+        assert acknowledgement is not None
+        assert acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert acknowledgement.reason == "map_destination_reached"
+        assert telemetry.paused is True
+        assert [action.kind for action in controller.actions] == ["hotkey", "key"]
 
     asyncio.run(scenario())
 

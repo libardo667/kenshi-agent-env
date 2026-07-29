@@ -266,15 +266,18 @@ yourself, in whatever order the current evidence supports.
 - Prefer `move_to_character` when somewhere useful has a person standing in it.
   For a named settlement or any other long journey, check
   `known_map_destinations` first. This list contains only markers the current
-  player has actually discovered, nearest first; it is the always-present
-  reminder that map-scale travel is available.
+  player has actually discovered, nearest first. Each marker remains visible as
+  knowledge, but only `travel_available: true` authorizes a new map-scale order;
+  false means that settlement is already local and must not be selected again
+  as movement.
 - `travel_to_map_destination` takes one `destination_id` copied exactly from
-  `known_map_destinations`. It owns one native waypoint order, 5x playback,
-  safety monitoring, a trailing follow camera, and the pause on arrival. Give
-  it `success_conditions: []` and enough wall time for the journey (up to 300
-  seconds). Never surround it with `set_speed`, camera, local movement, wait,
-  or continuation steps. The map does not need to be open for this action; use
-  `toggle_map` only when an aerial view would materially help deliberation.
+  a `known_map_destinations` entry whose `travel_available` is true. It owns one
+  native waypoint order, 5x playback, safety monitoring, a trailing follow
+  camera, and the pause on arrival. Give it `success_conditions: []` and enough
+  wall time for the journey (up to 300 seconds). Never surround it with
+  `set_speed`, camera, local movement, wait, or continuation steps. The map does
+  not need to be open for this action; use `toggle_map` only when an aerial view
+  would materially help deliberation.
 - When no exact nearby or known map destination expresses a *local* scouting
   move and `move_in_direction` is advertised, use a conservative
   bearing/distance and state the intended observable effect. Bearing is
@@ -455,6 +458,11 @@ yourself, in whatever order the current evidence supports.
   unlisted camera binding. Runtime-owned and controller-terminal actions use
   `success_conditions: []`. Dispatch alone is never success: the runtime still
   requires its derived later transition or typed terminal.
+- `failure_conditions` are optional future abort states. Usually leave them
+  empty for runtime-owned and controller-terminal actions. Add one only when it
+  is definitively false now, would become true on a harmful later state, and is
+  not merely a duplicate of freshness, a precondition, or the action's
+  completion. A true or unobservable failure condition blocks input.
 - **Check whether you are being attacked.** `in_combat` on the selected
   character, and `blood` falling, are the only warnings you get. Getting beaten
   unconscious ends the run, so if a fight has started, deal with it — run, or

@@ -8,12 +8,18 @@ from pydantic import ValidationError
 from kenshi_agent.models import (
     CharacterState,
     ClickAction,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
     ContextActionKind,
+    KnownMapDestination,
     NearbyEntity,
+    NoopAction,
     NormalizedPointerBounds,
     Observation,
     PerformContextAction,
     PlannerDecision,
+    PlanStep,
     ScrollAction,
     SkillAction,
     SkillSpec,
@@ -21,6 +27,7 @@ from kenshi_agent.models import (
     UIState,
     Vec3,
     VisibleUIControl,
+    WorldStateRevision,
     WorldTarget,
     parse_action,
 )
@@ -71,6 +78,59 @@ def test_known_map_destination_is_a_first_class_observed_identity() -> None:
     assert snapshot.known_map_destinations[0].id == "entity-known-town"
     assert snapshot.known_map_destinations[0].name == "The Hub"
     assert snapshot.known_map_destinations[0].distance == 1250.0
+
+
+def test_known_map_destination_digest_separates_identity_from_travel_eligibility() -> None:
+    state = Observation(
+        run_id="map-digest",
+        step_index=0,
+        mode="mock",
+        world_revision=WorldStateRevision(telemetry_sequence=1),
+        telemetry=TelemetrySnapshot(
+            sequence=1,
+            known_map_destinations=[
+                KnownMapDestination(id="near", name="The Hub", distance=5.0),
+                KnownMapDestination(id="far", name="Squin", distance=17500.0),
+            ],
+        ),
+    )
+
+    assert state.known_map_destination_digest() == [
+        {
+            "id": "near",
+            "name": "The Hub",
+            "distance": 5.0,
+            "travel_available": False,
+        },
+        {
+            "id": "far",
+            "name": "Squin",
+            "distance": 17500.0,
+            "travel_available": True,
+        },
+    ]
+
+
+def test_plan_step_normalizes_duplicate_conditions_at_the_schema_boundary() -> None:
+    condition = Condition(
+        kind=ConditionKind.TELEMETRY_FRESH,
+        operator=ConditionOperator.EQUALS,
+        expected=True,
+        max_age_seconds=3.0,
+    )
+
+    step = PlanStep(
+        step_id="inspect",
+        action=NoopAction(reason="Read the current observation."),
+        preconditions=[condition, condition, condition],
+        success_conditions=[condition, condition],
+        failure_conditions=[condition, condition],
+        timeout_seconds=1.0,
+    )
+
+    assert step.preconditions == [condition]
+    assert step.success_conditions == [condition]
+    assert step.failure_conditions == [condition]
 
 
 def test_visible_ui_control_exposes_resolution_independent_center() -> None:

@@ -373,6 +373,17 @@ class KnownMapDestination(StrictModel):
     distance: float = Field(ge=0.0)
 
 
+# This is intentionally a planner-policy radius, not a duplicate of the native
+# walk-arrival tolerance. A settlement marker already within local-interaction
+# range is still observed, but ordering another map-scale journey to it cannot
+# produce a meaningful new route.
+MINIMUM_REMOTE_MAP_TRAVEL_DISTANCE = 50.0
+
+
+def map_destination_travel_available(destination: KnownMapDestination) -> bool:
+    return destination.distance > MINIMUM_REMOTE_MAP_TRAVEL_DISTANCE
+
+
 def _nearest_first(entities: list[NearbyEntity]) -> list[NearbyEntity]:
     return sorted(
         entities,
@@ -3246,6 +3257,16 @@ class RiskBudget(StrictModel):
     max_native_assisted_actions: int = Field(ge=0, le=8)
 
 
+def _unique_conditions(conditions: list[Condition]) -> list[Condition]:
+    """Return one copy of each logical predicate, preserving authored order."""
+
+    unique: list[Condition] = []
+    for condition in conditions:
+        if condition not in unique:
+            unique.append(condition)
+    return unique
+
+
 class PlanStep(StrictModel):
     step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
     # `PlannerAction`, not `Action`: a plan is authored, so it must not offer
@@ -3271,6 +3292,19 @@ class PlanStep(StrictModel):
     )
     interrupt_policy: InterruptPolicy = InterruptPolicy.CANCEL_ON_REFLEX
     observation_policy: ObservationPolicy = ObservationPolicy.UNTIL_TERMINAL
+
+    @field_validator(
+        "preconditions",
+        "success_conditions",
+        "failure_conditions",
+        mode="after",
+    )
+    @classmethod
+    def normalize_duplicate_conditions(
+        cls,
+        conditions: list[Condition],
+    ) -> list[Condition]:
+        return _unique_conditions(conditions)
 
     @model_validator(mode="after")
     def retry_requires_idempotency(self) -> PlanStep:
@@ -3562,6 +3596,9 @@ class Observation(StrictModel):
             return []
         return [
             destination.model_dump(mode="json")
+            | {
+                "travel_available": map_destination_travel_available(destination),
+            }
             for destination in sorted(
                 self.telemetry.known_map_destinations,
                 key=lambda destination: (destination.distance, destination.id),

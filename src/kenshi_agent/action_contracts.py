@@ -78,6 +78,7 @@ from .models import (
     WorldTarget,
     dialogue_targets,
     game_binding_success_condition,
+    map_destination_travel_available,
     normalize_control_label,
 )
 from .resource_transfer import resource_transfer_layout_error
@@ -695,6 +696,12 @@ def bind_travel_to_map_destination(
             "markers; an ambiguous reference fails closed."
         )
     destination = matches[0]
+    if not map_destination_travel_available(destination):
+        return _unbound(
+            f"Destination {destination.name!r} ({destination.id}) is already local "
+            f"at map distance {destination.distance:.0f}; another map-scale order "
+            "would repeat a reached destination rather than make progress."
+        )
     return ReferenceBinding(
         bound=True,
         reason=(
@@ -714,7 +721,10 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
         and not observation.telemetry_stale
         and telemetry.game.loaded is True
         and len([character for character in telemetry.squad if character.selected]) == 1
-        and telemetry.known_map_destinations
+        and any(
+            map_destination_travel_available(destination)
+            for destination in telemetry.known_map_destinations
+        )
     )
 
 
@@ -1959,8 +1969,9 @@ TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
         "the terminal boundary."
     ),
     argument_source=(
-        "destination_id must be copied exactly from known_map_destinations. "
-        "Coordinates are neither exposed nor accepted."
+        "destination_id must be copied exactly from a known_map_destinations "
+        "entry whose travel_available is true. Coordinates are neither exposed "
+        "nor accepted."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),

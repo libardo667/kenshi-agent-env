@@ -41,6 +41,7 @@ from kenshi_agent.models import (
     ExitCurrentBuildingAction,
     GameState,
     IdempotencyPolicy,
+    KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
@@ -53,6 +54,7 @@ from kenshi_agent.models import (
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
+    TravelToMapDestinationAction,
     UIState,
     Vec3,
     VisibleUIControl,
@@ -929,6 +931,52 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
     assert contract.bind(action, state).bound
     missing = action.model_copy(update={"destination_id": "entity-undiscovered-town"})
     assert not contract.bind(missing, state).bound
+
+
+def test_map_travel_cannot_bind_a_destination_already_reached() -> None:
+    state = observation(
+        capabilities=[
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "identity.stable_handles",
+            "squad.health",
+        ],
+        squad=[
+            CharacterState(
+                id="entity-selected",
+                name="Streak",
+                selected=True,
+            )
+        ],
+        ui=UIState(
+            selected_character_id="entity-selected",
+            selected_character_ids=["entity-selected"],
+        ),
+    )
+    assert state.telemetry is not None
+    state.telemetry.known_map_destinations = [
+        KnownMapDestination(
+            id="entity-known-town",
+            name="The Hub",
+            distance=5.0,
+        )
+    ]
+    action = TravelToMapDestinationAction(destination_id="entity-known-town")
+
+    contract = contract_for(action)
+
+    assert contract is not None
+    binding = contract.bind(action, state)
+    assert not binding.bound
+    assert "already local" in binding.reason
+    assert "travel_to_map_destination" not in {
+        item.kind
+        for item in planner_visible_contracts(
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            capabilities=set(state.telemetry.capabilities),
+            observation=state,
+        )
+    }
 
 
 class TestLegacyCompatibilityAdapter:

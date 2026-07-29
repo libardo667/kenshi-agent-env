@@ -317,6 +317,32 @@ class TestGenericComposition:
 
 
 class TestGenericPolicyRejections:
+    def test_entry_failure_condition_must_start_definitively_false(self) -> None:
+        composed = plan(
+            [
+                PlanStep(
+                    step_id="open-inventory",
+                    action=UseGameBindingAction(
+                        binding=GameBinding.TOGGLE_INVENTORY,
+                        expected_effect="open inventory",
+                    ),
+                    preconditions=[freshness()],
+                    success_conditions=[],
+                    failure_conditions=[freshness()],
+                    timeout_seconds=30.0,
+                )
+            ],
+            pointer=0,
+            native=0,
+        )
+
+        errors = dialogue_interaction_policy_errors(composed, observation())
+
+        assert any(
+            "failure condition is already true before dispatch" in error
+            for error in errors
+        )
+
     def test_a_raw_primitive_cannot_even_be_expressed_as_a_plan_step(self) -> None:
         """A raw coordinate carries no evidence of what it would activate.
 

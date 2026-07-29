@@ -768,6 +768,100 @@ def test_sequential_toggles_derive_distinct_dispatch_time_baselines(
     asyncio.run(scenario())
 
 
+def test_later_step_with_active_failure_condition_dispatches_no_input(
+    tmp_path: Path,
+) -> None:
+    class ActiveFailurePlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls > 1:
+                return PlannerDecision(
+                    intent="Stop after the invalid future step is rejected.",
+                    rationale="The runtime must not dispatch through an active failure.",
+                    action=StopAction(reason="Failure preflight proof complete."),
+                    confidence=1.0,
+                )
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id="active-failure-preflight",
+                plan_version=1,
+                objective="Open inventory, but never dispatch an already-failed next step.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="open",
+                        action=UseGameBindingAction(
+                            binding=GameBinding.TOGGLE_INVENTORY,
+                            expected_effect="open inventory",
+                        ),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        timeout_seconds=1.0,
+                        on_success="invalid-close",
+                    ),
+                    PlanStep(
+                        step_id="invalid-close",
+                        action=UseGameBindingAction(
+                            binding=GameBinding.TOGGLE_INVENTORY,
+                            expected_effect="close inventory",
+                        ),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        failure_conditions=[fresh()],
+                        timeout_seconds=1.0,
+                    ),
+                ],
+                entry_step_id="open",
+                max_actions=2,
+                max_wall_seconds=3.0,
+                max_game_seconds=3.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            ActiveFailurePlanner(),
+            clock,
+        )
+        try:
+            await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        toggles = [
+            action
+            for action in environment.actions
+            if isinstance(action, UseGameBindingAction)
+        ]
+        assert len(toggles) == 1
+        assert environment.open_inventory_windows == 1
+        aborted = [
+            event
+            for event in read_events(tmp_path / "events.jsonl")
+            if event["event_type"] == "plan_aborted"
+        ]
+        assert any(
+            "failure condition is already true before dispatch"
+            in str(event["payload"]["reason"])
+            for event in aborted
+        )
+
+    asyncio.run(scenario())
+
+
 def test_continuous_actions_reach_the_next_planner_outcome_ledger(
     tmp_path: Path,
 ) -> None:

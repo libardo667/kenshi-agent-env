@@ -50,6 +50,7 @@ class _ExecutionTokenState:
     authority_validator: Callable[[Observation], str | None] | None = None
     assumptions: tuple[Condition, ...] = ()
     preconditions: tuple[Condition, ...] = ()
+    failure_conditions: tuple[Condition, ...] = ()
     _reports: list[InputBoundaryReport] = field(default_factory=list, compare=False)
 
 
@@ -234,13 +235,41 @@ class ExecutionToken(_ExecutionTokenState):
                 evaluations=evaluations,
             )
 
+        failure_evaluations = evaluate_conditions(
+            list(self.failure_conditions),
+            observation,
+        )
+        active_failure = next(
+            (
+                evaluation
+                for evaluation in failure_evaluations
+                if evaluation.result is not ConditionResult.FALSE
+            ),
+            None,
+        )
+        if active_failure is not None:
+            reason = (
+                "A step failure condition became true at the input boundary: "
+                f"{active_failure.reason}"
+                if active_failure.result is ConditionResult.TRUE
+                else (
+                    "A step failure condition is not observable at the input "
+                    f"boundary: {active_failure.reason}"
+                )
+            )
+            return self._reject(
+                reason,
+                lease_wait_seconds=lease_wait_seconds,
+                boundary_revision=boundary_revision,
+                evaluations=[*evaluations, *failure_evaluations],
+            )
+
         return self._report(
             InputBoundaryDecision.REVALIDATED,
-            "Assumptions, preconditions, control mode, "  # mutation: diagnostic-only
-            "and input authority still hold "  # mutation: diagnostic-only
-            "on the latest canonical revision "  # mutation: diagnostic-only
-            "inside the input lease.",  # mutation: diagnostic-only
+            "Assumptions, preconditions, failure conditions, control mode, "
+            "and input authority still hold on the latest canonical revision "
+            "inside the input lease.",
             lease_wait_seconds=lease_wait_seconds,
             boundary_revision=boundary_revision,
-            evaluations=evaluations,
+            evaluations=[*evaluations, *failure_evaluations],
         )

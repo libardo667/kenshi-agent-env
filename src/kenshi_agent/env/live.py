@@ -2555,26 +2555,67 @@ class LiveEnvironment(AgentEnvironment):
                 raise RuntimeError(
                     "Native movement cannot determine whether Kenshi is paused."
                 )
-            if paused:
-                unpause_count, unpause_control = await self._execute_pause_request(
-                    False
-                )
-                primitive_count += unpause_count
-                if not await self._wait_for_pause_state(False):
-                    raise RuntimeError(
-                        "Native movement did not confirm Kenshi running after "
-                        f"using {unpause_control}."
+            try:
+                if paused:
+                    unpause_count, unpause_control = await self._execute_pause_request(
+                        False
                     )
-                messages.append(
-                    f"Started the paused world with {unpause_control}; the "
-                    "monitored option now owns the running movement."
+                    primitive_count += unpause_count
+                    if not await self._wait_for_pause_state(False):
+                        raise RuntimeError(
+                            "Native movement did not confirm Kenshi running after "
+                            f"using {unpause_control}."
+                        )
+                    messages.append(
+                        f"Started the paused world with {unpause_control}; the "
+                        "monitored option now owns the running movement."
+                    )
+                if running_speed_gear != 1:
+                    primitive_count += await self._establish_playback_gear(
+                        running_speed_gear
+                    )
+                    messages.append(
+                        "Established controller-owned 5x playback speed for long travel."
+                    )
+            except RuntimeError:
+                terminal = self._fresh_matching_native_acknowledgement(
+                    acknowledgement
                 )
-            if running_speed_gear != 1:
-                primitive_count += await self._establish_playback_gear(
-                    running_speed_gear
-                )
+                if (
+                    terminal is None
+                    or terminal.status
+                    not in {
+                        NativeCommandStatus.CANCELLED,
+                        NativeCommandStatus.COMPLETED,
+                    }
+                ):
+                    raise
+                acknowledgement = terminal
                 messages.append(
-                    "Established controller-owned 5x playback speed for long travel."
+                    "The keyed native command reached its terminal while playback "
+                    "ownership was being established; that terminal takes "
+                    "precedence over an intermediate running-state confirmation: "
+                    f"{terminal.status.value} ({terminal.reason or 'no reason'})."
+                )
+                return ActionReceipt(
+                    action=action,
+                    command_id=command.command_id,
+                    started_after_revision=command.based_on_revision,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    started_at=started,
+                    finished_at=datetime.now(UTC),
+                    primitive_actions=primitive_count,
+                    message=" ".join(messages),
+                    error_type=(
+                        "NativeCommandCancelled"
+                        if acknowledgement.status
+                        is NativeCommandStatus.CANCELLED
+                        else None
+                    ),
+                    native_acknowledgement=acknowledgement,
+                    semantic=semantic,
                 )
             return ActionReceipt(
                 action=action,
@@ -2979,6 +3020,48 @@ class LiveEnvironment(AgentEnvironment):
                     "check whether it arrived before ordering it again."
                 )
             await asyncio.sleep(min(self._NATIVE_COMMAND_POLL_SECONDS, remaining))
+
+    def _fresh_matching_native_acknowledgement(
+        self,
+        previous: NativeCommandAcknowledgement,
+    ) -> NativeCommandAcknowledgement | None:
+        """Read a later verdict without weakening the command identity fence."""
+
+        try:
+            result = self.telemetry_reader.read()
+        except TelemetryReadError:
+            return None
+        if result.stale:
+            return None
+        current = result.snapshot.native_control.acknowledgement_for(
+            previous.command_id
+        )
+        if current is None:
+            return None
+        identity = (
+            current.command,
+            current.target_id,
+            current.bearing_degrees,
+            current.distance_units,
+            current.minimum_output_quantity,
+            current.selected_character_ids,
+            current.based_on_telemetry_sequence,
+        )
+        previous_identity = (
+            previous.command,
+            previous.target_id,
+            previous.bearing_degrees,
+            previous.distance_units,
+            previous.minimum_output_quantity,
+            previous.selected_character_ids,
+            previous.based_on_telemetry_sequence,
+        )
+        if identity != previous_identity:
+            raise RuntimeError(
+                "Native command acknowledgement changed identity while playback "
+                "ownership was being established."
+            )
+        return current
 
     async def _wait_for_pause_state(self, expected: bool, *, timeout_seconds: float = 3.0) -> bool:
         deadline = time.monotonic() + timeout_seconds

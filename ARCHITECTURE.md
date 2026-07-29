@@ -73,7 +73,10 @@ bounded primitives for compatibility and calibrated transport.
 Completion is controller-terminal, runtime-derived at the immediate dispatch
 baseline, or planner-authored only for genuinely ambiguous effects. The
 [completion authority ADR](docs/ADR_ACTION_COMPLETION_AUTHORITY.md) fixes that
-ownership boundary; the generated catalog reports it per contract.
+ownership boundary; the generated catalog reports it per contract. An action
+whose terminal is already satisfied does not bind, and declared failure states
+must remain definitively false through the final input lease; see
+[non-progress action boundaries](docs/ADR_NON_PROGRESS_ACTION_BOUNDARIES.md).
 
 ## Partial observability
 
@@ -96,6 +99,7 @@ telemetry.
 | Control modes and what each permits | [ADR_CONTROL_MODES](docs/ADR_CONTROL_MODES.md) |
 | Scheduler contract and plan authority | [ADR_CONTINUOUS_PLANNING](docs/ADR_CONTINUOUS_PLANNING.md) |
 | Action completion ownership | [ADR_ACTION_COMPLETION_AUTHORITY](docs/ADR_ACTION_COMPLETION_AUTHORITY.md) |
+| Already-satisfied actions and failure preflight | [ADR_NON_PROGRESS_ACTION_BOUNDARIES](docs/ADR_NON_PROGRESS_ACTION_BOUNDARIES.md) |
 | Revision ownership and causal confirmation | [ADR_WORLD_STATE_STREAM](docs/ADR_WORLD_STATE_STREAM.md) |
 | Final in-lease authorization fence | [ADR_INPUT_BOUNDARY_AUTHORITY_V2](docs/ADR_INPUT_BOUNDARY_AUTHORITY_V2.md) |
 | Transactional global and plan budgets | [ADR_TRANSACTIONAL_ACTION_BUDGETS](docs/ADR_TRANSACTIONAL_ACTION_BUDGETS.md) |

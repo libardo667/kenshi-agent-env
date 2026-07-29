@@ -80,6 +80,23 @@ def _step_action_errors(
     action: Action = step.action
     label = f"step {step.step_id!r}"
 
+    if require_binding:
+        failure_evaluations = evaluate_conditions(
+            step.failure_conditions,
+            observation,
+        )
+        for evaluation in failure_evaluations:
+            if evaluation.result is ConditionResult.TRUE:
+                errors.append(
+                    f"{label} failure condition is already true before dispatch: "
+                    f"{evaluation.reason}"
+                )
+            elif evaluation.result is ConditionResult.UNKNOWN:
+                errors.append(
+                    f"{label} failure condition is not observable before dispatch: "
+                    f"{evaluation.reason}"
+                )
+
     if is_controller_primitive(action):
         errors.append(
             f"{label} authors raw controller primitive {action.kind!r}; the generic "

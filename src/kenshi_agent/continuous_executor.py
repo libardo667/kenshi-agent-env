@@ -464,13 +464,56 @@ class ContinuousPlanExecutor:
                     evidence={"preconditions": self._evaluations_json(preconditions)},
                 )
 
+            failure_conditions = evaluate_conditions(
+                step.failure_conditions,
+                observation,
+            )
+            active_failure = next(
+                (
+                    evaluation
+                    for evaluation in failure_conditions
+                    if evaluation.result is not ConditionResult.FALSE
+                ),
+                None,
+            )
+            if active_failure is not None:
+                reason = (
+                    "Step failure condition is already true before dispatch: "
+                    f"{active_failure.reason}"
+                    if active_failure.result is ConditionResult.TRUE
+                    else (
+                        "Step failure condition is not definitively false before "
+                        f"dispatch: {active_failure.reason}"
+                    )
+                )
+                return self._abort(
+                    plan,
+                    step,
+                    observation,
+                    actions_completed,
+                    reason,
+                    evidence={
+                        "failure_conditions": self._evaluations_json(
+                            failure_conditions
+                        )
+                    },
+                )
+
             self._event(
                 "plan_step_ready",
                 plan,
                 observation,
                 step=step,
-                reason="All assumptions, capabilities, and preconditions are true.",
-                evidence={"preconditions": self._evaluations_json(preconditions)},
+                reason=(
+                    "All assumptions, capabilities, and preconditions are true; "
+                    "all declared failure conditions are false."
+                ),
+                evidence={
+                    "preconditions": self._evaluations_json(preconditions),
+                    "failure_conditions": self._evaluations_json(
+                        failure_conditions
+                    ),
+                },
             )
 
             retries_remaining = step.retry_budget
@@ -1140,6 +1183,7 @@ class ContinuousPlanExecutor:
             ),
             assumptions=tuple(plan.assumptions),
             preconditions=tuple(step.preconditions),
+            failure_conditions=tuple(step.failure_conditions),
         )
         step_deadline = self.clock.monotonic() + step.timeout_seconds
         self._event(
@@ -2398,6 +2442,11 @@ class ContinuousPlanExecutor:
             # them after this option intentionally opens inventory would revoke
             # the very authority needed to finish or clean up the transaction.
             preconditions=(),
+            failure_conditions=(
+                tuple(step.failure_conditions)
+                if retain_plan_assumptions
+                else ()
+            ),
         )
 
     def _publish_harvest_phase(
