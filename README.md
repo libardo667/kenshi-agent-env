@@ -25,9 +25,9 @@ direction without changing current Kenshi scope.
 | How to do something | `docs/GUIDE_*.md` |
 | What happened on a given day | `git log` and `runs/<run-id>/` |
 
-Documentation hygiene is enforced by `tests/test_docs_hygiene.py` rather than by convention:
-docs are capped at 120 lines, must be a decision record, a guide, or generated output, and
-generated files fail the build when they go stale.
+Documentation hygiene is enforced by `tests/test_docs_hygiene.py`: most docs are capped at
+120 lines, longer methods have explicit ratchets, every doc has a reviewed shape, and generated
+files fail the build when they go stale.
 
 ## Five-minute mock run
 

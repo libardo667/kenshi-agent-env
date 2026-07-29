@@ -31,8 +31,9 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 - A read-only guide-grounded strategic advisor. `consult_advisor` spends a strategic turn, creates
   no world command, emits zero primitives, fails closed on unknown source IDs, and suppresses
   unchanged-state requests pre-call.
-- `request_affordance` records typed, non-authoritative demand; aggregation splits raw reruns from
-  fixture-attested recurrence across five matrix axes.
+- Hosted calls project schemas to the current action surface, enforce system/static-prefix budgets,
+  put stable prefixes first, and record provider cache diagnostics. Accepted planner output may
+  carry one typed affordance candidate sidecar; cross-run aggregation remains non-authoritative.
 - [Continuity](docs/ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md) separates world evidence, run-local
   `ao-`/`po-` history, and durable memory; IDs resolve to immutable typed snapshots and an
   admissibility matrix before rendering; non-effects cannot become world proof or close a
@@ -45,9 +46,8 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
   operator compaction fingerprints exact active sources, presents a read-only candidate, then
   revalidates and supersedes them atomically without deleting history. Retrieval is deterministic
   and logged; semantic rewriting and semantic MMR are unavailable.
-- Hash-locked FCS starts install and launch with money/party proof. Each mutation campaign records
-  the digest of the source it attests, so the generated ledger derives — rather than asserts — which
-  committed results still describe the code; editing a mutated module fails a gate.
+- Hash-locked FCS starts install and launch with money/party proof. Mutation campaigns record source
+  digests, so the generated ledger derives which committed results still apply; edits fail a gate.
 
 ## Live profiles
 
