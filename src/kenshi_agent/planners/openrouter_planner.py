@@ -21,6 +21,7 @@ from .base import (
     Planner,
     PreparedPlannerInput,
     instructions_for_policy,
+    output_token_budget,
     prepared_budgeted_input,
     structured_output_model,
 )
@@ -66,11 +67,19 @@ def _json_body(content: str) -> str:
 class OpenRouterPlanner(Planner):
     """Vision planner using OpenRouter's OpenAI-compatible Chat API."""
 
+    max_plan_steps: int = 4
+
     # Flipped for the rest of the run the first time a provider refuses to
     # compile the schema, so the cost of discovering it is paid once.
     _schema_in_prompt: bool = False
 
-    def __init__(self, config: PlannerConfig, prompt_file: Path) -> None:
+    def __init__(
+        self,
+        config: PlannerConfig,
+        prompt_file: Path,
+        *,
+        max_plan_steps: int = 4,
+    ) -> None:
         try:
             from openai import AsyncOpenAI
         except ImportError as exc:
@@ -84,6 +93,7 @@ class OpenRouterPlanner(Planner):
         self.config = config
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
+        self.max_plan_steps = max_plan_steps
 
     def prepare_input(
         self,
@@ -148,12 +158,16 @@ class OpenRouterPlanner(Planner):
                 }
             )
 
-        # A non-reasoning model has no effort to set, and sending the parameter
-        # anyway either errors or - with require_parameters on - quietly routes
-        # the request nowhere. `none` means "do not ask for reasoning at all".
+        # Generation limits belong to the request actually sent, not only the
+        # local config. Reasoning is added to OpenRouter's provider-neutral
+        # `reasoning` object in `_request`; `none` omits it entirely.
         extra: dict[str, Any] = {}
-        if self.config.reasoning_effort != "none":
-            extra["reasoning_effort"] = self.config.reasoning_effort
+        extra["max_tokens"] = output_token_budget(
+            self.config,
+            observation,
+            max_plan_steps=self.max_plan_steps,
+        )
+        extra["temperature"] = self.config.temperature
 
         messages: list[dict[str, Any]] = [
             {
@@ -222,15 +236,18 @@ class OpenRouterPlanner(Planner):
                     ],
                 },
             ]
+        extra_body: dict[str, Any] = {
+            "provider": {
+                "sort": self.config.openrouter_provider_sort,
+                "require_parameters": self.config.openrouter_require_parameters,
+            }
+        }
+        if self.config.reasoning_effort != "none":
+            extra_body["reasoning"] = {"effort": self.config.reasoning_effort}
         return await self.client.chat.completions.create(
             model=self.config.openrouter_model,
             messages=messages,
-            extra_body={
-                "provider": {
-                    "sort": self.config.openrouter_provider_sort,
-                    "require_parameters": self.config.openrouter_require_parameters,
-                }
-            },
+            extra_body=extra_body,
             **kwargs,
             **extra,
         )

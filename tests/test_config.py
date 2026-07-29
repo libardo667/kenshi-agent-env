@@ -355,6 +355,23 @@ def test_generic_longform_profile_does_not_claim_a_specific_save_campaign(
     assert not config.memory.ephemeral
 
 
+def test_longform_profile_uses_an_explicit_reasoning_route(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+    monkeypatch.delenv("KENSHI_AGENT_OPENROUTER_MODEL", raising=False)
+    monkeypatch.delenv("KENSHI_AGENT_REASONING_EFFORT", raising=False)
+
+    config = load_config(root / "config" / "live.longform.yaml")
+
+    assert config.planner.openrouter_model == "google/gemini-3.1-flash-lite"
+    assert config.planner.reasoning_effort == "low"
+    assert config.planner.openrouter_require_parameters
+    assert config.planner.include_screenshot
+
+
 @pytest.mark.parametrize(
     "profile",
     [

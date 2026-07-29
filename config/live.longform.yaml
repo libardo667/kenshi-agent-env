@@ -84,13 +84,10 @@ runtime:
 planner:
   kind: ${KENSHI_AGENT_PLANNER:-openrouter}
   model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
-  # `none` omits the parameter entirely, which is what a non-reasoning
-  # model needs; the benchmark put gpt-4.1 at 5/5 valid plans in a median
-  # 7.6s against ~22s for the reasoning setup.
-  reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-none}
-  openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-openai/gpt-4.1}
+  reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-low}
+  openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-google/gemini-3.1-flash-lite}
   openrouter_provider_sort: ${KENSHI_AGENT_OPENROUTER_SORT:-latency}
-  # Parsed but not sent by the current hosted planner adapters.
+  openrouter_require_parameters: true
   temperature: 0.1
   timeout_seconds: 90
   max_output_tokens_base: 4096

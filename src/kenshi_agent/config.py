@@ -94,7 +94,8 @@ class PlannerConfig(ConfigModel):
     kind: Literal["heuristic", "scripted", "subprocess", "openai", "openrouter"] = "heuristic"
     model: str = "gpt-5.6-luna"
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "low"
-    # Parsed and validated, but current hosted adapters do not send it.
+    # The OpenRouter adapter sends this. The OpenAI Responses adapter omits it
+    # because reasoning-model temperature support is model-specific.
     temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
     max_output_tokens_base: int = Field(default=4096, ge=512, le=100000)

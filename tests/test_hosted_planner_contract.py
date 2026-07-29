@@ -10,6 +10,7 @@ from typing import Any
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
+    Condition,
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
@@ -24,6 +25,8 @@ from kenshi_agent.models import (
     PlannerDecision,
     PlanningMode,
     PlanPatch,
+    PlanStep,
+    RiskBudget,
     StopAction,
     TelemetrySnapshot,
     UIState,
@@ -236,6 +239,83 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     parsed_payload = json.loads(planner_payload)
     assert len(planner_payload) <= 4000
     assert parsed_payload["observation_budget"]["truncated"] is True
+
+
+def test_openrouter_request_carries_its_configured_generation_contract() -> None:
+    current = observation(planning_mode=PlanningMode.CONTINUOUS)
+    fresh = Condition.model_validate(
+        {
+            "kind": "telemetry_fresh",
+            "operator": "equals",
+            "expected": True,
+            "max_age_seconds": 3.0,
+        }
+    )
+
+    class FakeCompletions:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, Any] = {}
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            self.kwargs = kwargs
+            plan = PlanEnvelope(
+                schema_version="1.0",
+                plan_id="generation-contract",
+                plan_version=1,
+                objective="Prove the continuous response budget reaches OpenRouter.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh],
+                steps=[
+                    PlanStep(
+                        step_id="finish",
+                        action=StopAction(reason="Test complete."),
+                        preconditions=[fresh],
+                        timeout_seconds=2.0,
+                    )
+                ],
+                entry_step_id="finish",
+                max_actions=1,
+                max_wall_seconds=5.0,
+                max_game_seconds=5.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=plan.model_dump_json())
+                    )
+                ]
+            )
+
+    completions = FakeCompletions()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        reasoning_effort="high",
+        temperature=0.1,
+        max_output_tokens_base=2048,
+        max_output_tokens_per_plan_step=1024,
+        max_output_tokens_ceiling=8192,
+        openrouter_require_parameters=True,
+    )
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = asyncio.run(planner.decide(current))
+
+    assert isinstance(result, PlanEnvelope)
+    assert "reasoning_effort" not in completions.kwargs
+    assert completions.kwargs["max_tokens"] == 6144
+    assert completions.kwargs["temperature"] == 0.1
+    assert completions.kwargs["extra_body"]["provider"]["require_parameters"] is True
+    assert completions.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
 
 
 def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> None:

@@ -122,7 +122,11 @@ def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
             max_plan_steps=config.planning.max_plan_steps,
         )
     if kind == "openrouter":
-        return OpenRouterPlanner(config.planner, config.paths.prompt_file)
+        return OpenRouterPlanner(
+            config.planner,
+            config.paths.prompt_file,
+            max_plan_steps=config.planning.max_plan_steps,
+        )
     raise SystemExit(f"Unsupported planner kind: {kind}")
 
 
