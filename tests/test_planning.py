@@ -1406,6 +1406,23 @@ def test_budget_ledger_uses_contract_macro_and_legacy_skill_risk_sources() -> No
         MacroRegistry({}),
     ) == (1, 1, 0)
     ledger.release((1, 1, 0))
+    quantity_ledger = PlanBudgetLedger(
+        remaining_actions=1,
+        remaining_pointer_actions=3,
+        remaining_purchase_actions=3,
+        remaining_native_assisted_actions=0,
+    )
+    assert quantity_ledger.reserve(
+        PurchaseItemAction(
+            cell_label="Item 0",
+            item_name="Dried Meat",
+            expected_price=75,
+            quantity=3,
+            window="Trader",
+            seller_id="seller",
+        ),
+        MacroRegistry({}),
+    ) == (3, 3, 0)
     assert ledger.reserve(
         ApproachDialogueTargetAction(target_id="target"),
         MacroRegistry({}),

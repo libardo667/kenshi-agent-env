@@ -899,13 +899,12 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
         strict.validate(action, running)
 
 
-def test_a_purchase_contract_owns_proof_that_money_moved() -> None:
-    """A no-op purchase reported DONE three times running.
+def test_a_purchase_contract_owns_transfer_conservation() -> None:
+    """A no-op purchase once reported DONE three times running.
 
-    `purchase_item`'s receipt cannot see whether anything transferred, so if the
-    plan's own success conditions never look at money, a click that did nothing
-    is indistinguishable from a completed sale - and the agent walked back to
-    the same shelf because nothing it could see said otherwise.
+    The controller now owns the whole terminal: it must prove both money loss
+    and selected-character inventory gain for every requested unit. The planner
+    neither restates that motor effect nor gets to call an unverified click done.
     """
 
     from kenshi_agent.dialogue_interaction import _step_action_errors
@@ -950,14 +949,5 @@ def test_a_purchase_contract_owns_proof_that_money_moved() -> None:
     )
 
     completion = completion_contract_for(action, observation())
-    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
-    assert [
-        (condition.path, condition.operator, condition.expected)
-        for condition in completion.conditions
-    ] == [
-        (
-            "telemetry.game.money",
-            ConditionOperator.LESS_THAN,
-            1000,
-        )
-    ]
+    assert completion.owner is CompletionOwner.CONTROLLER_TERMINAL
+    assert completion.conditions == ()

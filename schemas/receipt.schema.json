@@ -1937,9 +1937,116 @@
       "title": "ProduceResourceOutputAction",
       "type": "object"
     },
+    "PurchaseEvidence": {
+      "additionalProperties": false,
+      "description": "Terminal conservation proof for one bounded purchasing transaction.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/PurchaseStatus"
+        },
+        "seller_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Seller Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "requested_quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Requested Quantity",
+          "type": "integer"
+        },
+        "purchased_quantity": {
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Purchased Quantity",
+          "type": "integer"
+        },
+        "money_before": {
+          "minimum": 0,
+          "title": "Money Before",
+          "type": "integer"
+        },
+        "money_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Money After"
+        },
+        "inventory_quantity_before": {
+          "minimum": 0,
+          "title": "Inventory Quantity Before",
+          "type": "integer"
+        },
+        "inventory_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Quantity After"
+        },
+        "observed_after_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed After Sequence"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "seller_id",
+        "selected_character_id",
+        "item_name",
+        "requested_quantity",
+        "purchased_quantity",
+        "money_before",
+        "inventory_quantity_before",
+        "reason"
+      ],
+      "title": "PurchaseEvidence",
+      "type": "object"
+    },
     "PurchaseItemAction": {
       "additionalProperties": false,
-      "description": "Buy the item in one exact seller-owned cell.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The action carries no coordinates; exact item, seller, and owner\nbinding prevents the wrong cell from being selected, and a later money\nchange proves the effect.",
+      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The model chooses the useful quantity once. The controller rebinds\ninterchangeable stock after each transfer and proves both money loss and\ncarried-item gain before attempting the next unit.",
       "properties": {
         "kind": {
           "const": "purchase_item",
@@ -1964,6 +2071,13 @@
           "title": "Expected Price",
           "type": "integer"
         },
+        "quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        },
         "window": {
           "maxLength": 200,
           "minLength": 1,
@@ -1986,6 +2100,16 @@
       ],
       "title": "PurchaseItemAction",
       "type": "object"
+    },
+    "PurchaseStatus": {
+      "enum": [
+        "purchased",
+        "partially_purchased",
+        "not_purchased",
+        "outcome_unknown"
+      ],
+      "title": "PurchaseStatus",
+      "type": "string"
     },
     "ReadFieldbookAction": {
       "additionalProperties": false,
@@ -2618,6 +2742,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/CameraRecoveryEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "purchase": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PurchaseEvidence"
             },
             {
               "type": "null"

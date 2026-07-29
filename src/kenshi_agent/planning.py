@@ -505,7 +505,7 @@ def _action_risk(
     # depends on expanding a macro or recognizing an exact skill name.
     contract = contract_for(action)
     if contract is not None:
-        return contract.risk.as_tuple()
+        return contract.risk_for(action).as_tuple()
     actions = [action]
     native = 0
     if isinstance(action, SkillAction):

@@ -1173,20 +1173,21 @@ class MoveToCharacterAction(StrictModel):
 
 
 class PurchaseItemAction(StrictModel):
-    """Buy the item in one exact seller-owned cell.
+    """Buy a bounded quantity of one item from exact seller-owned cells.
 
     Current producers name the cell and item directly. `expected_price` carries
     the best current value estimate for optional spending gates, but the
     exported `item_value` is base worth rather than an authoritative final shop
-    charge. The action carries no coordinates; exact item, seller, and owner
-    binding prevents the wrong cell from being selected, and a later money
-    change proves the effect.
+    charge. The model chooses the useful quantity once. The controller rebinds
+    interchangeable stock after each transfer and proves both money loss and
+    carried-item gain before attempting the next unit.
     """
 
     kind: Literal["purchase_item"] = "purchase_item"
     cell_label: str = Field(min_length=1, max_length=80)
     item_name: str = Field(min_length=1, max_length=200)
     expected_price: int = Field(gt=0)
+    quantity: int = Field(default=1, ge=1, le=5)
     # Caption of the seller's own inventory window. A trade screen shows two
     # inventories whose cell ordinals run across both, so this is what says the
     # item being bought is the shop's rather than ours.
@@ -4227,6 +4228,63 @@ class ResourceHarvestEvidence(StrictModel):
     reason: str = Field(min_length=1, max_length=1000)
 
 
+class PurchaseStatus(StrEnum):
+    PURCHASED = "purchased"
+    PARTIALLY_PURCHASED = "partially_purchased"
+    NOT_PURCHASED = "not_purchased"
+    OUTCOME_UNKNOWN = "outcome_unknown"
+
+
+def _validate_purchase_status_quantity(
+    status: PurchaseStatus,
+    requested_quantity: int,
+    purchased_quantity: int,
+) -> None:
+    """Keep terminal status consistent with the controller-proven quantity."""
+
+    if purchased_quantity > requested_quantity:
+        raise ValueError("purchased_quantity cannot exceed requested_quantity")
+    if (
+        status is PurchaseStatus.PURCHASED
+        and purchased_quantity != requested_quantity
+    ):
+        raise ValueError("purchased status requires the full requested quantity")
+    if status is PurchaseStatus.PARTIALLY_PURCHASED and not (
+        0 < purchased_quantity < requested_quantity
+    ):
+        raise ValueError(
+            "partially_purchased status requires a strict partial quantity"
+        )
+    if status is PurchaseStatus.NOT_PURCHASED and purchased_quantity != 0:
+        raise ValueError("not_purchased status requires zero purchased quantity")
+
+
+class PurchaseEvidence(StrictModel):
+    """Terminal conservation proof for one bounded purchasing transaction."""
+
+    status: PurchaseStatus
+    seller_id: str = Field(min_length=1, max_length=200)
+    selected_character_id: str = Field(min_length=1, max_length=200)
+    item_name: str = Field(min_length=1, max_length=200)
+    requested_quantity: int = Field(ge=1, le=5)
+    purchased_quantity: int = Field(ge=0, le=5)
+    money_before: int = Field(ge=0)
+    money_after: int | None = Field(default=None, ge=0)
+    inventory_quantity_before: int = Field(ge=0)
+    inventory_quantity_after: int | None = Field(default=None, ge=0)
+    observed_after_sequence: int | None = Field(default=None, ge=0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def status_matches_conserved_quantity(self) -> PurchaseEvidence:
+        _validate_purchase_status_quantity(
+            self.status,
+            self.requested_quantity,
+            self.purchased_quantity,
+        )
+        return self
+
+
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -4246,6 +4304,7 @@ class SemanticActionReceipt(StrictModel):
     revalidation: str = Field(min_length=1, max_length=1000)
     legacy_compatibility: bool = False
     camera_recovery: CameraRecoveryEvidence | None = None
+    purchase: PurchaseEvidence | None = None
     resource_transfer: ResourceTransferEvidence | None = None
     resource_harvest: ResourceHarvestEvidence | None = None
 

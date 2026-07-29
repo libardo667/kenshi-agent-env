@@ -44,6 +44,7 @@ from .models import (
     PlanPatch,
     PlanStep,
     ProduceResourceOutputAction,
+    PurchaseStatus,
     ReadFieldbookAction,
     RecallMemoryAction,
     RequestAffordanceAction,
@@ -1554,6 +1555,48 @@ class ContinuousPlanExecutor:
                     reason=(
                         "Controller-owned resource harvest returned "
                         f"{harvest.status.value!r}: {harvest.reason}"
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
+            purchase = (
+                transition.receipt.semantic.purchase
+                if transition.receipt.semantic is not None
+                else None
+            )
+            if purchase is not None:
+                succeeded = purchase.status is PurchaseStatus.PURCHASED
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Accepted the controller-owned purchase conservation verdict."
+                    ),
+                    evidence={
+                        "controller_verified": True,
+                        "status": purchase.status.value,
+                        "requested_quantity": purchase.requested_quantity,
+                        "purchased_quantity": purchase.purchased_quantity,
+                        "money_before": purchase.money_before,
+                        "money_after": purchase.money_after,
+                        "inventory_quantity_before": (
+                            purchase.inventory_quantity_before
+                        ),
+                        "inventory_quantity_after": (
+                            purchase.inventory_quantity_after
+                        ),
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        "Controller-owned purchase returned "
+                        f"{purchase.status.value!r}: {purchase.reason}"
                     ),
                     terminated=transition.terminated,
                     success=transition.success,

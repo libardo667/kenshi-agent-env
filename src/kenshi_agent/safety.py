@@ -149,17 +149,27 @@ class ActionGuard:
         self._validate_action_constraints(action, observation)
         contract = contract_for(action)
         if contract is not None:
-            self._validate_contracted_action(action, contract, observation)
+            primitive_actions = contract.primitive_action_bound_for(action)
+            risk = contract.risk_for(action)
+            self._validate_contracted_action(
+                action,
+                contract,
+                observation,
+                primitive_actions=primitive_actions,
+            )
             if isinstance(action, PurchaseItemAction) and observation.mode == "live":
                 self._validate_generic_purchase(
                     action,
                     observation,
                     check_purchase_limit=check_budget,
                 )
-            purchase_actions = int(
-                isinstance(action, PurchaseItemAction) and observation.mode == "live"
+            purchase_actions = (
+                risk.purchase_actions
+                if isinstance(action, PurchaseItemAction)
+                and observation.mode == "live"
+                else 0
             )
-            return action, contract.max_primitive_actions, purchase_actions
+            return action, primitive_actions, purchase_actions
         primitives: list[Action] | None = None
         if isinstance(action, SkillAction):
             if (
@@ -272,6 +282,8 @@ class ActionGuard:
         action: Action,
         contract: ActionContract,
         observation: Observation,
+        *,
+        primitive_actions: int,
     ) -> None:
         """Enforce one semantic action's contract instead of its exact name.
 
@@ -295,10 +307,10 @@ class ActionGuard:
             if contract.controller_verified
             else self.config.max_primitive_actions_per_step
         )
-        if contract.max_primitive_actions > primitive_limit:
+        if primitive_actions > primitive_limit:
             raise SafetyViolation(  # mutation: reason
                 f"Action {contract.kind!r} may emit "  # mutation: reason
-                f"{contract.max_primitive_actions} primitives; "  # mutation: reason
+                f"{primitive_actions} primitives; "  # mutation: reason
                 f"maximum is {primitive_limit} for this contract class."  # mutation: reason
             )
         if observation.mode != "live":
@@ -364,11 +376,15 @@ class ActionGuard:
         if (
             check_purchase_limit
             and self.config.max_purchases_per_run is not None
-            and self._purchase_count + self._pending_purchase_count
-            >= self.config.max_purchases_per_run
+            and (
+                self._purchase_count
+                + self._pending_purchase_count
+                + action.quantity
+                > self.config.max_purchases_per_run
+            )
         ):
             raise SafetyViolation(  # mutation: reason
-                "Per-run purchase limit has already been reached."  # mutation: reason
+                "Requested quantity exceeds the remaining per-run purchase limit."
             )
         if (
             self.config.max_purchase_price is not None
@@ -385,11 +401,13 @@ class ActionGuard:
             )
         if (
             self.config.min_money_after_purchase is not None
-            and money - action.expected_price < self.config.min_money_after_purchase
+            and money - action.expected_price * action.quantity
+            < self.config.min_money_after_purchase
         ):
+            estimated_total = action.expected_price * action.quantity
             raise SafetyViolation(  # mutation: reason
-                "Expected purchase would leave "  # mutation: reason
-                f"{money - action.expected_price} cats; "  # mutation: reason
+                "Expected bounded purchase would leave "  # mutation: reason
+                f"{money - estimated_total} cats; "  # mutation: reason
                 f"minimum is {self.config.min_money_after_purchase}."  # mutation: reason
             )
         tooltip_text = telemetry.ui.tooltip_text

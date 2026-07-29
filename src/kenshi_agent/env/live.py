@@ -88,7 +88,9 @@ from ..models import (
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
+    PurchaseEvidence,
     PurchaseItemAction,
+    PurchaseStatus,
     RecoverCameraViewAction,
     ResourceTransferStatus,
     ScrollAction,
@@ -105,6 +107,7 @@ from ..models import (
     UseGameBindingAction,
     WaitAction,
     WorldStateRevision,
+    normalize_control_label,
     window_close_point,
 )
 from ..native_commands import write_native_command_request_atomic
@@ -121,6 +124,7 @@ class LiveEnvironment(AgentEnvironment):
     _NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
     _NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
     _RESOURCE_TRANSFER_OBSERVATION_TIMEOUT_SECONDS = 2.0
+    _PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 2.0
     _NATIVE_COMMAND_POLL_SECONDS = 0.025
     _NATIVE_DIALOGUE_SETTLE_SECONDS = 1.0
 
@@ -1587,54 +1591,323 @@ class LiveEnvironment(AgentEnvironment):
         action: PurchaseItemAction,
         started: datetime,
     ) -> ActionReceipt:
-        """Buy the item in one cell, re-proving its tooltip inside the lease.
+        """Buy a bounded quantity with per-unit identity and conservation proof."""
 
-        The binding is re-run here rather than trusted from validation time,
-        because the whole guarantee is that the tooltip on screen at the instant
-        of the click still names this item at this price.
-        """
+        initial_binding, initial_observation = self._rebind_in_lease(
+            PURCHASE_ITEM_CONTRACT,
+            action,
+        )
+        telemetry = initial_observation.telemetry
+        assert telemetry is not None
+        selected_character_id, money_before, inventory_before = (
+            self._purchase_state(telemetry, action.item_name)
+        )
 
-        binding, observation = self._rebind_in_lease(PURCHASE_ITEM_CONTRACT, action)
-        bounds = binding.resolved_bounds
-        assert bounds is not None
-        x = (bounds.min_x + bounds.max_x) / 2.0
-        y = (bounds.min_y + bounds.max_y) / 2.0
-        await self.controller.execute(MoveCursorAction(x=x, y=y))
-        if self.controls_config.item_cell_hover_seconds:
-            await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
-        primitive_receipt = await self.controller.execute(
-            ClickAction(
-                x=x,
-                y=y,
-                button=MouseButton.RIGHT,
-                hold_seconds=self.controls_config.control_activation_hold_seconds,
+        current_money = money_before
+        current_inventory = inventory_before
+        current_sequence = telemetry.sequence
+        final_money: int | None = money_before
+        final_inventory: int | None = inventory_before
+        final_sequence: int | None = telemetry.sequence
+        purchased_quantity = 0
+        primitive_actions = 0
+        status = PurchaseStatus.NOT_PURCHASED
+        reason = "No purchase input was sent."
+        binding = initial_binding
+
+        for unit_index in range(action.quantity):
+            if unit_index:
+                rebound, rebind_reason = self._try_rebind_purchase(action)
+                if rebound is None:
+                    status = (
+                        PurchaseStatus.PARTIALLY_PURCHASED
+                        if purchased_quantity
+                        else PurchaseStatus.NOT_PURCHASED
+                    )
+                    reason = (
+                        f"Stopped after {purchased_quantity}/{action.quantity}: "
+                        f"{rebind_reason}"
+                    )
+                    break
+                binding = rebound
+
+            remaining = action.quantity - purchased_quantity
+            self._ensure_purchase_can_continue()
+            bounds = binding.resolved_bounds
+            assert bounds is not None
+            x = (bounds.min_x + bounds.max_x) / 2.0
+            y = (bounds.min_y + bounds.max_y) / 2.0
+            move_receipt = await self.controller.execute(MoveCursorAction(x=x, y=y))
+            primitive_actions += move_receipt.primitive_actions
+            if self.controls_config.item_cell_hover_seconds:
+                await asyncio.sleep(self.controls_config.item_cell_hover_seconds)
+            self._ensure_purchase_can_continue()
+            click_receipt = await self.controller.execute(
+                ClickAction(
+                    x=x,
+                    y=y,
+                    button=MouseButton.RIGHT,
+                    hold_seconds=self.controls_config.control_activation_hold_seconds,
+                )
             )
+            primitive_actions += click_receipt.primitive_actions
+
+            (
+                outcome,
+                observed_money,
+                observed_inventory,
+                observed_sequence,
+                outcome_reason,
+            ) = await self._wait_for_purchase_conservation(
+                action,
+                selected_character_id=selected_character_id,
+                money_before=current_money,
+                inventory_before=current_inventory,
+                after_sequence=current_sequence,
+                remaining_quantity=remaining,
+            )
+            final_money = observed_money
+            final_inventory = observed_inventory
+            final_sequence = observed_sequence
+            if outcome is PurchaseStatus.PURCHASED:
+                assert observed_money is not None
+                assert observed_inventory is not None
+                assert observed_sequence is not None
+                gained = observed_inventory - current_inventory
+                purchased_quantity += gained
+                current_money = observed_money
+                current_inventory = observed_inventory
+                current_sequence = observed_sequence
+                if purchased_quantity >= action.quantity:
+                    status = PurchaseStatus.PURCHASED
+                    reason = (
+                        f"Conserved {purchased_quantity}/{action.quantity} "
+                        f"{action.item_name!r} purchases through matching purse "
+                        "loss and selected-character inventory gain."
+                    )
+                    break
+                continue
+
+            if outcome is PurchaseStatus.NOT_PURCHASED:
+                status = (
+                    PurchaseStatus.PARTIALLY_PURCHASED
+                    if purchased_quantity
+                    else PurchaseStatus.NOT_PURCHASED
+                )
+                reason = (
+                    f"Stopped after {purchased_quantity}/{action.quantity}: "
+                    f"{outcome_reason}"
+                )
+            else:
+                status = PurchaseStatus.OUTCOME_UNKNOWN
+                reason = (
+                    f"Stopped after {purchased_quantity}/{action.quantity} "
+                    f"confirmed purchases because the last delivery is "
+                    f"ambiguous: {outcome_reason}"
+                )
+            break
+        else:
+            if purchased_quantity == action.quantity:
+                status = PurchaseStatus.PURCHASED
+                reason = (
+                    f"Conserved all {purchased_quantity} requested "
+                    f"{action.item_name!r} purchases."
+                )
+
+        evidence = PurchaseEvidence(
+            status=status,
+            seller_id=action.seller_id,
+            selected_character_id=selected_character_id,
+            item_name=action.item_name,
+            requested_quantity=action.quantity,
+            purchased_quantity=purchased_quantity,
+            money_before=money_before,
+            money_after=final_money,
+            inventory_quantity_before=inventory_before,
+            inventory_quantity_after=final_inventory,
+            observed_after_sequence=final_sequence,
+            reason=reason,
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=PURCHASE_ITEM_CONTRACT.version,
             target_id=action.seller_id,
-            resolved_label=binding.resolved_label,
-            resolved_role=binding.resolved_role,
-            resolved_bounds=bounds,
-            source_revision=observation.world_revision,
+            resolved_label=initial_binding.resolved_label,
+            resolved_role=initial_binding.resolved_role,
+            resolved_bounds=initial_binding.resolved_bounds,
+            source_revision=initial_observation.world_revision,
             revalidation=(
-                "Re-proved the cell and its own tooltip inside the input lease "
-                f"before buying. {binding.reason}"
+                "Re-bound the exact seller-owned item cell before every unit and "
+                "required a later matching purse loss plus selected-character "
+                f"inventory gain before continuing. {initial_binding.reason}"
             ),
+            purchase=evidence,
         )
-        return primitive_receipt.model_copy(
-            update={
-                "action": action,
-                "semantic": semantic,
-                "message": (
-                    f"Sent the buy gesture at cell {binding.resolved_label!r} for "
-                    f"{action.item_name!r}. This is not proof of a purchase: only a "
-                    "later observation showing money spent and the item carried is. "
-                    "Check both before buying again."
-                ),
-            }
+        return ActionReceipt(
+            action=action,
+            accepted=True,
+            executed=primitive_actions > 0,
+            dry_run=False,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=primitive_actions,
+            message=reason,
+            semantic=semantic,
         )
+
+    def _purchase_state(
+        self,
+        telemetry: TelemetrySnapshot,
+        item_name: str,
+        *,
+        expected_character_id: str | None = None,
+    ) -> tuple[str, int, int]:
+        selected_ids = telemetry.ui.selected_character_ids
+        selected_character_id = telemetry.ui.selected_character_id
+        if (
+            len(selected_ids) != 1
+            or selected_character_id != selected_ids[0]
+            or (
+                expected_character_id is not None
+                and selected_character_id != expected_character_id
+            )
+        ):
+            raise RuntimeError(
+                "Purchase conservation requires the same one exact selected character."
+            )
+        selected = [
+            character
+            for character in telemetry.squad
+            if character.id == selected_character_id and character.selected
+        ]
+        if len(selected) != 1 or selected[0].inventory_complete is not True:
+            raise RuntimeError(
+                "Purchase conservation requires one selected character with a "
+                "complete inventory export."
+            )
+        if telemetry.game.money is None:
+            raise RuntimeError("Purchase conservation requires known current money.")
+        normalized_name = normalize_control_label(item_name)
+        quantity = sum(
+            (
+                item.item_quantity
+                if item.item_quantity is not None
+                else item.quantity
+            )
+            for item in selected[0].inventory
+            if normalize_control_label(item.name) == normalized_name
+        )
+        return selected_character_id, telemetry.game.money, quantity
+
+    def _try_rebind_purchase(
+        self,
+        action: PurchaseItemAction,
+    ) -> tuple[ReferenceBinding | None, str]:
+        try:
+            result = self.telemetry_reader.read()
+        except TelemetryReadError as exc:
+            return None, f"telemetry could not be read ({exc})."
+        if result.stale:
+            return None, "telemetry became stale before the next unit."
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = PURCHASE_ITEM_CONTRACT.bind(action, observation)
+        if not binding.bound or binding.resolved_bounds is None:
+            return None, binding.reason
+        return binding, binding.reason
+
+    def _ensure_purchase_can_continue(self) -> None:
+        if self.controller.emergency_stop_pressed(self.emergency_stop_key):
+            raise RuntimeError(
+                "Emergency stop interrupted the purchase; no further input was sent."
+            )
+        if self.controller.user_input_detected():
+            raise RuntimeError(
+                "Human input interrupted the purchase; no further input was sent."
+            )
+
+    async def _wait_for_purchase_conservation(
+        self,
+        action: PurchaseItemAction,
+        *,
+        selected_character_id: str,
+        money_before: int,
+        inventory_before: int,
+        after_sequence: int,
+        remaining_quantity: int,
+    ) -> tuple[PurchaseStatus, int | None, int | None, int | None, str]:
+        deadline = time.monotonic() + self._PURCHASE_OBSERVATION_TIMEOUT_SECONDS
+        latest: tuple[int, int, int] | None = None
+        mismatch_reason: str | None = None
+        while True:
+            try:
+                result = self.telemetry_reader.read()
+            except TelemetryReadError:
+                result = None
+            if (
+                result is not None
+                and not result.stale
+                and result.snapshot.sequence > after_sequence
+            ):
+                try:
+                    _, money_after, inventory_after = self._purchase_state(
+                        result.snapshot,
+                        action.item_name,
+                        expected_character_id=selected_character_id,
+                    )
+                except RuntimeError as exc:
+                    mismatch_reason = str(exc)
+                else:
+                    latest = (
+                        money_after,
+                        inventory_after,
+                        result.snapshot.sequence,
+                    )
+                    money_loss = money_before - money_after
+                    inventory_gain = inventory_after - inventory_before
+                    if money_loss > 0 and 1 <= inventory_gain <= remaining_quantity:
+                        return (
+                            PurchaseStatus.PURCHASED,
+                            money_after,
+                            inventory_after,
+                            result.snapshot.sequence,
+                            (
+                                f"Observed c.{money_loss} purse loss and "
+                                f"{inventory_gain} matching carried-item gain."
+                            ),
+                        )
+                    if money_loss > 0 or inventory_gain > 0:
+                        mismatch_reason = (
+                            f"purse loss {money_loss} and inventory gain "
+                            f"{inventory_gain} do not conservatively match the "
+                            f"remaining bound {remaining_quantity}."
+                        )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if mismatch_reason is not None:
+                    values = latest or (None, None, None)
+                    return (
+                        PurchaseStatus.OUTCOME_UNKNOWN,
+                        values[0],
+                        values[1],
+                        values[2],
+                        mismatch_reason,
+                    )
+                if latest is not None:
+                    return (
+                        PurchaseStatus.NOT_PURCHASED,
+                        latest[0],
+                        latest[1],
+                        latest[2],
+                        "later telemetry showed no purse or inventory change.",
+                    )
+                return (
+                    PurchaseStatus.OUTCOME_UNKNOWN,
+                    None,
+                    None,
+                    None,
+                    "no causally later complete inventory observation arrived.",
+                )
+            await asyncio.sleep(min(self._NATIVE_COMMAND_POLL_SECONDS, remaining))
 
     def _rebind_in_lease(
         self,

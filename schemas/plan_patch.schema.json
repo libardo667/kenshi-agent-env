@@ -1099,7 +1099,7 @@
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
-      "description": "Buy the item in one exact seller-owned cell.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The action carries no coordinates; exact item, seller, and owner\nbinding prevents the wrong cell from being selected, and a later money\nchange proves the effect.",
+      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The model chooses the useful quantity once. The controller rebinds\ninterchangeable stock after each transfer and proves both money loss and\ncarried-item gain before attempting the next unit.",
       "properties": {
         "kind": {
           "const": "purchase_item",
@@ -1122,6 +1122,13 @@
         "expected_price": {
           "exclusiveMinimum": 0,
           "title": "Expected Price",
+          "type": "integer"
+        },
+        "quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
           "type": "integer"
         },
         "window": {

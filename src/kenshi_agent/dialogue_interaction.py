@@ -332,9 +332,10 @@ def plan_contract_costs(plan: PlanEnvelope) -> tuple[int, int, int]:
         if contract is None:
             continue
         attempts = 1 + step.retry_budget
-        pointer += contract.risk.pointer_actions * attempts
-        purchase += contract.risk.purchase_actions * attempts
-        native += contract.risk.native_assisted_actions * attempts
+        risk = contract.risk_for(step.action)
+        pointer += risk.pointer_actions * attempts
+        purchase += risk.purchase_actions * attempts
+        native += risk.native_assisted_actions * attempts
     return pointer, purchase, native
 
 

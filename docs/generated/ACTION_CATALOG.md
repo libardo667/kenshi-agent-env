@@ -18,7 +18,7 @@ Regenerate with `python scripts/export_docs.py`.
 | `open_context_inventory` | 1.0 | no | atomic_handler | controller terminal | yes | 6 | `control.open_context_inventory`, `identity.stable_handles`, `world.context_targets` |
 | `perform_context_action` | 1.0 | no | monitored_option | controller terminal | yes | 4 | `control.perform_context_action`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
 | `produce_resource_output` | 1.0 | no | monitored_option | controller terminal | yes | 7 | `control.produce_resource_output`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
-| `purchase_item` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | `game.money`, `game.pause`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.basic`, `ui.inventory`, `ui.tooltip`, `ui.visible_controls` |
+| `purchase_item` | 2.0 | yes | composite_option | controller terminal | no | 10 | `game.money`, `game.pause`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.basic`, `ui.inventory`, `ui.tooltip`, `ui.visible_controls` |
 | `recover_camera_view` | 1.0 | yes | atomic_handler | controller terminal | no | 15 | `camera.position`, `camera.recovery`, `game.pause`, `squad.basic`, `ui.visible_controls` |
 | `scroll_screen` | 1.0 | yes | atomic_handler | planner conditions | no | 1 | `ui.visible_controls` |
 | `sell_item` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | `game.money`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.inventory`, `ui.inventory`, `ui.visible_controls` |

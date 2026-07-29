@@ -82,18 +82,19 @@ def assert_one_runtime_condition(
 def test_mechanical_effects_are_owned_by_one_completion_boundary() -> None:
     """Actions do not make the planner restate effects the runtime already knows."""
 
-    assert_one_runtime_condition(
+    purchase = completion_contract_for(
         PurchaseItemAction(
             cell_label="item_0",
             item_name="Dried Meat",
             expected_price=38,
+            quantity=3,
             window="BARMAN",
             seller_id="entity-barman",
         ),
-        path="telemetry.game.money",
-        operator=ConditionOperator.LESS_THAN,
-        expected=1000,
+        observation(),
     )
+    assert purchase.owner is CompletionOwner.CONTROLLER_TERMINAL
+    assert purchase.conditions == ()
     assert_one_runtime_condition(
         SellItemAction(
             cell_label="item_4",

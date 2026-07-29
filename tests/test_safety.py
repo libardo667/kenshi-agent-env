@@ -1161,6 +1161,33 @@ def test_generic_purchase_budget_conserves_pending_and_committed_authority() -> 
     assert second_after_commit.purchase_actions == 1
 
 
+def test_bounded_purchase_reserves_every_unit_and_its_total_spend() -> None:
+    action = generic_purchase_action().model_copy(update={"quantity": 2})
+    observation = generic_purchase_observation()
+    config = generic_purchase_config().model_copy(
+        update={
+            "min_money_after_purchase": 924,
+            "max_purchases_per_run": 2,
+        }
+    )
+    guard = ActionGuard(config, MacroRegistry({}))
+
+    reservation = guard.reserve(action, observation)
+    assert reservation.purchase_actions == 2
+    assert reservation.primitive_actions == 4
+    with pytest.raises(SafetyViolation, match="purchase limit"):
+        guard.reserve(generic_purchase_action(), observation)
+
+    too_little_reserve = config.model_copy(
+        update={"min_money_after_purchase": 925}
+    )
+    with pytest.raises(SafetyViolation, match="would leave 924 cats"):
+        ActionGuard(too_little_reserve, MacroRegistry({})).reserve(
+            action,
+            observation,
+        )
+
+
 def test_generic_purchase_limits_are_inclusive_and_independent() -> None:
     action = generic_purchase_action()
     observation = generic_purchase_observation()

@@ -84,6 +84,8 @@ from .models import (
     PlanningMode,
     PlanPatch,
     PlanStep,
+    PurchaseItemAction,
+    PurchaseStatus,
     ReadFieldbookAction,
     RecallMemoryAction,
     RecoverCameraViewAction,
@@ -3253,7 +3255,9 @@ class AgentRuntime:
         target_id: str | None = None
         if receipt.semantic is not None:
             target_id = receipt.semantic.target_id
-            if receipt.semantic.resource_harvest is not None:
+            if receipt.semantic.purchase is not None:
+                semantic_status = receipt.semantic.purchase.status.value
+            elif receipt.semantic.resource_harvest is not None:
                 semantic_status = receipt.semantic.resource_harvest.status.value
             elif receipt.semantic.resource_transfer is not None:
                 semantic_status = receipt.semantic.resource_transfer.status.value
@@ -3320,6 +3324,42 @@ class AgentRuntime:
                 ActionOutcomeAssessment.UNKNOWN,
                 "The action has no causally later validated world revision. "
                 "Do not treat raw or pre-command state as progress.",
+            )
+
+        if isinstance(receipt.action, PurchaseItemAction):
+            purchase = (
+                receipt.semantic.purchase
+                if receipt.semantic is not None
+                else None
+            )
+            if purchase is None:
+                return (
+                    ActionOutcomeAssessment.UNKNOWN,
+                    "Purchase returned no typed controller evidence.",
+                )
+            if purchase.status is PurchaseStatus.PURCHASED:
+                return (
+                    ActionOutcomeAssessment.CHANGED,
+                    f"The controller conserved all {purchase.purchased_quantity} "
+                    f"requested {purchase.item_name!r} purchases through matching "
+                    "purse loss and selected-character inventory gain.",
+                )
+            if purchase.status is PurchaseStatus.PARTIALLY_PURCHASED:
+                return (
+                    ActionOutcomeAssessment.CHANGED,
+                    f"The controller conserved {purchase.purchased_quantity}/"
+                    f"{purchase.requested_quantity} {purchase.item_name!r} "
+                    f"purchases before stopping: {purchase.reason}",
+                )
+            if purchase.status is PurchaseStatus.NOT_PURCHASED:
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    f"Purchase made no verified transfer: {purchase.reason}",
+                )
+            return (
+                ActionOutcomeAssessment.UNKNOWN,
+                f"Purchase delivery is ambiguous and must not be retried as a "
+                f"whole: {purchase.reason}",
             )
 
         if isinstance(receipt.action, HarvestResourceAction):

@@ -174,6 +174,10 @@ class ActionRiskCost:
         )
 
 
+RiskCostFactory = Callable[[Action], ActionRiskCost]
+PrimitiveActionBoundFactory = Callable[[Action], int]
+
+
 @dataclass(frozen=True, slots=True)
 class ReferenceBinding:
     """The result of resolving an action's arguments against current state."""
@@ -1606,6 +1610,16 @@ class ActionContract:
     execution: ActionExecution
     receipt_kind: str
     bind: Callable[[Action, Observation], ReferenceBinding]
+    derive_risk: RiskCostFactory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
+    derive_primitive_action_bound: PrimitiveActionBoundFactory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     # The handler itself returns a typed terminal verdict based on evidence it
     # owns, so the planner must not invent a redundant postcondition.
     controller_verified: bool = False
@@ -1626,6 +1640,29 @@ class ActionContract:
         repr=False,
         compare=False,
     )
+
+    def risk_for(self, action: Action) -> ActionRiskCost:
+        """Resolve risk from this exact action without weakening the ceiling."""
+
+        risk = self.derive_risk(action) if self.derive_risk is not None else self.risk
+        if min(risk.as_tuple()) < 0:
+            raise RuntimeError(f"Action contract {self.kind!r} derived negative risk.")
+        return risk
+
+    def primitive_action_bound_for(self, action: Action) -> int:
+        """Resolve the exact transaction bound under the declared maximum."""
+
+        bound = (
+            self.derive_primitive_action_bound(action)
+            if self.derive_primitive_action_bound is not None
+            else self.max_primitive_actions
+        )
+        if not 0 <= bound <= self.max_primitive_actions:
+            raise RuntimeError(
+                f"Action contract {self.kind!r} derived {bound} primitives "
+                f"outside its declared 0-{self.max_primitive_actions} bound."
+            )
+        return bound
 
     def missing_capabilities(self, capabilities: set[str] | frozenset[str]) -> list[str]:
         """Required capabilities absent from an observation, alias-aware.
@@ -1654,24 +1691,20 @@ class ActionContract:
         return self.authorable_when(observation)
 
 
-def _money_decreased(
-    action: Action,
-    observation: Observation,
-) -> tuple[Condition, ...]:
+def _purchase_risk(action: Action) -> ActionRiskCost:
     if not isinstance(action, PurchaseItemAction):
-        return ()
-    telemetry = observation.telemetry
-    if telemetry is None or telemetry.game.money is None:
-        return ()
-    return (
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_GAME_MONEY,
-            operator=ConditionOperator.LESS_THAN,
-            expected=telemetry.game.money,
-            max_age_seconds=3.0,
-        ),
+        raise TypeError("purchase risk requires PurchaseItemAction")
+    return ActionRiskCost(
+        pointer_actions=action.quantity,
+        purchase_actions=action.quantity,
     )
+
+
+def _purchase_primitive_action_bound(action: Action) -> int:
+    if not isinstance(action, PurchaseItemAction):
+        raise TypeError("purchase primitive bound requires PurchaseItemAction")
+    # One current-cell cursor move and one right-click per requested unit.
+    return action.quantity * 2
 
 
 def _money_increased(
@@ -2136,17 +2169,17 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
 
 PURCHASE_ITEM_CONTRACT = ActionContract(
     kind="purchase_item",
-    version="1.0",
+    version="2.0",
     model=PurchaseItemAction,
     summary=(
-        "Buy the item in one exact named seller-owned cell. Current cell facts "
-        "bind identity; the final shop charge is confirmed only by later money."
+        "Buy a bounded quantity of one item from exact seller-owned cells. The "
+        "controller rebinds each unit and proves purse loss plus carried gain."
     ),
     argument_source=(
-        "cell_label, item_name, expected_price (from item_value), and window "
-        "from one visible_controls item entry; seller_id is the exact stable id "
-        "of that vendor group. item_value is base worth, not a guaranteed final "
-        "shop charge."
+        "cell_label, item_name, expected unit price (from item_value), and window "
+        "come from one visible_controls item entry; seller_id is the exact stable "
+        "id of that vendor group; quantity is the useful bounded amount, 1-5. "
+        "item_value is base worth, not a guaranteed final shop charge."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
@@ -2167,13 +2200,21 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
     risk=ActionRiskCost(pointer_actions=1, purchase_actions=1),
-    max_primitive_actions=1,
-    reference_fields=("cell_label", "item_name", "expected_price", "seller_id"),
+    max_primitive_actions=10,
+    reference_fields=(
+        "cell_label",
+        "item_name",
+        "expected_price",
+        "quantity",
+        "seller_id",
+    ),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=ActionExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_purchase",
     bind=bind_purchase_item,
-    derive_completion_conditions=_money_decreased,
+    derive_risk=_purchase_risk,
+    derive_primitive_action_bound=_purchase_primitive_action_bound,
+    controller_verified=True,
 )
 
 

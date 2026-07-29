@@ -48,7 +48,9 @@ planning:
   # plus one wall-second at the conservative 60x conversion.
   max_plan_game_seconds: 3600
   max_pointer_actions_per_plan: 16
-  max_purchase_actions_per_plan: 1
+  # One strategic purchase may ask the controller to conserve up to five
+  # identical units without another planner call.
+  max_purchase_actions_per_plan: 5
   max_native_assisted_actions_per_plan: 4
   max_consecutive_replans: 20
   # The world runs while the agent thinks, so per-plan game-time budgets

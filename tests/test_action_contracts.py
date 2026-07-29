@@ -1478,6 +1478,9 @@ class TestPurchaseSafety:
     def test_purchase_is_at_most_once_and_costs_a_purchase_budget(self) -> None:
         assert PURCHASE_ITEM_CONTRACT.idempotency is IdempotencyPolicy.AT_MOST_ONCE
         assert PURCHASE_ITEM_CONTRACT.risk.purchase_actions == 1
+        action = self._action(quantity=3)
+        assert PURCHASE_ITEM_CONTRACT.risk_for(action).as_tuple() == (3, 3, 0)
+        assert PURCHASE_ITEM_CONTRACT.primitive_action_bound_for(action) == 6
 
     def test_purchase_says_nothing_about_what_kind_of_item_is_worth_buying(self) -> None:
         """Task intent lives in config, not in the purchase contract."""

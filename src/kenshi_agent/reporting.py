@@ -12,6 +12,7 @@ from .models import (
     CameraRecoveryStatus,
     ControlMode,
     PlannerDecision,
+    PurchaseStatus,
     ResourceHarvestStatus,
     ResourceTransferStatus,
     SkillAction,
@@ -88,7 +89,13 @@ def describe_action(action: Action) -> str:
     if kind == "move_to_character":
         return "Walking toward that person."
     if kind == "purchase_item":
-        return _spoken_sentence("Buying " + cast(str, values["item_name"]))
+        quantity = cast(int, values["quantity"])
+        item_name = cast(str, values["item_name"])
+        return _spoken_sentence(
+            f"Buying {quantity} {item_name}"
+            if quantity > 1
+            else f"Buying {item_name}"
+        )
     if kind == "dismiss_screen":
         return "Closing the current screen."
     if kind == "activate_visible_control":
@@ -132,6 +139,21 @@ def describe_receipt(receipt: ActionReceipt) -> str:
         if status is CameraRecoveryStatus.RECOVERED:
             return "The camera view is clear again."
         return "I couldn't get a clear camera view."
+    if semantic is not None and semantic.purchase is not None:
+        purchase = semantic.purchase
+        if purchase.status is PurchaseStatus.PURCHASED:
+            return (
+                f"Bought {purchase.purchased_quantity} "
+                f"{purchase.item_name}."
+            )
+        if purchase.status is PurchaseStatus.PARTIALLY_PURCHASED:
+            return (
+                f"Bought {purchase.purchased_quantity} of "
+                f"{purchase.requested_quantity} {purchase.item_name}."
+            )
+        if purchase.status is PurchaseStatus.NOT_PURCHASED:
+            return "Nothing was purchased."
+        return "I couldn't verify the last purchase."
     if semantic is not None and semantic.resource_harvest is not None:
         harvest = semantic.resource_harvest
         if harvest.status is ResourceHarvestStatus.HARVESTED:
