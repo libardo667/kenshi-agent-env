@@ -187,9 +187,9 @@ AFFORDANCES: tuple[Affordance, ...] = (
         "use_game_binding",
         native_entry_point="controls.cfg toggle_inventory=I",
         gap=(
-            "Verified live. Note active_screen reports 'trade' for a solo "
-            "inventory and never 'inventory'; open_inventory_windows is the "
-            "field that actually moves."
+            "Use open_inventory_windows as the exact count. active_screen is a "
+            "collapsed label: inventory means no observed shop-owner window, "
+            "while trade means one exact registered shop-owner window is open."
         ),
     ),
     Affordance(

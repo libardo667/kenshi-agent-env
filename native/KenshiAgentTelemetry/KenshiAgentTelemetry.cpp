@@ -2817,10 +2817,27 @@ namespace
             gui != NULL &&
             inventoryTrader != NULL &&
             gui->hasInventoryWindowOpen(inventoryTrader->getHandle());
+        bool registeredShopInventoryOpen = false;
+        if (gui != NULL && g_shopTraderRegistryReady)
+        {
+            for (unsigned int index = 0;
+                 index < g_trackedShopTraderCount;
+                 ++index)
+            {
+                Character* owner = g_trackedShopTraders[index].owner;
+                if (owner != NULL &&
+                    gui->hasInventoryWindowOpen(owner->getHandle()))
+                {
+                    registeredShopInventoryOpen = true;
+                    break;
+                }
+            }
+        }
         const bool tradeOpen =
             KenshiAgentTelemetry::IsTradeInventoryOpen(
                 inventoryOpen,
-                traderInventoryOpen);
+                traderInventoryOpen,
+                registeredShopInventoryOpen);
         const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
         // Map, squad, research and factions are not separate screens: they are
         // tabs of one ManagementScreen. Reporting only `active_screen` left all

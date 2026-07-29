@@ -29,7 +29,7 @@ DIALOGUE
 
 INVENTORY
   ok  enter     Open the squad member's own inventory.  [control: use_game_binding]
-        -> Verified live. Note active_screen reports 'trade' for a solo inventory and never 'inventory'; open_inventory_windows is the field that actually moves.
+        -> Use open_inventory_windows as the exact count. active_screen is a collapsed label: inventory means no observed shop-owner window, while trade means one exact registered shop-owner window is open.
   ok  navigate  Reach cells that are scrolled out of view or in another section.  [control: scroll_screen]
   ok  interact  Read what an item actually is.  [native: telemetry.ui.visible_controls[item].item_name]
   ok  interact  Equip an item from the selected character's own inventory.  [control: equip_item]

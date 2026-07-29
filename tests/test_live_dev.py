@@ -35,6 +35,7 @@ from kenshi_agent.models import (
     ActionReceipt,
     CharacterState,
     ClickAction,
+    Disposition,
     GameState,
     HotkeyAction,
     KeyAction,
@@ -42,6 +43,7 @@ from kenshi_agent.models import (
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeControlState,
+    NearbyEntity,
     NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
@@ -498,7 +500,7 @@ def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> Non
     asyncio.run(scenario())
 
 
-def test_supported_close_refuses_an_actual_shop_inventory_layout() -> None:
+def test_supported_close_resolves_an_exact_shop_inventory_layout() -> None:
     trade = resource_inventory_snapshot(
         75,
         destination_open=True,
@@ -527,8 +529,20 @@ def test_supported_close_refuses_an_actual_shop_inventory_layout() -> None:
             shop_controls.append(control)
     actual_trade = trade.model_copy(
         update={
+            "nearby_entities": [
+                NearbyEntity(
+                    id="entity-zu",
+                    name="Zu",
+                    disposition=Disposition.NEUTRAL,
+                    shop_inventory_owner=True,
+                )
+            ],
             "ui": trade.ui.model_copy(
                 update={
+                    # This is the state the live exporter produced: both exact
+                    # trade inventories were open, but the transient native
+                    # trader pointer left the collapsed label at "inventory".
+                    "active_screen": "inventory",
                     "context_inventory_target_id": None,
                     "visible_controls": shop_controls,
                 }
@@ -537,8 +551,60 @@ def test_supported_close_refuses_an_actual_shop_inventory_layout() -> None:
         deep=True,
     )
 
-    with pytest.raises(LaunchFailed, match="unexplained or missing inventory window"):
-        live_dev._safe_close_inventory_window(actual_trade)
+    caption, bounds = live_dev._safe_close_inventory_window(actual_trade)
+
+    assert caption == "Zu"
+    assert bounds == NormalizedPointerBounds(
+        min_x=0.2,
+        max_x=0.5,
+        min_y=0.3,
+        max_y=0.7,
+    )
+
+    hostile_owner = actual_trade.nearby_entities[0].model_copy(
+        update={"disposition": Disposition.HOSTILE}
+    )
+    non_shop_owner = actual_trade.nearby_entities[0].model_copy(
+        update={"shop_inventory_owner": False}
+    )
+    duplicate_owner = actual_trade.nearby_entities[0].model_copy(
+        update={"id": "entity-zu-duplicate"}
+    )
+    for invalid_entities in (
+        [],
+        [hostile_owner],
+        [non_shop_owner],
+        [*actual_trade.nearby_entities, duplicate_owner],
+    ):
+        unsafe = actual_trade.model_copy(
+            update={"nearby_entities": invalid_entities},
+            deep=True,
+        )
+        with pytest.raises(LaunchFailed, match="one exact shop-owner window"):
+            live_dev._safe_close_inventory_window(unsafe)
+
+    shop_root = next(
+        control
+        for control in actual_trade.ui.visible_controls or []
+        if control.role == "text"
+        and control.window == "ZU"
+        and control.label == "ZU"
+    )
+    duplicate_roots = actual_trade.model_copy(
+        update={
+            "ui": actual_trade.ui.model_copy(
+                update={
+                    "visible_controls": [
+                        *(actual_trade.ui.visible_controls or []),
+                        shop_root,
+                    ]
+                }
+            )
+        },
+        deep=True,
+    )
+    with pytest.raises(LaunchFailed, match="duplicate roots"):
+        live_dev._safe_close_inventory_window(duplicate_roots)
 
 
 def test_supported_close_dismisses_source_and_destination_before_wm_close() -> None:

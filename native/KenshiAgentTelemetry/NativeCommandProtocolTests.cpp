@@ -155,17 +155,28 @@ namespace
     {
         using KenshiAgentTelemetry::IsTradeInventoryOpen;
 
-        if (IsTradeInventoryOpen(false, false))
-            return Fail("a closed inventory was classified as trade");
-        if (IsTradeInventoryOpen(true, false))
+        for (int anyInventory = 0; anyInventory <= 1; ++anyInventory)
         {
-            return Fail(
-                "a non-commercial inventory inherited stale trade authority");
+            for (int transientTrader = 0; transientTrader <= 1; ++transientTrader)
+            {
+                for (int registeredShop = 0; registeredShop <= 1; ++registeredShop)
+                {
+                    const bool expected =
+                        anyInventory != 0 &&
+                        (transientTrader != 0 || registeredShop != 0);
+                    const bool actual = IsTradeInventoryOpen(
+                        anyInventory != 0,
+                        transientTrader != 0,
+                        registeredShop != 0);
+                    if (actual != expected)
+                    {
+                        return Fail(
+                            "trade classification violated inventory and "
+                            "shop-owner authority");
+                    }
+                }
+            }
         }
-        if (IsTradeInventoryOpen(false, true))
-            return Fail("an impossible trader-only signal overrode the closed UI");
-        if (!IsTradeInventoryOpen(true, true))
-            return Fail("an exact open trader inventory was not classified as trade");
         return 0;
     }
 

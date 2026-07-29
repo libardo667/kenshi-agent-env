@@ -4,8 +4,10 @@ namespace KenshiAgentTelemetry
 {
     inline bool IsTradeInventoryOpen(
         bool anyInventoryOpen,
-        bool traderInventoryOpen)
+        bool transientTraderInventoryOpen,
+        bool registeredShopInventoryOpen)
     {
-        return anyInventoryOpen && traderInventoryOpen;
+        return anyInventoryOpen &&
+            (transientTraderInventoryOpen || registeredShopInventoryOpen);
     }
 }

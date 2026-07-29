@@ -65,6 +65,7 @@ from .graphics_profile import (
 )
 from .models import (
     ClickAction,
+    Disposition,
     HotkeyAction,
     KeyAction,
     NormalizedPointerBounds,
@@ -352,6 +353,39 @@ def _safe_close_inventory_window(
         if len(targets) != 1 or not targets[0].name:
             raise LaunchFailed(f"{refusal} cannot resolve the contextual source.")
         source_caption = targets[0].name
+    elif ui.open_inventory_windows == 2:
+        # A real trade can arrive with active_screen="inventory" when Kenshi's
+        # transient inventoryWindowTrader pointer is empty. Resolve authority
+        # from the stronger evidence instead: exactly one observed non-hostile
+        # registered shop owner has an exact named inventory root beside ours.
+        shop_captions: list[str] = []
+        for entity in snapshot.nearby_entities:
+            if (
+                entity.shop_inventory_owner is not True
+                or entity.disposition
+                not in {Disposition.FRIENDLY, Disposition.NEUTRAL}
+                or not entity.name
+            ):
+                continue
+            normalized = _normalize_control_label(entity.name)
+            roots = [
+                control
+                for control in ui.visible_controls
+                if control.role == "text"
+                and _normalize_control_label(control.window) == normalized
+                and _normalize_control_label(control.label) == normalized
+            ]
+            if len(roots) == 1:
+                shop_captions.append(entity.name)
+            elif len(roots) > 1:
+                raise LaunchFailed(
+                    f"{refusal} found duplicate roots for {entity.name!r}."
+                )
+        if len(shop_captions) != 1:
+            raise LaunchFailed(
+                f"{refusal} cannot resolve one exact shop-owner window."
+            )
+        source_caption = shop_captions[0]
 
     captions = [
         caption
