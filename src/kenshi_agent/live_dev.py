@@ -2641,10 +2641,10 @@ def _journey(args: argparse.Namespace) -> int:
     return result
 
 
-async def _play(args: argparse.Namespace) -> int:
+def _play(args: argparse.Namespace) -> int:
     """Launch and load Kenshi, then hand the same intent to journey."""
 
-    launch_result = await _launch(args)
+    launch_result = asyncio.run(_launch(args))
     if launch_result != 0:
         return launch_result
     return _journey(args)
@@ -2954,7 +2954,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "journey":
         return _journey(args)
     if args.command == "play":
-        return asyncio.run(_play(args))
+        return _play(args)
     raise AssertionError(args.command)
 
 

@@ -1570,7 +1570,7 @@ def test_play_parser_combines_launch_and_continuous_journey_options() -> None:
             "--config",
             "config/live.longform.yaml",
             "--game-start",
-            "kae-01-funded-solo",
+            "kae-02-funded-solo",
             "--campaign",
             "fresh-funded-solo",
             "--steps",
@@ -1583,7 +1583,7 @@ def test_play_parser_combines_launch_and_continuous_journey_options() -> None:
         ]
     )
 
-    assert args.game_start == "kae-01-funded-solo"
+    assert args.game_start == "kae-02-funded-solo"
     assert args.campaign == "fresh-funded-solo"
     assert args.continue_game is True
     assert args.preflight_only is False
@@ -1612,9 +1612,7 @@ def test_play_starts_journey_only_after_launch_succeeds(
     monkeypatch.setattr(live_dev, "_journey", journey)
     args = object()
 
-    import asyncio
-
-    assert asyncio.run(live_dev._play(args)) == 7
+    assert live_dev._play(args) == 7
     assert calls == ["launch", "journey"]
 
     calls.clear()
@@ -1624,7 +1622,7 @@ def test_play_starts_journey_only_after_launch_succeeds(
         return 4
 
     monkeypatch.setattr(live_dev, "_launch", failed_launch)
-    assert asyncio.run(live_dev._play(args)) == 4
+    assert live_dev._play(args) == 4
     assert calls == ["launch"]
 
 

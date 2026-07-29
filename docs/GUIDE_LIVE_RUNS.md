@@ -27,7 +27,7 @@ launcher without a pseudo-terminal:
 ```bash
 ./dev launch --preflight-only
 ./dev launch
-./dev play --game-start kae-01-funded-solo \
+./dev play --game-start kae-02-funded-solo \
   --campaign fresh-funded-solo --steps 80 \
   --continuous --execute --native-assisted \
   --acknowledge-continuous-live --exclusive
