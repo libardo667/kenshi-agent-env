@@ -2527,6 +2527,123 @@
       "title": "ResourceTransferStatus",
       "type": "string"
     },
+    "SaleEvidence": {
+      "additionalProperties": false,
+      "description": "Terminal conservation proof for one bounded selling transaction.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/SaleStatus"
+        },
+        "buyer_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Buyer Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "requested_quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Requested Quantity",
+          "type": "integer"
+        },
+        "sold_quantity": {
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Sold Quantity",
+          "type": "integer"
+        },
+        "money_before": {
+          "minimum": 0,
+          "title": "Money Before",
+          "type": "integer"
+        },
+        "money_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Money After"
+        },
+        "inventory_quantity_before": {
+          "minimum": 0,
+          "title": "Inventory Quantity Before",
+          "type": "integer"
+        },
+        "inventory_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Quantity After"
+        },
+        "observed_after_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed After Sequence"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "buyer_id",
+        "selected_character_id",
+        "item_name",
+        "requested_quantity",
+        "sold_quantity",
+        "money_before",
+        "inventory_quantity_before",
+        "reason"
+      ],
+      "title": "SaleEvidence",
+      "type": "object"
+    },
+    "SaleStatus": {
+      "enum": [
+        "sold",
+        "partially_sold",
+        "not_sold",
+        "outcome_unknown"
+      ],
+      "title": "SaleStatus",
+      "type": "string"
+    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -2595,7 +2712,7 @@
     },
     "SellItemAction": {
       "additionalProperties": false,
-      "description": "Sell the item in one exact cell of the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
+      "description": "Sell a bounded quantity from the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
       "properties": {
         "kind": {
           "const": "sell_item",
@@ -2614,6 +2731,13 @@
           "minLength": 1,
           "title": "Item Name",
           "type": "string"
+        },
+        "quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
         },
         "window": {
           "maxLength": 200,
@@ -2753,6 +2877,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/PurchaseEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sale": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SaleEvidence"
             },
             {
               "type": "null"

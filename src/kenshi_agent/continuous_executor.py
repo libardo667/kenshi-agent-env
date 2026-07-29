@@ -52,6 +52,7 @@ from .models import (
     ResourceHarvestStatus,
     ResourceTransferEvidence,
     ResourceTransferStatus,
+    SaleStatus,
     SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
@@ -1597,6 +1598,42 @@ class ContinuousPlanExecutor:
                     reason=(
                         "Controller-owned purchase returned "
                         f"{purchase.status.value!r}: {purchase.reason}"
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
+            sale = (
+                transition.receipt.semantic.sale
+                if transition.receipt.semantic is not None
+                else None
+            )
+            if sale is not None:
+                succeeded = sale.status is SaleStatus.SOLD
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason="Accepted the controller-owned sale conservation verdict.",
+                    evidence={
+                        "controller_verified": True,
+                        "status": sale.status.value,
+                        "requested_quantity": sale.requested_quantity,
+                        "sold_quantity": sale.sold_quantity,
+                        "money_before": sale.money_before,
+                        "money_after": sale.money_after,
+                        "inventory_quantity_before": sale.inventory_quantity_before,
+                        "inventory_quantity_after": sale.inventory_quantity_after,
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        "Controller-owned sale returned "
+                        f"{sale.status.value!r}: {sale.reason}"
                     ),
                     terminated=transition.terminated,
                     success=transition.success,

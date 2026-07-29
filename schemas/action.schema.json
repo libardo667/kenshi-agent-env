@@ -981,7 +981,7 @@
     },
     "SellItemAction": {
       "additionalProperties": false,
-      "description": "Sell the item in one exact cell of the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
+      "description": "Sell a bounded quantity from the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
       "properties": {
         "kind": {
           "const": "sell_item",
@@ -1000,6 +1000,13 @@
           "minLength": 1,
           "title": "Item Name",
           "type": "string"
+        },
+        "quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
         },
         "window": {
           "maxLength": 200,

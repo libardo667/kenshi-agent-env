@@ -1273,7 +1273,7 @@ class EquipItemAction(StrictModel):
 
 
 class SellItemAction(StrictModel):
-    """Sell the item in one exact cell of the agent's own inventory.
+    """Sell a bounded quantity from the agent's own inventory.
 
     The mirror of `purchase_item`, and the reason trading stopped being one-way:
     with only a purchase action the agent could spend its starting money and
@@ -1289,6 +1289,7 @@ class SellItemAction(StrictModel):
     kind: Literal["sell_item"] = "sell_item"
     cell_label: str = Field(min_length=1, max_length=80)
     item_name: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(default=1, ge=1, le=5)
     # Caption of the inventory window the cell sits in; must be the selected
     # character's own window, never the trader's.
     window: str = Field(min_length=1, max_length=200)
@@ -4257,6 +4258,11 @@ def _validate_purchase_status_quantity(
         )
     if status is PurchaseStatus.NOT_PURCHASED and purchased_quantity != 0:
         raise ValueError("not_purchased status requires zero purchased quantity")
+    if (
+        status is PurchaseStatus.OUTCOME_UNKNOWN
+        and purchased_quantity >= requested_quantity
+    ):
+        raise ValueError("outcome_unknown requires an unresolved remaining quantity")
 
 
 class PurchaseEvidence(StrictModel):
@@ -4285,6 +4291,60 @@ class PurchaseEvidence(StrictModel):
         return self
 
 
+class SaleStatus(StrEnum):
+    SOLD = "sold"
+    PARTIALLY_SOLD = "partially_sold"
+    NOT_SOLD = "not_sold"
+    OUTCOME_UNKNOWN = "outcome_unknown"
+
+
+def _validate_sale_status_quantity(
+    status: SaleStatus,
+    requested_quantity: int,
+    sold_quantity: int,
+) -> None:
+    """Keep terminal status consistent with the controller-proven quantity."""
+
+    if sold_quantity > requested_quantity:
+        raise ValueError("sold_quantity cannot exceed requested_quantity")
+    if status is SaleStatus.SOLD and sold_quantity != requested_quantity:
+        raise ValueError("sold status requires the full requested quantity")
+    if status is SaleStatus.PARTIALLY_SOLD and not (
+        0 < sold_quantity < requested_quantity
+    ):
+        raise ValueError("partially_sold status requires a strict partial quantity")
+    if status is SaleStatus.NOT_SOLD and sold_quantity != 0:
+        raise ValueError("not_sold status requires zero sold quantity")
+    if status is SaleStatus.OUTCOME_UNKNOWN and sold_quantity >= requested_quantity:
+        raise ValueError("outcome_unknown requires an unresolved remaining quantity")
+
+
+class SaleEvidence(StrictModel):
+    """Terminal conservation proof for one bounded selling transaction."""
+
+    status: SaleStatus
+    buyer_id: str = Field(min_length=1, max_length=200)
+    selected_character_id: str = Field(min_length=1, max_length=200)
+    item_name: str = Field(min_length=1, max_length=200)
+    requested_quantity: int = Field(ge=1, le=5)
+    sold_quantity: int = Field(ge=0, le=5)
+    money_before: int = Field(ge=0)
+    money_after: int | None = Field(default=None, ge=0)
+    inventory_quantity_before: int = Field(ge=0)
+    inventory_quantity_after: int | None = Field(default=None, ge=0)
+    observed_after_sequence: int | None = Field(default=None, ge=0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def status_matches_conserved_quantity(self) -> SaleEvidence:
+        _validate_sale_status_quantity(
+            self.status,
+            self.requested_quantity,
+            self.sold_quantity,
+        )
+        return self
+
+
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -4305,6 +4365,7 @@ class SemanticActionReceipt(StrictModel):
     legacy_compatibility: bool = False
     camera_recovery: CameraRecoveryEvidence | None = None
     purchase: PurchaseEvidence | None = None
+    sale: SaleEvidence | None = None
     resource_transfer: ResourceTransferEvidence | None = None
     resource_harvest: ResourceHarvestEvidence | None = None
 

@@ -15,6 +15,7 @@ from .models import (
     PurchaseStatus,
     ResourceHarvestStatus,
     ResourceTransferStatus,
+    SaleStatus,
     SkillAction,
 )
 from .speech import SpeechNarrator
@@ -103,7 +104,13 @@ def describe_action(action: Action) -> str:
     if kind == "equip_item":
         return _spoken_sentence("Equipping " + cast(str, values["item_name"]))
     if kind == "sell_item":
-        return _spoken_sentence("Selling " + cast(str, values["item_name"]))
+        quantity = cast(int, values["quantity"])
+        item_name = cast(str, values["item_name"])
+        return _spoken_sentence(
+            f"Selling {quantity} {item_name}"
+            if quantity > 1
+            else f"Selling {item_name}"
+        )
     if kind == "collect_resource_output":
         return _spoken_sentence(
             "Collecting " + cast(str, values["item_name"])
@@ -154,6 +161,18 @@ def describe_receipt(receipt: ActionReceipt) -> str:
         if purchase.status is PurchaseStatus.NOT_PURCHASED:
             return "Nothing was purchased."
         return "I couldn't verify the last purchase."
+    if semantic is not None and semantic.sale is not None:
+        sale = semantic.sale
+        if sale.status is SaleStatus.SOLD:
+            return f"Sold {sale.sold_quantity} {sale.item_name}."
+        if sale.status is SaleStatus.PARTIALLY_SOLD:
+            return (
+                f"Sold {sale.sold_quantity} of "
+                f"{sale.requested_quantity} {sale.item_name}."
+            )
+        if sale.status is SaleStatus.NOT_SOLD:
+            return "Nothing was sold."
+        return "I couldn't verify the last sale."
     if semantic is not None and semantic.resource_harvest is not None:
         harvest = semantic.resource_harvest
         if harvest.status is ResourceHarvestStatus.HARVESTED:

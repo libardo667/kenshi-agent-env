@@ -1691,40 +1691,24 @@ class ActionContract:
         return self.authorable_when(observation)
 
 
-def _purchase_risk(action: Action) -> ActionRiskCost:
-    if not isinstance(action, PurchaseItemAction):
-        raise TypeError("purchase risk requires PurchaseItemAction")
+def _bounded_trade_quantity(action: Action) -> int:
+    if not isinstance(action, (PurchaseItemAction, SellItemAction)):
+        raise TypeError("bounded trade cost requires a purchase or sale action")
+    return action.quantity
+
+
+def _bounded_trade_risk(action: Action) -> ActionRiskCost:
+    quantity = _bounded_trade_quantity(action)
     return ActionRiskCost(
-        pointer_actions=action.quantity,
-        purchase_actions=action.quantity,
+        pointer_actions=quantity,
+        purchase_actions=quantity,
     )
 
 
-def _purchase_primitive_action_bound(action: Action) -> int:
-    if not isinstance(action, PurchaseItemAction):
-        raise TypeError("purchase primitive bound requires PurchaseItemAction")
+def _bounded_trade_primitive_action_bound(action: Action) -> int:
+    quantity = _bounded_trade_quantity(action)
     # One current-cell cursor move and one right-click per requested unit.
-    return action.quantity * 2
-
-
-def _money_increased(
-    action: Action,
-    observation: Observation,
-) -> tuple[Condition, ...]:
-    if not isinstance(action, SellItemAction):
-        return ()
-    telemetry = observation.telemetry
-    if telemetry is None or telemetry.game.money is None:
-        return ()
-    return (
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_GAME_MONEY,
-            operator=ConditionOperator.GREATER_THAN,
-            expected=telemetry.game.money,
-            max_age_seconds=3.0,
-        ),
-    )
+    return quantity * 2
 
 
 def _named_window_closed(
@@ -2212,8 +2196,8 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     execution=ActionExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_purchase",
     bind=bind_purchase_item,
-    derive_risk=_purchase_risk,
-    derive_primitive_action_bound=_purchase_primitive_action_bound,
+    derive_risk=_bounded_trade_risk,
+    derive_primitive_action_bound=_bounded_trade_primitive_action_bound,
     controller_verified=True,
 )
 
@@ -2332,18 +2316,18 @@ SCROLL_SCREEN_CONTRACT = ActionContract(
 
 SELL_ITEM_CONTRACT = ActionContract(
     kind="sell_item",
-    version="1.0",
+    version="2.0",
     model=SellItemAction,
     summary=(
-        "Sell one item from the selected character's own inventory to the shop "
-        "currently being traded with. The mirror of purchase_item, and the only "
-        "way the agent earns money rather than only spending it."
+        "Sell a bounded quantity from the selected character's own inventory. "
+        "The controller rebinds every unit and proves carried loss plus purse gain."
     ),
     argument_source=(
         "cell_label from a visible_controls entry with role 'item'; window must "
         "be the selected character's own name; item_name copied from that "
         "cell's own entry; buyer_id the exact stable id of the one active shop "
-        "owner. No price is given: the shop's offer is not exported."
+        "owner; quantity is the useful bounded amount, 1-5. No price is given: "
+        "the shop's offer is not exported."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
@@ -2363,13 +2347,15 @@ SELL_ITEM_CONTRACT = ActionContract(
     native_assisted=False,
     # Counted against the purchase budget: a sale is as irreversible as a buy.
     risk=ActionRiskCost(pointer_actions=1, purchase_actions=1),
-    max_primitive_actions=1,
-    reference_fields=("cell_label", "window", "buyer_id"),
+    max_primitive_actions=10,
+    reference_fields=("cell_label", "item_name", "quantity", "window", "buyer_id"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=ActionExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_sell",
     bind=bind_sell_item,
-    derive_completion_conditions=_money_increased,
+    derive_risk=_bounded_trade_risk,
+    derive_primitive_action_bound=_bounded_trade_primitive_action_bound,
+    controller_verified=True,
 )
 
 

@@ -95,17 +95,18 @@ def test_mechanical_effects_are_owned_by_one_completion_boundary() -> None:
     )
     assert purchase.owner is CompletionOwner.CONTROLLER_TERMINAL
     assert purchase.conditions == ()
-    assert_one_runtime_condition(
+    sale = completion_contract_for(
         SellItemAction(
             cell_label="item_4",
             item_name="Iron Club",
+            quantity=3,
             window="HIROTO",
             buyer_id="entity-barman",
         ),
-        path="telemetry.game.money",
-        operator=ConditionOperator.GREATER_THAN,
-        expected=1000,
+        observation(),
     )
+    assert sale.owner is CompletionOwner.CONTROLLER_TERMINAL
+    assert sale.conditions == ()
     assert_one_runtime_condition(
         DismissScreenAction(expected_screen="trade", window="BARMAN"),
         path="telemetry.ui.open_inventory_windows",

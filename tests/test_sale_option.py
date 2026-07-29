@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
 from kenshi_agent.config import (
     CaptureConfig,
     ControlsConfig,
@@ -36,10 +37,10 @@ from kenshi_agent.models import (
     PlanEnvelope,
     PlanningMode,
     PlanStep,
-    PurchaseEvidence,
-    PurchaseItemAction,
-    PurchaseStatus,
     RiskBudget,
+    SaleEvidence,
+    SaleStatus,
+    SellItemAction,
     TelemetrySnapshot,
     Transition,
     UIState,
@@ -66,57 +67,72 @@ class FakeClock(PlanningClock):
         self.now += seconds
 
 
-def _bounds(index: int) -> NormalizedPointerBounds:
+def _bounds(index: int, *, buyer: bool = False) -> NormalizedPointerBounds:
     top = 0.20 + 0.06 * index
     return NormalizedPointerBounds(
-        min_x=0.52,
+        min_x=0.72 if buyer else 0.32,
         min_y=top,
-        max_x=0.57,
+        max_x=0.77 if buyer else 0.37,
         max_y=top + 0.05,
     )
 
 
-class PurchaseTelemetry:
-    def __init__(self, *, stock: int) -> None:
-        self.stock = stock
-        self.carried = 0
+class SaleTelemetry:
+    def __init__(self, *, carried: int, stacked: bool = False) -> None:
+        self.carried = carried
+        self.stacked = stacked
         self.money = 1000
         self.sequence = 0
         self.max_age_seconds = 3.0
-        self.path = Path("purchase-telemetry.json")
+        self.path = Path("sale-telemetry.json")
+
+    def _inventory(self) -> list[InventoryItem]:
+        if not self.carried:
+            return []
+        if self.stacked:
+            return [
+                InventoryItem(
+                    name="Dried Meat",
+                    item_name="Dried Meat",
+                    item_quantity=self.carried,
+                )
+            ]
+        return [
+            InventoryItem(
+                name="Dried Meat",
+                item_name="Dried Meat",
+                item_quantity=1,
+            )
+            for _ in range(self.carried)
+        ]
+
+    def _own_cells(self) -> list[VisibleUIControl]:
+        quantities = [self.carried] if self.stacked and self.carried else [
+            1 for _ in range(self.carried)
+        ]
+        return [
+            VisibleUIControl(
+                label="Dried Meat",
+                role="item",
+                window="JAGLONGER",
+                item_name="Dried Meat",
+                item_value=43,
+                item_quantity=quantity,
+                bounds=_bounds(index),
+            )
+            for index, quantity in enumerate(quantities)
+        ]
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
-        inventory = (
-            [InventoryItem(name="Dried Meat", quantity=self.carried)]
-            if self.carried
-            else []
-        )
-        controls = (
-            [
-                VisibleUIControl(
-                    label="Dried Meat",
-                    role="item",
-                    window="BURN",
-                    item_name="Dried Meat",
-                    item_value=43,
-                    item_quantity=self.stock,
-                    bounds=_bounds(0),
-                )
-            ]
-            if self.stock
-            else []
-        )
         snapshot = TelemetrySnapshot(
             sequence=self.sequence,
             captured_at=datetime.now(UTC),
-            identity_session_id="session-purchase",
+            identity_session_id="session-sale",
             capabilities=[
                 "ui.visible_controls",
-                "ui.tooltip",
                 "ui.inventory",
                 "game.money",
-                "game.pause",
                 "identity.stable_handles",
                 "nearby.characters",
                 "nearby.shop_owners",
@@ -131,16 +147,16 @@ class PurchaseTelemetry:
             ),
             squad=[
                 CharacterState(
-                    id="character-bark",
-                    name="Bark",
+                    id="character-jaglonger",
+                    name="Jaglonger",
                     selected=True,
-                    inventory=inventory,
+                    inventory=self._inventory(),
                     inventory_complete=True,
                 )
             ],
             nearby_entities=[
                 NearbyEntity(
-                    id="seller-burn",
+                    id="buyer-burn",
                     name="Burn",
                     disposition=Disposition.NEUTRAL,
                     shop_inventory_owner=True,
@@ -150,9 +166,20 @@ class PurchaseTelemetry:
             ui=UIState(
                 active_screen="trade",
                 open_inventory_windows=2,
-                selected_character_id="character-bark",
-                selected_character_ids=["character-bark"],
-                visible_controls=controls,
+                selected_character_id="character-jaglonger",
+                selected_character_ids=["character-jaglonger"],
+                visible_controls=[
+                    *self._own_cells(),
+                    VisibleUIControl(
+                        label="Water",
+                        role="item",
+                        window="BURN",
+                        item_name="Water",
+                        item_value=25,
+                        item_quantity=12,
+                        bounds=_bounds(0, buyer=True),
+                    ),
+                ],
             ),
         )
         return TelemetryRead(
@@ -163,15 +190,17 @@ class PurchaseTelemetry:
         )
 
 
-class PurchaseController(InputController):
+class SaleController(InputController):
     def __init__(
         self,
-        telemetry: PurchaseTelemetry,
+        telemetry: SaleTelemetry,
         *,
         inventory_updates: bool = True,
+        reverse_transfer: bool = False,
     ) -> None:
         self.telemetry = telemetry
         self.inventory_updates = inventory_updates
+        self.reverse_transfer = reverse_transfer
         self.actions: list[PrimitiveInputAction] = []
 
     def focus_window(self) -> None:
@@ -180,14 +209,15 @@ class PurchaseController(InputController):
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         self.actions.append(action)
         if isinstance(action, ClickAction) and action.button is MouseButton.RIGHT:
-            assert self.telemetry.stock > 0
-            self.telemetry.stock -= 1
-            if self.inventory_updates:
+            assert self.telemetry.carried > 0
+            if self.reverse_transfer:
                 self.telemetry.carried += 1
-            # The live Burn charged c.87 for a cell whose exported base value
-            # was c.43. Conservation requires a loss, never equality with the
-            # non-authoritative estimate.
-            self.telemetry.money -= 87
+                self.telemetry.money -= 50
+            elif self.inventory_updates:
+                self.telemetry.carried -= 1
+                self.telemetry.money += 50
+            else:
+                self.telemetry.money += 50
         now = datetime.now(UTC)
         return ActionReceipt(
             action=action,
@@ -210,24 +240,27 @@ class PurchaseController(InputController):
         return WindowRect(left=0, top=0, right=640, bottom=360)
 
 
-def purchase_environment(
+def sale_environment(
     tmp_path: Path,
     *,
-    stock: int,
+    carried: int,
+    stacked: bool = False,
     inventory_updates: bool = True,
-) -> tuple[LiveEnvironment, PurchaseTelemetry, PurchaseController]:
-    telemetry = PurchaseTelemetry(stock=stock)
-    controller = PurchaseController(
+    reverse_transfer: bool = False,
+) -> tuple[LiveEnvironment, SaleTelemetry, SaleController]:
+    telemetry = SaleTelemetry(carried=carried, stacked=stacked)
+    controller = SaleController(
         telemetry,
         inventory_updates=inventory_updates,
+        reverse_transfer=reverse_transfer,
     )
     environment = LiveEnvironment(
-        run_id="purchase-option-test",
+        run_id="sale-option-test",
         run_dir=tmp_path,
         telemetry=telemetry,  # type: ignore[arg-type]
         controller=controller,
         macros=MacroRegistry({}),
-        runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Buy supplies."),
+        runtime_config=RuntimeConfig(settle_seconds=0.0, objective="Sell supplies."),
         controls_config=ControlsConfig(
             post_input_delay_seconds=0.0,
             item_cell_hover_seconds=0.0,
@@ -240,14 +273,13 @@ def purchase_environment(
     return environment, telemetry, controller
 
 
-def _purchase(*, quantity: int) -> PurchaseItemAction:
-    return PurchaseItemAction(
+def _sale(*, quantity: int) -> SellItemAction:
+    return SellItemAction(
         cell_label="Dried Meat",
         item_name="Dried Meat",
-        expected_price=43,
         quantity=quantity,
-        window="BURN",
-        seller_id="seller-burn",
+        window="JAGLONGER",
+        buyer_id="buyer-burn",
     )
 
 
@@ -260,21 +292,21 @@ def _fresh() -> Condition:
     )
 
 
-def _purchase_plan(
+def _sale_plan(
     observation: Observation,
-    action: PurchaseItemAction,
+    action: SellItemAction,
 ) -> PlanEnvelope:
     return PlanEnvelope(
         schema_version="1.0",
-        plan_id="purchase-controller-verdict",
+        plan_id="sale-controller-verdict",
         plan_version=1,
-        objective="Buy one bounded quantity under one strategic choice.",
+        objective="Sell one bounded quantity under one strategic choice.",
         control_mode=observation.control_mode,
         based_on_revision=observation.world_revision,
         assumptions=[_fresh()],
         steps=[
             PlanStep(
-                step_id="purchase",
+                step_id="sale",
                 action=action,
                 preconditions=[_fresh()],
                 success_conditions=[],
@@ -282,7 +314,7 @@ def _purchase_plan(
                 idempotency=IdempotencyPolicy.AT_MOST_ONCE,
             )
         ],
-        entry_step_id="purchase",
+        entry_step_id="sale",
         max_actions=1,
         max_wall_seconds=60.0,
         max_game_seconds=60.0,
@@ -294,71 +326,81 @@ def _purchase_plan(
     )
 
 
-def test_purchase_terminal_status_matches_every_bounded_quantity_pair() -> None:
+def test_sale_terminal_status_matches_every_bounded_quantity_pair() -> None:
     for requested_quantity in range(1, 6):
-        for purchased_quantity in range(0, 6):
-            for status in PurchaseStatus:
-                valid = purchased_quantity <= requested_quantity and (
+        for sold_quantity in range(0, 6):
+            for status in SaleStatus:
+                valid = sold_quantity <= requested_quantity and (
                     (
-                        status is PurchaseStatus.OUTCOME_UNKNOWN
-                        and purchased_quantity < requested_quantity
+                        status is SaleStatus.OUTCOME_UNKNOWN
+                        and sold_quantity < requested_quantity
                     )
                     or (
-                        status is PurchaseStatus.PURCHASED
-                        and purchased_quantity == requested_quantity
+                        status is SaleStatus.SOLD
+                        and sold_quantity == requested_quantity
                     )
                     or (
-                        status is PurchaseStatus.PARTIALLY_PURCHASED
-                        and 0 < purchased_quantity < requested_quantity
+                        status is SaleStatus.PARTIALLY_SOLD
+                        and 0 < sold_quantity < requested_quantity
                     )
                     or (
-                        status is PurchaseStatus.NOT_PURCHASED
-                        and purchased_quantity == 0
+                        status is SaleStatus.NOT_SOLD
+                        and sold_quantity == 0
                     )
                 )
                 arguments = {
                     "status": status,
-                    "seller_id": "seller-burn",
-                    "selected_character_id": "character-bark",
+                    "buyer_id": "buyer-burn",
+                    "selected_character_id": "character-jaglonger",
                     "item_name": "Dried Meat",
                     "requested_quantity": requested_quantity,
-                    "purchased_quantity": purchased_quantity,
+                    "sold_quantity": sold_quantity,
                     "money_before": 1000,
-                    "inventory_quantity_before": 0,
+                    "inventory_quantity_before": 3,
                     "reason": "Finite-state invariant.",
                 }
                 if valid:
-                    assert PurchaseEvidence(**arguments).status is status
+                    assert SaleEvidence(**arguments).status is status
                 else:
                     with pytest.raises(ValueError):
-                        PurchaseEvidence(**arguments)
+                        SaleEvidence(**arguments)
 
 
-def test_one_purchase_intent_transfers_its_bounded_quantity(
+def test_sale_contract_reserves_every_requested_unit() -> None:
+    action = _sale(quantity=3)
+
+    assert SELL_ITEM_CONTRACT.controller_verified
+    assert SELL_ITEM_CONTRACT.risk_for(action).as_tuple() == (3, 3, 0)
+    assert SELL_ITEM_CONTRACT.primitive_action_bound_for(action) == 6
+
+
+@pytest.mark.parametrize("stacked", [False, True])
+def test_one_sale_intent_transfers_its_bounded_quantity(
     tmp_path: Path,
+    stacked: bool,
 ) -> None:
     async def scenario() -> None:
-        action = _purchase(quantity=3)
-        environment, telemetry, controller = purchase_environment(
+        action = _sale(quantity=3)
+        environment, telemetry, controller = sale_environment(
             tmp_path,
-            stock=3,
+            carried=3,
+            stacked=stacked,
         )
         await environment.reset()
         transition = await environment.step(action)
 
         assert transition.receipt.semantic is not None
-        evidence = transition.receipt.semantic.purchase
+        evidence = transition.receipt.semantic.sale
         assert evidence is not None
-        assert evidence.status.value == "purchased"
+        assert evidence.status.value == "sold"
         assert evidence.requested_quantity == 3
-        assert evidence.purchased_quantity == 3
+        assert evidence.sold_quantity == 3
         assert evidence.money_before == 1000
-        assert evidence.money_after == 739
-        assert evidence.inventory_quantity_before == 0
-        assert evidence.inventory_quantity_after == 3
+        assert evidence.money_after == 1150
+        assert evidence.inventory_quantity_before == 3
+        assert evidence.inventory_quantity_after == 0
         assert transition.receipt.primitive_actions == 6
-        assert telemetry.stock == 0
-        assert telemetry.carried == 3
+        assert telemetry.carried == 0
         assert len(
             [
                 item
@@ -372,39 +414,39 @@ def test_one_purchase_intent_transfers_its_bounded_quantity(
 
 
 @pytest.mark.parametrize(
-    ("stock", "inventory_updates", "expected_completed", "expected_status"),
+    ("carried", "inventory_updates", "expected_completed", "expected_status"),
     [
-        (3, True, True, "purchased"),
-        (2, True, False, "partially_purchased"),
+        (3, True, True, "sold"),
+        (2, True, False, "partially_sold"),
         (3, False, False, "outcome_unknown"),
     ],
 )
-def test_continuous_executor_completes_only_the_full_purchase_terminal(
+def test_continuous_executor_completes_only_the_full_sale_terminal(
     tmp_path: Path,
-    stock: int,
+    carried: int,
     inventory_updates: bool,
     expected_completed: bool,
     expected_status: str,
 ) -> None:
     async def scenario() -> None:
         clock = FakeClock()
-        action = _purchase(quantity=3)
-        environment, _, _ = purchase_environment(
+        action = _sale(quantity=3)
+        environment, _, _ = sale_environment(
             tmp_path,
-            stock=stock,
+            carried=carried,
             inventory_updates=inventory_updates,
         )
         if not inventory_updates:
-            environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+            environment._SALE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         observation = await environment.reset()
-        plan = _purchase_plan(observation, action)
+        plan = _sale_plan(observation, action)
         assert dialogue_interaction_policy_errors(plan, observation) == []
 
         store = WorldStateStore(clock=clock)
         store.publish(observation)
         logger = SessionLogger(
             tmp_path / f"{expected_status}.jsonl",
-            "purchase-controller-verdict",
+            "sale-controller-verdict",
         )
 
         def observe_transition(
@@ -423,7 +465,7 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
             environment=environment,
             guard=ActionGuard(
                 SafetyConfig(
-                    allow_action_kinds=["purchase_item"],
+                    allow_action_kinds=["sell_item"],
                     max_actions_per_minute=100,
                 ),
                 MacroRegistry({}),
@@ -461,26 +503,26 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
     asyncio.run(scenario())
 
 
-def test_stock_exhaustion_returns_partial_without_an_unbound_click(
+def test_inventory_exhaustion_returns_partial_without_an_unbound_click(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        action = _purchase(quantity=3)
-        environment, telemetry, controller = purchase_environment(
+        action = _sale(quantity=3)
+        environment, telemetry, controller = sale_environment(
             tmp_path,
-            stock=2,
+            carried=2,
         )
         await environment.reset()
         transition = await environment.step(action)
 
         assert transition.receipt.semantic is not None
-        evidence = transition.receipt.semantic.purchase
+        evidence = transition.receipt.semantic.sale
         assert evidence is not None
-        assert evidence.status.value == "partially_purchased"
+        assert evidence.status.value == "partially_sold"
         assert evidence.requested_quantity == 3
-        assert evidence.purchased_quantity == 2
-        assert evidence.inventory_quantity_after == 2
-        assert telemetry.stock == 0
+        assert evidence.sold_quantity == 2
+        assert evidence.inventory_quantity_after == 0
+        assert telemetry.carried == 0
         assert len(
             [
                 item
@@ -497,25 +539,58 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        action = _purchase(quantity=3)
-        environment, _, controller = purchase_environment(
+        action = _sale(quantity=3)
+        environment, _, controller = sale_environment(
             tmp_path,
-            stock=3,
+            carried=3,
             inventory_updates=False,
         )
-        environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+        environment._SALE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
         transition = await environment.step(action)
 
         assert transition.receipt.semantic is not None
-        evidence = transition.receipt.semantic.purchase
+        evidence = transition.receipt.semantic.sale
         assert evidence is not None
         assert evidence.status.value == "outcome_unknown"
-        assert evidence.purchased_quantity == 0
+        assert evidence.sold_quantity == 0
         assert evidence.money_before == 1000
-        assert evidence.money_after == 913
-        assert evidence.inventory_quantity_before == 0
-        assert evidence.inventory_quantity_after == 0
+        assert evidence.money_after == 1050
+        assert evidence.inventory_quantity_before == 3
+        assert evidence.inventory_quantity_after == 3
+        assert len(
+            [
+                item
+                for item in controller.actions
+                if isinstance(item, ClickAction)
+                and item.button is MouseButton.RIGHT
+            ]
+        ) == 1
+
+    asyncio.run(scenario())
+
+
+def test_reverse_money_and_inventory_changes_are_unknown_not_a_noop(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        action = _sale(quantity=3)
+        environment, _, controller = sale_environment(
+            tmp_path,
+            carried=3,
+            reverse_transfer=True,
+        )
+        environment._SALE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+        await environment.reset()
+        transition = await environment.step(action)
+
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.sale
+        assert evidence is not None
+        assert evidence.status is SaleStatus.OUTCOME_UNKNOWN
+        assert evidence.sold_quantity == 0
+        assert evidence.money_after == 950
+        assert evidence.inventory_quantity_after == 4
         assert len(
             [
                 item

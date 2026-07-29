@@ -91,7 +91,9 @@ from .models import (
     RecoverCameraViewAction,
     RequestAffordanceAction,
     ResourceHarvestStatus,
+    SaleStatus,
     ScenarioIdentity,
+    SellItemAction,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -3257,6 +3259,8 @@ class AgentRuntime:
             target_id = receipt.semantic.target_id
             if receipt.semantic.purchase is not None:
                 semantic_status = receipt.semantic.purchase.status.value
+            elif receipt.semantic.sale is not None:
+                semantic_status = receipt.semantic.sale.status.value
             elif receipt.semantic.resource_harvest is not None:
                 semantic_status = receipt.semantic.resource_harvest.status.value
             elif receipt.semantic.resource_transfer is not None:
@@ -3360,6 +3364,38 @@ class AgentRuntime:
                 ActionOutcomeAssessment.UNKNOWN,
                 f"Purchase delivery is ambiguous and must not be retried as a "
                 f"whole: {purchase.reason}",
+            )
+
+        if isinstance(receipt.action, SellItemAction):
+            sale = receipt.semantic.sale if receipt.semantic is not None else None
+            if sale is None:
+                return (
+                    ActionOutcomeAssessment.UNKNOWN,
+                    "Sale returned no typed controller evidence.",
+                )
+            if sale.status is SaleStatus.SOLD:
+                return (
+                    ActionOutcomeAssessment.CHANGED,
+                    f"The controller conserved all {sale.sold_quantity} requested "
+                    f"{sale.item_name!r} sales through matching purse gain and "
+                    "selected-character inventory loss.",
+                )
+            if sale.status is SaleStatus.PARTIALLY_SOLD:
+                return (
+                    ActionOutcomeAssessment.CHANGED,
+                    f"The controller conserved {sale.sold_quantity}/"
+                    f"{sale.requested_quantity} {sale.item_name!r} sales before "
+                    f"stopping: {sale.reason}",
+                )
+            if sale.status is SaleStatus.NOT_SOLD:
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    f"Sale made no verified transfer: {sale.reason}",
+                )
+            return (
+                ActionOutcomeAssessment.UNKNOWN,
+                "Sale delivery is ambiguous and must not be retried as a whole: "
+                f"{sale.reason}",
             )
 
         if isinstance(receipt.action, HarvestResourceAction):
