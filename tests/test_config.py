@@ -325,6 +325,18 @@ def test_live_profiles_allowlist_every_planner_visible_action(
         assert not missing, (
             f"{profile} runs the generic policy but does not allowlist: {missing}"
         )
+        controller_verified_max = max(
+            contract.max_primitive_actions
+            for contract in ACTION_CONTRACTS.values()
+            if contract.kind in allowed and contract.controller_verified
+        )
+        assert (
+            config.safety.max_controller_verified_primitive_actions_per_step
+            >= controller_verified_max
+        ), (
+            f"{profile} caps controller-verified actions below an allowlisted "
+            f"contract's {controller_verified_max}-primitive bound"
+        )
         # And it still must not allowlist raw controller primitives.
         assert not allowed & {"click", "key", "hotkey", "move_cursor", "scroll"}
 
