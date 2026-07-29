@@ -66,7 +66,7 @@ from .scenario_fixtures import (
 from .schema_export import export_schemas
 from .session_log import SessionLogger
 from .skills import MacroRegistry
-from .speech import SpeechUnavailableError, windows_sapi_narrator
+from .speech import SpeechUnavailableError, default_narrator
 from .telemetry import TelemetryReader, write_snapshot_atomic
 from .telemetry.sample import sample_snapshot
 
@@ -669,7 +669,7 @@ async def _run_command(args: argparse.Namespace) -> int:
         narrator = None
         if args.tts:
             try:
-                narrator = windows_sapi_narrator()
+                narrator = default_narrator()
             except SpeechUnavailableError as exc:
                 raise SystemExit(f"TTS mode is unavailable: {exc}") from exc
         if config.runtime.decision_stream or narrator is not None:

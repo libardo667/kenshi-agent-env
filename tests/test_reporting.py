@@ -6,6 +6,7 @@ from io import StringIO
 from kenshi_agent.models import (
     ActionReceipt,
     ControlMode,
+    PauseAction,
     PlannerDecision,
     PurchaseItemAction,
     SkillAction,
@@ -128,3 +129,80 @@ def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:
         "My plan is to reach Squin and look for supplies.",
         "Moving through the visible terrain.",
     ]
+
+
+def test_runtime_authored_reasoning_is_never_read_aloud() -> None:
+    """Reflex and supervisor rationales are diagnostics, not the agent's thoughts.
+
+    This exact string was narrated during live run
+    live-trade-surface-20260729-r1, read out to the operator word for word.
+    """
+
+    leaked = (
+        "The active option ended without a terminal handoff while the world "
+        "was still running: The monitored native option did not reach its "
+        "terminal success, so the step cannot succeed: Kenshi ended the "
+        "native movement as 'cancelled': movement_stalled."
+    )
+    narrator = RecordingNarrator()
+    reporter = ConsoleDecisionReporter(
+        stream=StringIO(),
+        run_id="leak",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        planner_name="test",
+        model_name="test",
+        narrator=narrator,
+    )
+
+    reporter.decision(
+        step_index=7,
+        source="reflex",
+        decision=PlannerDecision(
+            intent="Recover option ownership before replanning.",
+            rationale=leaked,
+            action=PauseAction(paused=True),
+            confidence=1.0,
+        ),
+        latency_seconds=0.0,
+    )
+
+    spoken = " ".join(text for text, _ in narrator.utterances)
+    assert "movement_stalled" not in spoken
+    assert "terminal success" not in spoken
+    assert "Pausing the game." in spoken
+
+
+def test_model_authored_reasoning_survives_past_a_status_line_clip() -> None:
+    """A thought clipped at 150 characters is a fragment, not reasoning."""
+
+    rationale = (
+        "The Barman turned out to sell no goods, so the recruitment dialogue "
+        "was a dead end, and the bar itself is still unlocated after several "
+        "directional probes that revealed no new characters or shops nearby."
+    )
+    assert len(rationale) > 150
+    narrator = RecordingNarrator()
+    reporter = ConsoleDecisionReporter(
+        stream=StringIO(),
+        run_id="reasoning",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        planner_name="test",
+        model_name="test",
+        narrator=narrator,
+    )
+
+    reporter.decision(
+        step_index=3,
+        source="planner",
+        decision=PlannerDecision(
+            intent="Find an actual vendor.",
+            rationale=rationale,
+            action=PauseAction(paused=True),
+            confidence=0.6,
+        ),
+        latency_seconds=1.0,
+    )
+
+    spoken = " ".join(text for text, _ in narrator.utterances)
+    assert rationale in spoken
+    assert "…" not in spoken

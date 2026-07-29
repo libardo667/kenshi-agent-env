@@ -32,6 +32,46 @@ def format_action(action: Action) -> str:
     return f"{action.kind}({arguments})" if arguments else f"{action.kind}()"
 
 
+# Only the planner writes for a listener. Reflex and supervisor decisions carry
+# runtime diagnostics in the same field - one live run narrated "the monitored
+# native option did not reach its terminal success ... 'cancelled':
+# movement_stalled" aloud - so their reasoning is summarised, never read out.
+MODEL_AUTHORED_DECISION_SOURCES = frozenset({"planner"})
+
+# Reasoning is the point of listening, so it gets room that a status line does
+# not. Clipping a thought at 150 characters produces a fragment ending in "…".
+MAX_SPOKEN_REASONING_CHARS = 400
+
+_RUNTIME_DECISION_SUMMARIES: tuple[tuple[str, str], ...] = (
+    ("human input", "You've taken over, so I'm standing down."),
+    ("hostile", "Something hostile is close, so I'm stopping."),
+    ("stale", "I've lost a reliable view of the game, so I'm pausing."),
+    ("terminal handoff", "That move ended without finishing, so I'm taking stock."),
+    ("pause", "I'm making sure the game is safely paused."),
+)
+
+
+def _spoken_decision(source: str, decision: PlannerDecision) -> str:
+    """What to read aloud for one decision, by who actually wrote it."""
+
+    # `action_started` is only wired on the continuous path, so the single-step
+    # path would otherwise never say what it is about to do.
+    action = describe_action(decision.action)
+    if source in MODEL_AUTHORED_DECISION_SOURCES:
+        return " ".join(
+            (
+                _spoken_sentence(decision.intent, max_chars=MAX_SPOKEN_REASONING_CHARS),
+                _spoken_sentence(decision.rationale, max_chars=MAX_SPOKEN_REASONING_CHARS),
+                action,
+            )
+        )
+    haystack = f"{decision.intent} {decision.rationale}".lower()
+    for marker, sentence in _RUNTIME_DECISION_SUMMARIES:
+        if marker in haystack:
+            return f"{sentence} {action}"
+    return f"I'm handling something the game did. {action}"
+
+
 def _spoken_sentence(value: object, *, max_chars: int = 150) -> str:
     text = " ".join(str(value).split()).strip()
     if len(text) > max_chars:
@@ -264,16 +304,7 @@ class ConsoleDecisionReporter:
             f"  Action  {format_action(decision.action)}\n"
             f"  Conf    {decision.confidence:.0%}\n"
         )
-        self._say(
-            " ".join(
-                (
-                    _spoken_sentence(decision.intent),
-                    _spoken_sentence(decision.rationale),
-                    describe_action(decision.action),
-                )
-            ),
-            key="decision",
-        )
+        self._say(_spoken_decision(source, decision), key="decision")
 
     def plan_accepted(
         self,

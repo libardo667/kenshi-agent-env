@@ -1,8 +1,16 @@
 from __future__ import annotations
 
+from pathlib import Path
 from threading import Event, Thread
 
-from kenshi_agent.speech import QueuedSpeechNarrator
+import pytest
+
+from kenshi_agent.speech import (
+    PiperSpeaker,
+    QueuedSpeechNarrator,
+    SpeechUnavailableError,
+    installed_piper_voice,
+)
 
 
 class BlockingSpeaker:
@@ -59,3 +67,44 @@ def test_narration_bounds_text_before_it_reaches_the_speaker() -> None:
     assert "\n" not in speaker.spoken[0]
     assert "  " not in speaker.spoken[0]
     assert len(speaker.spoken[0]) <= 40
+
+
+def _piper_home(root: Path, *, executable: bool = True, model: bool = True) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    if executable:
+        (root / "piper").mkdir(parents=True, exist_ok=True)
+        (root / "piper" / "piper.exe").write_bytes(b"")
+    if model:
+        (root / "en_US-lessac-medium.onnx").write_bytes(b"")
+    return root
+
+
+def test_installed_piper_voice_finds_a_complete_install(tmp_path: Path) -> None:
+    home = _piper_home(tmp_path)
+
+    voice = installed_piper_voice(home)
+
+    assert voice is not None
+    assert voice[0] == home / "piper" / "piper.exe"
+    assert voice[1] == home / "en_US-lessac-medium.onnx"
+
+
+def test_a_half_downloaded_piper_install_is_absent_not_broken(tmp_path: Path) -> None:
+    """A model still downloading must fall back, not fail the run."""
+
+    no_model = _piper_home(tmp_path / "a", model=False)
+    no_executable = _piper_home(tmp_path / "b", executable=False)
+
+    assert installed_piper_voice(no_model) is None
+    assert installed_piper_voice(no_executable) is None
+
+
+def test_piper_speaker_refuses_to_start_without_its_voice(tmp_path: Path) -> None:
+    home = _piper_home(tmp_path, model=False)
+
+    with pytest.raises(SpeechUnavailableError, match="voice model is missing"):
+        PiperSpeaker(
+            home / "piper" / "piper.exe",
+            home / "absent.onnx",
+            player="/bin/true",
+        )

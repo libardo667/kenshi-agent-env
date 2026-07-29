@@ -4,6 +4,9 @@ import shutil
 import subprocess
 from collections import deque
 from dataclasses import dataclass
+from os import environ
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from threading import Condition, Lock, Thread
 from typing import Protocol
 
@@ -232,7 +235,163 @@ class WindowsSapiSpeaker:
                 self._process.wait(timeout=0.5)
 
 
+_PIPER_PLAY_SCRIPT = (
+    "$ErrorActionPreference='Stop';"
+    "$p=New-Object Media.SoundPlayer $args[0];"
+    "$p.PlaySync()"
+)
+
+
+class PiperSpeaker:
+    """Local neural speech through a Piper model, synthesised per utterance.
+
+    SAPI's installed voices are concatenative and there is no neural voice on
+    the supported host, so realism has to come from a different engine rather
+    than from tuning this one. Piper runs offline, which the narration design
+    already requires, and synthesis is far faster than playback: a 3.4 second
+    line took 0.27 seconds, so a fresh process per utterance stays well inside
+    the narrator's queue without needing a resident model.
+    """
+
+    def __init__(
+        self,
+        executable: Path,
+        model: Path,
+        *,
+        player: str | None = None,
+    ) -> None:
+        if not executable.is_file():
+            raise SpeechUnavailableError(f"Piper executable is missing: {executable}")
+        if not model.is_file():
+            raise SpeechUnavailableError(f"Piper voice model is missing: {model}")
+        resolved_player = player or shutil.which("powershell.exe") or shutil.which("powershell")
+        if resolved_player is None:
+            raise SpeechUnavailableError(
+                "No Windows audio player is available to play Piper output."
+            )
+        self._executable = executable
+        self._model = model
+        self._player = resolved_player
+        self._closed = False
+        self._lock = Lock()
+        self._directory = TemporaryDirectory(prefix="kenshi-agent-piper-")
+
+    def speak(self, text: str) -> None:
+        with self._lock:
+            if self._closed:
+                raise RuntimeError("Piper speaker is closed.")
+            wave_path = Path(self._directory.name) / "utterance.wav"
+        try:
+            subprocess.run(
+                [
+                    str(self._executable),
+                    "--model",
+                    str(self._model),
+                    "--output_file",
+                    str(wave_path),
+                ],
+                input=text,
+                text=True,
+                capture_output=True,
+                check=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(f"Piper synthesis failed: {exc}") from exc
+        try:
+            subprocess.run(
+                [
+                    self._player,
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    _PIPER_PLAY_SCRIPT,
+                    _windows_path(wave_path),
+                ],
+                capture_output=True,
+                check=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise RuntimeError(f"Piper playback failed: {exc}") from exc
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        self._directory.cleanup()
+
+
+def _windows_path(path: Path) -> str:
+    """Render a path for the Windows player, which cannot read WSL paths."""
+
+    if shutil.which("wslpath") is None:
+        return str(path)
+    try:
+        converted = subprocess.run(
+            ["wslpath", "-w", str(path)],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return str(path)
+    return converted.stdout.strip() or str(path)
+
+
 def windows_sapi_narrator() -> QueuedSpeechNarrator:
     """Build the supported offline narration mode for Windows or WSL."""
 
     return QueuedSpeechNarrator(WindowsSapiSpeaker())
+
+
+def piper_narrator(executable: Path, model: Path) -> QueuedSpeechNarrator:
+    """Build local neural narration from an installed Piper voice."""
+
+    return QueuedSpeechNarrator(PiperSpeaker(executable, model))
+
+
+PIPER_HOME_VARIABLE = "KENSHI_AGENT_PIPER_HOME"
+
+
+def installed_piper_voice(home: Path | None = None) -> tuple[Path, Path] | None:
+    """The installed Piper executable and voice model, if both are present.
+
+    Absence is not an error: the SAPI voice still narrates, just worse. A
+    partial install is also absence rather than a failure, because a missing
+    model with a present executable is the normal state midway through a
+    download.
+    """
+
+    if home is None:
+        configured = environ.get(PIPER_HOME_VARIABLE)
+        if configured:
+            home = Path(configured)
+        else:
+            local_app_data = environ.get("LOCALAPPDATA")
+            if not local_app_data:
+                return None
+            home = Path(local_app_data) / "KenshiAgent" / "piper"
+    executable = home / "piper" / "piper.exe"
+    if not executable.is_file():
+        return None
+    models = sorted(home.glob("*.onnx"))
+    if not models:
+        return None
+    return executable, models[0]
+
+
+def default_narrator() -> QueuedSpeechNarrator:
+    """Narrate through a local neural voice when one is installed.
+
+    The host has no neural SAPI voice, so SAPI is the floor rather than the
+    intent. Selection is by what is installed, not by a flag, so a run does not
+    fail because a voice was never downloaded.
+    """
+
+    voice = installed_piper_voice()
+    if voice is not None:
+        return piper_narrator(*voice)
+    return windows_sapi_narrator()
