@@ -68,7 +68,11 @@ from kenshi_agent.models import (
     VisibleUIControl,
     WorldStateRevision,
 )
-from kenshi_agent.planners.base import Planner
+from kenshi_agent.planners.base import (
+    HostedPlannerCallDiagnostics,
+    HostedPlannerResponseError,
+    Planner,
+)
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.reporting import ConsoleDecisionReporter
@@ -1183,6 +1187,101 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
             event for event in events if event["event_type"] == "strategic_planner_call"
         )
         assert planner_call["payload"]["source"] == "planner_error"
+
+    asyncio.run(scenario())
+
+
+def test_continuous_retry_preserves_typed_hosted_terminal_and_compact_feedback(
+    tmp_path: Path,
+) -> None:
+    class TruncatedThenStopPlanner(Planner):
+        def __init__(self) -> None:
+            self.observations: list[Observation] = []
+            self.pending_diagnostics: HostedPlannerCallDiagnostics | None = None
+
+        async def decide(self, observation: Observation) -> PlannerOutput:
+            self.observations.append(observation)
+            if len(self.observations) == 1:
+                diagnostics = HostedPlannerCallDiagnostics(
+                    provider_kind="openrouter",
+                    output_model="PlanEnvelope",
+                    requested_model="google/gemini-3.1-flash-lite",
+                    response_model="google/gemini-3.1-flash-lite",
+                    provider_name="Google",
+                    response_id="generation-cut-short",
+                    finish_reason="length",
+                    max_output_tokens=12_288,
+                    prompt_tokens=19_000,
+                    completion_tokens=12_288,
+                    reasoning_tokens=11_700,
+                    total_tokens=31_288,
+                    response_characters=1_870,
+                    system_characters=45_000,
+                    observation_characters=29_900,
+                    schema_characters=61_000,
+                    request_text_characters=75_000,
+                    schema_in_prompt=False,
+                    screenshot_included=True,
+                )
+                self.pending_diagnostics = diagnostics
+                raise HostedPlannerResponseError("output_truncated", diagnostics)
+            return PlannerDecision(
+                intent="Stop after proving typed hosted recovery.",
+                rationale="The retry received the exact attributable terminal.",
+                action=StopAction(reason="Hosted recovery proof complete."),
+                confidence=1.0,
+            )
+
+        def take_call_diagnostics(self) -> HostedPlannerCallDiagnostics | None:
+            diagnostics = self.pending_diagnostics
+            self.pending_diagnostics = None
+            return diagnostics
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = TruncatedThenStopPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            summary = await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert summary.terminated is True
+        assert len(planner.observations) == 2
+        feedback = planner.observations[1].planner_feedback
+        assert feedback is not None
+        assert "one compact PlanEnvelope" in feedback
+        assert "strategic intent" in feedback
+        assert "one step only" not in feedback
+
+        events = read_events(tmp_path / "events.jsonl")
+        transport = [
+            event for event in events if event["event_type"] == "planner_transport"
+        ]
+        assert len(transport) == 1
+        assert transport[0]["payload"]["finish_reason"] == "length"
+        assert transport[0]["payload"]["reasoning_tokens"] == 11_700
+        assert transport[0]["payload"]["structured_output_accepted"] is False
+
+        planner_error = next(
+            event for event in events if event["event_type"] == "planner_error"
+        )
+        assert planner_error["payload"]["failure_category"] == "output_truncated"
+        assert planner_error["payload"]["failure_signature"] == (
+            "openrouter:output_truncated:PlanEnvelope:length"
+        )
+        planner_call = next(
+            event
+            for event in events
+            if event["event_type"] == "strategic_planner_call"
+            and event["payload"]["source"] == "planner_error"
+        )
+        assert planner_call["payload"]["failure_category"] == "output_truncated"
+
+        metrics = evaluate_log(tmp_path / "events.jsonl")
+        assert metrics.planner_errors == 1
+        assert metrics.planner_failure_categories == {"output_truncated": 1}
 
     asyncio.run(scenario())
 

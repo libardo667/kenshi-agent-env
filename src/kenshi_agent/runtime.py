@@ -103,6 +103,10 @@ from .models import (
     new_command_id,
 )
 from .planners import Planner
+from .planners.base import (
+    HostedPlannerCallDiagnostics,
+    HostedPlannerResponseError,
+)
 from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, validate_plan
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
@@ -282,6 +286,20 @@ class AgentRuntime:
             return value
         return value[: max_chars - len(suffix)] + suffix
 
+    @staticmethod
+    def _planner_failure_signature(exc: Exception) -> str:
+        if isinstance(exc, HostedPlannerResponseError):
+            return exc.failure_signature
+        return str(exc)
+
+    def _planner_retry_feedback(self, exc: Exception) -> str:
+        if isinstance(exc, HostedPlannerResponseError):
+            return self._bounded_text(exc.retry_feedback, 1_200)
+        return (
+            "Your previous response could not be used. Fix exactly this and "
+            "return the schema again: " + self._bounded_text(str(exc), 900)
+        )
+
     def _planner_failure_decision(
         self,
         exc: Exception,
@@ -289,19 +307,28 @@ class AgentRuntime:
         step_index: int,
     ) -> PlannerDecision:
         message = f"Planner raised {type(exc).__name__}: {exc}"
+        payload: dict[str, Any] = {
+            "control_mode": self.control_mode.value,
+            "error_type": type(exc).__name__,
+            "message": self._bounded_text(
+                message,
+                self._PLANNER_ERROR_LOG_MAX_CHARS,
+            ),
+            "message_characters": len(message),
+            "message_truncated": len(message) > self._PLANNER_ERROR_LOG_MAX_CHARS,
+        }
+        if isinstance(exc, HostedPlannerResponseError):
+            payload.update(
+                {
+                    "failure_category": exc.category,
+                    "failure_signature": exc.failure_signature,
+                    "finish_reason": exc.diagnostics.finish_reason,
+                }
+            )
         self.logger.write(
             "planner_error",
             step_index=step_index,
-            payload={
-                "control_mode": self.control_mode.value,
-                "error_type": type(exc).__name__,
-                "message": self._bounded_text(
-                    message,
-                    self._PLANNER_ERROR_LOG_MAX_CHARS,
-                ),
-                "message_characters": len(message),
-                "message_truncated": len(message) > self._PLANNER_ERROR_LOG_MAX_CHARS,
-            },
+            payload=payload,
         )
         return PlannerDecision(
             intent="Stop after planner failure.",
@@ -988,10 +1015,8 @@ class AgentRuntime:
                     # Tell the next attempt what was wrong with this one. Without
                     # it a deterministic mistake is remade every retry until the
                     # replan limit ends the run.
-                    planner_feedback = (
-                        "Your previous response could not be used. Fix exactly "
-                        "this and return the schema again: " + self._bounded_text(str(exc), 900)
-                    )
+                    planner_feedback = self._planner_retry_feedback(exc)
+                    failure_signature = self._planner_failure_signature(exc)
                     self._planner_failure_decision(
                         exc,
                         step_index=observation.step_index,
@@ -1007,10 +1032,15 @@ class AgentRuntime:
                             "world_revision": observation.world_revision.model_dump(mode="json"),
                             "control_mode": observation.control_mode.value,
                             "output_type": type(exc).__name__,
+                            **(
+                                {"failure_category": exc.category}
+                                if isinstance(exc, HostedPlannerResponseError)
+                                else {}
+                            ),
                         },
                     )
                     consecutive_replans += 1
-                    if identical_failure_limit_reached(str(exc)):
+                    if identical_failure_limit_reached(failure_signature):
                         stop_reason = (
                             "Stopped: the planner returned "
                             f"{identical_replan_failures} unusable responses in a "
@@ -2989,6 +3019,24 @@ class AgentRuntime:
             payload=outcome,
         )
 
+    def _record_planner_transport(
+        self,
+        diagnostics: HostedPlannerCallDiagnostics,
+        observation: Observation,
+        *,
+        structured_output_accepted: bool,
+    ) -> None:
+        self.logger.write(
+            "planner_transport",
+            step_index=observation.step_index,
+            payload={
+                **diagnostics.event_payload(),
+                "structured_output_accepted": structured_output_accepted,
+                "world_revision": observation.world_revision.model_dump(mode="json"),
+                "control_mode": observation.control_mode.value,
+            },
+        )
+
     async def _decide(self, observation: Observation) -> AuthoredPlannerOutput:
         """Assemble a planner payload, marking exactly what it carried.
 
@@ -3030,7 +3078,24 @@ class AgentRuntime:
                 )
         self._pending_memory_search = None
         self._pending_fieldbook_read = None
-        output = await self.planner.decide_prepared(prepared)
+        try:
+            output = await self.planner.decide_prepared(prepared)
+        except Exception:
+            diagnostics = self.planner.take_call_diagnostics()
+            if diagnostics is not None:
+                self._record_planner_transport(
+                    diagnostics,
+                    observation,
+                    structured_output_accepted=False,
+                )
+            raise
+        diagnostics = self.planner.take_call_diagnostics()
+        if diagnostics is not None:
+            self._record_planner_transport(
+                diagnostics,
+                observation,
+                structured_output_accepted=True,
+            )
         return AuthoredPlannerOutput(output=output, context=prepared.context)
 
     def _execute_memory_read(

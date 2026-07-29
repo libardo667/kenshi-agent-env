@@ -114,6 +114,7 @@ class LogMetrics:
     strategic_planner_calls: int = 0
     reflex_decisions: int = 0
     planner_errors: int = 0
+    planner_failure_categories: dict[str, int] = field(default_factory=dict)
     action_receipts: int = 0
     rejected_actions: int = 0
     dry_run_actions: int = 0
@@ -239,6 +240,9 @@ def evaluate_log(path: Path) -> LogMetrics:
     dialogue_approaches_by_target: dict[str, int] = {}
     transitions: dict[str, int] = {}
     fieldbook_transitions: dict[str, int] = {}
+    planner_failure_categories: dict[str, int] = {}
+    planner_error_events = 0
+    planner_error_decisions = 0
 
     def retain_native_acknowledgement(candidate: object) -> None:
         if not isinstance(candidate, dict):
@@ -362,7 +366,7 @@ def evaluate_log(path: Path) -> LogMetrics:
             if source == "reflex":
                 values["reflex_decisions"] += 1
             if source == "planner_error":
-                values["planner_errors"] += 1
+                planner_error_decisions += 1
             latency = payload.get("planner_latency_seconds")
             if latency is not None and source != "reflex":
                 decision_planner_latencies.append(float(latency))
@@ -371,6 +375,11 @@ def evaluate_log(path: Path) -> LogMetrics:
             latency = payload.get("planner_latency_seconds")
             if latency is not None:
                 strategic_planner_latencies.append(float(latency))
+        elif event_type == "planner_error":
+            planner_error_events += 1
+            category = payload.get("failure_category")
+            key = category if isinstance(category, str) and category else "unattributed"
+            planner_failure_categories[key] = planner_failure_categories.get(key, 0) + 1
         elif event_type == "action_receipt":
             values["action_receipts"] += 1
             values["primitive_actions"] += int(payload.get("primitive_actions", 0))
@@ -624,6 +633,7 @@ def evaluate_log(path: Path) -> LogMetrics:
             values["success"] = payload.get("success")
             values["steps_completed"] = payload.get("steps_completed")
             values["stop_reason"] = payload.get("stop_reason")
+    values["planner_errors"] = max(planner_error_events, planner_error_decisions)
     if values["strategic_planner_calls"] == 0:
         values["strategic_planner_calls"] = max(
             0,
@@ -689,6 +699,7 @@ def evaluate_log(path: Path) -> LogMetrics:
             repeated_dialogue_approach_attempts=repeated_dialogue_approach_attempts,
             max_dialogue_approach_attempts_per_target=(max_dialogue_approach_attempts_per_target),
             dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
+            planner_failure_categories=dict(sorted(planner_failure_categories.items())),
             memory_lifecycle_transitions=dict(sorted(transitions.items())),
             fieldbook_lifecycle_transitions=dict(
                 sorted(fieldbook_transitions.items())
@@ -709,6 +720,7 @@ def evaluate_log(path: Path) -> LogMetrics:
         repeated_dialogue_approach_attempts=repeated_dialogue_approach_attempts,
         max_dialogue_approach_attempts_per_target=(max_dialogue_approach_attempts_per_target),
         dialogue_approach_attempts_by_target=ordered_dialogue_approaches,
+        planner_failure_categories=dict(sorted(planner_failure_categories.items())),
         memory_lifecycle_transitions=dict(sorted(transitions.items())),
         fieldbook_lifecycle_transitions=dict(
             sorted(fieldbook_transitions.items())

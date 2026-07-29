@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
@@ -33,6 +35,7 @@ from kenshi_agent.models import (
     WorldStateRevision,
 )
 from kenshi_agent.planners.base import (
+    HostedPlannerResponseError,
     output_token_budget,
     planner_context_manifest,
     structured_output_model,
@@ -316,6 +319,260 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert completions.kwargs["temperature"] == 0.1
     assert completions.kwargs["extra_body"]["provider"]["require_parameters"] is True
     assert completions.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
+
+
+def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> None:
+    """An EOF is not attributable unless the provider terminal survives parsing."""
+
+    class TruncatedCompletion:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            del kwargs
+            return SimpleNamespace(
+                id="generation-cut-short",
+                model="google/gemini-3.1-flash-lite",
+                provider="Google",
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="length",
+                        message=SimpleNamespace(
+                            content='{"schema_version":"1.0","plan_id":"cut-short",'
+                        ),
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=19_000,
+                    completion_tokens=12_288,
+                    total_tokens=31_288,
+                    completion_tokens_details=SimpleNamespace(
+                        reasoning_tokens=11_700,
+                    ),
+                ),
+            )
+
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        max_observation_chars=4000,
+        openrouter_model="google/gemini-3.1-flash-lite",
+        max_output_continuations=0,
+    )
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=TruncatedCompletion()),
+    )
+
+    with pytest.raises(HostedPlannerResponseError) as captured:
+        asyncio.run(planner.decide(observation()))
+
+    error = captured.value
+    assert error.category == "output_truncated"
+    assert error.failure_signature == (
+        "openrouter:output_truncated:PlanEnvelope:length"
+    )
+    assert "one compact PlanEnvelope" in error.retry_feedback
+
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert diagnostics.finish_reason == "length"
+    assert diagnostics.requested_model == "google/gemini-3.1-flash-lite"
+    assert diagnostics.response_model == "google/gemini-3.1-flash-lite"
+    assert diagnostics.provider_name == "Google"
+    assert diagnostics.max_output_tokens == 12_288
+    assert diagnostics.prompt_tokens == 19_000
+    assert diagnostics.completion_tokens == 12_288
+    assert diagnostics.reasoning_tokens == 11_700
+    assert diagnostics.total_tokens == 31_288
+    assert diagnostics.response_characters == 46
+    assert diagnostics.schema_in_prompt is False
+
+
+def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> None:
+    current = observation()
+    fresh = Condition.model_validate(
+        {
+            "kind": "telemetry_fresh",
+            "operator": "equals",
+            "expected": True,
+            "max_age_seconds": 3.0,
+        }
+    )
+    plan = PlanEnvelope(
+        schema_version="1.0",
+        plan_id="continued-plan",
+        plan_version=1,
+        objective="Finish the same thought without regenerating it.",
+        control_mode=current.control_mode,
+        based_on_revision=current.world_revision,
+        assumptions=[fresh],
+        steps=[
+            PlanStep(
+                step_id="finish",
+                action=StopAction(reason="Continuation complete."),
+                preconditions=[fresh],
+                timeout_seconds=2.0,
+            )
+        ],
+        entry_step_id="finish",
+        max_actions=1,
+        max_wall_seconds=5.0,
+        max_game_seconds=5.0,
+        risk_budget=RiskBudget(
+            max_pointer_actions=0,
+            max_purchase_actions=0,
+            max_native_assisted_actions=0,
+        ),
+    )
+    encoded = plan.model_dump_json()
+    split_at = len(encoded) // 2
+    prefix = encoded[:split_at]
+    suffix = encoded[split_at:]
+    reasoning_details = [
+        {
+            "type": "reasoning.encrypted",
+            "data": "opaque-provider-thought",
+            "format": "google-gemini-v1",
+        }
+    ]
+
+    class Continues:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, Any]] = []
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            self.calls.append(kwargs)
+            if len(self.calls) == 1:
+                return SimpleNamespace(
+                    id="segment-1",
+                    model="google/gemini-3.1-flash-lite",
+                    provider="Google",
+                    choices=[
+                        SimpleNamespace(
+                            finish_reason="length",
+                            message=SimpleNamespace(
+                                content=prefix,
+                                reasoning_details=reasoning_details,
+                            ),
+                        )
+                    ],
+                    usage=SimpleNamespace(
+                        prompt_tokens=19_000,
+                        completion_tokens=12_288,
+                        total_tokens=31_288,
+                        completion_tokens_details=SimpleNamespace(
+                            reasoning_tokens=11_700,
+                        ),
+                    ),
+                )
+            return SimpleNamespace(
+                id="segment-2",
+                model="google/gemini-3.1-flash-lite",
+                provider="Google",
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(
+                            content=suffix,
+                            reasoning_details=[],
+                        ),
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=31_500,
+                    completion_tokens=900,
+                    total_tokens=32_400,
+                    completion_tokens_details=SimpleNamespace(
+                        reasoning_tokens=100,
+                    ),
+                ),
+            )
+
+    completions = Continues()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        max_observation_chars=4000,
+        openrouter_model="google/gemini-3.1-flash-lite",
+    )
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = asyncio.run(planner.decide(current))
+
+    assert result == plan
+    assert len(completions.calls) == 2
+    continuation = completions.calls[1]
+    assert "response_format" not in continuation
+    assistant = continuation["messages"][-2]
+    assert assistant["role"] == "assistant"
+    assert assistant["content"] == prefix
+    assert assistant["reasoning_details"] == reasoning_details
+    assert "exact next character" in continuation["messages"][-1]["content"][0]["text"]
+
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert diagnostics.finish_reason == "stop"
+    assert diagnostics.continuation_count == 1
+    assert diagnostics.segment_finish_reasons == ("length", "stop")
+    assert diagnostics.response_ids == ("segment-1", "segment-2")
+    assert diagnostics.completion_tokens == 13_188
+    assert diagnostics.reasoning_tokens == 11_800
+    assert diagnostics.response_characters == len(encoded)
+
+
+def test_openrouter_continuation_budget_is_exact() -> None:
+    class NeverFinishes:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            del kwargs
+            self.calls += 1
+            return SimpleNamespace(
+                id=f"segment-{self.calls}",
+                model="google/gemini-3.1-flash-lite",
+                provider="Google",
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="length",
+                        message=SimpleNamespace(
+                            content="{",
+                            reasoning_details=[],
+                        ),
+                    )
+                ],
+                usage=SimpleNamespace(
+                    prompt_tokens=100,
+                    completion_tokens=200,
+                    total_tokens=300,
+                    completion_tokens_details=SimpleNamespace(reasoning_tokens=150),
+                ),
+            )
+
+    completions = NeverFinishes()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        max_observation_chars=4000,
+        openrouter_model="google/gemini-3.1-flash-lite",
+        max_output_continuations=2,
+    )
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    with pytest.raises(HostedPlannerResponseError) as captured:
+        asyncio.run(planner.decide(observation()))
+
+    assert captured.value.category == "output_truncated"
+    assert completions.calls == 3
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert diagnostics.continuation_count == 2
+    assert diagnostics.segment_finish_reasons == ("length", "length", "length")
+    assert diagnostics.response_characters == 3
 
 
 def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> None:

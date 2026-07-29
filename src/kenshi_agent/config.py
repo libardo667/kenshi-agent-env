@@ -101,6 +101,7 @@ class PlannerConfig(ConfigModel):
     max_output_tokens_base: int = Field(default=4096, ge=512, le=100000)
     max_output_tokens_per_plan_step: int = Field(default=2048, ge=256, le=50000)
     max_output_tokens_ceiling: int = Field(default=12288, ge=768, le=100000)
+    max_output_continuations: int = Field(default=2, ge=0, le=8)
     include_screenshot: bool = True
     screenshot_detail: Literal["low", "high", "auto"] = "high"
     # What an observation may normally cost. A spending decision, not a limit

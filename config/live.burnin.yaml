@@ -62,6 +62,7 @@ planner:
   max_output_tokens_base: 4096
   max_output_tokens_per_plan_step: 2048
   max_output_tokens_ceiling: 12288
+  max_output_continuations: 2
   include_screenshot: true
   screenshot_detail: high
   max_observation_chars: 30000

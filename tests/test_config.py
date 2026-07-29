@@ -131,6 +131,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.planner.max_output_tokens_base == 4096
     assert config.planner.max_output_tokens_per_plan_step == 2048
     assert config.planner.max_output_tokens_ceiling == 12288
+    assert config.planner.max_output_continuations == 2
     assert config.planner.model == "gpt-5.6-luna"
     assert config.planner.openrouter_provider_sort == "latency"
     assert config.controls.alt_tab_after_input

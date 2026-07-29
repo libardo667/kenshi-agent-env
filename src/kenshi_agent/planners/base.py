@@ -21,6 +21,11 @@ from ..models import (
 )
 
 PlannerOutputModel = type[PlannerDecision] | type[PlanEnvelope] | type[PlanPatch]
+HostedPlannerFailureCategory = Literal[
+    "output_truncated",
+    "empty_response",
+    "malformed_structured_output",
+]
 
 _POLICY_SECTION = re.compile(
     r"<!-- policy:(?P<policy>[a-z0-9_,]+) -->\n(?P<body>.*?)<!-- /policy -->\n",
@@ -342,6 +347,100 @@ class PreparedPlannerInput:
     payload: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class HostedPlannerCallDiagnostics:
+    """Non-secret request and provider-terminal facts for one hosted call."""
+
+    provider_kind: Literal["openrouter", "openai"]
+    output_model: str
+    requested_model: str
+    response_model: str | None
+    provider_name: str | None
+    response_id: str | None
+    finish_reason: str | None
+    max_output_tokens: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
+    reasoning_tokens: int | None
+    total_tokens: int | None
+    response_characters: int
+    system_characters: int
+    observation_characters: int
+    schema_characters: int
+    request_text_characters: int
+    schema_in_prompt: bool
+    screenshot_included: bool
+    continuation_count: int = 0
+    segment_finish_reasons: tuple[str | None, ...] = ()
+    response_ids: tuple[str, ...] = ()
+    schema_refusal_count: int = 0
+    native_finish_reason: str | None = None
+    segment_native_finish_reasons: tuple[str | None, ...] = ()
+    provider_error_type: str | None = None
+
+    def event_payload(self) -> dict[str, Any]:
+        return {
+            field: (
+                list(value)
+                if isinstance(value := getattr(self, field), tuple)
+                else value
+            )
+            for field in self.__dataclass_fields__
+        }
+
+
+class HostedPlannerResponseError(RuntimeError):
+    """A provider returned a terminal response that cannot authorize a plan."""
+
+    def __init__(
+        self,
+        category: HostedPlannerFailureCategory,
+        diagnostics: HostedPlannerCallDiagnostics,
+    ) -> None:
+        self.category = category
+        self.diagnostics = diagnostics
+        finish_reason = diagnostics.finish_reason or "unknown"
+        self.failure_signature = (
+            f"{diagnostics.provider_kind}:{category}:"
+            f"{diagnostics.output_model}:{finish_reason}"
+        )
+        if category == "output_truncated":
+            self.retry_feedback = (
+                "The provider hit its output limit before the JSON completed. "
+                f"Return one compact {diagnostics.output_model} that preserves your "
+                "strategic intent: use concise strings, include only steps needed for "
+                "the next coherent milestone, omit optional sidecars unless essential, "
+                "and close every JSON value."
+            )
+            message = (
+                f"{diagnostics.provider_kind} ended {diagnostics.output_model} at "
+                f"the output limit (finish_reason={finish_reason!r})."
+            )
+        elif category == "empty_response":
+            self.retry_feedback = (
+                "The provider returned no usable text. Return one compact "
+                f"{diagnostics.output_model} as complete JSON while preserving "
+                "the intended strategy."
+            )
+            message = (
+                f"{diagnostics.provider_kind} returned no text for "
+                f"{diagnostics.output_model} (finish_reason={finish_reason!r})."
+            )
+        else:
+            self.retry_feedback = (
+                "The provider returned malformed structured JSON. Return one compact "
+                f"{diagnostics.output_model} as complete JSON with only the steps "
+                "needed for the next coherent milestone; do not include prose or "
+                "a code fence."
+            )
+            message = (
+                f"{diagnostics.provider_kind} returned malformed "
+                f"{diagnostics.output_model} JSON "
+                f"(finish_reason={finish_reason!r})."
+            )
+        super().__init__(message)
+
+
 def prepared_budgeted_input(
     observation: Observation,
     *,
@@ -392,6 +491,11 @@ class Planner(ABC):
 
     async def decide_prepared(self, prepared: PreparedPlannerInput) -> PlannerOutput:
         return await self.decide(prepared.context.observation)
+
+    def take_call_diagnostics(self) -> HostedPlannerCallDiagnostics | None:
+        """Return and clear optional hosted-call evidence."""
+
+        return None
 
     @abstractmethod
     async def decide(self, observation: Observation) -> PlannerOutput:
