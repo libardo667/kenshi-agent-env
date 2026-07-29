@@ -34,7 +34,6 @@ from .models import (
     PauseAction,
     PlanEnvelope,
     PlanStep,
-    RequestAffordanceAction,
     RiskBudget,
     SetSpeedAction,
     UseGameBindingAction,
@@ -389,15 +388,6 @@ def dialogue_interaction_policy_errors(
         errors.append(
             f"plan has {len(plan.steps)} steps; the generic interaction policy allows at "
             f"most {max_steps}"
-        )
-
-    affordance_request_steps = [
-        step for step in plan.steps if isinstance(step.action, RequestAffordanceAction)
-    ]
-    if affordance_request_steps and len(plan.steps) != 1:
-        errors.append(
-            "request_affordance must be the plan's only step, because recording a "
-            "missing control does not make that control available to later steps"
         )
 
     if not any(condition.kind is ConditionKind.TELEMETRY_FRESH for condition in plan.assumptions):

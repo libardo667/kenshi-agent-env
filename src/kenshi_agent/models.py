@@ -1029,11 +1029,10 @@ class AffordanceIntentClass(StrEnum):
 
 
 class RequestAffordanceAction(StrictModel):
-    """Retain a concrete capability gap without emitting game input.
+    """Describe one candidate capability gap without granting authority.
 
-    This is a cognitive action, like consulting the advisor. It tells the
-    engineering loop which intention the current action surface cannot express;
-    it does not grant that capability or authorize an improvised substitute.
+    The type remains in the broad protocol union for old logs and is reused by
+    planner-output sidecars, but is not a planner-authorable action.
     """
 
     kind: Literal["request_affordance"] = "request_affordance"
@@ -1531,7 +1530,6 @@ PlannerControlAction: TypeAlias = (
     | SetSpeedAction
     | WaitAction
     | ConsultAdvisorAction
-    | RequestAffordanceAction
     | RecallMemoryAction
     | ReadFieldbookAction
 )
@@ -1661,7 +1659,6 @@ PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
         "set_speed",
         "wait",
         "consult_advisor",
-        "request_affordance",
         "recall_memory",
         "read_fieldbook",
     }
@@ -3391,6 +3388,12 @@ class PlanEnvelope(StrictModel):
         default_factory=list,
         max_length=4,
     )
+    # Diagnostic sidecar, not an action and never planner authority. The
+    # runtime retains it only after this plan passes every acceptance gate.
+    affordance_candidates: list[RequestAffordanceAction] = Field(
+        default_factory=list,
+        max_length=1,
+    )
 
     @model_validator(mode="after")
     def validate_graph_and_action_bound(self) -> PlanEnvelope:
@@ -3457,6 +3460,10 @@ class PlanPatch(StrictModel):
     fieldbook_operations: list[FieldbookOperation] = Field(
         default_factory=list,
         max_length=4,
+    )
+    affordance_candidates: list[RequestAffordanceAction] = Field(
+        default_factory=list,
+        max_length=1,
     )
 
 
@@ -4202,6 +4209,10 @@ class PlannerDecision(StrictModel):
     fieldbook_operations: list[FieldbookOperation] = Field(
         default_factory=list,
         max_length=4,
+    )
+    affordance_candidates: list[RequestAffordanceAction] = Field(
+        default_factory=list,
+        max_length=1,
     )
 
 

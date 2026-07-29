@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from kenshi_agent.affordance_requests import aggregate_affordance_requests
 from kenshi_agent.config import MockConfig, PlanningConfig, SafetyConfig
-from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env import MockEnvironment
 from kenshi_agent.evals import evaluate_log
 from kenshi_agent.models import (
@@ -20,7 +19,7 @@ from kenshi_agent.models import (
     Condition,
     ConditionKind,
     ConditionOperator,
-    IdempotencyPolicy,
+    NoopAction,
     Observation,
     PlanEnvelope,
     PlannerDecision,
@@ -78,7 +77,7 @@ def request_action(
     )
 
 
-def request_plan(
+def candidate_plan(
     current: Observation,
     *,
     plan_id: str,
@@ -90,23 +89,20 @@ def request_plan(
         schema_version="1.0",
         plan_id=plan_id,
         plan_version=1,
-        objective="Report the missing deliberate-combat control.",
+        objective="Continue safely while surfacing one candidate gap.",
         control_mode=current.control_mode,
         based_on_revision=current.world_revision,
         assumptions=[fresh()],
         steps=[
             PlanStep(
-                step_id="request",
-                action=request_action(
-                    capability_description=capability_description,
-                ),
+                step_id="continue",
+                action=NoopAction(reason="No world input is needed for this proof."),
                 preconditions=[fresh()],
                 success_conditions=[],
                 timeout_seconds=5.0,
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
             )
         ],
-        entry_step_id="request",
+        entry_step_id="continue",
         max_actions=1,
         max_wall_seconds=10.0,
         max_game_seconds=10.0,
@@ -115,10 +111,13 @@ def request_plan(
             max_purchase_actions=0,
             max_native_assisted_actions=0,
         ),
+        affordance_candidates=[
+            request_action(capability_description=capability_description)
+        ],
     )
 
 
-class RequestTwiceThenStopPlanner(Planner):
+class CandidateTwiceThenStopPlanner(Planner):
     def __init__(self) -> None:
         self.calls = 0
         self.observations: list[Observation] = []
@@ -132,43 +131,253 @@ class RequestTwiceThenStopPlanner(Planner):
                 if self.calls == 1
                 else "Work a selected world object through its contextual action."
             )
-            return request_plan(
+            return candidate_plan(
                 current,
-                plan_id=f"request-tool-{self.calls}",
+                plan_id=f"candidate-{self.calls}",
                 capability_description=description,
             )
-        return PlannerDecision(
-            intent="End the bounded affordance-request proof.",
-            rationale="The request is retained and its duplicate was suppressed.",
-            action=StopAction(reason="Affordance request integration proved."),
-            confidence=1.0,
+        plan = candidate_plan(current, plan_id="candidate-stop")
+        return plan.model_copy(
+            update={
+                "steps": [
+                    PlanStep(
+                        step_id="stop",
+                        action=StopAction(reason="Candidate integration proved."),
+                        preconditions=[fresh()],
+                        timeout_seconds=5.0,
+                    )
+                ],
+                "entry_step_id": "stop",
+                "affordance_candidates": [],
+            },
+            deep=True,
         )
 
 
-def test_generic_policy_does_not_compose_steps_after_an_affordance_request(
+class CandidateAndStopPlanner(Planner):
+    def __init__(self, *, stale_basis: bool = False) -> None:
+        self.stale_basis = stale_basis
+
+    async def decide(self, current: Observation) -> PlannerOutput:
+        plan = candidate_plan(current, plan_id="automatic-candidate")
+        basis = (
+            WorldStateRevision(telemetry_sequence=999_999)
+            if self.stale_basis
+            else current.world_revision
+        )
+        return plan.model_copy(
+            update={
+                "based_on_revision": basis,
+                "objective": "Continue safely while surfacing one candidate gap.",
+                "steps": [
+                    PlanStep(
+                        step_id="stop",
+                        action=StopAction(reason="Bounded candidate proof complete."),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        timeout_seconds=5.0,
+                    )
+                ],
+                "entry_step_id": "stop",
+                "affordance_candidates": [request_action()],
+            },
+            deep=True,
+        )
+
+
+def test_affordance_demand_is_one_sidecar_and_not_a_planner_action() -> None:
+    with pytest.raises(ValidationError):
+        PlanStep(
+            step_id="legacy-request",
+            action=request_action(),
+            preconditions=[fresh()],
+            timeout_seconds=5.0,
+        )
+
+    current = Observation(run_id="candidate-shape", step_index=0, mode="mock")
+    plan = candidate_plan(current, plan_id="candidate-shape")
+    payload = plan.model_dump(mode="json")
+    payload["affordance_candidates"] = [request_action(), request_action()]
+    with pytest.raises(ValidationError):
+        PlanEnvelope.model_validate(payload)
+
+
+def test_accepted_output_automatically_records_a_candidate_without_an_action(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        environment = MockEnvironment(MockConfig(random_events=False), tmp_path, "policy")
+        environment = MockEnvironment(
+            MockConfig(random_events=False),
+            tmp_path,
+            "automatic-candidate",
+        )
+        log_path = tmp_path / "automatic-candidate.jsonl"
+        logger = SessionLogger(log_path, "automatic-candidate")
+        runtime = AgentRuntime(
+            run_id="automatic-candidate",
+            environment=environment,
+            planner=CandidateAndStopPlanner(),
+            guard=ActionGuard(
+                SafetyConfig(
+                    supervisor_enabled=False,
+                    allow_action_kinds=["stop"],
+                    max_actions_per_minute=500,
+                ),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+            planning_config=PlanningConfig(
+                mode=PlanningMode.CONTINUOUS,
+                observation_pump_enabled=False,
+                max_plan_steps=1,
+                max_actions_per_plan=1,
+            ),
+        )
         try:
-            current = await environment.reset()
+            await runtime.run(max_steps=2)
         finally:
-            await environment.close()
+            logger.close()
 
-        plan = request_plan(current, plan_id="request-then-act")
-        request_step = plan.steps[0].model_copy(update={"on_success": "request-again"})
-        second_step = plan.steps[0].model_copy(
-            update={"step_id": "request-again", "on_success": None}
-        )
-        composed = plan.model_copy(
-            update={
-                "steps": [request_step, second_step],
-                "max_actions": 2,
-            }
-        )
+        events = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        candidates = [
+            event
+            for event in events
+            if event["event_type"] == "affordance_request"
+        ]
+        assert len(candidates) == 1
+        payload = candidates[0]["payload"]
+        assert payload["source"] == "planner_sidecar"
+        assert payload["classification"] == "needs_engineering_review"
+        assert payload["world_command_created"] is False
+        assert payload["controller_primitives"] == 0
+        assert not [
+            event
+            for event in events
+            if event["event_type"] == "action_receipt"
+            and event["payload"]["action"]["kind"] == "request_affordance"
+        ]
 
-        errors = dialogue_interaction_policy_errors(composed, current)
-        assert any("request_affordance must be the plan's only step" in error for error in errors)
+    asyncio.run(scenario())
+
+
+def test_accepted_single_step_decision_records_its_candidate_sidecar(
+    tmp_path: Path,
+) -> None:
+    class CandidateDecisionPlanner(Planner):
+        async def decide(self, current: Observation) -> PlannerOutput:
+            return PlannerDecision(
+                intent="Stop after reporting the grounded capability gap.",
+                rationale="The candidate sidecar does not require a game action.",
+                action=StopAction(reason="Bounded candidate proof complete."),
+                affordance_candidates=[request_action()],
+            )
+
+    async def scenario() -> None:
+        environment = MockEnvironment(
+            MockConfig(random_events=False),
+            tmp_path,
+            "decision-candidate",
+        )
+        log_path = tmp_path / "decision-candidate.jsonl"
+        logger = SessionLogger(log_path, "decision-candidate")
+        runtime = AgentRuntime(
+            run_id="decision-candidate",
+            environment=environment,
+            planner=CandidateDecisionPlanner(),
+            guard=ActionGuard(
+                SafetyConfig(
+                    supervisor_enabled=False,
+                    allow_action_kinds=["stop"],
+                    max_actions_per_minute=500,
+                ),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+        )
+        try:
+            await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        events = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        candidates = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "affordance_request"
+        ]
+        assert len(candidates) == 1
+        assert candidates[0]["source"] == "planner_sidecar"
+        assert candidates[0]["origin"] == "decision"
+        assert candidates[0]["step_id"] == "step-0"
+
+    asyncio.run(scenario())
+
+
+def test_rejected_output_does_not_turn_its_sidecar_or_failure_into_a_candidate(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment = MockEnvironment(
+            MockConfig(random_events=False),
+            tmp_path,
+            "rejected-candidate",
+        )
+        log_path = tmp_path / "rejected-candidate.jsonl"
+        logger = SessionLogger(log_path, "rejected-candidate")
+        runtime = AgentRuntime(
+            run_id="rejected-candidate",
+            environment=environment,
+            planner=CandidateAndStopPlanner(stale_basis=True),
+            guard=ActionGuard(
+                SafetyConfig(
+                    supervisor_enabled=False,
+                    allow_action_kinds=["stop"],
+                    max_actions_per_minute=500,
+                ),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+            planning_config=PlanningConfig(
+                mode=PlanningMode.CONTINUOUS,
+                observation_pump_enabled=False,
+                max_plan_steps=1,
+                max_actions_per_plan=1,
+                max_consecutive_replans=0,
+            ),
+        )
+        try:
+            await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        events = [
+            json.loads(line)
+            for line in log_path.read_text(encoding="utf-8").splitlines()
+        ]
+        assert any(event["event_type"] == "plan_rejected" for event in events)
+        assert not [
+            event
+            for event in events
+            if event["event_type"] == "affordance_request"
+        ]
 
     asyncio.run(scenario())
 
@@ -177,7 +386,7 @@ def test_runtime_retains_and_deduplicates_affordance_requests_without_dispatch(
     tmp_path: Path,
 ) -> None:
     async def scenario() -> None:
-        planner = RequestTwiceThenStopPlanner()
+        planner = CandidateTwiceThenStopPlanner()
         environment = MockEnvironment(
             MockConfig(random_events=False),
             tmp_path,
@@ -192,7 +401,7 @@ def test_runtime_retains_and_deduplicates_affordance_requests_without_dispatch(
             guard=ActionGuard(
                 SafetyConfig(
                     supervisor_enabled=False,
-                    allow_action_kinds=["request_affordance", "stop"],
+                    allow_action_kinds=["noop", "stop"],
                     max_actions_per_minute=500,
                 ),
                 MacroRegistry({}),
@@ -230,9 +439,7 @@ def test_runtime_retains_and_deduplicates_affordance_requests_without_dispatch(
             if event["event_type"] == "action_receipt"
             and event["payload"]["action"]["kind"] == "request_affordance"
         ]
-        assert len(request_receipts) == 2
-        assert all(event["payload"]["primitive_actions"] == 0 for event in request_receipts)
-        assert all(event["payload"]["command_id"] is None for event in request_receipts)
+        assert request_receipts == []
 
         request_events = [event for event in events if event["event_type"] == "affordance_request"]
         assert [event["payload"]["evidence"]["status"] for event in request_events] == [
@@ -292,7 +499,7 @@ def test_duplicate_suppression_only_ever_cites_a_visible_request(tmp_path: Path)
         runtime = AgentRuntime(
             run_id="affordance-cap",
             environment=environment,
-            planner=RequestTwiceThenStopPlanner(),
+            planner=CandidateTwiceThenStopPlanner(),
             guard=ActionGuard(
                 SafetyConfig(
                     supervisor_enabled=False,

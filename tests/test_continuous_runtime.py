@@ -23,6 +23,8 @@ from kenshi_agent.models import (
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
+    AffordanceIntentClass,
+    AffordanceUrgency,
     ApproachDialogueTargetAction,
     CharacterState,
     CommandDispatchContext,
@@ -55,6 +57,7 @@ from kenshi_agent.models import (
     PlanPatch,
     PlanStep,
     ReadFieldbookAction,
+    RequestAffordanceAction,
     RiskBudget,
     SemanticActionReceipt,
     SetSpeedAction,
@@ -3920,6 +3923,25 @@ def _future_speed_patch(current: Observation, step_id: str) -> PlanPatch:
                 summary="The movement option required a mid-route revision.",
             )
         ],
+        affordance_candidates=[
+            RequestAffordanceAction(
+                intent_class=AffordanceIntentClass.MOVE,
+                capability_slug="revise_active_route",
+                capability_description=(
+                    "Revise the destination of an already active movement task."
+                ),
+                blocked_goal="Adapt the route without restarting movement.",
+                why_needed=(
+                    "The planner can replace future steps but cannot revise the "
+                    "destination owned by the active movement task."
+                ),
+                evidence=(
+                    "The active movement remained in progress while the future "
+                    "speed step was patched."
+                ),
+                urgency=AffordanceUrgency.IMPROVES_FIDELITY,
+            )
+        ],
     )
 
 
@@ -4003,6 +4025,16 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
         assert fieldbook_receipts[0]["authored_context_id"] == (
             contexts[1]["context_id"]
         )
+        candidates = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "affordance_request"
+        ]
+        assert len(candidates) == 1
+        assert candidates[0]["source"] == "planner_sidecar"
+        assert candidates[0]["origin"] == "patch"
+        assert candidates[0]["authored_context_id"] == contexts[1]["context_id"]
+        assert candidates[0]["world_revision"] == contexts[1]["authored_revision"]
 
     asyncio.run(scenario())
 
@@ -4071,6 +4103,9 @@ def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
         )
         assert not any(
             event["event_type"] == "fieldbook_receipt" for event in events
+        )
+        assert not any(
+            event["event_type"] == "affordance_request" for event in events
         )
 
     asyncio.run(scenario())

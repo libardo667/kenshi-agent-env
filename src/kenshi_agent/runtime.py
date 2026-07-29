@@ -2704,17 +2704,13 @@ class AgentRuntime:
                     )
         return observation.model_copy(update=updates)
 
-    async def _execute_affordance_request_action(
+    def _retain_affordance_request(
         self,
         action: RequestAffordanceAction,
         observation: Observation,
-        plan_id: str,
-        plan_version: int,
-        step_id: str,
-    ) -> AffordanceRequestActionResult:
-        """Retain one planner-discovered control gap and decorate later context."""
+    ) -> AffordanceRequestEvidence:
+        """Retain or deduplicate one non-authoritative engineering candidate."""
 
-        started_at = datetime.now(UTC)
         aggregation_key = affordance_aggregation_key(action)
         existing = next(
             (
@@ -2756,6 +2752,64 @@ class AgentRuntime:
             request_number=request_number,
             aggregation_key=aggregation_key,
         )
+        return evidence
+
+    def _record_affordance_candidates(
+        self,
+        candidates: Sequence[RequestAffordanceAction],
+        observation: Observation,
+        *,
+        origin: ContinuityOrigin,
+        authored_context: AuthoredPlannerContext,
+        plan_id: str,
+        plan_version: int,
+        step_id: str | None = None,
+    ) -> None:
+        """Record accepted-output sidecars without spending an action."""
+
+        for candidate in candidates:
+            authored_observation = authored_context.observation
+            evidence = self._retain_affordance_request(
+                candidate,
+                authored_observation,
+            )
+            self.logger.write(
+                "affordance_request",
+                step_index=observation.step_index,
+                payload={
+                    "source": "planner_sidecar",
+                    "classification": "needs_engineering_review",
+                    "origin": origin.value,
+                    "authored_context_id": authored_context.manifest.context_id,
+                    "plan_id": plan_id,
+                    "plan_version": plan_version,
+                    "step_id": step_id,
+                    "world_revision": (
+                        authored_observation.world_revision.model_dump(mode="json")
+                    ),
+                    "accepted_at_world_revision": (
+                        observation.world_revision.model_dump(mode="json")
+                    ),
+                    "controller_primitives": 0,
+                    "world_command_created": False,
+                    "evidence": evidence.model_dump(mode="json"),
+                    "request": candidate.model_dump(mode="json"),
+                },
+            )
+
+    async def _execute_affordance_request_action(
+        self,
+        action: RequestAffordanceAction,
+        observation: Observation,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+    ) -> AffordanceRequestActionResult:
+        """Retain a legacy explicit request without dispatching game input."""
+
+        started_at = datetime.now(UTC)
+        evidence = self._retain_affordance_request(action, observation)
+        reason = evidence.reason
         finished_at = datetime.now(UTC)
         receipt = ActionReceipt(
             action=action,
@@ -2778,6 +2832,8 @@ class AgentRuntime:
             "affordance_request",
             step_index=observation.step_index,
             payload={
+                "source": "planner_action",
+                "classification": "needs_engineering_review",
                 "plan_id": plan_id,
                 "plan_version": plan_version,
                 "step_id": step_id,
@@ -3159,6 +3215,15 @@ class AgentRuntime:
                     plan_version=plan.plan_version,
                 )
             )
+        if plan.affordance_candidates:
+            self._record_affordance_candidates(
+                plan.affordance_candidates,
+                observation,
+                origin=ContinuityOrigin.PLAN,
+                authored_context=authored_context,
+                plan_id=plan.plan_id,
+                plan_version=plan.plan_version,
+            )
 
     def _apply_decision_continuity(
         self,
@@ -3199,7 +3264,9 @@ class AgentRuntime:
         """Commit planner sidecars after the action and expose them immediately."""
 
         if (
-            decision.continuity_operations or decision.fieldbook_operations
+            decision.continuity_operations
+            or decision.fieldbook_operations
+            or decision.affordance_candidates
         ) and authored_context is None:
             raise RuntimeError(
                 "Planner-authored durable operations have no authored "
@@ -3225,6 +3292,17 @@ class AgentRuntime:
                     step_id=step_id,
                 )
             )
+        if decision.affordance_candidates:
+            assert authored_context is not None
+            self._record_affordance_candidates(
+                decision.affordance_candidates,
+                observation,
+                origin=ContinuityOrigin.DECISION,
+                authored_context=authored_context,
+                plan_id=plan_id,
+                plan_version=1,
+                step_id=step_id,
+            )
         latest = self._with_memories(observation)
         if self._state_store is not None:
             latest = self._state_store.decorate_latest(latest)
@@ -3234,6 +3312,7 @@ class AgentRuntime:
         self,
         operations: Sequence[ContinuityOperation],
         fieldbook_operations: Sequence[FieldbookOperation],
+        affordance_candidates: Sequence[RequestAffordanceAction],
         observation: Observation,
         *,
         authored_context: AuthoredPlannerContext,
@@ -3270,6 +3349,16 @@ class AgentRuntime:
                     plan_version=plan_version,
                     step_id=step_id,
                 )
+            )
+        if affordance_candidates:
+            self._record_affordance_candidates(
+                affordance_candidates,
+                observation,
+                origin=ContinuityOrigin.PATCH,
+                authored_context=authored_context,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
             )
 
     def _surface(self, receipts: Sequence[ContinuityOperationReceipt]) -> None:

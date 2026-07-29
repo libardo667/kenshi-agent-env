@@ -154,6 +154,7 @@ class PatchContinuityApplier(Protocol):
         self,
         operations: Sequence[ContinuityOperation],
         fieldbook_operations: Sequence[FieldbookOperation],
+        affordance_candidates: Sequence[RequestAffordanceAction],
         observation: Observation,
         *,
         authored_context: AuthoredPlannerContext,
@@ -308,6 +309,7 @@ class ContinuousPlanExecutor:
         self.apply_patch_continuity(
             staged_patch.patch.continuity_operations,
             staged_patch.patch.fieldbook_operations,
+            staged_patch.patch.affordance_candidates,
             observation,
             authored_context=staged_patch.authored_context,
             plan_id=patched_plan.plan_id,

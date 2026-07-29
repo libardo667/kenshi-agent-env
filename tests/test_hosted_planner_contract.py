@@ -943,6 +943,8 @@ def test_projected_schema_matches_the_exact_authorable_action_surface() -> None:
     assert "activate_visible_control" in allowed
     assert "move_in_direction" not in allowed
     assert "skill" not in allowed
+    assert "request_affordance" not in allowed
+    assert "affordance_candidates" in schema["properties"]
 
 
 def test_projected_schema_retains_only_reachable_definitions() -> None:

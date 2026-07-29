@@ -836,7 +836,7 @@
     },
     "RequestAffordanceAction": {
       "additionalProperties": false,
-      "description": "Retain a concrete capability gap without emitting game input.\n\nThis is a cognitive action, like consulting the advisor. It tells the\nengineering loop which intention the current action surface cannot express;\nit does not grant that capability or authorize an improvised substitute.",
+      "description": "Describe one candidate capability gap without granting authority.\n\nThe type remains in the broad protocol union for old logs and is reused by\nplanner-output sidecars, but is not a planner-authorable action.",
       "properties": {
         "kind": {
           "const": "request_affordance",
