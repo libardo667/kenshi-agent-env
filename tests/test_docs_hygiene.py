@@ -60,20 +60,6 @@ ROOT_DOC_CAPS: dict[str, int] = {
     "ARCHITECTURE.md": DOC_LINE_CAP,
     "STATUS.md": DOC_LINE_CAP,
     "SECURITY_AND_SAFETY.md": DOC_LINE_CAP,
-    # `LOOP_PROMPT.md` is the file that steers the loop, so it is the file most
-    # able to grow unnoticed: for a while it was longer than the four documents
-    # above combined and no gate saw it. It does not fit `DOC_LINE_CAP` and
-    # splitting it would defeat its purpose — it is copied whole into an agent.
-    # So it gets its own ceiling, set at its measured length on the day it was
-    # capped. Ratchet downward only: growing it means raising this number in a
-    # test, deliberately, where a reviewer sees it.
-    "LOOP_PROMPT.md": 421,
-    # A second steering document, for the memory/continuity work. Same reason
-    # as above. This one has an explicitly approved larger ceiling because it
-    # is the complete executable architecture specification and must remain
-    # usable as one copied document. The exception is deliberately scoped to
-    # this path; every other document keeps its existing ceiling.
-    "MEMORY_CONTINUITY_LOOP_PROMPT.md": 1800,
 }
 
 # Not root documents, but the same reasoning: a step-by-step procedure someone
@@ -169,11 +155,7 @@ def test_documents_stay_under_the_line_cap() -> None:
 
 
 def test_every_root_prose_file_is_capped_or_exempt() -> None:
-    """An uncapped root document must be a stated decision, not an omission.
-
-    `LOOP_PROMPT.md` was uncapped for exactly this reason: the ceiling list named
-    four files and nobody noticed the fifth was missing from it.
-    """
+    """An uncapped root document must be a stated decision, not an omission."""
 
     unaccounted = sorted(
         path.name

@@ -22,7 +22,7 @@ reach without a running game:
   than discovered live.
 
 The fourth rung, whether the far side honours what it advertised, is only
-reachable from a supervised live run. `docs/ADR_EVIDENCE_VOCABULARY.md` records
+reachable from a supervised live run. `docs/ADR_EVIDENCE_VOCABULARY_V2.md` records
 that it is enforced by review, not by code, and must not be collapsed into
 "supported".
 """
