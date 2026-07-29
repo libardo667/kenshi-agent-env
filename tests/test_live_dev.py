@@ -2161,6 +2161,13 @@ def test_journey_defaults_to_single_step_without_continuous_flags() -> None:
     assert "--execute-live-actions" not in argv
 
 
+def test_journey_omits_unspecified_profile_overrides() -> None:
+    argv = _journey_argv(_journey_args(), "profile-owned-run")
+
+    assert "--planner" not in argv
+    assert "--steps" not in argv
+
+
 def test_journey_continuous_flag_passes_planning_mode() -> None:
     argv = _journey_argv(_journey_args("--continuous"), "run-2")
     assert argv[argv.index("--planning-mode") + 1] == "continuous"

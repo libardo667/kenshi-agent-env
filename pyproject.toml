@@ -74,6 +74,7 @@ also_copy = [
   "scripts/",
   "ARCHITECTURE.md",
   "CHANGELOG.md",
+  "LOOP-PROMPT.md",
   "README.md",
   "SECURITY_AND_SAFETY.md",
   "STATUS.md",

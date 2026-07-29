@@ -2477,13 +2477,13 @@ def _journey_argv(
         args.config,
         "--mode",
         "live",
-        "--planner",
-        args.planner,
-        "--steps",
-        str(args.steps),
         "--run-id",
         run_id,
     ]
+    if args.planner is not None:
+        argv.extend(["--planner", args.planner])
+    if args.steps is not None:
+        argv.extend(["--steps", str(args.steps)])
     if args.objective:
         argv.extend(["--objective", args.objective])
     if args.campaign:
@@ -2786,7 +2786,7 @@ def _add_journey_arguments(
     parser.add_argument(
         "--planner",
         choices=["openai", "openrouter", "subprocess"],
-        default="openai",
+        help="Override the profile planner; omit to preserve planner.kind.",
     )
     parser.add_argument(
         "--planner-script",
@@ -2804,7 +2804,11 @@ def _add_journey_arguments(
             "with '-' use --planner-arg=VALUE."
         ),
     )
-    parser.add_argument("--steps", type=int, default=8)
+    parser.add_argument(
+        "--steps",
+        type=int,
+        help="Override the profile step ceiling; omit to preserve runtime.max_steps.",
+    )
     parser.add_argument("--run-id")
     parser.add_argument(
         "--continuous",

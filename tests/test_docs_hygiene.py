@@ -60,6 +60,9 @@ ROOT_DOC_CAPS: dict[str, int] = {
     "ARCHITECTURE.md": DOC_LINE_CAP,
     "STATUS.md": DOC_LINE_CAP,
     "SECURITY_AND_SAFETY.md": DOC_LINE_CAP,
+    # This is copied whole into an agent, so splitting it would break its use.
+    # Ratchet downward; growth must remain a deliberate test change.
+    "LOOP-PROMPT.md": 412,
 }
 
 # Not root documents, but the same reasoning: a step-by-step procedure someone

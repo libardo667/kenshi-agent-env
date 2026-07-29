@@ -103,6 +103,7 @@ done
 cd "$repo_dir"
 windows_command=(
   "$windows_python"
+  -u
   -m
   kenshi_agent.live_dev
   "$command_name"
@@ -111,7 +112,26 @@ windows_command=(
   "${forward_args[@]}"
 )
 
+windows_stdio_is_terminal() {
+  [[ -t 0 || -t 1 || -t 2 ]]
+}
+
+run_windows_command() {
+  if windows_stdio_is_terminal; then
+    # WSL's Windows interop can ask a terminal for its cursor position
+    # (ESC[6n) and wait forever for a response. Live tooling has no interactive
+    # stdin contract, so make that impossible while retaining streamed output.
+    "$@" </dev/null 2>&1 | cat
+  else
+    "$@"
+  fi
+}
+
 if [[ "$command_name" != "journey" && "$command_name" != "play" ]]; then
+  if windows_stdio_is_terminal; then
+    run_windows_command "${windows_command[@]}"
+    exit "$?"
+  fi
   exec "${windows_command[@]}"
 fi
 
@@ -120,7 +140,7 @@ recover_interrupted_journey() {
   trap - EXIT INT TERM
   if [[ "$journey_status" -ne 0 ]]; then
     echo "Journey exited before clean completion; running supported recovery." >&2
-    "$windows_python" -m kenshi_agent.live_dev \
+    run_windows_command "$windows_python" -u -m kenshi_agent.live_dev \
       recover \
       --config "$windows_config" >&2 || true
   fi
@@ -130,4 +150,4 @@ recover_interrupted_journey() {
 trap recover_interrupted_journey EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-"${windows_command[@]}"
+run_windows_command "${windows_command[@]}"
