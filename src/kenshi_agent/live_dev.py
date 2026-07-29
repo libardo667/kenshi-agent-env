@@ -2925,11 +2925,20 @@ def _add_journey_arguments(
         help="Override the profile step ceiling; omit to preserve runtime.max_steps.",
     )
     parser.add_argument("--run-id")
-    parser.add_argument(
+    narration = parser.add_mutually_exclusive_group()
+    narration.add_argument(
         "--tts",
+        dest="tts",
         action="store_true",
-        help="Narrate human-readable planning and action updates aloud.",
+        help="Narrate human-readable planning and action updates aloud (default).",
     )
+    narration.add_argument(
+        "--no-tts",
+        dest="tts",
+        action="store_false",
+        help="Disable spoken planning and action updates for this journey.",
+    )
+    parser.set_defaults(tts=True)
     parser.add_argument(
         "--continuous",
         action="store_true",

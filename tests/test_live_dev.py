@@ -1766,12 +1766,28 @@ def test_play_parser_combines_launch_and_continuous_journey_options() -> None:
     assert args.campaign == "fresh-funded-solo"
     assert args.continue_game is True
     assert args.preflight_only is False
+    assert args.tts is True
     argv = _journey_argv(args, "combined-run")
     assert argv[argv.index("--steps") + 1] == "80"
     assert argv[argv.index("--planning-mode") + 1] == "continuous"
     assert "--execute-live-actions" in argv
     assert "--acknowledge-native-assisted-control" in argv
     assert "--acknowledge-continuous-live" in argv
+    assert "--tts" in argv
+
+
+def test_play_parser_can_explicitly_disable_default_narration() -> None:
+    args = live_dev.build_parser().parse_args(
+        [
+            "play",
+            "--config",
+            "config/live.longform.yaml",
+            "--no-tts",
+        ]
+    )
+
+    assert args.tts is False
+    assert "--tts" not in _journey_argv(args, "quiet-run")
 
 
 def test_play_starts_journey_only_after_launch_succeeds(
