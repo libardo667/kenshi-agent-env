@@ -198,16 +198,22 @@ terminals and scenario-specific milestones; report ambiguous progress as ambiguo
 These were present in the reviewed checkout. They are candidates, not eternal facts. Verify each against
 current code and newer run evidence.
 
-1. The evaluator records many lifecycle metrics but does not currently aggregate `action_outcome`
-   assessments or generic repeated semantic actions. Long runs can therefore look healthy while spending
-   most of their time in no-op or repeated-action loops.
-2. Run `live-advisor-background-20260729-r5` measured 41.9 KB of recurring system instructions, 39.6 KB
-   of compact plan schema, and 65.7-76.3 KB of observation/context on the stalled purchase turn. Ordinary
-   requests used roughly 47-51k prompt tokens. Two truncated responses plus exact continuation consumed
-   95-102k prompt tokens and took roughly 40-44 seconds. The immediate purchase failure was a false native
-   trade-screen label, not prompt length, but recurring context amplified it into seven near-identical
-   replans. Measure the component and ablation effects before compressing; remove redundant runtime law only
-   where the model does not need it to choose valid semantic actions.
+1. Action outcomes are now assessed honestly: only decision-relevant change counts, so actor
+   displacement, controller-owned pause/speed transitions, camera bearing, and an `already_clear`
+   camera recovery are `no_op`. Re-derived over its logged deltas, `live-trade-surface-20260729-r1`
+   moves from 11 changed/1 no-op to 6/6 with a six-action no-progress streak. The evaluator still does
+   not aggregate `action_outcome` assessments, normalized repeated signatures, or longest no-progress
+   streak, so `summarize` cannot yet show that. The honest assessment is portable-tested only; no live
+   run has exercised it.
+2. Prompt cost is measured across 230 hosted requests in ten live runs, not one turn. Median request is
+   116-137 KB and 35-42k prompt tokens: system 40.9-41.9 KB (~32%), plan schema 39.6 KB (~31%),
+   observation 30-48 KB (~30%). `schema_in_prompt` was true on 230/230 - the constrained route never
+   survives, and the latch is permanent once refused. Inside the schema, 62 `$defs` are 90.5% of the
+   bytes, 14.2 KB (35.8%) is description prose, and 22 of 24 action kinds are also documented in
+   `planner_system.md`, duplicating 7.4 KB. The largest lever is not compression: roughly 81 KB is a
+   byte-identical prefix already positioned first in the message, and nothing in the tree sets
+   `cache_control`. Prefer caching and removing hand-maintained duplication over shortening generated
+   descriptions, and measure ablation before cutting anything the model needs to pick valid actions.
 3. Fresh game starts have been launched under the same configured `fresh-funded-solo` campaign even when
    they create different characters and save lineages. The resulting journal includes earlier characters,
    completed recruitment, purchases, and still-open commitments. Personal continuity must not cross a fresh
@@ -216,6 +222,21 @@ current code and newer run evidence.
    queued with zero controller primitives, foreground movement continued while each was pending, and each
    source-attributed brief reached later planner observations. Exact EOF-suffix continuation remains
    portable/hosted evidence only; this run did not exercise malformed EOF recovery.
+5. Both purchase guards gated on `ui.active_screen == "trade"`, a collapsed label that reports
+   `inventory` whenever the trader behind the window cannot be resolved. In
+   `live-shop-ownership-regression-20260729-r2` that cost four planner calls in ninety seconds while the
+   operator watched the trade window on screen. The guards now decide by window ownership, as the
+   binding layer already did. This is portable-tested only; the acceptance run is the same campaign and
+   objective, stopping when a purchase either completes with a verified debit or fails for a reason that
+   is not the trade screen.
+6. The other half of that loop was `plan purchase risk budget exceeds configured maximum`, which never
+   names the maximum. A rejection the model cannot act on is a replan generator; every plan-validation
+   error should carry the value that would satisfy it. Note also that purchase-price uncertainty, the
+   stated reason for rationing buys at all, is recorded in `STATUS.md` as unresolved rather than true.
+7. `shop_inventory_owner` appears zero times in the `r2` and `r5` logs, so the field both the purchase
+   binding and the new trade predicate depend on is absent from run evidence. A purchase failure
+   therefore cannot be attributed from a bundle alone. Fix this before trusting any purchase dossier
+   built only from logs.
 
 ## Fix the class, not the final symptom
 
