@@ -1,7 +1,6 @@
 # Guide: running against real Kenshi
 
-Per-run evidence lives in the commit that landed the capability and in
-`runs/<run-id>/`. This guide is the standing procedure only.
+Per-run evidence lives in its commit and `runs/<run-id>/`; this is procedure only.
 
 ## Acknowledgements are separate on purpose
 
@@ -14,10 +13,8 @@ None of these implies another. Pass only what the run actually needs:
 | `--acknowledge-continuous-live` | a live continuous profile |
 | `--exclusive-input-session` | the human hands over the whole desktop |
 
-`--exclusive-input-session` keeps Kenshi foreground and leaves the guest cursor
-in place so a single-display run stays observable. Omit it on a shared machine:
-the polite input lease then waits for idle input and restores the previous
-foreground and cursor.
+`--exclusive-input-session` keeps Kenshi foreground and the guest cursor in place.
+Omit it to have each polite lease restore the prior foreground and cursor.
 
 F12 disarms automatic takeover for the remainder of the run.
 
@@ -30,22 +27,20 @@ launcher without a pseudo-terminal:
 ```bash
 ./dev launch --preflight-only
 ./dev launch
+./dev play --game-start kae-01-funded-solo \
+  --campaign fresh-funded-solo --steps 80 \
+  --continuous --execute --native-assisted \
+  --acknowledge-continuous-live --exclusive
 ./dev recover
 ./dev crash
 ./dev crash --dismiss
-./dev journey --planner subprocess \
-  --planner-script scripts/live_direction_smoke_planner.py \
-  --planner-arg=--bearing --planner-arg=100 \
-  --planner-arg=--distance --planner-arg=350 \
-  --campaign ladle-css-01 \
-  --continuous --execute --native-assisted \
-  --acknowledge-continuous-live --exclusive
 ```
 
-`journey` defaults to campaign-neutral `config/live.longform.yaml`; pass
-`--campaign <save-lineage>` or an attested `--scenario`. Other commands default
-to `config/live.burnin.yaml`. Do not substitute direct Windows-Python, native
-file, input snippet, or PTY workarounds.
+`play` performs guarded launch/load, then immediately invokes `journey` with the
+same options; it does not imply any acknowledgement. Both default to
+`config/live.longform.yaml`; pass a campaign or attested scenario. Other commands
+default to `config/live.burnin.yaml`. Never substitute direct Windows-Python,
+native-file, input-snippet, or PTY workarounds.
 
 The live profiles require the checked-in 30 fps renderer profile and an active
 1920x1080 external display. Actual `launch` and executing `journey` commands
@@ -61,7 +56,12 @@ dump plus current logs, telemetry, settings, and frame under `runs/crashes/`.
 `--dismiss` is explicit because it closes an unsent report; it archives first,
 dismisses each exact terminal layer with bounded ordinary input, aborts on human
 input, and never force-terminates a process that fails to exit.
-After a guarded input refusal, `./dev launch --resume-launcher` accepts only the exact small pre-game window.
+Human keyboard or mouse input during startup cancels the pending primitive and
+yields control. After three quiet seconds, the same visible five-second
+takeover countdown used by a journey begins; new input resets it and F12
+permanently disarms startup automation. Startup timeouts do not elapse while
+the human owns input. `./dev launch --resume-launcher` remains available for an
+exact small pre-game window left by an older guarded interruption.
 
 ## Before a run
 
@@ -86,8 +86,9 @@ Record evidence for each. **Do not mark one complete from code inspection.**
       pointers.
 - [ ] Controller and Kenshi run at equal integrity levels.
 - [ ] F12 prevents the next primitive action.
-- [ ] A supervised launcher interruption emits no further input and does not
-      reclaim focus.
+- [ ] Human input during launch cancels the pending primitive, waits for the
+      configured quiet interval and takeover countdown, revalidates the current
+      semantic startup state, and only then continues; F12 disarms it.
 - [ ] At 1920x1080 and one alternate client size the launcher advances by Enter,
       RE_Kenshi does not open its settings panel, and exact current
       `Continue`/save controls load without a fixed startup coordinate.
@@ -113,8 +114,7 @@ paused town does not clear water- or effects-heavy locations.
 
 ## What live evidence does and does not cover
 
-Live proofs here are single supervised runs on one host and save. They
-demonstrate that a path can work, not that it generalizes. A completed
+Live proofs here are single supervised runs on one host and save; they show a path can work, not that it generalizes. A completed
 `move_in_direction` smoke does not clear every local route; one Storm House exit
 does not clear every building. Treat each as one data point and say so when
 citing it.

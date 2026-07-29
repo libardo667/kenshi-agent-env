@@ -12,8 +12,13 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Callable
-from contextlib import AbstractContextManager, nullcontext
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import (
+    AbstractAsyncContextManager,
+    AbstractContextManager,
+    asynccontextmanager,
+    nullcontext,
+)
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
@@ -33,6 +38,12 @@ from .control.base import InputController, PrimitiveInputAction, WindowRect
 from .control.calibration import validate_expected_client_size
 from .control.capture import WindowCapture
 from .control.win32 import Win32InputController
+from .control_ownership import (
+    ControlOwnershipEvent,
+    ControlOwnershipEventType,
+    ControlOwnershipMachine,
+    ControlOwnershipState,
+)
 from .display_lease import (
     DisplayLeaseError,
     DisplayTopologyController,
@@ -85,6 +96,125 @@ class LaunchInterrupted(RuntimeError):
 
 class LaunchFailed(RuntimeError):
     pass
+
+
+class _StartupInputGate:
+    """Yield launcher input, then visibly reclaim it after a quiet countdown."""
+
+    def __init__(
+        self,
+        controller: InputController,
+        *,
+        emergency_stop_key: str,
+        quiet_seconds: float,
+        countdown_seconds: float,
+        poll_seconds: float,
+        monotonic: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    ) -> None:
+        self.controller = controller
+        self.emergency_stop_key = emergency_stop_key
+        self.poll_seconds = poll_seconds
+        self.monotonic = monotonic
+        self.sleep = sleep
+        self.machine = ControlOwnershipMachine(
+            quiet_seconds=quiet_seconds,
+            countdown_seconds=countdown_seconds,
+        )
+
+    def _check_emergency_stop(self) -> None:
+        if self.machine.state is ControlOwnershipState.DISARMED:
+            raise LaunchInterrupted(
+                "Kenshi startup automation remains disarmed by the emergency stop."
+            )
+        if not self.controller.emergency_stop_pressed(self.emergency_stop_key):
+            return
+        self.machine.disarm(
+            reason=(
+                f"Emergency stop {self.emergency_stop_key!r} pressed; launcher "
+                "takeover is permanently disarmed."
+            )
+        )
+        raise LaunchInterrupted(
+            f"Kenshi startup automation was permanently disarmed by "
+            f"{self.emergency_stop_key!r}."
+        )
+
+    @staticmethod
+    def _announce(events: tuple[ControlOwnershipEvent, ...]) -> None:
+        for event in events:
+            if event.event_type is ControlOwnershipEventType.COUNTDOWN:
+                print(
+                    "Launcher takeover in "
+                    f"{event.seconds_remaining}s; move the mouse or press a key "
+                    "to retain control."
+                )
+            elif event.event_type is ControlOwnershipEventType.READY:
+                print(
+                    "Launcher takeover countdown complete; revalidating current "
+                    "startup state."
+                )
+            elif (
+                event.event_type is ControlOwnershipEventType.CHANGED
+                and event.state is ControlOwnershipState.HUMAN_CONTROL
+            ):
+                print(
+                    "Human input detected; launcher yielded control and cancelled "
+                    "its pending input."
+                )
+
+    def _observe_human_input(self) -> bool:
+        self._check_emergency_stop()
+        detected = self.controller.continuous_user_input_detected()
+        if not detected:
+            return False
+        now = self.monotonic()
+        events = (
+            self.machine.yield_to_human(
+                now,
+                reason="Human input preempted Kenshi startup automation.",
+            )
+            if self.machine.state is ControlOwnershipState.AGENT_ACTIVE
+            else self.machine.advance(now, human_input=True)
+        )
+        self._announce(events)
+        return True
+
+    async def wait_for_turn(self) -> float:
+        """Wait without consuming startup timeout; F12 never auto-recovers."""
+
+        started = self.monotonic()
+        if (
+            not self._observe_human_input()
+            and self.machine.state is ControlOwnershipState.AGENT_ACTIVE
+        ):
+            return 0.0
+        while self.machine.state is not ControlOwnershipState.AGENT_ACTIVE:
+            await self.sleep(self.poll_seconds)
+            self._check_emergency_stop()
+            human_input = self.controller.continuous_user_input_detected()
+            events = self.machine.advance(
+                self.monotonic(),
+                human_input=human_input,
+            )
+            self._announce(events)
+        return self.monotonic() - started
+
+    async def _yield_input_lease(self) -> AsyncIterator[None]:
+        """Reacquire when input lands after the polite lease begins."""
+
+        while True:
+            await self.wait_for_turn()
+            async with self.controller.input_lease():
+                if self._observe_human_input():
+                    continue
+                yield
+                return
+
+    def input_lease(self) -> AbstractAsyncContextManager[None]:
+        """Expose the lease without hiding its decisions behind a decorator."""
+
+        return asynccontextmanager(self._yield_input_lease)()
 
 
 _TERMINAL_WINDOW_MARKERS = (
@@ -377,6 +507,16 @@ def _abort_if_human_input(controller: InputController) -> None:
         )
 
 
+async def _wait_for_startup_input(
+    controller: InputController,
+    input_gate: _StartupInputGate | None,
+) -> float:
+    if input_gate is not None:
+        return await input_gate.wait_for_turn()
+    _abort_if_human_input(controller)
+    return 0.0
+
+
 def _terminal_window_title(controller: InputController) -> str | None:
     for title in controller.visible_window_titles():
         normalized = title.strip().casefold()
@@ -394,6 +534,7 @@ async def _wait_until(
     *,
     controller: InputController,
     health_check: Callable[[], None] | None = None,
+    input_gate: _StartupInputGate | None = None,
 ) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -407,7 +548,7 @@ async def _wait_until(
             raise LaunchFailed(
                 f"Kenshi startup stopped because the terminal window {title!r} appeared."
             )
-        _abort_if_human_input(controller)
+        deadline += await _wait_for_startup_input(controller, input_gate)
         try:
             if predicate():
                 return
@@ -745,18 +886,32 @@ def _telemetry_read(config: AppConfig) -> TelemetryReader:
 async def _execute_primitive(
     controller: InputController,
     action: PrimitiveInputAction,
+    *,
+    input_gate: _StartupInputGate | None = None,
 ) -> None:
-    _abort_if_human_input(controller)
-    async with controller.input_lease():
+    if input_gate is None:
         _abort_if_human_input(controller)
-        receipt = await controller.execute(action)
+        async with controller.input_lease():
+            _abort_if_human_input(controller)
+            receipt = await controller.execute(action)
+    else:
+        async with input_gate.input_lease():
+            receipt = await controller.execute(action)
     if not receipt.executed:
         raise RuntimeError(receipt.message)
 
 
-async def _click(controller: InputController, x: float, y: float) -> None:
+async def _click(
+    controller: InputController,
+    x: float,
+    y: float,
+    *,
+    input_gate: _StartupInputGate | None = None,
+) -> None:
     await _execute_primitive(
-        controller, ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS)
+        controller,
+        ClickAction(x=x, y=y, hold_seconds=MYGUI_CLICK_HOLD_SECONDS),
+        input_gate=input_gate,
     )
 
 
@@ -850,6 +1005,7 @@ async def _wait_for_game_start_carousel(
     health_check: Callable[[], None] | None = None,
     previous_label: str | None = None,
     minimum_sequence: int | None = None,
+    input_gate: _StartupInputGate | None = None,
 ) -> tuple[VisibleUIControl, str, int]:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -863,7 +1019,7 @@ async def _wait_for_game_start_carousel(
             raise LaunchFailed(
                 f"Kenshi startup stopped because the terminal window {title!r} appeared."
             )
-        _abort_if_human_input(controller)
+        deadline += await _wait_for_startup_input(controller, input_gate)
         try:
             result = reader.read()
         except TelemetryReadError:
@@ -891,11 +1047,12 @@ async def _click_game_start_left(
     *,
     expected_left: VisibleUIControl,
     expected_label: str,
+    input_gate: _StartupInputGate | None = None,
 ) -> int:
     """Click left only while the exact observed carousel state remains current."""
 
     expected_normalized = _normalize_control_label(expected_label)
-    _abort_if_human_input(controller)
+    await _wait_for_startup_input(controller, input_gate)
     initial = reader.read()
     initial_state = (
         None
@@ -912,8 +1069,14 @@ async def _click_game_start_left(
             "no pointer input was sent."
         )
 
-    async with controller.input_lease():
-        _abort_if_human_input(controller)
+    lease = (
+        input_gate.input_lease()
+        if input_gate is not None
+        else controller.input_lease()
+    )
+    async with lease:
+        if input_gate is None:
+            _abort_if_human_input(controller)
         current = reader.read()
         current_state = (
             None
@@ -942,8 +1105,10 @@ async def _click_semantic_control(
     controller: InputController,
     reader: TelemetryReader,
     labels: list[str],
+    *,
+    input_gate: _StartupInputGate | None = None,
 ) -> None:
-    _abort_if_human_input(controller)
+    await _wait_for_startup_input(controller, input_gate)
     initial = reader.read()
     if initial.stale:
         raise RuntimeError("Semantic startup control requires fresh telemetry.")
@@ -954,8 +1119,14 @@ async def _click_semantic_control(
             f"{labels!r} on telemetry sequence {initial.snapshot.sequence}."
         )
 
-    async with controller.input_lease():
-        _abort_if_human_input(controller)
+    lease = (
+        input_gate.input_lease()
+        if input_gate is not None
+        else controller.input_lease()
+    )
+    async with lease:
+        if input_gate is None:
+            _abort_if_human_input(controller)
         current = reader.read()
         if current.stale:
             raise RuntimeError(
@@ -987,6 +1158,7 @@ async def _open_exact_scenario_save(
     save_control_label: str,
     timeout: float,
     health_check: Callable[[], None] | None = None,
+    input_gate: _StartupInputGate | None = None,
 ) -> None:
     """Open the load screen and one exact save row; never auto-Continue."""
 
@@ -1003,11 +1175,13 @@ async def _open_exact_scenario_save(
         "semantic Load Game control",
         controller=controller,
         health_check=health_check,
+        input_gate=input_gate,
     )
     await _click_semantic_control(
         controller,
         reader,
         load_control_labels,
+        input_gate=input_gate,
     )
     await _wait_until(
         lambda: (
@@ -1022,11 +1196,13 @@ async def _open_exact_scenario_save(
         f"exact scenario save control {save_control_label!r}",
         controller=controller,
         health_check=health_check,
+        input_gate=input_gate,
     )
     await _click_semantic_control(
         controller,
         reader,
         [save_control_label],
+        input_gate=input_gate,
     )
 
 
@@ -1041,6 +1217,7 @@ async def _open_exact_authored_game_start(
     max_carousel_steps: int,
     timeout: float,
     health_check: Callable[[], None] | None = None,
+    input_gate: _StartupInputGate | None = None,
 ) -> None:
     """Select one bundled Game Start through exact semantic controls."""
 
@@ -1050,8 +1227,14 @@ async def _open_exact_authored_game_start(
         "semantic New Game control",
         controller=controller,
         health_check=health_check,
+        input_gate=input_gate,
     )
-    await _click_semantic_control(controller, reader, new_game_control_labels)
+    await _click_semantic_control(
+        controller,
+        reader,
+        new_game_control_labels,
+        input_gate=input_gate,
+    )
 
     description = f"exact authored Game Start {game_start_label!r} carousel"
     left, current_label, sequence = await _wait_for_game_start_carousel(
@@ -1060,6 +1243,7 @@ async def _open_exact_authored_game_start(
         controller=controller,
         description=description,
         health_check=health_check,
+        input_gate=input_gate,
     )
     target = _normalize_control_label(game_start_label)
     seen = {_normalize_control_label(current_label)}
@@ -1075,6 +1259,7 @@ async def _open_exact_authored_game_start(
             reader,
             expected_left=left,
             expected_label=current_label,
+            input_gate=input_gate,
         )
         left, current_label, sequence = await _wait_for_game_start_carousel(
             reader,
@@ -1086,6 +1271,7 @@ async def _open_exact_authored_game_start(
             health_check=health_check,
             previous_label=_normalize_control_label(current_label),
             minimum_sequence=max(sequence, click_sequence),
+            input_gate=input_gate,
         )
         steps += 1
         normalized = _normalize_control_label(current_label)
@@ -1106,8 +1292,14 @@ async def _open_exact_authored_game_start(
             stage_description,
             controller=controller,
             health_check=health_check,
+            input_gate=input_gate,
         )
-        await _click_semantic_control(controller, reader, labels)
+        await _click_semantic_control(
+            controller,
+            reader,
+            labels,
+            input_gate=input_gate,
+        )
 
 
 async def _wait_for_loaded_or_semantic_control(
@@ -1117,12 +1309,13 @@ async def _wait_for_loaded_or_semantic_control(
     timeout: float,
     controller: InputController,
     health_check: Callable[[], None] | None = None,
+    input_gate: _StartupInputGate | None = None,
 ) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if health_check is not None:
             health_check()
-        _abort_if_human_input(controller)
+        deadline += await _wait_for_startup_input(controller, input_gate)
         try:
             result = reader.read()
         except TelemetryReadError:
@@ -1176,6 +1369,7 @@ async def _observe_loaded_paused_health(
     *,
     duration_seconds: float,
     health_check: Callable[[], None] | None = None,
+    input_gate: _StartupInputGate | None = None,
 ) -> None:
     if duration_seconds <= 0:
         return
@@ -1196,7 +1390,7 @@ async def _observe_loaded_paused_health(
             raise LaunchFailed(
                 f"Post-load health observation failed because {title!r} appeared."
             )
-        _abort_if_human_input(controller)
+        deadline += await _wait_for_startup_input(controller, input_gate)
         try:
             result = reader.read()
         except TelemetryReadError as exc:
@@ -1226,6 +1420,7 @@ async def _perform_launch(
     config: AppConfig,
     controller: InputController,
     monitor: GpuTdrMonitor | None,
+    input_gate: _StartupInputGate,
     scenario_manifest: ScenarioFixtureManifest | None = None,
     game_start: AuthoredGameStart | None = None,
 ) -> None:
@@ -1242,10 +1437,15 @@ async def _perform_launch(
         "Kenshi launcher",
         controller=controller,
         health_check=health_check,
+        input_gate=input_gate,
     )
     launcher_rect = controller.client_rect()
     if launcher_rect.width < 1200:
-        await _execute_primitive(controller, KeyAction(key="enter"))
+        await _execute_primitive(
+            controller,
+            KeyAction(key="enter"),
+            input_gate=input_gate,
+        )
 
     status_path = config.telemetry.file.parent / "plugin_status.json"
     await _wait_until(
@@ -1254,6 +1454,7 @@ async def _perform_launch(
         "fresh telemetry plugin startup",
         controller=controller,
         health_check=health_check,
+        input_gate=input_gate,
     )
     await _wait_until(
         lambda: controller.client_rect().width >= 1200,
@@ -1261,11 +1462,12 @@ async def _perform_launch(
         "full-size Kenshi window",
         controller=controller,
         health_check=health_check,
+        input_gate=input_gate,
     )
     await asyncio.sleep(2.0)
     if monitor is not None:
         monitor.raise_if_new(force=True)
-    _abort_if_human_input(controller)
+    await input_gate.wait_for_turn()
 
     if args.continue_game:
         reader = _telemetry_read(config)
@@ -1277,6 +1479,7 @@ async def _perform_launch(
                 save_control_label=scenario_manifest.managed_save_name,
                 timeout=args.timeout,
                 health_check=health_check,
+                input_gate=input_gate,
             )
         elif game_start is not None:
             await _open_exact_authored_game_start(
@@ -1291,6 +1494,7 @@ async def _perform_launch(
                 ),
                 timeout=args.timeout,
                 health_check=health_check,
+                input_gate=input_gate,
             )
         else:
             save_control_labels = config.controls.startup_save_control_labels
@@ -1307,11 +1511,13 @@ async def _perform_launch(
                 "semantic Continue control",
                 controller=controller,
                 health_check=health_check,
+                input_gate=input_gate,
             )
             await _click_semantic_control(
                 controller,
                 reader,
                 config.controls.startup_continue_control_labels,
+                input_gate=input_gate,
             )
             loaded = await _wait_for_loaded_or_semantic_control(
                 reader,
@@ -1319,12 +1525,14 @@ async def _perform_launch(
                 timeout=args.timeout,
                 controller=controller,
                 health_check=health_check,
+                input_gate=input_gate,
             )
             if not loaded:
                 await _click_semantic_control(
                     controller,
                     reader,
                     save_control_labels,
+                    input_gate=input_gate,
                 )
 
         def game_loaded() -> bool:
@@ -1344,12 +1552,14 @@ async def _perform_launch(
             "loaded player squad",
             controller=controller,
             health_check=health_check,
+            input_gate=input_gate,
         )
         snapshot = reader.read().snapshot
         if snapshot.game.paused is False:
             await _execute_primitive(
                 controller,
                 KeyAction(key=config.controls.pause_key),
+                input_gate=input_gate,
             )
 
         def game_paused() -> bool:
@@ -1370,12 +1580,14 @@ async def _perform_launch(
             "causally confirmed paused game",
             controller=controller,
             health_check=health_check,
+            input_gate=input_gate,
         )
         await _observe_loaded_paused_health(
             reader,
             controller,
             duration_seconds=config.launch.post_load_health_seconds,
             health_check=health_check,
+            input_gate=input_gate,
         )
         if game_start is not None:
             result = reader.read()
@@ -1435,6 +1647,13 @@ async def _launch(args: argparse.Namespace) -> int:
             )
             verify_installed_authored_starts(authored_bundle, _kenshi_root())
         controller = _controller(config)
+        input_gate = _StartupInputGate(
+            controller,
+            emergency_stop_key=config.safety.emergency_stop_key,
+            quiet_seconds=config.safety.human_control_quiet_seconds,
+            countdown_seconds=config.safety.takeover_countdown_seconds,
+            poll_seconds=config.safety.takeover_poll_seconds,
+        )
         try:
             terminal_window_title = _terminal_window_title(controller)
         except (OSError, RuntimeError, ValueError):
@@ -1488,6 +1707,7 @@ async def _launch(args: argparse.Namespace) -> int:
                     config,
                     controller,
                     monitor,
+                    input_gate,
                     scenario_manifest,
                     game_start,
                 )
@@ -2421,19 +2641,30 @@ def _journey(args: argparse.Namespace) -> int:
     return result
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="./dev", description="Live Kenshi development console.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+async def _play(args: argparse.Namespace) -> int:
+    """Launch and load Kenshi, then hand the same intent to journey."""
 
-    launch = subparsers.add_parser("launch", help="Launch RE_Kenshi through the launcher.")
-    launch.add_argument("--config", required=True)
-    launch.add_argument("--timeout", type=float, default=60.0)
-    startup_source = launch.add_mutually_exclusive_group()
-    startup_source.add_argument(
-        "--no-continue",
-        dest="continue_game",
-        action="store_false",
-    )
+    launch_result = await _launch(args)
+    if launch_result != 0:
+        return launch_result
+    return _journey(args)
+
+
+def _add_launch_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    allow_no_continue: bool,
+    allow_preflight: bool,
+) -> None:
+    parser.add_argument("--config", required=True)
+    parser.add_argument("--timeout", type=float, default=60.0)
+    startup_source = parser.add_mutually_exclusive_group()
+    if allow_no_continue:
+        startup_source.add_argument(
+            "--no-continue",
+            dest="continue_game",
+            action="store_false",
+        )
     startup_source.add_argument(
         "--scenario",
         help=(
@@ -2448,7 +2679,7 @@ def build_parser() -> argparse.ArgumentParser:
             "money and party size after loading."
         ),
     )
-    launch.add_argument(
+    parser.add_argument(
         "--resume-launcher",
         action="store_true",
         help=(
@@ -2456,12 +2687,124 @@ def build_parser() -> argparse.ArgumentParser:
             "without starting a second process."
         ),
     )
-    launch.add_argument(
-        "--preflight-only",
-        action="store_true",
-        help="Check Steam, memory, and graphics state without launching Kenshi.",
+    if allow_preflight:
+        parser.add_argument(
+            "--preflight-only",
+            action="store_true",
+            help="Check Steam, memory, and graphics state without launching Kenshi.",
+        )
+    parser.set_defaults(continue_game=True, preflight_only=False)
+
+
+def _add_journey_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    include_config: bool,
+    include_scenario: bool,
+) -> None:
+    if include_config:
+        parser.add_argument("--config", required=True)
+    parser.add_argument("--objective")
+    parser.add_argument(
+        "--campaign",
+        help=(
+            "Explicit save-lineage identity for durable continuity. Required "
+            "when the generic profile has memory enabled without an attested scenario."
+        ),
     )
-    launch.set_defaults(continue_game=True)
+    if include_scenario:
+        parser.add_argument(
+            "--scenario",
+            help=(
+                "Require the current loaded fixture attestation for this scenario ID. "
+                "This is the only form that counts as recurrence evidence."
+            ),
+        )
+    parser.add_argument("--scenario-id")
+    parser.add_argument(
+        "--save-id",
+        help="Stable operator label for the exact save snapshot under test.",
+    )
+    parser.add_argument(
+        "--scenario-environment",
+        choices=["indoor", "outdoor"],
+    )
+    parser.add_argument(
+        "--scenario-danger",
+        choices=["hostile", "safe"],
+    )
+    parser.add_argument(
+        "--scenario-economy",
+        choices=["broke", "funded"],
+    )
+    parser.add_argument(
+        "--scenario-party",
+        choices=["solo", "squad"],
+    )
+    parser.add_argument(
+        "--scenario-time-of-day",
+        choices=["day", "night"],
+    )
+    parser.add_argument(
+        "--planner",
+        choices=["openai", "openrouter", "subprocess"],
+        default="openai",
+    )
+    parser.add_argument(
+        "--planner-script",
+        help=(
+            "Repository-relative Python planner script used with "
+            "--planner subprocess."
+        ),
+    )
+    parser.add_argument(
+        "--planner-arg",
+        action="append",
+        default=[],
+        help=(
+            "Exact argument for --planner-script. Repeat it; values beginning "
+            "with '-' use --planner-arg=VALUE."
+        ),
+    )
+    parser.add_argument("--steps", type=int, default=8)
+    parser.add_argument("--run-id")
+    parser.add_argument(
+        "--continuous",
+        action="store_true",
+        help="Run the continuous scheduler instead of single-step.",
+    )
+    parser.add_argument("--execute", action="store_true")
+    parser.add_argument(
+        "--native-assisted",
+        action="store_true",
+        help="Acknowledge execution through configured native-assisted command bridges.",
+    )
+    parser.add_argument(
+        "--acknowledge-continuous-live",
+        action="store_true",
+        help=(
+            "Required in addition to --continuous and the normal live gates before "
+            "an enabled continuous-live policy may execute."
+        ),
+    )
+    parser.add_argument("--exclusive", action="store_true")
+    parser.add_argument(
+        "--ownership-overlay",
+        action="store_true",
+        help="Open the visible human/agent ownership and countdown window.",
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="./dev", description="Live Kenshi development console.")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    launch = subparsers.add_parser("launch", help="Launch RE_Kenshi through the launcher.")
+    _add_launch_arguments(
+        launch,
+        allow_no_continue=True,
+        allow_preflight=True,
+    )
 
     close = subparsers.add_parser(
         "close",
@@ -2566,94 +2909,25 @@ def build_parser() -> argparse.ArgumentParser:
     restore_scenario.add_argument("scenario_id")
 
     journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
-    journey.add_argument("--config", required=True)
-    journey.add_argument("--objective")
-    journey.add_argument(
-        "--campaign",
-        help=(
-            "Explicit save-lineage identity for durable continuity. Required "
-            "when the generic profile has memory enabled without an attested scenario."
-        ),
+    _add_journey_arguments(
+        journey,
+        include_config=True,
+        include_scenario=True,
     )
-    journey.add_argument(
-        "--scenario",
-        help=(
-            "Require the current loaded fixture attestation for this scenario ID. "
-            "This is the only form that counts as recurrence evidence."
-        ),
+
+    play = subparsers.add_parser(
+        "play",
+        help="Launch, load, and immediately begin one agent journey.",
     )
-    journey.add_argument("--scenario-id")
-    journey.add_argument(
-        "--save-id",
-        help="Stable operator label for the exact save snapshot under test.",
+    _add_launch_arguments(
+        play,
+        allow_no_continue=False,
+        allow_preflight=False,
     )
-    journey.add_argument(
-        "--scenario-environment",
-        choices=["indoor", "outdoor"],
-    )
-    journey.add_argument(
-        "--scenario-danger",
-        choices=["hostile", "safe"],
-    )
-    journey.add_argument(
-        "--scenario-economy",
-        choices=["broke", "funded"],
-    )
-    journey.add_argument(
-        "--scenario-party",
-        choices=["solo", "squad"],
-    )
-    journey.add_argument(
-        "--scenario-time-of-day",
-        choices=["day", "night"],
-    )
-    journey.add_argument(
-        "--planner",
-        choices=["openai", "openrouter", "subprocess"],
-        default="openai",
-    )
-    journey.add_argument(
-        "--planner-script",
-        help=(
-            "Repository-relative Python planner script used with "
-            "--planner subprocess."
-        ),
-    )
-    journey.add_argument(
-        "--planner-arg",
-        action="append",
-        default=[],
-        help=(
-            "Exact argument for --planner-script. Repeat it; values beginning "
-            "with '-' use --planner-arg=VALUE."
-        ),
-    )
-    journey.add_argument("--steps", type=int, default=8)
-    journey.add_argument("--run-id")
-    journey.add_argument(
-        "--continuous",
-        action="store_true",
-        help="Run the continuous scheduler instead of single-step.",
-    )
-    journey.add_argument("--execute", action="store_true")
-    journey.add_argument(
-        "--native-assisted",
-        action="store_true",
-        help="Acknowledge execution through configured native-assisted command bridges.",
-    )
-    journey.add_argument(
-        "--acknowledge-continuous-live",
-        action="store_true",
-        help=(
-            "Required in addition to --continuous and the normal live gates before "
-            "an enabled continuous-live policy may execute."
-        ),
-    )
-    journey.add_argument("--exclusive", action="store_true")
-    journey.add_argument(
-        "--ownership-overlay",
-        action="store_true",
-        help="Open the visible human/agent ownership and countdown window.",
+    _add_journey_arguments(
+        play,
+        include_config=False,
+        include_scenario=False,
     )
 
     return parser
@@ -2679,6 +2953,8 @@ def main(argv: list[str] | None = None) -> int:
         return _scenario_command(args)
     if args.command == "journey":
         return _journey(args)
+    if args.command == "play":
+        return asyncio.run(_play(args))
     raise AssertionError(args.command)
 
 

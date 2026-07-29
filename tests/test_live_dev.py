@@ -782,6 +782,123 @@ def test_launch_click_aborts_inside_lease_without_emitting_input() -> None:
     asyncio.run(scenario())
 
 
+def test_startup_input_gate_resets_takeover_after_new_human_input() -> None:
+    class SequenceController(LaunchController):
+        def __init__(self) -> None:
+            super().__init__()
+            self.human_inputs = iter([True, False, True, False, False, False])
+
+        def continuous_user_input_detected(self) -> bool:
+            return next(self.human_inputs, False)
+
+    class Clock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+        async def sleep(self, seconds: float) -> None:
+            self.now += seconds
+
+    async def scenario() -> None:
+        controller = SequenceController()
+        clock = Clock()
+        gate = live_dev._StartupInputGate(
+            controller,
+            emergency_stop_key="f12",
+            quiet_seconds=1.0,
+            countdown_seconds=2.0,
+            poll_seconds=1.0,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        waited = await gate.wait_for_turn()
+
+        assert waited == 5.0
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_startup_input_gate_reacquires_after_input_inside_lease() -> None:
+    class InterruptedLeaseController(LaunchController):
+        def __init__(self) -> None:
+            super().__init__()
+            self.detected = False
+
+        @asynccontextmanager
+        async def input_lease(self, *, alt_tab_on_restore: bool = False):
+            del alt_tab_on_restore
+            self.lease_entries += 1
+            self.detected = self.lease_entries == 1
+            yield
+
+        def continuous_user_input_detected(self) -> bool:
+            detected, self.detected = self.detected, False
+            return detected
+
+    class Clock:
+        def __init__(self) -> None:
+            self.now = 0.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+        async def sleep(self, seconds: float) -> None:
+            self.now += seconds
+
+    async def scenario() -> None:
+        controller = InterruptedLeaseController()
+        clock = Clock()
+        gate = live_dev._StartupInputGate(
+            controller,
+            emergency_stop_key="f12",
+            quiet_seconds=0.0,
+            countdown_seconds=1.0,
+            poll_seconds=1.0,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+
+        await live_dev._execute_primitive(
+            controller,
+            KeyAction(key="enter"),
+            input_gate=gate,
+        )
+
+        assert controller.lease_entries == 2
+        assert controller.actions == [KeyAction(key="enter")]
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_startup_input_gate_treats_f12_as_a_permanent_brake() -> None:
+    class EmergencyController(LaunchController):
+        def emergency_stop_pressed(self, key: str) -> bool:
+            return key == "f12"
+
+    async def scenario() -> None:
+        gate = live_dev._StartupInputGate(
+            EmergencyController(),
+            emergency_stop_key="f12",
+            quiet_seconds=0.0,
+            countdown_seconds=1.0,
+            poll_seconds=0.1,
+        )
+
+        with pytest.raises(LaunchInterrupted, match="disarmed"):
+            await gate.wait_for_turn()
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
 def test_launcher_wait_fails_immediately_on_crash_reporter() -> None:
     async def scenario() -> None:
         controller = LaunchController(title="RE_Kenshi Crash Reporter")
@@ -1444,6 +1561,71 @@ def test_launch_parser_accepts_only_one_exact_startup_source() -> None:
                 "kae-03-broke-pair",
             ]
         )
+
+
+def test_play_parser_combines_launch_and_continuous_journey_options() -> None:
+    args = live_dev.build_parser().parse_args(
+        [
+            "play",
+            "--config",
+            "config/live.longform.yaml",
+            "--game-start",
+            "kae-01-funded-solo",
+            "--campaign",
+            "fresh-funded-solo",
+            "--steps",
+            "80",
+            "--continuous",
+            "--execute",
+            "--native-assisted",
+            "--acknowledge-continuous-live",
+            "--exclusive",
+        ]
+    )
+
+    assert args.game_start == "kae-01-funded-solo"
+    assert args.campaign == "fresh-funded-solo"
+    assert args.continue_game is True
+    assert args.preflight_only is False
+    argv = _journey_argv(args, "combined-run")
+    assert argv[argv.index("--steps") + 1] == "80"
+    assert argv[argv.index("--planning-mode") + 1] == "continuous"
+    assert "--execute-live-actions" in argv
+    assert "--acknowledge-native-assisted-control" in argv
+    assert "--acknowledge-continuous-live" in argv
+
+
+def test_play_starts_journey_only_after_launch_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    async def launch(_: object) -> int:
+        calls.append("launch")
+        return 0
+
+    def journey(_: object) -> int:
+        calls.append("journey")
+        return 7
+
+    monkeypatch.setattr(live_dev, "_launch", launch)
+    monkeypatch.setattr(live_dev, "_journey", journey)
+    args = object()
+
+    import asyncio
+
+    assert asyncio.run(live_dev._play(args)) == 7
+    assert calls == ["launch", "journey"]
+
+    calls.clear()
+
+    async def failed_launch(_: object) -> int:
+        calls.append("launch")
+        return 4
+
+    monkeypatch.setattr(live_dev, "_launch", failed_launch)
+    assert asyncio.run(live_dev._play(args)) == 4
+    assert calls == ["launch"]
 
 
 def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sample() -> None:

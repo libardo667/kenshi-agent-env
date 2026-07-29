@@ -4,7 +4,7 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ $# -eq 0 ]]; then
-  echo "usage: ./dev {launch|close|recover|crash|graphics|shot|telemetry|scenario|journey} [options]" >&2
+  echo "usage: ./dev {launch|play|close|recover|crash|graphics|shot|telemetry|scenario|journey} [options]" >&2
   exit 2
 fi
 
@@ -14,7 +14,7 @@ case "$command_name" in
   launch|close|recover|crash|graphics|shot|telemetry|scenario)
     config_path="$repo_dir/config/live.burnin.yaml"
     ;;
-  journey)
+  journey|play)
     config_path="$repo_dir/config/live.longform.yaml"
     ;;
   *)
@@ -111,7 +111,7 @@ windows_command=(
   "${forward_args[@]}"
 )
 
-if [[ "$command_name" != "journey" ]]; then
+if [[ "$command_name" != "journey" && "$command_name" != "play" ]]; then
   exec "${windows_command[@]}"
 fi
 

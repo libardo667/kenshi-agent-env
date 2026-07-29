@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Compacted time control into truthful playback states. `set_speed` now means
+  “running at this ordinal gear”: from pause, its controller starts at 1x and
+  then selects 3x or 5x inside one causally verified action. Raw pause/speed
+  bindings are no longer planner affordances, and resource harvesting uses the
+  same transaction. Added `./dev play` to launch, load, and begin a journey in
+  one supported command. Launcher input now yields to human activity, restarts
+  the quiet interval and takeover countdown, excludes that handoff from startup
+  timeouts, and keeps F12 as a permanent brake.
 - Bundled resource work into one planner-visible `harvest_resource` option.
   The planner selects one exact actor, resource, and bounded yield; the
   controller owns causally confirmed 5x production, normal-speed restoration,

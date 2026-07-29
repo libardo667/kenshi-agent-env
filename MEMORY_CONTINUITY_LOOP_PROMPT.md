@@ -712,9 +712,12 @@ general Kenshi competence from one successful delivery.
 
 After portable and replay evidence is green, run the strongest safe supported
 integration proof — a useful endpoint is the same explicit campaign across two supported
-`./dev journey` processes, the second planner demonstrably receiving and using a
+`./dev play`/`./dev journey` pair, the second planner demonstrably receiving and using a
 grounded unresolved commitment or route lesson. Live input acknowledgements and human
-supervision rules remain authoritative.
+supervision rules remain authoritative. Use only the checked-in `./dev` workflow for live
+control. Treat a launcher, recovery, display-lease, or journey-orchestration defect as
+goal work; never replace missing infrastructure with ad-hoc input commands that obscure
+what the supported planner path can actually do.
 
 ## Mutation testing
 
