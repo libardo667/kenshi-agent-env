@@ -419,7 +419,10 @@ def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() ->
         root = Path(__file__).resolve().parents[1]
         config = load_config(root / "config" / "live.longform.yaml")
         controller = LaunchController()
-        resource_inventory = resource_inventory_snapshot(60)
+        resource_inventory = resource_inventory_snapshot(
+            60,
+            loaded_shop_trader_count=2,
+        )
         world = launch_snapshot(61, paused=True).model_copy(
             update={
                 "ui": UIState(
@@ -495,16 +498,64 @@ def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> Non
     asyncio.run(scenario())
 
 
+def test_supported_close_refuses_an_actual_shop_inventory_layout() -> None:
+    trade = resource_inventory_snapshot(
+        75,
+        destination_open=True,
+        loaded_shop_trader_count=2,
+    )
+    shop_controls = []
+    for control in trade.ui.visible_controls or []:
+        if control.window == "IRON RESOURCE":
+            shop_controls.append(
+                control.model_copy(
+                    update={
+                        "label": (
+                            "ZU" if control.role == "text" else "Dried Meat"
+                        ),
+                        "window": "ZU",
+                        "item_name": (
+                            "Dried Meat" if control.role == "item" else None
+                        ),
+                        "section": (
+                            "main" if control.role == "item" else None
+                        ),
+                    }
+                )
+            )
+        else:
+            shop_controls.append(control)
+    actual_trade = trade.model_copy(
+        update={
+            "ui": trade.ui.model_copy(
+                update={
+                    "context_inventory_target_id": None,
+                    "visible_controls": shop_controls,
+                }
+            )
+        },
+        deep=True,
+    )
+
+    with pytest.raises(LaunchFailed, match="unexplained or missing inventory window"):
+        live_dev._safe_close_inventory_window(actual_trade)
+
+
 def test_supported_close_dismisses_source_and_destination_before_wm_close() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
         config = load_config(root / "config" / "live.longform.yaml")
         controller = LaunchController()
-        both = resource_inventory_snapshot(80, destination_open=True)
+        both = resource_inventory_snapshot(
+            80,
+            destination_open=True,
+            loaded_shop_trader_count=5,
+        )
         destination = resource_inventory_snapshot(
             81,
             source_open=False,
             destination_open=True,
+            loaded_shop_trader_count=5,
         )
         world = launch_snapshot(82, paused=True).model_copy(
             update={
@@ -584,6 +635,7 @@ def resource_inventory_snapshot(
     *,
     source_open: bool = True,
     destination_open: bool = False,
+    loaded_shop_trader_count: int = 0,
 ) -> TelemetrySnapshot:
     source_bounds = NormalizedPointerBounds(
         min_x=0.2,
@@ -645,7 +697,7 @@ def resource_inventory_snapshot(
         ],
         identity_session_id="session-close",
         game=GameState(loaded=True, paused=True),
-        active_shop_trader_count=0,
+        active_shop_trader_count=loaded_shop_trader_count,
         ui=UIState(
             active_screen="trade" if open_count == 2 else "inventory",
             modal_open=open_count > 0,

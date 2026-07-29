@@ -734,15 +734,23 @@ class TestCollectResourceOutput:
         assert "selected character" in binding.reason
         assert "inventory" in binding.reason
 
-    def test_noncommercial_two_inventory_layout_may_report_trade_screen(self) -> None:
-        binding = ACTION_CONTRACTS["collect_resource_output"].bind(
-            self._action(),
-            self._state(active_screen="trade"),
-        )
+    def test_loaded_shop_traders_never_override_exact_resource_window_owners(
+        self,
+    ) -> None:
+        contract = ACTION_CONTRACTS["collect_resource_output"]
 
-        assert binding.bound
+        for loaded_shop_traders in range(257):
+            binding = contract.bind(
+                self._action(),
+                self._state(
+                    active_screen="trade",
+                    active_shop_trader_count=loaded_shop_traders,
+                ),
+            )
 
-    def test_rejects_wrong_target_section_quantity_and_trade_context(self) -> None:
+            assert binding.bound, binding.reason
+
+    def test_rejects_wrong_target_section_and_quantity(self) -> None:
         contract = ACTION_CONTRACTS["collect_resource_output"]
         wrong_target = self._state(context_target_id="entity-other")
 
@@ -757,13 +765,45 @@ class TestCollectResourceOutput:
             self._action(source_quantity=2),
             self._state(source_quantity=1),
         ).bound
-        assert not contract.bind(
+
+    def test_a_third_inventory_owner_fails_closed(self) -> None:
+        state = self._state(active_shop_trader_count=2)
+        assert state.telemetry is not None
+        controls = list(state.telemetry.ui.visible_controls or [])
+        controls.append(
+            VisibleUIControl(
+                label="Dried Meat",
+                window="ZU",
+                role="item",
+                item_name="Dried Meat",
+                item_quantity=5,
+                section="main",
+                bounds=_bounds(0.9),
+            )
+        )
+        unexplained_window = state.model_copy(
+            update={
+                "telemetry": state.telemetry.model_copy(
+                    update={
+                        "ui": state.telemetry.ui.model_copy(
+                            update={
+                                "open_inventory_windows": 3,
+                                "visible_controls": controls,
+                            }
+                        )
+                    }
+                )
+            },
+            deep=True,
+        )
+
+        binding = ACTION_CONTRACTS["collect_resource_output"].bind(
             self._action(),
-            self._state(
-                active_screen="trade",
-                active_shop_trader_count=1,
-            ),
-        ).bound
+            unexplained_window,
+        )
+
+        assert not binding.bound
+        assert "exactly two inventory windows" in binding.reason
 
     def test_rejects_incomplete_source_or_destination_observation(self) -> None:
         state = self._state()

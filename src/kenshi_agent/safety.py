@@ -26,6 +26,7 @@ from .models import (
     SetSpeedAction,
     SkillAction,
     WaitAction,
+    normalize_control_label,
 )
 from .skills import MacroRegistry
 
@@ -553,6 +554,7 @@ class ActionGuard:
             "squad.basic",
             "ui.inventory",
             "ui.tooltip",
+            "ui.visible_controls",
         }
         missing = required_capabilities - set(telemetry.capabilities)
         if missing:
@@ -589,14 +591,14 @@ class ActionGuard:
             None,
         )
         if (
-            telemetry.active_shop_trader_count != 1
-            or target is None
+            target is None
+            or not target.name
             or target.shop_inventory_owner is not True
             or target.disposition not in {Disposition.FRIENDLY, Disposition.NEUTRAL}
         ):
             raise SafetyViolation(  # mutation: reason
                 "Purchase blocked because the exact target is "  # mutation: reason
-                "not the one verified non-hostile shop owner."  # mutation: reason
+                "not a verified non-hostile shop owner."  # mutation: reason
             )
         if (
             check_purchase_limit
@@ -661,6 +663,24 @@ class ActionGuard:
             raise SafetyViolation(  # mutation: reason
                 "Purchase arguments do not match the "  # mutation: reason
                 "current food tooltip."  # mutation: reason
+            )
+        controls = telemetry.ui.visible_controls
+        if telemetry.ui.visible_controls_complete is not True or controls is None:
+            raise SafetyViolation(  # mutation: reason
+                "Purchase requires a complete current inventory-control export."  # mutation: reason
+            )
+        seller_window = normalize_control_label(target.name)
+        tooltip_cells = [
+            control
+            for control in controls
+            if control.role == "item"
+            and control.bounds == tooltip_bounds
+            and normalize_control_label(control.window) == seller_window
+        ]
+        if len(tooltip_cells) != 1:
+            raise SafetyViolation(  # mutation: reason
+                "The inspected cell is not uniquely owned by the exact seller's "
+                "current inventory window."  # mutation: reason
             )
         x = arguments.get("x")
         y = arguments.get("y")

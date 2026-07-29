@@ -319,8 +319,6 @@ def _safe_close_inventory_window(
         raise LaunchFailed("Safe close refuses while a native command is active.")
     if ui.active_screen not in {"inventory", "trade"}:
         raise LaunchFailed(f"{refusal} does not recognize this screen.")
-    if snapshot.active_shop_trader_count != 0:
-        raise LaunchFailed(f"{refusal} refuses a shop or unknown trader state.")
     if ui.context_menu_open is True:
         raise LaunchFailed(f"{refusal} refuses an open context menu.")
     if ui.open_inventory_windows not in {1, 2}:

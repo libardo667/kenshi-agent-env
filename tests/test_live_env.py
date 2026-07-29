@@ -892,11 +892,13 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
         path: Path,
         *,
         player_inventory_open: bool = True,
+        loaded_shop_trader_count: int = 0,
     ) -> None:
         super().__init__()
         self.path = path
         self.transferred = False
         self.player_inventory_open = player_inventory_open
+        self.loaded_shop_trader_count = loaded_shop_trader_count
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -921,7 +923,7 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                     "world.context_targets",
                 ],
                 game=GameState(loaded=True, paused=True),
-                active_shop_trader_count=0,
+                active_shop_trader_count=self.loaded_shop_trader_count,
                 ui=UIState(
                     active_screen=(
                         "trade" if self.player_inventory_open else "inventory"
@@ -1817,7 +1819,8 @@ def test_collect_resource_output_requires_conserved_transfer(
 ) -> None:
     async def scenario() -> None:
         telemetry = ResourceTransferPulseTelemetry(
-            tmp_path / "telemetry.latest.json"
+            tmp_path / "telemetry.latest.json",
+            loaded_shop_trader_count=2,
         )
         controller = ResourceTransferController(telemetry)
         environment = LiveEnvironment(

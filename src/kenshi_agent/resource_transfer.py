@@ -21,10 +21,6 @@ _FRESH_TELEMETRY_REASON = (
 )
 _NO_DIALOGUE_REASON = "Resource transfer requires no open dialogue."
 _INVENTORY_SCREEN_REASON = "Resource transfer requires the inventory interface."
-_COMMERCIAL_ROUTE_REASON = (
-    "An active shop trader makes a right-click a commercial action, "
-    "so resource collection fails closed."
-)
 _TWO_WINDOWS_REASON = (
     "Resource transfer requires exactly two inventory windows: the "
     "exact source and the selected character's own inventory."
@@ -103,9 +99,10 @@ def resource_transfer_layout_error(
     Kenshi will hover and right-click a building output cell with only that
     building window open, but it will not move the item anywhere. The selected
     character's own inventory window is the destination route. `active_screen`
-    calls this two-window layout "trade" even when no trader exists, so window
-    ownership and the native trader count—not the coarse screen label—own the
-    safety decision.
+    calls this two-window layout "trade" even when no trade exists. The native
+    trader count is a registry of loaded shop-owner characters, so only exact
+    current window ownership—not that registry or the coarse screen label—owns
+    the safety decision.
     """
 
     telemetry = observation.telemetry
@@ -116,8 +113,6 @@ def resource_transfer_layout_error(
         return _NO_DIALOGUE_REASON
     if ui.active_screen not in {"inventory", "trade"}:
         return _INVENTORY_SCREEN_REASON
-    if telemetry.active_shop_trader_count != 0:
-        return _COMMERCIAL_ROUTE_REASON
     if ui.open_inventory_windows != 2:
         return _TWO_WINDOWS_REASON
     controls = ui.visible_controls

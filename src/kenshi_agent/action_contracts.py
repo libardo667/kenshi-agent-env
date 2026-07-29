@@ -2392,13 +2392,14 @@ EQUIP_ITEM_CONTRACT = ActionContract(
 
 COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     kind="collect_resource_output",
-    version="1.1",
+    version="1.2",
     model=CollectResourceOutputAction,
     summary=(
         "Right-click one exact observed output cell into the selected character. "
         "The exact resource inventory and selected character's own inventory "
-        "must both be open, with no active shop trader; after "
-        "open_context_inventory, use toggle_inventory to open the destination. "
+        "must be the only two open inventory owners; after open_context_inventory, "
+        "use toggle_inventory to open the destination. Loaded shop-owner characters "
+        "do not define the current UI layout. "
         "Success requires a causally later equal source loss and destination gain "
         "from complete inventories; a click receipt is never enough."
     ),

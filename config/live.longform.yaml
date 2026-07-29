@@ -571,7 +571,7 @@ macros:
   inspect_shop_item:
     description: Hover one item in the calibrated Barman inventory grid so its tooltip can be read before any purchase.
     arguments:
-      target_id: Exact stable ID of the one active shop owner.
+      target_id: Exact stable ID of the shop owner whose current inventory window owns the inspected cell.
       x: Normalized horizontal coordinate of the candidate item inside the Barman inventory grid.
       y: Normalized vertical coordinate of the candidate item inside the Barman inventory grid.
     visual_precondition: The exact Barman trade window is open and telemetry reports him as shop_inventory_owner.

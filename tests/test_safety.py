@@ -1307,6 +1307,20 @@ def purchase_observation(*, include_tooltip: bool = True) -> Observation:
         "active_screen": "trade",
         "selected_character_id": "player:1",
         "selected_character_ids": ["player:1"],
+        "visible_controls_complete": True,
+        "visible_controls": [
+            {
+                "label": "item_3",
+                "role": "item",
+                "window": "BARMAN",
+                "bounds": {
+                    "min_x": 0.30,
+                    "max_x": 0.34,
+                    "min_y": 0.34,
+                    "max_y": 0.38,
+                },
+            }
+        ],
     }
     if include_tooltip:
         ui.update(
@@ -1339,6 +1353,7 @@ def purchase_observation(*, include_tooltip: bool = True) -> Observation:
                     "squad.hunger",
                     "ui.inventory",
                     "ui.tooltip",
+                    "ui.visible_controls",
                 ],
                 "game": {"paused": True, "money": 1000},
                 "ui": ui,
@@ -1393,7 +1408,7 @@ def legacy_purchase_action(**overrides: object) -> SkillAction:
         "missing_telemetry",
         "missing_capability",
         "no_primary_selection",
-        "wrong_trader_count",
+        "wrong_window_owner",
         "missing_target",
         "not_shop_owner",
         "hostile",
@@ -1431,9 +1446,24 @@ def test_legacy_purchase_requires_every_independent_authority_fact(
                 )
             }
         )
-    elif failed_fact == "wrong_trader_count":
+    elif failed_fact == "wrong_window_owner":
+        assert telemetry.ui.visible_controls is not None
         observation = observation.model_copy(
-            update={"telemetry": telemetry.model_copy(update={"active_shop_trader_count": 0})}
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={
+                        "ui": telemetry.ui.model_copy(
+                            update={
+                                "visible_controls": [
+                                    telemetry.ui.visible_controls[0].model_copy(
+                                        update={"window": "OTHER SHOP"}
+                                    )
+                                ]
+                            }
+                        )
+                    }
+                )
+            }
         )
     elif failed_fact == "missing_target":
         observation = observation.model_copy(
@@ -1458,6 +1488,24 @@ def test_legacy_purchase_requires_every_independent_authority_fact(
 
     with pytest.raises(SafetyViolation):
         legacy_purchase_guard().validate(legacy_purchase_action(), observation)
+
+
+def test_loaded_shop_trader_count_never_selects_the_current_legacy_seller() -> None:
+    action = legacy_purchase_action()
+
+    for loaded_shop_traders in range(257):
+        observation = purchase_observation()
+        telemetry = observation.telemetry
+        assert telemetry is not None
+        observation = observation.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={"active_shop_trader_count": loaded_shop_traders}
+                )
+            }
+        )
+
+        assert legacy_purchase_guard().validate(action, observation) == action
 
 
 @pytest.mark.parametrize("target_id", [None, "", 7])

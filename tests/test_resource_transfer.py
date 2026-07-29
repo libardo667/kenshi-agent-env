@@ -44,6 +44,7 @@ def observation(
     source_complete: bool = True,
     destination_complete: bool = True,
     destination_window_open: bool = True,
+    loaded_shop_trader_count: int = 0,
 ) -> Observation:
     return Observation(
         run_id="resource-transfer",
@@ -65,7 +66,7 @@ def observation(
                 "squad.inventory",
             ],
             game=GameState(loaded=True, paused=True),
-            active_shop_trader_count=0,
+            active_shop_trader_count=loaded_shop_trader_count,
             ui=UIState(
                 active_screen=(
                     "trade" if destination_window_open else "inventory"
@@ -155,6 +156,30 @@ def test_equal_source_loss_and_destination_gain_is_transferred() -> None:
     assert evidence.destination_quantity_after == 5
     assert evidence.selected_character_id == "entity-hep"
     assert evidence.observed_after_sequence == 11
+
+
+def test_loaded_shop_traders_do_not_erase_a_conserved_resource_transfer() -> None:
+    evidence = evaluate_resource_transfer(
+        ACTION,
+        before=observation(
+            10,
+            source_quantities=[2],
+            destination_quantities=[],
+            loaded_shop_trader_count=2,
+        ),
+        after=observation(
+            11,
+            source_quantities=[],
+            destination_quantities=[2],
+            loaded_shop_trader_count=2,
+        ),
+    )
+
+    assert evidence.status is ResourceTransferStatus.TRANSFERRED
+    assert evidence.source_quantity_before == 2
+    assert evidence.source_quantity_after == 0
+    assert evidence.destination_quantity_before == 0
+    assert evidence.destination_quantity_after == 2
 
 
 def test_every_positive_conserved_quantity_transfers_but_zero_does_not() -> None:
