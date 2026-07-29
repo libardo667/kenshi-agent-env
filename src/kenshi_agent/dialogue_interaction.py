@@ -28,7 +28,6 @@ from .models import (
     Action,
     ConditionKind,
     ConditionResult,
-    ConsultAdvisorAction,
     ControlMode,
     IdempotencyPolicy,
     Observation,
@@ -390,13 +389,6 @@ def dialogue_interaction_policy_errors(
         errors.append(
             f"plan has {len(plan.steps)} steps; the generic interaction policy allows at "
             f"most {max_steps}"
-        )
-
-    advisor_steps = [step for step in plan.steps if isinstance(step.action, ConsultAdvisorAction)]
-    if advisor_steps and len(plan.steps) != 1:
-        errors.append(
-            "consult_advisor must be the plan's only step, because its brief is "
-            "available only to the next strategic planner call"
         )
 
     affordance_request_steps = [

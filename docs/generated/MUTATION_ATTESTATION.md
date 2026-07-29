@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-71 shards: 2 attested, 18 unverified, 0 source-changed, 51 never; 1091 open mutants where the numbers still apply.
+72 shards: 3 attested, 18 unverified, 0 source-changed, 51 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -59,6 +59,7 @@ promises only that the module under test has not moved.
 | `final_safe_state` | — | — | — | — | — | never |
 | `gpu_events` | — | — | — | — | — | never |
 | `graphics_profile` | — | — | — | — | — | never |
+| `hosted_continuation` | 69 | 69 | 0 | 2026-07-29T17:51:11Z | 9b3ccfa0ecb94f4f | attested |
 | `input_boundary` | 140 | 140 | 0 | 2026-07-27T22:51:35Z | — | unverified |
 | `live_dev` | — | — | — | — | — | never |
 | `live_native_smoke_planner` | — | — | — | — | — | never |

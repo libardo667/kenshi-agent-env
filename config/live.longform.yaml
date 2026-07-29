@@ -114,6 +114,7 @@ advisor:
   # timeout cannot silently shorten a read-only hosted call.
   timeout_seconds: 90
   max_output_tokens: 2500
+  max_output_continuations: 2
   corpus_file: ../knowledge/kenshi_strategy_v1.yaml
   max_calls_per_run: 4
   cooldown_steps: 12

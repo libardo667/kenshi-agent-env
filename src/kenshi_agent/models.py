@@ -2846,6 +2846,7 @@ class AuthoredPlannerContext:
 
 
 class AdvisorConsultStatus(StrEnum):
+    PENDING = "pending"
     ANSWERED = "answered"
     DISABLED = "disabled"
     COOLDOWN = "cooldown"
@@ -2889,6 +2890,7 @@ class AdvisorAvailability(StrictModel):
     enabled: bool = False
     may_request: bool = False
     suggested: bool = False
+    request_pending: bool = False
     reason: str = Field(default="The strategic advisor is disabled.", max_length=600)
     calls_used: int = Field(default=0, ge=0)
     max_calls: int = Field(default=0, ge=0)

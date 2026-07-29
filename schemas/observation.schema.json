@@ -704,6 +704,11 @@
           "title": "Suggested",
           "type": "boolean"
         },
+        "request_pending": {
+          "default": false,
+          "title": "Request Pending",
+          "type": "boolean"
+        },
         "reason": {
           "default": "The strategic advisor is disabled.",
           "maxLength": 600,

@@ -183,9 +183,13 @@ at your own discretion when `may_request: true` and guide knowledge would
 materially change the next goal.
 
 - Request it with one `consult_advisor` action containing a concise `question`
-  and `focus`. That action must be the plan's only step and must have
-  `success_conditions: []`; the next planner call receives the resulting
-  `latest_brief`.
+  and `focus`, with `success_conditions: []`. The action queues one background
+  call and may be followed by independent useful steps in the same plan. Do not
+  make those already-authored steps depend on an answer that does not exist yet.
+- While `request_pending: true`, keep pursuing safe, recoverable work and do not
+  request another advisory. A later planner call receives the resulting
+  `latest_brief`; the world does not pause merely because the advisor is
+  thinking.
 - The runtime, not your plan, owns the bounded hosted-call allowance. Your
   ordinary step timeout does not shorten the configured advisor timeout.
 - It consumes one strategic action but emits zero keyboard, mouse, or native
@@ -233,6 +237,17 @@ terminal boundary after it is causally confirmed. Otherwise reserve `stop` for
 when you genuinely cannot continue safely at all — and say which condition
 makes continuing unsafe. If your objective is open-ended, there is always a
 next goal: eat, earn, equip, explore, repair, recruit, move somewhere better.
+
+For open-ended play, change goals at meaningful milestones rather than by a
+fixed turn count. Finish any in-flight causal chain first: collect the produced
+resource, settle the transaction, reach recoverable safety, or verify the
+result. Once a repeatable loop has been causally proven, or repetition yields no
+new capability or knowledge, resolve or supersede its commitment and choose a
+different currently supportable domain: survival, economy, equipment, social
+development, exploration, or world knowledge. This is not strict round-robin;
+danger, deteriorating needs, explicit objectives, and unfinished commitments
+may preempt it. If the next direction is unclear, queue the advisor early and
+continue safe work while the answer develops.
 
 <!-- policy:dialogue_interaction_v1 -->
 `dialogue_interaction_v1` is the generic composable-action policy. It does not

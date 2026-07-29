@@ -142,6 +142,7 @@ class AdvisorConfig(ConfigModel):
     ] = "medium"
     timeout_seconds: float = Field(default=90.0, ge=1.0, le=600.0)
     max_output_tokens: int = Field(default=2500, ge=512, le=20000)
+    max_output_continuations: int = Field(default=2, ge=0, le=8)
     corpus_file: Path = Path("../knowledge/kenshi_strategy_v1.yaml")
     max_calls_per_run: int = Field(default=4, ge=0, le=100)
     cooldown_steps: int = Field(default=12, ge=0, le=1000)

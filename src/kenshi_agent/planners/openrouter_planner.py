@@ -12,6 +12,11 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 from ..config import PlannerConfig
+from ..hosted_continuation import (
+    CONTINUE_STRUCTURED_JSON_SUFFIX,
+    TRUNCATED_FINISH_REASONS,
+    assistant_continuation,
+)
 from ..models import (
     Observation,
     PlanEnvelope,
@@ -105,22 +110,6 @@ def _contains_screenshot(value: object) -> bool:
     if value.get("type") == "image_url":
         return True
     return any(_contains_screenshot(item) for item in value.values())
-
-
-def _assistant_continuation(message: object) -> dict[str, Any]:
-    assistant: dict[str, Any] = {
-        "role": "assistant",
-        "content": _field(message, "content") or "",
-    }
-    reasoning_details = _field(message, "reasoning_details")
-    if reasoning_details:
-        # OpenRouter requires these opaque blocks to be passed back unmodified.
-        assistant["reasoning_details"] = reasoning_details
-    else:
-        reasoning = _field(message, "reasoning")
-        if reasoning:
-            assistant["reasoning"] = reasoning
-    return assistant
 
 
 def _sum_optional(
@@ -335,11 +324,7 @@ class OpenRouterPlanner(Planner):
             response_parts.append(
                 message.content if isinstance(message.content, str) else ""
             )
-            if diagnostics.finish_reason not in {
-                "length",
-                "max_tokens",
-                "max_output_tokens",
-            }:
+            if diagnostics.finish_reason not in TRUNCATED_FINISH_REASONS:
                 break
             aggregate = _aggregate_diagnostics(
                 segments,
@@ -351,18 +336,13 @@ class OpenRouterPlanner(Planner):
                 raise HostedPlannerResponseError("output_truncated", aggregate)
             continuation_messages = [
                 *sent_messages,
-                _assistant_continuation(message),
+                assistant_continuation(message),
                 {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": (
-                                "Continue the same structured response from the exact "
-                                "next character. Return only the remaining JSON suffix. "
-                                "Do not repeat any earlier character, open a code fence, "
-                                "restart the reasoning, or revise the plan."
-                            ),
+                            "text": CONTINUE_STRUCTURED_JSON_SUFFIX,
                         }
                     ],
                 },

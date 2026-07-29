@@ -19,9 +19,16 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 import yaml
-from pydantic import Field, model_validator
+from pydantic import Field, ValidationError, model_validator
 
 from .config import AdvisorConfig
+from .hosted_continuation import (
+    CONTINUE_STRUCTURED_JSON_SUFFIX,
+    TRUNCATED_FINISH_REASONS,
+    assistant_continuation,
+    message_field,
+    structured_json_was_truncated,
+)
 from .models import (
     ActionOutcome,
     AdvisorAttribution,
@@ -193,24 +200,71 @@ class OpenRouterStrategyAdvisor:
                 ),
             },
         ]
+        request_base = {
+            "model": self.model,
+            "max_completion_tokens": self.config.max_output_tokens,
+            "extra_body": {
+                "provider": {
+                    "sort": self.config.provider_sort,
+                    "require_parameters": self.config.require_parameters,
+                }
+            },
+            **extra,
+        }
+        sent_messages = messages
         async with asyncio.timeout(self.config.timeout_seconds):
             response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
+                messages=sent_messages,
                 response_format=response_format,
-                max_completion_tokens=self.config.max_output_tokens,
-                extra_body={
-                    "provider": {
-                        "sort": self.config.provider_sort,
-                        "require_parameters": self.config.require_parameters,
-                    }
-                },
-                **extra,
+                **request_base,
             )
-        message = response.choices[0].message
-        if not message.content:
-            raise RuntimeError("OpenRouter advisor response contained no text.")
-        return AdvisorDraft.model_validate_json(_json_body(message.content))
+
+        response_parts: list[str] = []
+        continuations = 0
+        while True:
+            choice = response.choices[0]
+            message = choice.message
+            content = message_field(message, "content")
+            if not isinstance(content, str) or not content:
+                raise RuntimeError("OpenRouter advisor response contained no text.")
+            response_parts.append(content)
+            combined = "".join(response_parts)
+            finish_reason = message_field(choice, "finish_reason")
+            try:
+                draft = AdvisorDraft.model_validate_json(_json_body(combined))
+            except ValidationError as exc:
+                truncated = (
+                    isinstance(finish_reason, str)
+                    and finish_reason in TRUNCATED_FINISH_REASONS
+                    or structured_json_was_truncated(exc)
+                )
+                if not truncated:
+                    raise
+                validation_error = exc
+            else:
+                # A valid complete object is authoritative even if a provider
+                # mislabeled its terminal reason as length.
+                return draft
+
+            if continuations >= self.config.max_output_continuations:
+                raise RuntimeError(
+                    "Advisor structured response remained truncated after "
+                    f"{continuations} continuation(s): {validation_error}"
+                ) from validation_error
+            continuations += 1
+            sent_messages = [
+                *sent_messages,
+                assistant_continuation(message),
+                {
+                    "role": "user",
+                    "content": CONTINUE_STRUCTURED_JSON_SUFFIX,
+                },
+            ]
+            async with asyncio.timeout(self.config.timeout_seconds):
+                response = await self.client.chat.completions.create(
+                    messages=sent_messages,
+                    **request_base,
+                )
 
 
 class AdvisorSession:
@@ -229,11 +283,22 @@ class AdvisorSession:
         self.last_call_step: int | None = None
         self.last_state_fingerprint: str | None = None
         self.latest_brief: AdvisorBrief | None = None
+        self.request_pending = False
 
     def availability(self, observation: Observation) -> AdvisorAvailability:
         fingerprint = advisor_state_fingerprint(observation)
         remaining = max(self.config.max_calls_per_run - self.calls_used, 0)
         cooldown = self._cooldown_remaining(observation.step_index)
+        if self.request_pending:
+            return self._availability(
+                may_request=False,
+                suggested=False,
+                reason=(
+                    "An advisor request is already pending; keep playing and "
+                    "use the brief after it arrives."
+                ),
+                cooldown=cooldown,
+            )
         if remaining == 0:
             return self._availability(
                 may_request=False,
@@ -289,7 +354,9 @@ class AdvisorSession:
         fingerprint = advisor_state_fingerprint(observation)
         availability = self.availability(observation)
         if not availability.may_request:
-            if self.calls_used >= self.config.max_calls_per_run:
+            if availability.request_pending:
+                status = AdvisorConsultStatus.PENDING
+            elif self.calls_used >= self.config.max_calls_per_run:
                 status = AdvisorConsultStatus.BUDGET_EXHAUSTED
             elif availability.cooldown_steps_remaining > 0:
                 status = AdvisorConsultStatus.COOLDOWN
@@ -306,45 +373,51 @@ class AdvisorSession:
         self.calls_used += 1
         self.last_call_step = observation.step_index
         self.last_state_fingerprint = fingerprint
+        self.request_pending = True
         try:
-            draft = await self.client.advise(
-                action=action,
-                observation=observation,
-                corpus=self.corpus,
-            )
-            source_ids = _validate_source_ids(draft, self.corpus)
-            sources = self.corpus.source_map()
-            brief = AdvisorBrief(
-                brief_id=f"advisor-{uuid4().hex}",
-                question=action.question,
-                focus=action.focus,
-                based_on_revision=observation.world_revision,
-                summary=draft.summary,
-                recommendations=draft.recommendations,
-                uncertainties=draft.uncertainties,
-                sources=[sources[source_id].attribution() for source_id in source_ids],
-                corpus_version=self.corpus.corpus_version,
-                provider=self.client.provider,
-                model=self.client.model,
-            )
-        except Exception as exc:
+            try:
+                draft = await self.client.advise(
+                    action=action,
+                    observation=observation,
+                    corpus=self.corpus,
+                )
+                source_ids = _validate_source_ids(draft, self.corpus)
+                sources = self.corpus.source_map()
+                brief = AdvisorBrief(
+                    brief_id=f"advisor-{uuid4().hex}",
+                    question=action.question,
+                    focus=action.focus,
+                    based_on_revision=observation.world_revision,
+                    summary=draft.summary,
+                    recommendations=draft.recommendations,
+                    uncertainties=draft.uncertainties,
+                    sources=[
+                        sources[source_id].attribution() for source_id in source_ids
+                    ],
+                    corpus_version=self.corpus.corpus_version,
+                    provider=self.client.provider,
+                    model=self.client.model,
+                )
+            except Exception as exc:
+                return AdvisorConsultEvidence(
+                    status=AdvisorConsultStatus.FAILED,
+                    reason=f"Advisor call failed: {type(exc).__name__}: {exc}",
+                    calls_used=self.calls_used,
+                    max_calls=self.config.max_calls_per_run,
+                    state_fingerprint=fingerprint,
+                )
+
+            self.latest_brief = brief
             return AdvisorConsultEvidence(
-                status=AdvisorConsultStatus.FAILED,
-                reason=f"Advisor call failed: {type(exc).__name__}: {exc}",
+                status=AdvisorConsultStatus.ANSWERED,
+                reason="The read-only advisor returned a source-attributed strategic brief.",
                 calls_used=self.calls_used,
                 max_calls=self.config.max_calls_per_run,
                 state_fingerprint=fingerprint,
+                brief=brief,
             )
-
-        self.latest_brief = brief
-        return AdvisorConsultEvidence(
-            status=AdvisorConsultStatus.ANSWERED,
-            reason="The read-only advisor returned a source-attributed strategic brief.",
-            calls_used=self.calls_used,
-            max_calls=self.config.max_calls_per_run,
-            state_fingerprint=fingerprint,
-            brief=brief,
-        )
+        finally:
+            self.request_pending = False
 
     def _cooldown_remaining(self, step_index: int) -> int:
         if self.last_call_step is None:
@@ -364,6 +437,7 @@ class AdvisorSession:
             enabled=True,
             may_request=may_request,
             suggested=suggested,
+            request_pending=self.request_pending,
             reason=reason,
             calls_used=self.calls_used,
             max_calls=self.config.max_calls_per_run,

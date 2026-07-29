@@ -19,6 +19,7 @@ from .models import (
     Action,
     ActionReceipt,
     ActivePlanContext,
+    AdvisorConsultStatus,
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
     CameraRecoveryStatus,
@@ -2000,10 +2001,18 @@ class ContinuousPlanExecutor:
             status = "missing_evidence"
         else:
             reason = evidence.reason
-            succeeded = evidence.status.value == "answered"
+            succeeded = (
+                evidence.status is AdvisorConsultStatus.ANSWERED
+                or (
+                    evidence.status is AdvisorConsultStatus.PENDING
+                    and result.receipt.accepted
+                )
+            )
             status = evidence.status.value
         terminal_event = (
-            "advisor_completed"
+            "advisor_queued"
+            if status == AdvisorConsultStatus.PENDING.value and succeeded
+            else "advisor_completed"
             if succeeded
             else "advisor_failed"
             if status == "failed"

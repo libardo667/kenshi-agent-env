@@ -236,6 +236,8 @@ class AgentRuntime:
         )
         self._pending_fieldbook_read: FieldbookReadReceipt | None = None
         self._advisor_brief_ids: set[str] = set()
+        self._advisor_task: asyncio.Task[None] | None = None
+        self._advisor_result_ready = False
         self._planner_contexts_issued = 0
         self._continuity = ContinuityAuthority(
             run_id=run_id,
@@ -770,6 +772,7 @@ class AgentRuntime:
                 )
             return summary
         finally:
+            await self._finish_advisor_task()
             await self._close_environment()
 
     async def _run_continuous(
@@ -1497,6 +1500,7 @@ class AgentRuntime:
                 await self._finish_safety_supervisor(safety_supervisor)
             if observation_pump is not None:
                 await observation_pump.stop()
+            await self._finish_advisor_task()
             if state_store is not None:
                 state_store.shutdown()
                 self.logger.write(
@@ -2581,6 +2585,32 @@ class AgentRuntime:
         )
 
     def _with_memories(self, observation: Observation) -> Observation:
+        advisor_availability = (
+            self.advisor.availability(observation)
+            if self.advisor is not None
+            else disabled_advisor_availability()
+        )
+        advisor_task = getattr(self, "_advisor_task", None)
+        if (
+            advisor_task is not None
+            and not advisor_task.done()
+            and not getattr(self, "_advisor_result_ready", False)
+            and not advisor_availability.request_pending
+        ):
+            # create_task schedules the provider coroutine for the next event-loop
+            # turn. Expose the reservation immediately so a faster planner cannot
+            # launch a duplicate in that small gap.
+            advisor_availability = advisor_availability.model_copy(
+                update={
+                    "may_request": False,
+                    "suggested": False,
+                    "request_pending": True,
+                    "reason": (
+                        "An advisor request is already pending; keep playing and "
+                        "use the brief after it arrives."
+                    ),
+                }
+            )
         updates: dict[str, object] = {
             "planning_mode": self.planning_config.mode,
             "live_execution_policy": self.planning_config.live_execution_policy,
@@ -2596,11 +2626,7 @@ class AgentRuntime:
             "continuity_reads_degraded_reason": (
                 self._continuity.reads_degraded_reason
             ),
-            "advisor": (
-                self.advisor.availability(observation)
-                if self.advisor is not None
-                else disabled_advisor_availability()
-            ),
+            "advisor": advisor_availability,
             "affordance_requests": list(self._affordance_requests),
             "memory_search": self._pending_memory_search,
             "fieldbook_read": getattr(self, "_pending_fieldbook_read", None),
@@ -2766,9 +2792,8 @@ class AgentRuntime:
         plan_version: int,
         step_id: str,
     ) -> AdvisorActionResult:
-        """Execute a cognitive request under the advisor-owned provider bound."""
+        """Queue a cognitive request without holding up foreground play."""
 
-        started_at = datetime.now(UTC)
         if self.advisor is None:
             evidence = AdvisorConsultEvidence(
                 status=AdvisorConsultStatus.DISABLED,
@@ -2777,33 +2802,185 @@ class AgentRuntime:
                 max_calls=0,
                 state_fingerprint=advisor_state_fingerprint(observation),
             )
-        else:
-            try:
-                # The hosted client owns this bound. A planner-authored step timeout
-                # describes world-step verification and must not silently shorten a
-                # read-only provider call whose configured allowance may be longer.
-                evidence = await self.advisor.consult(action, observation)
-            except TimeoutError:
-                evidence = AdvisorConsultEvidence(
-                    status=AdvisorConsultStatus.FAILED,
-                    reason=(
-                        f"Advisor call exceeded its configured provider timeout of "
-                        f"{self.advisor.config.timeout_seconds:.2f} seconds."
-                    ),
-                    calls_used=self.advisor.calls_used,
-                    max_calls=self.advisor.config.max_calls_per_run,
-                    state_fingerprint=advisor_state_fingerprint(observation),
-                )
-        finished_at = datetime.now(UTC)
+            return self._finish_immediate_advisor_action(
+                action,
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+                evidence=evidence,
+            )
+
+        self._reap_finished_advisor_task()
+        if self._advisor_task is not None and not self._advisor_task.done():
+            evidence = AdvisorConsultEvidence(
+                status=AdvisorConsultStatus.PENDING,
+                reason=(
+                    "An advisor request is already pending; the duplicate request "
+                    "was not launched."
+                ),
+                calls_used=self.advisor.calls_used,
+                max_calls=self.advisor.config.max_calls_per_run,
+                state_fingerprint=advisor_state_fingerprint(observation),
+            )
+            return self._finish_immediate_advisor_action(
+                action,
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+                evidence=evidence,
+            )
+
+        availability = self.advisor.availability(observation)
+        if not availability.may_request:
+            # Suppression paths do not reach a provider and complete immediately.
+            evidence = await self.advisor.consult(action, observation)
+            return self._finish_immediate_advisor_action(
+                action,
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+                evidence=evidence,
+            )
+
+        started_at = datetime.now(UTC)
+        evidence = AdvisorConsultEvidence(
+            status=AdvisorConsultStatus.PENDING,
+            reason=(
+                "The advisor request was queued in the background; foreground "
+                "play may continue while it is thinking."
+            ),
+            calls_used=min(
+                self.advisor.calls_used + 1,
+                self.advisor.config.max_calls_per_run,
+            ),
+            max_calls=self.advisor.config.max_calls_per_run,
+            state_fingerprint=advisor_state_fingerprint(observation),
+        )
+        receipt = ActionReceipt(
+            action=action,
+            control_mode=self.control_mode,
+            advisor=evidence,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started_at,
+            finished_at=datetime.now(UTC),
+            primitive_actions=0,
+            message=evidence.reason,
+            error_type=None,
+        )
+        self.logger.write(
+            "action_receipt",
+            step_index=observation.step_index,
+            payload=receipt,
+        )
+        self.logger.write(
+            "advisor_request_queued",
+            step_index=observation.step_index,
+            payload=self._advisor_event_payload(
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+                evidence=evidence,
+            ),
+        )
+        if self.reporter is not None:
+            self.reporter.action_receipt(
+                step_index=observation.step_index,
+                receipt=receipt,
+            )
+        self._advisor_task = asyncio.create_task(
+            self._complete_advisor_action(
+                action,
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+            ),
+            name=f"advisor-{self.run_id}-{plan_id}-{step_id}",
+        )
+        self._advisor_result_ready = False
+        latest = self._advisor_context_observation(observation)
+        return AdvisorActionResult(observation=latest, receipt=receipt)
+
+    async def _complete_advisor_action(
+        self,
+        action: ConsultAdvisorAction,
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+    ) -> None:
+        """Finish one single-flight provider call and publish only its advice."""
+
+        assert self.advisor is not None
+        try:
+            evidence = await self.advisor.consult(action, observation)
+        except asyncio.CancelledError:
+            self.logger.write(
+                "advisor_cancelled",
+                step_index=observation.step_index,
+                payload={
+                    "plan_id": plan_id,
+                    "plan_version": plan_version,
+                    "step_id": step_id,
+                    "world_revision": observation.world_revision.model_dump(mode="json"),
+                    "controller_primitives": 0,
+                    "world_command_created": False,
+                    "reason": "The run ended while the read-only advisory was pending.",
+                },
+            )
+            raise
+        except TimeoutError:
+            evidence = AdvisorConsultEvidence(
+                status=AdvisorConsultStatus.FAILED,
+                reason=(
+                    "Advisor call exceeded its configured provider timeout of "
+                    f"{self.advisor.config.timeout_seconds:.2f} seconds."
+                ),
+                calls_used=self.advisor.calls_used,
+                max_calls=self.advisor.config.max_calls_per_run,
+                state_fingerprint=advisor_state_fingerprint(observation),
+            )
+        self._advisor_result_ready = True
+        if evidence.brief is not None:
+            # Only a brief this run actually issued may later be cited as the
+            # source of a memory, and only ever as advice.
+            self._advisor_brief_ids.add(evidence.brief.brief_id)
+        self.logger.write(
+            "advisor_result",
+            step_index=observation.step_index,
+            payload=self._advisor_event_payload(
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+                evidence=evidence,
+            ),
+        )
+        self._advisor_context_observation(observation)
+
+    def _finish_immediate_advisor_action(
+        self,
+        action: ConsultAdvisorAction,
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+        evidence: AdvisorConsultEvidence,
+    ) -> AdvisorActionResult:
         answered = evidence.status is AdvisorConsultStatus.ANSWERED
         attempted = evidence.status in {
             AdvisorConsultStatus.ANSWERED,
             AdvisorConsultStatus.FAILED,
         }
-        if evidence.brief is not None:
-            # Only a brief this run actually issued may later be cited as the
-            # source of a memory, and only ever as advice.
-            self._advisor_brief_ids.add(evidence.brief.brief_id)
+        now = datetime.now(UTC)
         receipt = ActionReceipt(
             action=action,
             control_mode=self.control_mode,
@@ -2811,8 +2988,8 @@ class AgentRuntime:
             accepted=answered,
             executed=attempted,
             dry_run=False,
-            started_at=started_at,
-            finished_at=finished_at,
+            started_at=now,
+            finished_at=now,
             primitive_actions=0,
             message=evidence.reason,
             error_type=None if answered else evidence.status.value,
@@ -2825,33 +3002,105 @@ class AgentRuntime:
         self.logger.write(
             "advisor_result",
             step_index=observation.step_index,
-            payload={
-                "plan_id": plan_id,
-                "plan_version": plan_version,
-                "step_id": step_id,
-                "world_revision": observation.world_revision.model_dump(mode="json"),
-                "controller_primitives": 0,
-                "world_command_created": False,
-                "evidence": evidence.model_dump(mode="json"),
-            },
+            payload=self._advisor_event_payload(
+                observation,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=step_id,
+                evidence=evidence,
+            ),
         )
         if self.reporter is not None:
             self.reporter.action_receipt(
                 step_index=observation.step_index,
                 receipt=receipt,
             )
-        # A hosted advisor may take several seconds while the observation pump
-        # keeps publishing. The brief remains grounded in the revision supplied
-        # to `consult`, but planner context must be decorated onto the store's
-        # current revision rather than trying to overwrite that newer world.
-        current_store_observation = (
-            self._state_store.latest if self._state_store is not None else None
+        return AdvisorActionResult(
+            observation=self._advisor_context_observation(observation),
+            receipt=receipt,
         )
-        context_basis = current_store_observation or observation
-        latest = self._with_memories(context_basis)
-        if self._state_store is not None:
-            latest = self._state_store.decorate_latest(latest)
-        return AdvisorActionResult(observation=latest, receipt=receipt)
+
+    @staticmethod
+    def _advisor_event_payload(
+        observation: Observation,
+        *,
+        plan_id: str,
+        plan_version: int,
+        step_id: str,
+        evidence: AdvisorConsultEvidence,
+    ) -> dict[str, object]:
+        return {
+            "plan_id": plan_id,
+            "plan_version": plan_version,
+            "step_id": step_id,
+            "world_revision": observation.world_revision.model_dump(mode="json"),
+            "controller_primitives": 0,
+            "world_command_created": False,
+            "evidence": evidence.model_dump(mode="json"),
+        }
+
+    def _advisor_context_observation(
+        self,
+        observation: Observation,
+    ) -> Observation:
+        current = self._state_store.latest if self._state_store is not None else None
+        latest = self._with_memories(current or observation)
+        if self._state_store is None:
+            return latest
+        try:
+            return self._state_store.decorate_latest(latest)
+        except WorldStateError:
+            # The observation pump can publish between reading and decorating.
+            # The next planner call always re-decorates the latest revision, so
+            # advice is retained by AdvisorSession even if this opportunistic
+            # context refresh loses that race.
+            current = self._state_store.latest
+            return self._with_memories(current) if current is not None else latest
+
+    async def _finish_advisor_task(self) -> None:
+        task = self._advisor_task
+        if task is None:
+            return
+        if not task.done():
+            task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            self.logger.write(
+                "advisor_task_failed",
+                payload={
+                    "task": task.get_name(),
+                    "error_type": type(exc).__name__,
+                    "reason": self._bounded_text(str(exc), 1_000),
+                },
+            )
+        finally:
+            if self._advisor_task is task:
+                self._advisor_task = None
+            self._advisor_result_ready = False
+
+    def _reap_finished_advisor_task(self) -> None:
+        task = self._advisor_task
+        if task is None or not task.done():
+            return
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            self.logger.write(
+                "advisor_task_failed",
+                payload={
+                    "task": task.get_name(),
+                    "error_type": type(exc).__name__,
+                    "reason": self._bounded_text(str(exc), 1_000),
+                },
+            )
+        finally:
+            self._advisor_task = None
+            self._advisor_result_ready = False
 
     def _apply_plan_continuity(
         self,
