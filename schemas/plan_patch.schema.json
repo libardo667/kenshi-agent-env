@@ -973,6 +973,9 @@
               "$ref": "#/$defs/MoveInDirectionAction"
             },
             {
+              "$ref": "#/$defs/TravelToMapDestinationAction"
+            },
+            {
               "$ref": "#/$defs/ExitCurrentBuildingAction"
             },
             {
@@ -1826,6 +1829,29 @@
         "max_age_seconds"
       ],
       "title": "TelemetryFreshCondition",
+      "type": "object"
+    },
+    "TravelToMapDestinationAction": {
+      "additionalProperties": false,
+      "description": "Travel to one exact settlement marker already known to the player.\n\nNative code re-resolves the discovered marker, chooses Kenshi's waypoint,\nissues one pathing order, and owns camera follow and arrival. The planner\nnever supplies map coordinates or re-authors movement pulses.",
+      "properties": {
+        "kind": {
+          "const": "travel_to_map_destination",
+          "default": "travel_to_map_destination",
+          "title": "Kind",
+          "type": "string"
+        },
+        "destination_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Destination Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "destination_id"
+      ],
+      "title": "TravelToMapDestinationAction",
       "type": "object"
     },
     "UpdateFieldbookSummaryOperation": {

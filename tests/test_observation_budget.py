@@ -1061,6 +1061,7 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
             "squad": [{"id": "squad-a"}, {"name": "missing-id"}, "invalid"],
             "nearby_entities": [{"id": "nearby-a"}],
             "world_targets": [{"id": "world-a"}],
+            "known_map_destinations": [{"id": "town-a"}],
             "ui": {"dialogue_target_id": "dialogue-a"},
         },
     }
@@ -1068,6 +1069,7 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
         "squad-a",
         "nearby-a",
         "world-a",
+        "town-a",
         "dialogue-a",
     }
     stale = deepcopy(payload)
@@ -1078,13 +1080,14 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
     malformed_first_collection["telemetry"]["squad"] = None
     assert observation_budget._current_memory_target_ids(
         malformed_first_collection
-    ) == {"nearby-a", "world-a", "dialogue-a"}
+    ) == {"nearby-a", "world-a", "town-a", "dialogue-a"}
     no_dialogue = deepcopy(payload)
     no_dialogue["telemetry"]["ui"] = {}
     assert observation_budget._current_memory_target_ids(no_dialogue) == {
         "squad-a",
         "nearby-a",
         "world-a",
+        "town-a",
     }
 
     assert observation_budget._outcome_target_ids(

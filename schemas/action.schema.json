@@ -1130,6 +1130,29 @@
       "title": "StopAction",
       "type": "object"
     },
+    "TravelToMapDestinationAction": {
+      "additionalProperties": false,
+      "description": "Travel to one exact settlement marker already known to the player.\n\nNative code re-resolves the discovered marker, chooses Kenshi's waypoint,\nissues one pathing order, and owns camera follow and arrival. The planner\nnever supplies map coordinates or re-authors movement pulses.",
+      "properties": {
+        "kind": {
+          "const": "travel_to_map_destination",
+          "default": "travel_to_map_destination",
+          "title": "Kind",
+          "type": "string"
+        },
+        "destination_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Destination Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "destination_id"
+      ],
+      "title": "TravelToMapDestinationAction",
+      "type": "object"
+    },
     "UseGameBindingAction": {
       "additionalProperties": false,
       "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap and `C` the stats window under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.\nTime keys remain controller details behind PauseAction and SetSpeedAction.",
@@ -1246,6 +1269,9 @@
     },
     {
       "$ref": "#/$defs/MoveInDirectionAction"
+    },
+    {
+      "$ref": "#/$defs/TravelToMapDestinationAction"
     },
     {
       "$ref": "#/$defs/ExitCurrentBuildingAction"

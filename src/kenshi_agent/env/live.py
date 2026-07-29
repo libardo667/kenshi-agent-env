@@ -18,6 +18,7 @@ from ..action_contracts import (
     NATIVE_APPROACH_WIRE_COMMAND,
     NATIVE_DIRECTION_WIRE_COMMAND,
     NATIVE_EXIT_BUILDING_WIRE_COMMAND,
+    NATIVE_MAP_TRAVEL_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
     NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
     NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
@@ -29,6 +30,7 @@ from ..action_contracts import (
     RECOVER_CAMERA_VIEW_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
     SELL_ITEM_CONTRACT,
+    TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
     ActionContract,
     ReferenceBinding,
@@ -99,6 +101,7 @@ from ..models import (
     StopAction,
     TelemetrySnapshot,
     Transition,
+    TravelToMapDestinationAction,
     UseGameBindingAction,
     WaitAction,
     WorldStateRevision,
@@ -724,6 +727,12 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_directional_move(action, started, command)
+        if isinstance(action, TravelToMapDestinationAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_map_travel(action, started, command)
         if isinstance(action, ExitCurrentBuildingAction):
             if command is None:
                 raise RuntimeError(
@@ -1312,6 +1321,61 @@ class LiveEnvironment(AgentEnvironment):
             require_dialogue_target=False,
             bearing_degrees=action.bearing_degrees,
             distance_units=action.distance_units,
+        )
+
+    async def _execute_map_travel(
+        self,
+        action: TravelToMapDestinationAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Issue one exact long-distance order to a discovered settlement."""
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Map travel requires a configured native approach skill to "
+                "supply its bounded transport primitive."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[
+                SkillArgument(
+                    name="target_id",
+                    value=action.destination_id,
+                )
+            ],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(
+            primitive_skill
+        )
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native approach skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=TRAVEL_TO_MAP_DESTINATION_CONTRACT.version,
+            target_id=action.destination_id,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound one exact currently discovered settlement marker; "
+                "native code owns its waypoint, route, camera, and arrival."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.destination_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            continue_until_terminal=True,
+            wire_command=NATIVE_MAP_TRAVEL_WIRE_COMMAND,
+            require_dialogue_target=False,
+            running_speed_gear=3,
         )
 
     async def _execute_exit_current_building(
@@ -2327,6 +2391,7 @@ class LiveEnvironment(AgentEnvironment):
             "approach_confirmed_vendor",
             "move_to_character",
             "move_in_direction",
+            "travel_to_map_destination",
             "exit_current_building",
             "operate_natural_resource",
             "produce_resource_output",
@@ -2339,6 +2404,7 @@ class LiveEnvironment(AgentEnvironment):
         continue_until_terminal: bool = False,
         accepted_is_terminal_error: bool = False,
         minimum_output_quantity: int = 1,
+        running_speed_gear: int = 1,
     ) -> ActionReceipt:
         adopted = (
             self._active_native_order_for(
@@ -2503,6 +2569,13 @@ class LiveEnvironment(AgentEnvironment):
                     f"Started the paused world with {unpause_control}; the "
                     "monitored option now owns the running movement."
                 )
+            if running_speed_gear != 1:
+                primitive_count += await self._establish_playback_gear(
+                    running_speed_gear
+                )
+                messages.append(
+                    "Established controller-owned 5x playback speed for long travel."
+                )
             return ActionReceipt(
                 action=action,
                 command_id=command.command_id,
@@ -2592,6 +2665,7 @@ class LiveEnvironment(AgentEnvironment):
             "approach_confirmed_vendor",
             "move_to_character",
             "move_in_direction",
+            "travel_to_map_destination",
             "exit_current_building",
             "operate_natural_resource",
             "produce_resource_output",
@@ -2668,6 +2742,7 @@ class LiveEnvironment(AgentEnvironment):
             "approach_confirmed_vendor",
             "move_to_character",
             "move_in_direction",
+            "travel_to_map_destination",
             "exit_current_building",
             "operate_natural_resource",
             "produce_resource_output",
@@ -2715,6 +2790,8 @@ class LiveEnvironment(AgentEnvironment):
         telemetry = observation.telemetry
         if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
             native_contract = MOVE_IN_DIRECTION_CONTRACT
+        elif wire_command == NATIVE_MAP_TRAVEL_WIRE_COMMAND:
+            native_contract = TRAVEL_TO_MAP_DESTINATION_CONTRACT
         elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             native_contract = EXIT_CURRENT_BUILDING_CONTRACT
         elif wire_command == NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND:
@@ -2771,6 +2848,27 @@ class LiveEnvironment(AgentEnvironment):
                 identity_session_id=telemetry.identity_session_id,
                 based_on_revision=observation.world_revision,
                 selected_character_ids=list(selected_ids),
+            )
+        if wire_command == NATIVE_MAP_TRAVEL_WIRE_COMMAND:
+            map_destinations = [
+                destination
+                for destination in telemetry.known_map_destinations
+                if destination.id == target_id
+            ]
+            if len(map_destinations) != 1:
+                raise RuntimeError(
+                    "Native map destination is absent, undiscovered, or ambiguous "
+                    "at issue time."
+                )
+            return NativeCommandRequest(
+                schema_version="1.1",
+                command_id=command.command_id,
+                command=wire_command,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                identity_session_id=telemetry.identity_session_id,
+                based_on_revision=observation.world_revision,
+                selected_character_ids=list(selected_ids),
+                target_id=target_id,
             )
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")

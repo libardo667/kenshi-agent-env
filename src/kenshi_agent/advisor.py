@@ -477,6 +477,7 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
         },
         "dialogue_targets": observation.dialogue_target_digest(),
         "travel_destinations": observation.travel_destination_digest(),
+        "known_map_destinations": observation.known_map_destination_digest(),
         "recent_action_outcomes": [
             outcome.model_dump(mode="json")
             for outcome in observation.recent_action_outcomes[-12:]

@@ -26,6 +26,7 @@ from kenshi_agent.models import (
     HotkeyAction,
     InventoryItem,
     KeyAction,
+    KnownMapDestination,
     MouseButton,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
@@ -43,6 +44,7 @@ from kenshi_agent.models import (
     SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
+    TravelToMapDestinationAction,
     UIState,
     Vec2,
     Vec3,
@@ -814,6 +816,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.target_visible: bool | None = None
         self.dialogue_target_id: str | None = None
         self.indoors = False
+        self.known_map_destinations: list[KnownMapDestination] = []
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -824,7 +827,11 @@ class NativePulseTelemetry(PulseTelemetry):
                 captured_at=datetime.now(UTC),
                 identity_session_id="session-native-test",
                 capabilities=self.capabilities,
-                game=GameState(loaded=True, paused=self.paused),
+                game=GameState(
+                    loaded=True,
+                    paused=self.paused,
+                    speed_multiplier=self.speed_multiplier,
+                ),
                 ui=UIState(
                     selected_character_id="entity-selected",
                     selected_character_ids=["entity-selected"],
@@ -871,6 +878,7 @@ class NativePulseTelemetry(PulseTelemetry):
                         mining_resource_level=0.8,
                     )
                 ],
+                known_map_destinations=self.known_map_destinations,
             ),
             age_seconds=0.0,
             stale=False,
@@ -2000,6 +2008,57 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
         assert acknowledgement.target_id == ""
         assert acknowledgement.bearing_degrees == 90.0
         assert acknowledgement.distance_units == 250.0
+
+    asyncio.run(scenario())
+
+
+def test_map_travel_issues_one_exact_order_and_establishes_five_x(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "game.speed",
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "identity.stable_handles",
+            "squad.health",
+        ]
+        telemetry.known_map_destinations = [
+            KnownMapDestination(
+                id="entity-known-town",
+                name="The Hub",
+                distance=1250.0,
+            )
+        ]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "require_paused_between_actions": False,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            TravelToMapDestinationAction(
+                destination_id="entity-known-town",
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "d" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "travel_to_map_destination"
+        assert controller.request.target_id == "entity-known-town"
+        assert telemetry.paused is False
+        assert telemetry.speed_multiplier == 5.0
+        assert [
+            action.kind for action in controller.actions
+        ] == ["hotkey", "key", "key"]
 
     asyncio.run(scenario())
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TypeAlias, TypeGuard
 
 from .approach import ApproachMonitor, ApproachStatus
 from .env import AgentEnvironment
@@ -20,9 +21,18 @@ from .models import (
     ProduceResourceOutputAction,
     SkillAction,
     Transition,
+    TravelToMapDestinationAction,
     WorldStateRevision,
 )
 from .world_state import StoreUpdate
+
+NativeMovementAction: TypeAlias = (
+    MoveInDirectionAction
+    | TravelToMapDestinationAction
+    | ExitCurrentBuildingAction
+    | PerformContextAction
+    | ProduceResourceOutputAction
+)
 
 
 class OptionLifecycleError(RuntimeError):
@@ -184,16 +194,26 @@ class StatefulNativeMovementOption:
     keyed by command ID and fenced by the complete command identity.
     """
 
+    @classmethod
+    def supports(cls, action: Action) -> TypeGuard[NativeMovementAction]:
+        """Whether this lifecycle owns the action's native terminal."""
+
+        return isinstance(
+            action,
+            (
+                MoveInDirectionAction,
+                TravelToMapDestinationAction,
+                ExitCurrentBuildingAction,
+                PerformContextAction,
+                ProduceResourceOutputAction,
+            ),
+        )
+
     def __init__(
         self,
         *,
         option_id: str,
-        action: (
-            MoveInDirectionAction
-            | ExitCurrentBuildingAction
-            | PerformContextAction
-            | ProduceResourceOutputAction
-        ),
+        action: NativeMovementAction,
         environment: AgentEnvironment,
         require_paused_start: bool = True,
     ) -> None:
@@ -217,6 +237,8 @@ class StatefulNativeMovementOption:
 
     @property
     def _wire_command(self) -> str:
+        if isinstance(self.action, TravelToMapDestinationAction):
+            return "travel_to_map_destination"
         if isinstance(self.action, ProduceResourceOutputAction):
             return "produce_resource_output"
         if isinstance(self.action, PerformContextAction):
@@ -227,6 +249,8 @@ class StatefulNativeMovementOption:
 
     @property
     def _required_capability(self) -> str:
+        if isinstance(self.action, TravelToMapDestinationAction):
+            return "control.travel_to_map_destination"
         if isinstance(self.action, ProduceResourceOutputAction):
             return "control.produce_resource_output"
         if isinstance(self.action, PerformContextAction):
@@ -262,6 +286,17 @@ class StatefulNativeMovementOption:
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
         self.selected_character_ids = list(selected_ids)
+        if isinstance(self.action, TravelToMapDestinationAction):
+            destinations = [
+                destination
+                for destination in telemetry.known_map_destinations
+                if destination.id == self.action.destination_id
+            ]
+            if len(destinations) != 1:
+                raise OptionLifecycleError(
+                    "Map-travel option requires one exact currently known "
+                    "destination."
+                )
         if isinstance(self.action, ExitCurrentBuildingAction):
             selected = [
                 character for character in telemetry.squad if character.selected
@@ -345,6 +380,11 @@ class StatefulNativeMovementOption:
             self.reason = (
                 "Building-exit order dispatched; awaiting its terminal native "
                 "acknowledgement."
+            )
+        elif isinstance(self.action, TravelToMapDestinationAction):
+            self.reason = (
+                "Map-travel order dispatched; awaiting arrival at the exact "
+                "known destination."
             )
         else:
             self.reason = (
@@ -550,6 +590,12 @@ class StatefulNativeMovementOption:
                 and acknowledgement.bearing_degrees == 0.0
                 and acknowledgement.distance_units == 0.0
                 and minimum_matches
+            )
+        if isinstance(self.action, TravelToMapDestinationAction):
+            return bool(
+                acknowledgement.target_id == self.action.destination_id
+                and acknowledgement.bearing_degrees == 0.0
+                and acknowledgement.distance_units == 0.0
             )
         if acknowledgement.target_id != "":
             return False

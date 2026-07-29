@@ -69,6 +69,7 @@ _NATIVE_CONTROL_CAPABILITIES = (
     *_NATIVE_APPROACH_CAPABILITIES,
     "control.move_to_character",
     "control.move_in_direction",
+    "control.travel_to_map_destination",
     "control.exit_current_building",
     "control.perform_context_action",
     "control.produce_resource_output",

@@ -435,6 +435,78 @@ namespace
         return 0;
     }
 
+    int TestTrailingCameraPose()
+    {
+        using KenshiAgentTelemetry::NativeTrailingCameraPose;
+        using KenshiAgentTelemetry::TryComputeTrailingCameraPose;
+
+        NativeTrailingCameraPose north;
+        if (!TryComputeTrailingCameraPose(
+                0.0f,
+                0.0f,
+                0.0f,
+                100.0f,
+                0.0f,
+                0.0f,
+                30.0f,
+                north))
+        {
+            return Fail("a northbound walk had no trailing camera pose");
+        }
+        const float quaternionLength =
+            static_cast<float>(std::sqrt(
+                north.w * north.w +
+                north.x * north.x +
+                north.y * north.y +
+                north.z * north.z));
+        if (std::fabs(quaternionLength - 1.0f) > 0.0001f ||
+            std::fabs(north.facingX) > 0.0001f ||
+            !(north.facingY < 0.0f) ||
+            !(north.facingZ > 0.0f) ||
+            !(north.w > 0.9f) ||
+            !(north.x > 0.0f) ||
+            std::fabs(north.y) > 0.0001f ||
+            std::fabs(north.z) > 0.0001f ||
+            std::fabs(north.zoom + 30.0f) > 0.0001f)
+        {
+            return Fail(
+                "northbound trailing camera was not pitched down from behind");
+        }
+
+        NativeTrailingCameraPose turningEast;
+        if (!TryComputeTrailingCameraPose(
+                0.0f,
+                0.0f,
+                0.0f,
+                1000.0f,
+                12.0f,
+                0.0f,
+                30.0f,
+                turningEast) ||
+            !(turningEast.facingX > 0.9f) ||
+            std::fabs(turningEast.facingZ) > 0.0001f ||
+            !(turningEast.y > 0.0f))
+        {
+            return Fail(
+                "trailing camera ignored a live turn toward the east");
+        }
+
+        NativeTrailingCameraPose stationary;
+        if (TryComputeTrailingCameraPose(
+                5.0f,
+                5.0f,
+                5.0f,
+                5.0f,
+                0.0f,
+                0.0f,
+                30.0f,
+                stationary))
+        {
+            return Fail("a zero-length journey invented a camera direction");
+        }
+        return 0;
+    }
+
     int TestNaturalResourceAssessment()
     {
         using KenshiAgentTelemetry::AssessNaturalResource;
@@ -533,6 +605,9 @@ int main(int argc, char** argv)
     const int cameraFollowResult = TestNativeCameraFollowPolicy();
     if (cameraFollowResult != 0)
         return cameraFollowResult;
+    const int trailingCameraResult = TestTrailingCameraPose();
+    if (trailingCameraResult != 0)
+        return trailingCameraResult;
     const int naturalResourceResult = TestNaturalResourceAssessment();
     if (naturalResourceResult != 0)
         return naturalResourceResult;
@@ -586,6 +661,27 @@ int main(int argc, char** argv)
         targeted.distanceUnits != 0.0)
     {
         return Fail("targeted request did not retain its exact identity");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest mapTravel;
+    const std::string mapTravelPayload =
+        ReadFile(prefix + "valid_map_travel_request.json");
+    if (mapTravelPayload.empty())
+        return Fail("could not read valid_map_travel_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            mapTravelPayload,
+            mapTravel,
+            rejectionReason))
+    {
+        return Fail(
+            "valid map-travel request was rejected as " + rejectionReason);
+    }
+    if (mapTravel.command != "travel_to_map_destination" ||
+        mapTravel.targetId != "entity-known-town" ||
+        mapTravel.bearingDegrees != 0.0 ||
+        mapTravel.distanceUnits != 0.0)
+    {
+        return Fail("map travel did not retain its exact known destination");
     }
 
     KenshiAgentTelemetry::NativeCommandRequest approach;

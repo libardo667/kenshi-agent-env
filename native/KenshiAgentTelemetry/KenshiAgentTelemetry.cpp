@@ -1,6 +1,7 @@
 #include <Debug.h>
 #include <core/Functions.h>
 #include <kenshi/Character.h>
+#include <kenshi/CharMovement.h>
 #define CharacterMessage KenshiAgentAICharacterMessage
 #include <kenshi/AI/AI.h>
 #undef CharacterMessage
@@ -47,6 +48,8 @@
 #undef BD_RESIDENTIAL_SMALL
 #include <kenshi/Building/DoorStuff.h>
 #include <kenshi/Building/ProductionBuilding.h>
+#include <kenshi/SharedKing.h>
+#include <kenshi/Town.h>
 #include <kenshi/PlayerInterface.h>
 #include <kenshi/RootObject.h>
 #include <kenshi/ShopTrader.h>
@@ -68,6 +71,7 @@
 #endif
 #include <Windows.h>
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <iomanip>
@@ -107,6 +111,7 @@ namespace
     const int MAX_NEAR_WORLD_CONTEXT_BUILDINGS = 128;
     const int MAX_OUTER_WORLD_CONTEXT_BUILDINGS = 256;
     const unsigned int MAX_WORLD_CONTEXT_TARGETS = 128;
+    const unsigned int MAX_KNOWN_MAP_DESTINATIONS = 64;
     // Raised from 64 after button-priority passes pushed dialogue options -
     // which are TextBox widgets, walked last - out of the export entirely.
     // Prioritizing one role only helps if the cap is not the binding
@@ -119,7 +124,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.2.0";
+    const char* PROTOCOL_VERSION = "1.3.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -145,6 +150,7 @@ namespace
         // the way an approach is. It finishes by arriving.
         bool isWalk;
         bool hasFixedDestination;
+        bool isMapTravel;
         // A parameter-free building exit succeeds after the selected character
         // remains outside every building or tightly reaches the native-resolved
         // outside-door point. Kenshi can retain its indoor handle across a
@@ -234,6 +240,7 @@ namespace
         // approach being judged by arrival instead of by dialogue.
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.isMapTravel = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
@@ -486,6 +493,7 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.isMapTravel = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
@@ -653,6 +661,129 @@ namespace
         return true;
     }
 
+    bool IsKnownMapDestination(TownBase* town)
+    {
+        return town != NULL &&
+               town->isValid() &&
+               town->isTown() != NULL &&
+               town->isDiscovered() &&
+               !town->isDead();
+    }
+
+    struct KnownMapDestinationSnapshot
+    {
+        std::string id;
+        std::string name;
+        float distance;
+    };
+
+    bool KnownMapDestinationNearestFirst(
+        const KnownMapDestinationSnapshot& left,
+        const KnownMapDestinationSnapshot& right)
+    {
+        if (left.distance != right.distance)
+            return left.distance < right.distance;
+        return left.id < right.id;
+    }
+
+    void CollectKnownMapDestinations(
+        const Ogre::Vector3& selectedPosition,
+        std::vector<KnownMapDestinationSnapshot>& destinations)
+    {
+        destinations.clear();
+        if (shou == NULL || shou->townList == NULL)
+            return;
+
+        lektor<RootObject*>& towns = shou->townList->getAllTowns();
+        for (lektor<RootObject*>::iterator it = towns.begin();
+             it != towns.end();
+             ++it)
+        {
+            RootObject* root = *it;
+            if (root == NULL)
+                continue;
+            const hand& handle = root->getHandle();
+            TownBase* town = handle.getTown();
+            if (!IsKnownMapDestination(town))
+                continue;
+            const std::string id = StableEntityId(handle);
+            const std::string name = town->getKnownName();
+            if (id.empty() || name.empty())
+                continue;
+            KnownMapDestinationSnapshot snapshot;
+            snapshot.id = id;
+            snapshot.name = name;
+            snapshot.distance =
+                Distance(town->getPosition(), selectedPosition);
+            destinations.push_back(snapshot);
+        }
+        std::sort(
+            destinations.begin(),
+            destinations.end(),
+            KnownMapDestinationNearestFirst);
+    }
+
+    TownBase* FindExactKnownMapDestination(
+        const std::string& targetId,
+        bool& exactIdentityFound)
+    {
+        exactIdentityFound = false;
+        if (targetId.empty() ||
+            shou == NULL ||
+            shou->townList == NULL)
+        {
+            return NULL;
+        }
+
+        lektor<RootObject*>& towns = shou->townList->getAllTowns();
+        for (lektor<RootObject*>::iterator it = towns.begin();
+             it != towns.end();
+             ++it)
+        {
+            RootObject* root = *it;
+            if (root == NULL)
+                continue;
+            const hand& handle = root->getHandle();
+            if (StableEntityId(handle) != targetId)
+                continue;
+            exactIdentityFound = true;
+            TownBase* town = handle.getTown();
+            return IsKnownMapDestination(town) ? town : NULL;
+        }
+        return NULL;
+    }
+
+    bool TryResolveActiveCameraDestination(
+        float& destinationX,
+        float& destinationZ)
+    {
+        if (g_activeNativeCommand.hasFixedDestination)
+        {
+            destinationX = g_activeNativeCommand.destinationX;
+            destinationZ = g_activeNativeCommand.destinationZ;
+            return true;
+        }
+        if (g_activeNativeCommand.isContextAction)
+        {
+            Building* target =
+                g_activeNativeCommand.targetHandle.getBuilding();
+            if (target == NULL || !target->isValid())
+                return false;
+            const Ogre::Vector3 position = target->getPosition();
+            destinationX = position.x;
+            destinationZ = position.z;
+            return true;
+        }
+        Character* target =
+            g_activeNativeCommand.targetHandle.getCharacter();
+        if (target == NULL || !target->isValid())
+            return false;
+        const Ogre::Vector3 position = target->getPosition();
+        destinationX = position.x;
+        destinationZ = position.z;
+        return true;
+    }
+
     void MaintainCameraFollowForActiveCommand(PlayerInterface* player)
     {
         std::string selectedId;
@@ -677,6 +808,46 @@ namespace
         if (camera == NULL)
             return;
         camera->followObject(selectedHandle);
+
+        Character* selected = selectedHandle.getCharacter();
+        float destinationX = 0.0f;
+        float destinationZ = 0.0f;
+        if (selected == NULL ||
+            !selected->isValid() ||
+            !TryResolveActiveCameraDestination(
+                destinationX,
+                destinationZ))
+        {
+            return;
+        }
+        const Ogre::Vector3 origin = selected->getPosition();
+        Ogre::Vector3 motion = Ogre::Vector3::ZERO;
+        CharMovement* movement = selected->getMovement();
+        if (movement != NULL)
+            motion = movement->getCurrentMotion();
+        const Ogre::Vector3 cameraPosition = camera->getCameraPos();
+        const Ogre::Vector3 cameraCenter = camera->getCenter();
+        KenshiAgentTelemetry::NativeTrailingCameraPose pose;
+        if (!KenshiAgentTelemetry::TryComputeTrailingCameraPose(
+                origin.x,
+                origin.z,
+                destinationX,
+                destinationZ,
+                motion.x,
+                motion.z,
+                Distance(cameraPosition, cameraCenter),
+                pose))
+        {
+            return;
+        }
+        const Ogre::Quaternion orientation(
+            pose.w,
+            pose.x,
+            pose.y,
+            pose.z);
+        camera->manuallySetOrientationAndZoom(
+            orientation,
+            pose.zoom);
     }
 
     Character* FindExactDialogueTarget(
@@ -1594,6 +1765,28 @@ namespace
                 FinishActiveNativeCommand("cancelled", "selection_mismatch");
                 return;
             }
+            if (g_activeNativeCommand.isMapTravel)
+            {
+                TownBase* town =
+                    g_activeNativeCommand.targetHandle.getTown();
+                if (town == NULL ||
+                    !town->isValid() ||
+                    StableEntityId(town->getHandle()) !=
+                        g_activeNativeCommand.targetId)
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "target_lifetime_changed");
+                    return;
+                }
+                if (!IsKnownMapDestination(town))
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "target_role_invalid");
+                    return;
+                }
+            }
             float destinationX = g_activeNativeCommand.destinationX;
             float destinationZ = g_activeNativeCommand.destinationZ;
             if (!g_activeNativeCommand.hasFixedDestination)
@@ -1669,11 +1862,25 @@ namespace
             }
             if (arrived)
             {
+                const bool mapTravel =
+                    g_activeNativeCommand.isMapTravel;
+                if (mapTravel &&
+                    ou != NULL &&
+                    !ou->isPaused())
+                {
+                    // Long travel is a single controller-owned option. Pause at
+                    // its terminal boundary so the next state is deliberately
+                    // returned to planning rather than letting an old plan run
+                    // on after arrival.
+                    ou->togglePause(true);
+                }
                 FinishActiveNativeCommand(
                     "completed",
                     g_activeNativeCommand.isBuildingExit
                         ? "outside_door_destination_reached"
-                        : "walk_destination_reached");
+                        : (mapTravel
+                            ? "map_destination_reached"
+                            : "walk_destination_reached"));
                 return;
             }
             if (KenshiAgentTelemetry::ObserveNativeMovementStall(
@@ -1768,6 +1975,7 @@ namespace
                 (request.command == "approach_confirmed_vendor" ||
                  request.command == "move_to_character" ||
                  request.command == "move_in_direction" ||
+                 request.command == "travel_to_map_destination" ||
                  request.command == "exit_current_building" ||
                  request.command == "operate_natural_resource" ||
                  request.command == "produce_resource_output" ||
@@ -1798,6 +2006,8 @@ namespace
         const bool isApproach = request.command == "approach_confirmed_vendor";
         const bool isMove = request.command == "move_to_character";
         const bool isDirection = request.command == "move_in_direction";
+        const bool isMapTravel =
+            request.command == "travel_to_map_destination";
         const bool isBuildingExit =
             request.command == "exit_current_building";
         const bool isContextAction =
@@ -1806,12 +2016,14 @@ namespace
             request.command == "produce_resource_output";
         const bool isContextInventory =
             request.command == "open_context_inventory";
-        if (isApproach || isMove || isDirection || isBuildingExit ||
-            isContextAction || isResourceProduction || isContextInventory)
+        if (isApproach || isMove || isDirection || isMapTravel ||
+            isBuildingExit || isContextAction || isResourceProduction ||
+            isContextInventory)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
             !isDirection &&
+            !isMapTravel &&
             !isBuildingExit &&
             !isContextAction &&
             !isResourceProduction &&
@@ -1996,6 +2208,7 @@ namespace
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = false;
             g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = true;
             g_activeNativeCommand.isResourceProduction =
@@ -2017,6 +2230,79 @@ namespace
                 exactTaskAlreadyActive
                     ? "adopted_existing_task"
                     : "issued";
+            return;
+        }
+
+        if (isMapTravel)
+        {
+            bool exactIdentityFound = false;
+            TownBase* target = FindExactKnownMapDestination(
+                request.targetId,
+                exactIdentityFound);
+            if (target == NULL)
+            {
+                RejectNativeCommand(
+                    request,
+                    exactIdentityFound
+                        ? "target_role_invalid"
+                        : "target_lifetime_changed");
+                return;
+            }
+            Character* walker = selectedHandle.getCharacter();
+            if (walker == NULL || !walker->isValid())
+            {
+                RejectNativeCommand(request, "selection_mismatch");
+                return;
+            }
+
+            const Ogre::Vector3 origin = walker->getPosition();
+            const Ogre::Vector3 waypoint =
+                target->getPositionForWaypoint(origin);
+            Ogre::Vector3 destination = origin;
+            destination.x = waypoint.x;
+            destination.y = waypoint.y;
+            destination.z = waypoint.z;
+            player->newPlayerTaskSelectedCharacters(
+                MOVE_CUS_ORDERED,
+                hand(),
+                NULL,
+                destination,
+                false);
+            AddNativeAcknowledgement(
+                request,
+                "accepted",
+                "issued",
+                true,
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.selectedCharacterId =
+                request.selectedCharacterId;
+            g_activeNativeCommand.targetHandle = target->getHandle();
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = true;
+            g_activeNativeCommand.hasFixedDestination = true;
+            g_activeNativeCommand.isMapTravel = true;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = false;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.resourceTaskObserved = false;
+            g_activeNativeCommand.minimumOutputQuantity = 1;
+            g_activeNativeCommand.expectedTask = NULL_TASK;
+            KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+                g_activeNativeCommand.pauseWindow);
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
+            g_activeNativeCommand.originX = origin.x;
+            g_activeNativeCommand.originZ = origin.z;
+            g_activeNativeCommand.destinationX = destination.x;
+            g_activeNativeCommand.destinationZ = destination.z;
+            g_lastNativeCommandResult = "issued";
+            g_lastNativeCommandTarget = target->getKnownName();
+            g_lastNativeCommandTargetId = request.targetId;
             return;
         }
 
@@ -2060,6 +2346,7 @@ namespace
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
+            g_activeNativeCommand.isMapTravel = false;
             g_activeNativeCommand.isBuildingExit = false;
             g_activeNativeCommand.isContextAction = false;
             g_activeNativeCommand.isResourceProduction = false;
@@ -2158,6 +2445,7 @@ namespace
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;
             g_activeNativeCommand.hasFixedDestination = true;
+            g_activeNativeCommand.isMapTravel = false;
             g_activeNativeCommand.isBuildingExit = true;
             g_activeNativeCommand.isContextAction = false;
             g_activeNativeCommand.isResourceProduction = false;
@@ -2223,6 +2511,7 @@ namespace
         g_activeNativeCommand.selectedHandle = selectedHandle;
         g_activeNativeCommand.isWalk = isMove;
         g_activeNativeCommand.hasFixedDestination = false;
+        g_activeNativeCommand.isMapTravel = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
         g_activeNativeCommand.isResourceProduction = false;
@@ -2832,6 +3121,37 @@ namespace
             }
         }
         json << "],";
+        bool knownMapDestinationsTruncated = false;
+        json << "\"known_map_destinations\":[";
+        if (selected != NULL && selected->isValid())
+        {
+            std::vector<KnownMapDestinationSnapshot> destinations;
+            CollectKnownMapDestinations(
+                selected->getPosition(),
+                destinations);
+            knownMapDestinationsTruncated =
+                destinations.size() > MAX_KNOWN_MAP_DESTINATIONS;
+            const size_t emitCount =
+                destinations.size() < MAX_KNOWN_MAP_DESTINATIONS
+                    ? destinations.size()
+                    : MAX_KNOWN_MAP_DESTINATIONS;
+            for (size_t index = 0; index < emitCount; ++index)
+            {
+                if (index > 0)
+                    json << ",";
+                const KnownMapDestinationSnapshot& destination =
+                    destinations[index];
+                json << "{";
+                json << "\"id\":\""
+                     << JsonEscape(destination.id) << "\",";
+                json << "\"name\":\""
+                     << JsonEscape(destination.name) << "\",";
+                json << "\"distance\":"
+                     << destination.distance;
+                json << "}";
+            }
+        }
+        json << "],";
         json << "\"warnings\":["
              << "\"Partial telemetry only: body-part wounds, bleeding rate, "
              << "getting-eaten state, imprisonment/enslavement, "
@@ -2849,6 +3169,12 @@ namespace
         {
             json << ",\"The nearby building scan reached its bounded capacity; "
                  << "world_targets may be incomplete.\"";
+        }
+        if (knownMapDestinationsTruncated)
+        {
+            json << ",\"The discovered settlement list exceeded its bounded "
+                 << "capacity; known_map_destinations contains the nearest "
+                 << "markers only.\"";
         }
         json
              << "]";

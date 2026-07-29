@@ -71,7 +71,8 @@ runtime:
     You're playing Kenshi. Decide a goal for yourself and work your way
     towards completing it. You have the run of the interface. Open the
     inventory, map and stats windows with their bindings, move the camera,
-    control game speed, walk to people and talk to them, buy and sell.
+    control game speed, travel to discovered settlements, walk to people and
+    talk to them, buy and sell.
     You can also harvest a bounded yield from an exact observed resource into
     the selected character as one controller-owned action.
     Prefer acting on what you can currently see over gathering more
@@ -256,6 +257,7 @@ safety:
     - approach_dialogue_target
     - move_to_character
     - move_in_direction
+    - travel_to_map_destination
     - exit_current_building
     - harvest_resource
     - produce_resource_output

@@ -61,6 +61,7 @@ from .models import (
     ScrollScreenAction,
     SellItemAction,
     SkillAction,
+    TravelToMapDestinationAction,
     UseGameBindingAction,
     WorldStateRevision,
     WorldTarget,
@@ -85,6 +86,11 @@ NATIVE_MOVE_CAPABILITY = "control.move_to_character"
 NATIVE_DIRECTION_CAPABILITY = "control.move_in_direction"
 NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
 NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
+NATIVE_MAP_TRAVEL_CAPABILITY = "control.travel_to_map_destination"
+NATIVE_MAP_DESTINATIONS_CAPABILITY = "world.known_map_destinations"
+NATIVE_MAP_TRAVEL_WIRE_COMMAND: Literal["travel_to_map_destination"] = (
+    "travel_to_map_destination"
+)
 NATIVE_EXIT_BUILDING_CAPABILITY = "control.exit_current_building"
 NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
     "exit_current_building"
@@ -615,6 +621,66 @@ def bind_move_in_direction(
         ),
         resolved_label=walker.name,
         source_revision=observation.world_revision,
+    )
+
+
+def bind_travel_to_map_destination(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind long travel to one exact currently known settlement marker."""
+
+    if not isinstance(action, TravelToMapDestinationAction):
+        return _unbound("Action is not a travel_to_map_destination action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind map travel.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so map travel cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("The game is not loaded, so map travel cannot begin.")
+    selected = [character for character in telemetry.squad if character.selected]
+    if len(selected) != 1:
+        return _unbound(
+            f"{len(selected)} characters are selected; exactly one must receive "
+            "the travel order."
+        )
+    matches = [
+        destination
+        for destination in telemetry.known_map_destinations
+        if destination.id == action.destination_id
+    ]
+    if not matches:
+        return _unbound(
+            f"Destination {action.destination_id!r} is not a currently known "
+            "map destination."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Destination {action.destination_id!r} matches {len(matches)} known "
+            "markers; an ambiguous reference fails closed."
+        )
+    destination = matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound long travel to known map destination {destination.name!r} "
+            f"({destination.id}) at map distance {destination.distance:.0f}."
+        ),
+        target_id=destination.id,
+        resolved_label=destination.name,
+        source_revision=observation.world_revision,
+    )
+
+
+def map_travel_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.game.loaded is True
+        and len([character for character in telemetry.squad if character.selected]) == 1
+        and telemetry.known_map_destinations
     )
 
 
@@ -1768,6 +1834,47 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     controller_verified=True,
 )
 
+TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
+    kind="travel_to_map_destination",
+    version="1.0",
+    model=TravelToMapDestinationAction,
+    summary=(
+        "Travel to one exact settlement marker the player has already "
+        "discovered. Native code re-resolves the marker, selects Kenshi's "
+        "waypoint, issues one order, aligns the follow camera behind the route, "
+        "and owns arrival. The controller runs long travel at 5x and pauses at "
+        "the terminal boundary."
+    ),
+    argument_source=(
+        "destination_id must be copied exactly from known_map_destinations. "
+        "Coordinates are neither exposed nor accepted."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_MAP_TRAVEL_CAPABILITY,
+            NATIVE_MAP_DESTINATIONS_CAPABILITY,
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.health",
+        }
+    ),
+    capability_aliases=frozenset({NATIVE_MAP_TRAVEL_CAPABILITY}),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=5,
+    reference_fields=("destination_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_map_travel",
+    bind=bind_travel_to_map_destination,
+    controller_verified=True,
+    authorable_when=map_travel_is_currently_authorable,
+)
+
 EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
     kind="exit_current_building",
     version="1.0",
@@ -2190,6 +2297,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         OPEN_CONTEXT_INVENTORY_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,
+        TRAVEL_TO_MAP_DESTINATION_CONTRACT,
         EXIT_CURRENT_BUILDING_CONTRACT,
         ACTIVATE_VISIBLE_CONTROL_CONTRACT,
         DISMISS_SCREEN_CONTRACT,

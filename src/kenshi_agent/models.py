@@ -360,6 +360,19 @@ class WorldTarget(StrictModel):
     mining_resource_level: float | None = None
 
 
+class KnownMapDestination(StrictModel):
+    """A settlement marker the current player has actually discovered.
+
+    The stable identity and player-visible name authorize a semantic journey.
+    The controller owns the exact waypoint; no world coordinate is exposed to
+    or authored by the planner.
+    """
+
+    id: str = Field(min_length=1, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    distance: float = Field(ge=0.0)
+
+
 def _nearest_first(entities: list[NearbyEntity]) -> list[NearbyEntity]:
     return sorted(
         entities,
@@ -637,6 +650,7 @@ class NativeCommandAcknowledgement(StrictModel):
         "approach_confirmed_vendor",
         "move_to_character",
         "move_in_direction",
+        "travel_to_map_destination",
         "exit_current_building",
         "operate_natural_resource",
         "produce_resource_output",
@@ -758,7 +772,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.2.0"
+    protocol_version: str = "1.3.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -772,6 +786,7 @@ class TelemetrySnapshot(StrictModel):
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
     world_targets: list[WorldTarget] = Field(default_factory=list)
+    known_map_destinations: list[KnownMapDestination] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
     @field_validator("captured_at")
@@ -1103,6 +1118,18 @@ class MoveInDirectionAction(StrictModel):
     # Said in the plan so a later observation can judge it; the action itself
     # cannot know what is that way.
     expected_effect: str = Field(min_length=1, max_length=200)
+
+
+class TravelToMapDestinationAction(StrictModel):
+    """Travel to one exact settlement marker already known to the player.
+
+    Native code re-resolves the discovered marker, chooses Kenshi's waypoint,
+    issues one pathing order, and owns camera follow and arrival. The planner
+    never supplies map coordinates or re-authors movement pulses.
+    """
+
+    kind: Literal["travel_to_map_destination"] = "travel_to_map_destination"
+    destination_id: str = Field(min_length=1, max_length=200)
 
 
 class ExitCurrentBuildingAction(StrictModel):
@@ -1456,6 +1483,7 @@ PlannerAtomicSemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | MoveToCharacterAction
     | MoveInDirectionAction
+    | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
     | ActivateVisibleControlAction
     | DismissScreenAction
@@ -1518,6 +1546,7 @@ Action: TypeAlias = (
     | HarvestResourceAction
     | MoveToCharacterAction
     | MoveInDirectionAction
+    | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
     | ActivateVisibleControlAction
     | DismissScreenAction
@@ -1540,6 +1569,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "harvest_resource",
         "move_to_character",
         "move_in_direction",
+        "travel_to_map_destination",
         "exit_current_building",
         "activate_visible_control",
         "dismiss_screen",
@@ -2876,6 +2906,7 @@ class NativeCommandRequest(StrictModel):
         "approach_confirmed_vendor",
         "move_to_character",
         "move_in_direction",
+        "travel_to_map_destination",
         "exit_current_building",
         "operate_natural_resource",
         "produce_resource_output",
@@ -3256,12 +3287,14 @@ class PlanStep(StrictModel):
                 ReadFieldbookAction,
                 ExitCurrentBuildingAction,
                 HarvestResourceAction,
+                TravelToMapDestinationAction,
             ),
         ):
             raise ValueError(
                 "success_conditions may be empty only for recover_camera_view, "
                 "consult_advisor, request_affordance, recall_memory, "
                 "read_fieldbook, exit_current_building, or harvest_resource, "
+                "travel_to_map_destination, "
                 "whose owning subsystem returns a "
                 "typed terminal outcome"
             )
@@ -3497,6 +3530,7 @@ class Observation(StrictModel):
                 telemetry.squad,
                 telemetry.nearby_entities,
                 telemetry.world_targets,
+                telemetry.known_map_destinations,
             )
             for item in collection
             if item.id
@@ -3541,6 +3575,19 @@ class Observation(StrictModel):
                 "distance": entity.distance,
             }
             for entity in elsewhere[:8]
+        ]
+
+    def known_map_destination_digest(self) -> list[dict[str, Any]]:
+        """Discovered settlement markers available for semantic long travel."""
+
+        if self.telemetry is None or self.telemetry_stale:
+            return []
+        return [
+            destination.model_dump(mode="json")
+            for destination in sorted(
+                self.telemetry.known_map_destinations,
+                key=lambda destination: (destination.distance, destination.id),
+            )
         ]
 
     def dialogue_target_digest(self) -> list[dict[str, Any]]:
@@ -3969,6 +4016,7 @@ class Observation(StrictModel):
         # through budgeting.
         payload["dialogue_targets"] = self.dialogue_target_digest()
         payload["travel_destinations"] = self.travel_destination_digest()
+        payload["known_map_destinations"] = self.known_map_destination_digest()
         payload["context_targets"] = self.context_target_digest()
         payload["semantic_actions"] = self.semantic_action_digest()
 

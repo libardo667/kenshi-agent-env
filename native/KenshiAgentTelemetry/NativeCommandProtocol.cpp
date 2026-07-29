@@ -264,6 +264,7 @@ namespace KenshiAgentTelemetry
             const bool isTargeted =
                 request.command == "approach_confirmed_vendor" ||
                 request.command == "move_to_character" ||
+                request.command == "travel_to_map_destination" ||
                 request.command == "operate_natural_resource" ||
                 request.command == "produce_resource_output" ||
                 request.command == "open_context_inventory";

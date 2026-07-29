@@ -36,6 +36,17 @@ def test_python_accepts_targeted_request_fixture_with_no_direction_payload() -> 
     assert request.distance_units == 0.0
 
 
+def test_python_accepts_exact_known_map_destination_request_fixture() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_map_travel_request.json").read_bytes()
+    )
+
+    assert request.command == "travel_to_map_destination"
+    assert request.target_id == "entity-known-town"
+    assert request.bearing_degrees == 0.0
+    assert request.distance_units == 0.0
+
+
 def test_python_accepts_exact_dialogue_approach_request_fixture() -> None:
     request = NativeCommandRequest.model_validate_json(
         (FIXTURES / "valid_approach_request.json").read_bytes()

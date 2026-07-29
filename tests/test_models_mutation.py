@@ -26,6 +26,7 @@ from kenshi_agent.models import (
     Disposition,
     GameState,
     KeepMemoryOperation,
+    KnownMapDestination,
     LiveContinuousPolicy,
     MemoryKind,
     MemoryRecord,
@@ -234,6 +235,13 @@ def _rich_observation(*, item_control_count: int = 61) -> Observation:
                     mining_resource_level=0.75,
                 )
             ],
+            known_map_destinations=[
+                KnownMapDestination(
+                    id="entity-known-town",
+                    name="The Hub",
+                    distance=1250.0,
+                )
+            ],
             warnings=["fixture-warning"],
         ),
         telemetry_stale=True,
@@ -350,6 +358,7 @@ def test_current_memory_target_ids_are_exactly_fresh_current_identities() -> Non
         "entity-other",
         "entity-machine",
         "entity-dialogue",
+        "entity-known-town",
     }
 
     observation.telemetry_stale = True
@@ -907,6 +916,7 @@ def _planner_payload_base(observation: Observation) -> dict[str, Any]:
     payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
     payload["dialogue_targets"] = observation.dialogue_target_digest()
     payload["travel_destinations"] = observation.travel_destination_digest()
+    payload["known_map_destinations"] = observation.known_map_destination_digest()
     payload["context_targets"] = observation.context_target_digest()
     payload["semantic_actions"] = observation.semantic_action_digest()
     return payload

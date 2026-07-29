@@ -38,6 +38,7 @@ from kenshi_agent.models import (
     GameState,
     HotkeyAction,
     KeyAction,
+    KnownMapDestination,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeControlState,
@@ -1600,30 +1601,99 @@ def test_play_starts_journey_only_after_launch_succeeds(
 ) -> None:
     calls: list[str] = []
 
-    async def launch(_: object) -> int:
+    async def launch(_: object, *, manage_display_lease: bool = True) -> int:
+        assert manage_display_lease is False
         calls.append("launch")
         return 0
 
-    def journey(_: object) -> int:
+    def journey(_: object, *, manage_display_lease: bool = True) -> int:
+        assert manage_display_lease is False
         calls.append("journey")
         return 7
 
     monkeypatch.setattr(live_dev, "_launch", launch)
     monkeypatch.setattr(live_dev, "_journey", journey)
-    args = object()
+    monkeypatch.setattr(
+        live_dev,
+        "load_config",
+        lambda _: type(
+            "Config",
+            (),
+            {"launch": type("Launch", (), {"external_display_only": False})()},
+        )(),
+    )
+    args = type("Args", (), {"config": "config/live.longform.yaml"})()
 
     assert live_dev._play(args) == 7
     assert calls == ["launch", "journey"]
 
     calls.clear()
 
-    async def failed_launch(_: object) -> int:
+    async def failed_launch(
+        _: object,
+        *,
+        manage_display_lease: bool = True,
+    ) -> int:
+        assert manage_display_lease is False
         calls.append("launch")
         return 4
 
     monkeypatch.setattr(live_dev, "_launch", failed_launch)
     assert live_dev._play(args) == 4
     assert calls == ["launch"]
+
+
+def test_play_owns_one_display_lease_across_launch_and_journey(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class DisplayController:
+        def validate_ready(self) -> None:
+            calls.append("display-ready")
+
+    class DisplayLease:
+        def __enter__(self) -> None:
+            calls.append("lease-enter")
+
+        def __exit__(self, *_: object) -> None:
+            calls.append("lease-exit")
+
+    class Config:
+        class launch:
+            external_display_only = True
+
+    async def launch(_: object, *, manage_display_lease: bool = True) -> int:
+        calls.append(f"launch:{manage_display_lease}")
+        return 0
+
+    def journey(_: object, *, manage_display_lease: bool = True) -> int:
+        calls.append(f"journey:{manage_display_lease}")
+        return 0
+
+    monkeypatch.setattr(live_dev, "load_config", lambda _: Config())
+    monkeypatch.setattr(
+        live_dev,
+        "DisplayTopologyController",
+        DisplayController,
+    )
+    monkeypatch.setattr(
+        live_dev,
+        "external_display_lease",
+        lambda _: DisplayLease(),
+    )
+    monkeypatch.setattr(live_dev, "_launch", launch)
+    monkeypatch.setattr(live_dev, "_journey", journey)
+
+    args = type("Args", (), {"config": "config/live.longform.yaml"})()
+    assert live_dev._play(args) == 0
+    assert calls == [
+        "display-ready",
+        "lease-enter",
+        "launch:False",
+        "journey:False",
+        "lease-exit",
+    ]
 
 
 def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sample() -> None:
@@ -1650,6 +1720,13 @@ def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sampl
     )
     snapshot = launch_snapshot(70, paused=True).model_copy(
         update={
+            "known_map_destinations": [
+                KnownMapDestination(
+                    id="town-squin",
+                    name="Squin",
+                    distance=4800.0,
+                )
+            ],
             "world_targets": [*unadvertised, actionable],
             "warnings": ["world target query reached capacity"],
         }
@@ -1675,6 +1752,13 @@ def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sampl
         for target in payload["nearest_world_targets"]  # type: ignore[union-attr]
     }
     assert payload["warnings"] == ["world target query reached capacity"]
+    assert payload["known_map_destinations"] == [
+        {
+            "id": "town-squin",
+            "name": "Squin",
+            "distance": 4800.0,
+        }
+    ]
 
 
 def test_post_load_health_requires_advancing_loaded_paused_telemetry() -> None:

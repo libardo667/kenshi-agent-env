@@ -194,6 +194,7 @@ safety:
     - approach_dialogue_target
     - move_to_character
     - move_in_direction
+    - travel_to_map_destination
     - exit_current_building
     - harvest_resource
     - produce_resource_output

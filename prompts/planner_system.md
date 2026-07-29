@@ -259,13 +259,25 @@ yourself, in whatever order the current evidence supports.
   furthest first — and opens no conversation on arrival. Give it
   `success_conditions: []`; its keyed controller verdict owns arrival.
 - Prefer `move_to_character` when somewhere useful has a person standing in it.
-  When no exact nearby destination exists and `move_in_direction` is
-  advertised, use a conservative bearing/distance and state the intended
-  observable effect. Bearing is clockwise from map north (0 north, 90 east,
-  180 south, 270 west). One monitored option owns the targetless order until
-  its exact native acknowledgement is terminal; never add a continuation step.
-  This is bounded local movement, not a remote map-travel action. Its native
-  success result is exactly `walk_destination_reached`. Give it
+  For a named settlement or any other long journey, check
+  `known_map_destinations` first. This list contains only markers the current
+  player has actually discovered, nearest first; it is the always-present
+  reminder that map-scale travel is available.
+- `travel_to_map_destination` takes one `destination_id` copied exactly from
+  `known_map_destinations`. It owns one native waypoint order, 5x playback,
+  safety monitoring, a trailing follow camera, and the pause on arrival. Give
+  it `success_conditions: []` and enough wall time for the journey (up to 300
+  seconds). Never surround it with `set_speed`, camera, local movement, wait,
+  or continuation steps. The map does not need to be open for this action; use
+  `toggle_map` only when an aerial view would materially help deliberation.
+- When no exact nearby or known map destination expresses a *local* scouting
+  move and `move_in_direction` is advertised, use a conservative
+  bearing/distance and state the intended observable effect. Bearing is
+  clockwise from map north (0 north, 90 east, 180 south, 270 west). One
+  monitored option owns the targetless order until its exact native
+  acknowledgement is terminal; never add a continuation step. This is bounded
+  local movement, not a substitute for remote map travel. Its native success
+  result is exactly `walk_destination_reached`. Give it
   `success_conditions: []`; the controller accepts only that keyed terminal,
   never a synonym such as "arrived".
 - **When you have exhausted the people in a room, leave.** Re-approaching the
@@ -425,7 +437,7 @@ yourself, in whatever order the current evidence supports.
   Read the group before acting on any cell: the cheapest cell on a trade screen
   is often your own clothing, and buying it is really selling it.
 - Give every step except `recover_camera_view`, `harvest_resource`,
-  `consult_advisor`, and `request_affordance` a success
+  `travel_to_map_destination`, `consult_advisor`, and `request_affordance` a success
   condition that a later observation can settle, such as
   `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
   `telemetry.ui.active_screen`. Dispatch is not success.

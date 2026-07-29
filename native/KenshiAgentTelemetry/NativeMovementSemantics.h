@@ -2,6 +2,28 @@
 
 namespace KenshiAgentTelemetry
 {
+    struct NativeTrailingCameraPose
+    {
+        float w;
+        float x;
+        float y;
+        float z;
+        float facingX;
+        float facingY;
+        float facingZ;
+        float zoom;
+    };
+
+    bool TryComputeTrailingCameraPose(
+        float originX,
+        float originZ,
+        float destinationX,
+        float destinationZ,
+        float motionX,
+        float motionZ,
+        float currentZoom,
+        NativeTrailingCameraPose& pose);
+
     const float WALK_DESTINATION_TOLERANCE = 12.0f;
     const float NATIVE_MOVEMENT_PROGRESS_DISTANCE = 1.0f;
     const float NATIVE_EXIT_DESTINATION_TOLERANCE = 3.0f;

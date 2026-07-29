@@ -28,6 +28,7 @@ _TELEMETRY_COLLECTION_PATHS = (
     "telemetry.squad",
     "telemetry.nearby_entities",
     "telemetry.world_targets",
+    "telemetry.known_map_destinations",
     "telemetry.warnings",
 )
 _COLLECTION_PATHS = _ROOT_COLLECTION_PATHS + _TELEMETRY_COLLECTION_PATHS
@@ -456,6 +457,10 @@ def irreducible_payload(
                 ),
                 key=_entity_sort_key,
             ),
+            # The complete, authority-filtered list lives in the top-level
+            # `known_map_destinations` digest. Do not pay for a duplicate raw
+            # telemetry copy in the irreducible envelope.
+            "known_map_destinations": [],
             "warnings": [],
         }
     )
@@ -484,7 +489,12 @@ def _current_memory_target_ids(original: JsonObject) -> set[str]:
         return set()
 
     target_ids: set[str] = set()
-    for collection_name in ("squad", "nearby_entities", "world_targets"):
+    for collection_name in (
+        "squad",
+        "nearby_entities",
+        "world_targets",
+        "known_map_destinations",
+    ):
         collection = telemetry.get(collection_name)
         if not isinstance(collection, list):
             continue

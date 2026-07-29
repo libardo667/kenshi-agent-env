@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.1",
+  "command_id": "cmd-abcdef0123456789abcdef0123456789",
+  "command": "travel_to_map_destination",
+  "control_mode": "native_assisted",
+  "identity_session_id": "session-0000000000000001-0000000000000001",
+  "based_on_revision": {
+    "telemetry_sequence": 11,
+    "frame_sequence": 3,
+    "capability_epoch": 2,
+    "observed_at_monotonic": 12.5
+  },
+  "selected_character_ids": [
+    "entity-selected"
+  ],
+  "target_id": "entity-known-town",
+  "bearing_degrees": 0.0,
+  "distance_units": 0.0,
+  "minimum_output_quantity": 1
+}

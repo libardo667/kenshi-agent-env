@@ -52,8 +52,8 @@ MAP
   ok  enter     Open the world map to decide where to travel.  [control: use_game_binding]
         -> Verified live. The map is a ManagementScreen tab and leaves active_screen on 'world'; management_screen_open is the signal.
   ok  navigate  Pan and zoom to find a destination.  [control: use_game_binding]
-  ok  interact  Travel locally toward an observed character or along a bounded bearing.  [native: move_to_character / move_in_direction]
-        -> Local target and bearing orders are implemented; the corrected targetless protocol has portable and native-build proof but still needs a live Kenshi acceptance/completion smoke. Crossing the map still needs a travel order to a chosen location, which is a right-click on the map screen and has no action yet.
+  ok  interact  Travel to a discovered settlement, an observed character, or along a bounded local bearing.  [native: travel_to_map_destination / move_to_character / move_in_direction]
+        -> Only player-discovered settlement markers are exported; exact world coordinates and undiscovered markers remain unavailable. The controller owns long-travel speed, safety monitoring, trailing camera, and terminal pause.
   ok  exit      Close the map.  [control: use_game_binding]
         -> Verified live. `dismiss_screen` cannot close it: it binds on active_screen, which the map leaves on 'world'.
 

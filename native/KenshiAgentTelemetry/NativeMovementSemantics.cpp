@@ -1,7 +1,77 @@
 #include "NativeMovementSemantics.h"
 
+#include <cmath>
+
 namespace KenshiAgentTelemetry
 {
+    bool TryComputeTrailingCameraPose(
+        float originX,
+        float originZ,
+        float destinationX,
+        float destinationZ,
+        float motionX,
+        float motionZ,
+        float currentZoom,
+        NativeTrailingCameraPose& pose)
+    {
+        float dx = motionX;
+        float dz = motionZ;
+        const float horizontalLength =
+            static_cast<float>(std::sqrt(dx * dx + dz * dz));
+        float headingLength = horizontalLength;
+        if (headingLength <= 0.001f)
+        {
+            dx = destinationX - originX;
+            dz = destinationZ - originZ;
+            headingLength =
+                static_cast<float>(std::sqrt(dx * dx + dz * dz));
+            if (headingLength <= 0.001f)
+                return false;
+        }
+
+        // The live heading wins over the final waypoint so a curved navmesh
+        // route rotates the view with the character instead of pinning it to
+        // one world vector. The destination is only the startup/idle fallback.
+        const float headingX = dx / headingLength;
+        const float headingZ = dz / headingLength;
+        const float downwardPitch = 0.35f;
+        const float downward = -static_cast<float>(std::sin(downwardPitch));
+        const float facingLength =
+            static_cast<float>(std::cos(downwardPitch));
+        pose.facingX = headingX * facingLength;
+        pose.facingY = downward;
+        pose.facingZ = headingZ * facingLength;
+
+        // CameraClass::manuallySetOrientationAndZoom rotates Kenshi's center
+        // node using yaw(Y) * pitch(X). KenshiFP independently live-proved this
+        // exact handoff convention; a nominal Ogre -Z shortest-arc quaternion
+        // instead pitches the RTS camera into the sky.
+        const float yaw =
+            static_cast<float>(std::atan2(headingX, headingZ));
+        const float halfYaw = yaw * 0.5f;
+        const float halfPitch = downwardPitch * 0.5f;
+        const float cosYaw = static_cast<float>(std::cos(halfYaw));
+        const float sinYaw = static_cast<float>(std::sin(halfYaw));
+        const float cosPitch = static_cast<float>(std::cos(halfPitch));
+        const float sinPitch = static_cast<float>(std::sin(halfPitch));
+        pose.w = cosYaw * cosPitch;
+        pose.x = cosYaw * sinPitch;
+        pose.y = sinYaw * cosPitch;
+        pose.z = -sinYaw * sinPitch;
+
+        // Kenshi places a positive manual zoom on the front side of the
+        // followed object. Preserve the useful distance magnitude, but make it
+        // negative so the camera is actually behind the character.
+        float zoomMagnitude =
+            currentZoom < 0.0f ? -currentZoom : currentZoom;
+        if (zoomMagnitude < 20.0f)
+            zoomMagnitude = 20.0f;
+        if (zoomMagnitude > 60.0f)
+            zoomMagnitude = 60.0f;
+        pose.zoom = -zoomMagnitude;
+        return true;
+    }
+
     void ResetNativeMovementStallWindow(NativeMovementStallWindow& window)
     {
         window.observing = false;

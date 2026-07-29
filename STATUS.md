@@ -68,7 +68,7 @@ contextual operation through `context_task_started`. One bundled harvest retaine
 job at observed 5x speed, restored 1x speed, conserved three outputs into the selected actor, and
 closed both inventories. Selling and equipping have portable coverage but no live proof.
 
-## Native protocol 1.2.0 (supervised live-loaded)
+## Native protocol (supervised live-loaded)
 
 The plug-in hooks Kenshi-owned title and loaded-game update points and atomically replaces a
 complete snapshot at roughly 2 Hz, covering world/squad state, window state, bounded visible
@@ -94,8 +94,8 @@ before planning and rejects native actions again at the guard and environment bo
   versions and this Windows host.
 - Live proofs are single supervised runs. One harvest, one direction probe, and one Storm House
   exit do not generalize; raw `Character::isIndoors()` can retain a stale handle. The producer
-  fails unresolved buildings closed while exit completion uses controller proof. Chosen remote
-  map travel has no semantic action, and no live run has exercised the continuity authority.
+  fails unresolved buildings closed while exit completion uses controller proof. No live run has
+  exercised the continuity authority.
 - Item cells expose base value, not the final shop charge; the real debit is confirmed only after
   the purchase, from later money telemetry.
 - A causally later observation stops stale pre-action state from satisfying a postcondition, but

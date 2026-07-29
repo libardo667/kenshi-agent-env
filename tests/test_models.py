@@ -56,6 +56,23 @@ def test_nearby_entity_visibility_is_unknown_until_observed() -> None:
     assert entity.shop_inventory_owner is None
 
 
+def test_known_map_destination_is_a_first_class_observed_identity() -> None:
+    payload = TelemetrySnapshot().model_dump(mode="python")
+    payload["known_map_destinations"] = [
+        {
+            "id": "entity-known-town",
+            "name": "The Hub",
+            "distance": 1250.0,
+        }
+    ]
+
+    snapshot = TelemetrySnapshot.model_validate(payload)
+
+    assert snapshot.known_map_destinations[0].id == "entity-known-town"
+    assert snapshot.known_map_destinations[0].name == "The Hub"
+    assert snapshot.known_map_destinations[0].distance == 1250.0
+
+
 def test_visible_ui_control_exposes_resolution_independent_center() -> None:
     control = VisibleUIControl(
         label="Continue",

@@ -15,6 +15,7 @@ from kenshi_agent.models import (
     ContextActionKind,
     ExitCurrentBuildingAction,
     GameState,
+    KnownMapDestination,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
@@ -24,6 +25,7 @@ from kenshi_agent.models import (
     ProduceResourceOutputAction,
     TelemetrySnapshot,
     Transition,
+    TravelToMapDestinationAction,
     UIState,
     Vec3,
     WorldStateRevision,
@@ -103,6 +105,82 @@ def observation(
                 active_command_id=(
                     ack.command_id
                     if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
+                    else None
+                ),
+                acknowledgements=[ack] if ack is not None else [],
+            ),
+        ),
+        telemetry_age_seconds=0.0,
+    )
+
+
+def map_travel_acknowledgement(
+    sequence: int,
+    status: NativeCommandStatus,
+) -> NativeCommandAcknowledgement:
+    terminal = status is not NativeCommandStatus.ACCEPTED
+    return NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="travel_to_map_destination",
+        status=status,
+        reason=(
+            "issued"
+            if status is NativeCommandStatus.ACCEPTED
+            else (
+                "map_destination_reached"
+                if status is NativeCommandStatus.COMPLETED
+                else "movement_interrupted"
+            )
+        ),
+        target_id="entity-known-town",
+        selected_character_ids=[SELECTED_ID],
+        based_on_telemetry_sequence=1,
+        acknowledged_at_telemetry_sequence=2,
+        accepted_at_telemetry_sequence=2,
+        terminal_at_telemetry_sequence=sequence if terminal else None,
+    )
+
+
+def map_travel_observation(
+    sequence: int,
+    *,
+    ack: NativeCommandAcknowledgement | None = None,
+) -> Observation:
+    return Observation(
+        run_id="native-map-travel-option-test",
+        step_index=sequence,
+        mode="mock",
+        world_revision=WorldStateRevision(
+            telemetry_sequence=sequence,
+            capability_epoch=1,
+            observed_at_monotonic=float(sequence),
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=sequence,
+            captured_at=datetime.now(UTC),
+            capabilities=[
+                "game.pause",
+                "control.travel_to_map_destination",
+                "world.known_map_destinations",
+                "squad.health",
+            ],
+            game=GameState(paused=True, elapsed_minutes=0.0),
+            ui=UIState(
+                selected_character_id=SELECTED_ID,
+                selected_character_ids=[SELECTED_ID],
+            ),
+            known_map_destinations=[
+                KnownMapDestination(
+                    id="entity-known-town",
+                    name="The Hub",
+                    distance=1250.0,
+                )
+            ],
+            native_control=NativeControlState(
+                active_command_id=(
+                    ack.command_id
+                    if ack is not None
+                    and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
                 acknowledgements=[ack] if ack is not None else [],
@@ -476,6 +554,37 @@ class InstantResourceProductionEnvironment(AgentEnvironment):
         return None
 
 
+class InstantMapTravelEnvironment(AgentEnvironment):
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return map_travel_observation(1)
+
+    async def observe(self) -> Observation:
+        return map_travel_observation(1)
+
+    async def step(self, action: Action) -> Transition:
+        accepted = map_travel_acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+        )
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                command_id=COMMAND_ID,
+                started_after_revision=map_travel_observation(1).world_revision,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="map travel issued",
+                native_acknowledgement=accepted,
+            ),
+            observation=map_travel_observation(2, ack=accepted),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
 def option() -> StatefulNativeMovementOption:
     return StatefulNativeMovementOption(
         option_id="native-direction-1",
@@ -514,6 +623,64 @@ def test_direction_option_waits_for_terminal_acknowledgement() -> None:
         assert movement.result().receipt.accepted is True
 
     asyncio.run(scenario())
+
+
+def test_map_travel_option_owns_one_exact_destination_until_native_arrival() -> None:
+    async def scenario() -> None:
+        travel = StatefulNativeMovementOption(
+            option_id="native-map-travel-1",
+            action=TravelToMapDestinationAction(
+                destination_id="entity-known-town",
+            ),
+            environment=InstantMapTravelEnvironment(),
+        )
+        assert (
+            travel.prepare(map_travel_observation(1)).status
+            is OptionStatus.PREPARED
+        )
+        await travel.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=map_travel_observation(1).world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        accepted = travel.poll(
+            update(
+                map_travel_observation(
+                    2,
+                    ack=map_travel_acknowledgement(
+                        2,
+                        NativeCommandStatus.ACCEPTED,
+                    ),
+                )
+            )
+        )
+        assert accepted.status is OptionStatus.RUNNING
+
+        completed = travel.poll(
+            update(
+                map_travel_observation(
+                    3,
+                    ack=map_travel_acknowledgement(
+                        3,
+                        NativeCommandStatus.COMPLETED,
+                    ),
+                )
+            )
+        )
+        assert completed.status is OptionStatus.SUCCEEDED
+
+    asyncio.run(scenario())
+
+
+def test_map_travel_is_routed_through_the_native_movement_option() -> None:
+    assert StatefulNativeMovementOption.supports(
+        TravelToMapDestinationAction(
+            destination_id="entity-known-town",
+        )
+    )
 
 
 def test_building_exit_option_accepts_native_terminal_when_indoor_handle_lingers() -> None:

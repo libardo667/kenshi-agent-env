@@ -90,7 +90,12 @@ def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> se
     candidates: set[str] = set()
     telemetry = payload.get("telemetry")
     if isinstance(telemetry, dict):
-        for field in ("squad", "nearby_entities", "world_targets"):
+        for field in (
+            "squad",
+            "nearby_entities",
+            "world_targets",
+            "known_map_destinations",
+        ):
             candidates.update(_string_ids(telemetry.get(field), "id"))
         ui = telemetry.get("ui")
         if isinstance(ui, dict):
@@ -105,7 +110,12 @@ def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> se
             selected = ui.get("selected_character_ids")
             if isinstance(selected, list):
                 candidates.update(value for value in selected if isinstance(value, str))
-    for field in ("dialogue_targets", "travel_destinations", "context_targets"):
+    for field in (
+        "dialogue_targets",
+        "travel_destinations",
+        "known_map_destinations",
+        "context_targets",
+    ):
         candidates.update(_string_ids(payload.get(field), "id"))
     return candidates & observation.current_memory_target_ids()
 

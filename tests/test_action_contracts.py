@@ -19,12 +19,14 @@ from kenshi_agent.action_contracts import (
     PERFORM_CONTEXT_ACTION_CONTRACT,
     PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
+    TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     LegacyCompatibilityLedger,
     contract_for,
     planner_visible_contracts,
     translate_legacy_skill,
 )
 from kenshi_agent.models import (
+    ACTION_ADAPTER,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     CharacterState,
@@ -802,6 +804,7 @@ class TestContractCatalog:
             APPROACH_DIALOGUE_TARGET_CONTRACT,
             MOVE_TO_CHARACTER_CONTRACT,
             MOVE_IN_DIRECTION_CONTRACT,
+            TRAVEL_TO_MAP_DESTINATION_CONTRACT,
             EXIT_CURRENT_BUILDING_CONTRACT,
         ):
             assert contract.controller_verified
@@ -811,6 +814,7 @@ class TestContractCatalog:
             "approach_dialogue_target",
             "move_to_character",
             "move_in_direction",
+            "travel_to_map_destination",
             "exit_current_building",
             "perform_context_action",
             "produce_resource_output",
@@ -871,6 +875,60 @@ class TestContractCatalog:
             "nearby.roles",
         }
         assert not APPROACH_DIALOGUE_TARGET_CONTRACT.missing_capabilities(capabilities)
+
+
+def test_exact_known_map_destination_has_one_controller_owned_travel_contract() -> None:
+    state = observation(
+        capabilities=[
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "identity.stable_handles",
+            "squad.health",
+        ],
+        squad=[
+            CharacterState(
+                id="entity-selected",
+                name="Streak",
+                selected=True,
+            )
+        ],
+        ui=UIState(
+            selected_character_id="entity-selected",
+            selected_character_ids=["entity-selected"],
+        ),
+    )
+    assert state.telemetry is not None
+    state = state.model_copy(
+        update={
+            "telemetry": TelemetrySnapshot.model_validate(
+                state.telemetry.model_dump(mode="python")
+                | {
+                    "known_map_destinations": [
+                        {
+                            "id": "entity-known-town",
+                            "name": "The Hub",
+                            "distance": 1250.0,
+                        }
+                    ]
+                }
+            )
+        },
+        deep=True,
+    )
+    action = ACTION_ADAPTER.validate_python(
+        {
+            "kind": "travel_to_map_destination",
+            "destination_id": "entity-known-town",
+        }
+    )
+
+    contract = contract_for(action)
+
+    assert contract is not None
+    assert contract.controller_verified
+    assert contract.bind(action, state).bound
+    missing = action.model_copy(update={"destination_id": "entity-undiscovered-town"})
+    assert not contract.bind(missing, state).bound
 
 
 class TestLegacyCompatibilityAdapter:

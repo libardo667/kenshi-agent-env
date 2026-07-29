@@ -315,16 +315,16 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.MAP,
         Operation.INTERACT,
-        "Travel locally toward an observed character or along a bounded bearing.",
+        "Travel to a discovered settlement, an observed character, or along "
+        "a bounded local bearing.",
         Mechanism.NATIVE,
-        "move_to_character / move_in_direction",
+        "travel_to_map_destination / move_to_character / move_in_direction",
         native_entry_point="PlayerInterface::newPlayerTaskSelectedCharacters MOVE_CUS_ORDERED",
         gap=(
-            "Local target and bearing orders are implemented; the corrected "
-            "targetless protocol has portable and native-build proof but still "
-            "needs a live Kenshi acceptance/completion smoke. Crossing the map "
-            "still needs a travel order to a chosen location, which is a "
-            "right-click on the map screen and has no action yet."
+            "Only player-discovered settlement markers are exported; exact "
+            "world coordinates and undiscovered markers remain unavailable. "
+            "The controller owns long-travel speed, safety monitoring, trailing "
+            "camera, and terminal pause."
         ),
     ),
     Affordance(

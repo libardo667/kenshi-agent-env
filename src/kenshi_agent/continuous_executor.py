@@ -24,12 +24,10 @@ from .models import (
     ConsultAdvisorAction,
     ContinuityOperation,
     DismissScreenAction,
-    ExitCurrentBuildingAction,
     FieldbookOperation,
     GameBinding,
     HarvestResourceAction,
     InputBoundaryDecision,
-    MoveInDirectionAction,
     NativeCommandStatus,
     Observation,
     ObservationPolicy,
@@ -981,15 +979,7 @@ class ContinuousPlanExecutor:
         native_movement_option: StatefulNativeMovementOption | None = None
         contract = contract_for(action)
         if (
-            isinstance(
-                action,
-                (
-                    MoveInDirectionAction,
-                    ExitCurrentBuildingAction,
-                    PerformContextAction,
-                    ProduceResourceOutputAction,
-                ),
-            )
+            StatefulNativeMovementOption.supports(action)
             and contract is not None
             and contract.execution is ActionExecution.MONITORED_OPTION
         ):

@@ -36,11 +36,11 @@ launcher without a pseudo-terminal:
 ./dev crash --dismiss
 ```
 
-`play` performs guarded launch/load, then immediately invokes `journey` with the
-same options; it does not imply any acknowledgement. Both default to
-`config/live.longform.yaml`; pass a campaign or attested scenario. Other commands
-default to `config/live.burnin.yaml`. Never substitute direct Windows-Python,
-native-file, input-snippet, or PTY workarounds.
+`play` performs guarded launch/load, then invokes `journey` with the same options
+under one external-display lease; it implies no acknowledgement. Both default to
+`config/live.longform.yaml`; other commands use `config/live.burnin.yaml`.
+Standalone `launch` and `journey` own separate leases. Never substitute direct
+Windows-Python, native-file, input-snippet, or PTY workarounds.
 
 The live profiles require the checked-in 30 fps renderer profile and an active
 1920x1080 external display. Actual `launch` and executing `journey` commands

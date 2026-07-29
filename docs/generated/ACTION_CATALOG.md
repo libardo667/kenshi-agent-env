@@ -22,4 +22,5 @@ Regenerate with `python scripts/export_docs.py`.
 | `recover_camera_view` | 1.0 | yes | atomic_handler | no | 15 | `camera.position`, `camera.recovery`, `game.pause`, `squad.basic`, `ui.visible_controls` |
 | `scroll_screen` | 1.0 | yes | atomic_handler | no | 1 | `ui.visible_controls` |
 | `sell_item` | 1.0 | yes | atomic_handler | no | 1 | `game.money`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
+| `travel_to_map_destination` | 1.0 | yes | monitored_option | yes | 5 | `control.travel_to_map_destination`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.health`, `world.known_map_destinations` |
 | `use_game_binding` | 1.0 | yes | atomic_handler | no | 1 | — |

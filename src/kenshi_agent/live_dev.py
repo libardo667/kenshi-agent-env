@@ -1614,13 +1614,17 @@ async def _perform_launch(
         monitor.raise_if_new(force=True)
 
 
-async def _launch(args: argparse.Namespace) -> int:
+async def _launch(
+    args: argparse.Namespace,
+    *,
+    manage_display_lease: bool = True,
+) -> int:
     if os.name != "nt":
         raise SystemExit("The live developer launcher must run with Windows Python.")
     config = load_config(args.config)
     display_controller = (
         DisplayTopologyController()
-        if config.launch.external_display_only
+        if manage_display_lease and config.launch.external_display_only
         else None
     )
     monitor = GpuTdrMonitor() if config.launch.monitor_gpu_tdr else None
@@ -2307,6 +2311,10 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
         "native_control": snapshot.native_control.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json") if selected else None,
         "barman": barman.model_dump(mode="json") if barman else None,
+        "known_map_destinations": [
+            destination.model_dump(mode="json")
+            for destination in snapshot.known_map_destinations
+        ],
         "world_target_count": len(snapshot.world_targets),
         "context_targets": [
             target.model_dump(mode="json")
@@ -2526,7 +2534,11 @@ def _journey_argv(
     return argv
 
 
-def _journey(args: argparse.Namespace) -> int:
+def _journey(
+    args: argparse.Namespace,
+    *,
+    manage_display_lease: bool = True,
+) -> int:
     config = load_config(args.config)
     run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     scenario_attestation_path: Path | None = None
@@ -2575,7 +2587,7 @@ def _journey(args: argparse.Namespace) -> int:
     display_controller: DisplayTopologyController | None = None
     monitor: GpuTdrMonitor | None = None
     try:
-        if args.execute and os.name == "nt":
+        if manage_display_lease and args.execute and os.name == "nt":
             if config.launch.external_display_only:
                 display_controller = DisplayTopologyController()
                 display_controller.validate_ready()
@@ -2644,10 +2656,36 @@ def _journey(args: argparse.Namespace) -> int:
 def _play(args: argparse.Namespace) -> int:
     """Launch and load Kenshi, then hand the same intent to journey."""
 
-    launch_result = asyncio.run(_launch(args))
-    if launch_result != 0:
-        return launch_result
-    return _journey(args)
+    try:
+        config = load_config(args.config)
+        display_controller = (
+            DisplayTopologyController()
+            if config.launch.external_display_only
+            else None
+        )
+        if display_controller is not None:
+            display_controller.validate_ready()
+        display_context: AbstractContextManager[None] = (
+            external_display_lease(display_controller)
+            if display_controller is not None
+            else nullcontext()
+        )
+        with display_context:
+            launch_result = asyncio.run(
+                _launch(args, manage_display_lease=False)
+            )
+            if launch_result != 0:
+                return launch_result
+            return _journey(args, manage_display_lease=False)
+    except (
+        DisplayLeaseError,
+        FileNotFoundError,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
 
 
 def _add_launch_arguments(
