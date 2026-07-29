@@ -13,6 +13,8 @@ from kenshi_agent.action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     EXIT_CURRENT_BUILDING_CONTRACT,
+    MOVE_IN_DIRECTION_CONTRACT,
+    MOVE_TO_CHARACTER_CONTRACT,
     OPEN_CONTEXT_INVENTORY_CONTRACT,
     PERFORM_CONTEXT_ACTION_CONTRACT,
     PRODUCE_RESOURCE_OUTPUT_CONTRACT,
@@ -795,6 +797,15 @@ class TestCollectResourceOutput:
 
 
 class TestContractCatalog:
+    def test_monitored_movement_terminals_own_their_success_verdicts(self) -> None:
+        for contract in (
+            APPROACH_DIALOGUE_TARGET_CONTRACT,
+            MOVE_TO_CHARACTER_CONTRACT,
+            MOVE_IN_DIRECTION_CONTRACT,
+            EXIT_CURRENT_BUILDING_CONTRACT,
+        ):
+            assert contract.controller_verified
+
     def test_contracts_are_registered_by_kind(self) -> None:
         assert set(ACTION_CONTRACTS) == {
             "approach_dialogue_target",

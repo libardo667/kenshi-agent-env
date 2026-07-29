@@ -1565,6 +1565,7 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     execution=ActionExecution.MONITORED_OPTION,
     receipt_kind="semantic_approach",
     bind=bind_approach_dialogue_target,
+    controller_verified=True,
 )
 
 PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
@@ -1758,6 +1759,7 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     execution=ActionExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_move_in_direction,
+    controller_verified=True,
 )
 
 EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
@@ -1832,6 +1834,7 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     execution=ActionExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_move_to_character,
+    controller_verified=True,
 )
 
 ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(

@@ -441,12 +441,15 @@ class TestGenericPolicyRejections:
         composed = plan(
             [
                 step(
-                    "approach",
-                    ApproachDialogueTargetAction(target_id=VENDOR_ID),
+                    "activate",
+                    ActivateVisibleControlAction(
+                        exact_label="Show me your goods.",
+                        role="button",
+                    ),
                     success=[control_mode_only],
                 )
             ],
-            pointer=0,
+            pointer=1,
         )
         errors = dialogue_interaction_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
@@ -704,6 +707,42 @@ class TestRunControlActions:
 
         assert any("direct live unpause" in error for error in errors)
         assert any("approach_dialogue_target" in error for error in errors)
+
+    def test_pause_binding_cannot_alias_a_direct_unpause(self) -> None:
+        composed = plan(
+            [
+                step(
+                    "unpause",
+                    UseGameBindingAction(
+                        binding=GameBinding.PAUSE,
+                        expected_effect="resume game simulation",
+                    ),
+                    success=[
+                        Condition(
+                            kind=ConditionKind.FIELD,
+                            path="telemetry.game.paused",
+                            operator=ConditionOperator.EQUALS,
+                            expected=False,
+                            max_age_seconds=3.0,
+                            required_capabilities=["game.pause"],
+                        )
+                    ],
+                )
+            ],
+            native=0,
+            pointer=0,
+        )
+
+        errors = dialogue_interaction_policy_errors(
+            composed,
+            observation(
+                controls=TRADE_CONTROLS,
+                capabilities=[*CAPABILITIES, "game.pause"],
+            ),
+        )
+
+        assert any("direct live unpause" in error for error in errors)
+        assert any("harvest_resource" in error for error in errors)
 
     def test_a_stop_only_plan_needs_no_causal_success_condition(self) -> None:
         from kenshi_agent.models import ConditionPath, StopAction

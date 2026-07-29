@@ -25,6 +25,7 @@ from .models import (
     ConditionResult,
     ConsultAdvisorAction,
     ControlMode,
+    GameBinding,
     IdempotencyPolicy,
     Observation,
     PauseAction,
@@ -82,7 +83,16 @@ def _step_action_errors(
         )
         return errors
 
-    if isinstance(action, PauseAction) and action.paused is False:
+    direct_unpause = (
+        isinstance(action, PauseAction)
+        and action.paused is False
+    ) or (
+        isinstance(action, UseGameBindingAction)
+        and action.binding is GameBinding.PAUSE
+        and observation.telemetry is not None
+        and observation.telemetry.game.paused is True
+    )
+    if direct_unpause:
         errors.append(
             f"{label} requests direct live unpause, which the action guard cannot "
             "authorize. Do not add an unpause step before movement: "

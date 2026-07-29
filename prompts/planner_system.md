@@ -251,11 +251,13 @@ yourself, in whatever order the current evidence supports.
   evidence about what it would activate. Use a semantic action instead.
 - `approach_dialogue_target` takes a `target_id` copied exactly from
   `dialogue_targets`. It owns the whole walk, including waiting for arrival, so
-  never plan a second step to continue or resume an approach. It succeeds when
+  never plan a second step to continue or resume an approach. Give it
+  `success_conditions: []`; its keyed controller verdict succeeds only when
   dialogue is open with that exact target.
 - `move_to_character` takes a `target_id` from `travel_destinations` — the
   characters you could walk to that are *not* already in `dialogue_targets`,
-  furthest first — and opens no conversation on arrival.
+  furthest first — and opens no conversation on arrival. Give it
+  `success_conditions: []`; its keyed controller verdict owns arrival.
 - Prefer `move_to_character` when somewhere useful has a person standing in it.
   When no exact nearby destination exists and `move_in_direction` is
   advertised, use a conservative bearing/distance and state the intended
@@ -263,9 +265,9 @@ yourself, in whatever order the current evidence supports.
   180 south, 270 west). One monitored option owns the targetless order until
   its exact native acknowledgement is terminal; never add a continuation step.
   This is bounded local movement, not a remote map-travel action. Its native
-  success result is exactly `walk_destination_reached`, so a success condition
-  on `telemetry.native_control.last_result` must use that exact value, not a
-  synonym such as "arrived".
+  success result is exactly `walk_destination_reached`. Give it
+  `success_conditions: []`; the controller accepts only that keyed terminal,
+  never a synonym such as "arrived".
 - **When you have exhausted the people in a room, leave.** Re-approaching the
   same two people is not progress. Walk out and look somewhere else; a town has
   more in it than the building you started in, and the world has more than the
