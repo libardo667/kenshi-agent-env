@@ -96,8 +96,12 @@ before planning and rejects native actions again at the guard and environment bo
   exit do not generalize; raw `Character::isIndoors()` can retain a stale handle. The producer
   fails unresolved buildings closed while exit completion uses controller proof. No live run has
   exercised the continuity authority.
-- Item cells expose base value, not the final shop charge; the real debit is confirmed only after
-  the purchase, from later money telemetry.
+- Whether an item cell's price is the shop's actual charge is unresolved, and the former claim that
+  it is not was never evidenced by a run. Against it: the producer reads
+  `getValueSingle(isPlayer=true)`, and `purchase_item` will not bind unless the tooltip already
+  displays `c.<expected_price>`, which it could not require if the charge were unknown until after
+  the purchase. Settle this from a live receipt before any design leans on purchase-price
+  uncertainty.
 - A causally later observation stops stale pre-action state from satisfying a postcondition.
   Mechanical effects are controller-terminal or derived from the immediate dispatch baseline;
   ambiguous UI effects remain planner-authored and can still confuse a correlated later change
