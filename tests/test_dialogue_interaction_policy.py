@@ -192,6 +192,64 @@ TRADE_CONTROLS = [
 
 
 class TestGenericComposition:
+    def test_runtime_owned_completion_needs_no_model_authored_duplicate(self) -> None:
+        composed = plan(
+            [
+                PlanStep(
+                    step_id="open-inventory",
+                    action=UseGameBindingAction(
+                        binding=GameBinding.TOGGLE_INVENTORY,
+                        expected_effect="open the selected character inventory",
+                    ),
+                    preconditions=[freshness()],
+                    success_conditions=[],
+                    timeout_seconds=30.0,
+                )
+            ],
+            pointer=0,
+            native=0,
+        )
+        state = observation()
+        assert state.telemetry is not None
+        state = state.model_copy(
+            update={
+                "telemetry": state.telemetry.model_copy(
+                    update={
+                        "ui": state.telemetry.ui.model_copy(
+                            update={"open_inventory_windows": 0}
+                        )
+                    }
+                )
+            }
+        )
+
+        assert not dialogue_interaction_policy_errors(composed, state)
+
+    def test_ambiguous_completion_still_fails_closed_without_a_condition(self) -> None:
+        composed = plan(
+            [
+                PlanStep(
+                    step_id="choose",
+                    action=ActivateVisibleControlAction(
+                        exact_label="Goodbye.",
+                        role="button",
+                    ),
+                    preconditions=[freshness()],
+                    success_conditions=[],
+                    timeout_seconds=30.0,
+                )
+            ],
+            pointer=1,
+            native=0,
+        )
+
+        errors = dialogue_interaction_policy_errors(
+            composed,
+            observation(controls=TRADE_CONTROLS),
+        )
+
+        assert any("no causal success condition" in error for error in errors)
+
     def test_approach_then_activate_is_accepted(self) -> None:
         composed = plan(
             [

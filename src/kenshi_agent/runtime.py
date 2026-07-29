@@ -1212,7 +1212,9 @@ class AgentRuntime:
                 # derive the budget from them rather than rejecting a plan for
                 # failing to also state a number we compute anyway. Raised only,
                 # so a planner asking for more headroom keeps it.
-                from .dialogue_interaction import with_covering_risk_budget
+                from .dialogue_interaction import (
+                    with_covering_risk_budget,
+                )
 
                 plan = with_covering_risk_budget(plan)
                 try:

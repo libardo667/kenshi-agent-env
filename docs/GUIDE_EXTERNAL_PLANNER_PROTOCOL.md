@@ -104,10 +104,11 @@ future steps unless the exact active step opts into interruption and the
 replacement begins with a causally confirmed pause handoff. The executor—not
 the child process—owns active state, retries, branches, budget accounting,
 condition evaluation, cancellation, and postcondition polling. A snapshot at or
-before the action-start revision cannot confirm success. A later snapshot
-satisfies only the temporal fence; most postconditions are still
-planner-authored and are not controller-owned proof that the intended action
-caused the observed change.
+before the action-start revision cannot confirm success. Deterministic action
+effects are derived by the runtime from the immediate pre-dispatch observation
+or settled by a controller terminal. Only genuinely ambiguous effects retain
+planner-authored postconditions, for which a later snapshot satisfies the
+temporal fence but is not itself proof of causation.
 
 ## Errors
 

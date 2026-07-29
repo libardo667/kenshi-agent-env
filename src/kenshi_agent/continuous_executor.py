@@ -6,7 +6,12 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-from .action_contracts import ActionExecution, contract_for
+from .action_contracts import (
+    ActionExecution,
+    CompletionOwner,
+    completion_contract_for,
+    contract_for,
+)
 from .config import PlanningConfig
 from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
@@ -858,6 +863,22 @@ class ContinuousPlanExecutor:
                 reason=f"Existing action guard rejected the step: {exc}",
             )
 
+        completion = completion_contract_for(action, observation)
+        if (
+            completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+            and not completion.conditions
+        ):
+            self.guard.release(guard_reservation)
+            return _StepResult(
+                observation=observation,
+                succeeded=False,
+                actions_completed=0,
+                reason=(
+                    "Runtime-owned completion could not derive a causal baseline "
+                    "from the immediate pre-dispatch observation; no input was sent."
+                ),
+            )
+
         try:
             reserved_risk = budget.reserve(action, self.guard.macros)
         except PlanBudgetError as exc:
@@ -1131,6 +1152,11 @@ class ContinuousPlanExecutor:
                 "action_start_revision": action_start_revision.model_dump(mode="json"),
                 "command_id": command.command_id,
                 "remaining_actions_before_commit": budget.remaining_actions,
+                "completion_owner": completion.owner.value,
+                "completion_conditions": [
+                    condition.model_dump(mode="json")
+                    for condition in completion.conditions
+                ],
             },
         )
 
@@ -1411,7 +1437,7 @@ class ContinuousPlanExecutor:
                 staged_patch=staged_patch,
                 interrupted=True,
             )
-        contract = contract_for(step.action)
+        contract = contract_for(action)
         if contract is not None and contract.controller_verified:
             if monitored_outcome is not None:
                 self._event(
@@ -1605,9 +1631,57 @@ class ContinuousPlanExecutor:
                 success=transition.success,
                 staged_patch=staged_patch if succeeded else None,
             )
+        if completion.owner is CompletionOwner.CONTROLLER_TERMINAL:
+            succeeded = bool(
+                transition.receipt.accepted
+                and (transition.receipt.executed or transition.terminated)
+            )
+            self._event(
+                "plan_step_progress",
+                plan,
+                latest,
+                step=step,
+                reason="Accepted the controller-owned terminal receipt.",
+                evidence={
+                    "completion_owner": completion.owner.value,
+                    "accepted": transition.receipt.accepted,
+                    "executed": transition.receipt.executed,
+                    "terminated": transition.terminated,
+                },
+            )
+            return _StepResult(
+                observation=latest,
+                succeeded=succeeded,
+                actions_completed=1,
+                reason=(
+                    "Controller-owned action reached its terminal receipt."
+                    if succeeded
+                    else "Controller-owned action lacked an accepted terminal receipt."
+                ),
+                terminated=transition.terminated,
+                success=transition.success,
+                staged_patch=staged_patch if succeeded else None,
+            )
+
+        if completion.owner is CompletionOwner.RUNTIME_CONDITIONS:
+            runtime_paths = {
+                condition.path
+                for condition in completion.conditions
+                if condition.path is not None
+            }
+            success_conditions = (
+                *completion.conditions,
+                *(
+                    condition
+                    for condition in step.success_conditions
+                    if condition.path not in runtime_paths
+                ),
+            )
+        else:
+            success_conditions = tuple(step.success_conditions)
         while True:
             success_evaluations = evaluate_conditions(
-                step.success_conditions,
+                list(success_conditions),
                 latest,
                 after_revision=action_start_revision,
             )
@@ -1623,6 +1697,7 @@ class ContinuousPlanExecutor:
                 step=step,
                 reason="Evaluated typed postconditions on the latest revision.",
                 evidence={
+                    "completion_owner": completion.owner.value,
                     "success_conditions": self._evaluations_json(success_evaluations),
                     "failure_conditions": self._evaluations_json(failure_evaluations),
                 },

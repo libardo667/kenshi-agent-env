@@ -154,6 +154,11 @@ postconditions only on causally later revisions. Timeout after possible delivery
 is inconclusive unless the protocol proves rejection. Never automatically retry
 an ambiguous or at-most-once action.
 
+When action plus immediate pre-dispatch observation determine the completion
+predicate, the runtime owns it. Derive it at the step boundary, not plan
+acceptance, so sequential actions receive distinct baselines. Ask the model for a
+postcondition only when the effect is genuinely ambiguous; a missing baseline fails.
+
 ### 6. Revalidate at the actual input boundary
 
 Validation before entering a polite input lease is necessary but not sufficient —
@@ -275,18 +280,16 @@ Work top-down. Verify each is still open before starting it.
    a causally verified sale or food purchase without exposing its mechanical
    substeps. Missing authority becomes a typed affordance request, never a
    hand-rolled command.
-3. **Expand controller-verified contracts.** Most success conditions are still
-   planner-authored, so later correlated state can pass as the intended effect.
-   Each contract moved to a controller-owned typed terminal verdict removes one
-   class of false success.
-4. **Remote map travel.** No semantic action exists at all; `move_to_character`
-   is bounded to the nearby-character query.
-5. **Native identity validation** across recruit, dismiss, reorder, KO, death,
+3. **Strengthen ambiguous completion contracts.** Equip, scroll, camera gestures,
+   and generic visible controls still rely on planner-authored outcomes. Add
+   controller terminals or runtime-derived evidence where the game exposes a
+   truthful causal signal.
+4. **Native identity validation** across recruit, dismiss, reorder, KO, death,
    save/load, and zone transitions.
-6. **Harden hosted structured-output truncation.** The advisor can return an
+5. **Harden hosted structured-output truncation.** The advisor can return an
    EOF-truncated JSON string within its wall-time allowance; make that failure
    attributable and recoverable without inventing a brief.
-7. **Resume mutation rollout after capability growth.** Mutation remains a
+6. **Resume mutation rollout after capability growth.** Mutation remains a
    required gate, but its attended shard campaign is deliberately paused while
    play-driven affordances expand the still-small implementation surface.
 

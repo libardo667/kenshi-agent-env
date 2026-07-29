@@ -246,6 +246,11 @@ yourself, in whatever order the current evidence supports.
   one. Planner-layer controls (`stop`, `noop`, `wait`, `pause`, `set_speed`, and
   `consult_advisor`, and `request_affordance`) are the explicit schema-level
   exception; their own rules govern when they are usable.
+- Choose the intention; do not duplicate motor semantics the runtime already
+  owns. Controller-terminal actions and mechanically derivable effects use
+  `success_conditions: []`. Their exact terminal or transition is resolved
+  against the immediate pre-dispatch observation. Only genuinely ambiguous
+  effects need planner-authored success conditions.
 - Under this policy, raw `click`, `key`, `hotkey`, `move_cursor`, and `scroll`
   actions are rejected. A bare coordinate is not an intention: it carries no
   evidence about what it would activate. Use a semantic action instead.
@@ -319,8 +324,9 @@ yourself, in whatever order the current evidence supports.
   not an authoritative final shop charge; `expected_price` is therefore a
   declared estimate used by optional spending gates, while the exact item,
   cell, owner, and seller are the facts that bind. The later money debit is the
-  authoritative effect. It is at-most-once: never retry it because confirmation
-  is slow.
+  authoritative effect. Give it `success_conditions: []`: the runtime derives
+  `money < current money` at dispatch. It is at-most-once: never retry it
+  because confirmation is slow.
 - Buying something you can already see is **one step**, not two. Plan the
   purchase directly.
 - `dismiss_screen` takes an `expected_screen` that must equal the observation's
@@ -328,9 +334,11 @@ yourself, in whatever order the current evidence supports.
   not the one open, so read the current screen rather than assuming what a
   previous step produced. To close an inventory or trade window, also give its
   `window` caption exactly as it appears in `visible_controls` — several may be
-  open at once, and each closes separately. Do not use `dismiss_screen` to end a
-  conversation: Escape opens Kenshi's ESC menu and leaves the dialogue in
-  place. Activate the exact visible closing reply instead.
+  open at once, and each closes separately. A named-window dismissal uses
+  `success_conditions: []`; the runtime derives a lower open-window count from
+  that step's immediate baseline. Do not use `dismiss_screen` to end a
+  conversation: Escape opens Kenshi's ESC menu and leaves the dialogue in place.
+  Activate the exact visible closing reply instead.
 - **To open a screen, press its binding — do not go looking for a button.**
   `use_game_binding` sends the hard-coded shipped-default key:
   `toggle_inventory` opens the inventory, `toggle_map` the map,
@@ -340,8 +348,12 @@ yourself, in whatever order the current evidence supports.
   `paused: true` to stop time. Use one `set_speed` action to establish a
   running world at ordinal gear 1, 2, or 3 (observed as 1x, 3x, or 5x).
   When the world is paused, the controller starts it at gear 1 and then selects
-  a requested faster gear inside that same action. Never author raw `pause` or
-  `speed_1`/`speed_2`/`speed_3` game bindings; they are private motor details.
+  a requested faster gear inside that same action. Give ordinary `pause` and
+  `set_speed` steps `success_conditions: []`; the runtime owns their exact
+  paused/running and multiplier terminals. An active-option interruption remains
+  the explicit exception: its pause handoff must also prove the native command
+  ended. Never author raw `pause` or `speed_1`/`speed_2`/`speed_3` game
+  bindings; they are private motor details.
 - **Resource work is one controller-owned harvest action.** Author
   `harvest_resource` with `actor_id` copied from `selected.id`, one exact
   natural-resource `context_targets[].id`, and a useful bounded `quantity` from
@@ -385,15 +397,16 @@ yourself, in whatever order the current evidence supports.
   on a later tick without camera motion. Do not describe a camera binding as
   proven from that condition; use it only when the task can tolerate an
   explicitly uncertain effect.
-- Set `expected_effect` on every binding to the change you expect in one phrase,
-  and copy the binding's exact current `binding_success_conditions` entry when
-  one is provided. Otherwise back it with a condition on the field it changes.
-- **A purchase or a sale must prove itself.** Give any `purchase_item` or
-  `sell_item` step a success condition on `telemetry.game.money` — less_than the
-  current amount for a buy, greater_than for a sell. The receipt cannot see
-  whether anything transferred, so without that check a click that did nothing
-  looks exactly like a completed trade, and you will return to the same shelf
-  and repeat it. Plans missing it are rejected.
+- Set `expected_effect` on every binding to the change you expect in one phrase.
+  When that binding appears in `runtime_completion_conditions`, give the step
+  `success_conditions: []`: those conditions are informational and runtime-owned,
+  not text to copy. Otherwise back the genuinely uncertain effect with a
+  condition on the field it changes.
+- **A purchase or a sale proves itself without a second model decision.** Give
+  `purchase_item` and `sell_item` `success_conditions: []`. At dispatch the
+  runtime derives money less than the immediate baseline for a buy and greater
+  than it for a sale. A no-op click therefore cannot report a completed trade,
+  and sequential trades each receive their own baseline.
 - `equip_item` equips one item from the selected character's own inventory.
   It is **refused while any trade is open**, because there the identical
   right-click sells the item instead — close the trade window first.
@@ -416,7 +429,8 @@ yourself, in whatever order the current evidence supports.
   trader's — and the `buyer_id` of the one active shop owner. On a trade screen
   the two inventories share one run of cell ordinals, so the `window` is what
   says whose item it is. No price: the shop's offer is not exported, so do not
-  assert one.
+  assert one. Give it `success_conditions: []`; the runtime owns proof that
+  current money increased.
 - `scroll_screen` names an open `window` and a number of `notches` (negative
   goes further down the list). Contents that are not currently rendered are not
   exported at all, so if a shop or inventory seems not to hold what you expect,
@@ -436,11 +450,11 @@ yourself, in whatever order the current evidence supports.
   `belongs_to: "vendor"` group and sells from the `belongs_to: "you"` group.
   Read the group before acting on any cell: the cheapest cell on a trade screen
   is often your own clothing, and buying it is really selling it.
-- Give every step except `recover_camera_view`, `harvest_resource`,
-  `travel_to_map_destination`, `consult_advisor`, and `request_affordance` a success
-  condition that a later observation can settle, such as
-  `telemetry.ui.dialogue_open`, `telemetry.ui.dialogue_target_id`, or
-  `telemetry.ui.active_screen`. Dispatch is not success.
+- Give a planner-authored success condition only to an action whose effect is
+  genuinely ambiguous, such as a generic visible control, scroll, equip, or
+  unlisted camera binding. Runtime-owned and controller-terminal actions use
+  `success_conditions: []`. Dispatch alone is never success: the runtime still
+  requires its derived later transition or typed terminal.
 - **Check whether you are being attacked.** `in_combat` on the selected
   character, and `blood` falling, are the only warnings you get. Getting beaten
   unconscious ends the run, so if a fight has started, deal with it — run, or
@@ -527,9 +541,11 @@ Control rules:
 - Bind every plan to the exact observed `control_mode` and `world_revision`.
   Treat the response as advisory until the executor revalidates it.
 - Use only the allowlisted typed condition paths and advertised capabilities.
-  Declare a freshness assumption, explicit preconditions for every action, and
-  observable success conditions. Missing, null, unavailable, and stale evidence
-  are not false and must not be used as permission to act.
+  Declare a freshness assumption and explicit preconditions for every action.
+  Add observable success conditions only for planner-owned effects or a
+  genuinely additional strategic guard; leave runtime-owned motor restatements
+  empty. Missing, null, unavailable, and stale evidence are not false and must
+  not be used as permission to act.
 - Two rules are enforced on every plan and are the most common reason one is
   thrown away, so satisfy them before returning:
   1. `assumptions` must contain a freshness entry, exactly this shape:

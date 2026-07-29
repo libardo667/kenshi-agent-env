@@ -19,6 +19,7 @@ from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
 from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.memory import MemoryStore
 from kenshi_agent.models import (
+    GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -33,6 +34,7 @@ from kenshi_agent.models import (
     Disposition,
     FieldbookEntryKind,
     FieldbookProjectKind,
+    GameBinding,
     GameState,
     IdempotencyPolicy,
     InputBoundaryDecision,
@@ -61,6 +63,8 @@ from kenshi_agent.models import (
     StopAction,
     TelemetrySnapshot,
     Transition,
+    UIState,
+    UseGameBindingAction,
     VisibleUIControl,
     WorldStateRevision,
 )
@@ -130,6 +134,7 @@ class RevisionEnvironment(AgentEnvironment):
         self.paused = True
         self.speed = 1.0
         self.money = 180
+        self.open_inventory_windows = 0
         self.actions: list[Action] = []
         self.dispatch_contexts: list[CommandDispatchContext] = []
         self.dispatch_tokens: list[ExecutionToken | None] = []
@@ -150,13 +155,22 @@ class RevisionEnvironment(AgentEnvironment):
             telemetry=TelemetrySnapshot(
                 sequence=self.sequence,
                 captured_at=datetime.now(UTC),
-                capabilities=["game.pause", "game.speed", "game.money", "game.time"],
+                capabilities=[
+                    "game.pause",
+                    "game.speed",
+                    "game.money",
+                    "game.time",
+                    "ui.inventory",
+                ],
                 game=GameState(
                     loaded=True,
                     paused=self.paused,
                     speed_multiplier=self.speed,
                     money=self.money,
                     elapsed_minutes=0.0,
+                ),
+                ui=UIState(
+                    open_inventory_windows=self.open_inventory_windows,
                 ),
                 nearby_entities=(
                     [
@@ -188,7 +202,13 @@ class RevisionEnvironment(AgentEnvironment):
         if isinstance(action, PauseAction):
             self.paused = action.paused
         elif isinstance(action, SetSpeedAction):
-            self.speed = float(action.speed)
+            self.paused = False
+            self.speed = GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed]
+        elif (
+            isinstance(action, UseGameBindingAction)
+            and action.binding is GameBinding.TOGGLE_INVENTORY
+        ):
+            self.open_inventory_windows = int(not self.open_inventory_windows)
         self.step_index += 1
         if self.change_money_after_first_action and len(self.actions) == 1:
             self.money = 0
@@ -488,6 +508,7 @@ def runtime_for(
         allow_action_kinds=[
             "pause",
             "set_speed",
+            "use_game_binding",
             "skill",
             "stop",
             "approach_dialogue_target",
@@ -602,6 +623,147 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
             "resume",
             "accelerate",
         ]
+
+    asyncio.run(scenario())
+
+
+def test_executor_uses_dispatch_time_completion_without_model_restatement(
+    tmp_path: Path,
+) -> None:
+    class MechanicalCompletionPlanner(Planner):
+        async def decide(self, current: Observation) -> PlannerOutput:
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id="mechanical-completion",
+                plan_version=1,
+                objective="Select 5x playback without restating motor semantics.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="accelerate",
+                        action=SetSpeedAction(speed=3),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        failure_conditions=[],
+                        timeout_seconds=1.0,
+                    )
+                ],
+                entry_step_id="accelerate",
+                max_actions=1,
+                max_wall_seconds=3.0,
+                max_game_seconds=3.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            MechanicalCompletionPlanner(),
+            clock,
+        )
+        try:
+            summary = await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 1
+        assert environment.speed == 5.0
+        progress = [
+            event
+            for event in read_events(tmp_path / "events.jsonl")
+            if event["event_type"] == "plan_step_progress"
+        ]
+        assert any(
+            event["payload"]["evidence"].get("completion_owner")
+            == "runtime_conditions"
+            for event in progress
+        )
+
+    asyncio.run(scenario())
+
+
+def test_sequential_toggles_derive_distinct_dispatch_time_baselines(
+    tmp_path: Path,
+) -> None:
+    class SequentialTogglePlanner(Planner):
+        async def decide(self, current: Observation) -> PlannerOutput:
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id="sequential-toggles",
+                plan_version=1,
+                objective="Open and then close the same inventory.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="open",
+                        action=UseGameBindingAction(
+                            binding=GameBinding.TOGGLE_INVENTORY,
+                            expected_effect="open inventory",
+                        ),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        timeout_seconds=1.0,
+                        on_success="close",
+                    ),
+                    PlanStep(
+                        step_id="close",
+                        action=UseGameBindingAction(
+                            binding=GameBinding.TOGGLE_INVENTORY,
+                            expected_effect="close inventory",
+                        ),
+                        preconditions=[fresh()],
+                        success_conditions=[],
+                        timeout_seconds=1.0,
+                    ),
+                ],
+                entry_step_id="open",
+                max_actions=2,
+                max_wall_seconds=3.0,
+                max_game_seconds=3.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=0,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            SequentialTogglePlanner(),
+            clock,
+        )
+        try:
+            summary = await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 2
+        assert environment.open_inventory_windows == 0
+        started = [
+            event
+            for event in read_events(tmp_path / "events.jsonl")
+            if event["event_type"] == "plan_step_started"
+        ]
+        expected_baselines = [
+            event["payload"]["evidence"]["completion_conditions"][0]["expected"]
+            for event in started
+        ]
+        assert expected_baselines == [0, 1]
 
     asyncio.run(scenario())
 

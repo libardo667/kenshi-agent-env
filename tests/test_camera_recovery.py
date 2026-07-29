@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 from PIL import Image, ImageDraw
-from pydantic import ValidationError
 
 from kenshi_agent.action_contracts import RECOVER_CAMERA_VIEW_CONTRACT
 from kenshi_agent.camera_recovery import score_camera_observation
@@ -298,21 +297,21 @@ def test_action_has_no_arguments_and_is_the_only_empty_postcondition_step() -> N
         success_conditions=[],
         timeout_seconds=30,
     )
-    with pytest.raises(ValidationError, match="success_conditions may be empty only"):
-        PlanStep(
-            step_id="wait",
-            action={"kind": "wait", "seconds": 0.0},  # type: ignore[arg-type]
-            preconditions=[
-                Condition(
-                    kind=ConditionKind.TELEMETRY_FRESH,
-                    operator=ConditionOperator.EQUALS,
-                    expected=True,
-                    max_age_seconds=3.0,
-                )
-            ],
-            success_conditions=[],
-            timeout_seconds=30,
-        )
+    wait = PlanStep(
+        step_id="wait",
+        action={"kind": "wait", "seconds": 0.0},  # type: ignore[arg-type]
+        preconditions=[
+            Condition(
+                kind=ConditionKind.TELEMETRY_FRESH,
+                operator=ConditionOperator.EQUALS,
+                expected=True,
+                max_age_seconds=3.0,
+            )
+        ],
+        success_conditions=[],
+        timeout_seconds=30,
+    )
+    assert wait.success_conditions == []
 
 
 def test_contract_is_controller_verified_and_binds_current_hud(tmp_path: Path) -> None:

@@ -14,6 +14,8 @@ import pytest
 from kenshi_agent.action_contracts import (
     ACTION_CONTRACTS,
     USE_GAME_BINDING_CONTRACT,
+    CompletionOwner,
+    completion_contract_for,
     contract_for,
 )
 from kenshi_agent.models import (
@@ -38,8 +40,8 @@ def observation(*, loaded: bool = True, stale: bool = False) -> Observation:
         telemetry=TelemetrySnapshot(
             sequence=7,
             captured_at=datetime.now(UTC),
-            capabilities=["game.pause", "ui.inventory"],
-            game=GameState(loaded=loaded, paused=True),
+            capabilities=["game.money", "game.pause", "ui.inventory"],
+            game=GameState(loaded=loaded, paused=True, money=1000),
             ui=UIState(
                 open_inventory_windows=0,
                 management_screen_open=False,
@@ -97,7 +99,7 @@ def test_raw_time_keys_are_absent_from_planner_bindings() -> None:
         "speed_2",
         "speed_3",
     } & set(binding_action["available_bindings"])
-    inventory_condition = binding_action["binding_success_conditions"][
+    inventory_condition = binding_action["runtime_completion_conditions"][
         "toggle_inventory"
     ]
     assert inventory_condition["path"] == "telemetry.ui.open_inventory_windows"
@@ -108,7 +110,7 @@ def test_raw_time_keys_are_absent_from_planner_bindings() -> None:
         "speed_1",
         "speed_2",
         "speed_3",
-    } & set(binding_action["binding_success_conditions"])
+    } & set(binding_action["runtime_completion_conditions"])
 
 
 @pytest.mark.parametrize(
@@ -134,7 +136,7 @@ def test_raw_time_key_cannot_bind_as_a_planner_affordance(
     assert "set_speed" in result.reason
 
 
-def test_inventory_binding_must_verify_the_inventory_signal() -> None:
+def test_inventory_binding_owns_its_inventory_signal() -> None:
     from kenshi_agent.dialogue_interaction import _step_action_errors
     from kenshi_agent.models import (
         Condition,
@@ -171,7 +173,12 @@ def test_inventory_binding_must_verify_the_inventory_signal() -> None:
         control_mode=ControlMode.NATIVE_ASSISTED,
         require_binding=False,
     )
-    assert any("telemetry.ui.open_inventory_windows" in error for error in errors)
+    assert errors == []
+    completion = completion_contract_for(step.action, observation())
+    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    assert [condition.path for condition in completion.conditions] == [
+        "telemetry.ui.open_inventory_windows"
+    ]
 
 
 def test_a_binding_binds_on_a_loaded_game() -> None:
@@ -892,7 +899,7 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
         strict.validate(action, running)
 
 
-def test_a_purchase_step_must_verify_that_money_moved() -> None:
+def test_a_purchase_contract_owns_proof_that_money_moved() -> None:
     """A no-op purchase reported DONE three times running.
 
     `purchase_item`'s receipt cannot see whether anything transferred, so if the
@@ -901,7 +908,6 @@ def test_a_purchase_step_must_verify_that_money_moved() -> None:
     the same shelf because nothing it could see said otherwise.
     """
 
-    from kenshi_agent.action_contracts import PURCHASE_ITEM_CONTRACT
     from kenshi_agent.dialogue_interaction import _step_action_errors
     from kenshi_agent.models import (
         Condition,
@@ -913,8 +919,6 @@ def test_a_purchase_step_must_verify_that_money_moved() -> None:
         PurchaseItemAction,
     )
 
-    assert PURCHASE_ITEM_CONTRACT.verification_paths == {"telemetry.game.money"}
-
     action = PurchaseItemAction(
         cell_label="Dried Meat", item_name="Dried Meat", expected_price=38,
         window="BARMAN", seller_id="e-barman",
@@ -923,10 +927,6 @@ def test_a_purchase_step_must_verify_that_money_moved() -> None:
     screen_only = Condition(
         kind=ConditionKind.FIELD, path="telemetry.ui.active_screen",
         operator=ConditionOperator.EQUALS, expected="trade", max_age_seconds=2.0,
-    )
-    money_moved = Condition(
-        kind=ConditionKind.FIELD, path="telemetry.game.money",
-        operator=ConditionOperator.LESS_THAN, expected=1000, max_age_seconds=2.0,
     )
 
     def step_with(*conditions: Condition) -> PlanStep:
@@ -940,14 +940,24 @@ def test_a_purchase_step_must_verify_that_money_moved() -> None:
             timeout_seconds=10.0,
         )
 
-    unverified = _step_action_errors(
+    planner_did_not_duplicate = _step_action_errors(
         step_with(screen_only), observation(),
         control_mode=ControlMode.NATIVE_ASSISTED, require_binding=False,
     )
-    assert any("must verify its own effect" in e for e in unverified), unverified
-
-    verified = _step_action_errors(
-        step_with(screen_only, money_moved), observation(),
-        control_mode=ControlMode.NATIVE_ASSISTED, require_binding=False,
+    assert not any(
+        "completion" in error or "causal success" in error
+        for error in planner_did_not_duplicate
     )
-    assert not any("must verify its own effect" in e for e in verified), verified
+
+    completion = completion_contract_for(action, observation())
+    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    assert [
+        (condition.path, condition.operator, condition.expected)
+        for condition in completion.conditions
+    ] == [
+        (
+            "telemetry.game.money",
+            ConditionOperator.LESS_THAN,
+            1000,
+        )
+    ]

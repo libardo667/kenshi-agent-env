@@ -16,9 +16,13 @@ composes activate-alone are both acceptable if their references bind.
 
 from __future__ import annotations
 
-from .action_contracts import ActionContract, contract_for
+from .action_contracts import (
+    ActionContract,
+    CompletionOwner,
+    completion_contract_for,
+    contract_for,
+)
 from .models import (
-    GAME_BINDING_VERIFICATION_PATHS,
     TIME_GAME_BINDINGS,
     TOGGLE_GAME_BINDINGS,
     Action,
@@ -115,8 +119,17 @@ def _step_action_errors(
 
     if is_planner_control_action(action):
         # Run control (stop, noop, wait, pause, set_speed) touches no game object
-        # and binds to no reference, so contract checks and a causal success
-        # condition do not apply. A plan that simply ends is a valid plan.
+        # and binds to no reference. Its completion is runtime-owned rather than
+        # a second model-authored description of the same intention.
+        completion = completion_contract_for(action, observation)
+        if (
+            completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+            and not completion.conditions
+        ):
+            errors.append(
+                f"{label} runtime completion baseline is unavailable; no input "
+                "may be dispatched without a verifiable terminal"
+            )
         return errors
 
     contract: ActionContract | None = contract_for(action)
@@ -181,32 +194,29 @@ def _step_action_errors(
             "permission to act twice"
         )
 
-    if not contract.controller_verified and not any(
+    completion = completion_contract_for(action, observation)
+    if (
+        completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+        and not completion.conditions
+    ):
+        errors.append(
+            f"{label} runtime completion baseline is unavailable; no input may "
+            "be dispatched without a verifiable terminal"
+        )
+    elif completion.owner is CompletionOwner.RUNTIME_CONDITIONS and not all(
+        _is_causal_condition(condition.kind, condition.path)
+        for condition in completion.conditions
+    ):
+        errors.append(
+            f"{label} runtime completion contract contains a non-causal condition"
+        )
+    elif completion.owner is CompletionOwner.PLANNER_CONDITIONS and not any(
         _is_causal_condition(condition.kind, condition.path)
         for condition in step.success_conditions
     ):
         errors.append(
             f"{label} has no causal success condition; success must be observable in a "
             "later world revision rather than assumed from dispatch"
-        )
-
-    # Some actions leave no usable trace in their own receipt, so a plan that
-    # does not check the world cannot tell a completed one from a no-op. Three
-    # live purchases in a row moved no money, each reported success because the
-    # plan's own conditions never looked at money, and the agent went back to
-    # the same shelf because nothing it could see said otherwise.
-    verification_paths = set(contract.verification_paths)
-    if isinstance(action, UseGameBindingAction):
-        binding_path = GAME_BINDING_VERIFICATION_PATHS.get(action.binding)
-        if binding_path is not None:
-            verification_paths.add(binding_path.value)
-    missing_verification = verification_paths - {
-        condition.path for condition in step.success_conditions if condition.path
-    }
-    if missing_verification:
-        errors.append(
-            f"{label} action {action.kind!r} must verify its own effect: add a "
-            "success condition on " + ", ".join(sorted(missing_verification))
         )
     return errors
 

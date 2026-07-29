@@ -98,9 +98,10 @@ before planning and rejects native actions again at the guard and environment bo
   exercised the continuity authority.
 - Item cells expose base value, not the final shop charge; the real debit is confirmed only after
   the purchase, from later money telemetry.
-- A causally later observation stops stale pre-action state from satisfying a postcondition, but
-  most success conditions are planner-authored. Only `controller_verified` contracts carry effect
-  proof, so later correlated state can still be mistaken for the intended effect.
+- A causally later observation stops stale pre-action state from satisfying a postcondition.
+  Mechanical effects are controller-terminal or derived from the immediate dispatch baseline;
+  ambiguous UI effects remain planner-authored and can still confuse a correlated later change
+  with the intended effect.
 - Synthetic portable and replay evidence proves campaign-scoped continuity across real process
   restarts, including exact-identity exclusion, bounded fieldbook reopening, current-telemetry
   precedence, rejection correction, and evidence-backed commitment closure. No supervised live

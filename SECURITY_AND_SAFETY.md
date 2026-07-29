@@ -106,11 +106,11 @@ local action. Cleanup is not successful until a causally later revision with
 
 ## Explicit gaps
 
-- Requiring a success condition on a causally later revision does not make it an
-  authoritative effect. Most conditions are planner-authored and do not derive an
-  operator, expected value, and baseline from bound pre-action state, so later
-  correlated state can still produce a false semantic success. Only
-  `controller_verified` contracts avoid this.
+- Causally later evidence is necessary but does not make an ambiguous effect
+  authoritative. Deterministic effects use controller terminals or conditions
+  derived from the immediate pre-dispatch state; genuinely ambiguous planner
+  conditions can still mistake a later correlated change for the intended
+  effect until their contracts gain stronger evidence.
 - Live evidence is single supervised runs on one host and save. One directional
   probe does not generalize every bearing, obstacle, or scene.
 

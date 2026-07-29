@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from .models import (
     GAME_BINDING_KEYS,
+    GAME_SPEED_MULTIPLIER_BY_GEAR,
     TIME_GAME_BINDINGS,
     Action,
     ActivateVisibleControlAction,
@@ -39,33 +40,44 @@ from .models import (
     ConditionKind,
     ConditionOperator,
     ConditionPath,
+    ConsultAdvisorAction,
     ContextActionKind,
     ControlMode,
     DismissScreenAction,
     Disposition,
     EquipItemAction,
     ExitCurrentBuildingAction,
+    GameBinding,
     HarvestResourceAction,
     IdempotencyPolicy,
     MoveInDirectionAction,
     MoveToCharacterAction,
+    NoopAction,
     NormalizedPointerBounds,
     Observation,
     OpenContextInventoryAction,
+    PauseAction,
     PerformContextAction,
     PlanEnvelope,
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
+    ReadFieldbookAction,
+    RecallMemoryAction,
     RecoverCameraViewAction,
+    RequestAffordanceAction,
     ScrollScreenAction,
     SellItemAction,
+    SetSpeedAction,
     SkillAction,
+    StopAction,
     TravelToMapDestinationAction,
     UseGameBindingAction,
+    WaitAction,
     WorldStateRevision,
     WorldTarget,
     dialogue_targets,
+    game_binding_success_condition,
     normalize_control_label,
 )
 from .resource_transfer import resource_transfer_layout_error
@@ -121,6 +133,28 @@ class ActionExecution(StrEnum):
     ATOMIC_HANDLER = "atomic_handler"
     MONITORED_OPTION = "monitored_option"
     COMPOSITE_OPTION = "composite_option"
+
+
+class CompletionOwner(StrEnum):
+    """Who turns one dispatched intention into a terminal result."""
+
+    PLANNER_CONDITIONS = "planner_conditions"
+    RUNTIME_CONDITIONS = "runtime_conditions"
+    CONTROLLER_TERMINAL = "controller_terminal"
+
+
+@dataclass(frozen=True, slots=True)
+class ActionCompletionContract:
+    """Completion authority resolved for one action at one observation."""
+
+    owner: CompletionOwner
+    conditions: tuple[Condition, ...] = ()
+
+
+CompletionConditionFactory = Callable[
+    [Action, Observation],
+    tuple[Condition, ...] | None,
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1562,15 +1596,18 @@ class ActionContract:
     execution: ActionExecution
     receipt_kind: str
     bind: Callable[[Action, Observation], ReferenceBinding]
-    # Fields a step's own success conditions must check for this action. An
-    # action whose effect is invisible in its receipt needs the plan to verify
-    # it against the world, or a no-op reports success: three consecutive live
-    # purchases moved no money, each reported DONE, and the agent looped because
-    # nothing it could see said otherwise.
-    verification_paths: frozenset[str] = frozenset()
     # The handler itself returns a typed terminal verdict based on evidence it
     # owns, so the planner must not invent a redundant postcondition.
     controller_verified: bool = False
+    # A deterministic effect derived from the action and its immediate
+    # pre-dispatch observation. `None` means this action variant remains
+    # planner-owned; an empty tuple means the runtime owns it but the required
+    # baseline is unavailable, which fails closed before dispatch.
+    derive_completion_conditions: CompletionConditionFactory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     # Optional observation-specific visibility. Capabilities answer whether an
     # action kind exists; this answers whether its declared argument source
     # contains at least one currently bindable choice.
@@ -1605,6 +1642,82 @@ class ActionContract:
         if observation is None or self.authorable_when is None:
             return True
         return self.authorable_when(observation)
+
+
+def _money_decreased(
+    action: Action,
+    observation: Observation,
+) -> tuple[Condition, ...]:
+    if not isinstance(action, PurchaseItemAction):
+        return ()
+    telemetry = observation.telemetry
+    if telemetry is None or telemetry.game.money is None:
+        return ()
+    return (
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_GAME_MONEY,
+            operator=ConditionOperator.LESS_THAN,
+            expected=telemetry.game.money,
+            max_age_seconds=3.0,
+        ),
+    )
+
+
+def _money_increased(
+    action: Action,
+    observation: Observation,
+) -> tuple[Condition, ...]:
+    if not isinstance(action, SellItemAction):
+        return ()
+    telemetry = observation.telemetry
+    if telemetry is None or telemetry.game.money is None:
+        return ()
+    return (
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_GAME_MONEY,
+            operator=ConditionOperator.GREATER_THAN,
+            expected=telemetry.game.money,
+            max_age_seconds=3.0,
+        ),
+    )
+
+
+def _named_window_closed(
+    action: Action,
+    observation: Observation,
+) -> tuple[Condition, ...] | None:
+    if not isinstance(action, DismissScreenAction) or not action.window:
+        return None
+    telemetry = observation.telemetry
+    if telemetry is None or telemetry.ui.open_inventory_windows is None:
+        return ()
+    return (
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
+            operator=ConditionOperator.LESS_THAN,
+            expected=telemetry.ui.open_inventory_windows,
+            max_age_seconds=3.0,
+        ),
+    )
+
+
+def _binding_transition(
+    action: Action,
+    observation: Observation,
+) -> tuple[Condition, ...] | None:
+    if not isinstance(action, UseGameBindingAction):
+        return ()
+    if action.binding not in {
+        GameBinding.TOGGLE_INVENTORY,
+        GameBinding.TOGGLE_MAP,
+        GameBinding.TOGGLE_STATS,
+    }:
+        return None
+    condition = game_binding_success_condition(action.binding, observation.telemetry)
+    return (condition,) if condition is not None else ()
 
 
 APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
@@ -2007,6 +2120,7 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_dismiss",
     bind=bind_dismiss_screen,
+    derive_completion_conditions=_named_window_closed,
 )
 
 PURCHASE_ITEM_CONTRACT = ActionContract(
@@ -2047,8 +2161,8 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_purchase",
-    verification_paths=frozenset({"telemetry.game.money"}),
     bind=bind_purchase_item,
+    derive_completion_conditions=_money_decreased,
 )
 
 
@@ -2086,6 +2200,7 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_binding",
     bind=bind_use_game_binding,
+    derive_completion_conditions=_binding_transition,
 )
 
 RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
@@ -2201,8 +2316,8 @@ SELL_ITEM_CONTRACT = ActionContract(
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_sell",
-    verification_paths=frozenset({"telemetry.game.money"}),
     bind=bind_sell_item,
+    derive_completion_conditions=_money_increased,
 )
 
 
@@ -2316,6 +2431,81 @@ def contract_for(action: Action) -> ActionContract | None:
     """The contract governing an action, or None for uncontracted actions."""
 
     return ACTION_CONTRACTS.get(action.kind)
+
+
+def completion_contract_for(
+    action: Action,
+    observation: Observation,
+) -> ActionCompletionContract:
+    """Resolve completion once, against the state immediately before dispatch.
+
+    The planner chooses an intention. It does not repeat motor semantics the
+    runtime can calculate exactly: a purchase lowers current money, a sale
+    raises it, a toggle changes its current state, and playback names its exact
+    target state. Ambiguous effects remain planner-owned.
+    """
+
+    if isinstance(action, PauseAction):
+        return ActionCompletionContract(
+            owner=CompletionOwner.RUNTIME_CONDITIONS,
+            conditions=(
+                Condition(
+                    kind=ConditionKind.FIELD,
+                    path=ConditionPath.TELEMETRY_GAME_PAUSED,
+                    operator=ConditionOperator.EQUALS,
+                    expected=action.paused,
+                    max_age_seconds=3.0,
+                ),
+            ),
+        )
+    if isinstance(action, SetSpeedAction):
+        return ActionCompletionContract(
+            owner=CompletionOwner.RUNTIME_CONDITIONS,
+            conditions=(
+                Condition(
+                    kind=ConditionKind.FIELD,
+                    path=ConditionPath.TELEMETRY_GAME_PAUSED,
+                    operator=ConditionOperator.EQUALS,
+                    expected=False,
+                    max_age_seconds=3.0,
+                ),
+                Condition(
+                    kind=ConditionKind.FIELD,
+                    path=ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
+                    operator=ConditionOperator.EQUALS,
+                    expected=GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed],
+                    max_age_seconds=3.0,
+                ),
+            ),
+        )
+    if isinstance(
+        action,
+        (
+            NoopAction,
+            StopAction,
+            WaitAction,
+            ConsultAdvisorAction,
+            RequestAffordanceAction,
+            RecallMemoryAction,
+            ReadFieldbookAction,
+        ),
+    ):
+        return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
+
+    contract = contract_for(action)
+    if contract is None:
+        return ActionCompletionContract(owner=CompletionOwner.PLANNER_CONDITIONS)
+    if contract.controller_verified:
+        return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
+    if contract.derive_completion_conditions is None:
+        return ActionCompletionContract(owner=CompletionOwner.PLANNER_CONDITIONS)
+    conditions = contract.derive_completion_conditions(action, observation)
+    if conditions is None:
+        return ActionCompletionContract(owner=CompletionOwner.PLANNER_CONDITIONS)
+    return ActionCompletionContract(
+        owner=CompletionOwner.RUNTIME_CONDITIONS,
+        conditions=conditions,
+    )
 
 
 def planner_visible_contracts(

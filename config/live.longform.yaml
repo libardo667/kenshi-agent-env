@@ -75,8 +75,11 @@ runtime:
     talk to them, buy and sell.
     You can also harvest a bounded yield from an exact observed resource into
     the selected character as one controller-owned action.
-    Prefer acting on what you can currently see over gathering more
-    information.
+    Information gathering is part of play: explore, scout, inspect your own
+    state, open useful interfaces, talk to people, and browse shops when what
+    you learn could change the next meaningful choice. Prefer a grounded
+    information-seeking action over guessing. Do not repeat an unchanged look
+    or gather information with no decision it could affect.
 
 planner:
   kind: ${KENSHI_AGENT_PLANNER:-openrouter}

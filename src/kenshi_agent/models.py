@@ -1450,9 +1450,9 @@ class UseGameBindingAction(StrictModel):
 
     kind: Literal["use_game_binding"] = "use_game_binding"
     binding: GameBinding
-    # What the planner expects this to change, so the step can be verified
-    # rather than assumed. Free text: the typed check lives in the step's
-    # success conditions.
+    # Human-readable intent for logs and uncertain bindings. When the binding
+    # has a mechanically derivable transition, the runtime owns its typed
+    # completion condition instead of asking the planner to duplicate it.
     expected_effect: str = Field(min_length=1, max_length=200)
 
 
@@ -3197,7 +3197,7 @@ class Condition(RootModel[ConditionValue]):
         return getattr(self.root, "required_capabilities", [])
 
 
-def _game_binding_success_condition(
+def game_binding_success_condition(
     binding: GameBinding,
     telemetry: TelemetrySnapshot | None,
 ) -> Condition | None:
@@ -3253,10 +3253,9 @@ class PlanStep(StrictModel):
     # the response schema the planner is never allowed to choose.
     action: PlannerAction
     preconditions: list[Condition] = Field(min_length=1, max_length=12)
-    # Controller-verified actions return their own typed terminal verdict and
-    # therefore need no model-authored condition. Every other action still
-    # requires at least one condition; the validator below enforces that
-    # conditional rule.
+    # The action-completion catalog decides whether the controller, runtime, or
+    # planner owns verification. Keeping that rule out of this generic schema
+    # prevents a hard-coded action list from drifting behind the catalog.
     success_conditions: list[Condition] = Field(default_factory=list, max_length=12)
     failure_conditions: list[Condition] = Field(default_factory=list, max_length=12)
     timeout_seconds: float = Field(gt=0.0, le=300.0)
@@ -3277,27 +3276,6 @@ class PlanStep(StrictModel):
     def retry_requires_idempotency(self) -> PlanStep:
         if self.retry_budget and self.idempotency != IdempotencyPolicy.SAFE_TO_RETRY:
             raise ValueError("retry_budget requires idempotency=safe_to_retry")
-        if not self.success_conditions and not isinstance(
-            self.action,
-            (
-                RecoverCameraViewAction,
-                ConsultAdvisorAction,
-                RequestAffordanceAction,
-                RecallMemoryAction,
-                ReadFieldbookAction,
-                ExitCurrentBuildingAction,
-                HarvestResourceAction,
-                TravelToMapDestinationAction,
-            ),
-        ):
-            raise ValueError(
-                "success_conditions may be empty only for recover_camera_view, "
-                "consult_advisor, request_affordance, recall_memory, "
-                "read_fieldbook, exit_current_building, or harvest_resource, "
-                "travel_to_map_destination, "
-                "whose owning subsystem returns a "
-                "typed terminal outcome"
-            )
         return self
 
 
@@ -3791,12 +3769,12 @@ class Observation(StrictModel):
                     for binding in GameBinding
                     if binding not in TIME_GAME_BINDINGS
                 ]
-                entry["binding_success_conditions"] = {
+                entry["runtime_completion_conditions"] = {
                     binding.value: _json_model(condition)
                     for binding in GameBinding
                     if binding not in TIME_GAME_BINDINGS
                     and (
-                        condition := _game_binding_success_condition(
+                        condition := game_binding_success_condition(
                             binding,
                             self.telemetry,
                         )

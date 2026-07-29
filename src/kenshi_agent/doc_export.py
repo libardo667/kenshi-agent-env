@@ -22,9 +22,9 @@ def _action_catalog() -> str:
         "",
         "Regenerate with `python scripts/export_docs.py`.",
         "",
-        "| kind | version | planner-visible | execution | native | max primitives |"
-        " capabilities |",
-        "| --- | --- | --- | --- | --- | --- | --- |",
+        "| kind | version | planner-visible | execution | completion | native |"
+        " max primitives | capabilities |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for kind in sorted(ACTION_CONTRACTS):
         contract = ACTION_CONTRACTS[kind]
@@ -32,15 +32,34 @@ def _action_catalog() -> str:
             ", ".join(f"`{name}`" for name in sorted(contract.required_capabilities))
             or "—"
         )
+        completion = (
+            "controller terminal"
+            if contract.controller_verified
+            else (
+                "runtime-derived"
+                if contract.derive_completion_conditions is not None
+                else "planner conditions"
+            )
+        )
         lines.append(
             f"| `{kind}` | {contract.version}"
             f" | {'yes' if contract.planner_visible else 'no'}"
             f" | {contract.execution.value}"
+            f" | {completion}"
             f" | {'yes' if contract.native_assisted else 'no'}"
             f" | {contract.max_primitive_actions}"
             f" | {capabilities} |"
         )
-    lines.append("")
+    lines.extend(
+        [
+            "",
+            "`runtime-derived` applies when that action variant exposes a "
+            "deterministic signal;",
+            "variants whose factory declines remain planner-owned and fail "
+            "closed without a condition.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

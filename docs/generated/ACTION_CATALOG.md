@@ -4,23 +4,26 @@
 
 Regenerate with `python scripts/export_docs.py`.
 
-| kind | version | planner-visible | execution | native | max primitives | capabilities |
-| --- | --- | --- | --- | --- | --- | --- |
-| `activate_visible_control` | 1.0 | yes | atomic_handler | no | 1 | `ui.visible_controls` |
-| `approach_dialogue_target` | 1.0 | yes | monitored_option | yes | 4 | `control.approach_dialogue_target`, `identity.stable_handles`, `nearby.characters`, `nearby.roles` |
-| `collect_resource_output` | 1.1 | no | atomic_handler | no | 4 | `identity.stable_handles`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
-| `dismiss_screen` | 1.0 | yes | atomic_handler | no | 3 | — |
-| `equip_item` | 1.0 | yes | atomic_handler | no | 1 | `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
-| `exit_current_building` | 1.0 | yes | monitored_option | yes | 4 | `control.exit_current_building`, `game.pause`, `identity.stable_handles`, `squad.indoors` |
-| `harvest_resource` | 1.0 | yes | composite_option | yes | 45 | `control.open_context_inventory`, `control.produce_resource_output`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.basic`, `squad.health`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
-| `move_in_direction` | 1.0 | yes | monitored_option | yes | 4 | `control.move_in_direction`, `squad.health` |
-| `move_to_character` | 1.0 | yes | monitored_option | yes | 4 | `control.move_to_character`, `identity.stable_handles`, `nearby.characters` |
-| `open_context_inventory` | 1.0 | no | atomic_handler | yes | 6 | `control.open_context_inventory`, `identity.stable_handles`, `world.context_targets` |
-| `perform_context_action` | 1.0 | no | monitored_option | yes | 4 | `control.perform_context_action`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
-| `produce_resource_output` | 1.0 | no | monitored_option | yes | 7 | `control.produce_resource_output`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
-| `purchase_item` | 1.0 | yes | atomic_handler | no | 1 | `game.money`, `game.pause`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.basic`, `ui.inventory`, `ui.tooltip`, `ui.visible_controls` |
-| `recover_camera_view` | 1.0 | yes | atomic_handler | no | 15 | `camera.position`, `camera.recovery`, `game.pause`, `squad.basic`, `ui.visible_controls` |
-| `scroll_screen` | 1.0 | yes | atomic_handler | no | 1 | `ui.visible_controls` |
-| `sell_item` | 1.0 | yes | atomic_handler | no | 1 | `game.money`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
-| `travel_to_map_destination` | 1.0 | yes | monitored_option | yes | 5 | `control.travel_to_map_destination`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.health`, `world.known_map_destinations` |
-| `use_game_binding` | 1.0 | yes | atomic_handler | no | 1 | — |
+| kind | version | planner-visible | execution | completion | native | max primitives | capabilities |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `activate_visible_control` | 1.0 | yes | atomic_handler | planner conditions | no | 1 | `ui.visible_controls` |
+| `approach_dialogue_target` | 1.0 | yes | monitored_option | controller terminal | yes | 4 | `control.approach_dialogue_target`, `identity.stable_handles`, `nearby.characters`, `nearby.roles` |
+| `collect_resource_output` | 1.1 | no | atomic_handler | controller terminal | no | 4 | `identity.stable_handles`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
+| `dismiss_screen` | 1.0 | yes | atomic_handler | runtime-derived | no | 3 | — |
+| `equip_item` | 1.0 | yes | atomic_handler | planner conditions | no | 1 | `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
+| `exit_current_building` | 1.0 | yes | monitored_option | controller terminal | yes | 4 | `control.exit_current_building`, `game.pause`, `identity.stable_handles`, `squad.indoors` |
+| `harvest_resource` | 1.0 | yes | composite_option | controller terminal | yes | 45 | `control.open_context_inventory`, `control.produce_resource_output`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.basic`, `squad.health`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
+| `move_in_direction` | 1.0 | yes | monitored_option | controller terminal | yes | 4 | `control.move_in_direction`, `squad.health` |
+| `move_to_character` | 1.0 | yes | monitored_option | controller terminal | yes | 4 | `control.move_to_character`, `identity.stable_handles`, `nearby.characters` |
+| `open_context_inventory` | 1.0 | no | atomic_handler | controller terminal | yes | 6 | `control.open_context_inventory`, `identity.stable_handles`, `world.context_targets` |
+| `perform_context_action` | 1.0 | no | monitored_option | controller terminal | yes | 4 | `control.perform_context_action`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
+| `produce_resource_output` | 1.0 | no | monitored_option | controller terminal | yes | 7 | `control.produce_resource_output`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
+| `purchase_item` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | `game.money`, `game.pause`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.basic`, `ui.inventory`, `ui.tooltip`, `ui.visible_controls` |
+| `recover_camera_view` | 1.0 | yes | atomic_handler | controller terminal | no | 15 | `camera.position`, `camera.recovery`, `game.pause`, `squad.basic`, `ui.visible_controls` |
+| `scroll_screen` | 1.0 | yes | atomic_handler | planner conditions | no | 1 | `ui.visible_controls` |
+| `sell_item` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | `game.money`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
+| `travel_to_map_destination` | 1.0 | yes | monitored_option | controller terminal | yes | 5 | `control.travel_to_map_destination`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.health`, `world.known_map_destinations` |
+| `use_game_binding` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | — |
+
+`runtime-derived` applies when that action variant exposes a deterministic signal;
+variants whose factory declines remain planner-owned and fail closed without a condition.

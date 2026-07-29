@@ -65,16 +65,15 @@ list.
 
 Each `ActionContract` owns planner visibility, capability and control-mode
 requirements, pointer class, native requirement, risk cost, idempotency,
-reference binding, execution route, receipt kind, and required verification
-paths. The planner composes these in a bounded continuous plan; it never
+reference binding, execution route, receipt kind, and completion authority. The
+planner composes these in a bounded continuous plan; it never
 micromanages primitive timing or coordinates. Legacy skills still expand into
 bounded primitives for compatibility and calibrated transport.
 
-This is the intended single source of action truth, not yet complete executable
-truth. Contracts marked `controller_verified` — camera recovery, building exit,
-contextual operation — return a typed terminal verdict from their owning
-subsystem, so the planner supplies no success predicate. Extending that set is
-the ongoing work.
+Completion is controller-terminal, runtime-derived at the immediate dispatch
+baseline, or planner-authored only for genuinely ambiguous effects. The
+[completion authority ADR](docs/ADR_ACTION_COMPLETION_AUTHORITY.md) fixes that
+ownership boundary; the generated catalog reports it per contract.
 
 ## Partial observability
 
@@ -96,6 +95,7 @@ telemetry.
 | --- | --- |
 | Control modes and what each permits | [ADR_CONTROL_MODES](docs/ADR_CONTROL_MODES.md) |
 | Scheduler contract and plan authority | [ADR_CONTINUOUS_PLANNING](docs/ADR_CONTINUOUS_PLANNING.md) |
+| Action completion ownership | [ADR_ACTION_COMPLETION_AUTHORITY](docs/ADR_ACTION_COMPLETION_AUTHORITY.md) |
 | Revision ownership and causal confirmation | [ADR_WORLD_STATE_STREAM](docs/ADR_WORLD_STATE_STREAM.md) |
 | Final in-lease authorization fence | [ADR_INPUT_BOUNDARY_AUTHORITY_V2](docs/ADR_INPUT_BOUNDARY_AUTHORITY_V2.md) |
 | Transactional global and plan budgets | [ADR_TRANSACTIONAL_ACTION_BUDGETS](docs/ADR_TRANSACTIONAL_ACTION_BUDGETS.md) |
