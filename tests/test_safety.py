@@ -1870,3 +1870,68 @@ def test_wait_limit() -> None:
     )
     with pytest.raises(SafetyViolation):
         guard.validate(WaitAction(seconds=4), observation)
+
+
+def trade_in_progress_observation() -> Observation:
+    """The r2 trade window: two inventories open, the trader's among them.
+
+    Kenshi runs a trade as the player's inventory beside the trader's, moving
+    items across before exiting. Live run
+    live-shop-ownership-regression-20260729-r2 sat in exactly that state -
+    `open_inventory_windows` 2, the seller's own BARMAN window advertising its
+    stock - while `active_screen` collapsed to 'inventory', and the purchase
+    guard refused four planner calls in ninety seconds saying the trade screen
+    was not open. It was open; the operator could see it.
+    """
+
+    observation = generic_purchase_observation()
+    assert observation.telemetry is not None
+    return observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "ui": observation.telemetry.ui.model_copy(
+                        update={
+                            "active_screen": "inventory",
+                            "open_inventory_windows": 2,
+                        }
+                    )
+                }
+            )
+        }
+    )
+
+
+def test_purchase_survives_a_trade_screen_kenshi_labels_inventory() -> None:
+    action = generic_purchase_action()
+    observation = trade_in_progress_observation()
+
+    assert (
+        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(
+            action,
+            observation,
+        )
+        == action
+    )
+
+
+def test_purchase_still_refuses_a_solo_inventory_with_no_trader_window() -> None:
+    """One window open is our own bag, not a shop. This must stay refused."""
+
+    action = generic_purchase_action()
+    observation = trade_in_progress_observation()
+    assert observation.telemetry is not None
+    solo = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "ui": observation.telemetry.ui.model_copy(
+                        update={"open_inventory_windows": 1}
+                    )
+                }
+            )
+        }
+    )
+
+    with pytest.raises(SafetyViolation, match="trade"):
+        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(action, solo)

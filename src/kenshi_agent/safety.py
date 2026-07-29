@@ -368,9 +368,10 @@ class ActionGuard:
                 "because this profile sets "  # mutation: reason
                 "require_paused_between_actions."  # mutation: reason
             )
-        if telemetry.ui.active_screen != "trade":
+        if not observation.trade_screen_open():
             raise SafetyViolation(  # mutation: reason
-                "Purchase blocked because the trade screen is not open."  # mutation: reason
+                "Purchase blocked because no trade is open: a shop's own "  # mutation: reason
+                "inventory window must be open beside ours."  # mutation: reason
             )
         self._validate_exact_selection(observation)
         # Each of these is enforced only when the profile actually asks for it.
@@ -579,10 +580,10 @@ class ActionGuard:
             raise SafetyViolation(  # mutation: reason
                 "Purchase requires one exact primary selected character."  # mutation: reason
             )
-        if telemetry.ui.active_screen != "trade":
+        if not observation.trade_screen_open():
             raise SafetyViolation(  # mutation: reason
-                "Purchase blocked because the exact trade "  # mutation: reason
-                "screen is not open."  # mutation: reason
+                "Purchase blocked because no exact trade is open: a "  # mutation: reason
+                "shop's own inventory window must be open beside ours."  # mutation: reason
             )
         arguments = action.argument_map()
         target_id = require_exact_target_id(arguments.get("target_id"))

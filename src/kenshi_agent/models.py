@@ -3752,6 +3752,43 @@ class Observation(StrictModel):
                 }
         return owners
 
+    def vendor_inventory_windows(self) -> list[str]:
+        """Open windows that are a registered shop owner's own inventory."""
+
+        owners = self.window_owners()
+        return [
+            caption
+            for caption in self.open_window_captions()
+            if owners.get(normalize_control_label(caption), {}).get("belongs_to") == "vendor"
+        ]
+
+    def trade_screen_open(self) -> bool:
+        """Whether a shop's stock is open beside ours.
+
+        Kenshi runs a trade as two inventory windows - the player's and the
+        trader's - and every buy or sell is a right-click inside one of them.
+        `ui.active_screen` collapses that to one label and reports 'inventory'
+        whenever it cannot resolve the trader behind the window, so gating on
+        the label alone refuses real trades: live run
+        live-shop-ownership-regression-20260729-r2 lost four planner calls to
+        "the trade screen is not open" while the operator was looking at it.
+
+        Ownership decides it, exactly as it already decides which cell a
+        purchase may bind to. Neither the label nor a count of item cells is
+        evidence, and `active_shop_trader_count` counts traders loaded in the
+        world rather than windows open on screen.
+        """
+
+        telemetry = self.telemetry
+        if telemetry is None:
+            return False
+        if telemetry.ui.active_screen == "trade":
+            return True
+        open_inventories = telemetry.ui.open_inventory_windows
+        if open_inventories is None or open_inventories < 2:
+            return False
+        return bool(self.vendor_inventory_windows())
+
     def visible_control_digest(
         self,
         limit: int = MAX_DIGESTED_VISIBLE_CONTROLS,

@@ -12,6 +12,7 @@ from kenshi_agent.models import (
     ConditionKind,
     ConditionOperator,
     ContextActionKind,
+    Disposition,
     GameState,
     KnownMapDestination,
     NearbyEntity,
@@ -439,3 +440,97 @@ def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> Non
     assert "plan_patch.schema.json" in exported
     assert "receipt.schema.json" in exported
     assert "native_command_request.schema.json" in exported
+
+
+def _trade_observation(
+    *,
+    active_screen: str,
+    open_inventory_windows: int,
+    window_captions: list[str],
+) -> Observation:
+    """A world with squad members Hep and Puhat and a nearby shop-owning Barman."""
+
+    return Observation(
+        run_id="trade-predicate",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(
+            ui=UIState(
+                active_screen=active_screen,
+                open_inventory_windows=open_inventory_windows,
+                visible_controls=[
+                    VisibleUIControl(
+                        label=f"item_{index}",
+                        role="item",
+                        window=caption,
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.30,
+                            max_x=0.34,
+                            min_y=0.20,
+                            max_y=0.24,
+                        ),
+                    )
+                    for index, caption in enumerate(window_captions)
+                ],
+            ),
+            squad=[
+                CharacterState(id="player:1", name="Hep", selected=True),
+                CharacterState(id="player:2", name="Puhat"),
+            ],
+            nearby_entities=[
+                NearbyEntity(
+                    id="seller:1",
+                    name="Barman",
+                    shop_inventory_owner=True,
+                    disposition=Disposition.NEUTRAL,
+                )
+            ],
+        ),
+    )
+
+
+def test_trade_needs_a_shop_owned_window_not_merely_two_open_ones() -> None:
+    """Two of your own bags open is item shuffling, not a trade.
+
+    Kenshi lets you open two squad inventories side by side to move gear
+    between characters. That is the same window count as a trade, so a
+    purchase must be refused there while being allowed against a real shop.
+    """
+
+    trade = _trade_observation(
+        active_screen="inventory",
+        open_inventory_windows=2,
+        window_captions=["HEP", "BARMAN"],
+    )
+    own_gear = _trade_observation(
+        active_screen="inventory",
+        open_inventory_windows=2,
+        window_captions=["HEP", "PUHAT"],
+    )
+
+    assert trade.trade_screen_open() is True
+    assert trade.vendor_inventory_windows() == ["BARMAN"]
+    assert own_gear.trade_screen_open() is False
+    assert own_gear.vendor_inventory_windows() == []
+
+
+def test_trade_predicate_needs_the_shop_window_actually_open() -> None:
+    """A shop owner standing nearby is not a trade until its window is open."""
+
+    nearby_only = _trade_observation(
+        active_screen="inventory",
+        open_inventory_windows=1,
+        window_captions=["HEP"],
+    )
+
+    assert nearby_only.trade_screen_open() is False
+
+
+def test_trade_predicate_still_trusts_an_explicit_trade_label() -> None:
+    labelled = _trade_observation(
+        active_screen="trade",
+        open_inventory_windows=2,
+        window_captions=["HEP", "BARMAN"],
+    )
+
+    assert labelled.trade_screen_open() is True
