@@ -188,6 +188,17 @@ class LaunchConfig(ConfigModel):
     external_display_only: bool = False
     monitor_gpu_tdr: bool = False
     min_free_physical_memory_mib: int = Field(default=0, ge=0, le=1048576)
+    reclaim_wsl_cache_on_low_memory: bool = False
+    wsl_cache_reclaim_settle_timeout_seconds: float = Field(
+        default=45.0,
+        gt=0.0,
+        le=180.0,
+    )
+    wsl_cache_reclaim_poll_seconds: float = Field(
+        default=1.0,
+        gt=0.0,
+        le=10.0,
+    )
     post_load_health_seconds: float = Field(default=0.0, ge=0.0, le=600.0)
 
     @model_validator(mode="after")
@@ -195,6 +206,14 @@ class LaunchConfig(ConfigModel):
         if self.require_graphics_profile and self.graphics_profile_file is None:
             raise ValueError(
                 "require_graphics_profile needs graphics_profile_file"
+            )
+        if (
+            self.reclaim_wsl_cache_on_low_memory
+            and self.min_free_physical_memory_mib == 0
+        ):
+            raise ValueError(
+                "reclaim_wsl_cache_on_low_memory needs "
+                "min_free_physical_memory_mib"
             )
         return self
 

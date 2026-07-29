@@ -2,7 +2,12 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.config import ControlsConfig, MemoryConfig, load_config
+from kenshi_agent.config import (
+    ControlsConfig,
+    LaunchConfig,
+    MemoryConfig,
+    load_config,
+)
 from kenshi_agent.models import (
     ClickAction,
     ControlMode,
@@ -151,6 +156,9 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.launch.external_display_only
     assert config.launch.monitor_gpu_tdr
     assert config.launch.min_free_physical_memory_mib == 4096
+    assert config.launch.reclaim_wsl_cache_on_low_memory
+    assert config.launch.wsl_cache_reclaim_settle_timeout_seconds == 45
+    assert config.launch.wsl_cache_reclaim_poll_seconds == 1
     assert config.launch.post_load_health_seconds == 45
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
@@ -395,3 +403,14 @@ def test_every_memory_enabled_profile_allows_the_cognitive_read(
 
     assert config.memory.enabled
     assert "recall_memory" in config.safety.allow_action_kinds
+
+
+def test_wsl_cache_reclaim_requires_a_real_memory_floor() -> None:
+    with pytest.raises(
+        ValueError,
+        match=(
+            "reclaim_wsl_cache_on_low_memory needs "
+            "min_free_physical_memory_mib"
+        ),
+    ):
+        LaunchConfig(reclaim_wsl_cache_on_low_memory=True)

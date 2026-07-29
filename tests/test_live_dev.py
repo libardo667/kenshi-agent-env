@@ -1474,6 +1474,132 @@ def test_launch_preflight_rejects_low_memory_before_profile_read(
         )
 
 
+def test_low_launch_memory_reclaims_once_then_waits_for_page_reporting() -> None:
+    memory_readings = iter([2048, 3072, 4352])
+    command_calls: list[tuple[list[str], dict[str, object]]] = []
+    sleeps: list[float] = []
+    now = 0.0
+
+    def run_command(command: list[str], **kwargs: object) -> object:
+        command_calls.append((command, kwargs))
+        return type("Completed", (), {"returncode": 0, "stderr": ""})()
+
+    def sleep(seconds: float) -> None:
+        nonlocal now
+        sleeps.append(seconds)
+        now += seconds
+
+    result = live_dev._recover_low_launch_memory(
+        threshold_mib=4096,
+        distribution="Ubuntu-22.04",
+        available_memory_mib=lambda: next(memory_readings),
+        run_command=run_command,
+        sleep=sleep,
+        monotonic=lambda: now,
+        settle_timeout_seconds=10.0,
+        poll_seconds=2.0,
+    )
+
+    assert result == (2048, 4352)
+    assert sleeps == [2.0]
+    assert command_calls == [
+        (
+            [
+                "wsl.exe",
+                "--distribution",
+                "Ubuntu-22.04",
+                "--user",
+                "root",
+                "--exec",
+                "sh",
+                "-c",
+                "sync; echo 3 > /proc/sys/vm/drop_caches",
+            ],
+            {
+                "check": False,
+                "capture_output": True,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+                "timeout": 15.0,
+            },
+        )
+    ]
+
+
+def test_low_launch_memory_reclaim_fails_closed_after_bounded_settle() -> None:
+    readings = iter([2048, 2500, 2600, 2700])
+    calls = 0
+    now = 0.0
+
+    def run_command(command: list[str], **kwargs: object) -> object:
+        nonlocal calls
+        del command, kwargs
+        calls += 1
+        return type("Completed", (), {"returncode": 0, "stderr": ""})()
+
+    def sleep(seconds: float) -> None:
+        nonlocal now
+        now += seconds
+
+    with pytest.raises(
+        LaunchFailed,
+        match=r"completed.*2048 MiB to 2700 MiB.*requires 4096 MiB",
+    ):
+        live_dev._recover_low_launch_memory(
+            threshold_mib=4096,
+            distribution="Ubuntu-22.04",
+            available_memory_mib=lambda: next(readings),
+            run_command=run_command,
+            sleep=sleep,
+            monotonic=lambda: now,
+            settle_timeout_seconds=2.0,
+            poll_seconds=1.0,
+        )
+
+    assert calls == 1
+
+
+def test_low_launch_memory_reclaim_rejects_failed_root_command() -> None:
+    calls = 0
+
+    def run_command(command: list[str], **kwargs: object) -> object:
+        nonlocal calls
+        del command, kwargs
+        calls += 1
+        return type(
+            "Completed",
+            (),
+            {"returncode": 1, "stderr": "distribution unavailable"},
+        )()
+
+    with pytest.raises(
+        LaunchFailed,
+        match=r"reclaim failed: distribution unavailable.*No launch input",
+    ):
+        live_dev._recover_low_launch_memory(
+            threshold_mib=4096,
+            distribution="Ubuntu-22.04",
+            available_memory_mib=lambda: 2048,
+            run_command=run_command,
+        )
+
+    assert calls == 1
+
+
+def test_launch_memory_recovery_never_runs_for_sufficient_headroom() -> None:
+    def unexpected_command(command: list[str], **kwargs: object) -> object:
+        del command, kwargs
+        raise AssertionError("root recovery must not run above the threshold")
+
+    assert live_dev._recover_low_launch_memory(
+        threshold_mib=4096,
+        distribution="Ubuntu-22.04",
+        available_memory_mib=lambda: 4096,
+        run_command=unexpected_command,
+    ) == (4096, 4096)
+
+
 def test_launch_preflight_rejects_profile_drift_with_recovery_command(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

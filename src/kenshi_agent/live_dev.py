@@ -98,6 +98,16 @@ class LaunchFailed(RuntimeError):
     pass
 
 
+class LowPhysicalMemory(LaunchFailed):
+    def __init__(self, available_mib: int, threshold_mib: int) -> None:
+        self.available_mib = available_mib
+        self.threshold_mib = threshold_mib
+        super().__init__(
+            f"Only {available_mib} MiB physical memory is available; this profile "
+            f"requires at least {threshold_mib} MiB before launch."
+        )
+
+
 class _StartupInputGate:
     """Yield launcher input, then visibly reclaim it after a quiet countdown."""
 
@@ -753,6 +763,80 @@ def _available_physical_memory_mib() -> int:
     return int(status.available_physical // (1024 * 1024))
 
 
+def _recover_low_launch_memory(
+    *,
+    threshold_mib: int,
+    distribution: str,
+    available_memory_mib: Callable[[], int] = _available_physical_memory_mib,
+    run_command: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+    sleep: Callable[[float], None] = time.sleep,
+    monotonic: Callable[[], float] = time.monotonic,
+    settle_timeout_seconds: float = 45.0,
+    poll_seconds: float = 1.0,
+) -> tuple[int, int]:
+    """Drop this WSL VM's file cache once, then verify Windows page reporting."""
+
+    before = available_memory_mib()
+    if before >= threshold_mib:
+        return before, before
+    if not re.fullmatch(r"[A-Za-z0-9._+-]{1,128}", distribution):
+        raise LaunchFailed(
+            "Low-memory recovery received an invalid WSL distribution name; "
+            "no root command was attempted."
+        )
+    command = [
+        "wsl.exe",
+        "--distribution",
+        distribution,
+        "--user",
+        "root",
+        "--exec",
+        "sh",
+        "-c",
+        "sync; echo 3 > /proc/sys/vm/drop_caches",
+    ]
+    try:
+        result = run_command(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15.0,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise LaunchFailed(
+            "WSL cache reclaim could not run; no launch input was sent: "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip()
+        if len(detail) > 500:
+            detail = detail[:497] + "..."
+        raise LaunchFailed(
+            "WSL cache reclaim failed"
+            + (f": {detail}" if detail else ".")
+            + " No launch input was sent."
+        )
+
+    deadline = monotonic() + settle_timeout_seconds
+    after = available_memory_mib()
+    while after < threshold_mib:
+        remaining = deadline - monotonic()
+        if remaining <= 0.0:
+            break
+        sleep(min(poll_seconds, remaining))
+        after = available_memory_mib()
+    if after < threshold_mib:
+        raise LaunchFailed(
+            "WSL cache reclaim completed, but Windows available physical memory "
+            f"only changed from {before} MiB to {after} MiB; this profile still "
+            f"requires {threshold_mib} MiB before launch. No launch input was sent."
+        )
+    return before, after
+
+
 def _configured_graphics_profile(config: AppConfig) -> GraphicsProfile:
     path = config.launch.graphics_profile_file
     if path is None:
@@ -822,10 +906,7 @@ def _validate_launch_preconditions(
             else _available_physical_memory_mib()
         )
         if available < threshold:
-            raise LaunchFailed(
-                f"Only {available} MiB physical memory is available; this profile "
-                f"requires at least {threshold} MiB before launch."
-            )
+            raise LowPhysicalMemory(available, threshold)
 
     if config.launch.require_graphics_profile:
         profile = _configured_graphics_profile(config)
@@ -1662,12 +1743,46 @@ async def _launch(
             terminal_window_title = _terminal_window_title(controller)
         except (OSError, RuntimeError, ValueError):
             terminal_window_title = None
-        _validate_launch_preconditions(
-            config,
-            terminal_window_title=terminal_window_title,
-            resume_launcher=args.resume_launcher,
-            allow_existing_client=args.preflight_only,
-        )
+        try:
+            _validate_launch_preconditions(
+                config,
+                terminal_window_title=terminal_window_title,
+                resume_launcher=args.resume_launcher,
+                allow_existing_client=args.preflight_only,
+            )
+        except LowPhysicalMemory as low_memory:
+            if (
+                args.preflight_only
+                or not config.launch.reclaim_wsl_cache_on_low_memory
+            ):
+                raise
+            distribution = os.environ.get("WSL_DISTRO_NAME", "").strip()
+            if not distribution:
+                raise LaunchFailed(
+                    "Low-memory recovery is enabled, but ./dev did not forward "
+                    "WSL_DISTRO_NAME; no root command or launch input was sent."
+                ) from low_memory
+            before, after = _recover_low_launch_memory(
+                threshold_mib=config.launch.min_free_physical_memory_mib,
+                distribution=distribution,
+                settle_timeout_seconds=(
+                    config.launch.wsl_cache_reclaim_settle_timeout_seconds
+                ),
+                poll_seconds=config.launch.wsl_cache_reclaim_poll_seconds,
+            )
+            print(
+                "WSL cache reclaim restored Windows launch headroom: "
+                f"{before} MiB -> {after} MiB available."
+            )
+            # Re-run the complete authority check. Recovery does not waive
+            # Steam, process, graphics, display, or memory requirements, and a
+            # concurrent drop below the threshold still fails closed.
+            _validate_launch_preconditions(
+                config,
+                terminal_window_title=terminal_window_title,
+                resume_launcher=args.resume_launcher,
+                allow_existing_client=False,
+            )
         if args.resume_launcher:
             _validate_resumable_launcher_rect(controller.client_rect())
         if display_controller is not None:

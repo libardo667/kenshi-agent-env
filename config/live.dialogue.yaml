@@ -104,6 +104,9 @@ launch:
   # Intel Iris Xe shares system RAM. Refuse a test while host headroom is
   # already below a conservative four-GiB boundary.
   min_free_physical_memory_mib: 4096
+  reclaim_wsl_cache_on_low_memory: true
+  wsl_cache_reclaim_settle_timeout_seconds: 45
+  wsl_cache_reclaim_poll_seconds: 1
   # The authenticated device reset occurred 33 seconds after save load.
   # Successful startup must remain fresh, loaded, and paused beyond that point.
   post_load_health_seconds: 45

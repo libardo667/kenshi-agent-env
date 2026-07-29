@@ -54,6 +54,9 @@ if [[ -t 0 || -t 1 || -t 2 ]]; then
   printf '\033[6n'
   read -r _
 fi
+if [[ -n "${FAKE_WINDOWS_ENV_LOG:-}" ]]; then
+  printf '%s\n' "${WSLENV:-}" >> "$FAKE_WINDOWS_ENV_LOG"
+fi
 {
   printf '%s\n' "$@"
   printf '%s\n' "__END_WINDOWS_INVOCATION__"
@@ -161,6 +164,31 @@ def test_dev_recovery_also_detaches_from_an_inherited_pty(
             "--config",
             str(REPO_ROOT / "config" / "live.longform.yaml"),
         ],
+    ]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_dev_forwards_the_exact_wsl_distribution_for_memory_recovery(
+    tmp_path: Path,
+) -> None:
+    env, invocation_log = _fake_dev_environment(tmp_path)
+    environment_log = tmp_path / "windows-environment.txt"
+    env["FAKE_WINDOWS_ENV_LOG"] = str(environment_log)
+    env["WSL_DISTRO_NAME"] = "Ubuntu-Test"
+    env["WSLENV"] = "EXISTING/u"
+    for variable_name in (
+        "KENSHI_AGENT_OPENROUTER_MODEL",
+        "KENSHI_AGENT_REASONING_EFFORT",
+        "KENSHI_AGENT_ADVISOR_MODEL",
+        "KENSHI_AGENT_ADVISOR_REASONING_EFFORT",
+        "KENSHI_AGENT_ADVISOR_CADENCE_STEPS",
+    ):
+        env.pop(variable_name, None)
+
+    assert _run_dev_in_pty(env, "telemetry") == 0
+    assert _read_invocations(invocation_log)
+    assert environment_log.read_text(encoding="utf-8").splitlines() == [
+        "EXISTING/u:WSL_DISTRO_NAME/w"
     ]
 
 

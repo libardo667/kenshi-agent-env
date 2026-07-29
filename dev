@@ -93,6 +93,7 @@ runtime_overrides=(
   KENSHI_AGENT_ADVISOR_MODEL
   KENSHI_AGENT_ADVISOR_REASONING_EFFORT
   KENSHI_AGENT_ADVISOR_CADENCE_STEPS
+  WSL_DISTRO_NAME
 )
 for variable_name in "${runtime_overrides[@]}"; do
   if [[ -n "${!variable_name+x}" ]]; then
