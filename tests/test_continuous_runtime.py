@@ -1191,6 +1191,127 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
     asyncio.run(scenario())
 
 
+def test_orphaned_plan_patch_is_rejected_then_fresh_planning_continues(
+    tmp_path: Path,
+) -> None:
+    class OrphanedPatchThenStopPlanner(Planner):
+        def __init__(self) -> None:
+            self.observations: list[Observation] = []
+
+        async def decide(self, observation: Observation) -> PlannerOutput:
+            self.observations.append(observation)
+            if len(self.observations) == 1:
+                assert observation.active_plan is None
+                return PlanPatch(
+                    schema_version="1.0",
+                    plan_id="already-finished-plan",
+                    based_on_plan_version=1,
+                    based_on_revision=observation.world_revision,
+                    replace_future_steps=[
+                        PlanStep(
+                            step_id="orphaned-future",
+                            action=StopAction(
+                                reason="This action must never inherit authority."
+                            ),
+                            preconditions=[fresh()],
+                            timeout_seconds=1.0,
+                        )
+                    ],
+                    rationale="This patch has no active plan to revise.",
+                )
+            return PlannerDecision(
+                intent="Stop after recovering from the orphaned patch.",
+                rationale="Fresh planning remained available.",
+                action=StopAction(reason="Orphaned patch recovery complete."),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = OrphanedPatchThenStopPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            summary = await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert summary.terminated is True
+        assert len(planner.observations) == 2
+        assert planner.observations[1].active_plan is None
+        feedback = planner.observations[1].planner_feedback
+        assert feedback is not None
+        assert "no active plan" in feedback
+        assert "fresh PlanEnvelope or StopAction" in feedback
+        assert [type(action) for action in environment.actions] == [StopAction]
+
+        events = read_events(tmp_path / "events.jsonl")
+        rejected = [
+            event for event in events if event["event_type"] == "plan_rejected"
+        ]
+        assert len(rejected) == 1
+        assert rejected[0]["payload"]["plan_id"] == "already-finished-plan"
+        assert "no matching active plan" in rejected[0]["payload"]["reason"]
+        assert not any(
+            event["event_type"] == "replan_stalled" for event in events
+        )
+
+    asyncio.run(scenario())
+
+
+def test_semantically_identical_orphaned_patches_share_one_bounded_failure(
+    tmp_path: Path,
+) -> None:
+    class RepeatingOrphanedPatchPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, observation: Observation) -> PlannerOutput:
+            self.calls += 1
+            return PlanPatch(
+                schema_version="1.0",
+                plan_id=f"orphaned-plan-{self.calls}",
+                based_on_plan_version=self.calls,
+                based_on_revision=observation.world_revision,
+                replace_future_steps=[
+                    PlanStep(
+                        step_id=f"future-{self.calls}",
+                        action=StopAction(reason=f"Never execute patch {self.calls}."),
+                        preconditions=[fresh()],
+                        timeout_seconds=1.0,
+                    )
+                ],
+                rationale=f"Incidental response wording {self.calls}.",
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        planner = RepeatingOrphanedPatchPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            summary = await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        assert summary.terminated is True
+        assert planner.calls == AgentRuntime._IDENTICAL_REPLAN_FAILURE_LIMIT
+        assert environment.actions == []
+        assert "same orphaned plan patch" in summary.stop_reason
+
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(
+            event["event_type"] == "plan_rejected" for event in events
+        ) == AgentRuntime._IDENTICAL_REPLAN_FAILURE_LIMIT
+        stalled = [
+            event for event in events if event["event_type"] == "replan_stalled"
+        ]
+        assert len(stalled) == 1
+        assert stalled[0]["payload"]["reason"] == "plan_patch_without_active_plan"
+
+    asyncio.run(scenario())
+
+
 def test_continuous_retry_preserves_typed_hosted_terminal_and_compact_feedback(
     tmp_path: Path,
 ) -> None:

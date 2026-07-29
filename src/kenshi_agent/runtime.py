@@ -1121,19 +1121,46 @@ class AgentRuntime:
                     continue
 
                 if isinstance(output, PlanPatch):
-                    stop_reason = (
-                        "Stopped: the planner sent a plan revision, but no matching plan "
-                        "was still running to revise."
+                    rejection_reason = (
+                        "Plan patch rejected: no matching active plan was available "
+                        "to revise."
+                    )
+                    planner_feedback = (
+                        "Your previous PlanPatch could not be applied because there is "
+                        "no active plan to patch. Return a fresh PlanEnvelope or "
+                        "StopAction grounded in the current observation; do not return "
+                        "another PlanPatch unless active_plan is present."
                     )
                     self._plan_event(
                         "plan_rejected",
                         plan_id=output.plan_id,
                         plan_version=output.based_on_plan_version,
                         observation=observation,
-                        reason=stop_reason,
+                        reason=rejection_reason,
                         evidence={"patch": output.model_dump(mode="json")},
                     )
-                    terminated = True
+                    # An out-of-context patch has no authority and spends no
+                    # action. Treat it like every neighboring unusable planner
+                    # answer: reject it, explain the correct output shape, and
+                    # let the common replan limits bound recurrence.
+                    consecutive_replans += 1
+                    if identical_failure_limit_reached(
+                        "plan_patch_without_active_plan"
+                    ):
+                        stop_reason = (
+                            "Stopped after the same orphaned plan patch repeated "
+                            f"{identical_replan_failures} times."
+                        )
+                        terminated = True
+                    elif (
+                        consecutive_replans
+                        > self.planning_config.max_consecutive_replans
+                    ):
+                        stop_reason = (
+                            "Stopped: the planner produced "
+                            f"{consecutive_replans} unusable plan patches in a row."
+                        )
+                        terminated = True
                     continue
 
                 plan = output
