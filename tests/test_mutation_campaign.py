@@ -91,7 +91,7 @@ also_copy = ["config/"]
     assert fingerprint["digest"]
 
 
-def test_workspace_invalidates_test_associations_when_inputs_change(
+def test_workspace_discards_the_entire_generated_tree_when_inputs_change(
     tmp_path: Path,
 ) -> None:
     repo = tmp_path / "repo"
@@ -123,13 +123,39 @@ pytest_add_cli_args_test_selection = ["tests/"]
     generated_source.write_text("instrumented\n", encoding="utf-8")
     generated_metadata = Path(f"{generated_source}.meta")
     generated_metadata.write_text("{}\n", encoding="utf-8")
+    stale_test = workspace / "mutants" / "tests" / "test_removed.py"
+    stale_test.parent.mkdir(parents=True)
+    stale_test.write_text("def test_old_contract(): assert True\n", encoding="utf-8")
+    stale_bytecode = (
+        generated_source.parent / "__pycache__" / "memory.cpython-312.pyc"
+    )
+    stale_bytecode.parent.mkdir()
+    stale_bytecode.write_bytes(b"old bytecode")
 
     test.write_text("def test_recall(): assert True\n", encoding="utf-8")
     prepare_batch_workspace(repo, batch)
 
-    assert not stats.exists()
-    assert not generated_source.exists()
-    assert not generated_metadata.exists()
+    assert not (workspace / "mutants").exists()
+
+
+def test_generated_tree_invalidation_refuses_an_unmanaged_symlink(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "workspace"
+    external = tmp_path / "external"
+    external.mkdir()
+    marker = external / "keep.txt"
+    marker.write_text("outside the managed cache\n", encoding="utf-8")
+    workspace.mkdir()
+    (workspace / "mutants").symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(
+        campaign.MutationCampaignStateError,
+        match="unmanaged symlink",
+    ):
+        campaign._discard_generated_tree(workspace)
+
+    assert marker.read_text(encoding="utf-8") == "outside the managed cache\n"
 
 
 def test_result_summary_is_exactly_scoped_to_one_batch() -> None:

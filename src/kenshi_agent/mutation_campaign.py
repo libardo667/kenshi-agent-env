@@ -14,6 +14,7 @@ import fnmatch
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import tomllib
@@ -286,17 +287,16 @@ def _ensure_project_symlink(repo_root: Path, workspace: Path, anchor: str) -> No
     destination.symlink_to(source, target_is_directory=source.is_dir())
 
 
-def _invalidate_batch_cache(workspace: Path, batch: MutationBatch) -> None:
-    """Discard every generated file whose meaning depends on campaign inputs."""
+def _discard_generated_tree(workspace: Path) -> None:
+    """Invalidate copied inputs, bytecode, associations, and mutants together."""
 
     mutants = workspace / "mutants"
-    generated_source = mutants / batch.source_path
-    for path in (
-        mutants / "mutmut-stats.json",
-        generated_source,
-        Path(f"{generated_source}.meta"),
-    ):
-        path.unlink(missing_ok=True)
+    if mutants.is_symlink():
+        raise MutationCampaignStateError(
+            "mutation generated tree is an unmanaged symlink"  # mutation: diagnostic-only
+        )
+    if mutants.exists():
+        shutil.rmtree(mutants)
 
 
 def _batch_cache_is_complete(workspace: Path, batch: MutationBatch) -> bool:
@@ -347,7 +347,7 @@ def prepare_batch_workspace(repo_root: Path, batch: MutationBatch) -> Path:
     except (FileNotFoundError, json.JSONDecodeError):
         pass
     if previous != fingerprint or not _batch_cache_is_complete(workspace, batch):
-        _invalidate_batch_cache(workspace, batch)
+        _discard_generated_tree(workspace)
     _write_utf8(fingerprint_path, _pretty_json(fingerprint))
     return workspace
 

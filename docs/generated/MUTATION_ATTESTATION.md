@@ -68,7 +68,7 @@ promises only that the module under test has not moved.
 | `memory` | 1476 | 1476 | 0 | 2026-07-28T16:03:50Z | — | unverified |
 | `memory_compaction` | 114 | 114 | 0 | 2026-07-28T15:50:29Z | — | unverified |
 | `models` | 621 | 621 | 0 | 2026-07-28T11:51:55Z | — | unverified |
-| `mutation_campaign` | 517 | 517 | 0 | 2026-07-28T18:15:27Z | 912b4459e0069592 | attested |
+| `mutation_campaign` | 508 | 508 | 0 | 2026-07-29T21:33:57Z | 7ec6f5cbc6d2452a | attested |
 | `mutation_ledger` | 277 | 277 | 0 | 2026-07-28T18:31:37Z | b3c59cc2c0473cf3 | attested |
 | `native_commands` | — | — | — | — | — | never |
 | `native_contract_export` | — | — | — | — | — | never |

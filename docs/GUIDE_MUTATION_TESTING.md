@@ -26,7 +26,8 @@ The wrapper:
 1. creates `.mutation-workspaces/<module>/`;
 2. scopes `mutmut` to exactly that module;
 3. fingerprints source, tests, configuration, and copied project inputs;
-4. invalidates stale test associations when any input changes;
+4. discards the generated tree when any input changes or generation is partial,
+   so removed files and bytecode cannot survive into the next campaign;
 5. runs the shard and writes a transient JSON result under `runs/mutation/`;
 6. exits nonzero for an empty result or any status other than `killed` or
    `caught by type check`.
