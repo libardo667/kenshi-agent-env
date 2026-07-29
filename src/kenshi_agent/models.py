@@ -783,7 +783,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.3.0"
+    protocol_version: str = "1.3.1"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -794,6 +794,9 @@ class TelemetrySnapshot(StrictModel):
     ui: UIState = Field(default_factory=UIState)
     native_control: NativeControlState = Field(default_factory=NativeControlState)
     squad: list[CharacterState] = Field(default_factory=list)
+    # Despite the historical wire name, this is the number of lifecycle-tracked
+    # ShopTrader character objects loaded in the session. It is not the number
+    # of open trades and must never confer current UI authority.
     active_shop_trader_count: int | None = Field(default=None, ge=0)
     nearby_entities: list[NearbyEntity] = Field(default_factory=list)
     world_targets: list[WorldTarget] = Field(default_factory=list)

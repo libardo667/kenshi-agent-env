@@ -83,6 +83,7 @@
 
 #include "AtomicJsonWriter.h"
 #include "GameplayCapabilities.generated.h"
+#include "InventoryScreenSemantics.h"
 #include "NativeCommandProtocol.h"
 #include "NativeCommandTiming.h"
 #include "NativeMovementSemantics.h"
@@ -124,7 +125,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.3.0";
+    const char* PROTOCOL_VERSION = "1.3.1";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -2674,16 +2675,22 @@ namespace
         const bool dialogueOpen =
             gui != NULL && gui->dialogue != NULL && gui->dialogue->isVisible();
         const bool inventoryOpen = gui != NULL && gui->isAnyInventoryWindowOpen();
-        // The trade handles are not cleared when the window closes, so testing
-        // them alone reported `trade` indefinitely after a single trade - the
-        // agent could never observe leaving the shop. Trade is a trading
-        // *window* being open, so require an actually open inventory window too.
-        const bool tradeOpen =
+        // Trade handles survive their windows. Requiring only some other
+        // inventory to be open still mislabeled later character, resource, and
+        // corpse inventories as commerce. The trader's exact inventory window
+        // must itself still be among the open windows.
+        Character* inventoryTrader =
+            gui != NULL
+                ? gui->inventoryWindowTrader.getCharacter()
+                : NULL;
+        const bool traderInventoryOpen =
             gui != NULL &&
-            inventoryOpen &&
-            (gui->inventoryWindowTrader.getCharacter() != NULL ||
-             gui->tradeA.getCharacter() != NULL ||
-             gui->tradeB.getCharacter() != NULL);
+            inventoryTrader != NULL &&
+            gui->hasInventoryWindowOpen(inventoryTrader->getHandle());
+        const bool tradeOpen =
+            KenshiAgentTelemetry::IsTradeInventoryOpen(
+                inventoryOpen,
+                traderInventoryOpen);
         const bool statsWindowOpen = gui != NULL && gui->characterStatsWindowVisible();
         // Map, squad, research and factions are not separate screens: they are
         // tabs of one ManagementScreen. Reporting only `active_screen` left all

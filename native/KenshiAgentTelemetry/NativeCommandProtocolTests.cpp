@@ -16,6 +16,7 @@
 #include "ResourceProductionSemantics.h"
 #include "WorldTargetProtocol.cpp"
 #include "GameplayCapabilities.generated.h"
+#include "InventoryScreenSemantics.h"
 
 namespace
 {
@@ -147,6 +148,24 @@ namespace
         {
             return Fail("conditional gameplay capability was not serialized");
         }
+        return 0;
+    }
+
+    int TestInventoryScreenSemantics()
+    {
+        using KenshiAgentTelemetry::IsTradeInventoryOpen;
+
+        if (IsTradeInventoryOpen(false, false))
+            return Fail("a closed inventory was classified as trade");
+        if (IsTradeInventoryOpen(true, false))
+        {
+            return Fail(
+                "a non-commercial inventory inherited stale trade authority");
+        }
+        if (IsTradeInventoryOpen(false, true))
+            return Fail("an impossible trader-only signal overrode the closed UI");
+        if (!IsTradeInventoryOpen(true, true))
+            return Fail("an exact open trader inventory was not classified as trade");
         return 0;
     }
 
@@ -577,6 +596,9 @@ int main(int argc, char** argv)
     const int capabilityResult = TestGameplayCapabilities();
     if (capabilityResult != 0)
         return capabilityResult;
+    const int inventoryScreenResult = TestInventoryScreenSemantics();
+    if (inventoryScreenResult != 0)
+        return inventoryScreenResult;
     const int resourceProductionResult = TestResourceProductionSemantics();
     if (resourceProductionResult != 0)
         return resourceProductionResult;
