@@ -16,9 +16,16 @@ from kenshi_agent.memory import MemoryStore
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
+    CameraFrameScore,
+    CameraRecoveryEvidence,
+    CameraRecoveryStatus,
+    MoveInDirectionAction,
     Observation,
+    PauseAction,
     PlannerDecision,
+    RecoverCameraViewAction,
     ScenarioIdentity,
+    SemanticActionReceipt,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -28,7 +35,7 @@ from kenshi_agent.models import (
 from kenshi_agent.planners import HeuristicPlanner
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
-from kenshi_agent.runtime import AgentRuntime
+from kenshi_agent.runtime import AgentRuntime, TelemetryChange
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
 from kenshi_agent.skills import MacroRegistry
@@ -361,7 +368,7 @@ def test_interaction_requires_movement_or_dialogue_not_ambient_frame_change() ->
         receipt,
         None,
         visual_change=0.5,
-        telemetry_changes=["visible entities disappeared: Nomad"],
+        telemetry_changes=[TelemetryChange("visible entities disappeared: Nomad")],
         movement_distance=0.0,
     )
 
@@ -427,17 +434,223 @@ def test_purchase_outcome_requires_money_and_food_confirmation() -> None:
         receipt,
         TelemetrySnapshot(),
         visual_change=0.1,
-        telemetry_changes=["money: 1000 -> 351", "food items: 0 -> 1"],
+        telemetry_changes=[
+            TelemetryChange("money: 1000 -> 351"),
+            TelemetryChange("food items: 0 -> 1"),
+        ],
         movement_distance=0.0,
     )
     unverified = AgentRuntime._assess_outcome(
         receipt,
         TelemetrySnapshot(),
         visual_change=0.1,
-        telemetry_changes=["money: 1000 -> 351"],
+        telemetry_changes=[TelemetryChange("money: 1000 -> 351")],
         movement_distance=0.0,
     )
 
     assert verified[0] == "changed"
     assert "Purchase verified" in verified[1]
     assert unverified[0] == "no_op"
+
+
+def _camera_recovery_receipt(status: CameraRecoveryStatus) -> ActionReceipt:
+    candidate = CameraFrameScore(
+        candidate="controller_candidate",
+        screenshot_path=Path("candidate.png"),
+        screenshot_sha256="0" * 64,
+        telemetry_sequence=12,
+        frame_sequence=3,
+        floor=0,
+        score=0.9,
+        edge_density=0.9,
+        contrast=0.9,
+        color_diversity=0.9,
+        nonflat_fraction=0.9,
+        inverse_dominant_color=0.9,
+        selected_world_label_visible=True,
+        anchor_distance=0.0,
+        clear=status is not CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS,
+    )
+    return ActionReceipt(
+        action=RecoverCameraViewAction(),
+        accepted=True,
+        executed=True,
+        dry_run=False,
+        semantic=SemanticActionReceipt(
+            action_kind="recover_camera_view",
+            contract_version="1.0",
+            revalidation="Revalidated for the test.",
+            camera_recovery=CameraRecoveryEvidence(
+                status=status,
+                selected_character_id="char-puhat",
+                selected_character_name="Puhat",
+                initial_floor=0,
+                final_floor=0,
+                clear_score_threshold=0.72,
+                anchor_max_distance=30.0,
+                paused_for_recovery=False,
+                primitive_actions=(
+                    0 if status is CameraRecoveryStatus.ALREADY_CLEAR else 4
+                ),
+                follow_method=(
+                    "already_anchored"
+                    if status is CameraRecoveryStatus.ALREADY_CLEAR
+                    else "portrait_double_click"
+                ),
+                chosen_candidate=candidate.candidate,
+                candidates=[candidate],
+            ),
+        ),
+    )
+
+
+def test_displacement_without_new_choices_is_not_progress() -> None:
+    """A move that reveals nothing is a no-op, however far it travelled.
+
+    Live run live-trade-surface-20260729-r1 assessed five blind
+    `move_in_direction` hops as `changed` because the actor's coordinates and
+    the option's own pause/speed transitions differed. The planner was told
+    five times that it had produced an observed change while the choice set
+    never moved, and it kept walking.
+    """
+
+    receipt = ActionReceipt(
+        action=MoveInDirectionAction(
+            bearing_degrees=270.0,
+            distance_units=100.0,
+            expected_effect="Move west to explore The Hub for the bar.",
+        ),
+        accepted=True,
+        executed=True,
+        dry_run=False,
+    )
+
+    assessment, feedback = AgentRuntime._assess_outcome(
+        receipt,
+        TelemetrySnapshot(),
+        visual_change=0.6,
+        telemetry_changes=[
+            TelemetryChange("paused: True -> False", decision_relevant=False),
+            TelemetryChange("speed: 0.0 -> 1.0", decision_relevant=False),
+            TelemetryChange("Puhat moved 103.69 world units", decision_relevant=False),
+        ],
+        movement_distance=103.69,
+    )
+
+    assert assessment == "no_op"
+    assert "moved" in feedback
+    assert "do not repeat" in feedback.lower()
+
+
+def test_displacement_that_reveals_a_new_choice_is_progress() -> None:
+    receipt = ActionReceipt(
+        action=MoveInDirectionAction(
+            bearing_degrees=0.0,
+            distance_units=50.0,
+            expected_effect="Move north to search for the bar.",
+        ),
+        accepted=True,
+        executed=True,
+        dry_run=False,
+    )
+
+    assessment, _ = AgentRuntime._assess_outcome(
+        receipt,
+        TelemetrySnapshot(),
+        visual_change=0.6,
+        telemetry_changes=[
+            TelemetryChange("Puhat moved 49.10 world units", decision_relevant=False),
+            TelemetryChange("visible entities appeared: Hesric"),
+        ],
+        movement_distance=49.10,
+    )
+
+    assert assessment == "changed"
+
+
+def test_world_time_transition_alone_is_not_progress() -> None:
+    receipt = ActionReceipt(
+        action=PauseAction(paused=True),
+        accepted=True,
+        executed=True,
+        dry_run=False,
+    )
+
+    assessment, feedback = AgentRuntime._assess_outcome(
+        receipt,
+        TelemetrySnapshot(),
+        visual_change=0.0,
+        telemetry_changes=[
+            TelemetryChange("paused: False -> True", decision_relevant=False),
+            TelemetryChange("speed: 1.0 -> 0.0", decision_relevant=False),
+        ],
+        movement_distance=0.0,
+    )
+
+    assert assessment == "no_op"
+    assert "world time" in feedback.lower()
+
+
+def test_camera_recovery_that_found_nothing_to_do_is_not_progress() -> None:
+    already_clear = AgentRuntime._assess_outcome(
+        _camera_recovery_receipt(CameraRecoveryStatus.ALREADY_CLEAR),
+        TelemetrySnapshot(),
+        visual_change=0.0,
+        telemetry_changes=[],
+        movement_distance=0.0,
+    )
+    recovered = AgentRuntime._assess_outcome(
+        _camera_recovery_receipt(CameraRecoveryStatus.RECOVERED),
+        TelemetrySnapshot(),
+        visual_change=0.0,
+        telemetry_changes=[],
+        movement_distance=0.0,
+    )
+
+    assert already_clear[0] == "no_op"
+    assert "already" in already_clear[1].lower()
+    assert recovered[0] == "changed"
+
+
+def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> None:
+    before = TelemetrySnapshot.model_validate(
+        {
+            "game": {"paused": True, "speed_multiplier": 0.0},
+            "squad": [
+                {
+                    "id": "char-puhat",
+                    "name": "Puhat",
+                    "position": {"x": 0.0, "y": 0.0, "z": 0.0},
+                }
+            ],
+            "ui": {"selected_character_id": "char-puhat"},
+        }
+    )
+    after = TelemetrySnapshot.model_validate(
+        {
+            "game": {"paused": False, "speed_multiplier": 1.0},
+            "squad": [
+                {
+                    "id": "char-puhat",
+                    "name": "Puhat",
+                    "position": {"x": 0.0, "y": 0.0, "z": 50.0},
+                }
+            ],
+            "ui": {"selected_character_id": "char-puhat"},
+        }
+    )
+
+    changes = AgentRuntime._telemetry_changes_detailed(before, after)
+    relevant = {change.label for change in changes if change.decision_relevant}
+    mechanical = {change.label for change in changes if not change.decision_relevant}
+
+    assert mechanical == {
+        "paused: True -> False",
+        "speed: 0.0 -> 1.0",
+        "Puhat moved 50.00 world units",
+    }
+    assert not relevant
+    assert [change.label for change in changes] == AgentRuntime._telemetry_changes(
+        before,
+        after,
+    )

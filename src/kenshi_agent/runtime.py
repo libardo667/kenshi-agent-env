@@ -141,6 +141,25 @@ class _OutcomeIntent:
 
     intent: str
 
+
+@dataclass(frozen=True, slots=True)
+class TelemetryChange:
+    """One observed telemetry delta and whether it can count as progress.
+
+    Actor displacement and the pause/speed transitions a monitored option
+    performs to do its own work are *mechanical*: every movement produces them
+    whether or not the world became any different to decide in. Treating them
+    as change is what let live run `live-trade-surface-20260729-r1` report five
+    blind directional hops as five successful world changes while the choice
+    set never moved.
+
+    The producer declares this, rather than a consumer re-deriving it by
+    parsing the rendered label, so the two cannot drift apart.
+    """
+
+    label: str
+    decision_relevant: bool = True
+
 # How many distinct capability gaps stay visible to the planner at once.
 MAX_RETAINED_AFFORDANCE_REQUESTS = 32
 
@@ -3577,7 +3596,7 @@ class AgentRuntime:
         command_id: str | None = None,
     ) -> None:
         visual_change = self._visual_change_fraction(before, after)
-        telemetry_changes = self._telemetry_changes(before.telemetry, after.telemetry)
+        telemetry_changes = self._telemetry_changes_detailed(before.telemetry, after.telemetry)
         selected_before = self._selected_character(before.telemetry)
         selected_after = self._selected_character(after.telemetry)
         movement_distance = self._movement_distance(selected_before, selected_after)
@@ -3635,7 +3654,7 @@ class AgentRuntime:
             started_after_revision=receipt.started_after_revision,
             completed_at_revision=receipt.completed_at_revision,
             visual_change_fraction=visual_change,
-            telemetry_changes=telemetry_changes,
+            telemetry_changes=[change.label for change in telemetry_changes],
             selected_character_name=(
                 selected_after.name
                 if selected_after is not None
@@ -3656,9 +3675,17 @@ class AgentRuntime:
         after: TelemetrySnapshot | None,
         *,
         visual_change: float | None,
-        telemetry_changes: list[str],
+        telemetry_changes: Sequence[TelemetryChange],
         movement_distance: float | None,
     ) -> tuple[ActionOutcomeAssessment, str]:
+        labels = [change.label for change in telemetry_changes]
+        # Displacement and world-time transitions are what an option does to
+        # itself, not what it did to the world. An action that produced only
+        # those left every choice exactly where it found it.
+        decision_relevant = [
+            change.label for change in telemetry_changes if change.decision_relevant
+        ]
+        mechanical_only = bool(labels) and not decision_relevant
         if not receipt.executed:
             return (
                 ActionOutcomeAssessment.NOT_EXECUTED,
@@ -3771,15 +3798,22 @@ class AgentRuntime:
                     "Camera recovery returned no typed controller evidence. Do not "
                     "assume the view is usable.",
                 )
-            if recovery.status in {
-                CameraRecoveryStatus.ALREADY_CLEAR,
-                CameraRecoveryStatus.RECOVERED,
-            }:
+            if recovery.status is CameraRecoveryStatus.ALREADY_CLEAR:
+                # The controller looked and found nothing to do. The view is
+                # usable, but this action did not make it so, and asking again
+                # on the same evidence will keep returning already_clear.
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    "The view was already a usable selected-character-following "
+                    f"view on floor {recovery.final_floor}, so recovery changed "
+                    "nothing. Do not repeat it without evidence the view broke.",
+                )
+            if recovery.status is CameraRecoveryStatus.RECOVERED:
                 return (
                     ActionOutcomeAssessment.CHANGED,
-                    "The controller verified a usable selected-character-following "
-                    f"view ({recovery.status.value}) on floor {recovery.final_floor}; "
-                    "camera recovery does not need model-authored follow-up gestures.",
+                    "The controller restored a usable selected-character-following "
+                    f"view on floor {recovery.final_floor}; camera recovery does "
+                    "not need model-authored follow-up gestures.",
                 )
             return (
                 ActionOutcomeAssessment.NO_OP,
@@ -3792,6 +3826,11 @@ class AgentRuntime:
             name = receipt.action.name
             if name in {"move_visible_terrain", "move_on_map"}:
                 if movement_distance is not None and movement_distance >= 0.5:
+                    if mechanical_only:
+                        return (
+                            ActionOutcomeAssessment.NO_OP,
+                            cls._blind_movement_feedback(movement_distance),
+                        )
                     return (
                         ActionOutcomeAssessment.CHANGED,
                         f"The selected character moved {movement_distance:.2f} world units; "
@@ -3833,10 +3872,8 @@ class AgentRuntime:
                     "click failed to make progress; do not repeat it on the same evidence.",
                 )
             if name == "buy_inspected_shop_item":
-                money_changed = any(change.startswith("money: ") for change in telemetry_changes)
-                food_changed = any(
-                    change.startswith("food items: ") for change in telemetry_changes
-                )
+                money_changed = any(label.startswith("money: ") for label in labels)
+                food_changed = any(label.startswith("food items: ") for label in labels)
                 if money_changed and food_changed:
                     return (
                         ActionOutcomeAssessment.CHANGED,
@@ -3849,7 +3886,21 @@ class AgentRuntime:
                     "Do not click another item.",
                 )
 
-        if telemetry_changes or (
+        if mechanical_only:
+            # The screenshot cannot outvote this: walking repaints the frame
+            # whether or not the walk was worth anything.
+            if movement_distance is not None and movement_distance >= 0.5:
+                return (
+                    ActionOutcomeAssessment.NO_OP,
+                    cls._blind_movement_feedback(movement_distance),
+                )
+            return (
+                ActionOutcomeAssessment.NO_OP,
+                "This action only moved world time; nothing else the runtime "
+                "tracks changed. Pausing or resuming is not progress on its own, "
+                "so do not repeat it without new evidence.",
+            )
+        if decision_relevant or (
             visual_change is not None and visual_change >= cls._MATERIAL_VISUAL_CHANGE_FRACTION
         ):
             return (
@@ -3867,6 +3918,16 @@ class AgentRuntime:
             ActionOutcomeAssessment.UNKNOWN,
             "The runtime could not verify a visual or telemetry outcome. Do not assume the "
             "action succeeded.",
+        )
+
+    @staticmethod
+    def _blind_movement_feedback(movement_distance: float) -> str:
+        return (
+            f"The selected character moved {movement_distance:.2f} world units "
+            "and nothing else changed: no character, target, interface, or "
+            "resource became available or unavailable. Distance is not progress. "
+            "Do not repeat a bearing on the same evidence; either name an "
+            "observed destination or change approach."
         )
 
     @staticmethod
@@ -3890,17 +3951,44 @@ class AgentRuntime:
         before: TelemetrySnapshot | None,
         after: TelemetrySnapshot | None,
     ) -> list[str]:
+        return [change.label for change in cls._telemetry_changes_detailed(before, after)]
+
+    @classmethod
+    def _telemetry_changes_detailed(
+        cls,
+        before: TelemetrySnapshot | None,
+        after: TelemetrySnapshot | None,
+    ) -> list[TelemetryChange]:
         if before is None or after is None:
             return []
 
-        changes: list[str] = []
+        changes: list[TelemetryChange] = []
 
-        def changed(label: str, old: object, new: object) -> None:
+        def changed(
+            label: str,
+            old: object,
+            new: object,
+            *,
+            decision_relevant: bool = True,
+        ) -> None:
             if old != new:
-                changes.append(f"{label}: {old!r} -> {new!r}")
+                changes.append(
+                    TelemetryChange(
+                        f"{label}: {old!r} -> {new!r}",
+                        decision_relevant=decision_relevant,
+                    )
+                )
 
-        changed("paused", before.game.paused, after.game.paused)
-        changed("speed", before.game.speed_multiplier, after.game.speed_multiplier)
+        # World time is the controller's to move: options unpause to walk and
+        # repause to finish. A pause transition on its own leaves every choice
+        # exactly where it was.
+        changed("paused", before.game.paused, after.game.paused, decision_relevant=False)
+        changed(
+            "speed",
+            before.game.speed_multiplier,
+            after.game.speed_multiplier,
+            decision_relevant=False,
+        )
         changed("money", before.game.money, after.game.money)
         changed("location", before.game.location_name, after.game.location_name)
         changed("active screen", before.ui.active_screen, after.ui.active_screen)
@@ -3928,7 +4016,9 @@ class AgentRuntime:
                 and abs(selected_before.hunger - selected_after.hunger) >= 0.1
             ):
                 changes.append(
-                    f"hunger: {selected_before.hunger:.2f} -> {selected_after.hunger:.2f}"
+                    TelemetryChange(
+                        f"hunger: {selected_before.hunger:.2f} -> {selected_after.hunger:.2f}"
+                    )
                 )
             if selected_before.position is not None and selected_after.position is not None:
                 distance = dist(
@@ -3944,7 +4034,12 @@ class AgentRuntime:
                     ),
                 )
                 if distance >= 0.5:
-                    changes.append(f"{selected_after.name} moved {distance:.2f} world units")
+                    changes.append(
+                        TelemetryChange(
+                            f"{selected_after.name} moved {distance:.2f} world units",
+                            decision_relevant=False,
+                        )
+                    )
 
         visible_before = {
             entity.name for entity in before.nearby_entities if entity.visible is True
@@ -3953,9 +4048,11 @@ class AgentRuntime:
         appeared = sorted(visible_after - visible_before)
         disappeared = sorted(visible_before - visible_after)
         if appeared:
-            changes.append(f"visible entities appeared: {', '.join(appeared)}")
+            changes.append(TelemetryChange(f"visible entities appeared: {', '.join(appeared)}"))
         if disappeared:
-            changes.append(f"visible entities disappeared: {', '.join(disappeared)}")
+            changes.append(
+                TelemetryChange(f"visible entities disappeared: {', '.join(disappeared)}")
+            )
 
         candidate_before = cls._vendor_candidates(before)
         candidate_after = cls._vendor_candidates(after)
@@ -3966,19 +4063,28 @@ class AgentRuntime:
                 delta = new.distance - old.distance
                 if abs(delta) >= 0.5:
                     direction = "farther" if delta > 0 else "closer"
+                    # Closing on a named vendor is route progress the planner
+                    # chose, not incidental drift.
                     changes.append(
-                        f"distance to {new.name}: {old.distance:.2f} -> "
-                        f"{new.distance:.2f} ({abs(delta):.2f} {direction})"
+                        TelemetryChange(
+                            f"distance to {new.name}: {old.distance:.2f} -> "
+                            f"{new.distance:.2f} ({abs(delta):.2f} {direction})"
+                        )
                     )
             if old.camera_bearing_degrees is not None and new.camera_bearing_degrees is not None:
                 bearing_delta = (
                     new.camera_bearing_degrees - old.camera_bearing_degrees + 180.0
                 ) % 360.0 - 180.0
                 if abs(bearing_delta) >= 3.0:
+                    # Where the camera points is a view detail, not a change in
+                    # what the agent can choose to do next.
                     changes.append(
-                        f"camera bearing to {new.name}: "
-                        f"{old.camera_bearing_degrees:.1f} -> "
-                        f"{new.camera_bearing_degrees:.1f} degrees"
+                        TelemetryChange(
+                            f"camera bearing to {new.name}: "
+                            f"{old.camera_bearing_degrees:.1f} -> "
+                            f"{new.camera_bearing_degrees:.1f} degrees",
+                            decision_relevant=False,
+                        )
                     )
         return changes
 
