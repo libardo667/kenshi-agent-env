@@ -66,6 +66,7 @@ from .scenario_fixtures import (
 from .schema_export import export_schemas
 from .session_log import SessionLogger
 from .skills import MacroRegistry
+from .speech import SpeechUnavailableError, windows_sapi_narrator
 from .telemetry import TelemetryReader, write_snapshot_atomic
 from .telemetry.sample import sample_snapshot
 
@@ -629,6 +630,7 @@ async def _run_command(args: argparse.Namespace) -> int:
     macros = MacroRegistry(config.macros)
     logger = SessionLogger(run_dir / "events.jsonl", run_id)
     memory = None
+    reporter: ConsoleDecisionReporter | None = None
     if config.memory.enabled:
         try:
             campaign = resolve_campaign_scope(
@@ -664,6 +666,26 @@ async def _run_command(args: argparse.Namespace) -> int:
             if isinstance(environment, ReplayEnvironment)
             else config.control.mode
         )
+        narrator = None
+        if args.tts:
+            try:
+                narrator = windows_sapi_narrator()
+            except SpeechUnavailableError as exc:
+                raise SystemExit(f"TTS mode is unavailable: {exc}") from exc
+        if config.runtime.decision_stream or narrator is not None:
+            reporter = ConsoleDecisionReporter(
+                run_id=run_id,
+                planner_name=planner_kind,
+                model_name=(
+                    config.planner.openrouter_model
+                    if planner_kind == "openrouter"
+                    else config.planner.model
+                    if planner_kind == "openai"
+                    else None
+                ),
+                control_mode=run_control_mode,
+                narrator=narrator,
+            )
         runtime = AgentRuntime(
             run_id=run_id,
             environment=environment,
@@ -690,22 +712,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             log_full_observations=config.runtime.log_full_observations,
             scenario=config.runtime.scenario,
             scenario_attestation=config.runtime.scenario_attestation,
-            reporter=(
-                ConsoleDecisionReporter(
-                    run_id=run_id,
-                    planner_name=planner_kind,
-                    model_name=(
-                        config.planner.openrouter_model
-                        if planner_kind == "openrouter"
-                        else config.planner.model
-                        if planner_kind == "openai"
-                        else None
-                    ),
-                    control_mode=run_control_mode,
-                )
-                if config.runtime.decision_stream
-                else None
-            ),
+            reporter=reporter,
         )
         summary = await runtime.run(
             max_steps=args.steps or config.runtime.max_steps,
@@ -734,6 +741,8 @@ async def _run_command(args: argparse.Namespace) -> int:
         print(json.dumps(output, indent=2))
         return _run_exit_code(summary.success, runtime.final_safe_state)
     finally:
+        if reporter is not None:
+            reporter.close()
         logger.close()
         if memory is not None:
             memory.close()
@@ -917,6 +926,14 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--steps", type=int)
     run.add_argument("--seed", type=int)
     run.add_argument("--run-id")
+    run.add_argument(
+        "--tts",
+        action="store_true",
+        help=(
+            "Narrate human-readable planning and action updates through "
+            "offline Windows speech."
+        ),
+    )
     run.add_argument(
         "--objective",
         help="Override the configured objective for this run only.",

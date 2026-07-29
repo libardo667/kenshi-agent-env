@@ -2173,6 +2173,12 @@ def test_journey_continuous_flag_passes_planning_mode() -> None:
     assert argv[argv.index("--planning-mode") + 1] == "continuous"
 
 
+def test_journey_tts_mode_passes_to_the_core_run() -> None:
+    argv = _journey_argv(_journey_args("--tts"), "spoken-run")
+
+    assert "--tts" in argv
+
+
 def test_journey_passes_an_explicit_campaign_to_the_core_run() -> None:
     argv = _journey_argv(
         _journey_args("--campaign", "ladle-css-01"),

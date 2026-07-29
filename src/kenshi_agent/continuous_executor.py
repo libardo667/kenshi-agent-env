@@ -95,6 +95,7 @@ TransitionObserver = Callable[
     ],
     Observation,
 ]
+ActionStartedReporter = Callable[[int, Action], None]
 ConcurrentPlanner = Callable[
     [Observation],
     Coroutine[Any, Any, AuthoredPlannerOutput],
@@ -260,6 +261,7 @@ class ContinuousPlanExecutor:
         apply_patch_continuity: PatchContinuityApplier | None = None,
         read_memory: MemoryReader | None = None,
         read_fieldbook: FieldbookReader | None = None,
+        report_action_started: ActionStartedReporter | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -275,6 +277,7 @@ class ContinuousPlanExecutor:
         self.apply_patch_continuity = apply_patch_continuity
         self.read_memory = read_memory
         self.read_fieldbook = read_fieldbook
+        self.report_action_started = report_action_started
         # Which steps of the plan currently in flight actually finished. One
         # executor owns one plan, so this is that plan's answer, and every
         # terminal result reports it rather than only why the plan stopped.
@@ -944,6 +947,8 @@ class ContinuousPlanExecutor:
                 "native_assisted_actions": reserved_risk[2],
             },
         )
+        if self.report_action_started is not None:
+            self.report_action_started(observation.step_index, action)
 
         if isinstance(action, ConsultAdvisorAction):
             self.guard.commit(guard_reservation)

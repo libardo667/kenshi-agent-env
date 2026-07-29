@@ -2529,6 +2529,8 @@ def _journey_argv(
         argv.append("--acknowledge-native-assisted-control")
     if getattr(args, "acknowledge_continuous_live", False):
         argv.append("--acknowledge-continuous-live")
+    if args.tts:
+        argv.append("--tts")
     if args.exclusive:
         argv.append("--exclusive-input-session")
     return argv
@@ -2810,6 +2812,11 @@ def _add_journey_arguments(
         help="Override the profile step ceiling; omit to preserve runtime.max_steps.",
     )
     parser.add_argument("--run-id")
+    parser.add_argument(
+        "--tts",
+        action="store_true",
+        help="Narrate human-readable planning and action updates aloud.",
+    )
     parser.add_argument(
         "--continuous",
         action="store_true",

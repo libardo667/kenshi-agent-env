@@ -71,6 +71,7 @@ from kenshi_agent.models import (
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
+from kenshi_agent.reporting import ConsoleDecisionReporter
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
@@ -487,6 +488,7 @@ def runtime_for(
     max_native_assisted_actions_per_plan: int = 0,
     max_actions_per_minute: int = 500,
     memory: MemoryStore | None = None,
+    reporter: ConsoleDecisionReporter | None = None,
 ) -> tuple[AgentRuntime, SessionLogger]:
     macros = MacroRegistry(
         {
@@ -545,6 +547,7 @@ def runtime_for(
         ),
         planning_clock=clock,
         observation_clock=observation_clock,
+        reporter=reporter,
     )
     return runtime, logger
 
@@ -623,6 +626,48 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
             "resume",
             "accelerate",
         ]
+
+    asyncio.run(scenario())
+
+
+def test_continuous_reporter_narrates_plan_and_actions(tmp_path: Path) -> None:
+    class Narrator:
+        def __init__(self) -> None:
+            self.utterances: list[str] = []
+
+        def say(self, text: str, *, key: str | None = None) -> None:
+            del key
+            self.utterances.append(text)
+
+        def close(self) -> None:
+            pass
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = RevisionEnvironment(clock=clock)
+        narrator = Narrator()
+        reporter = ConsoleDecisionReporter(
+            run_id="continuous",
+            planner_name="scripted",
+            model_name=None,
+            narrator=narrator,
+        )
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            PlanThenStopPlanner(),
+            clock,
+            reporter=reporter,
+        )
+        try:
+            await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        spoken = " ".join(narrator.utterances)
+        assert "My plan is to resume and accelerate the mock world." in spoken
+        assert "Starting the game." in spoken
+        assert "Setting the game speed to five times." in spoken
 
     asyncio.run(scenario())
 

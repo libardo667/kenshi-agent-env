@@ -1285,6 +1285,12 @@ class AgentRuntime:
                         ]
                     },
                 )
+                if self.reporter is not None:
+                    self.reporter.plan_accepted(
+                        step_index=observation.step_index,
+                        objective=plan.objective,
+                        latency_seconds=planner_latency_seconds,
+                    )
                 executor = ContinuousPlanExecutor(
                     environment=self.environment,
                     guard=self.guard,
@@ -1300,6 +1306,11 @@ class AgentRuntime:
                     apply_patch_continuity=self._apply_patch_continuity,
                     read_memory=self._execute_memory_read,
                     read_fieldbook=self._execute_fieldbook_read,
+                    report_action_started=(
+                        self.reporter.action_started
+                        if self.reporter is not None
+                        else None
+                    ),
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(

@@ -127,6 +127,12 @@ def test_console_safe_escapes_characters_missing_from_stdout_encoding(monkeypatc
     assert cli._console_safe("spinner ⠸") == r"spinner \u2838"
 
 
+def test_run_parser_accepts_optional_tts_mode() -> None:
+    args = cli.build_parser().parse_args(["run", "--tts"])
+
+    assert args.tts is True
+
+
 def test_subprocess_planner_preserves_explicit_argv_without_shell_reparsing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
