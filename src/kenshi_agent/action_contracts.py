@@ -1689,7 +1689,7 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
     risk=ActionRiskCost(pointer_actions=12, native_assisted_actions=2),
-    max_primitive_actions=42,
+    max_primitive_actions=45,
     reference_fields=("actor_id", "target_id"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.COMPOSITE_OPTION,

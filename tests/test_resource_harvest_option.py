@@ -499,7 +499,7 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
                     ],
                     allow_live_unpause_actions=True,
                     max_actions_per_minute=100,
-                    max_controller_verified_primitive_actions_per_step=42,
+                    max_controller_verified_primitive_actions_per_step=45,
                 ),
                 MacroRegistry({}),
                 control_mode=ControlMode.NATIVE_ASSISTED,

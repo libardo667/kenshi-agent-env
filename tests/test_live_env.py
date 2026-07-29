@@ -106,6 +106,7 @@ class PulseController(InputController):
         continuous_user_input: bool = False,
         client_width: int = 1920,
         client_height: int = 1080,
+        ignore_speed_key_once: str | None = None,
     ) -> None:
         self.telemetry = telemetry
         self.actions: list[PrimitiveInputAction] = []
@@ -116,19 +117,29 @@ class PulseController(InputController):
         self.continuous_user_input = continuous_user_input
         self.client_width = client_width
         self.client_height = client_height
+        self.ignore_speed_key_once = ignore_speed_key_once
+        self.ignored_speed_key = False
 
     def focus_window(self) -> None:
         return None
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         self.actions.append(action)
-        if isinstance(action, KeyAction) and action.key == "space":
+        ignore_speed_key = (
+            isinstance(action, KeyAction)
+            and action.key == self.ignore_speed_key_once
+            and not self.ignored_speed_key
+        )
+        if ignore_speed_key:
+            self.ignored_speed_key = True
+        if not ignore_speed_key and isinstance(action, KeyAction) and action.key == "space":
             self.telemetry.paused = not self.telemetry.paused
-        if isinstance(action, KeyAction) and action.key == "f2":
+        if not ignore_speed_key and isinstance(action, KeyAction) and action.key == "f2":
             self.telemetry.paused = False
             self.telemetry.speed_multiplier = 1.0
         if (
-            isinstance(action, KeyAction)
+            not ignore_speed_key
+            and isinstance(action, KeyAction)
             and action.key in {"f3", "f4"}
             and not self.telemetry.paused
         ):
@@ -583,6 +594,37 @@ def test_set_speed_owns_starting_a_paused_world(
         assert telemetry.speed_multiplier == multiplier
         assert transition.receipt.primitive_actions == len(expected_keys)
         assert "running" in transition.receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_set_speed_reissues_an_idempotent_gear_after_a_dropped_key(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.paused = False
+        telemetry.speed_multiplier = 5.0
+        telemetry.capabilities = ["game.pause", "game.speed"]
+        controller = PulseController(telemetry, ignore_speed_key_once="f2")
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        await environment.reset()
+        transition = await environment.step(SetSpeedAction(speed=1))
+
+        assert [
+            action.key
+            for action in controller.actions
+            if isinstance(action, KeyAction)
+        ] == ["f2", "f2"]
+        assert telemetry.paused is False
+        assert telemetry.speed_multiplier == 1.0
+        assert transition.receipt.primitive_actions == 2
 
     asyncio.run(scenario())
 

@@ -902,25 +902,12 @@ class LiveEnvironment(AgentEnvironment):
 
         primitive_count = 0
         if paused:
-            primitive_count += await self._execute_speed_key(1)
-            if not await self._wait_for_playback_state(
-                paused=False,
-                multiplier=GAME_SPEED_MULTIPLIER_BY_GEAR[1],
-            ):
-                raise RuntimeError(
-                    "Kenshi did not confirm the paused world started at speed gear 1."
-                )
+            primitive_count += await self._establish_playback_gear(1)
 
         if action.speed != 1:
-            primitive_count += await self._execute_speed_key(action.speed)
-        if not await self._wait_for_playback_state(
-            paused=False,
-            multiplier=expected,
-        ):
-            raise RuntimeError(
-                f"Kenshi did not confirm running at speed gear {action.speed} "
-                f"({expected:g}x)."
-            )
+            primitive_count += await self._establish_playback_gear(action.speed)
+        elif not paused:
+            primitive_count += await self._establish_playback_gear(1)
 
         return ActionReceipt(
             action=action,
@@ -934,6 +921,23 @@ class LiveEnvironment(AgentEnvironment):
                 "Controller causally confirmed Kenshi running at "
                 f"speed gear {action.speed} ({expected:g}x)."
             ),
+        )
+
+    async def _establish_playback_gear(self, gear: int) -> int:
+        """Retry one idempotent gear selection only after confirmation fails."""
+
+        expected = GAME_SPEED_MULTIPLIER_BY_GEAR[gear]
+        primitive_count = 0
+        for _attempt in range(2):
+            primitive_count += await self._execute_speed_key(gear)
+            if await self._wait_for_playback_state(
+                paused=False,
+                multiplier=expected,
+            ):
+                return primitive_count
+        raise RuntimeError(
+            f"Kenshi did not confirm running at speed gear {gear} "
+            f"({expected:g}x) after two idempotent selections."
         )
 
     async def _execute_speed_key(self, gear: int) -> int:
