@@ -13,6 +13,7 @@ from ..action_contracts import contract_for
 from ..camera_recovery import score_camera_observation
 from ..config import MockConfig
 from ..models import (
+    GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -56,7 +57,7 @@ class MockWorld:
     bleeding_rate: float = 0.0
     elapsed_minutes: float = 0.0
     paused: bool = True
-    speed: int = 1
+    speed: float = 1.0
     alive: bool = True
     conscious: bool = True
     hostile_nearby: bool = False
@@ -302,8 +303,12 @@ class MockEnvironment(AgentEnvironment):
             self.world.paused = action.paused
             message = f"Mock game paused={action.paused}."
         elif isinstance(action, SetSpeedAction):
-            self.world.speed = action.speed
-            message = f"Mock speed set to {action.speed}."
+            self.world.paused = False
+            self.world.speed = GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed]
+            message = (
+                f"Mock playback started at speed gear {action.speed} "
+                f"({self.world.speed:g}x)."
+            )
         elif isinstance(action, WaitAction):
             await asyncio.sleep(0)
             self._advance_time(action.seconds * self.config.minutes_per_wait_second)

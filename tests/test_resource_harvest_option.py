@@ -40,6 +40,7 @@ from kenshi_agent.models import (
     ResourceTransferStatus,
     RiskBudget,
     SemanticActionReceipt,
+    SetSpeedAction,
     TelemetrySnapshot,
     Transition,
     UIState,
@@ -264,17 +265,11 @@ class HarvestEnvironment(AgentEnvironment):
         native: NativeCommandAcknowledgement | None = None
         transfer: ResourceTransferEvidence | None = None
 
-        if (
-            isinstance(action, UseGameBindingAction)
-            and action.binding is GameBinding.SPEED_3
-        ):
+        if isinstance(action, SetSpeedAction) and action.speed == 3:
             assert self.phase == "world"
             self.paused = False
             self.speed_multiplier = 5.0
-        elif (
-            isinstance(action, UseGameBindingAction)
-            and action.binding is GameBinding.SPEED_1
-        ):
+        elif isinstance(action, SetSpeedAction) and action.speed == 1:
             assert self.phase == "world"
             self.speed_multiplier = 1.0
         elif isinstance(action, ProduceResourceOutputAction):
@@ -380,7 +375,9 @@ class HarvestEnvironment(AgentEnvironment):
             resource_transfer=transfer,
         )
         primitive_actions = (
-            6
+            2
+            if isinstance(action, SetSpeedAction) and action.speed == 3
+            else 6
             if isinstance(
                 action,
                 (ProduceResourceOutputAction, OpenContextInventoryAction),
@@ -495,12 +492,14 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
                         "harvest_resource",
                         "produce_resource_output",
                         "open_context_inventory",
+                        "set_speed",
                         "use_game_binding",
                         "collect_resource_output",
                         "dismiss_screen",
                     ],
+                    allow_live_unpause_actions=True,
                     max_actions_per_minute=100,
-                    max_controller_verified_primitive_actions_per_step=41,
+                    max_controller_verified_primitive_actions_per_step=42,
                 ),
                 MacroRegistry({}),
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -526,7 +525,10 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
         finally:
             logger.close()
 
-        assert result.completed
+        assert result.completed, (
+            result.reason,
+            [item.model_dump(mode="json") for item in environment.actions],
+        )
         assert result.actions_completed == 1
         assert result.observation.telemetry is not None
         assert result.observation.telemetry.ui.open_inventory_windows == 0
@@ -534,9 +536,9 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
             InventoryItem(name=ITEM_NAME, quantity=5)
         ]
         assert [item.kind for item in environment.actions] == [
-            "use_game_binding",
+            "set_speed",
             "produce_resource_output",
-            "use_game_binding",
+            "set_speed",
             "open_context_inventory",
             "use_game_binding",
             "collect_resource_output",
@@ -552,14 +554,12 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
             for item in environment.actions
             if isinstance(item, UseGameBindingAction)
         ] == [
-            GameBinding.SPEED_3,
-            GameBinding.SPEED_1,
             GameBinding.TOGGLE_INVENTORY,
         ]
         assert environment.speed_multiplier == 1.0
         assert len(observed_transitions) == 1
         outer_receipt = observed_transitions[0].receipt
-        assert outer_receipt.primitive_actions == 41
+        assert outer_receipt.primitive_actions == 42
         assert outer_receipt.action == action
         assert outer_receipt.semantic is not None
         assert outer_receipt.semantic.resource_harvest is not None

@@ -1604,6 +1604,7 @@
     },
     "SetSpeedAction": {
       "additionalProperties": false,
+      "description": "Set a running playback state at one of Kenshi's three ordinal gears.\n\nThis is one semantic transition even when Kenshi is paused. The controller\nowns starting at gear 1 before selecting a faster gear, because the faster\nkeys do not themselves resume a paused world.",
       "properties": {
         "kind": {
           "const": "set_speed",
@@ -1857,7 +1858,7 @@
     },
     "UseGameBindingAction": {
       "additionalProperties": false,
-      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap, `C` the stats window, `Space` pauses under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.",
+      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap and `C` the stats window under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.\nTime keys remain controller details behind PauseAction and SetSpeedAction.",
       "properties": {
         "kind": {
           "const": "use_game_binding",

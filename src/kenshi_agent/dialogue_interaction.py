@@ -18,14 +18,13 @@ from __future__ import annotations
 
 from .action_contracts import ActionContract, contract_for
 from .models import (
-    GAME_BINDING_SUCCESS_CONDITIONS,
+    TIME_GAME_BINDINGS,
     TOGGLE_GAME_BINDINGS,
     Action,
     ConditionKind,
     ConditionResult,
     ConsultAdvisorAction,
     ControlMode,
-    GameBinding,
     IdempotencyPolicy,
     Observation,
     PauseAction,
@@ -33,6 +32,7 @@ from .models import (
     PlanStep,
     RequestAffordanceAction,
     RiskBudget,
+    SetSpeedAction,
     UseGameBindingAction,
     is_controller_primitive,
     is_planner_control_action,
@@ -87,8 +87,7 @@ def _step_action_errors(
         isinstance(action, PauseAction)
         and action.paused is False
     ) or (
-        isinstance(action, UseGameBindingAction)
-        and action.binding is GameBinding.PAUSE
+        isinstance(action, SetSpeedAction)
         and observation.telemetry is not None
         and observation.telemetry.game.paused is True
     )
@@ -98,6 +97,17 @@ def _step_action_errors(
             "authorize. Do not add an unpause step before movement: "
             "approach_dialogue_target, move_to_character, move_in_direction, and "
             "harvest_resource own any world-time transition they require."
+        )
+        return errors
+
+    if (
+        isinstance(action, UseGameBindingAction)
+        and action.binding in TIME_GAME_BINDINGS
+    ):
+        errors.append(
+            f"{label} authors raw time binding {action.binding.value!r}; use "
+            "pause to stop the world or one set_speed action to establish a "
+            "running playback state"
         )
         return errors
 
@@ -168,21 +178,6 @@ def _step_action_errors(
             f"{label} retries an at-most-once action; a delayed confirmation is not "
             "permission to act twice"
         )
-
-    if isinstance(action, UseGameBindingAction):
-        required_effect = GAME_BINDING_SUCCESS_CONDITIONS.get(action.binding)
-        if required_effect is not None and not any(
-            condition.kind is required_effect.kind
-            and condition.path == required_effect.path
-            and condition.operator is required_effect.operator
-            and condition.expected == required_effect.expected
-            for condition in step.success_conditions
-        ):
-            errors.append(
-                f"{label} binding {action.binding.value!r} must verify "
-                f"{required_effect.path} equals {required_effect.expected!r}; the "
-                "gear ordinal is not its multiplier"
-            )
 
     if not contract.controller_verified and not any(
         _is_causal_condition(condition.kind, condition.path)

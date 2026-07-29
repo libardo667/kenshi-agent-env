@@ -30,6 +30,7 @@ from kenshi_agent.models import (
     RecallMemoryAction,
     RequestAffordanceAction,
     ScrollAction,
+    SetSpeedAction,
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
@@ -144,7 +145,39 @@ def test_live_pause_requires_known_current_state() -> None:
         guard.validate(PauseAction(paused=False), known)
 
 
-def test_pause_binding_cannot_bypass_unpause_policy() -> None:
+def test_set_speed_unpause_requires_explicit_profile_authority() -> None:
+    action = SetSpeedAction(speed=3)
+    paused = Observation(
+        run_id="run",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(
+            capabilities=["game.pause", "game.speed"],
+            game=GameState(loaded=True, paused=True, speed_multiplier=0.0),
+        ),
+    )
+
+    with pytest.raises(SafetyViolation, match="Direct live unpause"):
+        ActionGuard(safety_config(), MacroRegistry({})).validate(action, paused)
+
+    enabled = safety_config().model_copy(
+        update={"allow_live_unpause_actions": True}
+    )
+    assert ActionGuard(enabled, MacroRegistry({})).validate(action, paused) == action
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        GameBinding.PAUSE,
+        GameBinding.SPEED_1,
+        GameBinding.SPEED_2,
+        GameBinding.SPEED_3,
+    ],
+)
+def test_raw_time_binding_is_not_a_guarded_planner_affordance(
+    binding: GameBinding,
+) -> None:
     guard = ActionGuard(
         safety_config().model_copy(
             update={"allow_action_kinds": [*safety_config().allow_action_kinds, "use_game_binding"]}
@@ -152,56 +185,21 @@ def test_pause_binding_cannot_bypass_unpause_policy() -> None:
         MacroRegistry({}),
     )
     action = UseGameBindingAction(
-        binding=GameBinding.PAUSE,
-        expected_effect="toggle the current pause state",
-    )
-    base = Observation(
-        run_id="run",
-        step_index=0,
-        mode="live",
-        telemetry=TelemetrySnapshot(game=GameState(loaded=True)),
-    )
-
-    with pytest.raises(SafetyViolation, match="pause state is unknown"):
-        guard.validate(action, base)
-    with pytest.raises(SafetyViolation, match="unpause"):
-        guard.validate(
-            action,
-            base.model_copy(
-                update={"telemetry": TelemetrySnapshot(game=GameState(loaded=True, paused=True))}
-            ),
-        )
-    assert (
-        guard.validate(
-            action,
-            base.model_copy(
-                update={"telemetry": TelemetrySnapshot(game=GameState(loaded=True, paused=False))}
-            ),
-        )
-        == action
-    )
-
-
-def test_pause_binding_unpause_requires_explicit_profile_authority() -> None:
-    config = safety_config().model_copy(
-        update={
-            "allow_action_kinds": [*safety_config().allow_action_kinds, "use_game_binding"],
-            "allow_live_unpause_actions": True,
-        }
-    )
-    guard = ActionGuard(config, MacroRegistry({}))
-    action = UseGameBindingAction(
-        binding=GameBinding.PAUSE,
-        expected_effect="unpause the loaded game",
+        binding=binding,
+        expected_effect="change playback",
     )
     observation = Observation(
         run_id="run",
         step_index=0,
         mode="live",
-        telemetry=TelemetrySnapshot(game=GameState(loaded=True, paused=True)),
+        telemetry=TelemetrySnapshot(
+            capabilities=["game.pause", "game.speed"],
+            game=GameState(loaded=True, paused=False, speed_multiplier=1.0),
+        ),
     )
 
-    assert guard.validate(action, observation) == action
+    with pytest.raises(SafetyViolation, match="Raw time bindings"):
+        guard.validate(action, observation)
 
 
 def test_safety_pause_bypasses_only_the_rate_budget() -> None:

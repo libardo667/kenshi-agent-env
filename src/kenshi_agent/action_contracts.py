@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from .models import (
     GAME_BINDING_KEYS,
+    TIME_GAME_BINDINGS,
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
@@ -1295,6 +1296,11 @@ def bind_use_game_binding(
         return _unbound("Telemetry is stale, so the game cannot be bound.")
     if telemetry.game.loaded is not True:
         return _unbound("Kenshi has no loaded game to receive a binding.")
+    if action.binding in TIME_GAME_BINDINGS:
+        return _unbound(
+            "Raw time bindings are not planner affordances; use pause to stop "
+            "the world or set_speed to establish one running playback state."
+        )
     key = GAME_BINDING_KEYS.get(action.binding)
     if key is None:
         return _unbound(f"No key is mapped for binding {action.binding.value!r}.")
@@ -1683,7 +1689,7 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
     risk=ActionRiskCost(pointer_actions=12, native_assisted_actions=2),
-    max_primitive_actions=41,
+    max_primitive_actions=42,
     reference_fields=("actor_id", "target_id"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
     execution=ActionExecution.COMPOSITE_OPTION,
@@ -1945,13 +1951,13 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     model=UseGameBindingAction,
     summary=(
         "Press one named Kenshi control through the hard-coded shipped-default "
-        "keymap: open inventory, map or stats, pause or set speed, move the "
-        "camera, or change selection. This is how screens are entered - do not "
+        "keymap: open inventory, map or stats, move the camera, or change "
+        "selection. This is how screens are entered - do not "
         "hunt for a widget when a binding exists. Customized keymaps are not "
         "currently read."
     ),
     argument_source=(
-        "binding must be one of the catalogued GameBinding names; "
+        "binding must be one of semantic_actions[].available_bindings; "
         "expected_effect states in one phrase what the press should change, "
         "and the step's success conditions must check it."
     ),

@@ -75,8 +75,8 @@ def test_the_binding_action_is_contracted_and_planner_visible() -> None:
     assert ACTION_CONTRACTS["use_game_binding"].planner_visible
 
 
-def test_speed_gears_advertise_their_exact_telemetry_effects() -> None:
-    """A gear ordinal is not its multiplier: Kenshi's third gear is 5x."""
+def test_raw_time_keys_are_absent_from_planner_bindings() -> None:
+    """Playback is represented once by pause/set_speed, not duplicate keys."""
 
     binding_action = next(
         action
@@ -84,35 +84,36 @@ def test_speed_gears_advertise_their_exact_telemetry_effects() -> None:
         if action["kind"] == "use_game_binding"
     )
 
-    assert binding_action["binding_success_conditions"] == {
-        "speed_1": {
-            "kind": "field",
-            "path": "telemetry.game.speed_multiplier",
-            "operator": "equals",
-            "expected": 1.0,
-            "target_id": None,
-            "max_age_seconds": 3.0,
-            "required_capabilities": ["game.speed"],
-        },
-        "speed_2": {
-            "kind": "field",
-            "path": "telemetry.game.speed_multiplier",
-            "operator": "equals",
-            "expected": 2.0,
-            "target_id": None,
-            "max_age_seconds": 3.0,
-            "required_capabilities": ["game.speed"],
-        },
-        "speed_3": {
-            "kind": "field",
-            "path": "telemetry.game.speed_multiplier",
-            "operator": "equals",
-            "expected": 5.0,
-            "target_id": None,
-            "max_age_seconds": 3.0,
-            "required_capabilities": ["game.speed"],
-        },
-    }
+    assert "toggle_inventory" in binding_action["available_bindings"]
+    assert not {
+        "pause",
+        "speed_1",
+        "speed_2",
+        "speed_3",
+    } & set(binding_action["available_bindings"])
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        GameBinding.PAUSE,
+        GameBinding.SPEED_1,
+        GameBinding.SPEED_2,
+        GameBinding.SPEED_3,
+    ],
+)
+def test_raw_time_key_cannot_bind_as_a_planner_affordance(
+    binding: GameBinding,
+) -> None:
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="change playback",
+    )
+
+    result = USE_GAME_BINDING_CONTRACT.bind(action, observation())
+
+    assert not result.bound
+    assert "set_speed" in result.reason
 
 
 def test_a_binding_binds_on_a_loaded_game() -> None:

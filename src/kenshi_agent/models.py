@@ -846,7 +846,22 @@ class PauseAction(StrictModel):
     paused: bool = True
 
 
+GAME_SPEED_MULTIPLIER_BY_GEAR: dict[int, float] = {
+    1: 1.0,
+    2: 3.0,
+    3: 5.0,
+}
+"""Observed simulation multiplier selected by each ordinal Kenshi speed gear."""
+
+
 class SetSpeedAction(StrictModel):
+    """Set a running playback state at one of Kenshi's three ordinal gears.
+
+    This is one semantic transition even when Kenshi is paused. The controller
+    owns starting at gear 1 before selecting a faster gear, because the faster
+    keys do not themselves resume a paused world.
+    """
+
     kind: Literal["set_speed"] = "set_speed"
     speed: Literal[1, 2, 3]
 
@@ -1382,6 +1397,17 @@ TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 )
 
 
+TIME_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
+    {
+        GameBinding.PAUSE,
+        GameBinding.SPEED_1,
+        GameBinding.SPEED_2,
+        GameBinding.SPEED_3,
+    }
+)
+"""Low-level time keys represented to planners by pause/set_speed actions."""
+
+
 class UseGameBindingAction(StrictModel):
     """Press one named Kenshi control through the shipped-default keymap.
 
@@ -1389,9 +1415,10 @@ class UseGameBindingAction(StrictModel):
     clicking the time-speed buttons to unpause, clicking around the world hoping
     an inventory would appear - because nothing in the catalog could simply open
     a screen. Kenshi already binds all of this: `I` opens the inventory, `M` the
-    map, `C` the stats window, `Space` pauses under the shipped defaults. Naming
+    map and `C` the stats window under the shipped defaults. Naming
     the *binding* rather than the key keeps the intention readable and the
     current default mapping in one place; customized keymaps are not yet read.
+    Time keys remain controller details behind PauseAction and SetSpeedAction.
     """
 
     kind: Literal["use_game_binding"] = "use_game_binding"
@@ -3133,26 +3160,6 @@ class Condition(RootModel[ConditionValue]):
         return getattr(self.root, "required_capabilities", [])
 
 
-# Gear names identify Kenshi's ordinal controls, not literal multipliers. This
-# typed map is both planner guidance and the policy's verification source, so a
-# third-gear plan cannot "prove" itself by waiting for a multiplier of 3.
-GAME_BINDING_SUCCESS_CONDITIONS: dict[GameBinding, Condition] = {
-    binding: Condition(
-        kind=ConditionKind.FIELD,
-        path=FieldConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
-        operator=ConditionOperator.EQUALS,
-        expected=multiplier,
-        max_age_seconds=3.0,
-        required_capabilities=["game.speed"],
-    )
-    for binding, multiplier in (
-        (GameBinding.SPEED_1, 1.0),
-        (GameBinding.SPEED_2, 2.0),
-        (GameBinding.SPEED_3, 5.0),
-    )
-}
-
-
 class ConditionEvaluation(StrictModel):
     condition: Condition
     result: ConditionResult
@@ -3690,10 +3697,11 @@ class Observation(StrictModel):
                 "argument_source": contract.argument_source,
             }
             if contract.kind == "use_game_binding":
-                entry["binding_success_conditions"] = {
-                    binding.value: _json_model(condition)
-                    for binding, condition in GAME_BINDING_SUCCESS_CONDITIONS.items()
-                }
+                entry["available_bindings"] = [
+                    binding.value
+                    for binding in GameBinding
+                    if binding not in TIME_GAME_BINDINGS
+                ]
             digest.append(entry)
         return digest
 

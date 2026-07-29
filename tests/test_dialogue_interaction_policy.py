@@ -36,6 +36,7 @@ from kenshi_agent.models import (
     PlanEnvelope,
     PlanStep,
     RiskBudget,
+    SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
     UIState,
@@ -708,25 +709,36 @@ class TestRunControlActions:
         assert any("direct live unpause" in error for error in errors)
         assert any("approach_dialogue_target" in error for error in errors)
 
-    def test_pause_binding_cannot_alias_a_direct_unpause(self) -> None:
+    @pytest.mark.parametrize(
+        ("action", "success"),
+        [
+            *[
+                (
+                    SetSpeedAction(speed=speed),
+                    Condition(
+                        kind=ConditionKind.FIELD,
+                        path="telemetry.game.speed_multiplier",
+                        operator=ConditionOperator.EQUALS,
+                        expected=multiplier,
+                        max_age_seconds=3.0,
+                        required_capabilities=["game.speed"],
+                    ),
+                )
+                for speed, multiplier in ((1, 1.0), (2, 3.0), (3, 5.0))
+            ],
+        ],
+    )
+    def test_playback_action_cannot_alias_a_direct_unpause(
+        self,
+        action: Action,
+        success: Condition,
+    ) -> None:
         composed = plan(
             [
                 step(
                     "unpause",
-                    UseGameBindingAction(
-                        binding=GameBinding.PAUSE,
-                        expected_effect="resume game simulation",
-                    ),
-                    success=[
-                        Condition(
-                            kind=ConditionKind.FIELD,
-                            path="telemetry.game.paused",
-                            operator=ConditionOperator.EQUALS,
-                            expected=False,
-                            max_age_seconds=3.0,
-                            required_capabilities=["game.pause"],
-                        )
-                    ],
+                    action,
+                    success=[success],
                 )
             ],
             native=0,
@@ -737,7 +749,7 @@ class TestRunControlActions:
             composed,
             observation(
                 controls=TRADE_CONTROLS,
-                capabilities=[*CAPABILITIES, "game.pause"],
+                capabilities=[*CAPABILITIES, "game.pause", "game.speed"],
             ),
         )
 
@@ -1109,10 +1121,10 @@ def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
 
 
-def test_speed_gear_plan_must_check_the_gears_actual_multiplier() -> None:
-    """A successful F4 press reports 5x; checking for literal 3x is not proof."""
+def test_raw_time_binding_is_rejected_in_favor_of_playback_state() -> None:
+    """The planner gets one playback action, not Kenshi's motor-key sequence."""
 
-    wrong_multiplier = Condition(
+    speed_effect = Condition(
         kind=ConditionKind.FIELD,
         path=ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
         operator=ConditionOperator.EQUALS,
@@ -1128,7 +1140,7 @@ def test_speed_gear_plan_must_check_the_gears_actual_multiplier() -> None:
                     binding=GameBinding.SPEED_3,
                     expected_effect="set the third speed gear",
                 ),
-                success=[wrong_multiplier],
+                success=[speed_effect],
             )
         ],
         pointer=0,
@@ -1140,4 +1152,5 @@ def test_speed_gear_plan_must_check_the_gears_actual_multiplier() -> None:
         observation(capabilities=[*CAPABILITIES, "game.speed"]),
     )
 
-    assert any("speed_3" in error and "5.0" in error for error in errors)
+    assert any("raw time binding 'speed_3'" in error for error in errors)
+    assert any("set_speed" in error for error in errors)

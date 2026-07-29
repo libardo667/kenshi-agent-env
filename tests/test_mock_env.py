@@ -24,9 +24,25 @@ def test_mock_environment_state_transitions(tmp_path: Path) -> None:
         transition = await environment.step(SkillAction(name="work_for_cats"))
         assert transition.observation.telemetry is not None
         assert transition.observation.telemetry.game.money == 300
-        assert transition.observation.telemetry.game.elapsed_minutes == 180
+        assert transition.observation.telemetry.game.elapsed_minutes == 300
         assert transition.observation.screenshot_path is not None
         assert transition.observation.screenshot_path.exists()
+
+    asyncio.run(scenario())
+
+
+def test_mock_set_speed_represents_a_running_playback_state(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        environment = MockEnvironment(MockConfig(random_events=False), tmp_path, "playback")
+        observation = await environment.reset()
+        assert observation.telemetry is not None
+        assert observation.telemetry.game.paused is True
+
+        transition = await environment.step(SetSpeedAction(speed=3))
+
+        assert transition.observation.telemetry is not None
+        assert transition.observation.telemetry.game.paused is False
+        assert transition.observation.telemetry.game.speed_multiplier == 5.0
 
     asyncio.run(scenario())
 

@@ -722,7 +722,7 @@ def test_visible_control_digest_keeps_unnamed_item_cells_distinct() -> None:
     ] == [True, True]
 
 
-def test_semantic_action_digest_contains_json_primitive_binding_conditions() -> None:
+def test_semantic_action_digest_contains_json_primitive_available_bindings() -> None:
     observation = _rich_observation(item_control_count=0)
 
     binding_action = next(
@@ -730,11 +730,11 @@ def test_semantic_action_digest_contains_json_primitive_binding_conditions() -> 
         for entry in observation.semantic_action_digest()
         if entry["kind"] == "use_game_binding"
     )
-    conditions = binding_action["binding_success_conditions"]
-    assert conditions
-    assert json.loads(json.dumps(conditions)) == conditions
+    bindings = binding_action["available_bindings"]
+    assert bindings
+    assert json.loads(json.dumps(bindings)) == bindings
 
-    _assert_plain_json_values(conditions)
+    _assert_plain_json_values(bindings)
 
 
 def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:

@@ -2,6 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -39,6 +40,7 @@ from kenshi_agent.models import (
     PointerActionClass,
     ProduceResourceOutputAction,
     ResourceTransferStatus,
+    SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
     UIState,
@@ -59,6 +61,7 @@ class PulseTelemetry:
         stale: bool = False,
     ) -> None:
         self.paused = True
+        self.speed_multiplier = 0.0
         self.sequence = 0
         self.auto_pause_after_reads = auto_pause_after_reads
         self.stale = stale
@@ -80,7 +83,11 @@ class PulseTelemetry:
                 sequence=self.sequence,
                 captured_at=datetime.now(UTC),
                 capabilities=self.capabilities,
-                game=GameState(loaded=True, paused=self.paused),
+                game=GameState(
+                    loaded=True,
+                    paused=self.paused,
+                    speed_multiplier=self.speed_multiplier,
+                ),
                 native_control=self.native_control,
             ),
             age_seconds=0.0,
@@ -117,6 +124,15 @@ class PulseController(InputController):
         self.actions.append(action)
         if isinstance(action, KeyAction) and action.key == "space":
             self.telemetry.paused = not self.telemetry.paused
+        if isinstance(action, KeyAction) and action.key == "f2":
+            self.telemetry.paused = False
+            self.telemetry.speed_multiplier = 1.0
+        if (
+            isinstance(action, KeyAction)
+            and action.key in {"f3", "f4"}
+            and not self.telemetry.paused
+        ):
+            self.telemetry.speed_multiplier = 3.0 if action.key == "f3" else 5.0
         if (
             isinstance(action, ClickAction)
             and action.button == MouseButton.LEFT
@@ -529,6 +545,44 @@ def test_separate_transport_controls_are_state_specific(tmp_path: Path) -> None:
         clicks = [action for action in controller.actions if isinstance(action, ClickAction)]
         assert [(action.x, action.y) for action in clicks] == [(0.792, 0.723), (0.765, 0.723)]
         assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("speed", "target_key", "multiplier"),
+    [(1, "f2", 1.0), (2, "f3", 3.0), (3, "f4", 5.0)],
+)
+def test_set_speed_owns_starting_a_paused_world(
+    tmp_path: Path,
+    speed: Literal[1, 2, 3],
+    target_key: str,
+    multiplier: float,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.capabilities = ["game.pause", "game.speed"]
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        await environment.reset()
+        transition = await environment.step(SetSpeedAction(speed=speed))
+
+        expected_keys = ["f2"] if speed == 1 else ["f2", target_key]
+        assert [
+            action.key
+            for action in controller.actions
+            if isinstance(action, KeyAction)
+        ] == expected_keys
+        assert telemetry.paused is False
+        assert telemetry.speed_multiplier == multiplier
+        assert transition.receipt.primitive_actions == len(expected_keys)
+        assert "running" in transition.receipt.message
 
     asyncio.run(scenario())
 

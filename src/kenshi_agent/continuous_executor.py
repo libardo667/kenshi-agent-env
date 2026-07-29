@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable, Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from .action_contracts import ActionExecution, contract_for
 from .config import PlanningConfig
@@ -49,6 +49,7 @@ from .models import (
     ResourceTransferEvidence,
     ResourceTransferStatus,
     SemanticActionReceipt,
+    SetSpeedAction,
     SkillAction,
     StopAction,
     Transition,
@@ -2388,7 +2389,7 @@ class ContinuousPlanExecutor:
         step: PlanStep,
         observation: Observation,
         *,
-        binding: GameBinding,
+        speed: Literal[1, 2, 3],
         expected_multiplier: float,
         require_running: bool,
         require_safe_actor: bool,
@@ -2402,13 +2403,7 @@ class ContinuousPlanExecutor:
         ):
             return observation, None
         transition, current, _ = await self._dispatch_harvest_phase(
-            UseGameBindingAction(
-                binding=binding,
-                expected_effect=(
-                    f"Set Kenshi to its observed {expected_multiplier:g}x "
-                    "simulation speed for the controller-owned harvest."
-                ),
-            ),
+            SetSpeedAction(speed=speed),
             action.actor_id,
             plan,
             step,
@@ -2687,7 +2682,7 @@ class ContinuousPlanExecutor:
                 plan,
                 step,
                 current,
-                binding=GameBinding.SPEED_3,
+                speed=3,
                 expected_multiplier=5.0,
                 require_running=True,
                 require_safe_actor=True,
@@ -2780,7 +2775,7 @@ class ContinuousPlanExecutor:
                     plan,
                     step,
                     current,
-                    binding=GameBinding.SPEED_1,
+                    speed=1,
                     expected_multiplier=1.0,
                     require_running=False,
                     require_safe_actor=False,

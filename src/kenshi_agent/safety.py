@@ -14,7 +14,6 @@ from .models import (
     ControlMode,
     CoordinateSpace,
     Disposition,
-    GameBinding,
     MoveCursorAction,
     NativeCommandStatus,
     Observation,
@@ -24,8 +23,8 @@ from .models import (
     RecallMemoryAction,
     RequestAffordanceAction,
     ScrollAction,
+    SetSpeedAction,
     SkillAction,
-    UseGameBindingAction,
     WaitAction,
 )
 from .skills import MacroRegistry
@@ -691,6 +690,27 @@ class ActionGuard:
                     "Direct live unpause is blocked; "  # mutation: reason
                     "use a bounded movement pulse."  # mutation: reason
                 )
+        if isinstance(action, SetSpeedAction) and observation.mode == "live":
+            telemetry = observation.telemetry
+            if (
+                telemetry is None
+                or telemetry.game.paused is None
+                or telemetry.game.speed_multiplier is None
+                or "game.pause" not in telemetry.capabilities
+                or "game.speed" not in telemetry.capabilities
+            ):
+                raise SafetyViolation(  # mutation: reason
+                    "Set-speed action requires fresh authoritative pause and "
+                    "speed state."  # mutation: reason
+                )
+            if (
+                telemetry.game.paused
+                and not self.config.allow_live_unpause_actions
+            ):
+                raise SafetyViolation(  # mutation: reason
+                    "Direct live unpause through set_speed is blocked; "
+                    "use a bounded movement option."  # mutation: reason
+                )
         if isinstance(action, ReadFieldbookAction) and action.project_id is not None:
             available_project_ids = {
                 project.project_id for project in observation.fieldbook_projects
@@ -712,24 +732,6 @@ class ActionGuard:
                 raise SafetyViolation(  # mutation: reason
                     f"Fieldbook project {action.project_id!r} is not present "
                     "in the current planner-visible fieldbook context."
-                )
-        if (
-            isinstance(action, UseGameBindingAction)
-            and action.binding is GameBinding.PAUSE
-            and observation.mode == "live"
-        ):
-            paused = (
-                observation.telemetry.game.paused if observation.telemetry is not None else None
-            )
-            if paused is None:
-                raise SafetyViolation(  # mutation: reason
-                    "Pause binding blocked because the current "  # mutation: reason
-                    "live pause state is unknown."  # mutation: reason
-                )
-            if paused and not self.config.allow_live_unpause_actions:
-                raise SafetyViolation(  # mutation: reason
-                    "Live unpause through the pause binding "  # mutation: reason
-                    "is blocked by policy."  # mutation: reason
                 )
         if isinstance(action, (ClickAction, MoveCursorAction, ScrollAction)):
             self._validate_pointer_target(action, observation)

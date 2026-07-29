@@ -51,6 +51,7 @@ from ..final_safe_state import (
 from ..input_boundary import ExecutionToken
 from ..models import (
     GAME_BINDING_KEYS,
+    GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -684,17 +685,7 @@ class LiveEnvironment(AgentEnvironment):
                 ),
             )
         if isinstance(action, SetSpeedAction):
-            primitive = KeyAction(key=self.controls_config.speed_keys[action.speed])
-            primitive_receipt = await self.controller.execute(primitive)
-            return primitive_receipt.model_copy(
-                update={
-                    "action": action,
-                    "message": (
-                        f"Pressed the configured speed-{action.speed} key. "
-                        "A later observation must confirm the speed."
-                    ),
-                }
-            )
+            return await self._execute_playback_speed(action, started)
         if isinstance(action, ApproachDialogueTargetAction):
             if command is None:
                 raise RuntimeError(
@@ -869,6 +860,121 @@ class LiveEnvironment(AgentEnvironment):
             receipt = await execute(primitive)
             primitive_count += receipt.primitive_actions
         return primitive_count, description
+
+    async def _execute_playback_speed(
+        self,
+        action: SetSpeedAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Causally establish one running playback state.
+
+        Kenshi's faster-speed keys select a rate but do not start a paused
+        world. Starting at gear 1 and then selecting the requested faster gear
+        is a controller detail, not a second planner decision.
+        """
+
+        initial = self.telemetry_reader.read()
+        if initial.stale:
+            raise RuntimeError(
+                "Refusing to set playback speed from stale telemetry."
+            )
+        paused = initial.snapshot.game.paused
+        multiplier = initial.snapshot.game.speed_multiplier
+        expected = GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed]
+        if paused is None or multiplier is None:
+            raise RuntimeError(
+                "Refusing to set playback speed while pause or speed state is unknown."
+            )
+        if paused is False and multiplier == expected:
+            return ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                primitive_actions=0,
+                message=(
+                    f"Kenshi already reports running at speed gear {action.speed} "
+                    f"({expected:g}x)."
+                ),
+            )
+
+        primitive_count = 0
+        if paused:
+            primitive_count += await self._execute_speed_key(1)
+            if not await self._wait_for_playback_state(
+                paused=False,
+                multiplier=GAME_SPEED_MULTIPLIER_BY_GEAR[1],
+            ):
+                raise RuntimeError(
+                    "Kenshi did not confirm the paused world started at speed gear 1."
+                )
+
+        if action.speed != 1:
+            primitive_count += await self._execute_speed_key(action.speed)
+        if not await self._wait_for_playback_state(
+            paused=False,
+            multiplier=expected,
+        ):
+            raise RuntimeError(
+                f"Kenshi did not confirm running at speed gear {action.speed} "
+                f"({expected:g}x)."
+            )
+
+        return ActionReceipt(
+            action=action,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=primitive_count,
+            message=(
+                "Controller causally confirmed Kenshi running at "
+                f"speed gear {action.speed} ({expected:g}x)."
+            ),
+        )
+
+    async def _execute_speed_key(self, gear: int) -> int:
+        if self.controller.emergency_stop_pressed(self.emergency_stop_key):
+            raise RuntimeError(
+                "Emergency stop interrupted playback control; no further input was sent."
+            )
+        if self.controller.user_input_detected():
+            raise RuntimeError(
+                "Human input interrupted playback control; no further input was sent."
+            )
+        receipt = await self.controller.execute(
+            KeyAction(key=self.controls_config.speed_keys[gear])
+        )
+        if not receipt.executed:
+            raise RuntimeError(receipt.message or "Playback key was not executed.")
+        return receipt.primitive_actions
+
+    async def _wait_for_playback_state(
+        self,
+        *,
+        paused: bool,
+        multiplier: float,
+        timeout_seconds: float = 3.0,
+    ) -> bool:
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            try:
+                result = self.telemetry_reader.read()
+                if (
+                    not result.stale
+                    and result.snapshot.game.paused is paused
+                    and result.snapshot.game.speed_multiplier == multiplier
+                ):
+                    return True
+            except TelemetryReadError:
+                pass
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.05, remaining))
 
     async def _execute_movement_pulse(
         self,

@@ -12,7 +12,7 @@ Regenerate with `python scripts/export_docs.py`.
 | `dismiss_screen` | 1.0 | yes | atomic_handler | no | 3 | — |
 | `equip_item` | 1.0 | yes | atomic_handler | no | 1 | `squad.inventory`, `ui.inventory`, `ui.visible_controls` |
 | `exit_current_building` | 1.0 | yes | monitored_option | yes | 4 | `control.exit_current_building`, `game.pause`, `identity.stable_handles`, `squad.indoors` |
-| `harvest_resource` | 1.0 | yes | composite_option | yes | 41 | `control.open_context_inventory`, `control.produce_resource_output`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.basic`, `squad.health`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
+| `harvest_resource` | 1.0 | yes | composite_option | yes | 42 | `control.open_context_inventory`, `control.produce_resource_output`, `game.pause`, `game.speed`, `identity.stable_handles`, `squad.basic`, `squad.health`, `squad.inventory`, `ui.context_inventory_target`, `ui.inventory`, `ui.visible_controls`, `world.context_targets` |
 | `move_in_direction` | 1.0 | yes | monitored_option | yes | 4 | `control.move_in_direction`, `squad.health` |
 | `move_to_character` | 1.0 | yes | monitored_option | yes | 4 | `control.move_to_character`, `identity.stable_handles`, `nearby.characters` |
 | `open_context_inventory` | 1.0 | no | atomic_handler | yes | 6 | `control.open_context_inventory`, `identity.stable_handles`, `world.context_targets` |

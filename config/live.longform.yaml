@@ -239,9 +239,8 @@ safety:
   max_actions_per_minute: 120
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
-  # This continuous profile explicitly authorizes a running world. Direct
-  # unpause and the pause toggle share this gate; the latter derives its effect
-  # from current fresh pause state and cannot bypass the policy.
+  # This continuous profile explicitly authorizes a running world. set_speed
+  # owns any required 1x start before selecting a faster ordinal gear.
   allow_live_unpause_actions: true
   # Unset: the agent trades freely on this profile. Exact current cell, item,
   # owner-window and seller binding prevents the wrong-item click. The exported
@@ -251,6 +250,7 @@ safety:
     - noop
     - stop
     - pause
+    - set_speed
     - wait
     - skill
     - approach_dialogue_target

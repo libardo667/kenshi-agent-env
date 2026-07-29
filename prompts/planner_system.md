@@ -324,11 +324,12 @@ yourself, in whatever order the current evidence supports.
   `toggle_inventory` opens the inventory, `toggle_map` the map,
   `toggle_stats` the stats window. There is no widget to hunt for, but a
   customized keymap is not currently supported.
-- Time is a binding too. `pause` toggles pause; `speed_1`, `speed_2` and
-  `speed_3` select ordinal gears, not same-numbered multipliers. Copy the exact
-  typed check from `semantic_actions[].binding_success_conditions`. Direct
-  unpause and a pause binding that would unpause share the profile's explicit
-  gate. The physical keys are shipped defaults, not a parsed customized keymap.
+- Playback is one state choice, not a key sequence. Use `pause` with
+  `paused: true` to stop time. Use one `set_speed` action to establish a
+  running world at ordinal gear 1, 2, or 3 (observed as 1x, 3x, or 5x).
+  When the world is paused, the controller starts it at gear 1 and then selects
+  a requested faster gear inside that same action. Never author raw `pause` or
+  `speed_1`/`speed_2`/`speed_3` game bindings; they are private motor details.
 - **Resource work is one controller-owned harvest action.** Author
   `harvest_resource` with `actor_id` copied from `selected.id`, one exact
   natural-resource `context_targets[].id`, and a useful bounded `quantity` from
@@ -338,7 +339,7 @@ yourself, in whatever order the current evidence supports.
   `Operating machine` job until that yield exists, restores gear 1 before
   inventory input, opens both exact inventory windows, derives the output cell
   from current telemetry, proves conserved transfer into that actor, and closes
-  only those two windows. Do not author `speed_3`,
+  only those two windows. Do not author a separate `set_speed`,
   `produce_resource_output`, `open_context_inventory`, or
   `collect_resource_output` around a harvest; they are private motor phases,
   not planning decisions. A harvest receipt is success only when its typed
