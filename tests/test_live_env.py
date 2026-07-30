@@ -18,6 +18,7 @@ from kenshi_agent.models import (
     ClickAction,
     CollectResourceOutputAction,
     CommandDispatchContext,
+    CommandWorldTargetAction,
     ContextActionKind,
     ControlMode,
     Disposition,
@@ -870,12 +871,14 @@ class NativePulseTelemetry(PulseTelemetry):
             "nearby.characters",
             "nearby.roles",
             "world.context_targets",
+            "world.context_target_screen_positions",
             "control.perform_context_action",
             "control.produce_resource_output",
             "control.open_context_inventory",
         ]
         self.target_distance: float | None = None
         self.target_screen_position: Vec2 | None = None
+        self.world_target_screen_position: Vec2 | None = None
         self.target_visible: bool | None = None
         self.dialogue_target_id: str | None = None
         self.indoors = False
@@ -939,6 +942,7 @@ class NativePulseTelemetry(PulseTelemetry):
                         context_actions=[ContextActionKind.OPERATE],
                         default_task="operate_machinery",
                         mining_resource_level=0.8,
+                        screen_position=self.world_target_screen_position,
                     )
                 ],
                 known_map_destinations=self.known_map_destinations,
@@ -1252,6 +1256,73 @@ def native_vendor_action(target_id: str = "entity-vendor") -> SkillAction:
             "duration_seconds": 0.01,
         },  # type: ignore[arg-type]
     )
+
+
+def test_world_target_command_rebinds_geometry_inside_input_lease(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.world_target_screen_position = Vec2(x=0.4, y=0.6)
+        initial = await environment.reset()
+        telemetry.world_target_screen_position = Vec2(x=0.55, y=0.65)
+        action = CommandWorldTargetAction(
+            target_id="entity-copper",
+            context_action=ContextActionKind.OPERATE,
+        )
+
+        transition = await environment.dispatch(
+            action,
+            command=CommandDispatchContext(
+                command_id="cmd-" + "f" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert controller.actions == [
+            ClickAction(
+                x=0.55,
+                y=0.65,
+                button=MouseButton.RIGHT,
+            )
+        ]
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.target_id == "entity-copper"
+        assert transition.receipt.semantic.resolved_label == "operate"
+        assert transition.receipt.semantic.resolved_bounds == NormalizedPointerBounds(
+            min_x=0.55,
+            max_x=0.55,
+            min_y=0.65,
+            max_y=0.65,
+        )
+
+    asyncio.run(scenario())
+
+
+def test_world_target_command_emits_nothing_when_geometry_disappears(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.world_target_screen_position = Vec2(x=0.4, y=0.6)
+        initial = await environment.reset()
+        telemetry.world_target_screen_position = None
+
+        with pytest.raises(RuntimeError, match="no current on-screen command geometry"):
+            await environment.dispatch(
+                CommandWorldTargetAction(
+                    target_id="entity-copper",
+                    context_action=ContextActionKind.OPERATE,
+                ),
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "f" * 32,
+                    based_on_revision=initial.world_revision,
+                ),
+            )
+
+        assert controller.actions == []
+
+    asyncio.run(scenario())
 
 
 def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(

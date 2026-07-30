@@ -85,7 +85,10 @@ namespace KenshiAgentTelemetry
           positionY(0.0),
           positionZ(0.0),
           distance(0.0),
-          miningResourceLevel(0.0)
+          miningResourceLevel(0.0),
+          hasScreenPosition(false),
+          screenX(0.0),
+          screenY(0.0)
     {
     }
 
@@ -158,6 +161,13 @@ namespace KenshiAgentTelemetry
         json << "\"default_task\":\"operate_machinery\",";
         json << "\"mining_resource_level\":"
              << target.miningResourceLevel;
+        if (target.hasScreenPosition)
+        {
+            json << ",\"screen_position\":{";
+            json << "\"x\":" << target.screenX << ",";
+            json << "\"y\":" << target.screenY;
+            json << "}";
+        }
         json << "}";
         return json.str();
     }

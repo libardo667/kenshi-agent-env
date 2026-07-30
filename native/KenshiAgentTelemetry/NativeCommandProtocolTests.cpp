@@ -130,6 +130,8 @@ namespace
         }
         if (baseline.find("\"game.pause\"") == std::string::npos ||
             baseline.find("\"control.perform_context_action\"") ==
+                std::string::npos ||
+            baseline.find("\"world.context_target_screen_positions\"") ==
                 std::string::npos)
         {
             return Fail("required gameplay capabilities were not serialized");
@@ -683,6 +685,9 @@ namespace
         NaturalResourceTargetSnapshot nearest;
         nearest.id = "nearest";
         nearest.distance = 10.0;
+        nearest.hasScreenPosition = true;
+        nearest.screenX = 0.4;
+        nearest.screenY = 0.6;
         candidates.push_back(nearest);
         NaturalResourceTargetSnapshot duplicateNearest = nearest;
         duplicateNearest.distance = 20.0;
@@ -700,6 +705,15 @@ namespace
         {
             return Fail(
                 "world targets were not deduplicated and retained nearest-first");
+        }
+        const std::string serialized =
+            KenshiAgentTelemetry::SerializeNaturalResourceTarget(selected[0]);
+        if (serialized.find(
+                "\"screen_position\":{\"x\":0.4,\"y\":0.6}") ==
+            std::string::npos)
+        {
+            return Fail(
+                "a current world-target screen position was not serialized");
         }
 
         if (!KenshiAgentTelemetry::IsWorldTargetScanAtCapacity(128, 128) ||

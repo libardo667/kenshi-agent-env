@@ -12,6 +12,7 @@ from kenshi_agent.action_contracts import (
     ACTION_CONTRACTS,
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
+    COMMAND_WORLD_TARGET_CONTRACT,
     EXIT_CURRENT_BUILDING_CONTRACT,
     MOVE_IN_DIRECTION_CONTRACT,
     MOVE_TO_CHARACTER_CONTRACT,
@@ -32,6 +33,7 @@ from kenshi_agent.models import (
     CharacterState,
     ClickAction,
     CollectResourceOutputAction,
+    CommandWorldTargetAction,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -56,6 +58,7 @@ from kenshi_agent.models import (
     TelemetrySnapshot,
     TravelToMapDestinationAction,
     UIState,
+    Vec2,
     Vec3,
     VisibleUIControl,
     WorldStateRevision,
@@ -526,6 +529,7 @@ def natural_resource(
     target_id: str = "entity-copper",
     name: str = "Copper Resource",
     actions: list[ContextActionKind] | None = None,
+    screen_position: Vec2 | None = None,
 ) -> WorldTarget:
     return WorldTarget(
         id=target_id,
@@ -537,7 +541,48 @@ def natural_resource(
             [ContextActionKind.OPERATE] if actions is None else actions
         ),
         default_task="operate_machinery",
+        screen_position=screen_position,
     )
+
+
+class TestWorldTargetCommandContract:
+    def test_missing_geometry_and_ambiguous_ids_fail_closed(self) -> None:
+        action = CommandWorldTargetAction(
+            target_id="entity-copper",
+            context_action=ContextActionKind.OPERATE,
+        )
+        clear_ui = UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+        )
+        missing_geometry = observation(
+            ui=clear_ui,
+            capabilities=[
+                "world.context_targets",
+                "world.context_target_screen_positions",
+            ],
+            world_targets=[natural_resource()],
+        )
+        duplicate = observation(
+            ui=clear_ui,
+            capabilities=[
+                "world.context_targets",
+                "world.context_target_screen_positions",
+            ],
+            world_targets=[
+                natural_resource(screen_position=Vec2(x=0.4, y=0.6)),
+                natural_resource(screen_position=Vec2(x=0.5, y=0.7)),
+            ],
+        )
+
+        absent = COMMAND_WORLD_TARGET_CONTRACT.bind(action, missing_geometry)
+        ambiguous = COMMAND_WORLD_TARGET_CONTRACT.bind(action, duplicate)
+
+        assert not absent.bound
+        assert "no current on-screen command geometry" in absent.reason
+        assert not ambiguous.bound
+        assert "ambiguous" in ambiguous.reason
 
 
 class TestResourceProductionContracts:
@@ -855,6 +900,7 @@ class TestContractCatalog:
     def test_contracts_are_registered_by_kind(self) -> None:
         assert set(ACTION_CONTRACTS) == {
             "approach_dialogue_target",
+            "command_world_target",
             "move_to_character",
             "move_in_direction",
             "travel_to_map_destination",
@@ -876,6 +922,12 @@ class TestContractCatalog:
         assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
             APPROACH_DIALOGUE_TARGET_CONTRACT
         )
+        assert contract_for(
+            CommandWorldTargetAction(
+                target_id="entity-copper",
+                context_action=ContextActionKind.OPERATE,
+            )
+        ) is COMMAND_WORLD_TARGET_CONTRACT
         assert contract_for(
             PerformContextAction(
                 target_id="entity-copper",

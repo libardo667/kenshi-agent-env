@@ -969,6 +969,7 @@ namespace
     }
 
     void AppendNaturalResourceCandidates(
+        PlayerInterface* player,
         lektor<RootObject*>& buildings,
         const Ogre::Vector3& selectedPosition,
         std::vector<NaturalResourceTargetSnapshot>& candidates)
@@ -998,6 +999,20 @@ namespace
                 Distance(targetPosition, selectedPosition);
             snapshot.miningResourceLevel =
                 target->getMiningResourceLevel();
+            float screenX = 0.0f;
+            float screenY = 0.0f;
+            snapshot.hasScreenPosition =
+                target->getVisible() &&
+                TryGetScreenPosition(
+                    player,
+                    targetPosition,
+                    screenX,
+                    screenY);
+            if (snapshot.hasScreenPosition)
+            {
+                snapshot.screenX = screenX;
+                snapshot.screenY = screenY;
+            }
             candidates.push_back(snapshot);
         }
     }
@@ -3262,10 +3277,12 @@ namespace
                         MAX_OUTER_WORLD_CONTEXT_BUILDINGS));
             std::vector<NaturalResourceTargetSnapshot> candidates;
             AppendNaturalResourceCandidates(
+                player,
                 nearBuildings,
                 selectedPosition,
                 candidates);
             AppendNaturalResourceCandidates(
+                player,
                 outerBuildings,
                 selectedPosition,
                 candidates);

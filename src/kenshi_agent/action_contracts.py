@@ -37,6 +37,7 @@ from .models import (
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     CollectResourceOutputAction,
+    CommandWorldTargetAction,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -112,6 +113,9 @@ NATIVE_EXIT_BUILDING_WIRE_COMMAND: Literal["exit_current_building"] = (
 NATIVE_WALK_DESTINATION_REACHED_RESULT = "walk_destination_reached"
 NATIVE_CONTEXT_ACTION_CAPABILITY = "control.perform_context_action"
 NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
+WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = (
+    "world.context_target_screen_positions"
+)
 NATIVE_OPERATE_RESOURCE_WIRE_COMMAND: Literal["operate_natural_resource"] = (
     "operate_natural_resource"
 )
@@ -385,6 +389,91 @@ def context_action_is_currently_authorable(observation: Observation) -> bool:
         and telemetry.ui.modal_open is False
         and telemetry.ui.dialogue_open is False
         and any(target.context_actions for target in telemetry.world_targets)
+    )
+
+
+def bind_command_world_target(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind a right-click to one exact reviewed target and current screen point."""
+
+    if not isinstance(action, CommandWorldTargetAction):
+        return _unbound("Action is not a command_world_target action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the world target.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the world target cannot be bound.")
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.dialogue_open is not False
+        or telemetry.ui.modal_open is not False
+    ):
+        return _unbound(
+            "The modal and dialogue state is not confirmed clear, so a world "
+            "target command cannot bind; finish or close the interface first."
+        )
+    matches = [
+        target for target in telemetry.world_targets if target.id == action.target_id
+    ]
+    if not matches:
+        return _unbound(
+            f"Target {action.target_id!r} is not a current actionable world target."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Target {action.target_id!r} matches {len(matches)} world targets; "
+            "an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    if action.context_action not in target.context_actions:
+        return _unbound(
+            f"Target {target.name!r} does not currently advertise context action "
+            f"{action.context_action.value!r}."
+        )
+    point = target.screen_position
+    if point is None:
+        return _unbound(
+            f"Target {target.name!r} has no current on-screen command geometry."
+        )
+    if not (0.0 <= point.x <= 1.0 and 0.0 <= point.y <= 1.0):
+        return _unbound(
+            f"Target {target.name!r} has out-of-range command geometry."
+        )
+    bounds = NormalizedPointerBounds(
+        min_x=point.x,
+        max_x=point.x,
+        min_y=point.y,
+        max_y=point.y,
+    )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound {action.context_action.value!r} to current {target.kind} "
+            f"{target.name!r} ({target.id}) at its observed screen position."
+        ),
+        target_id=target.id,
+        resolved_label=action.context_action.value,
+        resolved_bounds=bounds,
+        source_revision=observation.world_revision,
+    )
+
+
+def world_target_command_is_currently_authorable(observation: Observation) -> bool:
+    """Whether an exact reviewed target currently has click geometry."""
+
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+        and any(
+            target.context_actions and target.screen_position is not None
+            for target in telemetry.world_targets
+        )
     )
 
 
@@ -1812,6 +1901,41 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     controller_verified=True,
 )
 
+COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
+    kind="command_world_target",
+    version="1.0",
+    model=CommandWorldTargetAction,
+    summary=(
+        "Issue Kenshi's Mouse2 command to one exact current world target at a "
+        "screen position exported by current telemetry and re-resolved inside "
+        "the input lease."
+    ),
+    argument_source=(
+        "target_id and context_action must be copied as an exact pair from a "
+        "context_targets entry that also has screen_position."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_CONTEXT_TARGETS_CAPABILITY,
+            WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY,
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=True,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("target_id", "context_action"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_world_command",
+    bind=bind_command_world_target,
+    authorable_when=world_target_command_is_currently_authorable,
+)
+
+
 PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     kind="perform_context_action",
     version="1.0",
@@ -2478,6 +2602,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
+        COMMAND_WORLD_TARGET_CONTRACT,
         PERFORM_CONTEXT_ACTION_CONTRACT,
         PRODUCE_RESOURCE_OUTPUT_CONTRACT,
         HARVEST_RESOURCE_CONTRACT,

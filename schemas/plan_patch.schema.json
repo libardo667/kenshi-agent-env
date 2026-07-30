@@ -225,6 +225,33 @@
       "title": "CapabilityCondition",
       "type": "object"
     },
+    "CommandWorldTargetAction": {
+      "additionalProperties": false,
+      "description": "Right-click one exact current world target at telemetry-owned geometry.",
+      "properties": {
+        "kind": {
+          "const": "command_world_target",
+          "default": "command_world_target",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "context_action": {
+          "$ref": "#/$defs/ContextActionKind"
+        }
+      },
+      "required": [
+        "target_id",
+        "context_action"
+      ],
+      "title": "CommandWorldTargetAction",
+      "type": "object"
+    },
     "Condition": {
       "anyOf": [
         {
@@ -279,6 +306,14 @@
       ],
       "title": "ConsultAdvisorAction",
       "type": "object"
+    },
+    "ContextActionKind": {
+      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
+      "enum": [
+        "operate"
+      ],
+      "title": "ContextActionKind",
+      "type": "string"
     },
     "CreateFieldbookProjectOperation": {
       "additionalProperties": false,
@@ -961,6 +996,9 @@
             },
             {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
+            },
+            {
+              "$ref": "#/$defs/CommandWorldTargetAction"
             },
             {
               "$ref": "#/$defs/MoveToCharacterAction"

@@ -196,6 +196,7 @@ safety:
     - wait
     - skill
     - approach_dialogue_target
+    - command_world_target
     - move_to_character
     - move_in_direction
     - travel_to_map_destination

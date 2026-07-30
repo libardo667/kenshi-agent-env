@@ -360,6 +360,7 @@ class WorldTarget(StrictModel):
     context_actions: list[ContextActionKind] = Field(default_factory=list)
     default_task: str
     mining_resource_level: float | None = None
+    screen_position: Vec2 | None = None
 
 
 class KnownMapDestination(StrictModel):
@@ -1094,6 +1095,14 @@ class PerformContextAction(StrictModel):
     context_action: ContextActionKind
 
 
+class CommandWorldTargetAction(StrictModel):
+    """Right-click one exact current world target at telemetry-owned geometry."""
+
+    kind: Literal["command_world_target"] = "command_world_target"
+    target_id: str = Field(min_length=1, max_length=200)
+    context_action: ContextActionKind
+
+
 class ProduceResourceOutputAction(StrictModel):
     """Internal production phase retained until a bounded output yield exists."""
 
@@ -1574,6 +1583,7 @@ PlannerControlAction: TypeAlias = (
 
 PlannerAtomicSemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
+    | CommandWorldTargetAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
@@ -1633,6 +1643,7 @@ Action: TypeAlias = (
     | ScrollAction
     | SkillAction
     | ApproachDialogueTargetAction
+    | CommandWorldTargetAction
     | PerformContextAction
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
@@ -1656,6 +1667,7 @@ ACTION_ADAPTER: TypeAdapter[Action] = TypeAdapter(Action)
 SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
+        "command_world_target",
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
@@ -3690,6 +3702,15 @@ class Observation(StrictModel):
                 "distance": target.distance,
                 "context_actions": [action.value for action in target.context_actions],
                 "mining_resource_level": target.mining_resource_level,
+                **(
+                    {
+                        "screen_position": target.screen_position.model_dump(
+                            mode="json"
+                        )
+                    }
+                    if target.screen_position is not None
+                    else {}
+                ),
             }
             for target in targets[:16]
         ]

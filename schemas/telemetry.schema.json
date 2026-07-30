@@ -1579,6 +1579,17 @@
           ],
           "default": null,
           "title": "Mining Resource Level"
+        },
+        "screen_position": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Vec2"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

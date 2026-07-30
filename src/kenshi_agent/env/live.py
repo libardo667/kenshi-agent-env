@@ -11,6 +11,7 @@ from ..action_contracts import (
     ACTIVATE_VISIBLE_CONTROL_CONTRACT,
     APPROACH_DIALOGUE_TARGET_CONTRACT,
     COLLECT_RESOURCE_OUTPUT_CONTRACT,
+    COMMAND_WORLD_TARGET_CONTRACT,
     DISMISS_SCREEN_CONTRACT,
     EQUIP_ITEM_CONTRACT,
     EXIT_CURRENT_BUILDING_CONTRACT,
@@ -65,6 +66,7 @@ from ..models import (
     ClickAction,
     CollectResourceOutputAction,
     CommandDispatchContext,
+    CommandWorldTargetAction,
     ControlMode,
     DismissScreenAction,
     EquipItemAction,
@@ -720,6 +722,8 @@ class LiveEnvironment(AgentEnvironment):
                     "Native command execution requires caller-owned command context."
                 )
             return await self._execute_semantic_approach(action, started, command)
+        if isinstance(action, CommandWorldTargetAction):
+            return await self._execute_world_target_command(action, started)
         if isinstance(action, PerformContextAction):
             if command is None:
                 raise RuntimeError(
@@ -1255,6 +1259,56 @@ class LiveEnvironment(AgentEnvironment):
             continue_until_terminal=True,
             wire_command=NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
+        )
+
+    async def _execute_world_target_command(
+        self,
+        action: CommandWorldTargetAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Right-click one exact target at geometry re-read inside the input lease."""
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = COMMAND_WORLD_TARGET_CONTRACT.bind(action, observation)
+        if not binding.bound or binding.resolved_bounds is None:
+            raise RuntimeError(f"No input was sent: {binding.reason}")
+        bounds = binding.resolved_bounds
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        primitive_receipt = await self.controller.execute(
+            ClickAction(
+                x=x,
+                y=y,
+                button=MouseButton.RIGHT,
+            )
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=COMMAND_WORLD_TARGET_CONTRACT.version,
+            target_id=binding.target_id,
+            resolved_label=binding.resolved_label,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-resolved the exact world target and its current screen position "
+                f"inside the input lease before Mouse2. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Commanded current target {binding.target_id!r} with Mouse2 "
+                    f"for {binding.resolved_label!r}. A later observation must "
+                    "confirm the resulting world task."
+                ),
+            }
         )
 
     def _context_native_transport(

@@ -24,6 +24,9 @@ namespace KenshiAgentTelemetry
         double positionZ;
         double distance;
         double miningResourceLevel;
+        bool hasScreenPosition;
+        double screenX;
+        double screenY;
     };
 
     NaturalResourceAssessment AssessNaturalResource(

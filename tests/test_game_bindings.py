@@ -181,6 +181,75 @@ def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
     assert binding in TOGGLE_GAME_BINDINGS
 
 
+def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> None:
+    from kenshi_agent.action_contracts import COMMAND_WORLD_TARGET_CONTRACT
+    from kenshi_agent.models import (
+        CommandWorldTargetAction,
+        ContextActionKind,
+        NormalizedPointerBounds,
+        PointerActionClass,
+        Vec2,
+        Vec3,
+        WorldTarget,
+    )
+
+    target = WorldTarget(
+        id="entity-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10.0, y=0.0, z=20.0),
+        distance=30.0,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+        mining_resource_level=0.8,
+        screen_position=Vec2(x=0.4, y=0.6),
+    )
+    state = observation()
+    assert state.telemetry is not None
+    state = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        *state.telemetry.capabilities,
+                        "world.context_targets",
+                        "world.context_target_screen_positions",
+                    ],
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                    ),
+                    "world_targets": [target],
+                }
+            )
+        }
+    )
+    action = CommandWorldTargetAction(
+        target_id=target.id,
+        context_action=ContextActionKind.OPERATE,
+    )
+
+    assert audit_binding_parity().decisions["mouse_command"] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("command_world_target"),
+    )
+    binding = COMMAND_WORLD_TARGET_CONTRACT.bind(action, state)
+    assert binding.bound
+    assert binding.target_id == target.id
+    assert binding.resolved_bounds == NormalizedPointerBounds(
+        min_x=0.4,
+        max_x=0.4,
+        min_y=0.6,
+        max_y=0.6,
+    )
+    assert COMMAND_WORLD_TARGET_CONTRACT.pointer_class is PointerActionClass.SEMANTIC_CURRENT
+    assert state.context_target_digest()[0]["screen_position"] == {
+        "x": 0.4,
+        "y": 0.6,
+    }
+
+
 def test_binding_catalog_contains_only_wired_decisions() -> None:
     names = {binding.value for binding in GameBinding}
     report = audit_binding_parity()
