@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .action_completeness import audit_action_completeness, render_action_queue
 from .action_contracts import ACTION_CONTRACTS
 from .affordance_parity import audit_binding_parity
 from .ui_affordances import audit
@@ -86,6 +87,33 @@ def _game_binding_parity() -> str:
     return "\n".join(lines)
 
 
+def _action_queue() -> str:
+    """Every contracted action against what its execution kind requires."""
+
+    lines = [
+        GENERATED_MARKER,
+        "",
+        "# Action implementation queue",
+        "",
+        "Derived from each contract's own `ActionExecution`, so the checklist",
+        "cannot drift from what the code requires: an atomic handler needs an",
+        "executor branch, while an option-backed action gets its terminal from",
+        "the option. Adding an action touches a model, two unions, a contract, a",
+        "bind, a completion owner, an executor branch and two generated",
+        "artefacts; nobody holds that list, so a missing piece used to surface as",
+        "a plan rejected mid-run.",
+        "",
+        "An unfinished action may not be planner-visible. Stubs that pass are",
+        "worse than gaps that fail: a generated completion returning nothing",
+        "satisfies every structural check and verifies nothing.",
+        "",
+        "```text",
+    ]
+    lines.extend(render_action_queue(audit_action_completeness()))
+    lines.extend(["```", ""])
+    return "\n".join(lines)
+
+
 def _modeled_interface_audit() -> str:
     """Navigation checks within already modeled interfaces, never a denominator."""
 
@@ -112,6 +140,7 @@ def export_docs(output_dir: Path) -> list[Path]:
     documents = {
         "ACTION_CATALOG.md": _action_catalog(),
         "GAME_BINDING_PARITY.md": _game_binding_parity(),
+        "ACTION_QUEUE.md": _action_queue(),
         "MODELED_INTERFACE_AUDIT.md": _modeled_interface_audit(),
     }
     paths: list[Path] = []

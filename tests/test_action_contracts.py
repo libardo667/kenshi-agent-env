@@ -906,6 +906,7 @@ class TestContractCatalog:
             "command_world_target",
             "move_to_character",
             "move_in_direction",
+        "open_screen",
             "travel_to_map_destination",
             "exit_current_building",
             "perform_context_action",

@@ -60,6 +60,7 @@ from .models import (
     NormalizedPointerBounds,
     Observation,
     OpenContextInventoryAction,
+    OpenScreenAction,
     PauseAction,
     PerformContextAction,
     PlanEnvelope,
@@ -2628,6 +2629,55 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
 )
 
 
+def bind_open_screen(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """SCAFFOLD: resolve the screen to its binding and current open state.
+
+    Must be already-satisfied aware. The underlying controls are toggles, so
+    pressing when the screen is already up closes it; `open_screen` promises the
+    screen IS open, which is the whole reason it exists.
+    """
+
+    raise NotImplementedError(
+        "bind_open_screen is scaffolded; see SCAFFOLDED_ACTIONS['open_screen']"
+    )
+
+
+OPEN_SCREEN_CONTRACT = ActionContract(
+    kind="open_screen",
+    version="1.0",
+    model=OpenScreenAction,
+    summary=(
+        "Have a named screen open. The controller presses whichever binding "
+        "opens it and proves the exact screen arrived, so the planner names an "
+        "intent rather than a key."
+    ),
+    argument_source=(
+        "screen must be one of the GameScreen values in the projected action "
+        "schema."
+    ),
+    # Forced false while scaffolded: an action the model can author and the
+    # executor cannot perform fails at dispatch, mid-run, having spent the turn.
+    planner_visible=False,
+    allowed_control_modes=frozenset(
+        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
+    ),
+    required_capabilities=frozenset(),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=False,
+    risk=ActionRiskCost(),
+    max_primitive_actions=1,
+    reference_fields=("screen",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_screen",
+    bind=bind_open_screen,
+)
+
+
 USE_GAME_BINDING_CONTRACT = ActionContract(
     kind="use_game_binding",
     version="1.0",
@@ -2871,6 +2921,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     contract.kind: contract
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
+        OPEN_SCREEN_CONTRACT,
         COMMAND_WORLD_TARGET_CONTRACT,
         SELECT_SQUAD_MEMBER_CONTRACT,
         ROTATE_CAMERA_CONTRACT,
