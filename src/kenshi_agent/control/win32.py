@@ -18,6 +18,7 @@ from ..models import (
     KeyAction,
     MouseButton,
     MouseButtonAction,
+    MouseDragAction,
     MoveCursorAction,
     ScrollAction,
 )
@@ -119,6 +120,29 @@ def relative_pointer_delta(
         damped(error_x),
         damped(error_y),
     )
+
+
+def relative_drag_steps(
+    delta_x: int,
+    delta_y: int,
+    steps: int,
+) -> tuple[tuple[int, int], ...]:
+    """Split one relative drag into bounded integer moves with exact totals."""
+
+    if steps < 1:
+        raise ValueError("steps must be positive")
+    moves: list[tuple[int, int]] = []
+    previous_x = 0
+    previous_y = 0
+    for index in range(1, steps + 1):
+        next_x = round(delta_x * index / steps)
+        next_y = round(delta_y * index / steps)
+        move = (next_x - previous_x, next_y - previous_y)
+        if move != (0, 0):
+            moves.append(move)
+        previous_x = next_x
+        previous_y = next_y
+    return tuple(moves)
 
 
 if os.name == "nt":
@@ -902,6 +926,24 @@ class Win32InputController(InputController):
             finally:
                 self._send([self._mouse_input(0, 0, up_flag, mouse_data=mouse_data)])
             primitive_count = 2
+        elif isinstance(action, MouseDragAction):
+            down_flag, up_flag, mouse_data = mouse_button_input_spec(action.button)
+            moves = relative_drag_steps(
+                action.delta_x,
+                action.delta_y,
+                action.steps,
+            )
+            self._send([self._mouse_input(0, 0, down_flag, mouse_data=mouse_data)])
+            try:
+                for delta_x, delta_y in moves:
+                    self._send(
+                        [self._mouse_input(delta_x, delta_y, self.MOUSEEVENTF_MOVE)]
+                    )
+                    if self.relative_pointer_settle_seconds:
+                        await asyncio.sleep(self.relative_pointer_settle_seconds)
+            finally:
+                self._send([self._mouse_input(0, 0, up_flag, mouse_data=mouse_data)])
+            primitive_count = len(moves) + 2
         elif isinstance(action, MoveCursorAction):
             await self._move_cursor(action.x, action.y, action.space)
         elif isinstance(action, ClickAction):

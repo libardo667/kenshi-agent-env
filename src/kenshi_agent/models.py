@@ -180,6 +180,11 @@ class MouseButton(StrEnum):
     X2 = "x2"
 
 
+class CameraRotationDirection(StrEnum):
+    LEFT = "left"
+    RIGHT = "right"
+
+
 class CoordinateSpace(StrEnum):
     NORMALIZED = "normalized"
     CLIENT = "client"
@@ -1033,6 +1038,14 @@ class MouseButtonAction(StrictModel):
     hold_seconds: float = Field(default=0.04, ge=0.0, le=5.0)
 
 
+class MouseDragAction(StrictModel):
+    kind: Literal["mouse_drag"] = "mouse_drag"
+    button: MouseButton
+    delta_x: int = Field(ge=-512, le=512)
+    delta_y: int = Field(ge=-512, le=512)
+    steps: int = Field(default=8, ge=1, le=32)
+
+
 class MoveCursorAction(StrictModel):
     kind: Literal["move_cursor"] = "move_cursor"
     x: float
@@ -1373,6 +1386,25 @@ class RecoverCameraViewAction(StrictModel):
     kind: Literal["recover_camera_view"] = "recover_camera_view"
 
 
+class RotateCameraAction(StrictModel):
+    """Rotate the world camera one bounded horizontal increment."""
+
+    kind: Literal["rotate_camera"] = "rotate_camera"
+    direction: CameraRotationDirection
+
+
+def camera_rotation_primitive(action: RotateCameraAction) -> MouseDragAction:
+    """Map one semantic yaw increment to Kenshi's held-Mouse3 rotation mode."""
+
+    delta_x = 96 if action.direction is CameraRotationDirection.LEFT else -96
+    return MouseDragAction(
+        button=MouseButton.MIDDLE,
+        delta_x=delta_x,
+        delta_y=0,
+        steps=8,
+    )
+
+
 class GameBinding(StrEnum):
     """Kenshi's named control intentions under the shipped default keymap.
 
@@ -1558,6 +1590,7 @@ ControllerPrimitive: TypeAlias = (
     KeyAction
     | HotkeyAction
     | MouseButtonAction
+    | MouseDragAction
     | MoveCursorAction
     | ClickAction
     | ScrollAction
@@ -1584,6 +1617,7 @@ PlannerControlAction: TypeAlias = (
 PlannerAtomicSemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | CommandWorldTargetAction
+    | RotateCameraAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
@@ -1638,12 +1672,14 @@ Action: TypeAlias = (
     | KeyAction
     | HotkeyAction
     | MouseButtonAction
+    | MouseDragAction
     | MoveCursorAction
     | ClickAction
     | ScrollAction
     | SkillAction
     | ApproachDialogueTargetAction
     | CommandWorldTargetAction
+    | RotateCameraAction
     | PerformContextAction
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
@@ -1668,6 +1704,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
         "command_world_target",
+        "rotate_camera",
         "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
@@ -1688,7 +1725,15 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
-    {"key", "hotkey", "mouse_button", "move_cursor", "click", "scroll"}
+    {
+        "key",
+        "hotkey",
+        "mouse_button",
+        "mouse_drag",
+        "move_cursor",
+        "click",
+        "scroll",
+    }
 )
 
 

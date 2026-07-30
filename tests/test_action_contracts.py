@@ -20,6 +20,7 @@ from kenshi_agent.action_contracts import (
     PERFORM_CONTEXT_ACTION_CONTRACT,
     PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
+    ROTATE_CAMERA_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     LegacyCompatibilityLedger,
     contract_for,
@@ -30,6 +31,7 @@ from kenshi_agent.models import (
     ACTION_ADAPTER,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    CameraRotationDirection,
     CharacterState,
     ClickAction,
     CollectResourceOutputAction,
@@ -53,6 +55,7 @@ from kenshi_agent.models import (
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
+    RotateCameraAction,
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
@@ -913,6 +916,7 @@ class TestContractCatalog:
             "activate_visible_control",
             "dismiss_screen",
             "purchase_item",
+            "rotate_camera",
             "use_game_binding",
             "scroll_screen",
             "sell_item",
@@ -928,6 +932,9 @@ class TestContractCatalog:
                 context_action=ContextActionKind.OPERATE,
             )
         ) is COMMAND_WORLD_TARGET_CONTRACT
+        assert contract_for(
+            RotateCameraAction(direction=CameraRotationDirection.RIGHT)
+        ) is ROTATE_CAMERA_CONTRACT
         assert contract_for(
             PerformContextAction(
                 target_id="entity-copper",

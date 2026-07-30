@@ -14,6 +14,7 @@ from kenshi_agent.models import (
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     CalibrationStatus,
+    CameraRotationDirection,
     CharacterState,
     ClickAction,
     CollectResourceOutputAction,
@@ -31,6 +32,7 @@ from kenshi_agent.models import (
     KnownMapDestination,
     MouseButton,
     MouseButtonAction,
+    MouseDragAction,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandRequest,
@@ -44,6 +46,7 @@ from kenshi_agent.models import (
     PointerActionClass,
     ProduceResourceOutputAction,
     ResourceTransferStatus,
+    RotateCameraAction,
     SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
@@ -357,6 +360,29 @@ def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> No
         assert receipt.semantic is not None
         assert receipt.semantic.resolved_label == "highlight"
         assert "x2" in receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_semantic_camera_rotation_dispatches_one_bounded_middle_drag(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, _, controller = native_vendor_environment(tmp_path)
+        action = RotateCameraAction(direction=CameraRotationDirection.RIGHT)
+
+        transition = await environment.step(action)
+
+        assert controller.actions == [
+            MouseDragAction(
+                button=MouseButton.MIDDLE,
+                delta_x=-96,
+                delta_y=0,
+                steps=8,
+            )
+        ]
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.resolved_label == "right"
 
     asyncio.run(scenario())
 

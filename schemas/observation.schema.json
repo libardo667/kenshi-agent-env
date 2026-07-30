@@ -91,6 +91,9 @@
               "$ref": "#/$defs/MouseButtonAction"
             },
             {
+              "$ref": "#/$defs/MouseDragAction"
+            },
+            {
               "$ref": "#/$defs/MoveCursorAction"
             },
             {
@@ -107,6 +110,9 @@
             },
             {
               "$ref": "#/$defs/CommandWorldTargetAction"
+            },
+            {
+              "$ref": "#/$defs/RotateCameraAction"
             },
             {
               "$ref": "#/$defs/PerformContextAction"
@@ -1110,6 +1116,14 @@
       ],
       "title": "BodyPartState",
       "type": "object"
+    },
+    "CameraRotationDirection": {
+      "enum": [
+        "left",
+        "right"
+      ],
+      "title": "CameraRotationDirection",
+      "type": "string"
     },
     "CameraState": {
       "additionalProperties": false,
@@ -3960,6 +3974,46 @@
       "title": "MouseButtonAction",
       "type": "object"
     },
+    "MouseDragAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mouse_drag",
+          "default": "mouse_drag",
+          "title": "Kind",
+          "type": "string"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton"
+        },
+        "delta_x": {
+          "maximum": 512,
+          "minimum": -512,
+          "title": "Delta X",
+          "type": "integer"
+        },
+        "delta_y": {
+          "maximum": 512,
+          "minimum": -512,
+          "title": "Delta Y",
+          "type": "integer"
+        },
+        "steps": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Steps",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "button",
+        "delta_x",
+        "delta_y"
+      ],
+      "title": "MouseDragAction",
+      "type": "object"
+    },
     "MoveCursorAction": {
       "additionalProperties": false,
       "properties": {
@@ -5345,6 +5399,26 @@
         "reason"
       ],
       "title": "RetractMemoryOperation",
+      "type": "object"
+    },
+    "RotateCameraAction": {
+      "additionalProperties": false,
+      "description": "Rotate the world camera one bounded horizontal increment.",
+      "properties": {
+        "kind": {
+          "const": "rotate_camera",
+          "default": "rotate_camera",
+          "title": "Kind",
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/CameraRotationDirection"
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "title": "RotateCameraAction",
       "type": "object"
     },
     "ScrollAction": {

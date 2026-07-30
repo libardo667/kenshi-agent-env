@@ -174,6 +174,14 @@
       "title": "ApproachDialogueTargetAction",
       "type": "object"
     },
+    "CameraRotationDirection": {
+      "enum": [
+        "left",
+        "right"
+      ],
+      "title": "CameraRotationDirection",
+      "type": "string"
+    },
     "CapabilityCondition": {
       "additionalProperties": false,
       "properties": {
@@ -1009,6 +1017,9 @@
               "$ref": "#/$defs/CommandWorldTargetAction"
             },
             {
+              "$ref": "#/$defs/RotateCameraAction"
+            },
+            {
               "$ref": "#/$defs/MoveToCharacterAction"
             },
             {
@@ -1478,6 +1489,26 @@
         "max_native_assisted_actions"
       ],
       "title": "RiskBudget",
+      "type": "object"
+    },
+    "RotateCameraAction": {
+      "additionalProperties": false,
+      "description": "Rotate the world camera one bounded horizontal increment.",
+      "properties": {
+        "kind": {
+          "const": "rotate_camera",
+          "default": "rotate_camera",
+          "title": "Kind",
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/CameraRotationDirection"
+        }
+      },
+      "required": [
+        "direction"
+      ],
+      "title": "RotateCameraAction",
       "type": "object"
     },
     "ScrollScreenAction": {

@@ -30,6 +30,7 @@ from ..action_contracts import (
     PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
     RECOVER_CAMERA_VIEW_CONTRACT,
+    ROTATE_CAMERA_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
     SELL_ITEM_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
@@ -76,6 +77,7 @@ from ..models import (
     KeyAction,
     MouseButton,
     MouseButtonAction,
+    MouseDragAction,
     MoveCursorAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
@@ -96,6 +98,7 @@ from ..models import (
     PurchaseStatus,
     RecoverCameraViewAction,
     ResourceTransferStatus,
+    RotateCameraAction,
     SaleEvidence,
     SaleStatus,
     ScrollAction,
@@ -112,6 +115,7 @@ from ..models import (
     UseGameBindingAction,
     WaitAction,
     WorldStateRevision,
+    camera_rotation_primitive,
     game_binding_primitive,
     normalize_control_label,
     window_close_point,
@@ -724,6 +728,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_semantic_approach(action, started, command)
         if isinstance(action, CommandWorldTargetAction):
             return await self._execute_world_target_command(action, started)
+        if isinstance(action, RotateCameraAction):
+            return await self._execute_rotate_camera(action, started)
         if isinstance(action, PerformContextAction):
             if command is None:
                 raise RuntimeError(
@@ -827,6 +833,7 @@ class LiveEnvironment(AgentEnvironment):
                 KeyAction,
                 HotkeyAction,
                 MouseButtonAction,
+                MouseDragAction,
                 MoveCursorAction,
                 ClickAction,
                 ScrollAction,
@@ -863,6 +870,7 @@ class LiveEnvironment(AgentEnvironment):
                     KeyAction,
                     HotkeyAction,
                     MouseButtonAction,
+                    MouseDragAction,
                     MoveCursorAction,
                     ClickAction,
                     ScrollAction,
@@ -1307,6 +1315,45 @@ class LiveEnvironment(AgentEnvironment):
                     f"Commanded current target {binding.target_id!r} with Mouse2 "
                     f"for {binding.resolved_label!r}. A later observation must "
                     "confirm the resulting world task."
+                ),
+            }
+        )
+
+    async def _execute_rotate_camera(
+        self,
+        action: RotateCameraAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Apply one bounded held-Mouse3 drag after in-lease world revalidation."""
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = ROTATE_CAMERA_CONTRACT.bind(action, observation)
+        if not binding.bound:
+            raise RuntimeError(f"No input was sent: {binding.reason}")
+        primitive = camera_rotation_primitive(action)
+        primitive_receipt = await self.controller.execute(primitive)
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=ROTATE_CAMERA_CONTRACT.version,
+            resolved_label=binding.resolved_label,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-confirmed the unobstructed world screen inside the input lease "
+                f"before the held-Mouse3 drag. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Rotated the camera {binding.resolved_label!r} through "
+                    "Kenshi's bounded Mouse3 rotation mode."
                 ),
             }
         )

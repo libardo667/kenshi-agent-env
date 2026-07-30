@@ -67,6 +67,7 @@ from .models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     RecoverCameraViewAction,
+    RotateCameraAction,
     ScrollScreenAction,
     SellItemAction,
     SetSpeedAction,
@@ -474,6 +475,53 @@ def world_target_command_is_currently_authorable(observation: Observation) -> bo
             target.context_actions and target.screen_position is not None
             for target in telemetry.world_targets
         )
+    )
+
+
+def bind_rotate_camera(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind one bounded camera yaw only while the unobstructed world is current."""
+
+    if not isinstance(action, RotateCameraAction):
+        return _unbound("Action is not a rotate_camera action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind camera rotation.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so camera rotation cannot be bound.")
+    if telemetry.game.loaded is not True:
+        return _unbound("Kenshi has no loaded world to rotate.")
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.dialogue_open is not False
+        or telemetry.ui.modal_open is not False
+    ):
+        return _unbound(
+            "The unobstructed world screen is not confirmed current, so camera "
+            "rotation cannot bind."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound one bounded camera rotation {action.direction.value!r} "
+            "against the current world screen."
+        ),
+        resolved_label=action.direction.value,
+        source_revision=observation.world_revision,
+    )
+
+
+def camera_rotation_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.game.loaded is True
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
     )
 
 
@@ -1936,6 +1984,34 @@ COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
 )
 
 
+ROTATE_CAMERA_CONTRACT = ActionContract(
+    kind="rotate_camera",
+    version="1.0",
+    model=RotateCameraAction,
+    summary=(
+        "Rotate the current world camera one bounded horizontal increment through "
+        "Kenshi's held-Mouse3 rotation mode."
+    ),
+    argument_source="direction is left or right.",
+    planner_visible=True,
+    allowed_control_modes=frozenset(
+        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
+    ),
+    required_capabilities=frozenset(),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=1,
+    reference_fields=(),
+    idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_camera_rotation",
+    bind=bind_rotate_camera,
+    authorable_when=camera_rotation_is_currently_authorable,
+)
+
+
 PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     kind="perform_context_action",
     version="1.0",
@@ -2603,6 +2679,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         COMMAND_WORLD_TARGET_CONTRACT,
+        ROTATE_CAMERA_CONTRACT,
         PERFORM_CONTEXT_ACTION_CONTRACT,
         PRODUCE_RESOURCE_OUTPUT_CONTRACT,
         HARVEST_RESOURCE_CONTRACT,

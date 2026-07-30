@@ -250,6 +250,51 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
     }
 
 
+def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
+    from kenshi_agent.action_contracts import ROTATE_CAMERA_CONTRACT
+    from kenshi_agent.models import (
+        CameraRotationDirection,
+        MouseButton,
+        MouseDragAction,
+        PointerActionClass,
+        RotateCameraAction,
+        camera_rotation_primitive,
+    )
+
+    state = observation()
+    assert state.telemetry is not None
+    state = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                    )
+                }
+            )
+        }
+    )
+    action = RotateCameraAction(direction=CameraRotationDirection.RIGHT)
+
+    assert audit_binding_parity().decisions["mouse_rotate"] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("rotate_camera"),
+    )
+    assert ROTATE_CAMERA_CONTRACT.bind(action, state).bound
+    primitive = camera_rotation_primitive(action)
+    assert primitive == MouseDragAction(
+        button=MouseButton.MIDDLE,
+        delta_x=-96,
+        delta_y=0,
+        steps=8,
+    )
+    assert ROTATE_CAMERA_CONTRACT.pointer_class is (
+        PointerActionClass.COORDINATE_INDEPENDENT
+    )
+
+
 def test_binding_catalog_contains_only_wired_decisions() -> None:
     names = {binding.value for binding in GameBinding}
     report = audit_binding_parity()

@@ -334,7 +334,7 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
     (
         "Raw world mouse operation is not a bound semantic affordance; "
         "current pointer actions operate exact exported controls."
-    ): frozenset({"mouse_rotate", "mouse_select"}),
+    ): frozenset({"mouse_select"}),
     "No planner route selects this exact squad group.": frozenset(
         {f"select_{index}" for index in range(10)}
     ),
@@ -375,6 +375,10 @@ def _binding_decisions() -> dict[str, BindingDecision]:
             "mouse_command": BindingDecision(
                 status=BindingStatus.WIRED,
                 route=AffordanceRoute("command_world_target"),
+            ),
+            "mouse_rotate": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute("rotate_camera"),
             ),
             "screenshot": BindingDecision(
                 status=BindingStatus.EXEMPT,

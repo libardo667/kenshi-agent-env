@@ -12,6 +12,7 @@ from ..models import (
     HotkeyAction,
     KeyAction,
     MouseButtonAction,
+    MouseDragAction,
     MoveCursorAction,
     ScrollAction,
 )
@@ -20,6 +21,7 @@ PrimitiveInputAction = (
     KeyAction
     | HotkeyAction
     | MouseButtonAction
+    | MouseDragAction
     | MoveCursorAction
     | ClickAction
     | ScrollAction

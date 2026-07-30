@@ -9,6 +9,7 @@ from kenshi_agent.control.win32 import (
     Win32InputController,
     enable_per_monitor_dpi_awareness,
     normalize_virtual_desktop_point,
+    relative_drag_steps,
     relative_pointer_delta,
     resolve_screen_point,
     select_unique_window,
@@ -152,6 +153,14 @@ def test_wheel_delta_data_encodes_both_directions() -> None:
 def test_camera_tilt_key_names_resolve_to_windows_oem_keys() -> None:
     assert Win32InputController._vk("comma") == 0xBC
     assert Win32InputController._vk("period") == 0xBE
+
+
+def test_relative_drag_steps_preserve_exact_bounded_motion() -> None:
+    moves = relative_drag_steps(96, -32, 8)
+
+    assert moves == ((12, -4),) * 8
+    assert sum(delta_x for delta_x, _ in moves) == 96
+    assert sum(delta_y for _, delta_y in moves) == -32
 
 
 def test_relative_pointer_delta_is_bounded_and_converges() -> None:
