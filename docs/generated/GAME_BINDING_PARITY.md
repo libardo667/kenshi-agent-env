@@ -13,13 +13,12 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        43
+wired        44
 exempt        1
-missing      28
+missing      27
 unclassified  0
 
 MISSING — implementation queue
-  medic                    [NUM7]  No contracted squad-care action exposes this order.
   mouse_command            [Mouse2]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
   mouse_rotate             [Left Control, Mouse3]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
   mouse_select             [Mouse1]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
@@ -83,6 +82,7 @@ WIRED — real planner routes
   gizmo_rotate             use_game_binding(gizmo_rotate)
   gizmo_scale              use_game_binding(gizmo_scale)
   highlight                use_game_binding(highlight)
+  medic                    use_game_binding(medic)
   pause                    pause
   select_all               use_game_binding(select_all)
   speed_1                  set_speed(1)

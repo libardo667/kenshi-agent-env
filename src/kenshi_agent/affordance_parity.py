@@ -280,6 +280,7 @@ _WIRED_GAME_BINDINGS = frozenset(
         "gizmo_rotate",
         "gizmo_scale",
         "highlight",
+        "medic",
         "change_squad",
         "character_next",
         "character_prev",
@@ -329,9 +330,7 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
             "toggle_fps_camera",
         }
     ),
-    "No contracted squad-care action exposes this order.": frozenset(
-        {"medic", "rescue"}
-    ),
+    "No contracted squad-care action exposes this order.": frozenset({"rescue"}),
     (
         "Raw world mouse operation is not a bound semantic affordance; "
         "current pointer actions operate exact exported controls."

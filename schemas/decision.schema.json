@@ -413,7 +413,8 @@
         "change_squad",
         "character_next",
         "character_prev",
-        "stop_movement"
+        "stop_movement",
+        "medic"
       ],
       "title": "GameBinding",
       "type": "string"

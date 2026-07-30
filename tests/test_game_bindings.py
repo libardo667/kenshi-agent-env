@@ -162,6 +162,25 @@ def test_highlight_is_reachable_through_a_held_fifth_mouse_button() -> None:
     assert mouse_button_input_spec(MouseButton.X2) == (0x0080, 0x0100, 0x0002)
 
 
+def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
+    binding = GameBinding.MEDIC
+    from kenshi_agent.control.win32 import Win32InputController
+    from kenshi_agent.models import KeyAction, game_binding_primitive
+
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="toggle the medic job for the selected squad members",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert game_binding_primitive(binding) == KeyAction(key="numpad7")
+    assert Win32InputController._vk("numpad7") == 0x67
+    assert binding in TOGGLE_GAME_BINDINGS
+
+
 def test_binding_catalog_contains_only_wired_decisions() -> None:
     names = {binding.value for binding in GameBinding}
     report = audit_binding_parity()
