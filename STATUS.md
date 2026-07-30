@@ -85,8 +85,9 @@ before planning and rejects native actions again at the guard and environment bo
 - No live plan has yet been retained in which the playing model itself authors `consult_advisor`
   and grounds its changed goal in both the attributed brief and current Kenshi evidence. One live
   call returned truncated invalid JSON; synthetic proofs do not satisfy the requirement.
-- The food-purchase loop is closed live: `live-vendor-search-20260729-r1` went from a fresh solo
-  start with no vendor in range to two verified purchases. Harvest-to-sale has no such receipt.
+- The full economic loop is closed live. `live-hub-survival-pair-20260729-r3` started on 20 cats
+  with no food, harvested six Raw Iron, sold them for 612, and bought Bread, all from observed
+  evidence. It stopped on an unactionable rejection, not on capability.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
@@ -97,12 +98,11 @@ before planning and rejects native actions again at the guard and environment bo
   exit do not generalize; raw `Character::isIndoors()` can retain a stale handle. The producer
   fails unresolved buildings closed while exit completion uses controller proof. No live run has
   exercised the continuity authority.
-- Whether an item cell's price is the shop's actual charge is unresolved, and the former claim that
-  it is not was never evidenced by a run. Against it: the producer reads
-  `getValueSingle(isPlayer=true)`, and `purchase_item` will not bind unless the tooltip already
-  displays `c.<expected_price>`, which it could not require if the charge were unknown until after
-  the purchase. Settle this from a live receipt before any design leans on purchase-price
-  uncertainty.
+- Item cells expose base value, not the shop's charge: a trader applies its own multiplier and the
+  asking price is never exported. `live-hub-survival-pair-20260729-r3` declared `expected_price` 300
+  for Bread and was charged 549. `max_purchase_price` and `min_money_after_purchase` are enforced
+  against the declared price, so a spending cap is advisory rather than binding. The tooltip price
+  check exists but sits behind `tooltip_visible`, which was false for that entire run.
 - A causally later observation stops stale pre-action state from satisfying a postcondition.
   Mechanical effects are controller-terminal or derived from the immediate dispatch baseline;
   ambiguous UI effects remain planner-authored and can still confuse a correlated later change
