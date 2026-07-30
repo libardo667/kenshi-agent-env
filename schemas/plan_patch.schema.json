@@ -684,7 +684,10 @@
         "select_9",
         "stop_movement",
         "medic",
-        "rescue"
+        "rescue",
+        "toggle_hold",
+        "toggle_block",
+        "toggle_bar"
       ],
       "title": "GameBinding",
       "type": "string"

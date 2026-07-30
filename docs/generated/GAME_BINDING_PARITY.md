@@ -13,19 +13,16 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        60
+wired        63
 exempt        1
-missing      11
+missing       8
 unclassified  0
 
 MISSING — implementation queue
   rebuild_navmesh          [Ctrl+Shift+F11]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   reload_biomes            [Ctrl+F6]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
-  toggle_bar               [F7]  No contracted action exposes this combat or AI stance.
-  toggle_block             [NUM0]  No contracted action exposes this combat or AI stance.
   toggle_build             [B]  Construction and placement have no observed build state or contracted semantic action.
   toggle_fps_camera        [;]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
-  toggle_hold              [NUM1]  No contracted action exposes this combat or AI stance.
   toggle_passive           [NUM2]  No contracted action exposes this combat or AI stance.
   toggle_ranged            [NUM3]  No contracted action exposes this combat or AI stance.
   toggle_sneak             [NUM4]  No contracted action exposes this combat or AI stance.
@@ -89,8 +86,11 @@ WIRED — real planner routes
   speed_2                  set_speed(2)
   speed_3                  set_speed(3)
   stop_movement            use_game_binding(stop_movement)
+  toggle_bar               use_game_binding(toggle_bar)
+  toggle_block             use_game_binding(toggle_block)
   toggle_crafting          use_game_binding(toggle_crafting)
   toggle_help              use_game_binding(toggle_help)
+  toggle_hold              use_game_binding(toggle_hold)
   toggle_inventory         use_game_binding(toggle_inventory)
   toggle_map               use_game_binding(toggle_map)
   toggle_research          use_game_binding(toggle_research)

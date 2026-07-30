@@ -234,6 +234,8 @@ class Win32InputController(InputController):
         "]": 0xDD,
         "equals": 0xBB,
         "minus": 0xBD,
+        "numpad0": 0x60,
+        "numpad1": 0x61,
         "numpad6": 0x66,
         "numpad7": 0x67,
         "numpad8": 0x68,

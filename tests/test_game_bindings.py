@@ -237,6 +237,37 @@ def test_rescue_is_reachable_through_a_semantic_toggle_binding() -> None:
     assert binding in TOGGLE_GAME_BINDINGS
 
 
+@pytest.mark.parametrize(
+    ("binding_name", "expected_key", "expected_virtual_key"),
+    [
+        ("toggle_hold", "numpad1", 0x61),
+        ("toggle_block", "numpad0", 0x60),
+        ("toggle_bar", "f7", 0x76),
+    ],
+)
+def test_preferred_combat_stance_binding_is_reachable(
+    binding_name: str,
+    expected_key: str,
+    expected_virtual_key: int,
+) -> None:
+    from kenshi_agent.control.win32 import Win32InputController
+    from kenshi_agent.models import KeyAction, game_binding_primitive
+
+    binding = GameBinding(binding_name)
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect=f"toggle the selected squad's {binding_name} stance",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert game_binding_primitive(binding) == KeyAction(key=expected_key)
+    assert Win32InputController._vk(expected_key) == expected_virtual_key
+    assert binding in TOGGLE_GAME_BINDINGS
+
+
 def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> None:
     from kenshi_agent.control.win32 import Win32InputController
     from kenshi_agent.models import (

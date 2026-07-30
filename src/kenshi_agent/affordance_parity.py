@@ -303,6 +303,9 @@ _WIRED_GAME_BINDINGS = frozenset(
         "toggle_crafting",
         "toggle_help",
         "toggle_inventory",
+        "toggle_bar",
+        "toggle_block",
+        "toggle_hold",
         "toggle_map",
         "toggle_research",
         "toggle_stats",
@@ -339,9 +342,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
     ),
     "No contracted action exposes this combat or AI stance.": frozenset(
         {
-            "toggle_bar",
-            "toggle_block",
-            "toggle_hold",
             "toggle_passive",
             "toggle_ranged",
             "toggle_sneak",
