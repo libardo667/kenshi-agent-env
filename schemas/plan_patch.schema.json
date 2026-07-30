@@ -621,6 +621,7 @@
         "gizmo_rotate",
         "gizmo_scale",
         "focus_char",
+        "highlight",
         "select_all",
         "change_squad",
         "character_next",

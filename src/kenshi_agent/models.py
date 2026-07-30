@@ -176,6 +176,8 @@ class MouseButton(StrEnum):
     LEFT = "left"
     RIGHT = "right"
     MIDDLE = "middle"
+    X1 = "x1"
+    X2 = "x2"
 
 
 class CoordinateSpace(StrEnum):
@@ -1024,6 +1026,12 @@ class HotkeyAction(StrictModel):
     hold_seconds: float = Field(default=0.04, ge=0.0, le=5.0)
 
 
+class MouseButtonAction(StrictModel):
+    kind: Literal["mouse_button"] = "mouse_button"
+    button: MouseButton
+    hold_seconds: float = Field(default=0.04, ge=0.0, le=5.0)
+
+
 class MoveCursorAction(StrictModel):
     kind: Literal["move_cursor"] = "move_cursor"
     x: float
@@ -1406,6 +1414,7 @@ class GameBinding(StrEnum):
     GIZMO_ROTATE = "gizmo_rotate"
     GIZMO_SCALE = "gizmo_scale"
     FOCUS_CHAR = "focus_char"
+    HIGHLIGHT = "highlight"
     # Selection.
     SELECT_ALL = "select_all"
     CHANGE_SQUAD = "change_squad"
@@ -1462,9 +1471,20 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
 """Default Kenshi key per binding; hard-coded, not parsed from active controls.cfg."""
 
 
-def game_binding_primitive(binding: GameBinding) -> KeyAction | HotkeyAction:
+GAME_BINDING_MOUSE_BUTTONS: dict[GameBinding, MouseButton] = {
+    GameBinding.HIGHLIGHT: MouseButton.X2,
+}
+"""Default Kenshi mouse button per binding; hard-coded from controls.cfg."""
+
+
+def game_binding_primitive(
+    binding: GameBinding,
+) -> KeyAction | HotkeyAction | MouseButtonAction:
     """Resolve one reviewed binding to the primitive that drives its default input."""
 
+    mouse_button = GAME_BINDING_MOUSE_BUTTONS.get(binding)
+    if mouse_button is not None:
+        return MouseButtonAction(button=mouse_button, hold_seconds=0.25)
     mapped = GAME_BINDING_KEYS[binding]
     if isinstance(mapped, str):
         return KeyAction(key=mapped)
@@ -1523,7 +1543,12 @@ class UseGameBindingAction(StrictModel):
 
 
 ControllerPrimitive: TypeAlias = (
-    KeyAction | HotkeyAction | MoveCursorAction | ClickAction | ScrollAction
+    KeyAction
+    | HotkeyAction
+    | MouseButtonAction
+    | MoveCursorAction
+    | ClickAction
+    | ScrollAction
 )
 """Deterministic executor/controller implementation details.
 
@@ -1599,6 +1624,7 @@ Action: TypeAlias = (
     | ReadFieldbookAction
     | KeyAction
     | HotkeyAction
+    | MouseButtonAction
     | MoveCursorAction
     | ClickAction
     | ScrollAction
@@ -1647,7 +1673,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     }
 )
 CONTROLLER_PRIMITIVE_KINDS: frozenset[str] = frozenset(
-    {"key", "hotkey", "move_cursor", "click", "scroll"}
+    {"key", "hotkey", "mouse_button", "move_cursor", "click", "scroll"}
 )
 
 

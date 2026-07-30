@@ -29,6 +29,7 @@ from kenshi_agent.models import (
     KeyAction,
     KnownMapDestination,
     MouseButton,
+    MouseButtonAction,
     MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandRequest,
@@ -324,6 +325,37 @@ def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
         assert receipt.semantic is not None
         assert receipt.semantic.resolved_label == "editor_toggle"
         assert "shift+f12" in receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+        action = UseGameBindingAction(
+            binding=GameBinding.HIGHLIGHT,
+            expected_effect="highlight world items while the binding is held",
+        )
+
+        receipt = await environment._execute_game_binding(  # noqa: SLF001
+            action,
+            datetime.now(UTC),
+        )
+
+        assert controller.actions == [
+            MouseButtonAction(button=MouseButton.X2, hold_seconds=0.25)
+        ]
+        assert receipt.action == action
+        assert receipt.semantic is not None
+        assert receipt.semantic.resolved_label == "highlight"
+        assert "x2" in receipt.message
 
     asyncio.run(scenario())
 

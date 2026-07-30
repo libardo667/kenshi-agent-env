@@ -17,6 +17,7 @@ from ..models import (
     HotkeyAction,
     KeyAction,
     MouseButton,
+    MouseButtonAction,
     MoveCursorAction,
     ScrollAction,
 )
@@ -80,6 +81,18 @@ def normalize_virtual_desktop_point(
 def wheel_delta_data(notches: int) -> int:
     """Encode signed Win32 wheel notches in MOUSEINPUT's unsigned DWORD."""
     return ctypes.c_uint32(notches * 120).value
+
+
+def mouse_button_input_spec(button: MouseButton) -> tuple[int, int, int]:
+    """Return Win32 down/up flags and mouseData for one mouse button."""
+
+    return {
+        MouseButton.LEFT: (0x0002, 0x0004, 0),
+        MouseButton.RIGHT: (0x0008, 0x0010, 0),
+        MouseButton.MIDDLE: (0x0020, 0x0040, 0),
+        MouseButton.X1: (0x0080, 0x0100, 0x0001),
+        MouseButton.X2: (0x0080, 0x0100, 0x0002),
+    }[button]
 
 
 def relative_pointer_delta(
@@ -879,27 +892,36 @@ class Win32InputController(InputController):
                 if pressed:
                     self._send([self._keyboard_input(vk, key_up=True) for vk in reversed(pressed)])
             primitive_count = len(keys) * 2
+        elif isinstance(action, MouseButtonAction):
+            down_flag, up_flag, mouse_data = mouse_button_input_spec(action.button)
+            self._send([self._mouse_input(0, 0, down_flag, mouse_data=mouse_data)])
+            try:
+                if action.hold_seconds:
+                    await asyncio.sleep(action.hold_seconds)
+            finally:
+                self._send([self._mouse_input(0, 0, up_flag, mouse_data=mouse_data)])
+            primitive_count = 2
         elif isinstance(action, MoveCursorAction):
             await self._move_cursor(action.x, action.y, action.space)
         elif isinstance(action, ClickAction):
             await self._move_cursor(action.x, action.y, action.space)
-            button_flags = {
-                MouseButton.LEFT: (self.MOUSEEVENTF_LEFTDOWN, self.MOUSEEVENTF_LEFTUP),
-                MouseButton.RIGHT: (self.MOUSEEVENTF_RIGHTDOWN, self.MOUSEEVENTF_RIGHTUP),
-                MouseButton.MIDDLE: (self.MOUSEEVENTF_MIDDLEDOWN, self.MOUSEEVENTF_MIDDLEUP),
-            }[action.button]
+            down_flag, up_flag, mouse_data = mouse_button_input_spec(action.button)
             for click_index in range(action.clicks):
                 if action.hold_seconds:
-                    self._send([self._mouse_input(0, 0, button_flags[0])])
+                    self._send(
+                        [self._mouse_input(0, 0, down_flag, mouse_data=mouse_data)]
+                    )
                     try:
                         await asyncio.sleep(action.hold_seconds)
                     finally:
-                        self._send([self._mouse_input(0, 0, button_flags[1])])
+                        self._send(
+                            [self._mouse_input(0, 0, up_flag, mouse_data=mouse_data)]
+                        )
                 else:
                     self._send(
                         [
-                            self._mouse_input(0, 0, button_flags[0]),
-                            self._mouse_input(0, 0, button_flags[1]),
+                            self._mouse_input(0, 0, down_flag, mouse_data=mouse_data),
+                            self._mouse_input(0, 0, up_flag, mouse_data=mouse_data),
                         ]
                     )
                 if click_index + 1 < action.clicks and action.interval_seconds:

@@ -11,11 +11,19 @@ from ..models import (
     ClickAction,
     HotkeyAction,
     KeyAction,
+    MouseButtonAction,
     MoveCursorAction,
     ScrollAction,
 )
 
-PrimitiveInputAction = KeyAction | HotkeyAction | MoveCursorAction | ClickAction | ScrollAction
+PrimitiveInputAction = (
+    KeyAction
+    | HotkeyAction
+    | MouseButtonAction
+    | MoveCursorAction
+    | ClickAction
+    | ScrollAction
+)
 
 
 @dataclass(frozen=True, slots=True)

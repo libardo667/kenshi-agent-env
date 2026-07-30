@@ -26,6 +26,7 @@ from kenshi_agent.affordance_parity import (
 )
 from kenshi_agent.models import (
     GAME_BINDING_KEYS,
+    GAME_BINDING_MOUSE_BUTTONS,
     TOGGLE_GAME_BINDINGS,
     GameBinding,
     GameState,
@@ -60,12 +61,13 @@ def observation(*, loaded: bool = True, stale: bool = False) -> Observation:
     )
 
 
-def test_every_binding_maps_to_a_key() -> None:
-    """A binding with no key would bind successfully and then send nothing."""
+def test_every_binding_maps_to_exactly_one_input() -> None:
+    """A binding must resolve to one physical input, never zero or two."""
 
     for binding in GameBinding:
-        assert binding in GAME_BINDING_KEYS, binding
-        assert GAME_BINDING_KEYS[binding]
+        assert (binding in GAME_BINDING_KEYS) != (
+            binding in GAME_BINDING_MOUSE_BUTTONS
+        ), binding
 
 
 @pytest.mark.parametrize(
@@ -133,6 +135,31 @@ def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
     )
     assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
     assert game_binding_primitive(binding) == HotkeyAction(keys=["shift", "f12"])
+
+
+def test_highlight_is_reachable_through_a_held_fifth_mouse_button() -> None:
+    binding = GameBinding.HIGHLIGHT
+    from kenshi_agent.control.win32 import mouse_button_input_spec
+    from kenshi_agent.models import (
+        MouseButton,
+        MouseButtonAction,
+        game_binding_primitive,
+    )
+
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="highlight world items while the binding is held",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert game_binding_primitive(binding) == MouseButtonAction(
+        button=MouseButton.X2,
+        hold_seconds=0.25,
+    )
+    assert mouse_button_input_spec(MouseButton.X2) == (0x0080, 0x0100, 0x0002)
 
 
 def test_binding_catalog_contains_only_wired_decisions() -> None:

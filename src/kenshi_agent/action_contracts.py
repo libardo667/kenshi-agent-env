@@ -30,6 +30,7 @@ from pydantic import BaseModel
 
 from .models import (
     GAME_BINDING_KEYS,
+    GAME_BINDING_MOUSE_BUTTONS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     TIME_GAME_BINDINGS,
     Action,
@@ -1444,14 +1445,16 @@ def bind_use_game_binding(
             "Raw time bindings are not planner affordances; use pause to stop "
             "the world or set_speed to establish one running playback state."
         )
-    key = GAME_BINDING_KEYS.get(action.binding)
-    if key is None:
-        return _unbound(f"No key is mapped for binding {action.binding.value!r}.")
+    mapped_input = GAME_BINDING_KEYS.get(action.binding)
+    if mapped_input is None:
+        mapped_input = GAME_BINDING_MOUSE_BUTTONS.get(action.binding)
+    if mapped_input is None:
+        return _unbound(f"No input is mapped for binding {action.binding.value!r}.")
     return ReferenceBinding(
         bound=True,
         reason=(
             f"Bound {action.binding.value!r} to the current hard-coded default "
-            f"Kenshi key {key!r} on a loaded game."
+            f"Kenshi input {mapped_input!r} on a loaded game."
         ),
         resolved_label=action.binding.value,
         source_revision=observation.world_revision,

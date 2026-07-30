@@ -88,6 +88,9 @@
               "$ref": "#/$defs/HotkeyAction"
             },
             {
+              "$ref": "#/$defs/MouseButtonAction"
+            },
+            {
               "$ref": "#/$defs/MoveCursorAction"
             },
             {
@@ -2818,6 +2821,7 @@
         "gizmo_rotate",
         "gizmo_scale",
         "focus_char",
+        "highlight",
         "select_all",
         "change_squad",
         "character_next",
@@ -3892,10 +3896,38 @@
       "enum": [
         "left",
         "right",
-        "middle"
+        "middle",
+        "x1",
+        "x2"
       ],
       "title": "MouseButton",
       "type": "string"
+    },
+    "MouseButtonAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mouse_button",
+          "default": "mouse_button",
+          "title": "Kind",
+          "type": "string"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "button"
+      ],
+      "title": "MouseButtonAction",
+      "type": "object"
     },
     "MoveCursorAction": {
       "additionalProperties": false,

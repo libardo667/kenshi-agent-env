@@ -279,6 +279,7 @@ _WIRED_GAME_BINDINGS = frozenset(
         "gizmo_move",
         "gizmo_rotate",
         "gizmo_scale",
+        "highlight",
         "change_squad",
         "character_next",
         "character_prev",
@@ -325,7 +326,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
         "semantic route."
     ): frozenset(
         {
-            "highlight",
             "toggle_fps_camera",
         }
     ),

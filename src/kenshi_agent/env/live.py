@@ -73,6 +73,7 @@ from ..models import (
     InputBoundaryDecision,
     KeyAction,
     MouseButton,
+    MouseButtonAction,
     MoveCursorAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
@@ -817,7 +818,15 @@ class LiveEnvironment(AgentEnvironment):
                 )
             return await self._execute_skill(action, started)
         if isinstance(
-            action, (KeyAction, HotkeyAction, MoveCursorAction, ClickAction, ScrollAction)
+            action,
+            (
+                KeyAction,
+                HotkeyAction,
+                MouseButtonAction,
+                MoveCursorAction,
+                ClickAction,
+                ScrollAction,
+            ),
         ):
             return await self.controller.execute(action)
         raise TypeError(f"Unsupported live action: {type(action).__name__}")
@@ -846,7 +855,14 @@ class LiveEnvironment(AgentEnvironment):
                 raise RuntimeError("Emergency stop pressed during macro execution.")
             if not isinstance(
                 macro_primitive,
-                (KeyAction, HotkeyAction, MoveCursorAction, ClickAction, ScrollAction),
+                (
+                    KeyAction,
+                    HotkeyAction,
+                    MouseButtonAction,
+                    MoveCursorAction,
+                    ClickAction,
+                    ScrollAction,
+                ),
             ):
                 raise TypeError(
                     f"Live macro {action.name!r} contains unsupported primitive "
@@ -2511,11 +2527,12 @@ class LiveEnvironment(AgentEnvironment):
             raise RuntimeError(f"No input was sent: {binding.reason}")
         primitive = game_binding_primitive(action.binding)
         primitive_receipt = await self.controller.execute(primitive)
-        mapped_input = (
-            primitive.key
-            if isinstance(primitive, KeyAction)
-            else "+".join(primitive.keys)
-        )
+        if isinstance(primitive, KeyAction):
+            mapped_input = primitive.key
+        elif isinstance(primitive, HotkeyAction):
+            mapped_input = "+".join(primitive.keys)
+        else:
+            mapped_input = primitive.button.value
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=USE_GAME_BINDING_CONTRACT.version,
