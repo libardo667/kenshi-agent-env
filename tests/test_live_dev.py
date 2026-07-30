@@ -2806,3 +2806,56 @@ def test_startup_clicks_hold_long_enough_for_mygui() -> None:
     from kenshi_agent.config import ControlsConfig
 
     assert MYGUI_CLICK_HOLD_SECONDS == ControlsConfig().control_activation_hold_seconds
+
+
+def test_launcher_resolves_without_a_desktop_shortcut(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A deleted desktop icon must not be able to break launching.
+
+    The launch path accepted only a hand-made `RE_Kenshi.lnk` that nothing in
+    this repository creates, documents, or checks. Tidying it off a desktop
+    broke `./dev launch` after preflight had reported everything ready and a
+    display lease had already been taken.
+    """
+
+    install = tmp_path / "Steam" / "steamapps" / "common" / "Kenshi"
+    (install / "RE_Kenshi").mkdir(parents=True)
+    executable = install / "RE_Kenshi" / "Kenshi_x64.exe"
+    executable.write_bytes(b"")
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.delenv("KENSHI_AGENT_SHORTCUT", raising=False)
+    monkeypatch.setattr(live_dev.Path, "home", classmethod(lambda cls: tmp_path / "nobody"))
+
+    assert live_dev._shortcut() == executable
+    # The install root, not the patched executable's own folder, is where
+    # Kenshi resolves data, mods and RE_Kenshi.ini.
+    assert executable.parent.parent == install
+
+
+def test_an_operator_shortcut_still_wins_over_the_installed_executable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    install = tmp_path / "Steam" / "steamapps" / "common" / "Kenshi"
+    (install / "RE_Kenshi").mkdir(parents=True)
+    (install / "RE_Kenshi" / "Kenshi_x64.exe").write_bytes(b"")
+    chosen = tmp_path / "my-launcher.lnk"
+    chosen.write_bytes(b"")
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.setenv("KENSHI_AGENT_SHORTCUT", str(chosen))
+
+    assert live_dev._shortcut() == chosen
+
+
+def test_a_missing_launcher_names_every_place_it_looked(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path))
+    monkeypatch.delenv("KENSHI_AGENT_SHORTCUT", raising=False)
+    monkeypatch.setattr(live_dev.Path, "home", classmethod(lambda cls: tmp_path / "nobody"))
+
+    with pytest.raises(FileNotFoundError, match="RE_Kenshi/Kenshi_x64.exe"):
+        live_dev._shortcut()

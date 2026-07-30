@@ -614,18 +614,49 @@ def _plugin_ready(status_path: Path, launched_at: datetime) -> bool:
     return bool(state == "ready")
 
 
+def _re_kenshi_executable() -> Path | None:
+    """RE_Kenshi's patched launcher inside the Kenshi install, if present."""
+
+    program_files_x86 = os.environ.get("ProgramFiles(x86)")
+    if not program_files_x86:
+        return None
+    return (
+        Path(program_files_x86)
+        / "Steam"
+        / "steamapps"
+        / "common"
+        / "Kenshi"
+        / "RE_Kenshi"
+        / "Kenshi_x64.exe"
+    )
+
+
 def _shortcut() -> Path:
+    """What to start to bring up the RE_Kenshi launcher.
+
+    A desktop `.lnk` used to be the only accepted answer, which made the whole
+    live path depend on a hand-made shortcut that nothing in this repository
+    creates, documents, or checks. Deleting a cluttered desktop icon then broke
+    launching, after preflight had already reported everything ready and a
+    display lease had been taken. The installed executable is the durable
+    target; the shortcuts stay ahead of it so an operator's own launcher
+    arrangement still wins.
+    """
+
     override = os.environ.get("KENSHI_AGENT_SHORTCUT")
     candidates = [
         Path(override) if override else None,
         Path.home() / "OneDrive" / "Desktop" / "RE_Kenshi.lnk",
         Path.home() / "Desktop" / "RE_Kenshi.lnk",
+        _re_kenshi_executable(),
     ]
     for candidate in candidates:
         if candidate is not None and candidate.is_file():
             return candidate
     raise FileNotFoundError(
-        "RE_Kenshi.lnk was not found. Set KENSHI_AGENT_SHORTCUT to its full path."
+        "No RE_Kenshi launcher was found. Expected a desktop RE_Kenshi.lnk, "
+        "the installed RE_Kenshi/Kenshi_x64.exe, or KENSHI_AGENT_SHORTCUT set "
+        "to a launcher path."
     )
 
 
@@ -1541,7 +1572,15 @@ async def _perform_launch(
     _disable_re_kenshi_startup_panel(_re_kenshi_settings_path())
     launched_at = datetime.now(UTC)
     if not args.resume_launcher:
-        os.startfile(_shortcut())  # type: ignore[attr-defined]
+        target = _shortcut()
+        if target.suffix.lower() == ".lnk":
+            # A shortcut carries its own working directory; overriding it would
+            # discard whatever the operator configured.
+            os.startfile(target)  # type: ignore[attr-defined]
+        else:
+            # Kenshi resolves data, mods and RE_Kenshi.ini against the install
+            # root, not against the patched executable's own folder.
+            os.startfile(target, cwd=str(target.parent.parent))  # type: ignore[attr-defined]
     else:
         print("Resuming the existing verified RE_Kenshi pre-game launcher.")
     await _wait_until(
