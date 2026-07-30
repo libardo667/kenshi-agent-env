@@ -1358,6 +1358,7 @@ async def _open_exact_authored_game_start(
     game_start_label: str,
     begin_control_labels: list[str],
     confirm_control_labels: list[str],
+    warning_confirm_control_labels: list[str],
     max_carousel_steps: int,
     timeout: float,
     health_check: Callable[[], None] | None = None,
@@ -1442,6 +1443,21 @@ async def _open_exact_authored_game_start(
             controller,
             reader,
             labels,
+            input_gate=input_gate,
+        )
+    loaded = await _wait_for_loaded_or_semantic_control(
+        reader,
+        warning_confirm_control_labels,
+        timeout=timeout,
+        controller=controller,
+        health_check=health_check,
+        input_gate=input_gate,
+    )
+    if not loaded:
+        await _click_semantic_control(
+            controller,
+            reader,
+            warning_confirm_control_labels,
             input_gate=input_gate,
         )
 
@@ -1641,6 +1657,9 @@ async def _perform_launch(
                 game_start_label=game_start.label,
                 begin_control_labels=config.controls.startup_begin_control_labels,
                 confirm_control_labels=config.controls.startup_confirm_control_labels,
+                warning_confirm_control_labels=(
+                    config.controls.startup_warning_confirm_control_labels
+                ),
                 max_carousel_steps=(
                     config.controls.startup_game_start_max_carousel_steps
                 ),

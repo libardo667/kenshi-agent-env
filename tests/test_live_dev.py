@@ -2251,7 +2251,7 @@ def test_scenario_start_uses_load_game_then_exact_managed_save() -> None:
     asyncio.run(scenario())
 
 
-def test_authored_start_traverses_carousel_then_begins_and_confirms() -> None:
+def test_authored_pair_start_confirms_unchanged_character_warning() -> None:
     async def scenario() -> None:
         controller = LaunchController()
         snapshots = [
@@ -2272,6 +2272,9 @@ def test_authored_start_traverses_carousel_then_begins_and_confirms() -> None:
             semantic_snapshot(15, label="Confirm"),
             semantic_snapshot(16, label="Confirm"),
             semantic_snapshot(17, label="Confirm"),
+            semantic_snapshot(18, label="Yes"),
+            semantic_snapshot(19, label="Yes"),
+            semantic_snapshot(20, label="Yes"),
         ]
         reader = LaunchTelemetry(*snapshots)
 
@@ -2282,11 +2285,49 @@ def test_authored_start_traverses_carousel_then_begins_and_confirms() -> None:
             game_start_label="KAE 03 - Broke Pair",
             begin_control_labels=["Begin"],
             confirm_control_labels=["Confirm"],
+            warning_confirm_control_labels=["Yes"],
             max_carousel_steps=16,
             timeout=0.5,
         )
 
-        assert len(controller.actions) == 5
+        assert len(controller.actions) == 6
+        assert all(isinstance(action, live_dev.ClickAction) for action in controller.actions)
+
+    import asyncio
+
+    asyncio.run(scenario())
+
+
+def test_authored_solo_start_does_not_invent_a_warning_confirmation() -> None:
+    async def scenario() -> None:
+        controller = LaunchController()
+        reader = LaunchTelemetry(
+            semantic_snapshot(1, label="New Game"),
+            semantic_snapshot(2, label="New Game"),
+            semantic_snapshot(3, label="New Game"),
+            carousel_snapshot(4, label="KAE 01 - Solo"),
+            semantic_snapshot(5, label="Begin"),
+            semantic_snapshot(6, label="Begin"),
+            semantic_snapshot(7, label="Begin"),
+            semantic_snapshot(8, label="Confirm"),
+            semantic_snapshot(9, label="Confirm"),
+            semantic_snapshot(10, label="Confirm"),
+            launch_snapshot(11, paused=True),
+        )
+
+        await _open_exact_authored_game_start(
+            controller,
+            reader,  # type: ignore[arg-type]
+            new_game_control_labels=["New Game"],
+            game_start_label="KAE 01 - Solo",
+            begin_control_labels=["Begin"],
+            confirm_control_labels=["Confirm"],
+            warning_confirm_control_labels=["Yes"],
+            max_carousel_steps=16,
+            timeout=0.5,
+        )
+
+        assert len(controller.actions) == 3
         assert all(isinstance(action, live_dev.ClickAction) for action in controller.actions)
 
     import asyncio
@@ -2313,6 +2354,7 @@ def test_authored_start_ambiguity_emits_no_start_selection_input() -> None:
                 game_start_label="KAE 03 - Broke Pair",
                 begin_control_labels=["Begin"],
                 confirm_control_labels=["Confirm"],
+                warning_confirm_control_labels=["Yes"],
                 max_carousel_steps=16,
                 timeout=0.01,
             )
@@ -2350,6 +2392,7 @@ def test_authored_start_carousel_cycle_stops_before_begin() -> None:
                 game_start_label="KAE 03 - Broke Pair",
                 begin_control_labels=["Begin"],
                 confirm_control_labels=["Confirm"],
+                warning_confirm_control_labels=["Yes"],
                 max_carousel_steps=16,
                 timeout=0.5,
             )
@@ -2383,6 +2426,7 @@ def test_authored_start_carousel_requires_causally_later_label_change() -> None:
                 game_start_label="KAE 03 - Broke Pair",
                 begin_control_labels=["Begin"],
                 confirm_control_labels=["Confirm"],
+                warning_confirm_control_labels=["Yes"],
                 max_carousel_steps=16,
                 timeout=0.01,
             )
