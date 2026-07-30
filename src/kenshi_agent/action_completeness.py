@@ -38,17 +38,7 @@ class ActionGap(StrEnum):
 # An entry here forces `planner_visible=False`, so a half-built action cannot
 # reach the model. Removing the entry is how an action graduates, and the gate
 # then requires every derived piece to be real.
-SCAFFOLDED_ACTIONS: dict[str, str] = {
-    "open_screen": (
-        "bind_open_screen must resolve the screen to its binding and report "
-        "already-open as satisfied rather than pressing a toggle closed; "
-        "derive_completion_conditions must return the exact per-screen terminal "
-        "(inventory -> open_inventory_windows, stats -> stats_window_open, "
-        "map/research/crafting -> management_tab equals MANAGEMENT_TAB_INDICES); "
-        "env/live.py needs an _execute_open_screen branch; then drop this entry "
-        "and set planner_visible=True."
-    ),
-}
+SCAFFOLDED_ACTIONS: dict[str, str] = {}
 
 
 @dataclass(frozen=True, slots=True)

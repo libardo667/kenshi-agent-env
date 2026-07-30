@@ -486,6 +486,18 @@
       "title": "GameBinding",
       "type": "string"
     },
+    "GameScreen": {
+      "description": "A screen the agent wants open, named by what it is rather than a key.",
+      "enum": [
+        "inventory",
+        "stats",
+        "map",
+        "research",
+        "crafting"
+      ],
+      "title": "GameScreen",
+      "type": "string"
+    },
     "KeepMemoryOperation": {
       "additionalProperties": false,
       "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
@@ -677,6 +689,26 @@
         }
       },
       "title": "NoopAction",
+      "type": "object"
+    },
+    "OpenScreenAction": {
+      "additionalProperties": false,
+      "description": "Have a named screen open, without naming the key that opens it.\n\n`use_game_binding` makes the planner name a mechanism when what it has is an\nintent: \"I need the inventory\" became `toggle_inventory` plus a\nhand-authored causal condition proving it opened. Verifying that pressing I\nopened the inventory is a mechanical fact about Kenshi, not a strategic\nchoice, and the controller owns mechanical facts.\n\nIt also promises the screen is *open*, which a toggle cannot. Pressing the\nbinding when the screen is already up closes it, so an agent that wanted the\ninventory and pressed I twice ends with no inventory and a receipt saying\nsomething changed both times.",
+      "properties": {
+        "kind": {
+          "const": "open_screen",
+          "default": "open_screen",
+          "title": "Kind",
+          "type": "string"
+        },
+        "screen": {
+          "$ref": "#/$defs/GameScreen"
+        }
+      },
+      "required": [
+        "screen"
+      ],
+      "title": "OpenScreenAction",
       "type": "object"
     },
     "PauseAction": {
@@ -1569,6 +1601,9 @@
         },
         {
           "$ref": "#/$defs/PurchaseItemAction"
+        },
+        {
+          "$ref": "#/$defs/OpenScreenAction"
         },
         {
           "$ref": "#/$defs/UseGameBindingAction"

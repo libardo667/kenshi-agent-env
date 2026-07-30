@@ -1802,6 +1802,7 @@ PlannerAtomicSemanticAction: TypeAlias = (
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
+    | OpenScreenAction
     | UseGameBindingAction
     | ScrollScreenAction
     | SellItemAction
@@ -1869,6 +1870,7 @@ Action: TypeAlias = (
     | ActivateVisibleControlAction
     | DismissScreenAction
     | PurchaseItemAction
+    | OpenScreenAction
     | UseGameBindingAction
     | ScrollScreenAction
     | SellItemAction
@@ -3684,6 +3686,76 @@ def game_binding_success_condition(
         expected=current,
         max_age_seconds=3.0,
         required_capabilities=list(terminal.required_capabilities),
+    )
+
+
+SCREEN_BINDINGS: dict[GameScreen, GameBinding] = {
+    GameScreen.INVENTORY: GameBinding.TOGGLE_INVENTORY,
+    GameScreen.STATS: GameBinding.TOGGLE_STATS,
+    GameScreen.MAP: GameBinding.TOGGLE_MAP,
+    GameScreen.RESEARCH: GameBinding.TOGGLE_RESEARCH,
+    GameScreen.CRAFTING: GameBinding.TOGGLE_CRAFTING,
+}
+
+
+def screen_is_open(screen: GameScreen, telemetry: TelemetrySnapshot | None) -> bool | None:
+    """Whether the exact named screen is up, or None when it cannot be read.
+
+    The distinction matters more than it looks: pressing a toggle to "open" a
+    screen that is already open closes it, so an agent that wanted the inventory
+    and pressed I twice ends with no inventory and a receipt saying something
+    changed both times.
+    """
+
+    if telemetry is None:
+        return None
+    if screen is GameScreen.INVENTORY:
+        windows = telemetry.ui.open_inventory_windows
+        return None if windows is None else windows > 0
+    if screen is GameScreen.STATS:
+        return telemetry.ui.stats_window_open
+    tab = telemetry.ui.management_tab
+    if tab is None:
+        return None
+    return tab == MANAGEMENT_TAB_INDICES[screen]
+
+
+def open_screen_success_condition(
+    screen: GameScreen,
+    telemetry: TelemetrySnapshot | None,
+) -> Condition | None:
+    """The exact observation proving this screen, not merely some screen, is up."""
+
+    if telemetry is None:
+        return None
+    if screen is GameScreen.INVENTORY:
+        if telemetry.ui.open_inventory_windows is None:
+            return None
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
+            operator=ConditionOperator.GREATER_THAN,
+            expected=0,
+            max_age_seconds=3.0,
+        )
+    if screen is GameScreen.STATS:
+        if telemetry.ui.stats_window_open is None:
+            return None
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            max_age_seconds=3.0,
+        )
+    if telemetry.ui.management_tab is None:
+        return None
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
+        operator=ConditionOperator.EQUALS,
+        expected=MANAGEMENT_TAB_INDICES[screen],
+        max_age_seconds=3.0,
     )
 
 

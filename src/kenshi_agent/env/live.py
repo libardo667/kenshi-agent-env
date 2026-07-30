@@ -26,6 +26,7 @@ from ..action_contracts import (
     NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
     NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
     OPEN_CONTEXT_INVENTORY_CONTRACT,
+    OPEN_SCREEN_CONTRACT,
     PERFORM_CONTEXT_ACTION_CONTRACT,
     PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
@@ -58,6 +59,7 @@ from ..input_boundary import ExecutionToken
 from ..models import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     QUICKSAVE_COMPLETION_CAPABILITY,
+    SCREEN_BINDINGS,
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -92,6 +94,7 @@ from ..models import (
     NormalizedPointerBounds,
     Observation,
     OpenContextInventoryAction,
+    OpenScreenAction,
     PauseAction,
     PerformContextAction,
     PointerActionClass,
@@ -124,6 +127,7 @@ from ..models import (
     camera_rotation_primitive,
     game_binding_primitive,
     normalize_control_label,
+    screen_is_open,
     window_close_point,
 )
 from ..native_commands import write_native_command_request_atomic
@@ -862,6 +866,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_purchase_item(action, started)
         if isinstance(action, RecoverCameraViewAction):
             return await self._execute_recover_camera_view(action, started)
+        if isinstance(action, OpenScreenAction):
+            return await self._execute_open_screen(action, started)
         if isinstance(action, UseGameBindingAction):
             return await self._execute_game_binding(action, started)
         if isinstance(action, ScrollScreenAction):
@@ -2727,6 +2733,82 @@ class LiveEnvironment(AgentEnvironment):
             status,
             final_frame,
             follow_method="portrait_double_click",
+        )
+
+    async def _execute_open_screen(
+        self,
+        action: OpenScreenAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Have the named screen open, pressing nothing when it already is.
+
+        The agent used to name a binding and author its own proof that the
+        binding worked. One live run then looped: a window it had asked for
+        opened, telemetry did not show it, and nothing could tell the agent it
+        had already succeeded. Here the controller reads the exact screen state,
+        presses only when it needs to, and the contract's terminal proves which
+        screen arrived rather than that something changed.
+        """
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = OPEN_SCREEN_CONTRACT.bind(action, observation)
+        if not binding.bound:
+            raise RuntimeError(f"No input was sent: {binding.reason}")
+
+        already = screen_is_open(action.screen, result.snapshot)
+        control = SCREEN_BINDINGS[action.screen]
+        if already:
+            semantic = SemanticActionReceipt(
+                action_kind=action.kind,
+                contract_version=OPEN_SCREEN_CONTRACT.version,
+                resolved_label=action.screen.value,
+                source_revision=observation.world_revision,
+                revalidation=binding.reason,
+            )
+            return ActionReceipt(
+                action=action,
+                control_mode=self.control_mode,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                primitive_actions=0,
+                started_at=started,
+                finished_at=datetime.now(UTC),
+                message=(
+                    f"The {action.screen.value} screen was already open, so no "
+                    "key was pressed."
+                ),
+                semantic=semantic,
+            )
+
+        primitive = game_binding_primitive(control)
+        await self.controller.execute(primitive)
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=OPEN_SCREEN_CONTRACT.version,
+            resolved_label=action.screen.value,
+            source_revision=observation.world_revision,
+            revalidation=binding.reason,
+        )
+        return ActionReceipt(
+            action=action,
+            control_mode=self.control_mode,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            primitive_actions=1,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            message=(
+                f"Pressed {control.value} to open the {action.screen.value} "
+                "screen. A later observation must confirm it arrived."
+            ),
+            semantic=semantic,
         )
 
     async def _execute_game_binding(

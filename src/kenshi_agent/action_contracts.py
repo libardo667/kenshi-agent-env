@@ -34,6 +34,7 @@ from .models import (
     GAME_BINDING_TERMINALS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     QUICKSAVE_COMPLETION_CAPABILITY,
+    SCREEN_BINDINGS,
     TIME_GAME_BINDINGS,
     Action,
     ActivateVisibleControlAction,
@@ -87,6 +88,8 @@ from .models import (
     map_destination_already_reached,
     map_destination_travel_available,
     normalize_control_label,
+    open_screen_success_condition,
+    screen_is_open,
 )
 from .resource_transfer import resource_transfer_layout_error
 
@@ -2633,16 +2636,51 @@ def bind_open_screen(
     action: Action,
     observation: Observation,
 ) -> ReferenceBinding:
-    """SCAFFOLD: resolve the screen to its binding and current open state.
+    """Resolve the screen to its binding and to whether it is already up.
 
-    Must be already-satisfied aware. The underlying controls are toggles, so
-    pressing when the screen is already up closes it; `open_screen` promises the
-    screen IS open, which is the whole reason it exists.
+    Already-satisfied aware on purpose. The underlying controls are toggles, so
+    pressing to "open" a screen that is open closes it; this action promises the
+    screen IS open, which is the whole reason it exists rather than
+    `use_game_binding`.
     """
 
-    raise NotImplementedError(
-        "bind_open_screen is scaffolded; see SCAFFOLDED_ACTIONS['open_screen']"
+    if not isinstance(action, OpenScreenAction):
+        return _unbound("Action is not an open_screen action.")
+    telemetry = observation.telemetry
+    if telemetry is None or observation.telemetry_stale:
+        return _unbound("No fresh telemetry, so the screen state cannot be read.")
+    already = screen_is_open(action.screen, telemetry)
+    if already is None:
+        return _unbound(
+            f"Nothing observable reports whether {action.screen.value} is open, "
+            "so opening it could not be proven."
+        )
+    binding = SCREEN_BINDINGS[action.screen]
+    if already:
+        return ReferenceBinding(
+            bound=True,
+            reason=(
+                f"The {action.screen.value} screen is already open; pressing "
+                f"{binding.value} would close it, so no input is sent."
+            ),
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"The {action.screen.value} screen is closed and "
+            f"{binding.value} opens it."
+        ),
     )
+
+
+def _open_screen_terminal(
+    action: Action,
+    observation: Observation,
+) -> tuple[Condition, ...] | None:
+    if not isinstance(action, OpenScreenAction):
+        return ()
+    condition = open_screen_success_condition(action.screen, observation.telemetry)
+    return (condition,) if condition is not None else ()
 
 
 OPEN_SCREEN_CONTRACT = ActionContract(
@@ -2658,9 +2696,7 @@ OPEN_SCREEN_CONTRACT = ActionContract(
         "screen must be one of the GameScreen values in the projected action "
         "schema."
     ),
-    # Forced false while scaffolded: an action the model can author and the
-    # executor cannot perform fails at dispatch, mid-run, having spent the turn.
-    planner_visible=False,
+    planner_visible=True,
     allowed_control_modes=frozenset(
         {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
     ),
@@ -2675,6 +2711,7 @@ OPEN_SCREEN_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_screen",
     bind=bind_open_screen,
+    derive_completion_conditions=_open_screen_terminal,
 )
 
 

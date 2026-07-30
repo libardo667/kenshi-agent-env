@@ -279,6 +279,7 @@ safety:
     - activate_visible_control
     - dismiss_screen
     - purchase_item
+    - open_screen
     - use_game_binding
     - scroll_screen
     - sell_item

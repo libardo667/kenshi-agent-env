@@ -13,6 +13,7 @@ import pytest
 
 from kenshi_agent.action_contracts import (
     ACTION_CONTRACTS,
+    OPEN_SCREEN_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
     CompletionOwner,
     completion_contract_for,
@@ -40,6 +41,7 @@ from kenshi_agent.models import (
     GameState,
     HotkeyAction,
     Observation,
+    OpenScreenAction,
     TelemetrySnapshot,
     UIState,
     UseGameBindingAction,
@@ -1780,3 +1782,70 @@ def test_every_named_screen_can_be_told_apart_from_the_others() -> None:
 
     assert set(distinguishers) == set(GameScreen)
     assert len(set(map(str, distinguishers.values()))) == len(GameScreen)
+
+
+def _screen_observation(**ui: object) -> Observation:
+    return Observation(
+        run_id="screen",
+        step_index=0,
+        mode="live",
+        telemetry=TelemetrySnapshot(
+            game=GameState(loaded=True, paused=True),
+            ui=UIState(**ui),  # type: ignore[arg-type]
+        ),
+    )
+
+
+def test_opening_an_already_open_screen_sends_no_input() -> None:
+    """A toggle pressed to "open" an open screen closes it.
+
+    This is the whole reason the action exists rather than `use_game_binding`:
+    an agent that wanted the inventory and pressed I twice ended with no
+    inventory and a receipt saying something changed both times.
+    """
+
+    already = _screen_observation(open_inventory_windows=1)
+    binding = OPEN_SCREEN_CONTRACT.bind(
+        OpenScreenAction(screen=GameScreen.INVENTORY), already
+    )
+
+    assert binding.bound
+    assert "already open" in binding.reason
+    assert "no input is sent" in binding.reason
+
+
+def test_opening_a_closed_screen_names_the_control_that_opens_it() -> None:
+    closed = _screen_observation(open_inventory_windows=0)
+    binding = OPEN_SCREEN_CONTRACT.bind(
+        OpenScreenAction(screen=GameScreen.INVENTORY), closed
+    )
+
+    assert binding.bound
+    assert "toggle_inventory" in binding.reason
+
+
+def test_the_terminal_proves_the_exact_screen_not_merely_a_change() -> None:
+    """Map, research and crafting share one window; a change is not enough."""
+
+    on_map = _screen_observation(management_screen_open=True, management_tab=0)
+    conditions = OPEN_SCREEN_CONTRACT.derive_completion_conditions(
+        OpenScreenAction(screen=GameScreen.RESEARCH), on_map
+    )
+
+    assert conditions
+    condition = conditions[0]
+    assert condition.root.path == FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB
+    assert condition.root.operator == ConditionOperator.EQUALS
+    assert condition.root.expected == MANAGEMENT_TAB_INDICES[GameScreen.RESEARCH]
+
+
+def test_a_screen_nothing_can_report_refuses_to_bind() -> None:
+    """Better to refuse than to press a key and assume it worked."""
+
+    unreadable = _screen_observation()
+    binding = OPEN_SCREEN_CONTRACT.bind(
+        OpenScreenAction(screen=GameScreen.RESEARCH), unreadable
+    )
+
+    assert not binding.bound
+    assert "could not be proven" in binding.reason

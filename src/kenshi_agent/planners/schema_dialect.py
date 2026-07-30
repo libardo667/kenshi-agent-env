@@ -189,8 +189,31 @@ def _build_projected_response_format(
     if not branches:
         raise RuntimeError("planner action projection removed every action branch")
     action_union["anyOf"] = branches
+    _project_binding_vocabulary(definitions)
     _prune_unreachable_definitions(schema)
     return response_format
+
+
+def _project_binding_vocabulary(definitions: dict[str, Any]) -> None:
+    """Offer only bindings a plan naming them could actually pass validation.
+
+    Fifty-eight of sixty-eight bindings have no observable completion terminal,
+    so a step naming one is rejected with "has no causal success condition".
+    Advertising them costs prompt space on every call to describe a trap: the
+    model can author them and can never succeed with them. The parity report
+    keeps counting all seventy-two, because coverage accounting and what the
+    model is offered are different questions.
+    """
+
+    from ..models import GAME_BINDING_TERMINALS
+
+    definition = definitions.get("GameBinding")
+    if definition is None:
+        return
+    usable = {binding.value for binding in GAME_BINDING_TERMINALS}
+    offered = [value for value in definition.get("enum", []) if value in usable]
+    if offered:
+        definition["enum"] = offered
 
 
 @lru_cache(maxsize=128)

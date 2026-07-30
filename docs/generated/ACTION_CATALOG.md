@@ -17,7 +17,7 @@ Regenerate with `python scripts/export_docs.py`.
 | `move_in_direction` | 1.0 | yes | monitored_option | controller terminal | yes | 4 | `control.move_in_direction`, `squad.health` |
 | `move_to_character` | 1.0 | yes | monitored_option | controller terminal | yes | 4 | `control.move_to_character`, `identity.stable_handles`, `nearby.characters` |
 | `open_context_inventory` | 1.0 | no | atomic_handler | controller terminal | yes | 6 | `control.open_context_inventory`, `identity.stable_handles`, `world.context_targets` |
-| `open_screen` | 1.0 | no | atomic_handler | planner conditions | no | 1 | — |
+| `open_screen` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | — |
 | `perform_context_action` | 1.0 | no | monitored_option | controller terminal | yes | 4 | `control.perform_context_action`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
 | `produce_resource_output` | 1.0 | no | monitored_option | controller terminal | yes | 7 | `control.produce_resource_output`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
 | `purchase_item` | 2.0 | yes | composite_option | controller terminal | no | 10 | `game.money`, `game.pause`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.basic`, `ui.inventory`, `ui.tooltip`, `ui.visible_controls` |
