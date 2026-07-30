@@ -47,6 +47,7 @@ from kenshi_agent.models import (
     ProduceResourceOutputAction,
     ResourceTransferStatus,
     RotateCameraAction,
+    SelectSquadMemberAction,
     SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
@@ -896,6 +897,7 @@ class NativePulseTelemetry(PulseTelemetry):
             "identity.stable_handles",
             "nearby.characters",
             "nearby.roles",
+            "ui.visible_controls",
             "world.context_targets",
             "world.context_target_screen_positions",
             "control.perform_context_action",
@@ -904,6 +906,7 @@ class NativePulseTelemetry(PulseTelemetry):
         ]
         self.target_distance: float | None = None
         self.target_screen_position: Vec2 | None = None
+        self.squad_target_portrait_bounds: NormalizedPointerBounds | None = None
         self.world_target_screen_position: Vec2 | None = None
         self.target_visible: bool | None = None
         self.dialogue_target_id: str | None = None
@@ -933,6 +936,18 @@ class NativePulseTelemetry(PulseTelemetry):
                     modal_open=self.dialogue_target_id is not None,
                     dialogue_open=self.dialogue_target_id is not None,
                     dialogue_target_id=self.dialogue_target_id,
+                    visible_controls=(
+                        [
+                            VisibleUIControl(
+                                label="Ruka",
+                                role="text",
+                                bounds=self.squad_target_portrait_bounds,
+                            )
+                        ]
+                        if self.squad_target_portrait_bounds is not None
+                        else []
+                    ),
+                    visible_controls_complete=True,
                 ),
                 native_control=self.native_control,
                 squad=[
@@ -941,7 +956,12 @@ class NativePulseTelemetry(PulseTelemetry):
                         name="Wanderer",
                         selected=True,
                         indoors=self.indoors,
-                    )
+                    ),
+                    CharacterState(
+                        id="entity-ruka",
+                        name="Ruka",
+                        selected=False,
+                    ),
                 ],
                 nearby_entities=[
                     NearbyEntity(
@@ -1320,6 +1340,52 @@ def test_world_target_command_rebinds_geometry_inside_input_lease(
             max_x=0.55,
             min_y=0.65,
             max_y=0.65,
+        )
+
+    asyncio.run(scenario())
+
+
+def test_squad_member_selection_rebinds_geometry_inside_input_lease(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.squad_target_portrait_bounds = NormalizedPointerBounds(
+            min_x=0.38,
+            max_x=0.44,
+            min_y=0.84,
+            max_y=0.94,
+        )
+        initial = await environment.reset()
+        telemetry.squad_target_portrait_bounds = NormalizedPointerBounds(
+            min_x=0.49,
+            max_x=0.55,
+            min_y=0.84,
+            max_y=0.94,
+        )
+
+        transition = await environment.dispatch(
+            SelectSquadMemberAction(target_id="entity-ruka"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "e" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert controller.actions == [
+            ClickAction(
+                x=0.52,
+                y=(0.84 + 0.94) / 2.0,
+                button=MouseButton.LEFT,
+            )
+        ]
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.target_id == "entity-ruka"
+        assert transition.receipt.semantic.resolved_bounds == NormalizedPointerBounds(
+            min_x=0.49,
+            max_x=0.55,
+            min_y=0.84,
+            max_y=0.94,
         )
 
     asyncio.run(scenario())

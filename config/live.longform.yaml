@@ -267,6 +267,7 @@ safety:
     - skill
     - approach_dialogue_target
     - command_world_target
+    - select_squad_member
     - rotate_camera
     - move_to_character
     - move_in_direction

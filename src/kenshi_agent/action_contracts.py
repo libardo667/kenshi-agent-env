@@ -69,6 +69,7 @@ from .models import (
     RecoverCameraViewAction,
     RotateCameraAction,
     ScrollScreenAction,
+    SelectSquadMemberAction,
     SellItemAction,
     SetSpeedAction,
     SkillAction,
@@ -474,6 +475,102 @@ def world_target_command_is_currently_authorable(observation: Observation) -> bo
         and any(
             target.context_actions and target.screen_position is not None
             for target in telemetry.world_targets
+        )
+    )
+
+
+def bind_select_squad_member(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind Mouse1 to one exact squad member's current lower-HUD portrait."""
+
+    if not isinstance(action, SelectSquadMemberAction):
+        return _unbound("Action is not a select_squad_member action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the squad member.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the squad member cannot be bound.")
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.dialogue_open is not False
+        or telemetry.ui.modal_open is not False
+    ):
+        return _unbound(
+            "The modal and dialogue state is not confirmed clear, so a squad "
+            "member selection cannot bind; finish or close the interface first."
+        )
+    matches = [
+        character for character in telemetry.squad if character.id == action.target_id
+    ]
+    if not matches:
+        return _unbound(
+            f"Target {action.target_id!r} is not a current squad member."
+        )
+    if len(matches) > 1:
+        return _unbound(
+            f"Target {action.target_id!r} matches {len(matches)} squad members; "
+            "an ambiguous reference fails closed."
+        )
+    target = matches[0]
+    same_name = [
+        character
+        for character in telemetry.squad
+        if normalize_control_label(character.name)
+        == normalize_control_label(target.name)
+    ]
+    if len(same_name) != 1:
+        return _unbound(
+            f"Squad member name {target.name!r} identifies {len(same_name)} "
+            "current members; portrait identity is ambiguous."
+        )
+    portrait_matches = [
+        control
+        for control in (telemetry.ui.visible_controls or [])
+        if control.role == "text"
+        and normalize_control_label(control.label)
+        == normalize_control_label(target.name)
+        and control.bounds.min_y >= 0.75
+    ]
+    if len(portrait_matches) != 1:
+        return _unbound(
+            f"Squad member {target.name!r} has {len(portrait_matches)} "
+            "unambiguous lower-HUD portrait labels; exactly one is required."
+        )
+    portrait = portrait_matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound Mouse1 selection to current squad member {target.name!r} "
+            f"({target.id}) through its exact current lower-HUD portrait."
+        ),
+        target_id=target.id,
+        resolved_label=portrait.label,
+        resolved_role=portrait.role,
+        resolved_bounds=portrait.bounds.model_copy(deep=True),
+        source_revision=observation.world_revision,
+    )
+
+
+def squad_member_selection_is_currently_authorable(
+    observation: Observation,
+) -> bool:
+    """Whether any exact current squad member has one unambiguous portrait."""
+
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+        and any(
+            bind_select_squad_member(
+                SelectSquadMemberAction(target_id=character.id),
+                observation,
+            ).bound
+            for character in telemetry.squad
         )
     )
 
@@ -1779,6 +1876,10 @@ class ActionContract:
     execution: ActionExecution
     receipt_kind: str
     bind: Callable[[Action, Observation], ReferenceBinding]
+    # Native telemetry/control is not the same thing as acting through the
+    # current player selection. Selection itself is native-observed but must be
+    # usable to collapse an ambiguous multi-selection.
+    requires_exact_selection: bool = False
     derive_risk: RiskCostFactory | None = field(
         default=None,
         repr=False,
@@ -1916,6 +2017,32 @@ def _binding_transition(
     return (condition,) if condition is not None else ()
 
 
+def _selected_squad_member(
+    action: Action,
+    observation: Observation,
+) -> tuple[Condition, ...] | None:
+    if not isinstance(action, SelectSquadMemberAction):
+        return ()
+    return (
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID,
+            operator=ConditionOperator.EQUALS,
+            expected=action.target_id,
+            max_age_seconds=3.0,
+            required_capabilities=["squad.basic"],
+        ),
+        Condition(
+            kind=ConditionKind.FIELD,
+            path=ConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT,
+            operator=ConditionOperator.EQUALS,
+            expected=1,
+            max_age_seconds=3.0,
+            required_capabilities=["squad.basic"],
+        ),
+    )
+
+
 APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     kind="approach_dialogue_target",
     version="1.0",
@@ -1939,6 +2066,7 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     capability_aliases=NATIVE_APPROACH_CAPABILITY_ALIASES,
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
@@ -1973,6 +2101,7 @@ COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id", "context_action"),
@@ -1981,6 +2110,44 @@ COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
     receipt_kind="semantic_world_command",
     bind=bind_command_world_target,
     authorable_when=world_target_command_is_currently_authorable,
+)
+
+
+SELECT_SQUAD_MEMBER_CONTRACT = ActionContract(
+    kind="select_squad_member",
+    version="1.0",
+    model=SelectSquadMemberAction,
+    summary=(
+        "Select one exact current squad member with Kenshi's Mouse1 binding at "
+        "that member's unique current lower-HUD portrait, re-resolved inside "
+        "the input lease."
+    ),
+    argument_source=(
+        "target_id must be copied from a current squad entry whose unique name "
+        "matches exactly one current lower-HUD portrait label."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset(
+        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
+    ),
+    required_capabilities=frozenset(
+        {
+            "squad.basic",
+            VISIBLE_CONTROLS_CAPABILITY,
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.SEMANTIC_CURRENT,
+    native_assisted=False,
+    risk=ActionRiskCost(pointer_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("target_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_squad_selection",
+    bind=bind_select_squad_member,
+    derive_completion_conditions=_selected_squad_member,
+    authorable_when=squad_member_selection_is_currently_authorable,
 )
 
 
@@ -2042,6 +2209,7 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id", "context_action"),
@@ -2079,6 +2247,7 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=7,
     reference_fields=("target_id",),
@@ -2126,6 +2295,7 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(pointer_actions=12, native_assisted_actions=2),
     max_primitive_actions=45,
     reference_fields=("actor_id", "target_id"),
@@ -2164,6 +2334,7 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=6,
     reference_fields=("target_id",),
@@ -2196,6 +2367,7 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_DIRECTION_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
@@ -2238,6 +2410,7 @@ TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_MAP_TRAVEL_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("destination_id",),
@@ -2278,6 +2451,7 @@ EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_EXIT_BUILDING_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
@@ -2314,6 +2488,7 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_MOVE_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
+    requires_exact_selection=True,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
@@ -2679,6 +2854,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
     for contract in (
         APPROACH_DIALOGUE_TARGET_CONTRACT,
         COMMAND_WORLD_TARGET_CONTRACT,
+        SELECT_SQUAD_MEMBER_CONTRACT,
         ROTATE_CAMERA_CONTRACT,
         PERFORM_CONTEXT_ACTION_CONTRACT,
         PRODUCE_RESOURCE_OUTPUT_CONTRACT,

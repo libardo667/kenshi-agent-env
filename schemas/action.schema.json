@@ -1022,6 +1022,29 @@
       "title": "ScrollScreenAction",
       "type": "object"
     },
+    "SelectSquadMemberAction": {
+      "additionalProperties": false,
+      "description": "Select one exact current squad member through observed world geometry.",
+      "properties": {
+        "kind": {
+          "const": "select_squad_member",
+          "default": "select_squad_member",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "SelectSquadMemberAction",
+      "type": "object"
+    },
     "SellItemAction": {
       "additionalProperties": false,
       "description": "Sell a bounded quantity from the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
@@ -1314,6 +1337,9 @@
     },
     {
       "$ref": "#/$defs/CommandWorldTargetAction"
+    },
+    {
+      "$ref": "#/$defs/SelectSquadMemberAction"
     },
     {
       "$ref": "#/$defs/RotateCameraAction"

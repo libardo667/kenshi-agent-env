@@ -32,6 +32,7 @@ from ..action_contracts import (
     RECOVER_CAMERA_VIEW_CONTRACT,
     ROTATE_CAMERA_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
+    SELECT_SQUAD_MEMBER_CONTRACT,
     SELL_ITEM_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
@@ -103,6 +104,7 @@ from ..models import (
     SaleStatus,
     ScrollAction,
     ScrollScreenAction,
+    SelectSquadMemberAction,
     SellItemAction,
     SemanticActionReceipt,
     SetSpeedAction,
@@ -728,6 +730,8 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_semantic_approach(action, started, command)
         if isinstance(action, CommandWorldTargetAction):
             return await self._execute_world_target_command(action, started)
+        if isinstance(action, SelectSquadMemberAction):
+            return await self._execute_select_squad_member(action, started)
         if isinstance(action, RotateCameraAction):
             return await self._execute_rotate_camera(action, started)
         if isinstance(action, PerformContextAction):
@@ -1354,6 +1358,56 @@ class LiveEnvironment(AgentEnvironment):
                 "message": (
                     f"Rotated the camera {binding.resolved_label!r} through "
                     "Kenshi's bounded Mouse3 rotation mode."
+                ),
+            }
+        )
+
+    async def _execute_select_squad_member(
+        self,
+        action: SelectSquadMemberAction,
+        started: datetime,
+    ) -> ActionReceipt:
+        """Left-click one exact squad portrait after in-lease revalidation."""
+
+        result = self.telemetry_reader.read()
+        if result.stale:
+            raise RuntimeError(
+                "No input was sent: telemetry became stale inside the input lease."
+            )
+        observation = self._observation_from_snapshot(result.snapshot)
+        binding = SELECT_SQUAD_MEMBER_CONTRACT.bind(action, observation)
+        if not binding.bound or binding.resolved_bounds is None:
+            raise RuntimeError(f"No input was sent: {binding.reason}")
+        bounds = binding.resolved_bounds
+        x = (bounds.min_x + bounds.max_x) / 2.0
+        y = (bounds.min_y + bounds.max_y) / 2.0
+        primitive_receipt = await self.controller.execute(
+            ClickAction(
+                x=x,
+                y=y,
+                button=MouseButton.LEFT,
+            )
+        )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=SELECT_SQUAD_MEMBER_CONTRACT.version,
+            target_id=binding.target_id,
+            resolved_label=binding.resolved_label,
+            resolved_bounds=bounds,
+            source_revision=observation.world_revision,
+            revalidation=(
+                "Re-resolved the exact squad member and current lower-HUD portrait "
+                f"inside the input lease before Mouse1. {binding.reason}"
+            ),
+        )
+        return primitive_receipt.model_copy(
+            update={
+                "action": action,
+                "semantic": semantic,
+                "message": (
+                    f"Selected current squad member {binding.target_id!r} with "
+                    "Mouse1. A later observation must confirm the singular "
+                    "selected character."
                 ),
             }
         )

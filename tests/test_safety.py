@@ -28,6 +28,7 @@ from kenshi_agent.models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     ScrollAction,
+    SelectSquadMemberAction,
     SetSpeedAction,
     SkillAction,
     SkillArgument,
@@ -126,6 +127,62 @@ def test_live_client_pointer_requires_known_window_dimensions() -> None:
     )
     with pytest.raises(SafetyViolation, match="dimensions are unknown"):
         guard.validate(ClickAction(x=20, y=20, space=CoordinateSpace.CLIENT), observation)
+
+
+def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
+    config = safety_config().model_copy(
+        update={"allow_action_kinds": ["select_squad_member"]}
+    )
+    guard = ActionGuard(
+        config,
+        MacroRegistry({}),
+        control_mode=ControlMode.NATIVE_ASSISTED,
+    )
+    action = SelectSquadMemberAction(target_id="entity-nam")
+    observation = Observation(
+        run_id="squad-selection",
+        step_index=0,
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        telemetry=TelemetrySnapshot(
+            capabilities=["squad.basic", "ui.visible_controls"],
+            game=GameState(loaded=True, paused=True),
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+                selected_character_id="entity-twitch",
+                selected_character_ids=["entity-nam", "entity-twitch"],
+                visible_controls=[
+                    VisibleUIControl(
+                        label="Nam",
+                        role="text",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.32,
+                            max_x=0.38,
+                            min_y=0.84,
+                            max_y=0.95,
+                        ),
+                    )
+                ],
+                visible_controls_complete=True,
+            ),
+            squad=[
+                CharacterState(
+                    id="entity-nam",
+                    name="Nam",
+                    selected=True,
+                ),
+                CharacterState(
+                    id="entity-twitch",
+                    name="Twitch",
+                    selected=True,
+                ),
+            ],
+        ),
+    )
+
+    assert guard.validate(action, observation) == action
 
 
 def test_live_pause_requires_known_current_state() -> None:

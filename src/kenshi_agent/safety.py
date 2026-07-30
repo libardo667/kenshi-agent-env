@@ -334,7 +334,7 @@ class ActionGuard:
                 f"Action {contract.kind!r} does not bind to "  # mutation: reason
                 f"current state: {binding.reason}"  # mutation: reason
             )
-        if contract.native_assisted:
+        if contract.requires_exact_selection:
             self._validate_exact_selection(observation)
 
     def _validate_generic_purchase(

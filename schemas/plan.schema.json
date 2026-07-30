@@ -1017,6 +1017,9 @@
               "$ref": "#/$defs/CommandWorldTargetAction"
             },
             {
+              "$ref": "#/$defs/SelectSquadMemberAction"
+            },
+            {
               "$ref": "#/$defs/RotateCameraAction"
             },
             {
@@ -1565,6 +1568,29 @@
         }
       },
       "title": "SelectFieldbookProjectOperation",
+      "type": "object"
+    },
+    "SelectSquadMemberAction": {
+      "additionalProperties": false,
+      "description": "Select one exact current squad member through observed world geometry.",
+      "properties": {
+        "kind": {
+          "const": "select_squad_member",
+          "default": "select_squad_member",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "SelectSquadMemberAction",
       "type": "object"
     },
     "SellItemAction": {

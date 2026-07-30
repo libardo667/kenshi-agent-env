@@ -1116,6 +1116,13 @@ class CommandWorldTargetAction(StrictModel):
     context_action: ContextActionKind
 
 
+class SelectSquadMemberAction(StrictModel):
+    """Select one exact current squad member through observed world geometry."""
+
+    kind: Literal["select_squad_member"] = "select_squad_member"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
 class ProduceResourceOutputAction(StrictModel):
     """Internal production phase retained until a bounded output yield exists."""
 
@@ -1617,6 +1624,7 @@ PlannerControlAction: TypeAlias = (
 PlannerAtomicSemanticAction: TypeAlias = (
     ApproachDialogueTargetAction
     | CommandWorldTargetAction
+    | SelectSquadMemberAction
     | RotateCameraAction
     | MoveToCharacterAction
     | MoveInDirectionAction
@@ -1679,6 +1687,7 @@ Action: TypeAlias = (
     | SkillAction
     | ApproachDialogueTargetAction
     | CommandWorldTargetAction
+    | SelectSquadMemberAction
     | RotateCameraAction
     | PerformContextAction
     | ProduceResourceOutputAction
@@ -1704,6 +1713,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "approach_dialogue_target",
         "command_world_target",
+        "select_squad_member",
         "rotate_camera",
         "perform_context_action",
         "produce_resource_output",

@@ -917,6 +917,7 @@ class TestContractCatalog:
             "dismiss_screen",
             "purchase_item",
             "rotate_camera",
+            "select_squad_member",
             "use_game_binding",
             "scroll_screen",
             "sell_item",

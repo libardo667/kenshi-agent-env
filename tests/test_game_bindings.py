@@ -295,6 +295,136 @@ def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
     )
 
 
+def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> None:
+    from kenshi_agent.action_contracts import SELECT_SQUAD_MEMBER_CONTRACT
+    from kenshi_agent.models import (
+        CharacterState,
+        ConditionOperator,
+        ConditionPath,
+        NormalizedPointerBounds,
+        PointerActionClass,
+        SelectSquadMemberAction,
+        VisibleUIControl,
+    )
+
+    target = CharacterState(
+        id="entity-ruka",
+        name="Ruka",
+        selected=False,
+    )
+    state = observation()
+    assert state.telemetry is not None
+    state = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        *state.telemetry.capabilities,
+                        "squad.basic",
+                        "ui.visible_controls",
+                    ],
+                    "ui": UIState(
+                        active_screen="world",
+                        modal_open=False,
+                        dialogue_open=False,
+                        selected_character_id="entity-hep",
+                        selected_character_ids=["entity-hep"],
+                        visible_controls=[
+                            VisibleUIControl(
+                                label="Ruka",
+                                role="text",
+                                bounds=NormalizedPointerBounds(
+                                    min_x=0.42,
+                                    max_x=0.48,
+                                    min_y=0.84,
+                                    max_y=0.95,
+                                ),
+                            )
+                        ],
+                        visible_controls_complete=True,
+                    ),
+                    "squad": [
+                        CharacterState(
+                            id="entity-hep",
+                            name="Hep",
+                            selected=True,
+                        ),
+                        target,
+                    ],
+                }
+            )
+        }
+    )
+    action = SelectSquadMemberAction(target_id=target.id)
+
+    assert audit_binding_parity().decisions["mouse_select"] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("select_squad_member"),
+    )
+    binding = SELECT_SQUAD_MEMBER_CONTRACT.bind(action, state)
+    assert binding.bound
+    assert binding.target_id == target.id
+    assert binding.resolved_bounds == NormalizedPointerBounds(
+        min_x=0.42,
+        max_x=0.48,
+        min_y=0.84,
+        max_y=0.95,
+    )
+    assert SELECT_SQUAD_MEMBER_CONTRACT.pointer_class is (
+        PointerActionClass.SEMANTIC_CURRENT
+    )
+
+    completion = completion_contract_for(action, state)
+    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    assert len(completion.conditions) == 2
+    selected_id, selected_count = completion.conditions
+    assert selected_id.path is ConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID
+    assert selected_id.operator is ConditionOperator.EQUALS
+    assert selected_id.expected == target.id
+    assert selected_count.path is ConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT
+    assert selected_count.operator is ConditionOperator.EQUALS
+    assert selected_count.expected == 1
+
+    duplicate_name = state.telemetry.model_copy(
+        update={
+            "squad": [
+                *state.telemetry.squad,
+                target.model_copy(update={"id": "entity-other-ruka"}),
+            ]
+        }
+    )
+    assert not SELECT_SQUAD_MEMBER_CONTRACT.bind(
+        action,
+        state.model_copy(update={"telemetry": duplicate_name}),
+    ).bound
+
+    duplicate_portrait = state.telemetry.model_copy(
+        update={
+            "ui": state.telemetry.ui.model_copy(
+                update={
+                    "visible_controls": [
+                        *state.telemetry.ui.visible_controls,
+                        state.telemetry.ui.visible_controls[0].model_copy(
+                            update={
+                                "bounds": NormalizedPointerBounds(
+                                    min_x=0.50,
+                                    max_x=0.56,
+                                    min_y=0.84,
+                                    max_y=0.95,
+                                )
+                            }
+                        ),
+                    ]
+                }
+            )
+        }
+    )
+    assert not SELECT_SQUAD_MEMBER_CONTRACT.bind(
+        action,
+        state.model_copy(update={"telemetry": duplicate_portrait}),
+    ).bound
+
+
 def test_binding_catalog_contains_only_wired_decisions() -> None:
     names = {binding.value for binding in GameBinding}
     report = audit_binding_parity()
