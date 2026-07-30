@@ -331,6 +331,8 @@ class AgentRuntime:
             payload.update(
                 {
                     "failure_category": exc.category,
+                    "failure_detail": exc.detail,
+                    "response_excerpt": exc.response_excerpt,
                     "failure_signature": exc.failure_signature,
                     "finish_reason": exc.diagnostics.finish_reason,
                 }

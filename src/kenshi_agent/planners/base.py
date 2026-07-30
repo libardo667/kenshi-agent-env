@@ -26,6 +26,7 @@ HostedPlannerFailureCategory = Literal[
     "output_truncated",
     "empty_response",
     "malformed_structured_output",
+    "disallowed_action_surface",
 ]
 PLANNER_SYSTEM_CHARACTER_BUDGET: dict[LiveContinuousPolicy, int] = {
     LiveContinuousPolicy.DISABLED: 8_000,
@@ -475,9 +476,17 @@ class HostedPlannerResponseError(RuntimeError):
         self,
         category: HostedPlannerFailureCategory,
         diagnostics: HostedPlannerCallDiagnostics,
+        *,
+        detail: str = "",
+        response_excerpt: str = "",
     ) -> None:
         self.category = category
         self.diagnostics = diagnostics
+        # Why it failed, and enough of what arrived to see it. Without these a
+        # malformed response is unattributable from the bundle: the runtime
+        # discarded the body and logged only that something was wrong.
+        self.detail = detail[:1000]
+        self.response_excerpt = response_excerpt[:1200]
         finish_reason = diagnostics.finish_reason or "unknown"
         self.failure_signature = (
             f"{diagnostics.provider_kind}:{category}:"
@@ -505,12 +514,34 @@ class HostedPlannerResponseError(RuntimeError):
                 f"{diagnostics.provider_kind} returned no text for "
                 f"{diagnostics.output_model} (finish_reason={finish_reason!r})."
             )
-        else:
+        elif category == "disallowed_action_surface":
             self.retry_feedback = (
-                "The provider returned malformed structured JSON. Return one compact "
-                f"{diagnostics.output_model} as complete JSON with only the steps "
-                "needed for the next coherent milestone; do not include prose or "
-                "a code fence."
+                f"Your {diagnostics.output_model} parsed, but it named an action "
+                "this observation does not offer. Fix exactly this and return "
+                f"the schema again: {self.detail}"
+            )
+            message = (
+                f"{diagnostics.provider_kind} returned a {diagnostics.output_model} "
+                "naming an unavailable action "
+                f"(finish_reason={finish_reason!r})."
+            )
+        else:
+            # Saying "malformed JSON" when the JSON was well-formed and a field
+            # constraint failed leaves the model nothing to correct, so it
+            # returns the same plan. live-hub-survival-pair-20260729-r2 died
+            # that way: a sound plan to close the leftover screens and go mine
+            # iron, rejected three times for setting `retry_budget` on steps
+            # that are not `safe_to_retry`, and told only that its JSON was bad.
+            correction = (
+                f" The exact validation errors were: {self.detail}"
+                if self.detail
+                else ""
+            )
+            self.retry_feedback = (
+                f"Your {diagnostics.output_model} did not satisfy the schema. "
+                "Keep your strategic intent and return one compact "
+                f"{diagnostics.output_model} as complete JSON with no prose and "
+                f"no code fence.{correction}"
             )
             message = (
                 f"{diagnostics.provider_kind} returned malformed "

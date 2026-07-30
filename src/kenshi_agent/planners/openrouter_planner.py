@@ -408,18 +408,34 @@ class OpenRouterPlanner(Planner):
         self._last_call_diagnostics = diagnostics
         if not combined_response:
             raise HostedPlannerResponseError("empty_response", diagnostics)
+        # Two different failures used to arrive as one category. A response
+        # whose JSON does not fit the model and a well-formed plan naming an
+        # action the observation does not allow need different answers, and a
+        # run that reported only "malformed PlanEnvelope JSON" could not tell
+        # them apart: live-hub-survival-pair-20260729-r1 died on three of these
+        # at step zero with nothing recorded about why.
         try:
             output = output_model.model_validate_json(_json_body(combined_response))
-            validate_planner_output_surface(
-                output,
-                allowed_action_kinds=allowed_action_kinds,
-            )
-            return output
         except ValueError as exc:
             raise HostedPlannerResponseError(
                 "malformed_structured_output",
                 diagnostics,
+                detail=str(exc),
+                response_excerpt=combined_response,
             ) from exc
+        try:
+            validate_planner_output_surface(
+                output,
+                allowed_action_kinds=allowed_action_kinds,
+            )
+        except ValueError as exc:
+            raise HostedPlannerResponseError(
+                "disallowed_action_surface",
+                diagnostics,
+                detail=str(exc),
+                response_excerpt=combined_response,
+            ) from exc
+        return output
 
     async def _request(
         self,

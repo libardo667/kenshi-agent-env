@@ -36,6 +36,7 @@ from kenshi_agent.models import (
     WorldStateRevision,
 )
 from kenshi_agent.planners.base import (
+    HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
     output_token_budget,
     planner_action_kinds,
@@ -375,7 +376,14 @@ def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() 
     with pytest.raises(HostedPlannerResponseError) as captured:
         asyncio.run(planner.decide(current))
 
-    assert captured.value.category == "malformed_structured_output"
+    # A well-formed plan naming an action the observation does not allow is a
+    # different failure from JSON that does not fit the model, and needs a
+    # different answer. They arrived as one category until
+    # live-hub-survival-pair-20260729-r1 died on three of them at step zero with
+    # nothing recorded about which had happened.
+    assert captured.value.category == "disallowed_action_surface"
+    assert captured.value.detail
+    assert captured.value.response_excerpt
 
 
 def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
@@ -1333,3 +1341,73 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
     # already talk to is not somewhere new to go.
     talkable = {target["id"] for target in payload["dialogue_targets"]}
     assert not talkable & {entry["id"] for entry in destinations}
+
+
+def _diagnostics(*, finish_reason: str) -> HostedPlannerCallDiagnostics:
+    return HostedPlannerCallDiagnostics(
+        provider_kind="openrouter",
+        output_model="PlanEnvelope",
+        requested_model="m",
+        response_model="m",
+        provider_name="p",
+        response_id="r",
+        finish_reason=finish_reason,
+        max_output_tokens=1,
+        prompt_tokens=1,
+        completion_tokens=1,
+        reasoning_tokens=0,
+        total_tokens=2,
+        response_characters=1,
+        system_characters=1,
+        observation_characters=1,
+        schema_characters=1,
+        request_text_characters=1,
+        schema_in_prompt=True,
+        screenshot_included=False,
+        continuation_count=0,
+        segment_finish_reasons=(finish_reason,),
+        response_ids=("r",),
+        schema_refusal_count=0,
+        native_finish_reason=None,
+        segment_native_finish_reasons=(),
+        provider_error_type=None,
+        cached_tokens=0,
+        cache_write_tokens=0,
+    )
+
+
+def test_a_schema_rejection_tells_the_model_what_to_fix() -> None:
+    """"Malformed JSON" for a well-formed plan leaves nothing to correct.
+
+    live-hub-survival-pair-20260729-r2 ended at step two with a sound plan —
+    close the leftover screens, go mine iron — rejected three times for setting
+    `retry_budget` on steps that are not `safe_to_retry`, and told each time
+    only that its JSON was malformed. It was not; a field constraint failed. So
+    the model returned the same plan and the run died.
+    """
+
+    diagnostics = _diagnostics(finish_reason="stop")
+    error = HostedPlannerResponseError(
+        "malformed_structured_output",
+        diagnostics,
+        detail="steps.0 Value error, retry_budget requires idempotency=safe_to_retry",
+        response_excerpt='{"plan_id": "x"}',
+    )
+
+    assert "retry_budget requires idempotency=safe_to_retry" in error.retry_feedback
+    assert error.detail
+    assert error.response_excerpt
+
+
+def test_a_disallowed_action_is_not_reported_as_broken_json() -> None:
+    diagnostics = _diagnostics(finish_reason="stop")
+    error = HostedPlannerResponseError(
+        "disallowed_action_surface",
+        diagnostics,
+        detail="action 'harvest_resource' is not available in this observation",
+        response_excerpt="{}",
+    )
+
+    assert "does not offer" in error.retry_feedback
+    assert "harvest_resource" in error.retry_feedback
+    assert "malformed" not in error.retry_feedback.lower()
