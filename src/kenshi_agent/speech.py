@@ -275,12 +275,17 @@ class PiperSpeaker:
         self._closed = False
         self._lock = Lock()
         self._directory = TemporaryDirectory(prefix="kenshi-agent-piper-")
+        self._utterance = 0
 
     def speak(self, text: str) -> None:
         with self._lock:
             if self._closed:
                 raise RuntimeError("Piper speaker is closed.")
-            wave_path = Path(self._directory.name) / "utterance.wav"
+            # A fixed name races the player: PlaySync returns before Windows
+            # has always released the handle, and the next synthesis then fails
+            # with "used by another process" mid-run.
+            self._utterance += 1
+            wave_path = Path(self._directory.name) / f"utterance-{self._utterance}.wav"
         try:
             subprocess.run(
                 [
