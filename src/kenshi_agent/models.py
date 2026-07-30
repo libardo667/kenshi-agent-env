@@ -602,6 +602,48 @@ def normalize_control_label(value: str) -> str:
     return " ".join(value.split()).casefold()
 
 
+def window_instance_of(widget_name: str) -> str:
+    """Which open window a widget belongs to, from its MyGUI name.
+
+    Windows are the one thing in this telemetry with no identity. Characters,
+    resources, map destinations and dialogue targets all carry an opaque ID
+    derived from a validated Kenshi handle; windows carry a caption and a count.
+    That is why "is this the shop's window or the merchant's own?" has been
+    answered by comparing caption strings in five places, and why trade
+    authority took four commits to settle.
+
+    MyGUI instantiates a layout with a per-load instance prefix on every widget
+    name, so the prefix identifies the open window instance without serialising
+    a pointer. It is stable while the window is open and differs between two
+    windows built from the same layout - observed live as two separate
+    `BorderPanel` instances under different prefixes.
+
+    Undecorated and module-level so mutation tooling can see these decisions.
+    """
+
+    prefix, separator, _ = widget_name.partition("_")
+    if not separator or not prefix:
+        return ""
+    # MyGUI writes the id as comma-grouped hex. Anything else is a widget whose
+    # own name simply contains an underscore, like an `item_3` cell.
+    for part in prefix.split(","):
+        if not part:
+            return ""
+        for character in part:
+            if character not in "0123456789ABCDEF":
+                return ""
+    return prefix
+
+
+def layout_widget_name_of(widget_name: str) -> str:
+    """The widget's name inside its layout, joinable to Kenshi's own files."""
+
+    instance = window_instance_of(widget_name)
+    if not instance:
+        return widget_name
+    return widget_name[len(instance) + 1 :]
+
+
 class VisibleUIControl(StrictModel):
     label: str = Field(min_length=1, max_length=500)
 
@@ -626,6 +668,28 @@ class VisibleUIControl(StrictModel):
     # Several open windows otherwise arrive as one flat list in which every
     # close button looks identical, so "close the shop" cannot be expressed.
     window: str = Field(default="", max_length=200)
+    # The widget's own MyGUI name, always, separate from whatever a human reads
+    # off it. `label` is a caption for most widgets and the widget name for a
+    # caption-less button, so it cannot be joined against Kenshi's shipped
+    # layouts: a caption may be localised, may collide, and 56 of 91 observed
+    # labels were rendered content like '16 mph' rather than any control.
+    widget_name: str = Field(default="", max_length=200)
+    # MyGUI's own type - Button, TextBox, EditBox, ListBox, TabItem, ItemBox.
+    # `role` collapses everything to button/text/item, which cannot say whether
+    # a control is editable, scrollable, or a tab.
+    widget_type: str = Field(default="", max_length=80)
+
+    @property
+    def window_instance(self) -> str:
+        """Which open window this control belongs to, as an opaque identity."""
+
+        return window_instance_of(self.widget_name)
+
+    @property
+    def layout_widget_name(self) -> str:
+        """The widget's name inside its layout, joinable to Kenshi's own files."""
+
+        return layout_widget_name_of(self.widget_name)
     # For `item` cells: what the cell actually holds. Without these the agent
     # can only learn a cell's contents by hovering it, one model round-trip at
     # a time, while a human simply reads the shop.

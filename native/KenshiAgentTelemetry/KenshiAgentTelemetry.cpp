@@ -1497,6 +1497,23 @@ namespace
                     json << "{";
                     json << "\"label\":\"" << JsonEscape(label) << "\",";
                     json << "\"role\":\"" << role << "\",";
+                    // `label` carries whatever a human reads, which is a
+                    // caption for most widgets and the widget's own name for a
+                    // caption-less button. One field answering both "what does
+                    // this say" and "which control is this" cannot be joined
+                    // against Kenshi's own layout files, so the identity is
+                    // emitted separately and always.
+                    //
+                    // MyGUI prefixes every widget it instantiates from a layout
+                    // with a per-loadLayout instance id, so the prefix names the
+                    // open window instance and the suffix names the widget
+                    // inside its layout. That is the only window identity this
+                    // protocol has ever had; captions collide and are absent on
+                    // most controls.
+                    json << "\"widget_name\":\""
+                         << JsonEscape(widget->getName()) << "\",";
+                    json << "\"widget_type\":\""
+                         << JsonEscape(widget->getTypeName()) << "\",";
                     json << "\"window\":\""
                          << JsonEscape(OwningWindowCaption(widget)) << "\",";
                     json << "\"bounds\":{";

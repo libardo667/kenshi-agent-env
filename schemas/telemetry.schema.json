@@ -1456,6 +1456,18 @@
           "title": "Window",
           "type": "string"
         },
+        "widget_name": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Widget Name",
+          "type": "string"
+        },
+        "widget_type": {
+          "default": "",
+          "maxLength": 80,
+          "title": "Widget Type",
+          "type": "string"
+        },
         "item_name": {
           "anyOf": [
             {

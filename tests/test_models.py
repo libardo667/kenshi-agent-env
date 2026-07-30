@@ -534,3 +534,44 @@ def test_trade_predicate_still_trusts_an_explicit_trade_label() -> None:
     )
 
     assert labelled.trade_screen_open() is True
+
+
+def _control(widget_name: str) -> VisibleUIControl:
+    return VisibleUIControl(
+        label="x",
+        role="button",
+        widget_name=widget_name,
+        bounds=NormalizedPointerBounds(min_x=0.1, max_x=0.2, min_y=0.1, max_y=0.2),
+    )
+
+
+def test_a_widget_name_carries_the_window_it_belongs_to() -> None:
+    """Windows are the only thing in this telemetry with no identity.
+
+    Characters, resources, map destinations and dialogue targets all carry an
+    opaque handle-derived ID; windows carry a caption and a count. MyGUI's
+    per-load instance prefix is the identity that was already present and
+    discarded, observed live grouping ten MainPanel widgets under one prefix.
+    """
+
+    build = _control("0,000,000,093,8E6,C50_BuildButton")
+    speed = _control("0,000,000,093,8E6,C50_TimeSpeedButton1")
+    other = _control("0,000,000,0EE,9EF,F40_BorderPanel")
+
+    assert build.window_instance == speed.window_instance
+    assert build.window_instance != other.window_instance
+    assert build.layout_widget_name == "BuildButton"
+    assert other.layout_widget_name == "BorderPanel"
+
+
+def test_a_widget_whose_own_name_has_an_underscore_is_not_split() -> None:
+    """`item_3` is a name, not an instance prefix and a widget."""
+
+    cell = _control("item_3")
+
+    assert cell.window_instance == ""
+    assert cell.layout_widget_name == "item_3"
+
+
+def test_an_unnamed_widget_reports_no_window_instance() -> None:
+    assert _control("").window_instance == ""
