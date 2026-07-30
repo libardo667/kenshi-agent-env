@@ -585,6 +585,11 @@ def test_a_purchase_that_clicks_and_moves_nothing_says_so_explicitly(
     When the purse and the shelf were both fine and the transfer still did not
     happen, the fault is the mechanism rather than the resources, and the
     message has to say which so the next attempt is not a blind retry.
+
+    The numbers are stated in the past tense on purpose. They come from the
+    binding, which can be a full conservation timeout stale by the time this
+    is written - a live run produced this message claiming a cell held 1 while
+    telemetry showed the trade window holding no item cells at all.
     """
 
     async def scenario() -> None:
@@ -599,8 +604,9 @@ def test_a_purchase_that_clicks_and_moves_nothing_says_so_explicitly(
         transition = await environment.step(action)
 
         message = transition.receipt.message or ""
-        assert "purse held 1000 against a price of 43" in message
-        assert "the right-click itself moved nothing" in message
+        assert "When the click was sent the purse held 1000" in message
+        assert "price of 43" in message
+        assert "neither the purse nor the shelf explains this" in message
         # It really did try, unlike the unaffordable case.
         assert [
             item

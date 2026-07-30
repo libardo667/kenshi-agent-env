@@ -1964,11 +1964,18 @@ class LiveEnvironment(AgentEnvironment):
         direction: Literal["purchase", "sale"],
         money: int,
     ) -> str:
-        """State what was true when input was sent, for a failure that follows.
+        """State what was true *at binding*, for a failure that follows.
 
         Without this a reader cannot tell an unaffordable purchase from a
-        right-click that simply did not land, because both end in no observed
-        delta.
+        right-click that did not land, because both end in no observed delta.
+
+        Every number here comes from the binding, which is why the tense
+        matters. A first version said "the cell held 1" in the present, and a
+        live run then produced exactly that sentence while telemetry showed the
+        trade window holding no item cells at all - the binding was up to the
+        full conservation timeout out of date. Reporting remembered state as
+        current is the same defect this whole message exists to remove, so the
+        wording pins when it was true and claims nothing about now.
         """
 
         if direction != "purchase":
@@ -1977,10 +1984,11 @@ class LiveEnvironment(AgentEnvironment):
         if price is None:
             return ""
         stock = binding.item_quantity
-        stocked = f" and the cell held {stock}" if stock is not None else ""
+        stocked = f" and the bound cell held {stock}" if stock is not None else ""
         return (
-            f" The purse held {money} against a price of {price}{stocked}, so"
-            " the right-click itself moved nothing."
+            f" When the click was sent the purse held {money} against a price "
+            f"of {price}{stocked}, so neither the purse nor the shelf explains "
+            "this; the cell may also have gone since."
         )
 
     async def _execute_bounded_trade(
