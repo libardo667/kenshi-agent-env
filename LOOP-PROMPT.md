@@ -54,17 +54,17 @@ Do not trust this prompt or a prior summary for current facts.
    work and resolve concurrent ownership before editing.
 2. Read `STATUS.md`, `ARCHITECTURE.md`, `SECURITY_AND_SAFETY.md`, the active
    profile, and relevant ADRs and guides.
-3. Read the generated action catalog, game-binding parity report, modeled
-   interface audit, and mutation attestation. Generated output is authoritative
-   only for the source that actually generates it.
+3. Read every artifact in `docs/generated/`. Generated output is authoritative
+   only for the source that actually generates it, and each report states its
+   own boundary; read the boundary before trusting a number.
 4. Run the portable baseline and generated-artifact checks. On a host with
    Kenshi installed, the parity tests must compare the captured denominator
    with the installed game.
 5. Read the generated observed-blocker ledger for what recent runs actually
    failed on, then inspect the newest complete relevant `runs/<run-id>/`
-   bundles behind the rows that matter. Use `kenshi-agent summarize` and
-   `kenshi-agent aggregate-affordances`; do not infer a blocker from a final
-   stop reason alone. The ledger groups failures into signatures and records
+   bundles behind the rows that matter. Use `kenshi-agent summarize`; do not
+   infer a blocker from a final stop reason alone. The ledger groups failures
+   into signatures and records
    which run last exhibited each; it does not attribute an owning boundary or
    decide anything is fixed, so both remain yours to establish. On a host
    holding run bundles, regenerate it with
@@ -96,7 +96,9 @@ Every enumerated item has exactly one decision:
 
 - **wired:** a planner-visible semantic route exists and the report can derive
   that claim from current code;
-- **exempt:** a typed safety, debug-only, or supersession reason exists;
+- **exempt:** one of the typed exemption reasons applies, and the report can
+  name which. The kinds are defined in code, not here; a preference for not
+  building something is not one of them;
 - **missing:** a grounded implementation-queue description exists.
 
 Unclassified items, stale decisions, invalid routes, and expansion beyond the
@@ -108,9 +110,7 @@ needs current binding evidence, safety ownership, bounded execution, and a
 causal terminal. Complex mechanical chains may become controller-owned options,
 but target, goal, quantity, risk, and strategy remain with the model.
 
-Planner-authored affordance candidates are non-authoritative engineering
-signals. They may accompany accepted useful output without spending a gameplay
-step. Rejected, stale, unsafe, ambiguous, or failed existing routes are not
+Rejected, stale, unsafe, ambiguous, or failed existing routes are not
 automatically missing capabilities. Promotion requires an engineer-owned route,
 safety contract, and terminal proof.
 

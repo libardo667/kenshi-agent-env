@@ -99,10 +99,10 @@ Journey requires the same fresh native session and matching observable
 conditions. Manual `--scenario-*` fields are retained for unverified historical
 or diagnostic labels, but their runs cannot increase scenario/save recurrence.
 
-After runs, aggregate normally:
+After runs, fold the new evidence into the observed-blocker ledger:
 
 ```bash
-uv run kenshi-agent aggregate-affordances runs
+uv run python scripts/export_blocker_ledger.py
 ```
 
 Select capability work from fixture-attested recurrence or one genuinely

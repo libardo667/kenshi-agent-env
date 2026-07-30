@@ -43,7 +43,8 @@ kenshi-agent run --config config/default.yaml --mode mock --planner heuristic --
 The command prints a run directory whose `events.jsonl` records observations,
 world-state updates, decisions, receipts, memory writes, and termination.
 Summarize it with `kenshi-agent summarize runs\<RUN_ID>\events.jsonl`.
-Rank typed capability gaps across runs with `kenshi-agent aggregate-affordances runs`.
+What recent runs actually failed on is derived into
+`docs/generated/OBSERVED_BLOCKERS.md` by `scripts/export_blocker_ledger.py`.
 
 Planners available: heuristic, scripted, external subprocess (see
 [`GUIDE_EXTERNAL_PLANNER_PROTOCOL.md`](docs/GUIDE_EXTERNAL_PLANNER_PROTOCOL.md)),

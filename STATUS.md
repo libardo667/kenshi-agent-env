@@ -32,8 +32,7 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
   no world command, emits zero primitives, fails closed on unknown source IDs, and suppresses
   unchanged-state requests pre-call.
 - Hosted calls project schemas to the current action surface, enforce system/static-prefix budgets,
-  put stable prefixes first, and record provider cache diagnostics. Accepted planner output may
-  carry one typed affordance candidate sidecar; cross-run aggregation remains non-authoritative.
+  put stable prefixes first, and record provider cache diagnostics.
 - [Continuity](docs/ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md) separates world evidence, run-local
   `ao-`/`po-` history, and durable memory; IDs resolve to immutable typed snapshots and an
   admissibility matrix before rendering; non-effects cannot become world proof or close a
