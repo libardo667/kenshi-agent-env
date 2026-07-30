@@ -83,6 +83,11 @@ def test_every_binding_maps_to_a_key() -> None:
         (GameBinding.CAMERA_TILT_DOWN, "period", 0xBE),
         (GameBinding.CYCLE_RUN_SPEED, "numpad6", 0x66),
         (GameBinding.EDITOR_DELETE, "delete", 0x2E),
+        (GameBinding.FLOOR_DOWN, "pagedown", 0x22),
+        (GameBinding.FLOOR_UP, "pageup", 0x21),
+        (GameBinding.GIZMO_MOVE, "h", 0x48),
+        (GameBinding.GIZMO_ROTATE, "j", 0x4A),
+        (GameBinding.GIZMO_SCALE, "k", 0x4B),
     ],
 )
 def test_queued_binding_is_reachable_through_the_semantic_binding_action(

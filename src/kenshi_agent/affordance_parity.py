@@ -274,6 +274,11 @@ _WIRED_GAME_BINDINGS = frozenset(
         "cycle_run_speed",
         "editor_delete",
         "editor_toggle",
+        "floor_down",
+        "floor_up",
+        "gizmo_move",
+        "gizmo_rotate",
+        "gizmo_scale",
         "change_squad",
         "character_next",
         "character_prev",
@@ -312,11 +317,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
         "contracted semantic action."
     ): frozenset(
         {
-            "floor_down",
-            "floor_up",
-            "gizmo_move",
-            "gizmo_rotate",
-            "gizmo_scale",
             "toggle_build",
         }
     ),

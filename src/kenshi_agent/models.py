@@ -1400,6 +1400,11 @@ class GameBinding(StrEnum):
     # Development host controls.
     EDITOR_DELETE = "editor_delete"
     EDITOR_TOGGLE = "editor_toggle"
+    FLOOR_DOWN = "floor_down"
+    FLOOR_UP = "floor_up"
+    GIZMO_MOVE = "gizmo_move"
+    GIZMO_ROTATE = "gizmo_rotate"
+    GIZMO_SCALE = "gizmo_scale"
     FOCUS_CHAR = "focus_char"
     # Selection.
     SELECT_ALL = "select_all"
@@ -1442,6 +1447,11 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.CYCLE_RUN_SPEED: "numpad6",
     GameBinding.EDITOR_DELETE: "delete",
     GameBinding.EDITOR_TOGGLE: ("shift", "f12"),
+    GameBinding.FLOOR_DOWN: "pagedown",
+    GameBinding.FLOOR_UP: "pageup",
+    GameBinding.GIZMO_MOVE: "h",
+    GameBinding.GIZMO_ROTATE: "j",
+    GameBinding.GIZMO_SCALE: "k",
     GameBinding.FOCUS_CHAR: "f",
     GameBinding.SELECT_ALL: "grave",
     GameBinding.CHANGE_SQUAD: "tab",

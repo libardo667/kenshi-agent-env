@@ -13,17 +13,12 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        37
+wired        42
 exempt        1
-missing      34
+missing      29
 unclassified  0
 
 MISSING — implementation queue
-  floor_down               [PgDn]  Construction and placement have no observed build state or contracted semantic action.
-  floor_up                 [PgUp]  Construction and placement have no observed build state or contracted semantic action.
-  gizmo_move               [H]  Construction and placement have no observed build state or contracted semantic action.
-  gizmo_rotate             [J]  Construction and placement have no observed build state or contracted semantic action.
-  gizmo_scale              [K]  Construction and placement have no observed build state or contracted semantic action.
   highlight                [Mouse5]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
   medic                    [NUM7]  No contracted squad-care action exposes this order.
   mouse_command            [Mouse2]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
@@ -82,7 +77,12 @@ WIRED — real planner routes
   cycle_run_speed          use_game_binding(cycle_run_speed)
   editor_delete            use_game_binding(editor_delete)
   editor_toggle            use_game_binding(editor_toggle)
+  floor_down               use_game_binding(floor_down)
+  floor_up                 use_game_binding(floor_up)
   focus_char               use_game_binding(focus_char)
+  gizmo_move               use_game_binding(gizmo_move)
+  gizmo_rotate             use_game_binding(gizmo_rotate)
+  gizmo_scale              use_game_binding(gizmo_scale)
   pause                    pause
   select_all               use_game_binding(select_all)
   speed_1                  set_speed(1)
