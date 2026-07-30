@@ -286,6 +286,16 @@ _WIRED_GAME_BINDINGS = frozenset(
         "change_squad",
         "character_next",
         "character_prev",
+        "select_0",
+        "select_1",
+        "select_2",
+        "select_3",
+        "select_4",
+        "select_5",
+        "select_6",
+        "select_7",
+        "select_8",
+        "select_9",
         "focus_char",
         "select_all",
         "stop_movement",
@@ -327,9 +337,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
         }
     ),
     "No contracted squad-care action exposes this order.": frozenset({"rescue"}),
-    "No planner route selects this exact squad group.": frozenset(
-        {f"select_{index}" for index in range(10)}
-    ),
     "No contracted action exposes this combat or AI stance.": frozenset(
         {
             "toggle_bar",

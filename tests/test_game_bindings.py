@@ -121,6 +121,43 @@ def test_queued_binding_is_reachable_through_the_semantic_binding_action(
     assert Win32InputController._vk(expected_key) == expected_virtual_key
 
 
+@pytest.mark.parametrize(
+    ("binding_name", "expected_key", "expected_virtual_key"),
+    [
+        ("select_0", "1", 0x31),
+        ("select_1", "2", 0x32),
+        ("select_2", "3", 0x33),
+        ("select_3", "4", 0x34),
+        ("select_4", "5", 0x35),
+        ("select_5", "6", 0x36),
+        ("select_6", "7", 0x37),
+        ("select_7", "8", 0x38),
+        ("select_8", "9", 0x39),
+        ("select_9", "0", 0x30),
+    ],
+)
+def test_squad_group_binding_selects_one_exact_group(
+    binding_name: str,
+    expected_key: str,
+    expected_virtual_key: int,
+) -> None:
+    from kenshi_agent.control.win32 import Win32InputController
+    from kenshi_agent.models import KeyAction, game_binding_primitive
+
+    binding = GameBinding(binding_name)
+    assert audit_binding_parity().decisions[binding_name] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding_name),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect=f"select exact squad group {binding_name.removeprefix('select_')}",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert game_binding_primitive(binding) == KeyAction(key=expected_key)
+    assert Win32InputController._vk(expected_key) == expected_virtual_key
+
+
 def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
     binding = GameBinding.EDITOR_TOGGLE
     from kenshi_agent.models import game_binding_primitive

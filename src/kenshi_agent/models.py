@@ -1475,6 +1475,16 @@ class GameBinding(StrEnum):
     CHANGE_SQUAD = "change_squad"
     CHARACTER_NEXT = "character_next"
     CHARACTER_PREV = "character_prev"
+    SELECT_GROUP_0 = "select_0"
+    SELECT_GROUP_1 = "select_1"
+    SELECT_GROUP_2 = "select_2"
+    SELECT_GROUP_3 = "select_3"
+    SELECT_GROUP_4 = "select_4"
+    SELECT_GROUP_5 = "select_5"
+    SELECT_GROUP_6 = "select_6"
+    SELECT_GROUP_7 = "select_7"
+    SELECT_GROUP_8 = "select_8"
+    SELECT_GROUP_9 = "select_9"
     # Orders.
     STOP_MOVEMENT = "stop_movement"
     MEDIC = "medic"
@@ -1524,6 +1534,16 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.CHANGE_SQUAD: "tab",
     GameBinding.CHARACTER_NEXT: "]",
     GameBinding.CHARACTER_PREV: "[",
+    GameBinding.SELECT_GROUP_0: "1",
+    GameBinding.SELECT_GROUP_1: "2",
+    GameBinding.SELECT_GROUP_2: "3",
+    GameBinding.SELECT_GROUP_3: "4",
+    GameBinding.SELECT_GROUP_4: "5",
+    GameBinding.SELECT_GROUP_5: "6",
+    GameBinding.SELECT_GROUP_6: "7",
+    GameBinding.SELECT_GROUP_7: "8",
+    GameBinding.SELECT_GROUP_8: "9",
+    GameBinding.SELECT_GROUP_9: "0",
     GameBinding.STOP_MOVEMENT: "r",
     GameBinding.MEDIC: "numpad7",
 }

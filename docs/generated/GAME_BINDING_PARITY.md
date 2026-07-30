@@ -13,25 +13,15 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        49
+wired        59
 exempt        1
-missing      22
+missing      12
 unclassified  0
 
 MISSING — implementation queue
   rebuild_navmesh          [Ctrl+Shift+F11]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   reload_biomes            [Ctrl+F6]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   rescue                   [NUM8]  No contracted squad-care action exposes this order.
-  select_0                 [1]  No planner route selects this exact squad group.
-  select_1                 [2]  No planner route selects this exact squad group.
-  select_2                 [3]  No planner route selects this exact squad group.
-  select_3                 [4]  No planner route selects this exact squad group.
-  select_4                 [5]  No planner route selects this exact squad group.
-  select_5                 [6]  No planner route selects this exact squad group.
-  select_6                 [7]  No planner route selects this exact squad group.
-  select_7                 [8]  No planner route selects this exact squad group.
-  select_8                 [9]  No planner route selects this exact squad group.
-  select_9                 [0]  No planner route selects this exact squad group.
   toggle_bar               [F7]  No contracted action exposes this combat or AI stance.
   toggle_block             [NUM0]  No contracted action exposes this combat or AI stance.
   toggle_build             [B]  Construction and placement have no observed build state or contracted semantic action.
@@ -84,6 +74,16 @@ WIRED — real planner routes
   pause                    pause
   quickload                use_game_binding(quickload)
   quicksave                use_game_binding(quicksave)
+  select_0                 use_game_binding(select_0)
+  select_1                 use_game_binding(select_1)
+  select_2                 use_game_binding(select_2)
+  select_3                 use_game_binding(select_3)
+  select_4                 use_game_binding(select_4)
+  select_5                 use_game_binding(select_5)
+  select_6                 use_game_binding(select_6)
+  select_7                 use_game_binding(select_7)
+  select_8                 use_game_binding(select_8)
+  select_9                 use_game_binding(select_9)
   select_all               use_game_binding(select_all)
   speed_1                  set_speed(1)
   speed_2                  set_speed(2)
