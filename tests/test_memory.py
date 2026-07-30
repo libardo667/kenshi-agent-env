@@ -224,7 +224,6 @@ def test_current_target_memory_survives_general_recall_overflow(
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None
-        runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
 
         observation = Observation(
@@ -270,7 +269,6 @@ def test_target_memory_never_attaches_by_name_or_stale_identity(
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None
-        runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
 
         same_name_new_identity = Observation(
@@ -354,7 +352,6 @@ def test_entity_recall_reduces_repeated_approaches_in_controlled_policy(
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None
-        runner._affordance_requests = []
         runner.planning_config = PlanningConfig()
         context = runner._with_memories(observation)
 

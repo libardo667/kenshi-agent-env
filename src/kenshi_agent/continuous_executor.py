@@ -48,7 +48,6 @@ from .models import (
     PurchaseStatus,
     ReadFieldbookAction,
     RecallMemoryAction,
-    RequestAffordanceAction,
     ResourceHarvestEvidence,
     ResourceHarvestStatus,
     ResourceTransferEvidence,
@@ -107,12 +106,6 @@ AdvisorConsultant = Callable[
     [ConsultAdvisorAction, Observation, str, int, str],
     Coroutine[Any, Any, "AdvisorActionResult"],
 ]
-AffordanceRequester = Callable[
-    [RequestAffordanceAction, Observation, str, int, str],
-    Coroutine[Any, Any, "AffordanceRequestActionResult"],
-]
-
-
 class MemoryReader(Protocol):
     """Answer one elective memory read. Emits no game input."""
 
@@ -154,7 +147,6 @@ class PatchContinuityApplier(Protocol):
         self,
         operations: Sequence[ContinuityOperation],
         fieldbook_operations: Sequence[FieldbookOperation],
-        affordance_candidates: Sequence[RequestAffordanceAction],
         observation: Observation,
         *,
         authored_context: AuthoredPlannerContext,
@@ -181,12 +173,6 @@ class PlanExecutionResult:
 
 @dataclass(frozen=True, slots=True)
 class AdvisorActionResult:
-    observation: Observation
-    receipt: ActionReceipt
-
-
-@dataclass(frozen=True, slots=True)
-class AffordanceRequestActionResult:
     observation: Observation
     receipt: ActionReceipt
 
@@ -261,7 +247,6 @@ class ContinuousPlanExecutor:
         planning_config: PlanningConfig,
         concurrent_planner: ConcurrentPlanner | None = None,
         consult_advisor: AdvisorConsultant | None = None,
-        request_affordance: AffordanceRequester | None = None,
         apply_patch_continuity: PatchContinuityApplier | None = None,
         read_memory: MemoryReader | None = None,
         read_fieldbook: FieldbookReader | None = None,
@@ -277,7 +262,6 @@ class ContinuousPlanExecutor:
         self.planning_config = planning_config
         self.concurrent_planner = concurrent_planner
         self.consult_advisor = consult_advisor
-        self.request_affordance = request_affordance
         self.apply_patch_continuity = apply_patch_continuity
         self.read_memory = read_memory
         self.read_fieldbook = read_fieldbook
@@ -309,7 +293,6 @@ class ContinuousPlanExecutor:
         self.apply_patch_continuity(
             staged_patch.patch.continuity_operations,
             staged_patch.patch.fieldbook_operations,
-            staged_patch.patch.affordance_candidates,
             observation,
             authored_context=staged_patch.authored_context,
             plan_id=patched_plan.plan_id,
@@ -958,16 +941,6 @@ class ContinuousPlanExecutor:
         if isinstance(action, ConsultAdvisorAction):
             self.guard.commit(guard_reservation)
             return await self._execute_advisor_step(
-                action,
-                plan,
-                step,
-                observation,
-                budget,
-            )
-
-        if isinstance(action, RequestAffordanceAction):
-            self.guard.commit(guard_reservation)
-            return await self._execute_affordance_request_step(
                 action,
                 plan,
                 step,
@@ -2035,86 +2008,6 @@ class ContinuousPlanExecutor:
             reason=reason,
             evidence={
                 "status": status,
-                "controller_primitives": 0,
-                "world_command_created": False,
-            },
-        )
-        return _StepResult(
-            observation=result.observation,
-            succeeded=succeeded,
-            actions_completed=1,
-            reason=reason,
-        )
-
-    async def _execute_affordance_request_step(
-        self,
-        action: RequestAffordanceAction,
-        plan: PlanEnvelope,
-        step: PlanStep,
-        observation: Observation,
-        budget: PlanBudgetLedger,
-    ) -> _StepResult:
-        """Retain one capability gap without creating a world command."""
-
-        self._event(
-            "plan_step_started",
-            plan,
-            observation,
-            step=step,
-            reason="Affordance request passed the guard and reserved one plan action.",
-            evidence={
-                "controller_primitives": 0,
-                "world_command_created": False,
-                "remaining_actions_before_commit": budget.remaining_actions,
-            },
-        )
-        if self.request_affordance is None:
-            budget.release((0, 0, 0))
-            reason = "No affordance-request sink is attached to this runtime."
-            self._event(
-                "plan_budget_released",
-                plan,
-                observation,
-                step=step,
-                reason=reason,
-            )
-            return _StepResult(
-                observation=observation,
-                succeeded=False,
-                actions_completed=0,
-                reason=reason,
-            )
-
-        result = await self.request_affordance(
-            action,
-            observation,
-            plan.plan_id,
-            plan.plan_version,
-            step.step_id,
-        )
-        budget.commit()
-        evidence = result.receipt.affordance_request
-        succeeded = evidence is not None
-        reason = (
-            evidence.reason
-            if evidence is not None
-            else "Affordance request returned no typed evidence."
-        )
-        self._event(
-            "plan_budget_committed",
-            plan,
-            result.observation,
-            step=step,
-            reason="The cognitive request consumed one bounded plan action.",
-        )
-        self._event(
-            "affordance_request_completed" if succeeded else "affordance_request_failed",
-            plan,
-            result.observation,
-            step=step,
-            reason=reason,
-            evidence={
-                "status": (evidence.status.value if evidence is not None else "missing_evidence"),
                 "controller_primitives": 0,
                 "world_command_created": False,
             },

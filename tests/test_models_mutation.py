@@ -11,9 +11,6 @@ import pytest
 
 from kenshi_agent.models import (
     AdvisorAvailability,
-    AffordanceIntentClass,
-    AffordanceRequestRecord,
-    AffordanceUrgency,
     CharacterState,
     ClickAction,
     Condition,
@@ -36,7 +33,6 @@ from kenshi_agent.models import (
     Observation,
     PerformContextAction,
     PlanningMode,
-    RequestAffordanceAction,
     TelemetrySnapshot,
     UIState,
     Vec3,
@@ -91,30 +87,6 @@ def _control(
         item_value=item_value,
         item_quantity=item_quantity,
         section=section,
-    )
-
-
-def _affordance_request() -> AffordanceRequestRecord:
-    action = RequestAffordanceAction(
-        intent_class=AffordanceIntentClass.OBSERVE,
-        capability_slug="inspect_machine_state",
-        capability_description="Inspect one machine.",
-        blocked_goal="Understand production.",
-        why_needed="The current observation omits it.",
-        evidence="A machine is visible.",
-        available_workaround="Open its panel.",
-        urgency=AffordanceUrgency.IMPROVES_FIDELITY,
-    )
-    return AffordanceRequestRecord(
-        request_number=7,
-        action=action,
-        based_on_revision=WorldStateRevision(
-            telemetry_sequence=8,
-            frame_sequence=9,
-            capability_epoch=10,
-            observed_at_monotonic=11.0,
-        ),
-        aggregation_key="kenshi:observe:inspect_machine_state",
     )
 
 
@@ -259,7 +231,6 @@ def _rich_observation(*, item_control_count: int = 61) -> Observation:
             cooldown_steps_remaining=4,
             corpus_version="fixture-corpus",
         ),
-        affordance_requests=[_affordance_request()],
     )
 
 
@@ -767,7 +738,6 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "events",
         "objective",
         "advisor",
-        "affordance_requests",
         "digest",
         "telemetry",
     }
@@ -787,10 +757,6 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "events": ["event-one", "event-two"],
         "objective": "Exercise every digest field.",
         "advisor": observation.advisor.model_dump(mode="json"),
-        "affordance_requests": [
-            request.model_dump(mode="json")
-            for request in observation.affordance_requests
-        ],
         "digest": True,
     }
 
@@ -906,7 +872,6 @@ def test_log_digest_marks_absent_telemetry_without_inventing_nested_state() -> N
         "events",
         "objective",
         "advisor",
-        "affordance_requests",
         "digest",
         "telemetry",
     }

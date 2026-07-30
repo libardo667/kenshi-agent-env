@@ -21,7 +21,6 @@ from .models import (
     PurchaseItemAction,
     ReadFieldbookAction,
     RecallMemoryAction,
-    RequestAffordanceAction,
     ScrollAction,
     SetSpeedAction,
     SkillAction,
@@ -259,8 +258,7 @@ class ActionGuard:
                 action,
                 (
                     ConsultAdvisorAction,
-                    RequestAffordanceAction,
-                    RecallMemoryAction,
+                                    RecallMemoryAction,
                     ReadFieldbookAction,
                 ),
             )

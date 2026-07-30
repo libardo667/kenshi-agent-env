@@ -303,69 +303,6 @@
       "title": "AdvisorRecommendation",
       "type": "object"
     },
-    "AffordanceIntentClass": {
-      "description": "Small game-neutral classes for grouping missing player intentions.",
-      "enum": [
-        "observe",
-        "move",
-        "interact",
-        "communicate",
-        "manage"
-      ],
-      "title": "AffordanceIntentClass",
-      "type": "string"
-    },
-    "AffordanceRequestEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "status": {
-          "$ref": "#/$defs/AffordanceRequestStatus"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        },
-        "request_number": {
-          "minimum": 1,
-          "title": "Request Number",
-          "type": "integer"
-        },
-        "aggregation_key": {
-          "maxLength": 120,
-          "minLength": 1,
-          "pattern": "^kenshi:(?:observe|move|interact|communicate|manage):[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
-          "title": "Aggregation Key",
-          "type": "string"
-        }
-      },
-      "required": [
-        "status",
-        "reason",
-        "request_number",
-        "aggregation_key"
-      ],
-      "title": "AffordanceRequestEvidence",
-      "type": "object"
-    },
-    "AffordanceRequestStatus": {
-      "enum": [
-        "retained",
-        "duplicate"
-      ],
-      "title": "AffordanceRequestStatus",
-      "type": "string"
-    },
-    "AffordanceUrgency": {
-      "enum": [
-        "survival_critical",
-        "blocks_current_goal",
-        "improves_fidelity"
-      ],
-      "title": "AffordanceUrgency",
-      "type": "string"
-    },
     "ApproachDialogueTargetAction": {
       "additionalProperties": false,
       "description": "Initiate dialogue with one exact currently observed dialogue target.\n\nReusable and target-generic: the target is any current non-hostile person\nthe telemetry already reports as talkable, vendor or not. The action names\nonly a stable observed identity, never a role, a scenario, or a coordinate.\nThe controller issues Kenshi's native talk-to order and owns the whole\nmonitored interaction, so there is no planner-visible \"continue\napproaching\" or prerequisite unpause command.",
@@ -2213,85 +2150,6 @@
       "title": "RecoverCameraViewAction",
       "type": "object"
     },
-    "RequestAffordanceAction": {
-      "additionalProperties": false,
-      "description": "Describe one candidate capability gap without granting authority.\n\nThe type remains in the broad protocol union for old logs and is reused by\nplanner-output sidecars, but is not a planner-authorable action.",
-      "properties": {
-        "kind": {
-          "const": "request_affordance",
-          "default": "request_affordance",
-          "title": "Kind",
-          "type": "string"
-        },
-        "game": {
-          "const": "kenshi",
-          "default": "kenshi",
-          "title": "Game",
-          "type": "string"
-        },
-        "intent_class": {
-          "$ref": "#/$defs/AffordanceIntentClass"
-        },
-        "capability_slug": {
-          "maxLength": 80,
-          "minLength": 3,
-          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
-          "title": "Capability Slug",
-          "type": "string"
-        },
-        "capability_description": {
-          "maxLength": 300,
-          "minLength": 1,
-          "title": "Capability Description",
-          "type": "string"
-        },
-        "blocked_goal": {
-          "maxLength": 300,
-          "minLength": 1,
-          "title": "Blocked Goal",
-          "type": "string"
-        },
-        "why_needed": {
-          "maxLength": 600,
-          "minLength": 1,
-          "title": "Why Needed",
-          "type": "string"
-        },
-        "evidence": {
-          "maxLength": 600,
-          "minLength": 1,
-          "title": "Evidence",
-          "type": "string"
-        },
-        "available_workaround": {
-          "anyOf": [
-            {
-              "maxLength": 400,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Available Workaround"
-        },
-        "urgency": {
-          "$ref": "#/$defs/AffordanceUrgency",
-          "default": "blocks_current_goal"
-        }
-      },
-      "required": [
-        "intent_class",
-        "capability_slug",
-        "capability_description",
-        "blocked_goal",
-        "why_needed",
-        "evidence"
-      ],
-      "title": "RequestAffordanceAction",
-      "type": "object"
-    },
     "ResourceHarvestEvidence": {
       "additionalProperties": false,
       "description": "Terminal proof for one controller-owned production and transfer bundle.",
@@ -3215,9 +3073,6 @@
           "$ref": "#/$defs/ConsultAdvisorAction"
         },
         {
-          "$ref": "#/$defs/RequestAffordanceAction"
-        },
-        {
           "$ref": "#/$defs/RecallMemoryAction"
         },
         {
@@ -3397,17 +3252,6 @@
       "anyOf": [
         {
           "$ref": "#/$defs/AdvisorConsultEvidence"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "affordance_request": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/AffordanceRequestEvidence"
         },
         {
           "type": "null"

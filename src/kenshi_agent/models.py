@@ -1012,45 +1012,6 @@ class ReadFieldbookAction(StrictModel):
         return self
 
 
-class AffordanceUrgency(StrEnum):
-    SURVIVAL_CRITICAL = "survival_critical"
-    BLOCKS_CURRENT_GOAL = "blocks_current_goal"
-    IMPROVES_FIDELITY = "improves_fidelity"
-
-
-class AffordanceIntentClass(StrEnum):
-    """Small game-neutral classes for grouping missing player intentions."""
-
-    OBSERVE = "observe"
-    MOVE = "move"
-    INTERACT = "interact"
-    COMMUNICATE = "communicate"
-    MANAGE = "manage"
-
-
-class RequestAffordanceAction(StrictModel):
-    """Describe one candidate capability gap without granting authority.
-
-    The type remains in the broad protocol union for old logs and is reused by
-    planner-output sidecars, but is not a planner-authorable action.
-    """
-
-    kind: Literal["request_affordance"] = "request_affordance"
-    game: Literal["kenshi"] = "kenshi"
-    intent_class: AffordanceIntentClass
-    capability_slug: str = Field(
-        min_length=3,
-        max_length=80,
-        pattern=r"^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
-    )
-    capability_description: str = Field(min_length=1, max_length=300)
-    blocked_goal: str = Field(min_length=1, max_length=300)
-    why_needed: str = Field(min_length=1, max_length=600)
-    evidence: str = Field(min_length=1, max_length=600)
-    available_workaround: str | None = Field(default=None, max_length=400)
-    urgency: AffordanceUrgency = AffordanceUrgency.BLOCKS_CURRENT_GOAL
-
-
 class KeyAction(StrictModel):
     kind: Literal["key"] = "key"
     key: str = Field(min_length=1, max_length=32)
@@ -1586,7 +1547,6 @@ Action: TypeAlias = (
     | SetSpeedAction
     | WaitAction
     | ConsultAdvisorAction
-    | RequestAffordanceAction
     | RecallMemoryAction
     | ReadFieldbookAction
     | KeyAction
@@ -2905,52 +2865,6 @@ class AdvisorConsultEvidence(StrictModel):
     brief: AdvisorBrief | None = None
 
 
-class AffordanceRequestStatus(StrEnum):
-    RETAINED = "retained"
-    DUPLICATE = "duplicate"
-
-
-class AffordanceRequestEvidence(StrictModel):
-    status: AffordanceRequestStatus
-    reason: str = Field(min_length=1, max_length=1000)
-    request_number: int = Field(ge=1)
-    aggregation_key: str = Field(
-        min_length=1,
-        max_length=120,
-        pattern=r"^kenshi:(?:observe|move|interact|communicate|manage):"
-        r"[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
-    )
-
-
-def affordance_aggregation_key(action: RequestAffordanceAction) -> str:
-    """Return the one stable cross-run identity for a grounded capability gap.
-
-    A second copy of this rule is a second answer to "is this a duplicate?", so
-    retained records, receipts, and offline aggregation all derive from here.
-    """
-
-    return f"{action.game}:{action.intent_class.value}:{action.capability_slug}"
-
-
-class AffordanceRequestRecord(StrictModel):
-    request_number: int = Field(ge=1)
-    action: RequestAffordanceAction
-    based_on_revision: WorldStateRevision
-    # Stored beside the record so duplicate detection reads the same list the
-    # planner sees. A parallel index outlived this list once and made an evicted
-    # gap permanently unreportable.
-    aggregation_key: str = Field(min_length=1, max_length=120)
-
-    @model_validator(mode="after")
-    def key_matches_action(self) -> AffordanceRequestRecord:
-        expected = affordance_aggregation_key(self.action)
-        if self.aggregation_key != expected:
-            raise ValueError(
-                "Affordance request aggregation_key must match its typed action."
-            )
-        return self
-
-
 class CommandDispatchContext(StrictModel):
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     based_on_revision: WorldStateRevision
@@ -3388,12 +3302,6 @@ class PlanEnvelope(StrictModel):
         default_factory=list,
         max_length=4,
     )
-    # Diagnostic sidecar, not an action and never planner authority. The
-    # runtime retains it only after this plan passes every acceptance gate.
-    affordance_candidates: list[RequestAffordanceAction] = Field(
-        default_factory=list,
-        max_length=1,
-    )
 
     @model_validator(mode="after")
     def validate_graph_and_action_bound(self) -> PlanEnvelope:
@@ -3460,10 +3368,6 @@ class PlanPatch(StrictModel):
     fieldbook_operations: list[FieldbookOperation] = Field(
         default_factory=list,
         max_length=4,
-    )
-    affordance_candidates: list[RequestAffordanceAction] = Field(
-        default_factory=list,
-        max_length=1,
     )
 
 
@@ -3575,10 +3479,6 @@ class Observation(StrictModel):
     )
     fieldbook_read: FieldbookReadReceipt | None = None
     advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
-    affordance_requests: list[AffordanceRequestRecord] = Field(
-        default_factory=list,
-        max_length=32,
-    )
 
     def current_memory_target_ids(self) -> set[str]:
         """Return exact identities safe to use for entity-scoped recall.
@@ -3946,9 +3846,6 @@ class Observation(StrictModel):
             "events": list(self.events),
             "objective": self.objective,
             "advisor": _json_model(self.advisor),
-            "affordance_requests": [
-                _json_model(request) for request in self.affordance_requests
-            ],
             "digest": True,
         }
         if telemetry is None:
@@ -4209,10 +4106,6 @@ class PlannerDecision(StrictModel):
     fieldbook_operations: list[FieldbookOperation] = Field(
         default_factory=list,
         max_length=4,
-    )
-    affordance_candidates: list[RequestAffordanceAction] = Field(
-        default_factory=list,
-        max_length=1,
     )
 
 
@@ -4495,7 +4388,6 @@ class ActionReceipt(StrictModel):
     calibration: CalibrationReport | None = None
     semantic: SemanticActionReceipt | None = None
     advisor: AdvisorConsultEvidence | None = None
-    affordance_request: AffordanceRequestEvidence | None = None
     accepted: bool
     executed: bool
     dry_run: bool

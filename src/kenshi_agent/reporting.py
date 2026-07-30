@@ -104,11 +104,6 @@ def describe_action(action: Action) -> str:
         return "Checking what I remember."
     if kind == "read_fieldbook":
         return "Checking my journal."
-    if kind == "request_affordance":
-        return _spoken_sentence(
-            "Noting a capability I need: "
-            + cast(str, values["capability_description"])
-        )
     if kind == "approach_dialogue_target":
         return "Starting a conversation."
     if kind == "perform_context_action":
@@ -239,8 +234,6 @@ def describe_receipt(receipt: ActionReceipt) -> str:
             return native_results[acknowledgement.reason]
     if receipt.advisor is not None:
         return "I have some new advice to consider."
-    if receipt.affordance_request is not None:
-        return "I recorded that missing capability."
     if receipt.action.kind == "stop":
         return "The run is stopping."
     if receipt.action.kind == "pause":

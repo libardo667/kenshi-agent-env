@@ -24,59 +24,6 @@ from kenshi_agent.models import (
 from kenshi_agent.telemetry import write_snapshot_atomic
 
 
-def test_aggregate_affordances_cli_scans_run_directories(
-    tmp_path: Path,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    run_dir = tmp_path / "runs" / "run-a"
-    run_dir.mkdir(parents=True)
-    (run_dir / "events.jsonl").write_text(
-        json.dumps(
-            {
-                "event_type": "affordance_request",
-                "run_id": "run-a",
-                "payload": {
-                    "evidence": {
-                        "status": "retained",
-                        "reason": "Recorded for review.",
-                        "request_number": 1,
-                        "aggregation_key": "kenshi:move:travel_to_map_destination",
-                    },
-                    "request": {
-                        "kind": "request_affordance",
-                        "game": "kenshi",
-                        "intent_class": "move",
-                        "capability_slug": "travel_to_map_destination",
-                        "capability_description": "Travel to a chosen map destination.",
-                        "blocked_goal": "Reach another town.",
-                        "why_needed": "No remote travel action is advertised.",
-                        "evidence": "The current travel digest contains no remote destination.",
-                        "available_workaround": None,
-                        "urgency": "blocks_current_goal",
-                    },
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-
-    assert cli.main(["aggregate-affordances", str(tmp_path / "runs")]) == 0
-
-    report = json.loads(capsys.readouterr().out)
-    assert report["request_events"] == 1
-    assert report["candidates"][0]["aggregation_key"] == (
-        "kenshi:move:travel_to_map_destination"
-    )
-
-
-def test_aggregate_affordances_cli_refuses_to_imply_no_demand_without_logs(
-    tmp_path: Path,
-) -> None:
-    with pytest.raises(SystemExit, match="No session logs found"):
-        cli.main(["aggregate-affordances", str(tmp_path)])
-
-
 def test_project_env_loads_openai_key_from_current_repo_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

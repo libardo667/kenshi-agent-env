@@ -4,7 +4,6 @@ import pytest
 
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
 from kenshi_agent.models import (
-    AffordanceIntentClass,
     CharacterState,
     ClickAction,
     ConsultAdvisorAction,
@@ -28,7 +27,6 @@ from kenshi_agent.models import (
     PurchaseItemAction,
     ReadFieldbookAction,
     RecallMemoryAction,
-    RequestAffordanceAction,
     ScrollAction,
     SetSpeedAction,
     SkillAction,
@@ -282,7 +280,6 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
             "allow_action_kinds": [
                 *safety_config().allow_action_kinds,
                 "consult_advisor",
-                "request_affordance",
                 "recall_memory",
                 "read_fieldbook",
             ],
@@ -294,14 +291,6 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
     guard.validate(PauseAction(paused=True), observation)
 
     advisor = ConsultAdvisorAction(question="What should the squad pursue next?")
-    affordance = RequestAffordanceAction(
-        intent_class=AffordanceIntentClass.INTERACT,
-        capability_slug="open_remote_map",
-        capability_description="Open the map without a calibrated pointer.",
-        blocked_goal="Travel to another town.",
-        why_needed="The current action vocabulary cannot open the map.",
-        evidence="The requested binding is absent from the observation.",
-    )
     recall = RecallMemoryAction(query="gate")
     project_id = "fbp-" + "1" * 32
     fieldbook_observation = observation.model_copy(
@@ -322,7 +311,6 @@ def test_cognitive_actions_do_not_consume_primitive_authority() -> None:
     )
     read_fieldbook = ReadFieldbookAction(project_id=project_id)
     assert guard.validate(advisor, observation) == advisor
-    assert guard.validate(affordance, observation) == affordance
     assert guard.validate(recall, observation) == recall
     assert guard.validate(read_fieldbook, fieldbook_observation) == read_fieldbook
 

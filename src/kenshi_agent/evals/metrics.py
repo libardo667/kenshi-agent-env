@@ -83,8 +83,6 @@ class _MetricValues(TypedDict):
     advisor_answers: int
     advisor_suppressions: int
     advisor_failures: int
-    affordance_requests: int
-    affordance_request_duplicates: int
     plan_execution_cancellations: int
     safety_cleanups_started: int
     safety_cleanups_completed: int
@@ -192,8 +190,6 @@ class LogMetrics:
     advisor_answers: int = 0
     advisor_suppressions: int = 0
     advisor_failures: int = 0
-    affordance_requests: int = 0
-    affordance_request_duplicates: int = 0
     plan_execution_cancellations: int = 0
     safety_cleanups_started: int = 0
     safety_cleanups_completed: int = 0
@@ -327,8 +323,6 @@ def evaluate_log(path: Path) -> LogMetrics:
         "advisor_answers": 0,
         "advisor_suppressions": 0,
         "advisor_failures": 0,
-        "affordance_requests": 0,
-        "affordance_request_duplicates": 0,
         "plan_execution_cancellations": 0,
         "safety_cleanups_started": 0,
         "safety_cleanups_completed": 0,
@@ -541,12 +535,6 @@ def evaluate_log(path: Path) -> LogMetrics:
                 values["advisor_failures"] += 1
             else:
                 values["advisor_suppressions"] += 1
-        elif event_type == "affordance_request":
-            values["affordance_requests"] += 1
-            evidence = payload.get("evidence")
-            status = evidence.get("status") if isinstance(evidence, dict) else None
-            if status == "duplicate":
-                values["affordance_request_duplicates"] += 1
         elif event_type == "plan_execution_cancelled":
             values["plan_execution_cancellations"] += 1
         elif event_type == "safety_cleanup_started":

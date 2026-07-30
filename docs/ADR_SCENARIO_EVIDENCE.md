@@ -1,7 +1,7 @@
 # ADR: declared scenarios own recurrence evidence
 
-Status: accepted 2026-07-27; supersedes the distinct-run recurrence rule in
-`ADR_AFFORDANCE_REQUEST_VOCABULARY`.
+Status: accepted 2026-07-27. The affordance-demand subsystem it governed was
+removed once game-derived parity denominators replaced model-reported demand.
 
 ## Context
 

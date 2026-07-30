@@ -24,7 +24,6 @@ from .config import PlanningConfig
 from .continuity import ContinuityAuthority, ContinuityLedger
 from .continuous_executor import (
     AdvisorActionResult,
-    AffordanceRequestActionResult,
     ContinuousPlanExecutor,
 )
 from .control_ownership import (
@@ -48,9 +47,6 @@ from .models import (
     ActionReceipt,
     AdvisorConsultEvidence,
     AdvisorConsultStatus,
-    AffordanceRequestEvidence,
-    AffordanceRequestRecord,
-    AffordanceRequestStatus,
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
     CameraRecoveryStatus,
@@ -89,7 +85,6 @@ from .models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     RecoverCameraViewAction,
-    RequestAffordanceAction,
     ResourceHarvestStatus,
     SaleStatus,
     ScenarioIdentity,
@@ -99,7 +94,6 @@ from .models import (
     TelemetrySnapshot,
     Transition,
     WorldStateRevision,
-    affordance_aggregation_key,
     new_command_id,
 )
 from .planners import Planner
@@ -159,9 +153,6 @@ class TelemetryChange:
 
     label: str
     decision_relevant: bool = True
-
-# How many distinct capability gaps stay visible to the planner at once.
-MAX_RETAINED_AFFORDANCE_REQUESTS = 32
 
 # How many continuity receipts a planner sees. Enough to stop repeating one
 # deterministic mistake; not enough to become a second, rival history.
@@ -281,11 +272,9 @@ class AgentRuntime:
             )
         self.scenario_attestation = scenario_attestation
         self._state_store: WorldStateStore | None = None
-        self._affordance_requests: list[AffordanceRequestRecord] = []
         # Numbering only. Membership is answered by the record list itself, so a
         # request evicted by MAX_RETAINED_AFFORDANCE_REQUESTS can be raised again
         # instead of being suppressed as a duplicate of something invisible.
-        self._affordance_requests_issued = 0
         self.final_safe_state: FinalSafeStateOutcome | None = None
 
     def _log_observation(self, observation: Observation) -> None:
@@ -399,8 +388,6 @@ class AgentRuntime:
             self._pending_memory_search = None
             self._fieldbook_receipts.clear()
             self._pending_fieldbook_read = None
-            self._affordance_requests.clear()
-            self._affordance_requests_issued = 0
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
             self.logger.write(
@@ -584,28 +571,6 @@ class AgentRuntime:
                     )
                     self._log_observation(observation)
                     stop_reason = read_receipt.message
-                    continue
-
-                if isinstance(action, RequestAffordanceAction):
-                    self.guard.commit(guard_reservation)
-                    affordance_result = await self._execute_affordance_request_action(
-                        action,
-                        observation,
-                        plan_id="single-step",
-                        plan_version=1,
-                        step_id=step_id,
-                    )
-                    steps_completed += 1
-                    observation = affordance_result.observation
-                    observation = self._apply_decision_sidecars(
-                        decision,
-                        observation,
-                        authored_context=authored_context,
-                        plan_id="single-step",
-                        step_id=step_id,
-                    )
-                    self._log_observation(observation)
-                    stop_reason = affordance_result.receipt.message
                     continue
 
                 guard_reservation_finalized = False
@@ -849,8 +814,6 @@ class AgentRuntime:
             self._pending_memory_search = None
             self._fieldbook_receipts.clear()
             self._pending_fieldbook_read = None
-            self._affordance_requests.clear()
-            self._affordance_requests_issued = 0
             observation = self._with_memories(await self.environment.reset(seed=seed))
             self.logger.write(
                 "run_started",
@@ -1385,7 +1348,6 @@ class AgentRuntime:
                     planning_config=self.planning_config,
                     concurrent_planner=self._decide,
                     consult_advisor=self._execute_advisor_action,
-                    request_affordance=self._execute_affordance_request_action,
                     apply_patch_continuity=self._apply_patch_continuity,
                     read_memory=self._execute_memory_read,
                     read_fieldbook=self._execute_fieldbook_read,
@@ -2646,7 +2608,6 @@ class AgentRuntime:
                 self._continuity.reads_degraded_reason
             ),
             "advisor": advisor_availability,
-            "affordance_requests": list(self._affordance_requests),
             "memory_search": self._pending_memory_search,
             "fieldbook_read": getattr(self, "_pending_fieldbook_read", None),
             "fieldbook_projects": [],
@@ -2703,161 +2664,6 @@ class AgentRuntime:
                         },
                     )
         return observation.model_copy(update=updates)
-
-    def _retain_affordance_request(
-        self,
-        action: RequestAffordanceAction,
-        observation: Observation,
-    ) -> AffordanceRequestEvidence:
-        """Retain or deduplicate one non-authoritative engineering candidate."""
-
-        aggregation_key = affordance_aggregation_key(action)
-        existing = next(
-            (
-                record
-                for record in self._affordance_requests
-                if record.aggregation_key == aggregation_key
-            ),
-            None,
-        )
-        if existing is None:
-            self._affordance_requests_issued += 1
-            request_number = self._affordance_requests_issued
-            self._affordance_requests.append(
-                AffordanceRequestRecord(
-                    request_number=request_number,
-                    action=action,
-                    based_on_revision=observation.world_revision,
-                    aggregation_key=aggregation_key,
-                )
-            )
-            del self._affordance_requests[:-MAX_RETAINED_AFFORDANCE_REQUESTS]
-            status = AffordanceRequestStatus.RETAINED
-            reason = (
-                f"Recorded affordance request #{request_number} "
-                f"({aggregation_key}): {action.capability_description} "
-                "The capability is not available yet and requires engineering review."
-            )
-        else:
-            request_number = existing.request_number
-            status = AffordanceRequestStatus.DUPLICATE
-            reason = (
-                f"Affordance request #{request_number} already records "
-                f"{aggregation_key}; duplicate suppressed."
-            )
-
-        evidence = AffordanceRequestEvidence(
-            status=status,
-            reason=reason,
-            request_number=request_number,
-            aggregation_key=aggregation_key,
-        )
-        return evidence
-
-    def _record_affordance_candidates(
-        self,
-        candidates: Sequence[RequestAffordanceAction],
-        observation: Observation,
-        *,
-        origin: ContinuityOrigin,
-        authored_context: AuthoredPlannerContext,
-        plan_id: str,
-        plan_version: int,
-        step_id: str | None = None,
-    ) -> None:
-        """Record accepted-output sidecars without spending an action."""
-
-        for candidate in candidates:
-            authored_observation = authored_context.observation
-            evidence = self._retain_affordance_request(
-                candidate,
-                authored_observation,
-            )
-            self.logger.write(
-                "affordance_request",
-                step_index=observation.step_index,
-                payload={
-                    "source": "planner_sidecar",
-                    "classification": "needs_engineering_review",
-                    "origin": origin.value,
-                    "authored_context_id": authored_context.manifest.context_id,
-                    "plan_id": plan_id,
-                    "plan_version": plan_version,
-                    "step_id": step_id,
-                    "world_revision": (
-                        authored_observation.world_revision.model_dump(mode="json")
-                    ),
-                    "accepted_at_world_revision": (
-                        observation.world_revision.model_dump(mode="json")
-                    ),
-                    "controller_primitives": 0,
-                    "world_command_created": False,
-                    "evidence": evidence.model_dump(mode="json"),
-                    "request": candidate.model_dump(mode="json"),
-                },
-            )
-
-    async def _execute_affordance_request_action(
-        self,
-        action: RequestAffordanceAction,
-        observation: Observation,
-        plan_id: str,
-        plan_version: int,
-        step_id: str,
-    ) -> AffordanceRequestActionResult:
-        """Retain a legacy explicit request without dispatching game input."""
-
-        started_at = datetime.now(UTC)
-        evidence = self._retain_affordance_request(action, observation)
-        reason = evidence.reason
-        finished_at = datetime.now(UTC)
-        receipt = ActionReceipt(
-            action=action,
-            control_mode=self.control_mode,
-            affordance_request=evidence,
-            accepted=True,
-            executed=True,
-            dry_run=False,
-            started_at=started_at,
-            finished_at=finished_at,
-            primitive_actions=0,
-            message=reason,
-        )
-        self.logger.write(
-            "action_receipt",
-            step_index=observation.step_index,
-            payload=receipt,
-        )
-        self.logger.write(
-            "affordance_request",
-            step_index=observation.step_index,
-            payload={
-                "source": "planner_action",
-                "classification": "needs_engineering_review",
-                "plan_id": plan_id,
-                "plan_version": plan_version,
-                "step_id": step_id,
-                "world_revision": observation.world_revision.model_dump(mode="json"),
-                "controller_primitives": 0,
-                "world_command_created": False,
-                "evidence": evidence.model_dump(mode="json"),
-                "request": action.model_dump(mode="json"),
-            },
-        )
-        if self.reporter is not None:
-            self.reporter.action_receipt(
-                step_index=observation.step_index,
-                receipt=receipt,
-            )
-
-        current_store_observation = (
-            self._state_store.latest if self._state_store is not None else None
-        )
-        context_basis = current_store_observation or observation
-        latest = self._with_memories(context_basis)
-        if self._state_store is not None:
-            latest = self._state_store.decorate_latest(latest)
-        return AffordanceRequestActionResult(observation=latest, receipt=receipt)
 
     async def _execute_advisor_action(
         self,
@@ -3215,15 +3021,6 @@ class AgentRuntime:
                     plan_version=plan.plan_version,
                 )
             )
-        if plan.affordance_candidates:
-            self._record_affordance_candidates(
-                plan.affordance_candidates,
-                observation,
-                origin=ContinuityOrigin.PLAN,
-                authored_context=authored_context,
-                plan_id=plan.plan_id,
-                plan_version=plan.plan_version,
-            )
 
     def _apply_decision_continuity(
         self,
@@ -3266,7 +3063,6 @@ class AgentRuntime:
         if (
             decision.continuity_operations
             or decision.fieldbook_operations
-            or decision.affordance_candidates
         ) and authored_context is None:
             raise RuntimeError(
                 "Planner-authored durable operations have no authored "
@@ -3292,17 +3088,6 @@ class AgentRuntime:
                     step_id=step_id,
                 )
             )
-        if decision.affordance_candidates:
-            assert authored_context is not None
-            self._record_affordance_candidates(
-                decision.affordance_candidates,
-                observation,
-                origin=ContinuityOrigin.DECISION,
-                authored_context=authored_context,
-                plan_id=plan_id,
-                plan_version=1,
-                step_id=step_id,
-            )
         latest = self._with_memories(observation)
         if self._state_store is not None:
             latest = self._state_store.decorate_latest(latest)
@@ -3312,7 +3097,6 @@ class AgentRuntime:
         self,
         operations: Sequence[ContinuityOperation],
         fieldbook_operations: Sequence[FieldbookOperation],
-        affordance_candidates: Sequence[RequestAffordanceAction],
         observation: Observation,
         *,
         authored_context: AuthoredPlannerContext,
@@ -3349,16 +3133,6 @@ class AgentRuntime:
                     plan_version=plan_version,
                     step_id=step_id,
                 )
-            )
-        if affordance_candidates:
-            self._record_affordance_candidates(
-                affordance_candidates,
-                observation,
-                origin=ContinuityOrigin.PATCH,
-                authored_context=authored_context,
-                plan_id=plan_id,
-                plan_version=plan_version,
-                step_id=step_id,
             )
 
     def _surface(self, receipts: Sequence[ContinuityOperationReceipt]) -> None:

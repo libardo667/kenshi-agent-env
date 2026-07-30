@@ -15,7 +15,6 @@ from typing import TypedDict
 from dotenv import load_dotenv
 
 from .advisor import AdvisorSession, GuideCorpus, OpenRouterStrategyAdvisor
-from .affordance_requests import aggregate_affordance_requests
 from .campaign import (
     CampaignScope,
     CampaignScopeError,
@@ -858,32 +857,6 @@ def _summarize(args: argparse.Namespace) -> int:
     return 0
 
 
-def _affordance_log_paths(raw_paths: list[str]) -> list[Path]:
-    logs: set[Path] = set()
-    for raw_path in raw_paths:
-        path = Path(raw_path).expanduser().resolve()
-        if path.is_file():
-            logs.add(path)
-        elif path.is_dir():
-            logs.update(candidate.resolve() for candidate in path.rglob("events.jsonl"))
-        else:
-            raise SystemExit(f"Affordance aggregation input does not exist: {path}")
-    if not logs:
-        raise SystemExit(
-            "No session logs found; refusing to report zero affordance demand "
-            "without examining any runs."
-        )
-    return sorted(logs)
-
-
-def _aggregate_affordances(args: argparse.Namespace) -> int:
-    report = aggregate_affordance_requests(
-        _affordance_log_paths(list(args.paths))
-    )
-    print(json.dumps(asdict(report), indent=2))
-    return 0
-
-
 def _export_schemas(args: argparse.Namespace) -> int:
     paths = export_schemas(Path(args.output).expanduser().resolve())
     for path in paths:
@@ -1088,16 +1061,6 @@ def build_parser() -> argparse.ArgumentParser:
     summarize = subparsers.add_parser("summarize", help="Summarize a session JSONL log.")
     summarize.add_argument("log")
 
-    aggregate_affordances = subparsers.add_parser(
-        "aggregate-affordances",
-        help="Rank typed affordance requests across one or more run logs.",
-    )
-    aggregate_affordances.add_argument(
-        "paths",
-        nargs="+",
-        help="Session JSONL files or directories recursively containing events.jsonl.",
-    )
-
     schemas = subparsers.add_parser("export-schemas", help="Write JSON Schemas.")
     schemas.add_argument("--output", default="schemas")
 
@@ -1137,8 +1100,6 @@ def main(argv: list[str] | None = None) -> int:
         return _validate_telemetry(args)
     if args.subcommand == "summarize":
         return _summarize(args)
-    if args.subcommand == "aggregate-affordances":
-        return _aggregate_affordances(args)
     if args.subcommand == "export-schemas":
         return _export_schemas(args)
     if args.subcommand == "write-sample-telemetry":

@@ -76,9 +76,6 @@
               "$ref": "#/$defs/ConsultAdvisorAction"
             },
             {
-              "$ref": "#/$defs/RequestAffordanceAction"
-            },
-            {
               "$ref": "#/$defs/RecallMemoryAction"
             },
             {
@@ -942,57 +939,6 @@
       ],
       "title": "AdvisorRecommendation",
       "type": "object"
-    },
-    "AffordanceIntentClass": {
-      "description": "Small game-neutral classes for grouping missing player intentions.",
-      "enum": [
-        "observe",
-        "move",
-        "interact",
-        "communicate",
-        "manage"
-      ],
-      "title": "AffordanceIntentClass",
-      "type": "string"
-    },
-    "AffordanceRequestRecord": {
-      "additionalProperties": false,
-      "properties": {
-        "request_number": {
-          "minimum": 1,
-          "title": "Request Number",
-          "type": "integer"
-        },
-        "action": {
-          "$ref": "#/$defs/RequestAffordanceAction"
-        },
-        "based_on_revision": {
-          "$ref": "#/$defs/WorldStateRevision"
-        },
-        "aggregation_key": {
-          "maxLength": 120,
-          "minLength": 1,
-          "title": "Aggregation Key",
-          "type": "string"
-        }
-      },
-      "required": [
-        "request_number",
-        "action",
-        "based_on_revision",
-        "aggregation_key"
-      ],
-      "title": "AffordanceRequestRecord",
-      "type": "object"
-    },
-    "AffordanceUrgency": {
-      "enum": [
-        "survival_critical",
-        "blocks_current_goal",
-        "improves_fidelity"
-      ],
-      "title": "AffordanceUrgency",
-      "type": "string"
     },
     "AppendFieldbookEntryOperation": {
       "additionalProperties": false,
@@ -5044,85 +4990,6 @@
       "title": "ReinforceMemoryOperation",
       "type": "object"
     },
-    "RequestAffordanceAction": {
-      "additionalProperties": false,
-      "description": "Describe one candidate capability gap without granting authority.\n\nThe type remains in the broad protocol union for old logs and is reused by\nplanner-output sidecars, but is not a planner-authorable action.",
-      "properties": {
-        "kind": {
-          "const": "request_affordance",
-          "default": "request_affordance",
-          "title": "Kind",
-          "type": "string"
-        },
-        "game": {
-          "const": "kenshi",
-          "default": "kenshi",
-          "title": "Game",
-          "type": "string"
-        },
-        "intent_class": {
-          "$ref": "#/$defs/AffordanceIntentClass"
-        },
-        "capability_slug": {
-          "maxLength": 80,
-          "minLength": 3,
-          "pattern": "^[a-z][a-z0-9]*(?:_[a-z0-9]+)+$",
-          "title": "Capability Slug",
-          "type": "string"
-        },
-        "capability_description": {
-          "maxLength": 300,
-          "minLength": 1,
-          "title": "Capability Description",
-          "type": "string"
-        },
-        "blocked_goal": {
-          "maxLength": 300,
-          "minLength": 1,
-          "title": "Blocked Goal",
-          "type": "string"
-        },
-        "why_needed": {
-          "maxLength": 600,
-          "minLength": 1,
-          "title": "Why Needed",
-          "type": "string"
-        },
-        "evidence": {
-          "maxLength": 600,
-          "minLength": 1,
-          "title": "Evidence",
-          "type": "string"
-        },
-        "available_workaround": {
-          "anyOf": [
-            {
-              "maxLength": 400,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Available Workaround"
-        },
-        "urgency": {
-          "$ref": "#/$defs/AffordanceUrgency",
-          "default": "blocks_current_goal"
-        }
-      },
-      "required": [
-        "intent_class",
-        "capability_slug",
-        "capability_description",
-        "blocked_goal",
-        "why_needed",
-        "evidence"
-      ],
-      "title": "RequestAffordanceAction",
-      "type": "object"
-    },
     "ResolveMemoryOperation": {
       "additionalProperties": false,
       "description": "Close an open commitment or question with the evidence that closed it.",
@@ -6871,14 +6738,6 @@
     },
     "advisor": {
       "$ref": "#/$defs/AdvisorAvailability"
-    },
-    "affordance_requests": {
-      "items": {
-        "$ref": "#/$defs/AffordanceRequestRecord"
-      },
-      "maxItems": 32,
-      "title": "Affordance Requests",
-      "type": "array"
     }
   },
   "required": [

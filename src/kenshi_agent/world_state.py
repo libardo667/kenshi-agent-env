@@ -393,7 +393,6 @@ class WorldStateStore:
             "skill_specs",
             "memories",
             "advisor",
-            "affordance_requests",
         )
         decorated = self._latest.model_copy(
             update={
@@ -432,8 +431,7 @@ class WorldStateStore:
                         "skill_specs",
                         "memories",
                         "advisor",
-                        "affordance_requests",
-                    )
+                                )
                 },
                 deep=True,
             )
@@ -980,8 +978,7 @@ class WorldStateStore:
                 "world_revision",
                 "events",
                 "memories",
-                "affordance_requests",
-                "recent_action_outcomes",
+                    "recent_action_outcomes",
                 "screenshot_path",
                 # Excluded or the delta would feed on itself: last tick's
                 # changes differ from this tick's, so every observation would

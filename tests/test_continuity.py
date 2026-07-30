@@ -2628,7 +2628,6 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
         runner.advisor = None
         runner._continuity_receipts = []
         runner._pending_memory_search = None
-        runner._affordance_requests = []
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
         runner._continuity, _ = authority(store, runner._ledger)
         runner.planning_config = PlanningConfig()
@@ -3623,7 +3622,6 @@ def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
         runner.logger = SimpleNamespace(write=lambda *a, **k: None)
         runner._ledger = ledger
         runner._continuity = engine
-        runner._affordance_requests = []
         runner._pending_memory_search = None
         runner._continuity_receipts = []
         runner.planning_config = PlanningConfig()
@@ -3683,7 +3681,6 @@ def test_omitted_general_memories_are_declared_in_the_observation(
         runner.advisor = None
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=0)
         runner._continuity, _ = authority(store, runner._ledger)
-        runner._affordance_requests = []
         runner._continuity_receipts = []
         runner._pending_memory_search = None
         runner.planning_config = PlanningConfig()

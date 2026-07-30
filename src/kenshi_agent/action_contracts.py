@@ -65,7 +65,6 @@ from .models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     RecoverCameraViewAction,
-    RequestAffordanceAction,
     ScrollScreenAction,
     SellItemAction,
     SetSpeedAction,
@@ -2555,8 +2554,7 @@ def completion_contract_for(
             StopAction,
             WaitAction,
             ConsultAdvisorAction,
-            RequestAffordanceAction,
-            RecallMemoryAction,
+                    RecallMemoryAction,
             ReadFieldbookAction,
         ),
     ):

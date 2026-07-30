@@ -67,12 +67,6 @@ While a request is pending, continue independent safe work. Treat a returned
 brief as fallible advice, inspect its sources and uncertainties, and verify
 world-facing requirements against current telemetry. It emits no game input.
 
-`affordance_candidates` is a diagnostic sidecar for at most one grounded
-intention with no safe advertised route. It consumes no step and grants no
-capability. Reuse slugs, avoid duplicates, state a workaround, and continue
-through supported actions. Leave it empty for stale, unsafe, ambiguous, or
-failed existing routes; those are not missing affordances.
-
 `stop` ends the whole run, not the current plan. A plan ends when its steps do.
 Reserve stop for an explicit bounded endpoint, unrecoverable unsafe state, or a
 world in which no safe supported action remains. Open-ended play always has a

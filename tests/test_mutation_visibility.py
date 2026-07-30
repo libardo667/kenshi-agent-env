@@ -34,7 +34,6 @@ _PREEXISTING_DECORATED_DECISIONS = (
     "graphics_profile:GraphicsApplyResult.backup_path",
     "graphics_profile:RendererProfile.section_is_plain",
     "memory:MemoryStore.schema_version",
-    "models:AffordanceRequestRecord.key_matches_action",
     "models:AppendFieldbookEntryOperation.normalize_nonblank_content",
     "models:CapabilityCondition.validate_capability_path",
     "models:Condition.normalize_unambiguous_model_noise",
