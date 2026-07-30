@@ -1934,3 +1934,71 @@ class TestAmbiguityMatchesTheBinder:
             capabilities=["ui.visible_controls"],
         )
         assert all(entry["ambiguous"] for entry in state.visible_control_digest())
+
+
+class TestPurchaseBindingCarriesCellFacts:
+    """The binding is the executor's only view of what it is clicking.
+
+    `bind_purchase_item` rebuilt its result from label, role and bounds alone,
+    so the executor knew where to click and nothing about the item there. An
+    unaffordable purchase could then only be discovered by attempting it and
+    watching for a delta that never arrived, which is indistinguishable from a
+    click that missed. Anything the cell knows has to survive the binding.
+    """
+
+    def _state(self) -> Observation:
+        cell = VisibleUIControl(
+            label="Bread",
+            role="item",
+            window="BARMAN",
+            bounds=_bounds(0.5),
+            item_name="Bread",
+            item_base_value=52,
+            item_sell_value=13,
+            item_quantity=3,
+        )
+        seller = NearbyEntity(
+            id="entity-barman",
+            name="Barman",
+            is_animal=False,
+            has_dialogue=True,
+            shop_inventory_owner=True,
+            disposition=Disposition.NEUTRAL,
+            distance=3.0,
+            conscious=True,
+        )
+        state = observation(
+            entities=[seller],
+            controls=[cell],
+            capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
+        )
+        telemetry = state.telemetry
+        assert telemetry is not None
+        return state.model_copy(
+            update={
+                "telemetry": telemetry.model_copy(
+                    update={
+                        "active_shop_trader_count": 1,
+                        "ui": telemetry.ui.model_copy(update={"active_screen": "trade"}),
+                    }
+                )
+            },
+            deep=True,
+        )
+
+    def test_every_cell_fact_survives_the_binding(self) -> None:
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            PurchaseItemAction(
+                cell_label="Bread",
+                item_name="Bread",
+                expected_price=52,
+                window="BARMAN",
+                seller_id="entity-barman",
+            ),
+            self._state(),
+        )
+        assert binding.bound, binding.reason
+        assert binding.item_name == "Bread"
+        assert binding.item_base_value == 52
+        assert binding.item_sell_value == 13
+        assert binding.item_quantity == 3

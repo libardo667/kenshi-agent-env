@@ -1914,6 +1914,75 @@ class LiveEnvironment(AgentEnvironment):
             semantic=semantic,
         )
 
+    def _trade_refusal_before_input(
+        self,
+        action: PurchaseItemAction | SellItemAction,
+        binding: ReferenceBinding,
+        *,
+        direction: Literal["purchase", "sale"],
+        money: int,
+    ) -> str | None:
+        """Name a reason this unit cannot trade, before any input is sent.
+
+        A trade that binds, clicks and moves nothing used to report only "later
+        telemetry showed no purse or selected-inventory change" - a sentence
+        every possible cause produces, so an agent reading it learns nothing it
+        can act on and neither does a reader of the log. Cells now carry their
+        own price and stack size, so the resource reasons are answerable here,
+        without spending input to discover them.
+
+        Returning None means the known preconditions hold. That is the point:
+        it turns a silent failure afterwards into evidence that the mechanism
+        is at fault rather than the purse or the shelf.
+        """
+
+        if direction != "purchase":
+            return None
+        price = binding.item_base_value
+        if price is not None and money < price:
+            return (
+                f"{action.item_name!r} costs {price} and the purse holds "
+                f"{money}; sell something or choose an item at or under {money}."
+            )
+        available = binding.item_quantity
+        if available is not None and available < 1:
+            return (
+                f"the bound cell no longer holds any {action.item_name!r}; "
+                "the shelf changed after an earlier transfer."
+            )
+        if binding.item_name is not None and binding.item_name != action.item_name:
+            return (
+                f"the bound cell now holds {binding.item_name!r}, not "
+                f"{action.item_name!r}; the shelf re-indexed under this binding."
+            )
+        return None
+
+    def _trade_preconditions_note(
+        self,
+        binding: ReferenceBinding,
+        *,
+        direction: Literal["purchase", "sale"],
+        money: int,
+    ) -> str:
+        """State what was true when input was sent, for a failure that follows.
+
+        Without this a reader cannot tell an unaffordable purchase from a
+        right-click that simply did not land, because both end in no observed
+        delta.
+        """
+
+        if direction != "purchase":
+            return ""
+        price = binding.item_base_value
+        if price is None:
+            return ""
+        stock = binding.item_quantity
+        stocked = f" and the cell held {stock}" if stock is not None else ""
+        return (
+            f" The purse held {money} against a price of {price}{stocked}, so"
+            " the right-click itself moved nothing."
+        )
+
     async def _execute_bounded_trade(
         self,
         action: PurchaseItemAction | SellItemAction,
@@ -1967,6 +2036,19 @@ class LiveEnvironment(AgentEnvironment):
                 binding = rebound
 
             remaining = action.quantity - completed_quantity
+            refusal = self._trade_refusal_before_input(
+                action,
+                binding,
+                direction=direction,
+                money=current_money,
+            )
+            if refusal is not None:
+                status = "partial" if completed_quantity else "not_completed"
+                reason = (
+                    f"Stopped after {completed_quantity}/{action.quantity}: "
+                    f"{refusal}"
+                )
+                break
             self._ensure_trade_can_continue(operation)
             bounds = binding.resolved_bounds
             assert bounds is not None
@@ -2038,6 +2120,11 @@ class LiveEnvironment(AgentEnvironment):
                 reason = (
                     f"Stopped after {completed_quantity}/{action.quantity}: "
                     f"{outcome_reason}"
+                    + self._trade_preconditions_note(
+                        binding,
+                        direction=direction,
+                        money=current_money,
+                    )
                 )
             else:
                 status = "outcome_unknown"

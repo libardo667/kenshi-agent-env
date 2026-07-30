@@ -77,10 +77,10 @@ def _bounds(index: int) -> NormalizedPointerBounds:
 
 
 class PurchaseTelemetry:
-    def __init__(self, *, stock: int) -> None:
+    def __init__(self, *, stock: int, money: int = 1000) -> None:
         self.stock = stock
         self.carried = 0
-        self.money = 1000
+        self.money = money
         self.sequence = 0
         self.max_age_seconds = 3.0
         self.path = Path("purchase-telemetry.json")
@@ -169,9 +169,14 @@ class PurchaseController(InputController):
         telemetry: PurchaseTelemetry,
         *,
         inventory_updates: bool = True,
+        no_effect: bool = False,
     ) -> None:
         self.telemetry = telemetry
         self.inventory_updates = inventory_updates
+        # A right-click that lands on a live cell and moves nothing at all.
+        # Observed in `live-price-check-20260730-132702` with the item both
+        # affordable and in stock, and distinct from a partial transfer.
+        self.no_effect = no_effect
         self.actions: list[PrimitiveInputAction] = []
 
     def focus_window(self) -> None:
@@ -179,15 +184,21 @@ class PurchaseController(InputController):
 
     async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
         self.actions.append(action)
-        if isinstance(action, ClickAction) and action.button is MouseButton.RIGHT:
+        if (
+            isinstance(action, ClickAction)
+            and action.button is MouseButton.RIGHT
+            and not self.no_effect
+        ):
             assert self.telemetry.stock > 0
             self.telemetry.stock -= 1
             if self.inventory_updates:
                 self.telemetry.carried += 1
-            # The live Burn charged c.87 for a cell whose exported base value
-            # was c.43. Conservation requires a loss, never equality with the
-            # non-authoritative estimate.
-            self.telemetry.money -= 87
+            # Charges the cell's own price. An earlier fixture debited 87
+            # for a cell exporting 43, encoding a belief that the exported
+            # value was a non-authoritative estimate of an unknowable charge.
+            # It was simply the wrong side of the trade - the sell value - and
+            # three live purchases have since debited the buy price exactly.
+            self.telemetry.money -= 43
         now = datetime.now(UTC)
         return ActionReceipt(
             action=action,
@@ -215,11 +226,14 @@ def purchase_environment(
     *,
     stock: int,
     inventory_updates: bool = True,
+    money: int = 1000,
+    no_effect: bool = False,
 ) -> tuple[LiveEnvironment, PurchaseTelemetry, PurchaseController]:
-    telemetry = PurchaseTelemetry(stock=stock)
+    telemetry = PurchaseTelemetry(stock=stock, money=money)
     controller = PurchaseController(
         telemetry,
         inventory_updates=inventory_updates,
+        no_effect=no_effect,
     )
     environment = LiveEnvironment(
         run_id="purchase-option-test",
@@ -353,7 +367,7 @@ def test_one_purchase_intent_transfers_its_bounded_quantity(
         assert evidence.requested_quantity == 3
         assert evidence.purchased_quantity == 3
         assert evidence.money_before == 1000
-        assert evidence.money_after == 739
+        assert evidence.money_after == 871
         assert evidence.inventory_quantity_before == 0
         assert evidence.inventory_quantity_after == 3
         assert transition.receipt.primitive_actions == 6
@@ -513,7 +527,7 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
         assert evidence.status.value == "outcome_unknown"
         assert evidence.purchased_quantity == 0
         assert evidence.money_before == 1000
-        assert evidence.money_after == 913
+        assert evidence.money_after == 957
         assert evidence.inventory_quantity_before == 0
         assert evidence.inventory_quantity_after == 0
         assert len(
@@ -524,5 +538,74 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
                 and item.button is MouseButton.RIGHT
             ]
         ) == 1
+
+    asyncio.run(scenario())
+
+
+def test_an_unaffordable_purchase_names_the_shortfall_and_sends_no_input(
+    tmp_path: Path,
+) -> None:
+    """A purchase the purse cannot cover must not be discovered by clicking.
+
+    The failure this replaces reported "later telemetry showed no purse or
+    selected-inventory change" - the same sentence an out-of-stock cell, a
+    stale binding and a right-click that simply missed all produce. An agent
+    reading it cannot tell which of those to do something about, and one live
+    run burned its remaining steps re-attempting a purchase for that reason.
+    """
+
+    async def scenario() -> None:
+        action = _purchase(quantity=1)
+        environment, _, controller = purchase_environment(
+            tmp_path,
+            stock=5,
+            money=10,
+        )
+        await environment.reset()
+        transition = await environment.step(action)
+
+        message = transition.receipt.message or ""
+        assert "costs 43" in message
+        assert "purse holds 10" in message
+        # No input at all: the answer was already in telemetry.
+        assert not [
+            item
+            for item in controller.actions
+            if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+        ]
+
+    asyncio.run(scenario())
+
+
+def test_a_purchase_that_clicks_and_moves_nothing_says_so_explicitly(
+    tmp_path: Path,
+) -> None:
+    """Preconditions holding is itself the finding worth reporting.
+
+    When the purse and the shelf were both fine and the transfer still did not
+    happen, the fault is the mechanism rather than the resources, and the
+    message has to say which so the next attempt is not a blind retry.
+    """
+
+    async def scenario() -> None:
+        action = _purchase(quantity=1)
+        environment, _, controller = purchase_environment(
+            tmp_path,
+            stock=3,
+            no_effect=True,
+        )
+        environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+        await environment.reset()
+        transition = await environment.step(action)
+
+        message = transition.receipt.message or ""
+        assert "purse held 1000 against a price of 43" in message
+        assert "the right-click itself moved nothing" in message
+        # It really did try, unlike the unaffordable case.
+        assert [
+            item
+            for item in controller.actions
+            if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+        ]
 
     asyncio.run(scenario())

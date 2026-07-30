@@ -1324,14 +1324,23 @@ def bind_purchase_item(
         bound=True,
         reason=(
             f"Bound {action.item_name!r} to seller-owned cell "
-            f"{cell.resolved_label!r} for seller {action.seller_id}; declared "
-            f"value estimate c.{action.expected_price}."
+            f"{cell.resolved_label!r} for seller {action.seller_id} at a "
+            f"checked price of c.{action.expected_price}."
         ),
         target_id=action.seller_id,
         resolved_label=cell.resolved_label,
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
         source_revision=observation.world_revision,
+        # Carry the cell's own facts through. Rebuilding the binding from
+        # label, role and bounds alone dropped them, so the executor knew where
+        # to click and nothing about what it was clicking - which is why an
+        # unaffordable purchase could only be discovered by attempting it and
+        # watching for a delta that never came.
+        item_name=cell.item_name,
+        item_base_value=cell.item_base_value,
+        item_sell_value=cell.item_sell_value,
+        item_quantity=cell.item_quantity,
     )
 
 
