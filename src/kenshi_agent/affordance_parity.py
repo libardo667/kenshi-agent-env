@@ -282,6 +282,7 @@ _WIRED_GAME_BINDINGS = frozenset(
         "highlight",
         "medic",
         "quickload",
+        "quicksave",
         "change_squad",
         "character_next",
         "character_prev",
@@ -298,12 +299,6 @@ _WIRED_GAME_BINDINGS = frozenset(
 )
 
 _MISSING_GROUPS: dict[str, frozenset[str]] = {
-    (
-        "Save-state control is wanted, not refused: it lets a run checkpoint "
-        "before a risky experiment and recover from death without a human. "
-        "No observable save-completion signal is contracted yet; an F5 input "
-        "receipt alone cannot prove the quicksave finished."
-    ): frozenset({"quicksave"}),
     (
         "World-editor and world-data control on a development host. Not "
         "ordinary play, but the operator's own machine and the operator's "

@@ -17,6 +17,7 @@ from kenshi_agent.models import (
     ContextActionKind,
     ControlMode,
     ExitCurrentBuildingAction,
+    GameBinding,
     GameState,
     HarvestResourceAction,
     InterruptPolicy,
@@ -28,6 +29,7 @@ from kenshi_agent.models import (
     StopAction,
     TelemetrySnapshot,
     UIState,
+    UseGameBindingAction,
     Vec3,
     WorldStateRevision,
     WorldTarget,
@@ -213,6 +215,34 @@ def test_harvest_smoke_runs_through_the_subprocess_entrypoint() -> None:
         actor_id="entity-hep",
         target_id=TARGET_ID,
         quantity=1,
+    )
+
+
+def test_quicksave_smoke_runs_through_the_subprocess_entrypoint() -> None:
+    state = observation(indoors=False).model_copy(
+        update={
+            "planning_mode": PlanningMode.CONTINUOUS,
+            "telemetry": observation(indoors=False).telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        *observation(indoors=False).telemetry.capabilities,
+                        "host.quicksave_completion",
+                    ]
+                }
+            ),
+        }
+    )
+    script = Path(__file__).parents[1] / "scripts" / "live_quicksave_smoke_planner.py"
+
+    output = asyncio.run(
+        SubprocessPlanner([sys.executable, str(script)]).decide(state)
+    )
+
+    assert isinstance(output, PlanEnvelope)
+    assert output.max_actions == 1
+    assert output.steps[0].action == UseGameBindingAction(
+        binding=GameBinding.QUICKSAVE,
+        expected_effect="write the current game to the exact quicksave slot",
     )
 
 

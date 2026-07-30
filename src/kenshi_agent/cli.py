@@ -367,6 +367,16 @@ def _run_exit_code(
     return 0 if summary_success is not False else 2
 
 
+def _live_quicksave_dir() -> Path | None:
+    save_root = os.environ.get("KENSHI_AGENT_SAVE_ROOT")
+    if save_root:
+        return Path(save_root) / "quicksave"
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        return None
+    return Path(local_app_data) / "kenshi" / "save" / "quicksave"
+
+
 def _build_environment(
     config: AppConfig,
     args: argparse.Namespace,
@@ -418,6 +428,7 @@ def _build_environment(
             ),
             available_skills=config.safety.allow_skills,
             control_mode=config.control.mode,
+            quicksave_dir=_live_quicksave_dir(),
         )
     raise SystemExit(f"Unsupported environment mode: {mode}")
 

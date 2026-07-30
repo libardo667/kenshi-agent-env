@@ -1412,6 +1412,10 @@ def camera_rotation_primitive(action: RotateCameraAction) -> MouseDragAction:
     )
 
 
+QUICKSAVE_COMPLETION_CAPABILITY = "host.quicksave_completion"
+"""Controller can attribute F5 to one completed exact quicksave tree."""
+
+
 class GameBinding(StrEnum):
     """Kenshi's named control intentions under the shipped default keymap.
 
@@ -1428,6 +1432,7 @@ class GameBinding(StrEnum):
     TOGGLE_CRAFTING = "toggle_crafting"
     TOGGLE_RESEARCH = "toggle_research"
     # Save-state control.
+    QUICKSAVE = "quicksave"
     QUICKLOAD = "quickload"
     # Construction.
     BUILD_APPLY = "build_apply"
@@ -1482,6 +1487,7 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.TOGGLE_HELP: "f1",
     GameBinding.TOGGLE_CRAFTING: "y",
     GameBinding.TOGGLE_RESEARCH: "t",
+    GameBinding.QUICKSAVE: "f5",
     GameBinding.QUICKLOAD: "f9",
     GameBinding.BUILD_APPLY: "space",
     GameBinding.BUILD_MOVE_DOWN: "minus",
@@ -4516,6 +4522,46 @@ class SaleEvidence(StrictModel):
         return self
 
 
+class QuicksaveStatus(StrEnum):
+    SAVED = "saved"
+    NOT_OBSERVED = "not_observed"
+
+
+def _validate_quicksave_completion(
+    status: QuicksaveStatus,
+    changed_files: int,
+    quick_save_size_bytes: int | None,
+) -> None:
+    """Keep a terminal save verdict coupled to observable filesystem proof."""
+
+    if status is QuicksaveStatus.SAVED and (
+        changed_files < 1 or quick_save_size_bytes is None
+    ):
+        raise ValueError(
+            "saved quicksave evidence requires a changed tree and nonempty quick.save"
+        )
+
+
+class QuicksaveEvidence(StrictModel):
+    """Controller-owned proof that F5 replaced the exact quicksave tree."""
+
+    status: QuicksaveStatus
+    slot: Literal["quicksave"] = "quicksave"
+    changed_files: int = Field(ge=0)
+    quick_save_size_bytes: int | None = Field(default=None, gt=0)
+    quiescent_seconds: float = Field(ge=0.0)
+    reason: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def saved_requires_a_changed_nonempty_quick_save(self) -> QuicksaveEvidence:
+        _validate_quicksave_completion(
+            self.status,
+            self.changed_files,
+            self.quick_save_size_bytes,
+        )
+        return self
+
+
 class SemanticActionReceipt(StrictModel):
     """Causal evidence for one reusable semantic action.
 
@@ -4537,6 +4583,7 @@ class SemanticActionReceipt(StrictModel):
     camera_recovery: CameraRecoveryEvidence | None = None
     purchase: PurchaseEvidence | None = None
     sale: SaleEvidence | None = None
+    quicksave: QuicksaveEvidence | None = None
     resource_transfer: ResourceTransferEvidence | None = None
     resource_harvest: ResourceHarvestEvidence | None = None
 

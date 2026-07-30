@@ -268,6 +268,9 @@ def live_environment(
     pause_skill: str | None = None,
     unpause_skill: str | None = None,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+    quicksave_dir: Path | None = None,
+    quicksave_timeout_seconds: float = 10.0,
+    quicksave_stable_seconds: float = 0.5,
 ) -> LiveEnvironment:
     return LiveEnvironment(
         run_id="pulse-test",
@@ -290,6 +293,9 @@ def live_environment(
         emergency_stop_key="f12",
         available_skills=["move_visible_terrain"],
         control_mode=control_mode,
+        quicksave_dir=quicksave_dir,
+        quicksave_timeout_seconds=quicksave_timeout_seconds,
+        quicksave_stable_seconds=quicksave_stable_seconds,
     )
 
 
@@ -361,6 +367,89 @@ def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> No
         assert receipt.semantic is not None
         assert receipt.semantic.resolved_label == "highlight"
         assert "x2" in receipt.message
+
+    asyncio.run(scenario())
+
+
+def test_quicksave_waits_for_an_exact_quiescent_save_tree(tmp_path: Path) -> None:
+    from kenshi_agent.models import QuicksaveStatus
+
+    class QuicksavePulseController(PulseController):
+        def __init__(self, telemetry: PulseTelemetry, quicksave_dir: Path) -> None:
+            super().__init__(telemetry)
+            self.quicksave_dir = quicksave_dir
+
+        async def execute(self, action: PrimitiveInputAction) -> ActionReceipt:
+            receipt = await super().execute(action)
+            if isinstance(action, KeyAction) and action.key == "f5":
+                self.quicksave_dir.mkdir(parents=True)
+                (self.quicksave_dir / "quick.save").write_bytes(b"saved game")
+            return receipt
+
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        quicksave_dir = tmp_path / "save" / "quicksave"
+        controller = QuicksavePulseController(telemetry, quicksave_dir)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+            quicksave_dir=quicksave_dir,
+            quicksave_timeout_seconds=0.2,
+            quicksave_stable_seconds=0.01,
+        )
+        action = UseGameBindingAction(
+            binding=GameBinding.QUICKSAVE,
+            expected_effect="write the current game to the quicksave slot",
+        )
+
+        transition = await environment.step(action)
+
+        assert controller.actions == [KeyAction(key="f5")]
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.quicksave
+        assert evidence is not None
+        assert evidence.status is QuicksaveStatus.SAVED
+        assert evidence.slot == "quicksave"
+        assert evidence.changed_files == 1
+        assert evidence.quick_save_size_bytes == len(b"saved game")
+        assert evidence.quiescent_seconds >= 0.01
+
+    asyncio.run(scenario())
+
+
+def test_quicksave_does_not_promote_an_input_receipt_to_completion(
+    tmp_path: Path,
+) -> None:
+    from kenshi_agent.models import QuicksaveStatus
+
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+            quicksave_dir=tmp_path / "save" / "quicksave",
+            quicksave_timeout_seconds=0.03,
+            quicksave_stable_seconds=0.01,
+        )
+        action = UseGameBindingAction(
+            binding=GameBinding.QUICKSAVE,
+            expected_effect="write the current game to the quicksave slot",
+        )
+
+        transition = await environment.step(action)
+
+        assert transition.receipt.executed
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.quicksave
+        assert evidence is not None
+        assert evidence.status is QuicksaveStatus.NOT_OBSERVED
+        assert evidence.changed_files == 0
+        assert evidence.quick_save_size_bytes is None
 
     asyncio.run(scenario())
 

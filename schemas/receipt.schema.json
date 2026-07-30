@@ -1297,6 +1297,7 @@
         "toggle_help",
         "toggle_crafting",
         "toggle_research",
+        "quicksave",
         "quickload",
         "build_apply",
         "build_move_down",
@@ -2174,6 +2175,66 @@
       "title": "PurchaseStatus",
       "type": "string"
     },
+    "QuicksaveEvidence": {
+      "additionalProperties": false,
+      "description": "Controller-owned proof that F5 replaced the exact quicksave tree.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/QuicksaveStatus"
+        },
+        "slot": {
+          "const": "quicksave",
+          "default": "quicksave",
+          "title": "Slot",
+          "type": "string"
+        },
+        "changed_files": {
+          "minimum": 0,
+          "title": "Changed Files",
+          "type": "integer"
+        },
+        "quick_save_size_bytes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quick Save Size Bytes"
+        },
+        "quiescent_seconds": {
+          "minimum": 0.0,
+          "title": "Quiescent Seconds",
+          "type": "number"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "changed_files",
+        "quiescent_seconds",
+        "reason"
+      ],
+      "title": "QuicksaveEvidence",
+      "type": "object"
+    },
+    "QuicksaveStatus": {
+      "enum": [
+        "saved",
+        "not_observed"
+      ],
+      "title": "QuicksaveStatus",
+      "type": "string"
+    },
     "ReadFieldbookAction": {
       "additionalProperties": false,
       "description": "Electively inspect bounded private project context without game input.",
@@ -2915,6 +2976,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/SaleEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quicksave": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuicksaveEvidence"
             },
             {
               "type": "null"

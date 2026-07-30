@@ -248,6 +248,77 @@ def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> Non
     ).result.value == "true"
 
 
+def test_quicksave_is_reachable_only_with_controller_owned_completion() -> None:
+    from kenshi_agent.control.win32 import Win32InputController
+    from kenshi_agent.models import (
+        QUICKSAVE_COMPLETION_CAPABILITY,
+        KeyAction,
+        game_binding_primitive,
+    )
+
+    binding = GameBinding.QUICKSAVE
+    state = observation()
+    assert state.telemetry is not None
+    state = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        *state.telemetry.capabilities,
+                        QUICKSAVE_COMPLETION_CAPABILITY,
+                    ]
+                }
+            )
+        }
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="write the current game to the quicksave slot",
+    )
+
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, state).bound
+    assert game_binding_primitive(binding) == KeyAction(key="f5")
+    assert Win32InputController._vk("f5") == 0x74
+    assert (
+        completion_contract_for(action, state).owner
+        is CompletionOwner.CONTROLLER_TERMINAL
+    )
+
+    unavailable = state.telemetry.model_copy(
+        update={
+            "capabilities": [
+                capability
+                for capability in state.telemetry.capabilities
+                if capability != QUICKSAVE_COMPLETION_CAPABILITY
+            ]
+        }
+    )
+    assert not USE_GAME_BINDING_CONTRACT.bind(
+        action,
+        state.model_copy(update={"telemetry": unavailable}),
+    ).bound
+
+
+def test_saved_quicksave_evidence_requires_an_observed_nonempty_file() -> None:
+    from kenshi_agent.models import QuicksaveEvidence, QuicksaveStatus
+
+    with pytest.raises(
+        ValueError,
+        match="changed tree and nonempty quick.save",
+    ):
+        QuicksaveEvidence(
+            status=QuicksaveStatus.SAVED,
+            changed_files=0,
+            quick_save_size_bytes=None,
+            quiescent_seconds=0.5,
+            reason="No filesystem change was observed.",
+        )
+
+
 def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> None:
     from kenshi_agent.action_contracts import COMMAND_WORLD_TARGET_CONTRACT
     from kenshi_agent.models import (

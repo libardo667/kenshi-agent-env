@@ -32,6 +32,7 @@ from .models import (
     GAME_BINDING_KEYS,
     GAME_BINDING_MOUSE_BUTTONS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
+    QUICKSAVE_COMPLETION_CAPABILITY,
     TIME_GAME_BINDINGS,
     Action,
     ActivateVisibleControlAction,
@@ -1674,6 +1675,14 @@ def bind_use_game_binding(
         return _unbound("Telemetry is stale, so the game cannot be bound.")
     if telemetry.game.loaded is not True:
         return _unbound("Kenshi has no loaded game to receive a binding.")
+    if (
+        action.binding is GameBinding.QUICKSAVE
+        and QUICKSAVE_COMPLETION_CAPABILITY not in telemetry.capabilities
+    ):
+        return _unbound(
+            "Quicksave requires controller-owned completion evidence for the "
+            "exact quicksave slot."
+        )
     if action.binding is GameBinding.QUICKLOAD and (
         telemetry.identity_session_id is None
         or "identity.stable_handles" not in telemetry.capabilities
@@ -2937,6 +2946,11 @@ def completion_contract_for(
                 ),
             ),
         )
+    if (
+        isinstance(action, UseGameBindingAction)
+        and action.binding is GameBinding.QUICKSAVE
+    ):
+        return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
     if isinstance(
         action,
         (

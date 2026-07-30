@@ -57,6 +57,7 @@ from ..final_safe_state import (
 from ..input_boundary import ExecutionToken
 from ..models import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
+    QUICKSAVE_COMPLETION_CAPABILITY,
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -73,6 +74,7 @@ from ..models import (
     DismissScreenAction,
     EquipItemAction,
     ExitCurrentBuildingAction,
+    GameBinding,
     HotkeyAction,
     InputBoundaryDecision,
     KeyAction,
@@ -97,6 +99,8 @@ from ..models import (
     PurchaseEvidence,
     PurchaseItemAction,
     PurchaseStatus,
+    QuicksaveEvidence,
+    QuicksaveStatus,
     RecoverCameraViewAction,
     ResourceTransferStatus,
     RotateCameraAction,
@@ -148,6 +152,55 @@ class _BoundedTradeOutcome:
     reason: str
 
 
+@dataclass(frozen=True, slots=True)
+class _QuicksaveTreeState:
+    files: tuple[tuple[str, int, int], ...]
+    quick_save_size_bytes: int | None
+
+
+def _quicksave_tree_state(path: Path) -> _QuicksaveTreeState:
+    """Read one exact save slot without following links or opening its contents."""
+
+    if not path.exists():
+        return _QuicksaveTreeState(files=(), quick_save_size_bytes=None)
+    if path.is_symlink() or not path.is_dir():
+        raise RuntimeError(f"Quicksave slot is not a real directory: {path}")
+    files: list[tuple[str, int, int]] = []
+    quick_save_size: int | None = None
+    for candidate in sorted(path.rglob("*")):
+        if candidate.is_symlink():
+            raise RuntimeError(
+                f"Quicksave completion refuses symbolic links: {candidate}"
+            )
+        if candidate.is_dir():
+            continue
+        if not candidate.is_file():
+            raise RuntimeError(
+                f"Quicksave completion found an unsupported entry: {candidate}"
+            )
+        stat = candidate.stat()
+        relative = candidate.relative_to(path).as_posix()
+        files.append((relative, stat.st_size, stat.st_mtime_ns))
+        if relative == "quick.save" and stat.st_size > 0:
+            quick_save_size = stat.st_size
+    return _QuicksaveTreeState(
+        files=tuple(files),
+        quick_save_size_bytes=quick_save_size,
+    )
+
+
+def _changed_quicksave_files(
+    before: _QuicksaveTreeState,
+    after: _QuicksaveTreeState,
+) -> int:
+    before_by_path = {path: (size, modified) for path, size, modified in before.files}
+    after_by_path = {path: (size, modified) for path, size, modified in after.files}
+    return sum(
+        before_by_path.get(path) != after_by_path.get(path)
+        for path in before_by_path.keys() | after_by_path.keys()
+    )
+
+
 class LiveEnvironment(AgentEnvironment):
     _NATIVE_COMMAND_REQUEST_FILE = "native_command.request.json"
     _NATIVE_COMMAND_ACK_TIMEOUT_SECONDS = 2.0
@@ -173,7 +226,16 @@ class LiveEnvironment(AgentEnvironment):
         final_pause_timeout_seconds: float = 2.0,
         available_skills: list[str] | None = None,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
+        quicksave_dir: Path | None = None,
+        quicksave_timeout_seconds: float = 10.0,
+        quicksave_stable_seconds: float = 0.5,
     ) -> None:
+        if quicksave_timeout_seconds <= 0.0 or quicksave_stable_seconds <= 0.0:
+            raise ValueError("Quicksave monitoring times must be positive.")
+        if quicksave_stable_seconds >= quicksave_timeout_seconds:
+            raise ValueError(
+                "Quicksave stable time must be shorter than its completion timeout."
+            )
         self.run_id = run_id
         self.run_dir = run_dir
         self.telemetry_reader = telemetry
@@ -186,6 +248,9 @@ class LiveEnvironment(AgentEnvironment):
         self.emergency_stop_key = emergency_stop_key
         self.final_pause_timeout_seconds = final_pause_timeout_seconds
         self.control_mode = control_mode
+        self.quicksave_dir = quicksave_dir
+        self.quicksave_timeout_seconds = quicksave_timeout_seconds
+        self.quicksave_stable_seconds = quicksave_stable_seconds
         self.available_skills = macros.available_names(
             available_skills or macros.names(),
             control_mode=control_mode,
@@ -340,6 +405,11 @@ class LiveEnvironment(AgentEnvironment):
         """Withhold native-control evidence that `interface_only` may not use."""
 
         capabilities = list(snapshot.capabilities)
+        if (
+            self.quicksave_dir is not None
+            and QUICKSAVE_COMPLETION_CAPABILITY not in capabilities
+        ):
+            capabilities.append(QUICKSAVE_COMPLETION_CAPABILITY)
         if self._capture is not None and "camera.recovery" not in capabilities:
             # This is a controller capability, not a native plug-in claim. It is
             # advertised only when this environment actually owns a capture
@@ -2680,6 +2750,12 @@ class LiveEnvironment(AgentEnvironment):
         binding = USE_GAME_BINDING_CONTRACT.bind(action, observation)
         if not binding.bound:
             raise RuntimeError(f"No input was sent: {binding.reason}")
+        quicksave_before = (
+            _quicksave_tree_state(self.quicksave_dir)
+            if action.binding is GameBinding.QUICKSAVE
+            and self.quicksave_dir is not None
+            else None
+        )
         primitive = game_binding_primitive(action.binding)
         primitive_receipt = await self.controller.execute(primitive)
         if isinstance(primitive, KeyAction):
@@ -2688,6 +2764,16 @@ class LiveEnvironment(AgentEnvironment):
             mapped_input = "+".join(primitive.keys)
         else:
             mapped_input = primitive.button.value
+        quicksave = None
+        if action.binding is GameBinding.QUICKSAVE:
+            if self.quicksave_dir is None or quicksave_before is None:
+                raise RuntimeError(
+                    "Quicksave completion monitoring disappeared before input."
+                )
+            quicksave = await self._wait_for_quicksave_completion(
+                self.quicksave_dir,
+                quicksave_before,
+            )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=USE_GAME_BINDING_CONTRACT.version,
@@ -2697,6 +2783,12 @@ class LiveEnvironment(AgentEnvironment):
                 "Re-confirmed a game was loaded inside the input lease before "
                 f"pressing the key. {binding.reason}"
             ),
+            quicksave=quicksave,
+        )
+        completion_message = (
+            f" {quicksave.reason}"
+            if quicksave is not None
+            else " A later observation must confirm the transition."
         )
         return primitive_receipt.model_copy(
             update={
@@ -2705,10 +2797,76 @@ class LiveEnvironment(AgentEnvironment):
                 "message": (
                     f"Pressed Kenshi's {action.binding.value!r} binding "
                     f"({mapped_input!r}), "
-                    f"expecting: {action.expected_effect}. A later observation "
-                    "must confirm the transition."
+                    f"expecting: {action.expected_effect}."
+                    f"{completion_message}"
                 ),
             }
+        )
+
+    async def _wait_for_quicksave_completion(
+        self,
+        path: Path,
+        before: _QuicksaveTreeState,
+    ) -> QuicksaveEvidence:
+        """Require an exact changed slot to stop mutating after F5."""
+
+        deadline = time.monotonic() + self.quicksave_timeout_seconds
+        previous = before
+        latest = before
+        stable_since: float | None = None
+        last_error: OSError | RuntimeError | None = None
+        while time.monotonic() < deadline:
+            now = time.monotonic()
+            try:
+                current = _quicksave_tree_state(path)
+                last_error = None
+            except (OSError, RuntimeError) as exc:
+                last_error = exc
+                stable_since = None
+                await asyncio.sleep(0.05)
+                continue
+            latest = current
+            changed = current.files != before.files
+            complete_file = current.quick_save_size_bytes is not None
+            if changed and complete_file:
+                if current.files != previous.files:
+                    stable_since = now
+                elif stable_since is None:
+                    stable_since = now
+                elif now - stable_since >= self.quicksave_stable_seconds:
+                    changed_files = _changed_quicksave_files(before, current)
+                    return QuicksaveEvidence(
+                        status=QuicksaveStatus.SAVED,
+                        changed_files=changed_files,
+                        quick_save_size_bytes=current.quick_save_size_bytes,
+                        quiescent_seconds=now - stable_since,
+                        reason=(
+                            "Observed the exact quicksave tree change after F5 "
+                            f"and remain quiescent for {now - stable_since:.3f}s."
+                        ),
+                    )
+            else:
+                stable_since = None
+            previous = current
+            await asyncio.sleep(
+                min(0.05, max(0.005, self.quicksave_stable_seconds / 2.0))
+            )
+        changed_files = _changed_quicksave_files(before, latest)
+        error = (
+            f" Last monitor error: {type(last_error).__name__}: {last_error}."
+            if last_error is not None
+            else ""
+        )
+        return QuicksaveEvidence(
+            status=QuicksaveStatus.NOT_OBSERVED,
+            changed_files=changed_files,
+            quick_save_size_bytes=latest.quick_save_size_bytes,
+            quiescent_seconds=0.0,
+            reason=(
+                "F5 was sent, but the exact quicksave tree did not produce a "
+                "changed, nonempty, quiescent quick.save before the completion "
+                f"timeout.{error}"
+            ),
         )
 
     async def _execute_scroll_screen(

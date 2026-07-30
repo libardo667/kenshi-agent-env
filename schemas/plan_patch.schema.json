@@ -634,6 +634,7 @@
         "toggle_help",
         "toggle_crafting",
         "toggle_research",
+        "quicksave",
         "quickload",
         "build_apply",
         "build_move_down",

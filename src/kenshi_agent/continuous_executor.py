@@ -46,6 +46,7 @@ from .models import (
     PlanStep,
     ProduceResourceOutputAction,
     PurchaseStatus,
+    QuicksaveStatus,
     ReadFieldbookAction,
     RecallMemoryAction,
     ResourceHarvestEvidence,
@@ -1737,6 +1738,52 @@ class ContinuousPlanExecutor:
                 staged_patch=staged_patch if succeeded else None,
             )
         if completion.owner is CompletionOwner.CONTROLLER_TERMINAL:
+            if (
+                isinstance(action, UseGameBindingAction)
+                and action.binding is GameBinding.QUICKSAVE
+            ):
+                quicksave = (
+                    transition.receipt.semantic.quicksave
+                    if transition.receipt.semantic is not None
+                    else None
+                )
+                succeeded = (
+                    quicksave is not None
+                    and quicksave.status is QuicksaveStatus.SAVED
+                )
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason=(
+                        "Accepted the controller-owned quicksave verdict."
+                        if succeeded
+                        else "The controller did not prove a completed quicksave."
+                    ),
+                    evidence={
+                        "completion_owner": completion.owner.value,
+                        "controller_verified": True,
+                        "quicksave": (
+                            quicksave.model_dump(mode="json")
+                            if quicksave is not None
+                            else None
+                        ),
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        quicksave.reason
+                        if quicksave is not None
+                        else "Controller returned no typed quicksave evidence."
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
             succeeded = bool(
                 transition.receipt.accepted
                 and (transition.receipt.executed or transition.terminated)
