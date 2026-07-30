@@ -13,16 +13,12 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        67
+wired        71
 exempt        1
-missing       4
+missing       0
 unclassified  0
 
 MISSING — implementation queue
-  toggle_passive           [NUM2]  No contracted action exposes this combat or AI stance.
-  toggle_ranged            [NUM3]  No contracted action exposes this combat or AI stance.
-  toggle_sneak             [NUM4]  No contracted action exposes this combat or AI stance.
-  toggle_taunt             [NUM5]  No contracted action exposes this combat or AI stance.
 
 EXEMPT — deliberate non-affordances
   screenshot               [superseded]  The observation pipeline captures attributable game frames directly.
@@ -93,6 +89,10 @@ WIRED — real planner routes
   toggle_hold              use_game_binding(toggle_hold)
   toggle_inventory         use_game_binding(toggle_inventory)
   toggle_map               use_game_binding(toggle_map)
+  toggle_passive           use_game_binding(toggle_passive)
+  toggle_ranged            use_game_binding(toggle_ranged)
   toggle_research          use_game_binding(toggle_research)
+  toggle_sneak             use_game_binding(toggle_sneak)
   toggle_stats             use_game_binding(toggle_stats)
+  toggle_taunt             use_game_binding(toggle_taunt)
 ```

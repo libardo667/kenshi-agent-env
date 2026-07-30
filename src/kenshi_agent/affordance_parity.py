@@ -311,21 +311,16 @@ _WIRED_GAME_BINDINGS = frozenset(
         "toggle_fps_camera",
         "toggle_hold",
         "toggle_map",
+        "toggle_passive",
+        "toggle_ranged",
         "toggle_research",
+        "toggle_sneak",
         "toggle_stats",
+        "toggle_taunt",
     }
 )
 
-_MISSING_GROUPS: dict[str, frozenset[str]] = {
-    "No contracted action exposes this combat or AI stance.": frozenset(
-        {
-            "toggle_passive",
-            "toggle_ranged",
-            "toggle_sneak",
-            "toggle_taunt",
-        }
-    ),
-}
+_MISSING_GROUPS: dict[str, frozenset[str]] = {}
 
 
 def _binding_decisions() -> dict[str, BindingDecision]:

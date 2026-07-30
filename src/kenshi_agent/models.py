@@ -1496,6 +1496,10 @@ class GameBinding(StrEnum):
     TOGGLE_HOLD = "toggle_hold"
     TOGGLE_BLOCK = "toggle_block"
     TOGGLE_BAR = "toggle_bar"
+    TOGGLE_PASSIVE = "toggle_passive"
+    TOGGLE_RANGED = "toggle_ranged"
+    TOGGLE_SNEAK = "toggle_sneak"
+    TOGGLE_TAUNT = "toggle_taunt"
 
 
 GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
@@ -1562,6 +1566,10 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.TOGGLE_HOLD: "numpad1",
     GameBinding.TOGGLE_BLOCK: "numpad0",
     GameBinding.TOGGLE_BAR: "f7",
+    GameBinding.TOGGLE_PASSIVE: "numpad2",
+    GameBinding.TOGGLE_RANGED: "numpad3",
+    GameBinding.TOGGLE_SNEAK: "numpad4",
+    GameBinding.TOGGLE_TAUNT: "numpad5",
 }
 """Default Kenshi key per binding; hard-coded, not parsed from active controls.cfg."""
 
@@ -1606,6 +1614,10 @@ TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.TOGGLE_HOLD,
         GameBinding.TOGGLE_BLOCK,
         GameBinding.TOGGLE_BAR,
+        GameBinding.TOGGLE_PASSIVE,
+        GameBinding.TOGGLE_RANGED,
+        GameBinding.TOGGLE_SNEAK,
+        GameBinding.TOGGLE_TAUNT,
     }
 )
 

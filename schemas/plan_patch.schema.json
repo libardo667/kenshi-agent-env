@@ -691,7 +691,11 @@
         "rescue",
         "toggle_hold",
         "toggle_block",
-        "toggle_bar"
+        "toggle_bar",
+        "toggle_passive",
+        "toggle_ranged",
+        "toggle_sneak",
+        "toggle_taunt"
       ],
       "title": "GameBinding",
       "type": "string"
