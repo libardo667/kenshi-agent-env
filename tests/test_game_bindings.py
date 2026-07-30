@@ -101,12 +101,8 @@ def test_queued_binding_is_reachable_through_the_semantic_binding_action(
     assert result.bound
     assert result.resolved_label == binding.value
 
-    binding_action = next(
-        item
-        for item in observation().semantic_action_digest()
-        if item["kind"] == "use_game_binding"
-    )
-    assert binding.value in binding_action["available_bindings"]
+    schema = UseGameBindingAction.model_json_schema()
+    assert binding.value in schema["$defs"]["GameBinding"]["enum"]
     assert GAME_BINDING_KEYS[binding] == expected_key
     from kenshi_agent.control.win32 import Win32InputController
 
@@ -135,8 +131,41 @@ def test_the_binding_action_is_contracted_and_planner_visible() -> None:
     assert ACTION_CONTRACTS["use_game_binding"].planner_visible
 
 
-def test_raw_time_keys_are_absent_from_planner_bindings() -> None:
-    """Playback is represented once by pause/set_speed, not duplicate keys."""
+def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic() -> None:
+    closed = observation()
+    closed_binding_action = next(
+        action
+        for action in closed.semantic_action_digest()
+        if action["kind"] == "use_game_binding"
+    )
+    assert "available_bindings" not in closed_binding_action
+
+    schema = UseGameBindingAction.model_json_schema()
+    assert set(schema["$defs"]["GameBinding"]["enum"]) == {
+        binding.value for binding in GameBinding
+    }
+
+    assert closed.telemetry is not None
+    opened_telemetry = closed.telemetry.model_copy(
+        update={
+            "ui": closed.telemetry.ui.model_copy(
+                update={"management_screen_open": True}
+            )
+        }
+    )
+    opened = closed.model_copy(update={"telemetry": opened_telemetry})
+    opened_binding_action = next(
+        action
+        for action in opened.semantic_action_digest()
+        if action["kind"] == "use_game_binding"
+    )
+    closed_map = closed_binding_action["runtime_completion_conditions"]["toggle_map"]
+    opened_map = opened_binding_action["runtime_completion_conditions"]["toggle_map"]
+    assert closed_map["expected"] is True
+    assert opened_map["expected"] is False
+
+
+def test_binding_runtime_conditions_contain_only_observable_transitions() -> None:
 
     binding_action = next(
         action
@@ -144,13 +173,6 @@ def test_raw_time_keys_are_absent_from_planner_bindings() -> None:
         if action["kind"] == "use_game_binding"
     )
 
-    assert "toggle_inventory" in binding_action["available_bindings"]
-    assert not {
-        "pause",
-        "speed_1",
-        "speed_2",
-        "speed_3",
-    } & set(binding_action["available_bindings"])
     inventory_condition = binding_action["runtime_completion_conditions"][
         "toggle_inventory"
     ]

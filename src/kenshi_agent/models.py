@@ -3817,11 +3817,6 @@ class Observation(StrictModel):
                 "argument_source": contract.argument_source,
             }
             if contract.kind == "use_game_binding":
-                entry["available_bindings"] = [
-                    binding.value
-                    for binding in GameBinding
-                    if binding not in TIME_GAME_BINDINGS
-                ]
                 entry["runtime_completion_conditions"] = {
                     binding.value: _json_model(condition)
                     for binding in GameBinding

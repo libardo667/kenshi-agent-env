@@ -2243,7 +2243,8 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
         "for a widget when one exists. Customized keymaps are not currently read."
     ),
     argument_source=(
-        "binding must be one of semantic_actions[].available_bindings; "
+        "binding must be one of the GameBinding values in the projected action "
+        "schema; raw time controls use pause/set_speed instead. "
         "expected_effect states in one phrase what the press should change, "
         "and the step's success conditions must check it."
     ),
