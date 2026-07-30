@@ -268,6 +268,32 @@ def test_preferred_combat_stance_binding_is_reachable(
     assert binding in TOGGLE_GAME_BINDINGS
 
 
+@pytest.mark.parametrize(
+    ("binding_name", "expected_keys"),
+    [
+        ("rebuild_navmesh", ["ctrl", "shift", "f11"]),
+        ("reload_biomes", ["ctrl", "f6"]),
+    ],
+)
+def test_world_data_binding_is_reachable_as_an_exact_hotkey(
+    binding_name: str,
+    expected_keys: list[str],
+) -> None:
+    binding = GameBinding(binding_name)
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect=f"apply the exact {binding_name} world-data control",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    from kenshi_agent.models import game_binding_primitive
+
+    assert game_binding_primitive(binding) == HotkeyAction(keys=expected_keys)
+
+
 def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> None:
     from kenshi_agent.control.win32 import Win32InputController
     from kenshi_agent.models import (

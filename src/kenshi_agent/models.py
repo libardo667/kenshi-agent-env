@@ -1463,6 +1463,8 @@ class GameBinding(StrEnum):
     # Development host controls.
     EDITOR_DELETE = "editor_delete"
     EDITOR_TOGGLE = "editor_toggle"
+    REBUILD_NAVMESH = "rebuild_navmesh"
+    RELOAD_BIOMES = "reload_biomes"
     FLOOR_DOWN = "floor_down"
     FLOOR_UP = "floor_up"
     GIZMO_MOVE = "gizmo_move"
@@ -1528,6 +1530,8 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.CYCLE_RUN_SPEED: "numpad6",
     GameBinding.EDITOR_DELETE: "delete",
     GameBinding.EDITOR_TOGGLE: ("shift", "f12"),
+    GameBinding.REBUILD_NAVMESH: ("ctrl", "shift", "f11"),
+    GameBinding.RELOAD_BIOMES: ("ctrl", "f6"),
     GameBinding.FLOOR_DOWN: "pagedown",
     GameBinding.FLOOR_UP: "pageup",
     GameBinding.GIZMO_MOVE: "h",

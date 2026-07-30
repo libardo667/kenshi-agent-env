@@ -661,6 +661,8 @@
         "cycle_run_speed",
         "editor_delete",
         "editor_toggle",
+        "rebuild_navmesh",
+        "reload_biomes",
         "floor_down",
         "floor_up",
         "gizmo_move",

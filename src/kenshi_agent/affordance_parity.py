@@ -284,6 +284,8 @@ _WIRED_GAME_BINDINGS = frozenset(
         "rescue",
         "quickload",
         "quicksave",
+        "rebuild_navmesh",
+        "reload_biomes",
         "change_squad",
         "character_next",
         "character_prev",
@@ -313,17 +315,6 @@ _WIRED_GAME_BINDINGS = frozenset(
 )
 
 _MISSING_GROUPS: dict[str, frozenset[str]] = {
-    (
-        "World-editor and world-data control on a development host. Not "
-        "ordinary play, but the operator's own machine and the operator's "
-        "call; rebuild_navmesh may even answer the movement_stalled failures "
-        "that ended live-trade-surface-20260729-r1."
-    ): frozenset(
-        {
-            "rebuild_navmesh",
-            "reload_biomes",
-        }
-    ),
     (
         "Construction and placement have no observed build state or "
         "contracted semantic action."
