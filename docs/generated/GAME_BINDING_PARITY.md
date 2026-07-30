@@ -13,14 +13,13 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        47
+wired        48
 exempt        1
-missing      24
+missing      23
 unclassified  0
 
 MISSING — implementation queue
-  quickload                [F9]  Save-state control is wanted, not refused: it lets a run checkpoint before a risky experiment and recover from death without a human. Blocked on the world store treating a load as a session boundary rather than a revision regression, which it currently rejects.
-  quicksave                [F5]  Save-state control is wanted, not refused: it lets a run checkpoint before a risky experiment and recover from death without a human. Blocked on the world store treating a load as a session boundary rather than a revision regression, which it currently rejects.
+  quicksave                [F5]  Save-state control is wanted, not refused: it lets a run checkpoint before a risky experiment and recover from death without a human. No observable save-completion signal is contracted yet; an F5 input receipt alone cannot prove the quicksave finished.
   rebuild_navmesh          [Ctrl+Shift+F11]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   reload_biomes            [Ctrl+F6]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   rescue                   [NUM8]  No contracted squad-care action exposes this order.
@@ -84,6 +83,7 @@ WIRED — real planner routes
   mouse_rotate             rotate_camera
   mouse_select             select_squad_member
   pause                    pause
+  quickload                use_game_binding(quickload)
   select_all               use_game_binding(select_all)
   speed_1                  set_speed(1)
   speed_2                  set_speed(2)

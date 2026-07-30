@@ -1427,6 +1427,8 @@ class GameBinding(StrEnum):
     TOGGLE_HELP = "toggle_help"
     TOGGLE_CRAFTING = "toggle_crafting"
     TOGGLE_RESEARCH = "toggle_research"
+    # Save-state control.
+    QUICKLOAD = "quickload"
     # Construction.
     BUILD_APPLY = "build_apply"
     BUILD_MOVE_DOWN = "build_move_down"
@@ -1480,6 +1482,7 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.TOGGLE_HELP: "f1",
     GameBinding.TOGGLE_CRAFTING: "y",
     GameBinding.TOGGLE_RESEARCH: "t",
+    GameBinding.QUICKLOAD: "f9",
     GameBinding.BUILD_APPLY: "space",
     GameBinding.BUILD_MOVE_DOWN: "minus",
     GameBinding.BUILD_MOVE_UP: "equals",
@@ -3072,6 +3075,7 @@ ConditionScalar: TypeAlias = ExpectedConditionScalar | None
 class FieldConditionPath(StrEnum):
     CONTROL_MODE = "control_mode"
     TELEMETRY_STALE = "telemetry_stale"
+    TELEMETRY_IDENTITY_SESSION_ID = "telemetry.identity_session_id"
     TELEMETRY_GAME_LOADED = "telemetry.game.loaded"
     TELEMETRY_GAME_PAUSED = "telemetry.game.paused"
     TELEMETRY_GAME_SPEED_MULTIPLIER = "telemetry.game.speed_multiplier"
@@ -3137,6 +3141,7 @@ ConditionPath = FieldConditionPath
 _ALLOWED_CONDITION_PATHS = frozenset(path.value for path in FieldConditionPath)
 
 GAME_BINDING_VERIFICATION_PATHS: dict[GameBinding, FieldConditionPath] = {
+    GameBinding.QUICKLOAD: FieldConditionPath.TELEMETRY_IDENTITY_SESSION_ID,
     GameBinding.TOGGLE_INVENTORY: FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
     GameBinding.TOGGLE_MAP: FieldConditionPath.TELEMETRY_UI_MANAGEMENT_SCREEN_OPEN,
     GameBinding.TOGGLE_STATS: FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
@@ -3320,6 +3325,21 @@ def game_binding_success_condition(
 
     if telemetry is None:
         return None
+    if binding is GameBinding.QUICKLOAD:
+        current_session_id = telemetry.identity_session_id
+        if (
+            current_session_id is None
+            or "identity.stable_handles" not in telemetry.capabilities
+        ):
+            return None
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=GAME_BINDING_VERIFICATION_PATHS[binding],
+            operator=ConditionOperator.NOT_EQUALS,
+            expected=current_session_id,
+            max_age_seconds=3.0,
+            required_capabilities=["identity.stable_handles"],
+        )
     if binding is GameBinding.TOGGLE_INVENTORY:
         current = telemetry.ui.open_inventory_windows
         if current is None:

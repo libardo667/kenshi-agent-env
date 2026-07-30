@@ -93,6 +93,7 @@ def capability_satisfied(name: str, available: set[str] | frozenset[str]) -> boo
     return any(alias in available for alias in _CAPABILITY_ALIASES.get(name, ()))
 
 _PATH_CAPABILITY_ALTERNATIVES: dict[str, tuple[str, ...]] = {
+    "telemetry.identity_session_id": ("identity.stable_handles",),
     "telemetry.game.loaded": ("game.pause",),
     "telemetry.game.paused": ("game.pause",),
     "telemetry.game.speed_multiplier": ("game.speed",),
@@ -186,6 +187,7 @@ def _resolve_field(condition: Condition, observation: Observation) -> object | N
     assert path is not None  # pragma: no mutate - field conditions always have a path
 
     direct_paths: dict[str, object | None] = {
+        "telemetry.identity_session_id": telemetry.identity_session_id,
         "telemetry.game.loaded": telemetry.game.loaded,
         "telemetry.game.paused": telemetry.game.paused,
         "telemetry.game.speed_multiplier": telemetry.game.speed_multiplier,

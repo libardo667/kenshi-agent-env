@@ -1228,6 +1228,7 @@
       "enum": [
         "control_mode",
         "telemetry_stale",
+        "telemetry.identity_session_id",
         "telemetry.game.loaded",
         "telemetry.game.paused",
         "telemetry.game.speed_multiplier",
@@ -1296,6 +1297,7 @@
         "toggle_help",
         "toggle_crafting",
         "toggle_research",
+        "quickload",
         "build_apply",
         "build_move_down",
         "build_move_up",

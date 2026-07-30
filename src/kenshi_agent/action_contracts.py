@@ -1674,6 +1674,14 @@ def bind_use_game_binding(
         return _unbound("Telemetry is stale, so the game cannot be bound.")
     if telemetry.game.loaded is not True:
         return _unbound("Kenshi has no loaded game to receive a binding.")
+    if action.binding is GameBinding.QUICKLOAD and (
+        telemetry.identity_session_id is None
+        or "identity.stable_handles" not in telemetry.capabilities
+    ):
+        return _unbound(
+            "Quickload requires a current stable identity session so completion "
+            "can be attributed to a new loaded session."
+        )
     if action.binding in TIME_GAME_BINDINGS:
         return _unbound(
             "Raw time bindings are not planner affordances; use pause to stop "
@@ -2008,6 +2016,7 @@ def _binding_transition(
     if not isinstance(action, UseGameBindingAction):
         return ()
     if action.binding not in {
+        GameBinding.QUICKLOAD,
         GameBinding.TOGGLE_INVENTORY,
         GameBinding.TOGGLE_MAP,
         GameBinding.TOGGLE_STATS,

@@ -420,6 +420,7 @@
         "toggle_help",
         "toggle_crafting",
         "toggle_research",
+        "quickload",
         "build_apply",
         "build_move_down",
         "build_move_up",

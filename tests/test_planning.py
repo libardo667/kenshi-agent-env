@@ -363,6 +363,7 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
     expected: dict[FieldConditionPath, str | int | float | bool] = {
         FieldConditionPath.CONTROL_MODE: ControlMode.INTERFACE_ONLY.value,
         FieldConditionPath.TELEMETRY_STALE: False,
+        FieldConditionPath.TELEMETRY_IDENTITY_SESSION_ID: "session-planning",
         FieldConditionPath.TELEMETRY_GAME_LOADED: True,
         FieldConditionPath.TELEMETRY_GAME_PAUSED: False,
         FieldConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER: 2.5,

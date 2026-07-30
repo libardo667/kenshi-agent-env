@@ -281,6 +281,7 @@ _WIRED_GAME_BINDINGS = frozenset(
         "gizmo_scale",
         "highlight",
         "medic",
+        "quickload",
         "change_squad",
         "character_next",
         "character_prev",
@@ -300,9 +301,9 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
     (
         "Save-state control is wanted, not refused: it lets a run checkpoint "
         "before a risky experiment and recover from death without a human. "
-        "Blocked on the world store treating a load as a session boundary "
-        "rather than a revision regression, which it currently rejects."
-    ): frozenset({"quicksave", "quickload"}),
+        "No observable save-completion signal is contracted yet; an F5 input "
+        "receipt alone cannot prove the quicksave finished."
+    ): frozenset({"quicksave"}),
     (
         "World-editor and world-data control on a development host. Not "
         "ordinary play, but the operator's own machine and the operator's "

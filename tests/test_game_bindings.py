@@ -181,6 +181,73 @@ def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
     assert binding in TOGGLE_GAME_BINDINGS
 
 
+def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> None:
+    from kenshi_agent.control.win32 import Win32InputController
+    from kenshi_agent.models import (
+        ConditionOperator,
+        ConditionPath,
+        KeyAction,
+        game_binding_primitive,
+    )
+    from kenshi_agent.planning import evaluate_condition
+
+    binding = GameBinding.QUICKLOAD
+    state = observation()
+    assert state.telemetry is not None
+    state = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "identity_session_id": "session-before-load",
+                    "capabilities": [
+                        *state.telemetry.capabilities,
+                        "identity.stable_handles",
+                    ],
+                }
+            )
+        }
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="load the current quicksave",
+    )
+
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, state).bound
+    assert game_binding_primitive(binding) == KeyAction(key="f9")
+    assert Win32InputController._vk("f9") == 0x78
+
+    completion = completion_contract_for(action, state)
+    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    assert len(completion.conditions) == 1
+    session_changed = completion.conditions[0]
+    assert session_changed.path is ConditionPath.TELEMETRY_IDENTITY_SESSION_ID
+    assert session_changed.operator is ConditionOperator.NOT_EQUALS
+    assert session_changed.expected == "session-before-load"
+    assert session_changed.required_capabilities == ["identity.stable_handles"]
+
+    after_telemetry = state.telemetry.model_copy(
+        update={
+            "sequence": 8,
+            "identity_session_id": "session-after-load",
+        }
+    )
+    after = state.model_copy(
+        update={
+            "world_revision": WorldStateRevision(telemetry_sequence=8),
+            "telemetry": after_telemetry,
+        }
+    )
+    assert evaluate_condition(
+        session_changed,
+        after,
+        after_revision=state.world_revision,
+    ).result.value == "true"
+
+
 def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> None:
     from kenshi_agent.action_contracts import COMMAND_WORLD_TARGET_CONTRACT
     from kenshi_agent.models import (

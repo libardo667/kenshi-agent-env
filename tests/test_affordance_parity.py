@@ -124,9 +124,8 @@ def test_withdrawn_preference_exemptions_are_queued_or_wired_not_hidden() -> Non
     ):
         assert name not in exempt, f"{name} returned to a preference exemption"
         assert name in missing or name in wired, f"{name} is neither queued nor wired"
-    # The technical objection to loading is causal, not moral, and it has to be
-    # written where the next reader will find it.
-    assert "session boundary" in report.decisions["quickload"].reason
+    assert report.decisions["quickload"].route is not None
+    assert report.decisions["quickload"].route.action_kind == "use_game_binding"
 
 
 @pytest.mark.skipif(
