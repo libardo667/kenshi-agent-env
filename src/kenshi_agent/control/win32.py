@@ -236,6 +236,7 @@ class Win32InputController(InputController):
         "minus": 0xBD,
         "numpad6": 0x66,
         "numpad7": 0x67,
+        "numpad8": 0x68,
         "semicolon": 0xBA,
         "comma": 0xBC,
         "period": 0xBE,

@@ -2886,7 +2886,8 @@
         "select_8",
         "select_9",
         "stop_movement",
-        "medic"
+        "medic",
+        "rescue"
       ],
       "title": "GameBinding",
       "type": "string"

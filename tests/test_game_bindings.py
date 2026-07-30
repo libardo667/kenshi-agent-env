@@ -218,6 +218,25 @@ def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
     assert binding in TOGGLE_GAME_BINDINGS
 
 
+def test_rescue_is_reachable_through_a_semantic_toggle_binding() -> None:
+    from kenshi_agent.control.win32 import Win32InputController
+    from kenshi_agent.models import KeyAction, game_binding_primitive
+
+    binding = GameBinding("rescue")
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="toggle the rescue job for the selected squad members",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert game_binding_primitive(binding) == KeyAction(key="numpad8")
+    assert Win32InputController._vk("numpad8") == 0x68
+    assert binding in TOGGLE_GAME_BINDINGS
+
+
 def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> None:
     from kenshi_agent.control.win32 import Win32InputController
     from kenshi_agent.models import (

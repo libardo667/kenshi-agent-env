@@ -281,6 +281,7 @@ _WIRED_GAME_BINDINGS = frozenset(
         "gizmo_scale",
         "highlight",
         "medic",
+        "rescue",
         "quickload",
         "quicksave",
         "change_squad",
@@ -336,7 +337,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
             "toggle_fps_camera",
         }
     ),
-    "No contracted squad-care action exposes this order.": frozenset({"rescue"}),
     "No contracted action exposes this combat or AI stance.": frozenset(
         {
             "toggle_bar",

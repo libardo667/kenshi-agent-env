@@ -13,15 +13,14 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        59
+wired        60
 exempt        1
-missing      12
+missing      11
 unclassified  0
 
 MISSING — implementation queue
   rebuild_navmesh          [Ctrl+Shift+F11]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   reload_biomes            [Ctrl+F6]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
-  rescue                   [NUM8]  No contracted squad-care action exposes this order.
   toggle_bar               [F7]  No contracted action exposes this combat or AI stance.
   toggle_block             [NUM0]  No contracted action exposes this combat or AI stance.
   toggle_build             [B]  Construction and placement have no observed build state or contracted semantic action.
@@ -74,6 +73,7 @@ WIRED — real planner routes
   pause                    pause
   quickload                use_game_binding(quickload)
   quicksave                use_game_binding(quicksave)
+  rescue                   use_game_binding(rescue)
   select_0                 use_game_binding(select_0)
   select_1                 use_game_binding(select_1)
   select_2                 use_game_binding(select_2)

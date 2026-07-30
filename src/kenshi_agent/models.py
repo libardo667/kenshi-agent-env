@@ -1488,6 +1488,7 @@ class GameBinding(StrEnum):
     # Orders.
     STOP_MOVEMENT = "stop_movement"
     MEDIC = "medic"
+    RESCUE = "rescue"
 
 
 GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
@@ -1546,6 +1547,7 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.SELECT_GROUP_9: "0",
     GameBinding.STOP_MOVEMENT: "r",
     GameBinding.MEDIC: "numpad7",
+    GameBinding.RESCUE: "numpad8",
 }
 """Default Kenshi key per binding; hard-coded, not parsed from active controls.cfg."""
 
@@ -1584,6 +1586,7 @@ TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.CHANGE_SQUAD,
         GameBinding.CYCLE_RUN_SPEED,
         GameBinding.MEDIC,
+        GameBinding.RESCUE,
     }
 )
 
