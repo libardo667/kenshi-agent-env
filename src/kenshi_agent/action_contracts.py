@@ -31,6 +31,7 @@ from pydantic import BaseModel
 from .models import (
     GAME_BINDING_KEYS,
     GAME_BINDING_MOUSE_BUTTONS,
+    GAME_BINDING_TERMINALS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     QUICKSAVE_COMPLETION_CAPABILITY,
     TIME_GAME_BINDINGS,
@@ -2024,12 +2025,11 @@ def _binding_transition(
 ) -> tuple[Condition, ...] | None:
     if not isinstance(action, UseGameBindingAction):
         return ()
-    if action.binding not in {
-        GameBinding.QUICKLOAD,
-        GameBinding.TOGGLE_INVENTORY,
-        GameBinding.TOGGLE_MAP,
-        GameBinding.TOGGLE_STATS,
-    }:
+    # A second literal copy of this set lived here and silently shadowed the
+    # terminal table: map gained a condition while research and crafting, whose
+    # table entries were identical, were still rejected at plan validation.
+    # There is one source of which bindings are witnessed.
+    if action.binding not in GAME_BINDING_TERMINALS:
         return None
     condition = game_binding_success_condition(action.binding, observation.telemetry)
     return (condition,) if condition is not None else ()

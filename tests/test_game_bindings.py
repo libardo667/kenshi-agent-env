@@ -28,12 +28,15 @@ from kenshi_agent.models import (
     GAME_BINDING_KEYS,
     GAME_BINDING_MOUSE_BUTTONS,
     GAME_BINDING_TERMINALS,
+    MANAGEMENT_TAB_CLOSED,
+    MANAGEMENT_TAB_INDICES,
     TOGGLE_GAME_BINDINGS,
     UNWITNESSED_BINDINGS,
     CharacterState,
     ConditionOperator,
     FieldConditionPath,
     GameBinding,
+    GameScreen,
     GameState,
     HotkeyAction,
     Observation,
@@ -1744,3 +1747,36 @@ def test_a_management_tab_binding_is_witnessed_by_the_tab_not_the_window() -> No
     assert condition.root.path == FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB
     assert condition.root.operator == ConditionOperator.NOT_EQUALS
     assert condition.root.expected == 0
+
+
+def test_management_tab_indices_come_from_measurement_not_assumption() -> None:
+    """Map, research and crafting share one window; only the tab tells them apart.
+
+    Measured in live-management-tabs-20260729-r3 and r4, reproducible across
+    three opens each: closed is -1, map 0, research 2, crafting 3. Without these
+    a controller can prove "some management screen opened" but not "research
+    opened", which is the difference between a semantic action that keeps its
+    promise and one that reports success for the wrong screen.
+    """
+
+    assert MANAGEMENT_TAB_CLOSED == -1
+    assert MANAGEMENT_TAB_INDICES == {
+        GameScreen.MAP: 0,
+        GameScreen.RESEARCH: 2,
+        GameScreen.CRAFTING: 3,
+    }
+    assert MANAGEMENT_TAB_CLOSED not in MANAGEMENT_TAB_INDICES.values()
+
+
+def test_every_named_screen_can_be_told_apart_from_the_others() -> None:
+    """A screen with no distinguishing observation cannot be promised."""
+
+    distinguishers: dict[GameScreen, object] = {
+        GameScreen.INVENTORY: "open_inventory_windows",
+        GameScreen.STATS: "stats_window_open",
+    }
+    for screen, tab in MANAGEMENT_TAB_INDICES.items():
+        distinguishers[screen] = ("management_tab", tab)
+
+    assert set(distinguishers) == set(GameScreen)
+    assert len(set(map(str, distinguishers.values()))) == len(GameScreen)

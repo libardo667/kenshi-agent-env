@@ -1187,6 +1187,48 @@ class SelectSquadMemberAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
+class GameScreen(StrEnum):
+    """A screen the agent wants open, named by what it is rather than a key."""
+
+    INVENTORY = "inventory"
+    STATS = "stats"
+    MAP = "map"
+    RESEARCH = "research"
+    CRAFTING = "crafting"
+
+
+# Which management tab index each screen occupies, measured live in
+# live-management-tabs-20260729-r3 and r4 rather than assumed: map 0,
+# research 2, crafting 3, and -1 whenever the window is closed. Map, research
+# and crafting share one window, so the tab index is the only thing that
+# distinguishes "research opened" from "some management screen opened".
+MANAGEMENT_TAB_INDICES: dict[GameScreen, int] = {
+    GameScreen.MAP: 0,
+    GameScreen.RESEARCH: 2,
+    GameScreen.CRAFTING: 3,
+}
+MANAGEMENT_TAB_CLOSED = -1
+
+
+class OpenScreenAction(StrictModel):
+    """Have a named screen open, without naming the key that opens it.
+
+    `use_game_binding` makes the planner name a mechanism when what it has is an
+    intent: "I need the inventory" became `toggle_inventory` plus a
+    hand-authored causal condition proving it opened. Verifying that pressing I
+    opened the inventory is a mechanical fact about Kenshi, not a strategic
+    choice, and the controller owns mechanical facts.
+
+    It also promises the screen is *open*, which a toggle cannot. Pressing the
+    binding when the screen is already up closes it, so an agent that wanted the
+    inventory and pressed I twice ends with no inventory and a receipt saying
+    something changed both times.
+    """
+
+    kind: Literal["open_screen"] = "open_screen"
+    screen: GameScreen
+
+
 class ProduceResourceOutputAction(StrictModel):
     """Internal production phase retained until a bounded output yield exists."""
 
