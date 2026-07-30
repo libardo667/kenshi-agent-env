@@ -53,7 +53,6 @@ from ..final_safe_state import (
 )
 from ..input_boundary import ExecutionToken
 from ..models import (
-    GAME_BINDING_KEYS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
     ActionReceipt,
@@ -110,6 +109,7 @@ from ..models import (
     UseGameBindingAction,
     WaitAction,
     WorldStateRevision,
+    game_binding_primitive,
     normalize_control_label,
     window_close_point,
 )
@@ -2509,8 +2509,13 @@ class LiveEnvironment(AgentEnvironment):
         binding = USE_GAME_BINDING_CONTRACT.bind(action, observation)
         if not binding.bound:
             raise RuntimeError(f"No input was sent: {binding.reason}")
-        key = GAME_BINDING_KEYS[action.binding]
-        primitive_receipt = await self.controller.execute(KeyAction(key=key))
+        primitive = game_binding_primitive(action.binding)
+        primitive_receipt = await self.controller.execute(primitive)
+        mapped_input = (
+            primitive.key
+            if isinstance(primitive, KeyAction)
+            else "+".join(primitive.keys)
+        )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
             contract_version=USE_GAME_BINDING_CONTRACT.version,
@@ -2526,7 +2531,8 @@ class LiveEnvironment(AgentEnvironment):
                 "action": action,
                 "semantic": semantic,
                 "message": (
-                    f"Pressed Kenshi's {action.binding.value!r} binding ({key!r}), "
+                    f"Pressed Kenshi's {action.binding.value!r} binding "
+                    f"({mapped_input!r}), "
                     f"expecting: {action.expected_effect}. A later observation "
                     "must confirm the transition."
                 ),

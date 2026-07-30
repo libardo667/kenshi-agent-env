@@ -13,17 +13,12 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        32
+wired        37
 exempt        1
-missing      39
+missing      34
 unclassified  0
 
 MISSING — implementation queue
-  camera_tilt+             [,]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
-  camera_tilt-             [.]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
-  cycle_run_speed          [NUM6]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
-  editor_delete            [Delete]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
-  editor_toggle            [Shift+F12]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   floor_down               [PgDn]  Construction and placement have no observed build state or contracted semantic action.
   floor_up                 [PgUp]  Construction and placement have no observed build state or contracted semantic action.
   gizmo_move               [H]  Construction and placement have no observed build state or contracted semantic action.
@@ -77,11 +72,16 @@ WIRED — real planner routes
   camera_right             use_game_binding(camera_right)
   camera_rotate_left       use_game_binding(camera_rotate_left)
   camera_rotate_right      use_game_binding(camera_rotate_right)
+  camera_tilt+             use_game_binding(camera_tilt+)
+  camera_tilt-             use_game_binding(camera_tilt-)
   camera_zoom_in           use_game_binding(camera_zoom_in)
   camera_zoom_out          use_game_binding(camera_zoom_out)
   change_squad             use_game_binding(change_squad)
   character_next           use_game_binding(character_next)
   character_prev           use_game_binding(character_prev)
+  cycle_run_speed          use_game_binding(cycle_run_speed)
+  editor_delete            use_game_binding(editor_delete)
+  editor_toggle            use_game_binding(editor_toggle)
   focus_char               use_game_binding(focus_char)
   pause                    pause
   select_all               use_game_binding(select_all)

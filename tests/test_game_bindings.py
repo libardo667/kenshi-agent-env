@@ -29,6 +29,7 @@ from kenshi_agent.models import (
     TOGGLE_GAME_BINDINGS,
     GameBinding,
     GameState,
+    HotkeyAction,
     Observation,
     TelemetrySnapshot,
     UIState,
@@ -78,6 +79,10 @@ def test_every_binding_maps_to_a_key() -> None:
         (GameBinding.BUILD_TILT_DECREASE, "[", 0xDB),
         (GameBinding.BUILD_TILT_INCREASE, "]", 0xDD),
         (GameBinding.BUILD_UNDO, "backspace", 0x08),
+        (GameBinding.CAMERA_TILT_UP, "comma", 0xBC),
+        (GameBinding.CAMERA_TILT_DOWN, "period", 0xBE),
+        (GameBinding.CYCLE_RUN_SPEED, "numpad6", 0x66),
+        (GameBinding.EDITOR_DELETE, "delete", 0x2E),
     ],
 )
 def test_queued_binding_is_reachable_through_the_semantic_binding_action(
@@ -109,17 +114,28 @@ def test_queued_binding_is_reachable_through_the_semantic_binding_action(
     assert Win32InputController._vk(expected_key) == expected_virtual_key
 
 
-def test_destructive_bindings_are_absent_from_the_catalog() -> None:
-    """An unattended agent must not be one keystroke from overwriting a save."""
+def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
+    binding = GameBinding.EDITOR_TOGGLE
+    from kenshi_agent.models import game_binding_primitive
 
+    assert audit_binding_parity().decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect="toggle the in-game editor",
+    )
+    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert game_binding_primitive(binding) == HotkeyAction(keys=["shift", "f12"])
+
+
+def test_binding_catalog_contains_only_wired_decisions() -> None:
     names = {binding.value for binding in GameBinding}
-    assert not names & {
-        "quicksave",
-        "quickload",
-        "editor_toggle",
-        "rebuild_navmesh",
-        "reload_biomes",
-    }
+    report = audit_binding_parity()
+
+    assert not names & set(report.with_status(BindingStatus.MISSING))
+    assert not names & set(report.with_status(BindingStatus.EXEMPT))
 
 
 def test_the_binding_action_is_contracted_and_planner_visible() -> None:
@@ -300,6 +316,7 @@ def test_toggles_are_marked_and_non_toggles_are_not() -> None:
 
     assert GameBinding.TOGGLE_INVENTORY in TOGGLE_GAME_BINDINGS
     assert GameBinding.PAUSE in TOGGLE_GAME_BINDINGS
+    assert GameBinding.CYCLE_RUN_SPEED in TOGGLE_GAME_BINDINGS
     assert GameBinding.CAMERA_LEFT not in TOGGLE_GAME_BINDINGS
     assert GameBinding.SPEED_2 not in TOGGLE_GAME_BINDINGS
 

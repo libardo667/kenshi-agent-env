@@ -22,6 +22,7 @@ from kenshi_agent.models import (
     ControlMode,
     Disposition,
     ExitCurrentBuildingAction,
+    GameBinding,
     GameState,
     HotkeyAction,
     InventoryItem,
@@ -46,6 +47,7 @@ from kenshi_agent.models import (
     TelemetrySnapshot,
     TravelToMapDestinationAction,
     UIState,
+    UseGameBindingAction,
     Vec2,
     Vec3,
     VisibleUIControl,
@@ -295,6 +297,35 @@ def movement_action(*, duration_seconds: float | None = None) -> SkillAction:
             "args": arguments,
         }
     )
+
+
+def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+        action = UseGameBindingAction(
+            binding=GameBinding.EDITOR_TOGGLE,
+            expected_effect="toggle the in-game editor",
+        )
+
+        receipt = await environment._execute_game_binding(  # noqa: SLF001
+            action,
+            datetime.now(UTC),
+        )
+
+        assert controller.actions == [HotkeyAction(keys=["shift", "f12"])]
+        assert receipt.action == action
+        assert receipt.semantic is not None
+        assert receipt.semantic.resolved_label == "editor_toggle"
+        assert "shift+f12" in receipt.message
+
+    asyncio.run(scenario())
 
 
 def test_live_close_causally_pauses_once_and_is_idempotent(tmp_path: Path) -> None:

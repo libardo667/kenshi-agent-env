@@ -108,9 +108,11 @@ def test_an_exemption_cannot_be_justified_by_preference() -> None:
         assert report.decisions[name].reason
 
 
-def test_withdrawn_preference_exemptions_are_queued_not_hidden() -> None:
+def test_withdrawn_preference_exemptions_are_queued_or_wired_not_hidden() -> None:
     report = audit_binding_parity()
     missing = report.with_status(BindingStatus.MISSING)
+    wired = report.with_status(BindingStatus.WIRED)
+    exempt = report.with_status(BindingStatus.EXEMPT)
 
     for name in (
         "quicksave",
@@ -120,7 +122,8 @@ def test_withdrawn_preference_exemptions_are_queued_not_hidden() -> None:
         "rebuild_navmesh",
         "reload_biomes",
     ):
-        assert name in missing, f"{name} was un-exempted but never queued"
+        assert name not in exempt, f"{name} returned to a preference exemption"
+        assert name in missing or name in wired, f"{name} is neither queued nor wired"
     # The technical objection to loading is causal, not moral, and it has to be
     # written where the next reader will find it.
     assert "session boundary" in report.decisions["quickload"].reason

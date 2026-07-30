@@ -1392,8 +1392,14 @@ class GameBinding(StrEnum):
     CAMERA_RIGHT = "camera_right"
     CAMERA_ROTATE_LEFT = "camera_rotate_left"
     CAMERA_ROTATE_RIGHT = "camera_rotate_right"
+    CAMERA_TILT_UP = "camera_tilt+"
+    CAMERA_TILT_DOWN = "camera_tilt-"
     CAMERA_ZOOM_IN = "camera_zoom_in"
     CAMERA_ZOOM_OUT = "camera_zoom_out"
+    CYCLE_RUN_SPEED = "cycle_run_speed"
+    # Development host controls.
+    EDITOR_DELETE = "editor_delete"
+    EDITOR_TOGGLE = "editor_toggle"
     FOCUS_CHAR = "focus_char"
     # Selection.
     SELECT_ALL = "select_all"
@@ -1404,7 +1410,7 @@ class GameBinding(StrEnum):
     STOP_MOVEMENT = "stop_movement"
 
 
-GAME_BINDING_KEYS: dict[GameBinding, str] = {
+GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.TOGGLE_INVENTORY: "i",
     GameBinding.TOGGLE_MAP: "m",
     GameBinding.TOGGLE_STATS: "c",
@@ -1429,8 +1435,13 @@ GAME_BINDING_KEYS: dict[GameBinding, str] = {
     GameBinding.CAMERA_RIGHT: "d",
     GameBinding.CAMERA_ROTATE_LEFT: "q",
     GameBinding.CAMERA_ROTATE_RIGHT: "e",
+    GameBinding.CAMERA_TILT_UP: "comma",
+    GameBinding.CAMERA_TILT_DOWN: "period",
     GameBinding.CAMERA_ZOOM_IN: "home",
     GameBinding.CAMERA_ZOOM_OUT: "end",
+    GameBinding.CYCLE_RUN_SPEED: "numpad6",
+    GameBinding.EDITOR_DELETE: "delete",
+    GameBinding.EDITOR_TOGGLE: ("shift", "f12"),
     GameBinding.FOCUS_CHAR: "f",
     GameBinding.SELECT_ALL: "grave",
     GameBinding.CHANGE_SQUAD: "tab",
@@ -1439,6 +1450,16 @@ GAME_BINDING_KEYS: dict[GameBinding, str] = {
     GameBinding.STOP_MOVEMENT: "r",
 }
 """Default Kenshi key per binding; hard-coded, not parsed from active controls.cfg."""
+
+
+def game_binding_primitive(binding: GameBinding) -> KeyAction | HotkeyAction:
+    """Resolve one reviewed binding to the primitive that drives its default input."""
+
+    mapped = GAME_BINDING_KEYS[binding]
+    if isinstance(mapped, str):
+        return KeyAction(key=mapped)
+    return HotkeyAction(keys=list(mapped))
+
 
 # Bindings that flip state rather than setting it, so a "retry" undoes the
 # first press instead of repeating it. These may never be retried.
@@ -1452,6 +1473,7 @@ TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.TOGGLE_RESEARCH,
         GameBinding.PAUSE,
         GameBinding.CHANGE_SQUAD,
+        GameBinding.CYCLE_RUN_SPEED,
     }
 )
 

@@ -267,8 +267,13 @@ _WIRED_GAME_BINDINGS = frozenset(
         "camera_right",
         "camera_rotate_left",
         "camera_rotate_right",
+        "camera_tilt+",
+        "camera_tilt-",
         "camera_zoom_in",
         "camera_zoom_out",
+        "cycle_run_speed",
+        "editor_delete",
+        "editor_toggle",
         "change_squad",
         "character_next",
         "character_prev",
@@ -298,8 +303,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
         "that ended live-trade-surface-20260729-r1."
     ): frozenset(
         {
-            "editor_delete",
-            "editor_toggle",
             "rebuild_navmesh",
             "reload_biomes",
         }
@@ -322,9 +325,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
         "semantic route."
     ): frozenset(
         {
-            "camera_tilt+",
-            "camera_tilt-",
-            "cycle_run_speed",
             "highlight",
             "toggle_fps_camera",
         }
