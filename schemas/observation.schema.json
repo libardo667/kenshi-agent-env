@@ -316,6 +316,19 @@
             }
           ],
           "default": null
+        },
+        "identity_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity Session Id"
         }
       },
       "required": [
@@ -473,6 +486,19 @@
           "format": "date-time",
           "title": "Recorded At",
           "type": "string"
+        },
+        "identity_session_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Identity Session Id"
         }
       },
       "required": [

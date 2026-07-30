@@ -1954,6 +1954,10 @@ class ActionOutcome(StrictModel):
     selected_character_name: str | None = Field(default=None, max_length=200)
     position_before: Vec3 | None = None
     position_after: Vec3 | None = None
+    # Which in-process game session this happened in. A load discards the world
+    # an outcome describes while leaving `run_id` untouched, so run identity
+    # cannot be the currency check once the agent can load for itself.
+    identity_session_id: str | None = Field(default=None, max_length=200)
 
 
 class PlanDisposition(StrEnum):
@@ -2008,6 +2012,7 @@ class ActionOutcomeDigest(StrictModel):
     completed_at_revision: WorldStateRevision | None = None
     evidence_summary: str = Field(min_length=1, max_length=500)
     recorded_at: datetime
+    identity_session_id: str | None = Field(default=None, max_length=200)
 
 
 class PlanOutcomeDigest(StrictModel):

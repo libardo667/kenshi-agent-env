@@ -3527,6 +3527,11 @@ class AgentRuntime:
             ),
             position_before=(selected_before.position if selected_before is not None else None),
             position_after=(selected_after.position if selected_after is not None else None),
+            identity_session_id=(
+                after.telemetry.identity_session_id
+                if after.telemetry is not None
+                else None
+            ),
         )
         self._ledger.record_action_outcome(outcome)
         self.logger.write("action_outcome", step_index=before.step_index, payload=outcome)

@@ -175,6 +175,7 @@ class ContinuityLedger:
             completed_at_revision=outcome.completed_at_revision,
             evidence_summary=outcome.feedback[:500],
             recorded_at=outcome.recorded_at,
+            identity_session_id=outcome.identity_session_id,
         )
         self._action_outcomes.append(outcome)
         del self._action_outcomes[: -self.action_outcome_limit or None]
@@ -375,6 +376,25 @@ def resolve_evidence_reference(
             raise EvidenceResolutionError(  # mutation: reason
                 f"No action outcome {reference.outcome_id!r} "  # mutation: reason
                 "was recorded in this run."  # mutation: reason
+            )
+        # A load discards the world an outcome describes but leaves `run_id`
+        # alone, so run identity cannot answer "is this still true?" once the
+        # agent can load for itself. Both sessions must be known to refuse:
+        # mock and interface-only runs carry no session and are unaffected.
+        current_session = (
+            authored_context.observation.telemetry.identity_session_id
+            if authored_context.observation.telemetry is not None
+            else None
+        )
+        if (
+            action_digest.identity_session_id is not None
+            and current_session is not None
+            and action_digest.identity_session_id != current_session
+        ):
+            raise EvidenceResolutionError(  # mutation: reason
+                f"Action outcome {reference.outcome_id!r} belongs to a "  # mutation: reason
+                "superseded game session; the world it describes was "  # mutation: reason
+                "discarded by a load."  # mutation: reason
             )
         if not action_digest.executed:
             authority = EvidenceAuthority.ATTEMPT_NOT_EXECUTED

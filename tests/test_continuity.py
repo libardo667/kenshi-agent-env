@@ -3697,3 +3697,106 @@ def test_omitted_general_memories_are_declared_in_the_observation(
     assert decorated.memory_recall.total_omitted == 3
     assert decorated.memory_recall.omitted[RecallTier.GENERAL] == 3
     assert decorated.memory_recall.complete is False
+
+
+def test_evidence_from_a_superseded_game_session_is_inadmissible() -> None:
+    """A load discards the world its outcomes describe.
+
+    Until quickload was wired, only the operator could load, between runs, and
+    a new run resets the ledger. The agent can now rotate the session mid-run,
+    so a purchase made before the load stays in the ledger as
+    `controller_verified` `changed` evidence for a world that no longer exists.
+    `run_id` does not change across a load, so it cannot be the currency check.
+    """
+
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    before_load = action_outcome("ao-1").model_copy(
+        update={"identity_session_id": "session-AAAA-0000000000000002"}
+    )
+    ledger.record_action_outcome(before_load)
+
+    after_load = observation().model_copy(
+        update={
+            "telemetry": TelemetrySnapshot(
+                sequence=9,
+                capabilities=["identity.stable_handles"],
+                identity_session_id="session-BBBB-0000000000000003",
+            )
+        }
+    )
+    context = planner_context(
+        after_load,
+        ledger=ledger,
+        store=None,
+        brief_ids=set(),
+    )
+
+    with pytest.raises(EvidenceResolutionError, match="superseded game session"):
+        resolve_evidence_reference(
+            ActionOutcomeEvidence(outcome_id="ao-1"),
+            authored_context=context,
+            ledger=ledger,
+            store=None,
+            advisor_brief_ids=set(),
+        )
+
+
+def test_evidence_from_the_same_game_session_stays_admissible() -> None:
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(
+        action_outcome("ao-1").model_copy(
+            update={"identity_session_id": "session-AAAA-0000000000000002"}
+        )
+    )
+    same_session = observation().model_copy(
+        update={
+            "telemetry": TelemetrySnapshot(
+                sequence=9,
+                capabilities=["identity.stable_handles"],
+                identity_session_id="session-AAAA-0000000000000002",
+            )
+        }
+    )
+    context = planner_context(
+        same_session, ledger=ledger, store=None, brief_ids=set()
+    )
+
+    snapshot = resolve_evidence_reference(
+        ActionOutcomeEvidence(outcome_id="ao-1"),
+        authored_context=context,
+        ledger=ledger,
+        store=None,
+        advisor_brief_ids=set(),
+    )
+
+    assert snapshot.source == "action_outcome"
+
+
+def test_a_run_without_session_identity_keeps_its_evidence() -> None:
+    """Refusing needs both sessions known, or mock runs lose their own evidence.
+
+    Mock and interface-only runs carry no `identity_session_id`, so comparing a
+    known session against an absent one would reject evidence that never
+    crossed a load at all.
+    """
+
+    ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
+    ledger.record_action_outcome(
+        action_outcome("ao-1").model_copy(
+            update={"identity_session_id": "session-AAAA-0000000000000002"}
+        )
+    )
+    no_telemetry = observation().model_copy(update={"telemetry": None})
+    context = planner_context(
+        no_telemetry, ledger=ledger, store=None, brief_ids=set()
+    )
+
+    snapshot = resolve_evidence_reference(
+        ActionOutcomeEvidence(outcome_id="ao-1"),
+        authored_context=context,
+        ledger=ledger,
+        store=None,
+        advisor_brief_ids=set(),
+    )
+
+    assert snapshot.source == "action_outcome"

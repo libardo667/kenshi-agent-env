@@ -19,6 +19,7 @@ from kenshi_agent.models import (
     CameraFrameScore,
     CameraRecoveryEvidence,
     CameraRecoveryStatus,
+    GameState,
     MoveInDirectionAction,
     Observation,
     PauseAction,
@@ -654,3 +655,97 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
         before,
         after,
     )
+
+
+def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
+    tmp_path: Path,
+) -> None:
+    """Without this stamp, evidence outlives the world a load discarded.
+
+    `run_id` is unchanged by a load, so it cannot answer "is this outcome still
+    true?" once the agent can quickload for itself. The session is the only
+    thing that rotates.
+    """
+
+    session = "session-AAAA0000AAAA0000-0000000000000002"
+
+    class SessionEnvironment(AgentEnvironment):
+        def observation(self) -> Observation:
+            return Observation(
+                run_id="session-run",
+                step_index=0,
+                mode="live",
+                telemetry=TelemetrySnapshot(
+                    sequence=3,
+                    identity_session_id=session,
+                    game=GameState(loaded=True, paused=True),
+                ),
+            )
+
+        async def reset(self, *, seed: int | None = None) -> Observation:
+            del seed
+            return self.observation()
+
+        async def observe(self) -> Observation:
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                ),
+                observation=self.observation(),
+                terminated=isinstance(action, StopAction),
+            )
+
+        async def close(self) -> FinalSafeStateOutcome:
+            return FinalSafeStateOutcome(
+                status=FinalSafeStateStatus.PAUSE_CONFIRMED,
+                reason="Confirmed by the test.",
+                initial_sequence=3,
+                confirmed_sequence=4,
+            )
+
+    class PausePlanner(Planner):
+        async def decide(self, observation: Observation) -> PlannerDecision:
+            del observation
+            return PlannerDecision(
+                intent="Pause.",
+                rationale="Exercise one recorded outcome.",
+                action=PauseAction(paused=True),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        logger = SessionLogger(tmp_path / "session.jsonl", "session-run")
+        runtime = AgentRuntime(
+            run_id="session-run",
+            environment=SessionEnvironment(),
+            planner=PausePlanner(),
+            guard=ActionGuard(
+                SafetyConfig(allow_action_kinds=["pause"], max_actions_per_minute=500),
+                MacroRegistry({}),
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            memory=None,
+            memory_limit=0,
+            minimum_memory_salience=0.0,
+        )
+        try:
+            await runtime.run(max_steps=1)
+        finally:
+            logger.close()
+
+        events = [
+            json.loads(line)
+            for line in (tmp_path / "session.jsonl").read_text().splitlines()
+        ]
+        outcomes = [e for e in events if e["event_type"] == "action_outcome"]
+        assert outcomes, "expected one recorded action outcome"
+        assert outcomes[0]["payload"]["identity_session_id"] == session
+
+    asyncio.run(scenario())
