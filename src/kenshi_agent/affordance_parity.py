@@ -307,6 +307,8 @@ _WIRED_GAME_BINDINGS = frozenset(
         "toggle_inventory",
         "toggle_bar",
         "toggle_block",
+        "toggle_build",
+        "toggle_fps_camera",
         "toggle_hold",
         "toggle_map",
         "toggle_research",
@@ -315,22 +317,6 @@ _WIRED_GAME_BINDINGS = frozenset(
 )
 
 _MISSING_GROUPS: dict[str, frozenset[str]] = {
-    (
-        "Construction and placement have no observed build state or "
-        "contracted semantic action."
-    ): frozenset(
-        {
-            "toggle_build",
-        }
-    ),
-    (
-        "This camera or locomotion mode is not exposed by a planner-visible "
-        "semantic route."
-    ): frozenset(
-        {
-            "toggle_fps_camera",
-        }
-    ),
     "No contracted action exposes this combat or AI stance.": frozenset(
         {
             "toggle_passive",

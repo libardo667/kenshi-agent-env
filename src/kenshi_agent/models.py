@@ -1443,6 +1443,7 @@ class GameBinding(StrEnum):
     BUILD_TILT_DECREASE = "build_tilt_decrease"
     BUILD_TILT_INCREASE = "build_tilt_increase"
     BUILD_UNDO = "build_undo"
+    TOGGLE_BUILD = "toggle_build"
     # Time.
     PAUSE = "pause"
     SPEED_1 = "speed_1"
@@ -1460,6 +1461,7 @@ class GameBinding(StrEnum):
     CAMERA_ZOOM_IN = "camera_zoom_in"
     CAMERA_ZOOM_OUT = "camera_zoom_out"
     CYCLE_RUN_SPEED = "cycle_run_speed"
+    TOGGLE_FPS_CAMERA = "toggle_fps_camera"
     # Development host controls.
     EDITOR_DELETE = "editor_delete"
     EDITOR_TOGGLE = "editor_toggle"
@@ -1513,6 +1515,7 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.BUILD_TILT_DECREASE: "[",
     GameBinding.BUILD_TILT_INCREASE: "]",
     GameBinding.BUILD_UNDO: "backspace",
+    GameBinding.TOGGLE_BUILD: "b",
     GameBinding.PAUSE: "space",
     GameBinding.SPEED_1: "f2",
     GameBinding.SPEED_2: "f3",
@@ -1528,6 +1531,7 @@ GAME_BINDING_KEYS: dict[GameBinding, str | tuple[str, ...]] = {
     GameBinding.CAMERA_ZOOM_IN: "home",
     GameBinding.CAMERA_ZOOM_OUT: "end",
     GameBinding.CYCLE_RUN_SPEED: "numpad6",
+    GameBinding.TOGGLE_FPS_CAMERA: "semicolon",
     GameBinding.EDITOR_DELETE: "delete",
     GameBinding.EDITOR_TOGGLE: ("shift", "f12"),
     GameBinding.REBUILD_NAVMESH: ("ctrl", "shift", "f11"),
@@ -1595,6 +1599,8 @@ TOGGLE_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.PAUSE,
         GameBinding.CHANGE_SQUAD,
         GameBinding.CYCLE_RUN_SPEED,
+        GameBinding.TOGGLE_BUILD,
+        GameBinding.TOGGLE_FPS_CAMERA,
         GameBinding.MEDIC,
         GameBinding.RESCUE,
         GameBinding.TOGGLE_HOLD,

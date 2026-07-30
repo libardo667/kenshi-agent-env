@@ -13,14 +13,12 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        65
+wired        67
 exempt        1
-missing       6
+missing       4
 unclassified  0
 
 MISSING — implementation queue
-  toggle_build             [B]  Construction and placement have no observed build state or contracted semantic action.
-  toggle_fps_camera        [;]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
   toggle_passive           [NUM2]  No contracted action exposes this combat or AI stance.
   toggle_ranged            [NUM3]  No contracted action exposes this combat or AI stance.
   toggle_sneak             [NUM4]  No contracted action exposes this combat or AI stance.
@@ -88,7 +86,9 @@ WIRED — real planner routes
   stop_movement            use_game_binding(stop_movement)
   toggle_bar               use_game_binding(toggle_bar)
   toggle_block             use_game_binding(toggle_block)
+  toggle_build             use_game_binding(toggle_build)
   toggle_crafting          use_game_binding(toggle_crafting)
+  toggle_fps_camera        use_game_binding(toggle_fps_camera)
   toggle_help              use_game_binding(toggle_help)
   toggle_hold              use_game_binding(toggle_hold)
   toggle_inventory         use_game_binding(toggle_inventory)
