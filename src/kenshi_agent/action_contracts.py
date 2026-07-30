@@ -2238,10 +2238,9 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     model=UseGameBindingAction,
     summary=(
         "Press one named Kenshi control through the hard-coded shipped-default "
-        "keymap: open inventory, map or stats, move the camera, or change "
-        "selection. This is how screens are entered - do not "
-        "hunt for a widget when a binding exists. Customized keymaps are not "
-        "currently read."
+        "keymap. The binding catalog is the reviewed semantic vocabulary; it "
+        "does not permit arbitrary keys. Use a named control instead of hunting "
+        "for a widget when one exists. Customized keymaps are not currently read."
     ),
     argument_source=(
         "binding must be one of semantic_actions[].available_bindings; "

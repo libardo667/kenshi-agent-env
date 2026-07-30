@@ -13,20 +13,12 @@ claim that every widget or world interaction has been enumerated.
 source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
-wired        24
+wired        32
 exempt        1
-missing      47
+missing      39
 unclassified  0
 
 MISSING — implementation queue
-  build_apply              [Space]  Construction and placement have no observed build state or contracted semantic action.
-  build_move_down          [-]  Construction and placement have no observed build state or contracted semantic action.
-  build_move_up            [=]  Construction and placement have no observed build state or contracted semantic action.
-  build_rotate_left        [,]  Construction and placement have no observed build state or contracted semantic action.
-  build_rotate_right       [.]  Construction and placement have no observed build state or contracted semantic action.
-  build_tilt_decrease      [[, NUM-]  Construction and placement have no observed build state or contracted semantic action.
-  build_tilt_increase      [], NUM+]  Construction and placement have no observed build state or contracted semantic action.
-  build_undo               [Backspace]  Construction and placement have no observed build state or contracted semantic action.
   camera_tilt+             [,]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
   camera_tilt-             [.]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
   cycle_run_speed          [NUM6]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
@@ -71,6 +63,14 @@ EXEMPT — deliberate non-affordances
   screenshot               [superseded]  The observation pipeline captures attributable game frames directly.
 
 WIRED — real planner routes
+  build_apply              use_game_binding(build_apply)
+  build_move_down          use_game_binding(build_move_down)
+  build_move_up            use_game_binding(build_move_up)
+  build_rotate_left        use_game_binding(build_rotate_left)
+  build_rotate_right       use_game_binding(build_rotate_right)
+  build_tilt_decrease      use_game_binding(build_tilt_decrease)
+  build_tilt_increase      use_game_binding(build_tilt_increase)
+  build_undo               use_game_binding(build_undo)
   camera_back              use_game_binding(camera_back)
   camera_forward           use_game_binding(camera_forward)
   camera_left              use_game_binding(camera_left)

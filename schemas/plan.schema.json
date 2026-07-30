@@ -590,7 +590,7 @@
       "type": "string"
     },
     "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Only the\nreversible ones are here: `quicksave`, `quickload`, `editor_toggle`,\n`rebuild_navmesh` and `reload_biomes` all exist in that file and are all\ndeliberately absent from this enum, because an agent running unattended on a\nstream must not be one keystroke away from overwriting a save.",
+      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe planner-visible subset recorded by the game-binding parity ledger.",
       "enum": [
         "toggle_inventory",
         "toggle_map",
@@ -598,6 +598,14 @@
         "toggle_help",
         "toggle_crafting",
         "toggle_research",
+        "build_apply",
+        "build_move_down",
+        "build_move_up",
+        "build_rotate_left",
+        "build_rotate_right",
+        "build_tilt_decrease",
+        "build_tilt_increase",
+        "build_undo",
         "pause",
         "speed_1",
         "speed_2",
@@ -1833,7 +1841,7 @@
     },
     "UseGameBindingAction": {
       "additionalProperties": false,
-      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap and `C` the stats window under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.\nTime keys remain controller details behind PauseAction and SetSpeedAction.",
+      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap and `C` the stats window under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.\nThe binding enum is the semantic vocabulary, rather than an escape hatch to\narbitrary keys. Time keys remain controller details behind PauseAction and\nSetSpeedAction.",
       "properties": {
         "kind": {
           "const": "use_game_binding",

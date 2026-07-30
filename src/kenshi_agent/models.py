@@ -1360,11 +1360,8 @@ class GameBinding(StrEnum):
     """Kenshi's named control intentions under the shipped default keymap.
 
     The current physical mapping is a hard-coded copy of the shipped
-    `controls.cfg`; it is not read from the user's active keymap. Only the
-    reversible ones are here: `quicksave`, `quickload`, `editor_toggle`,
-    `rebuild_navmesh` and `reload_biomes` all exist in that file and are all
-    deliberately absent from this enum, because an agent running unattended on a
-    stream must not be one keystroke away from overwriting a save.
+    `controls.cfg`; it is not read from the user's active keymap. Membership is
+    the planner-visible subset recorded by the game-binding parity ledger.
     """
 
     # Screens. Each is a toggle, so pressing twice returns to where it started.
@@ -1374,6 +1371,15 @@ class GameBinding(StrEnum):
     TOGGLE_HELP = "toggle_help"
     TOGGLE_CRAFTING = "toggle_crafting"
     TOGGLE_RESEARCH = "toggle_research"
+    # Construction.
+    BUILD_APPLY = "build_apply"
+    BUILD_MOVE_DOWN = "build_move_down"
+    BUILD_MOVE_UP = "build_move_up"
+    BUILD_ROTATE_LEFT = "build_rotate_left"
+    BUILD_ROTATE_RIGHT = "build_rotate_right"
+    BUILD_TILT_DECREASE = "build_tilt_decrease"
+    BUILD_TILT_INCREASE = "build_tilt_increase"
+    BUILD_UNDO = "build_undo"
     # Time.
     PAUSE = "pause"
     SPEED_1 = "speed_1"
@@ -1405,6 +1411,14 @@ GAME_BINDING_KEYS: dict[GameBinding, str] = {
     GameBinding.TOGGLE_HELP: "f1",
     GameBinding.TOGGLE_CRAFTING: "y",
     GameBinding.TOGGLE_RESEARCH: "t",
+    GameBinding.BUILD_APPLY: "space",
+    GameBinding.BUILD_MOVE_DOWN: "minus",
+    GameBinding.BUILD_MOVE_UP: "equals",
+    GameBinding.BUILD_ROTATE_LEFT: "comma",
+    GameBinding.BUILD_ROTATE_RIGHT: "period",
+    GameBinding.BUILD_TILT_DECREASE: "[",
+    GameBinding.BUILD_TILT_INCREASE: "]",
+    GameBinding.BUILD_UNDO: "backspace",
     GameBinding.PAUSE: "space",
     GameBinding.SPEED_1: "f2",
     GameBinding.SPEED_2: "f3",
@@ -1463,7 +1477,9 @@ class UseGameBindingAction(StrictModel):
     map and `C` the stats window under the shipped defaults. Naming
     the *binding* rather than the key keeps the intention readable and the
     current default mapping in one place; customized keymaps are not yet read.
-    Time keys remain controller details behind PauseAction and SetSpeedAction.
+    The binding enum is the semantic vocabulary, rather than an escape hatch to
+    arbitrary keys. Time keys remain controller details behind PauseAction and
+    SetSpeedAction.
     """
 
     kind: Literal["use_game_binding"] = "use_game_binding"

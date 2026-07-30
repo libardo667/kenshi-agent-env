@@ -253,6 +253,14 @@ def _missing(reason: str) -> BindingDecision:
 
 _WIRED_GAME_BINDINGS = frozenset(
     {
+        "build_apply",
+        "build_move_down",
+        "build_move_up",
+        "build_rotate_left",
+        "build_rotate_right",
+        "build_tilt_decrease",
+        "build_tilt_increase",
+        "build_undo",
         "camera_back",
         "camera_forward",
         "camera_left",
@@ -301,14 +309,6 @@ _MISSING_GROUPS: dict[str, frozenset[str]] = {
         "contracted semantic action."
     ): frozenset(
         {
-            "build_apply",
-            "build_move_down",
-            "build_move_up",
-            "build_rotate_left",
-            "build_rotate_right",
-            "build_tilt_decrease",
-            "build_tilt_increase",
-            "build_undo",
             "floor_down",
             "floor_up",
             "gizmo_move",

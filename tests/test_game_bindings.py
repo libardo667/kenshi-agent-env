@@ -18,6 +18,12 @@ from kenshi_agent.action_contracts import (
     completion_contract_for,
     contract_for,
 )
+from kenshi_agent.affordance_parity import (
+    AffordanceRoute,
+    BindingDecision,
+    BindingStatus,
+    audit_binding_parity,
+)
 from kenshi_agent.models import (
     GAME_BINDING_KEYS,
     TOGGLE_GAME_BINDINGS,
@@ -59,6 +65,52 @@ def test_every_binding_maps_to_a_key() -> None:
     for binding in GameBinding:
         assert binding in GAME_BINDING_KEYS, binding
         assert GAME_BINDING_KEYS[binding]
+
+
+@pytest.mark.parametrize(
+    ("binding", "expected_key", "expected_virtual_key"),
+    [
+        (GameBinding.BUILD_APPLY, "space", 0x20),
+        (GameBinding.BUILD_MOVE_DOWN, "minus", 0xBD),
+        (GameBinding.BUILD_MOVE_UP, "equals", 0xBB),
+        (GameBinding.BUILD_ROTATE_LEFT, "comma", 0xBC),
+        (GameBinding.BUILD_ROTATE_RIGHT, "period", 0xBE),
+        (GameBinding.BUILD_TILT_DECREASE, "[", 0xDB),
+        (GameBinding.BUILD_TILT_INCREASE, "]", 0xDD),
+        (GameBinding.BUILD_UNDO, "backspace", 0x08),
+    ],
+)
+def test_queued_binding_is_reachable_through_the_semantic_binding_action(
+    binding: GameBinding,
+    expected_key: str,
+    expected_virtual_key: int,
+) -> None:
+    """Each parity item has a planner route, a bindable action, and real input."""
+
+    report = audit_binding_parity()
+    assert report.decisions[binding.value] == BindingDecision(
+        status=BindingStatus.WIRED,
+        route=AffordanceRoute("use_game_binding", binding.value),
+    )
+
+    action = UseGameBindingAction(
+        binding=binding,
+        expected_effect=f"apply {binding.value}",
+    )
+    result = USE_GAME_BINDING_CONTRACT.bind(action, observation())
+    assert result.bound
+    assert result.resolved_label == binding.value
+
+    binding_action = next(
+        item
+        for item in observation().semantic_action_digest()
+        if item["kind"] == "use_game_binding"
+    )
+    assert binding.value in binding_action["available_bindings"]
+    assert GAME_BINDING_KEYS[binding] == expected_key
+    from kenshi_agent.control.win32 import Win32InputController
+
+    assert Win32InputController._vk(expected_key) == expected_virtual_key
 
 
 def test_destructive_bindings_are_absent_from_the_catalog() -> None:
