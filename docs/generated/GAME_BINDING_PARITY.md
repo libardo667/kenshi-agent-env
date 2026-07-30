@@ -18,7 +18,50 @@ exempt        1
 missing       0
 unclassified  0
 
-MISSING — implementation queue
+witnessed    10  (wired AND has an observable completion terminal)
+unwitnessed  58  (wired but no observation proves it landed)
+
+UNWITNESSED — wired, but a plan naming these is rejected
+   9  Build mode has no exported state.
+      build_apply, build_move_down, build_move_up, build_rotate_left, build_rotate_right, build_tilt_decrease, build_tilt_increase, build_undo, toggle_build
+   1  Camera mode is not exported.
+      toggle_fps_camera
+   4  Camera orientation is not exported.
+      camera_rotate_left, camera_rotate_right, camera_tilt+, camera_tilt-
+   5  Camera position is not exported as a condition path.
+      camera_back, camera_forward, camera_left, camera_right, focus_char
+   2  Camera zoom is not exported.
+      camera_zoom_in, camera_zoom_out
+   1  Completion is controller-owned through the save directory, not a field.
+      quicksave
+   3  Editor gizmo mode is not exported.
+      gizmo_move, gizmo_rotate, gizmo_scale
+   2  Editor mode is not exported.
+      editor_delete, editor_toggle
+   1  No exported field distinguishes a stopped order from an idle one.
+      stop_movement
+   7  Per-character stance is not exported.
+      toggle_bar, toggle_block, toggle_hold, toggle_passive, toggle_ranged, toggle_sneak, toggle_taunt
+   1  Run-speed mode is not exported.
+      cycle_run_speed
+  10  Squad group membership is not exported, so a group that is already selected cannot be distinguished from one that failed to select.
+      select_0, select_1, select_2, select_3, select_4, select_5, select_6, select_7, select_8, select_9
+   2  Squad job flags are not exported.
+      medic, rescue
+   2  The active building floor is not exported.
+      floor_down, floor_up
+   1  The help window is not exported.
+      toggle_help
+   1  The highlight overlay is not exported.
+      highlight
+   1  Time control belongs to PauseAction, which owns its own terminal.
+      pause
+   3  Time control belongs to SetSpeedAction, which owns its own terminal.
+      speed_1, speed_2, speed_3
+   1  World-data rebuilds have no observable result.
+      rebuild_navmesh
+   1  World-data reloads have no observable result.
+      reload_biomes
 
 EXEMPT — deliberate non-affordances
   screenshot               [superseded]  The observation pipeline captures attributable game frames directly.

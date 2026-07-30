@@ -27,7 +27,12 @@ from kenshi_agent.affordance_parity import (
 from kenshi_agent.models import (
     GAME_BINDING_KEYS,
     GAME_BINDING_MOUSE_BUTTONS,
+    GAME_BINDING_TERMINALS,
     TOGGLE_GAME_BINDINGS,
+    UNWITNESSED_BINDINGS,
+    CharacterState,
+    ConditionOperator,
+    FieldConditionPath,
     GameBinding,
     GameState,
     HotkeyAction,
@@ -36,6 +41,7 @@ from kenshi_agent.models import (
     UIState,
     UseGameBindingAction,
     WorldStateRevision,
+    game_binding_success_condition,
 )
 
 
@@ -764,7 +770,19 @@ def test_the_binding_action_is_contracted_and_planner_visible() -> None:
 
 
 def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic() -> None:
-    closed = observation()
+    base = observation()
+    assert base.telemetry is not None
+    closed = base.model_copy(
+        update={
+            "telemetry": base.telemetry.model_copy(
+                update={
+                    "ui": base.telemetry.ui.model_copy(
+                        update={"management_screen_open": False, "management_tab": -1}
+                    )
+                }
+            )
+        }
+    )
     closed_binding_action = next(
         action
         for action in closed.semantic_action_digest()
@@ -778,10 +796,12 @@ def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic(
     }
 
     assert closed.telemetry is not None
+    # Map, research and crafting share one management window, so the tab index
+    # is what moves; `management_screen_open` cannot see a switch between tabs.
     opened_telemetry = closed.telemetry.model_copy(
         update={
             "ui": closed.telemetry.ui.model_copy(
-                update={"management_screen_open": True}
+                update={"management_screen_open": True, "management_tab": 0}
             )
         }
     )
@@ -793,8 +813,8 @@ def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic(
     )
     closed_map = closed_binding_action["runtime_completion_conditions"]["toggle_map"]
     opened_map = opened_binding_action["runtime_completion_conditions"]["toggle_map"]
-    assert closed_map["expected"] is True
-    assert opened_map["expected"] is False
+    assert closed_map["expected"] == -1
+    assert opened_map["expected"] == 0
 
 
 def test_binding_runtime_conditions_contain_only_observable_transitions() -> None:
@@ -1658,3 +1678,69 @@ def test_a_purchase_contract_owns_transfer_conservation() -> None:
     completion = completion_contract_for(action, observation())
     assert completion.owner is CompletionOwner.CONTROLLER_TERMINAL
     assert completion.conditions == ()
+
+
+def test_every_binding_is_either_witnessed_or_declared_unwitnessable() -> None:
+    """A newly wired binding must not land unusable in silence.
+
+    Only four of sixty-eight bindings carried a causal completion condition
+    while the table was a chain of hand-written branches, so a plan naming
+    `toggle_build`, `toggle_research` or `toggle_crafting` was rejected outright
+    with "has no causal success condition". Parity still counted all of them as
+    wired. This is that gap made loud: a binding with neither a terminal nor a
+    stated reason fails here rather than at plan validation during a live run.
+    """
+
+    witnessed = set(GAME_BINDING_TERMINALS)
+    unwitnessed = set(UNWITNESSED_BINDINGS)
+
+    assert not (witnessed & unwitnessed), sorted(
+        binding.value for binding in witnessed & unwitnessed
+    )
+    undecided = sorted(
+        binding.value for binding in GameBinding
+        if binding not in witnessed and binding not in unwitnessed
+    )
+    assert not undecided, (
+        f"bindings with no completion decision: {undecided}. Give each a "
+        "terminal, or state why nothing can witness it."
+    )
+    for binding, reason in UNWITNESSED_BINDINGS.items():
+        assert reason.strip(), binding.value
+
+
+def test_every_declared_terminal_resolves_to_a_readable_field() -> None:
+    """A terminal naming an unreadable path yields no condition, silently."""
+
+    telemetry = TelemetrySnapshot(
+        identity_session_id="session-a",
+        capabilities=["identity.stable_handles"],
+        squad=[CharacterState(id="char-a", name="Hep", selected=True)],
+        ui=UIState(
+            open_inventory_windows=1,
+            stats_window_open=False,
+            management_tab=-1,
+            selected_character_id="char-a",
+            selected_character_ids=["char-a"],
+        ),
+    )
+
+    for binding in GAME_BINDING_TERMINALS:
+        assert game_binding_success_condition(binding, telemetry) is not None, (
+            f"{binding.value} declares a terminal that resolves to nothing"
+        )
+
+
+def test_a_management_tab_binding_is_witnessed_by_the_tab_not_the_window() -> None:
+    """Switching between two tabs never changes `management_screen_open`."""
+
+    open_on_map = TelemetrySnapshot(
+        ui=UIState(management_screen_open=True, management_tab=0)
+    )
+
+    condition = game_binding_success_condition(GameBinding.TOGGLE_RESEARCH, open_on_map)
+
+    assert condition is not None
+    assert condition.root.path == FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB
+    assert condition.root.operator == ConditionOperator.NOT_EQUALS
+    assert condition.root.expected == 0

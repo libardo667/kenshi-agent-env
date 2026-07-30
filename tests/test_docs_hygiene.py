@@ -129,6 +129,14 @@ def _oversized_documents(root: Path) -> dict[str, int]:
         relative = path.relative_to(root).as_posix()
         if relative in LEGACY_DOCS:
             continue
+        # A generated document's length is a function of Kenshi's surface, not
+        # of prose sprawl. Capping it means the report must get less informative
+        # as the game's affordances grow, which is the metric fighting the goal:
+        # the binding parity report was already being trimmed to fit. Staleness
+        # is the guard that matters for derived output, and
+        # `test_generated_docs_are_not_stale` already holds it.
+        if relative.startswith("docs/generated/"):
+            continue
         lines = _line_count(path)
         if lines > _ceiling(relative):
             oversized[relative] = lines
@@ -397,3 +405,22 @@ def test_exported_schemas_are_not_stale(tmp_path: Path) -> None:
         assert filecmp.cmp(fresh, checked_in, shallow=False), (
             f"schemas/{fresh.name} is stale; run `python scripts/export_schemas.py`"
         )
+
+
+def test_generated_documents_are_not_length_capped() -> None:
+    """Derived output is guarded by staleness, never by prose length.
+
+    `docs/generated/` was already exempt from the naming rule and not from the
+    line cap, which reads as an oversight rather than a decision. The binding
+    parity report hit the ceiling and the fix on offer was to print fewer
+    findings — a length limit deleting evidence it was never meant to govern.
+    """
+
+    generated = sorted((ROOT / "docs" / "generated").glob("*.md"))
+    assert generated, "expected generated documents to exist"
+
+    oversized = _oversized_documents(ROOT)
+    assert not any(name.startswith("docs/generated/") for name in oversized)
+    # And at least one of them is genuinely over the prose cap, so this is not
+    # vacuously true.
+    assert any(_line_count(path) > DOC_LINE_CAP for path in generated)

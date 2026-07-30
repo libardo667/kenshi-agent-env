@@ -85,6 +85,31 @@ class BindingDecision:
     reason: str = ""
 
 
+def _witnessed_names() -> frozenset[str]:
+    from .models import GAME_BINDING_TERMINALS
+
+    return frozenset(binding.value for binding in GAME_BINDING_TERMINALS)
+
+
+def _unwitnessed_reasons() -> dict[str, str]:
+    from .models import UNWITNESSED_BINDINGS
+
+    return {binding.value: reason for binding, reason in UNWITNESSED_BINDINGS.items()}
+
+
+def _binding_or_none(name: str) -> object | None:
+    """The enum member for a binding name, or None when Kenshi names one we do
+    not model. Imported locally because `models` imports this module's siblings.
+    """
+
+    from .models import GameBinding
+
+    try:
+        return GameBinding(name)
+    except ValueError:
+        return None
+
+
 @dataclass(frozen=True, slots=True)
 class BindingParityReport:
     source: ControlSource
@@ -162,6 +187,24 @@ class BindingParityReport:
                     errors.append(f"{name}: missing entry has no queue description")
         return tuple(errors)
 
+    def witnessed(self) -> tuple[str, ...]:
+        """Wired bindings a later observation can actually prove landed."""
+
+        return tuple(
+            name
+            for name in self.with_status(BindingStatus.WIRED)
+            if name in _witnessed_names()
+        )
+
+    def unwitnessed(self) -> tuple[str, ...]:
+        """Wired bindings no observation can prove, so no plan may use them."""
+
+        return tuple(
+            name
+            for name in self.with_status(BindingStatus.WIRED)
+            if name in _unwitnessed_reasons()
+        )
+
     def as_lines(self) -> list[str]:
         wired = self.with_status(BindingStatus.WIRED)
         exempt = self.with_status(BindingStatus.EXEMPT)
@@ -175,8 +218,26 @@ class BindingParityReport:
             f"missing     {len(missing):3d}",
             f"unclassified {len(self.unclassified()):2d}",
             "",
-            "MISSING — implementation queue",
+            # Wired means an action can express the binding. It does not mean a
+            # plan naming it can be accepted: a step needs a causal completion
+            # condition, and a binding nothing can witness has none. These were
+            # one number until a live sweep found 71 wired and 4 usable.
+            f"witnessed   {len(self.witnessed()):3d}  (wired AND has an "
+            "observable completion terminal)",
+            f"unwitnessed {len(self.unwitnessed()):3d}  (wired but no "
+            "observation proves it landed)",
+            "",
+            "UNWITNESSED — wired, but a plan naming these is rejected",
         ]
+        reasons = _unwitnessed_reasons()
+        grouped: dict[str, list[str]] = {}
+        for name in self.unwitnessed():
+            grouped.setdefault(reasons[name], []).append(name)
+        for reason, names in sorted(grouped.items()):
+            lines.append(f"  {len(names):2d}  {reason}")
+            lines.append(f"      {', '.join(sorted(names))}")
+        if missing:
+            lines.extend(["", "MISSING — implementation queue"])
         for name in missing:
             binding = next(item for item in self.source.bindings if item.name == name)
             lines.append(
