@@ -7,6 +7,7 @@ import pytest
 from kenshi_agent.affordance_parity import (
     CONTROLS_SNAPSHOT,
     BindingStatus,
+    ExemptionKind,
     audit_binding_parity,
     load_controls_cfg,
     parse_controls_cfg,
@@ -15,7 +16,8 @@ from kenshi_agent.affordance_parity import (
 INSTALLED_CONTROLS = Path(
     "/mnt/c/Program Files (x86)/Steam/steamapps/common/Kenshi/controls.cfg"
 )
-MAX_KNOWN_MISSING_BINDINGS = 41
+MIN_WIRED_BINDINGS = 24
+MAX_EXEMPT_BINDINGS = 1
 
 
 def test_controls_parser_preserves_alternates_and_equals_key() -> None:
@@ -58,13 +60,70 @@ def test_a_new_game_binding_cannot_disappear_inside_our_own_denominator() -> Non
     assert report.unclassified() == ("new_human_affordance",)
 
 
-def test_known_missing_queue_only_shrinks() -> None:
+def test_reach_only_grows_and_exemptions_only_shrink() -> None:
+    """Ratchet the two numbers a decision can game, not the remainder.
+
+    Ratcheting the missing queue downward looks right and punishes honesty: the
+    queue grew from 41 to 47 the moment six exemptions asserting preference
+    rather than constraint were reclassified as work, which is the direction we
+    want. Wired can only rise and exempt can only fall, so `missing` is free to
+    move as the honest remainder. Exempt is the number worth pinning hardest,
+    because an exemption list is what a queue decays into when nobody is
+    counting.
+    """
+
+    report = audit_binding_parity()
+
+    assert len(report.with_status(BindingStatus.WIRED)) >= MIN_WIRED_BINDINGS
+    assert len(report.with_status(BindingStatus.EXEMPT)) <= MAX_EXEMPT_BINDINGS
+    assert (
+        len(report.with_status(BindingStatus.WIRED))
+        + len(report.with_status(BindingStatus.EXEMPT))
+        + len(report.with_status(BindingStatus.MISSING))
+        == len(report.decisions)
+    )
+
+
+def test_an_exemption_cannot_be_justified_by_preference() -> None:
+    """The categories are the enforcement; care is not.
+
+    `safety` and `debug_only` withheld quicksave, quickload and the four
+    world-data bindings on grounds that were judgement about what the agent
+    ought to want -- on saves this project designates disposable, on the
+    operator's own development machine. Two agents produced that same list
+    independently. Every surviving category has to name a property of this
+    system that a reader could check.
+    """
+
+    assert {kind.value for kind in ExemptionKind} == {
+        "superseded",
+        "host_effect",
+        "no_observable_effect",
+    }
+
+    report = audit_binding_parity()
+    exempt = report.with_status(BindingStatus.EXEMPT)
+    assert set(exempt) == {"screenshot"}
+    for name in exempt:
+        assert report.decisions[name].reason
+
+
+def test_withdrawn_preference_exemptions_are_queued_not_hidden() -> None:
     report = audit_binding_parity()
     missing = report.with_status(BindingStatus.MISSING)
 
-    assert len(missing) <= MAX_KNOWN_MISSING_BINDINGS
-    assert len(report.with_status(BindingStatus.WIRED)) == 24
-    assert len(report.with_status(BindingStatus.EXEMPT)) == 7
+    for name in (
+        "quicksave",
+        "quickload",
+        "editor_toggle",
+        "editor_delete",
+        "rebuild_navmesh",
+        "reload_biomes",
+    ):
+        assert name in missing, f"{name} was un-exempted but never queued"
+    # The technical objection to loading is causal, not moral, and it has to be
+    # written where the next reader will find it.
+    assert "session boundary" in report.decisions["quickload"].reason
 
 
 @pytest.mark.skipif(

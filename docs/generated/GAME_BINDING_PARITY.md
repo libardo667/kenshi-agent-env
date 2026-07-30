@@ -14,8 +14,8 @@ source      controls.cfg v1
 source sha  ec8ac4d40dd56ef1f51bbd7efc89392f39a424eef889c1f03aee2f2a56056fc2
 enumerated   72
 wired        24
-exempt        7
-missing      41
+exempt        1
+missing      47
 unclassified  0
 
 MISSING — implementation queue
@@ -30,6 +30,8 @@ MISSING — implementation queue
   camera_tilt+             [,]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
   camera_tilt-             [.]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
   cycle_run_speed          [NUM6]  This camera or locomotion mode is not exposed by a planner-visible semantic route.
+  editor_delete            [Delete]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
+  editor_toggle            [Shift+F12]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   floor_down               [PgDn]  Construction and placement have no observed build state or contracted semantic action.
   floor_up                 [PgUp]  Construction and placement have no observed build state or contracted semantic action.
   gizmo_move               [H]  Construction and placement have no observed build state or contracted semantic action.
@@ -40,6 +42,10 @@ MISSING — implementation queue
   mouse_command            [Mouse2]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
   mouse_rotate             [Left Control, Mouse3]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
   mouse_select             [Mouse1]  Raw world mouse operation is not a bound semantic affordance; current pointer actions operate exact exported controls.
+  quickload                [F9]  Save-state control is wanted, not refused: it lets a run checkpoint before a risky experiment and recover from death without a human. Blocked on the world store treating a load as a session boundary rather than a revision regression, which it currently rejects.
+  quicksave                [F5]  Save-state control is wanted, not refused: it lets a run checkpoint before a risky experiment and recover from death without a human. Blocked on the world store treating a load as a session boundary rather than a revision regression, which it currently rejects.
+  rebuild_navmesh          [Ctrl+Shift+F11]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
+  reload_biomes            [Ctrl+F6]  World-editor and world-data control on a development host. Not ordinary play, but the operator's own machine and the operator's call; rebuild_navmesh may even answer the movement_stalled failures that ended live-trade-surface-20260729-r1.
   rescue                   [NUM8]  No contracted squad-care action exposes this order.
   select_0                 [1]  No planner route selects this exact squad group.
   select_1                 [2]  No planner route selects this exact squad group.
@@ -62,12 +68,6 @@ MISSING — implementation queue
   toggle_taunt             [NUM5]  No contracted action exposes this combat or AI stance.
 
 EXEMPT — deliberate non-affordances
-  editor_delete            [debug_only]  Editor mutation is outside ordinary player control.
-  editor_toggle            [debug_only]  Editor mode is outside ordinary player control.
-  quickload                [safety]  Loading is owned by the supervised launcher and save policy.
-  quicksave                [safety]  Unattended input may not overwrite persistent saves.
-  rebuild_navmesh          [debug_only]  Debug-world mutation is not an ordinary player affordance.
-  reload_biomes            [debug_only]  Debug-world mutation is not an ordinary player affordance.
   screenshot               [superseded]  The observation pipeline captures attributable game frames directly.
 
 WIRED — real planner routes

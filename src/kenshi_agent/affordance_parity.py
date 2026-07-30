@@ -43,9 +43,32 @@ class BindingStatus(StrEnum):
 
 
 class ExemptionKind(StrEnum):
-    SAFETY = "safety"
-    DEBUG_ONLY = "debug_only"
+    """Why a player affordance is deliberately not reachable.
+
+    Every member must name a constraint of *this system*. The categories this
+    replaces were `safety` and `debug_only`, and both were used to dress
+    preference as constraint: `quicksave` was withheld because "unattended input
+    may not overwrite persistent saves" on saves the project itself designates
+    disposable, and the editor bindings because they are "outside ordinary
+    player control" on a machine that exists to develop against this game. Two
+    different agents produced that same list independently, inherited from a
+    docstring, which is why the fix is to make the bad reasoning unexpressible
+    rather than to ask for more care.
+
+    An exemption is not a place to record that something looks unwise. If the
+    only objection is judgement about what the agent ought to want, it belongs
+    in the queue and the operator decides.
+    """
+
+    # The runtime already provides this affordance by a better-attributed route,
+    # so wiring the game's version would add a second unattributable path.
     SUPERSEDED = "superseded"
+    # Its effect reaches outside Kenshi, so no game observation could confirm or
+    # bound it.
+    HOST_EFFECT = "host_effect"
+    # Nothing in telemetry changes when it fires, so no causal terminal exists
+    # and success could only ever be assumed.
+    NO_OBSERVABLE_EFFECT = "no_observable_effect"
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,6 +278,25 @@ _WIRED_GAME_BINDINGS = frozenset(
 
 _MISSING_GROUPS: dict[str, frozenset[str]] = {
     (
+        "Save-state control is wanted, not refused: it lets a run checkpoint "
+        "before a risky experiment and recover from death without a human. "
+        "Blocked on the world store treating a load as a session boundary "
+        "rather than a revision regression, which it currently rejects."
+    ): frozenset({"quicksave", "quickload"}),
+    (
+        "World-editor and world-data control on a development host. Not "
+        "ordinary play, but the operator's own machine and the operator's "
+        "call; rebuild_navmesh may even answer the movement_stalled failures "
+        "that ended live-trade-surface-20260729-r1."
+    ): frozenset(
+        {
+            "editor_delete",
+            "editor_toggle",
+            "rebuild_navmesh",
+            "reload_biomes",
+        }
+    ),
+    (
         "Construction and placement have no observed build state or "
         "contracted semantic action."
     ): frozenset(
@@ -330,36 +372,6 @@ def _binding_decisions() -> dict[str, BindingDecision]:
             "speed_3": BindingDecision(
                 status=BindingStatus.WIRED,
                 route=AffordanceRoute("set_speed", "3"),
-            ),
-            "editor_delete": BindingDecision(
-                status=BindingStatus.EXEMPT,
-                exemption=ExemptionKind.DEBUG_ONLY,
-                reason="Editor mutation is outside ordinary player control.",
-            ),
-            "editor_toggle": BindingDecision(
-                status=BindingStatus.EXEMPT,
-                exemption=ExemptionKind.DEBUG_ONLY,
-                reason="Editor mode is outside ordinary player control.",
-            ),
-            "quicksave": BindingDecision(
-                status=BindingStatus.EXEMPT,
-                exemption=ExemptionKind.SAFETY,
-                reason="Unattended input may not overwrite persistent saves.",
-            ),
-            "quickload": BindingDecision(
-                status=BindingStatus.EXEMPT,
-                exemption=ExemptionKind.SAFETY,
-                reason="Loading is owned by the supervised launcher and save policy.",
-            ),
-            "rebuild_navmesh": BindingDecision(
-                status=BindingStatus.EXEMPT,
-                exemption=ExemptionKind.DEBUG_ONLY,
-                reason="Debug-world mutation is not an ordinary player affordance.",
-            ),
-            "reload_biomes": BindingDecision(
-                status=BindingStatus.EXEMPT,
-                exemption=ExemptionKind.DEBUG_ONLY,
-                reason="Debug-world mutation is not an ordinary player affordance.",
             ),
             "screenshot": BindingDecision(
                 status=BindingStatus.EXEMPT,
