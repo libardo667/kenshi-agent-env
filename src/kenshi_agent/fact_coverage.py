@@ -168,10 +168,18 @@ FACTS: tuple[Fact, ...] = (
     ),
     Fact(
         "shop.item_price",
-        "Base value for an affordability estimate; the exact shop charge is not exported.",
+        "Exactly what buying one unit costs, live-confirmed against the debit.",
         1,
         "hover the cell and read its displayed value",
-        lambda s: any(cell.item_value is not None for cell in _item_cells(s)),
+        lambda s: any(cell.item_base_value is not None for cell in _item_cells(s)),
+        _trading,
+    ),
+    Fact(
+        "shop.item_sell_price",
+        "What a trader pays for the item, which is a different number entirely.",
+        1,
+        "hover the cell and read its Sell value line",
+        lambda s: any(cell.item_sell_value is not None for cell in _item_cells(s)),
         _trading,
     ),
     Fact(

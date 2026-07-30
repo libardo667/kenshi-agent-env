@@ -741,7 +741,7 @@
     },
     "OpenScreenAction": {
       "additionalProperties": false,
-      "description": "Have a named screen open, without naming the key that opens it.\n\n`use_game_binding` makes the planner name a mechanism when what it has is an\nintent: \"I need the inventory\" became `toggle_inventory` plus a\nhand-authored causal condition proving it opened. Verifying that pressing I\nopened the inventory is a mechanical fact about Kenshi, not a strategic\nchoice, and the controller owns mechanical facts.\n\nIt also promises the screen is *open*, which a toggle cannot. Pressing the\nbinding when the screen is already up closes it, so an agent that wanted the\ninventory and pressed I twice ends with no inventory and a receipt saying\nsomething changed both times.",
+      "description": "Have a named screen open. Prefer this over pressing its key.\n\nIdempotent: succeeds if the screen is already open.",
       "properties": {
         "kind": {
           "const": "open_screen",
@@ -836,7 +836,7 @@
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
-      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The model chooses the useful quantity once. The controller rebinds\ninterchangeable stock after each transfer and proves both money loss and\ncarried-item gain before attempting the next unit.",
+      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the per-unit charge, taken from the cell's buy_price.\nThe controller rebinds interchangeable stock after each transfer and proves\nboth money loss and carried-item gain before attempting the next unit.",
       "properties": {
         "kind": {
           "const": "purchase_item",
@@ -1103,7 +1103,7 @@
     },
     "SellItemAction": {
       "additionalProperties": false,
-      "description": "Sell a bounded quantity from the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
+      "description": "Sell a bounded quantity from the agent's own inventory.\n\nChecked: the cell is in this character's own inventory and holds this item.",
       "properties": {
         "kind": {
           "const": "sell_item",
@@ -1291,7 +1291,7 @@
     },
     "UseGameBindingAction": {
       "additionalProperties": false,
-      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap and `C` the stats window under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.\nThe binding enum is the semantic vocabulary, rather than an escape hatch to\narbitrary keys. Time keys remain controller details behind PauseAction and\nSetSpeedAction.",
+      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nPrefer `open_screen` for reaching a screen; a binding only toggles.",
       "properties": {
         "kind": {
           "const": "use_game_binding",

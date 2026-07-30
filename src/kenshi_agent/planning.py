@@ -593,24 +593,30 @@ def validate_plan(
         )
     if plan.risk_budget.max_pointer_actions > config.max_pointer_actions_per_plan:
         errors.append(
-            "plan pointer risk budget exceeds configured maximum"  # mutation: diagnostic-only
+            f"plan declares max_pointer_actions "  # mutation: diagnostic-only
+            f"{plan.risk_budget.max_pointer_actions}; declare at most "
+            f"{config.max_pointer_actions_per_plan}"
         )
     if plan.risk_budget.max_purchase_actions > config.max_purchase_actions_per_plan:
         errors.append(
-            "plan purchase risk budget exceeds configured maximum"  # mutation: diagnostic-only
+            f"plan declares max_purchase_actions "  # mutation: diagnostic-only
+            f"{plan.risk_budget.max_purchase_actions}; declare at most "
+            f"{config.max_purchase_actions_per_plan}"
         )
     if plan.risk_budget.max_native_assisted_actions > config.max_native_assisted_actions_per_plan:
         errors.append(
-            "plan native-assisted risk budget exceeds "  # mutation: diagnostic-only
-            "configured maximum"
+            f"plan declares max_native_assisted_actions "  # mutation: diagnostic-only
+            f"{plan.risk_budget.max_native_assisted_actions}; declare at most "
+            f"{config.max_native_assisted_actions_per_plan}"
         )
     if (
         plan.control_mode == ControlMode.INTERFACE_ONLY
         and plan.risk_budget.max_native_assisted_actions != 0
     ):
         errors.append(
-            "interface_only plans must have zero "  # mutation: diagnostic-only
-            "native-assisted risk budget"
+            "interface_only plans declare "  # mutation: diagnostic-only
+            "max_native_assisted_actions 0, not "
+            f"{plan.risk_budget.max_native_assisted_actions}"
         )
 
     pointer_risk = 0
@@ -629,21 +635,25 @@ def validate_plan(
             (NoopAction, WaitAction, PauseAction, SetSpeedAction),
         ):
             errors.append(
-                f"step {step.step_id!r} retries an action "  # mutation: diagnostic-only
-                "not proven idempotent"
+                f"step {step.step_id!r} sets retry_budget on "  # mutation: diagnostic-only
+                f"{step.action.kind!r}, which is not retryable; omit "
+                "retry_budget, or use it only on noop, wait, pause or set_speed"
             )
     if pointer_risk > plan.risk_budget.max_pointer_actions:
         errors.append(
-            "plan actions exceed the declared pointer risk budget"  # mutation: diagnostic-only
+            f"plan steps cost {pointer_risk} pointer actions but "  # mutation: diagnostic-only
+            f"max_pointer_actions is {plan.risk_budget.max_pointer_actions}"
         )
     if purchase_risk > plan.risk_budget.max_purchase_actions:
         errors.append(
-            "plan actions exceed the declared purchase risk budget"  # mutation: diagnostic-only
+            f"plan steps cost {purchase_risk} purchase actions but "  # mutation: diagnostic-only
+            f"max_purchase_actions is {plan.risk_budget.max_purchase_actions}"
         )
     if native_risk > plan.risk_budget.max_native_assisted_actions:
         errors.append(
-            "plan actions exceed the declared "  # mutation: diagnostic-only
-            "native-assisted risk budget"
+            f"plan steps cost {native_risk} native-assisted actions "  # mutation: diagnostic-only
+            f"but max_native_assisted_actions is "
+            f"{plan.risk_budget.max_native_assisted_actions}"
         )
 
     assumption_results = evaluate_conditions(plan.assumptions, observation)

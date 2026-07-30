@@ -72,6 +72,7 @@
 #include <Windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <exception>
 #include <iomanip>
@@ -1191,6 +1192,64 @@ namespace
         json << "]";
     }
 
+    // There was an attempt here to read Kenshi's item tooltip through
+    // `InventoryGUI::toolTip`, a static the linker cannot bind, at its
+    // recorded module offset. It crashed the game on every save load: the
+    // pointer dangles across "Reset game" while the GUI is rebuilt, and a 2 Hz
+    // snapshot lands in that window reliably.
+    //
+    // It is gone because it was never needed. A hovered tooltip is already
+    // rendered as ordinary MyGUI widgets, so the widget walk below exports its
+    // text without touching raw memory - the Katana's "Value c.5,165" and
+    // "Sell value c.1,291" rows arrive as EditBox captions. Better still, the
+    // cells carry `item_base_value` themselves, so a price costs no hover at
+    // all. Reaching for a memory read to fetch what the safe instrument
+    // already reported bought nothing but the crash.
+    //
+    // Reporting only a bool would fold "nothing to look at", "the address held
+    // nothing", "reading it faulted" and "there is a tooltip and it is hidden"
+    // into one indistinguishable false - which is precisely how a tooltip
+    // sensor went a thousand observations without anyone being able to tell it
+    // was aimed at the wrong object. Each outcome gets its own name.
+    enum ToolTipProbe
+    {
+        TOOLTIP_PROBE_NOT_LOOKED,
+        TOOLTIP_PROBE_ABSENT,
+        TOOLTIP_PROBE_FAULT,
+        TOOLTIP_PROBE_HIDDEN,
+        TOOLTIP_PROBE_VISIBLE
+    };
+
+    const char* ToolTipProbeName(int probe)
+    {
+        switch (probe)
+        {
+        case TOOLTIP_PROBE_ABSENT: return "absent";
+        case TOOLTIP_PROBE_FAULT: return "fault";
+        case TOOLTIP_PROBE_HIDDEN: return "hidden";
+        case TOOLTIP_PROBE_VISIBLE: return "visible";
+        default: return "not_looked";
+        }
+    }
+
+    // Kept free of C++ objects on purpose - SEH cannot coexist with unwinding
+    // in one frame.
+    int ProbeToolTipVisible(ToolTip* tooltip)
+    {
+        if (tooltip == NULL)
+            return TOOLTIP_PROBE_ABSENT;
+        __try
+        {
+            return tooltip->getVisible()
+                ? TOOLTIP_PROBE_VISIBLE
+                : TOOLTIP_PROBE_HIDDEN;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return TOOLTIP_PROBE_FAULT;
+        }
+    }
+
     std::string CurrentToolTipText(ToolTip* tooltip)
     {
         std::ostringstream text;
@@ -1225,6 +1284,83 @@ namespace
             text << right;
         }
         return text.str();
+    }
+
+    // MyGUI encodes colour inline as #RRGGBB, and "##" escapes a literal '#'.
+    // Left in place the tags become part of the caption, so a label arrives as
+    // "#FFFFFFSell value" and no comparison against it can match.
+    std::string StripColourTags(const std::string& value)
+    {
+        std::string out;
+        out.reserve(value.size());
+        for (size_t i = 0; i < value.size(); ++i)
+        {
+            if (value[i] != '#')
+            {
+                out.push_back(value[i]);
+                continue;
+            }
+            if (i + 1 < value.size() && value[i + 1] == '#')
+            {
+                out.push_back('#');
+                ++i;
+                continue;
+            }
+            bool hexTag = (i + 6) < value.size();
+            for (size_t j = 1; hexTag && j <= 6; ++j)
+            {
+                if (!isxdigit(static_cast<unsigned char>(value[i + j])))
+                    hexTag = false;
+            }
+            if (hexTag)
+                i += 6;
+            else
+                out.push_back('#');
+        }
+        return out;
+    }
+
+    // The game already splits a tooltip row into a label and a value -
+    // ToolTipLine holds them in two separate EditBoxes - and flattening them
+    // into one string discards that, leaving every consumer to re-derive the
+    // structure with a regex over prose. An item shows "Sell value" / "c.62"
+    // and "Value" / "c.248" as distinct rows; shipped as pairs, reading a
+    // price is a lookup rather than a parse.
+    void AppendToolTipLines(std::ostringstream& json, ToolTip* tooltip)
+    {
+        json << "[";
+        if (tooltip == NULL)
+        {
+            json << "]";
+            return;
+        }
+
+        bool first = true;
+        for (Ogre::vector<ToolTip::ToolTipLine*>::type::const_iterator it =
+                 tooltip->lines.begin();
+             it != tooltip->lines.end();
+             ++it)
+        {
+            ToolTip::ToolTipLine* line = *it;
+            if (line == NULL)
+                continue;
+            const std::string left =
+                line->leftBox != NULL
+                    ? StripColourTags(line->leftBox->getCaption().asUTF8())
+                    : std::string();
+            const std::string right =
+                line->rightBox != NULL
+                    ? StripColourTags(line->rightBox->getCaption().asUTF8())
+                    : std::string();
+            if (left.empty() && right.empty())
+                continue;
+            if (!first)
+                json << ",";
+            first = false;
+            json << "{\"label\":\"" << JsonEscape(left) << "\",";
+            json << "\"value\":\"" << JsonEscape(right) << "\"}";
+        }
+        json << "]";
     }
 
     bool AppendToolTipSourceBounds(
@@ -1311,10 +1447,20 @@ namespace
     // One item, described well enough to decide about without touching it.
     // Name alone still forces "is this food? can I afford it?" through a hover
     // and a tooltip parse, which is a model round-trip per cell.
+    //
+    // `getValueSingle(isPlayer)` answers two different questions, and the old
+    // export shipped one of them under the neutral name `item_value`. With
+    // isPlayer=true it is what the trader pays the player - the "sell value
+    // c.62" line of the in-game tooltip - and never what the player is
+    // charged; the same item shows "value c.248" beside it. A plan that read
+    // the neutral name as an asking price declared 300 for Bread and was
+    // billed 549. Both sides ship under names that say which is which, so
+    // nothing downstream has to remember which meaning it holds.
     void AppendItemFacts(std::ostringstream& json, Item* item)
     {
         json << "\"item_name\":\"" << JsonEscape(item->getName()) << "\",";
-        json << "\"item_value\":" << item->getValueSingle(true) << ",";
+        json << "\"item_sell_value\":" << item->getValueSingle(true) << ",";
+        json << "\"item_base_value\":" << item->getValueSingle(false) << ",";
         json << "\"item_quantity\":" << item->quantity << ",";
         json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
     }
@@ -2890,9 +3036,18 @@ namespace
         const int managementTab = managementOpen ? management->getCurrentTab() : -1;
         const int openInventoryWindows =
             gui != NULL ? gui->getNumOpenInventoryWindows() : 0;
+        // Kenshi runs five ToolTip subclasses, and `ForgottenGUI::getToolTip`
+        // owns exactly one of them. Hovering an item raises a different
+        // object entirely - the static `InventoryGUI::toolTip`, a
+        // ToolTipInventory - so the old read reported "no tooltip" truthfully
+        // about a tooltip nobody was looking at, while the one carrying the
+        // price sat on screen. `tooltip_visible` was false for every step of
+        // every run ever recorded, which reads exactly like a game that has
+        // no tooltips. Prefer the item tooltip and fall back to the generic
+        // one, so a hovered item is seen and non-item tooltips still report.
         ToolTip* tooltip = gui != NULL ? gui->getToolTip() : NULL;
-        const bool tooltipVisible =
-            tooltip != NULL && tooltip->getVisible();
+        const int tooltipProbe = ProbeToolTipVisible(tooltip);
+        const bool tooltipVisible = tooltipProbe == TOOLTIP_PROBE_VISIBLE;
 
         json << "\"ui\":{";
         json << "\"active_screen\":\""
@@ -2915,9 +3070,27 @@ namespace
         AppendDialogueOptions(json);
         json << ",";
         json << "\"tooltip_visible\":" << JsonBool(tooltipVisible) << ",";
+        json << "\"tooltip_probe\":\"" << ToolTipProbeName(tooltipProbe) << "\",";
         json << "\"tooltip_text\":";
         if (tooltipVisible)
             json << "\"" << JsonEscape(CurrentToolTipText(tooltip)) << "\"";
+        else
+            json << "null";
+        json << ",";
+        json << "\"tooltip_lines\":";
+        if (tooltipVisible)
+            AppendToolTipLines(json, tooltip);
+        else
+            json << "null";
+        json << ",";
+        // What this trader charges over an item's base value. Static and
+        // argument-free, so every visible cell can carry a usable price
+        // without hovering any of them - a hover costs a model round-trip per
+        // cell, which is why the cells started carrying their own facts in the
+        // first place. Only meaningful while a trade partner is set.
+        json << "\"trader_price_multiplier\":";
+        if (tradeOpen)
+            json << InventoryGUI::getTraderPriceMultiplier();
         else
             json << "null";
         json << ",";

@@ -227,7 +227,11 @@ class InventoryItem(StrictModel):
     stolen: bool | None = None
     # Emitted by the plug-in's own item description, shared with shop cells.
     item_name: str | None = Field(default=None, max_length=200)
-    item_value: int | None = None
+    # Kenshi prices an item from two sides and shows both: an item listing
+    # "Value c.5,165" and "Sell value c.1,291" is bought for the first and sold
+    # for the second. Neither is "the" value, so neither is named that.
+    item_base_value: int | None = None
+    item_sell_value: int | None = None
     item_quantity: int | None = Field(default=None, ge=0)
     item_type: int | None = None
     # Which inventory section holds it, and whether that section is worn or
@@ -694,7 +698,21 @@ class VisibleUIControl(StrictModel):
     # can only learn a cell's contents by hovering it, one model round-trip at
     # a time, while a human simply reads the shop.
     item_name: str | None = Field(default=None, max_length=200)
-    item_value: int | None = None
+    # What buying this cell costs, and what selling it returns. The exporter
+    # once shipped only the sell side under the name `item_value`, which reads
+    # like an asking price and is not one: a run declared 300 for Bread on that
+    # number and was charged 549. Live-confirmed 2026-07-30 - a Greenfruit
+    # carrying item_base_value 33 debited exactly 33.
+    #
+    # Both are relative to where the item currently sits, because Kenshi prices
+    # from the owner's side. That same Greenfruit reports 30 once it is in the
+    # player's own inventory: the trader's markup is in the shop cell's number
+    # and not in ours. So these are not intrinsic item properties and two cells
+    # holding "the same" item may legitimately disagree - reconciling them
+    # would replace the price you will be charged with an average nobody
+    # quotes.
+    item_base_value: int | None = None
+    item_sell_value: int | None = None
     item_quantity: int | None = Field(default=None, ge=0)
     item_type: int | None = None
     section: str = Field(default="", max_length=80)
@@ -712,6 +730,17 @@ class VisibleUIControl(StrictModel):
         )
 
 
+class ToolTipLine(StrictModel):
+    """One tooltip row as the game stores it: a label and its value.
+
+    Kenshi's `ToolTipLine` keeps the two in separate boxes - "Value" / "c.5,165"
+    - so a price is a lookup rather than a parse.
+    """
+
+    label: str = Field(default="", max_length=200)
+    value: str = Field(default="", max_length=200)
+
+
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
@@ -719,8 +748,21 @@ class UIState(StrictModel):
     dialogue_target_id: str | None = None
     dialogue_options: list[str] | None = None
     tooltip_visible: bool | None = None
+    # Why `tooltip_visible` is what it is. A bare false folded "nothing to look
+    # at", "the pointer held nothing", "reading it faulted" and "hidden" into
+    # one value, and a tooltip sensor aimed at the wrong object read false for
+    # a thousand observations with nothing able to say so.
+    tooltip_probe: str | None = Field(default=None, max_length=20)
     tooltip_text: str | None = None
+    # The game builds a tooltip row from two captions, so the pairs survive
+    # instead of being flattened into prose a consumer has to regex.
+    tooltip_lines: list[ToolTipLine] | None = Field(default=None, max_length=64)
     tooltip_source_bounds: NormalizedPointerBounds | None = None
+    # What this trader charges over an item's base value. Observed at 1.0 on
+    # the live Barman, where the charge equalled `item_base_value` exactly, so
+    # nothing yet distinguishes "the multiplier is applied" from "it is always
+    # one" - the field is carried rather than trusted.
+    trader_price_multiplier: float | None = Field(default=None, ge=0.0, le=100.0)
     visible_controls: list[VisibleUIControl] | None = Field(
         default=None,
         # Must not be tighter than the plug-in's own export cap, or a rich
@@ -1210,19 +1252,20 @@ MANAGEMENT_TAB_INDICES: dict[GameScreen, int] = {
 MANAGEMENT_TAB_CLOSED = -1
 
 
+# `use_game_binding` makes the planner name a mechanism when what it has is an
+# intent: "I need the inventory" became `toggle_inventory` plus a hand-authored
+# causal condition proving it opened. Verifying that pressing I opened the
+# inventory is a mechanical fact about Kenshi, not a strategic choice, and the
+# controller owns mechanical facts.
+#
+# This also promises the screen is *open*, which a toggle cannot: pressing the
+# binding when the screen is already up closes it, so an agent that wanted the
+# inventory and pressed I twice ends with no inventory and a receipt saying
+# something changed both times.
 class OpenScreenAction(StrictModel):
-    """Have a named screen open, without naming the key that opens it.
+    """Have a named screen open. Prefer this over pressing its key.
 
-    `use_game_binding` makes the planner name a mechanism when what it has is an
-    intent: "I need the inventory" became `toggle_inventory` plus a
-    hand-authored causal condition proving it opened. Verifying that pressing I
-    opened the inventory is a mechanical fact about Kenshi, not a strategic
-    choice, and the controller owns mechanical facts.
-
-    It also promises the screen is *open*, which a toggle cannot. Pressing the
-    binding when the screen is already up closes it, so an agent that wanted the
-    inventory and pressed I twice ends with no inventory and a receipt saying
-    something changed both times.
+    Idempotent: succeeds if the screen is already open.
     """
 
     kind: Literal["open_screen"] = "open_screen"
@@ -1320,15 +1363,21 @@ class MoveToCharacterAction(StrictModel):
     target_id: str = Field(min_length=1, max_length=200)
 
 
+# A model docstring becomes the schema's `description`, so every word here is
+# static prompt text on a hard budget. Rationale that only a maintainer needs
+# goes in comments like this one, which never reach the planner.
+#
+# `expected_price` is checked against the cell's `item_base_value` before any
+# input is sent, rather than discovered from the debit afterwards. It used to be
+# compared against the sell value - what the trader pays out - which made every
+# spending gate advisory: one run declared 300 for Bread, was charged 549, and
+# tripped nothing.
 class PurchaseItemAction(StrictModel):
     """Buy a bounded quantity of one item from exact seller-owned cells.
 
-    Current producers name the cell and item directly. `expected_price` carries
-    the best current value estimate for optional spending gates, but the
-    exported `item_value` is base worth rather than an authoritative final shop
-    charge. The model chooses the useful quantity once. The controller rebinds
-    interchangeable stock after each transfer and proves both money loss and
-    carried-item gain before attempting the next unit.
+    `expected_price` is the per-unit charge, taken from the cell's buy_price.
+    The controller rebinds interchangeable stock after each transfer and proves
+    both money loss and carried-item gain before attempting the next unit.
     """
 
     kind: Literal["purchase_item"] = "purchase_item"
@@ -1420,18 +1469,20 @@ class EquipItemAction(StrictModel):
     window: str = Field(min_length=1, max_length=200)
 
 
+# The mirror of `purchase_item`: with only a purchase action the agent could
+# spend its starting money and never earn any.
+#
+# It carries no expected price. That was originally because a shop's offer "is
+# not exported" - no longer true, since cells now carry `item_sell_value`, the
+# same number the in-game tooltip labels "Sell value". Adding a checked price
+# here is real work, not a rename: nothing has yet confirmed that the proceeds
+# of a sale equal that field the way a purchase's debit was confirmed to equal
+# `item_base_value`. Until a live sale demonstrates it, asserting a price here
+# would assert something unverified.
 class SellItemAction(StrictModel):
     """Sell a bounded quantity from the agent's own inventory.
 
-    The mirror of `purchase_item`, and the reason trading stopped being one-way:
-    with only a purchase action the agent could spend its starting money and
-    then never earn any.
-
-    Deliberately carries no expected price. A shop pays its own multiplier on an
-    item's value rather than the listed value, and that offer is not exported,
-    so asserting a price here would be asserting something we cannot check - the
-    exact failure mode `purchase_item` was built to avoid. What *is* checked is
-    that the cell is in this character's own inventory and holds this item.
+    Checked: the cell is in this character's own inventory and holds this item.
     """
 
     kind: Literal["sell_item"] = "sell_item"
@@ -1739,19 +1790,18 @@ TIME_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 """Low-level time keys represented to planners by pause/set_speed actions."""
 
 
+# The agent kept trying to reach screens by hunting for a widget to click -
+# clicking the time-speed buttons to unpause, clicking around the world hoping
+# an inventory would appear - because nothing in the catalog could simply open a
+# screen. Kenshi already binds all of it. Naming the *binding* rather than the
+# key keeps the intention readable and the default mapping in one place;
+# customized keymaps are not yet read. The enum is a semantic vocabulary, not an
+# escape hatch to arbitrary keys. Time keys stay controller details behind
+# PauseAction and SetSpeedAction.
 class UseGameBindingAction(StrictModel):
     """Press one named Kenshi control through the shipped-default keymap.
 
-    The agent kept trying to reach screens by hunting for a widget to click -
-    clicking the time-speed buttons to unpause, clicking around the world hoping
-    an inventory would appear - because nothing in the catalog could simply open
-    a screen. Kenshi already binds all of this: `I` opens the inventory, `M` the
-    map and `C` the stats window under the shipped defaults. Naming
-    the *binding* rather than the key keeps the intention readable and the
-    current default mapping in one place; customized keymaps are not yet read.
-    The binding enum is the semantic vocabulary, rather than an escape hatch to
-    arbitrary keys. Time keys remain controller details behind PauseAction and
-    SetSpeedAction.
+    Prefer `open_screen` for reaching a screen; a binding only toggles.
     """
 
     kind: Literal["use_game_binding"] = "use_game_binding"
@@ -3767,9 +3817,25 @@ class ConditionEvaluation(StrictModel):
 
 
 class RiskBudget(StrictModel):
+    """What a plan may spend before a model sees the world again.
+
+    Counting actions was a proxy for a hazard it cannot measure. The risk of a
+    purchase is how much money leaves the purse, not how many clicks it took:
+    live-hub-survival-pair-20260729-r3 took 632 cats to 83 in ONE purchase,
+    while five purchases of a cheap item would be trivial. A count both refuses
+    harmless plans and permits expensive ones.
+
+    `max_spend` is the bound that matches the hazard, and it is enforced against
+    the observed debit rather than the planner's declared price, because the
+    shop's charge is never exported and a declaration cannot bound it.
+    """
+
     max_pointer_actions: int = Field(ge=0, le=32)
     max_purchase_actions: int = Field(ge=0, le=8)
     max_native_assisted_actions: int = Field(ge=0, le=8)
+    # Cats this plan may lose in total. Zero means the plan buys nothing, which
+    # is the honest default for a plan that never intended to.
+    max_spend: int = Field(default=0, ge=0, le=1_000_000)
 
 
 def _unique_conditions(conditions: list[Condition]) -> list[Condition]:
@@ -4301,7 +4367,7 @@ class Observation(StrictModel):
                 # A cell with no name cannot be shown interchangeable with
                 # anything, so each stays its own variant and fails closed.
                 distinguishing = (
-                    (control.item_name, control.item_value)
+                    (control.item_name, control.item_base_value)
                     if control.item_name is not None
                     else (id(control),)
                 )
@@ -4329,7 +4395,13 @@ class Observation(StrictModel):
             # away and left the agent unable to read a price it was looking at.
             if control.role == "item":
                 entry["item_name"] = control.item_name
-                entry["item_value"] = control.item_value
+                # Named for the direction of the trade rather than for the
+                # game's own "Value"/"Sell value" pair. Those two only
+                # disambiguate each other when read together, and a planner
+                # that sees one of them alone reads it as "the price" - which
+                # is the mistake the neutral name `item_value` produced here.
+                entry["buy_price"] = control.item_base_value
+                entry["sell_price"] = control.item_sell_value
                 entry["item_quantity"] = control.item_quantity
                 entry["section"] = control.section
             digest.append(entry)
@@ -4465,7 +4537,8 @@ class Observation(StrictModel):
                         "window": control.window,
                         "section": control.section,
                         "item_name": control.item_name,
-                        "item_value": control.item_value,
+                        "item_base_value": control.item_base_value,
+                        "item_sell_value": control.item_sell_value,
                         "item_quantity": control.item_quantity,
                     }
                     for control in (telemetry.ui.visible_controls or [])

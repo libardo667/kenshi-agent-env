@@ -1257,7 +1257,7 @@ def test_two_open_inventories_stay_distinguishable() -> None:
             role="item",
             window=window,
             item_name=label,
-            item_value=value,
+            item_base_value=value,
             bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
         )
 
@@ -1302,7 +1302,7 @@ def test_two_open_inventories_stay_distinguishable() -> None:
     ]
     assert [entry["item_name"] for entry in by_window["HEP"]] == ["Hep's Shirt"]
     # Prices travel with the cell, so affording a thing needs no extra step.
-    assert [entry["item_value"] for entry in by_window["BARMAN"]] == [30, 12]
+    assert [entry["buy_price"] for entry in by_window["BARMAN"]] == [30, 12]
 
 
 def test_somewhere_to_go_survives_the_payload_budget() -> None:

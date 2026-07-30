@@ -610,7 +610,7 @@
           "default": null,
           "title": "Item Name"
         },
-        "item_value": {
+        "item_base_value": {
           "anyOf": [
             {
               "type": "integer"
@@ -620,7 +620,19 @@
             }
           ],
           "default": null,
-          "title": "Item Value"
+          "title": "Item Base Value"
+        },
+        "item_sell_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Sell Value"
         },
         "item_quantity": {
           "anyOf": [
@@ -1145,6 +1157,26 @@
       "title": "NormalizedPointerBounds",
       "type": "object"
     },
+    "ToolTipLine": {
+      "additionalProperties": false,
+      "description": "One tooltip row as the game stores it: a label and its value.\n\nKenshi's `ToolTipLine` keeps the two in separate boxes - \"Value\" / \"c.5,165\"\n- so a price is a lookup rather than a parse.",
+      "properties": {
+        "label": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "title": "ToolTipLine",
+      "type": "object"
+    },
     "UIState": {
       "additionalProperties": false,
       "properties": {
@@ -1223,6 +1255,19 @@
           "default": null,
           "title": "Tooltip Visible"
         },
+        "tooltip_probe": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Probe"
+        },
         "tooltip_text": {
           "anyOf": [
             {
@@ -1235,6 +1280,22 @@
           "default": null,
           "title": "Tooltip Text"
         },
+        "tooltip_lines": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ToolTipLine"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Lines"
+        },
         "tooltip_source_bounds": {
           "anyOf": [
             {
@@ -1245,6 +1306,20 @@
             }
           ],
           "default": null
+        },
+        "trader_price_multiplier": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trader Price Multiplier"
         },
         "visible_controls": {
           "anyOf": [
@@ -1481,7 +1556,7 @@
           "default": null,
           "title": "Item Name"
         },
-        "item_value": {
+        "item_base_value": {
           "anyOf": [
             {
               "type": "integer"
@@ -1491,7 +1566,19 @@
             }
           ],
           "default": null,
-          "title": "Item Value"
+          "title": "Item Base Value"
+        },
+        "item_sell_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Sell Value"
         },
         "item_quantity": {
           "anyOf": [

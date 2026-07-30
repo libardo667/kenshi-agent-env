@@ -1529,7 +1529,7 @@ class TestPurchaseSafety:
             window="HEP",
             bounds=_bounds(0.2),
             item_name="Dried Meat",
-            item_value=52,
+            item_base_value=52,
         )
         # The tooltip's source is the cell itself unless told otherwise.
         source = _bounds(0.5) if tooltip_over_cell else _bounds(0.8)
@@ -1738,16 +1738,20 @@ class TestPurchaseUsesExportedCellFacts:
     spent whole runs inspecting instead of buying.
     """
 
-    def _trade_state(self) -> Observation:
+    def _trade_state(self, controls: list[VisibleUIControl] | None = None) -> Observation:
         cell = VisibleUIControl(
             label="Bread",
             role="item",
             window="BARMAN",
             bounds=_bounds(0.5),
             item_name="Bread",
-            item_value=52,
+            item_base_value=52,
             item_quantity=3,
         )
+        if controls is not None:
+            cell_list = controls
+        else:
+            cell_list = [cell]
         seller = NearbyEntity(
             id="entity-barman",
             name="Barman",
@@ -1760,7 +1764,7 @@ class TestPurchaseUsesExportedCellFacts:
         )
         state = observation(
             entities=[seller],
-            controls=[cell],
+            controls=cell_list,
             capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
         )
         telemetry = state.telemetry
@@ -1790,14 +1794,20 @@ class TestPurchaseUsesExportedCellFacts:
         )
         assert binding.bound, binding.reason
 
-    def test_a_price_that_disagrees_with_the_cell_does_not_refuse(self) -> None:
-        """`item_value` is the item's worth, not what this shop charges.
+    def test_a_price_that_disagrees_with_the_cell_is_refused_with_the_real_one(
+        self,
+    ) -> None:
+        """The cell states the charge, so a disagreeing price is now a defect.
 
-        A trader applies its own multiplier and the asking price is never
-        exported, so an `expected_price` that disagrees means the planner was
-        wrong about something it was never given - not that the wrong item is
-        about to be bought. Live, this refused every attempt at a c.38 Dried
-        Meat and reported that the cell had vanished.
+        This assertion used to run the other way, on the reasoning that a
+        trader applies its own multiplier and "the asking price is never
+        exported". The export was simply of the wrong side of the trade: the
+        sell value, what the trader pays out. `item_base_value` is the charge,
+        live-confirmed against a debit, so a mismatch means the plan is
+        reasoning about money the game never quoted.
+
+        The refusal has to name the real price. A plan told only that its
+        number is wrong can do nothing but guess a second one.
         """
 
         binding = PURCHASE_ITEM_CONTRACT.bind(
@@ -1810,8 +1820,50 @@ class TestPurchaseUsesExportedCellFacts:
             ),
             self._trade_state(),
         )
-        assert binding.bound, binding.reason
-        assert binding.resolved_label == "Bread"
+        assert not binding.bound
+        assert "costs 52" in binding.reason
+        assert "declare expected_price 52" in binding.reason
+
+    def test_a_mispriced_purchase_is_not_reported_as_a_missing_cell(self) -> None:
+        """The failure this must never regress to.
+
+        Narrowing candidates by price once refused outright when nothing
+        matched, so a wrong `expected_price` came back as "no current item cell
+        matches" - which sent the agent hunting a c.38 Dried Meat it was
+        looking straight at. Narrowing stays permissive; only the explicit
+        price check rejects, and it says what is actually wrong.
+
+        Needs two same-named cells or the narrowing branch never runs at all,
+        which is what made an earlier version of this test unable to fail for
+        its own stated reason.
+        """
+
+        duplicates = [
+            VisibleUIControl(
+                label="Tooth Pick",
+                role="item",
+                window="BARMAN",
+                bounds=_bounds(offset),
+                item_name="Tooth Pick",
+                item_base_value=390,
+                item_quantity=1,
+            )
+            for offset in (0.4, 0.5)
+        ]
+
+        binding = PURCHASE_ITEM_CONTRACT.bind(
+            PurchaseItemAction(
+                cell_label="Tooth Pick",
+                item_name="Tooth Pick",
+                expected_price=5,
+                window="BARMAN",
+                seller_id="entity-barman",
+            ),
+            self._trade_state(duplicates),
+        )
+        assert not binding.bound
+        assert "No current item cell matches" not in binding.reason
+        assert "costs 390" in binding.reason
 
     def test_a_name_that_disagrees_with_the_cell_is_refused(self) -> None:
         binding = PURCHASE_ITEM_CONTRACT.bind(
@@ -1837,7 +1889,7 @@ class TestAmbiguityMatchesTheBinder:
             role="item",
             window=window,
             item_name=name,
-            item_value=value,
+            item_base_value=value,
             bounds=_bounds(0.5),
         )
 

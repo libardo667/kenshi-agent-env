@@ -116,7 +116,7 @@ class SaleTelemetry:
                 role="item",
                 window="JAGLONGER",
                 item_name="Dried Meat",
-                item_value=43,
+                item_base_value=43,
                 item_quantity=quantity,
                 bounds=_bounds(index),
             )
@@ -175,7 +175,7 @@ class SaleTelemetry:
                         role="item",
                         window="BURN",
                         item_name="Water",
-                        item_value=25,
+                        item_base_value=25,
                         item_quantity=12,
                         bounds=_bounds(0, buyer=True),
                     ),

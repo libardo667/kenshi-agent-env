@@ -1100,7 +1100,7 @@ def _trade_observation(*, selected_name: str = "HEP") -> Observation:
             role="item",
             window=window,
             item_name=name,
-            item_value=value,
+            item_base_value=value,
             bounds=NormalizedPointerBounds(
                 min_x=0.1, min_y=0.1, max_x=0.15, max_y=0.15
             ),
@@ -1297,7 +1297,7 @@ def test_price_separates_cells_that_share_a_name() -> None:
             role="item",
             window="BARMAN",
             item_name="Tooth Pick",
-            item_value=value,
+            item_base_value=value,
             bounds=NormalizedPointerBounds(
                 min_x=0.3, min_y=y, max_x=0.34, max_y=y + 0.04
             ),
@@ -1553,7 +1553,7 @@ def _purchase_guard_state(*, paused: bool):
         role="item",
         window="BARMAN",
         item_name="Dried Meat",
-        item_value=38,
+        item_base_value=38,
         bounds=NormalizedPointerBounds(min_x=0.3, min_y=0.2, max_x=0.34, max_y=0.24),
     )
     return Observation(

@@ -1132,7 +1132,7 @@ def generic_purchase_observation() -> Observation:
                         role="item",
                         window="BARMAN",
                         item_name="Dried Meat",
-                        item_value=38,
+                        item_base_value=38,
                         bounds=bounds,
                     )
                 ],

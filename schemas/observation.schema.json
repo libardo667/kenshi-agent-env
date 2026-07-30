@@ -3221,7 +3221,7 @@
           "default": null,
           "title": "Item Name"
         },
-        "item_value": {
+        "item_base_value": {
           "anyOf": [
             {
               "type": "integer"
@@ -3231,7 +3231,19 @@
             }
           ],
           "default": null,
-          "title": "Item Value"
+          "title": "Item Base Value"
+        },
+        "item_sell_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Sell Value"
         },
         "item_quantity": {
           "anyOf": [
@@ -4648,7 +4660,7 @@
     },
     "OpenScreenAction": {
       "additionalProperties": false,
-      "description": "Have a named screen open, without naming the key that opens it.\n\n`use_game_binding` makes the planner name a mechanism when what it has is an\nintent: \"I need the inventory\" became `toggle_inventory` plus a\nhand-authored causal condition proving it opened. Verifying that pressing I\nopened the inventory is a mechanical fact about Kenshi, not a strategic\nchoice, and the controller owns mechanical facts.\n\nIt also promises the screen is *open*, which a toggle cannot. Pressing the\nbinding when the screen is already up closes it, so an agent that wanted the\ninventory and pressed I twice ends with no inventory and a receipt saying\nsomething changed both times.",
+      "description": "Have a named screen open. Prefer this over pressing its key.\n\nIdempotent: succeeds if the screen is already open.",
       "properties": {
         "kind": {
           "const": "open_screen",
@@ -4962,7 +4974,7 @@
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
-      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\nCurrent producers name the cell and item directly. `expected_price` carries\nthe best current value estimate for optional spending gates, but the\nexported `item_value` is base worth rather than an authoritative final shop\ncharge. The model chooses the useful quantity once. The controller rebinds\ninterchangeable stock after each transfer and proves both money loss and\ncarried-item gain before attempting the next unit.",
+      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the per-unit charge, taken from the cell's buy_price.\nThe controller rebinds interchangeable stock after each transfer and proves\nboth money loss and carried-item gain before attempting the next unit.",
       "properties": {
         "kind": {
           "const": "purchase_item",
@@ -5626,7 +5638,7 @@
     },
     "SellItemAction": {
       "additionalProperties": false,
-      "description": "Sell a bounded quantity from the agent's own inventory.\n\nThe mirror of `purchase_item`, and the reason trading stopped being one-way:\nwith only a purchase action the agent could spend its starting money and\nthen never earn any.\n\nDeliberately carries no expected price. A shop pays its own multiplier on an\nitem's value rather than the listed value, and that offer is not exported,\nso asserting a price here would be asserting something we cannot check - the\nexact failure mode `purchase_item` was built to avoid. What *is* checked is\nthat the cell is in this character's own inventory and holds this item.",
+      "description": "Sell a bounded quantity from the agent's own inventory.\n\nChecked: the cell is in this character's own inventory and holds this item.",
       "properties": {
         "kind": {
           "const": "sell_item",
@@ -6142,6 +6154,26 @@
       "title": "TelemetrySnapshot",
       "type": "object"
     },
+    "ToolTipLine": {
+      "additionalProperties": false,
+      "description": "One tooltip row as the game stores it: a label and its value.\n\nKenshi's `ToolTipLine` keeps the two in separate boxes - \"Value\" / \"c.5,165\"\n- so a price is a lookup rather than a parse.",
+      "properties": {
+        "label": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Label",
+          "type": "string"
+        },
+        "value": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "title": "ToolTipLine",
+      "type": "object"
+    },
     "TravelToMapDestinationAction": {
       "additionalProperties": false,
       "description": "Travel to one exact settlement marker already known to the player.\n\nNative code re-resolves the discovered marker, chooses Kenshi's waypoint,\nissues one pathing order, and owns camera follow and arrival. The planner\nnever supplies map coordinates or re-authors movement pulses.",
@@ -6243,6 +6275,19 @@
           "default": null,
           "title": "Tooltip Visible"
         },
+        "tooltip_probe": {
+          "anyOf": [
+            {
+              "maxLength": 20,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Probe"
+        },
         "tooltip_text": {
           "anyOf": [
             {
@@ -6255,6 +6300,22 @@
           "default": null,
           "title": "Tooltip Text"
         },
+        "tooltip_lines": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ToolTipLine"
+              },
+              "maxItems": 64,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tooltip Lines"
+        },
         "tooltip_source_bounds": {
           "anyOf": [
             {
@@ -6265,6 +6326,20 @@
             }
           ],
           "default": null
+        },
+        "trader_price_multiplier": {
+          "anyOf": [
+            {
+              "maximum": 100.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trader Price Multiplier"
         },
         "visible_controls": {
           "anyOf": [
@@ -6448,7 +6523,7 @@
     },
     "UseGameBindingAction": {
       "additionalProperties": false,
-      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nThe agent kept trying to reach screens by hunting for a widget to click -\nclicking the time-speed buttons to unpause, clicking around the world hoping\nan inventory would appear - because nothing in the catalog could simply open\na screen. Kenshi already binds all of this: `I` opens the inventory, `M` the\nmap and `C` the stats window under the shipped defaults. Naming\nthe *binding* rather than the key keeps the intention readable and the\ncurrent default mapping in one place; customized keymaps are not yet read.\nThe binding enum is the semantic vocabulary, rather than an escape hatch to\narbitrary keys. Time keys remain controller details behind PauseAction and\nSetSpeedAction.",
+      "description": "Press one named Kenshi control through the shipped-default keymap.\n\nPrefer `open_screen` for reaching a screen; a binding only toggles.",
       "properties": {
         "kind": {
           "const": "use_game_binding",
@@ -6556,7 +6631,7 @@
           "default": null,
           "title": "Item Name"
         },
-        "item_value": {
+        "item_base_value": {
           "anyOf": [
             {
               "type": "integer"
@@ -6566,7 +6641,19 @@
             }
           ],
           "default": null,
-          "title": "Item Value"
+          "title": "Item Base Value"
+        },
+        "item_sell_value": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Item Sell Value"
         },
         "item_quantity": {
           "anyOf": [

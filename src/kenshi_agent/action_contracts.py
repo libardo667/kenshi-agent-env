@@ -202,9 +202,11 @@ class ReferenceBinding:
     resolved_role: str | None = None
     resolved_bounds: NormalizedPointerBounds | None = None
     source_revision: WorldStateRevision | None = None
-    # For item cells: what the game itself says the cell holds and is worth.
+    # For item cells: what the game itself says the cell holds, what buying it
+    # costs, and what selling it returns.
     item_name: str | None = None
-    item_value: int | None = None
+    item_base_value: int | None = None
+    item_sell_value: int | None = None
     item_quantity: int | None = None
     section: str | None = None
     # Camera-recovery-only facts resolved from the current world HUD.
@@ -1122,7 +1124,7 @@ def _bind_item_cell(
     observation: Observation,
     *,
     window: str | None = None,
-    item_value: int | None = None,
+    item_base_value: int | None = None,
     item_name: str | None = None,
     item_quantity: int | None = None,
     section: str | None = None,
@@ -1133,10 +1135,10 @@ def _bind_item_cell(
     side by side and the cell ordinals run across both, so on that screen the
     label alone is not a reference to anything in particular.
 
-    `item_value` narrows further, because a label is not unique either: the live
-    Barman stocks five cells all labelled "Tooth Pick", two with base value 809
-    and three with base value 390 - different weapon grades wearing the same
-    name. Base value separates them; it is not the final shop price.
+    `item_base_value` narrows further, because a label is not unique either: the
+    live Barman stocks five cells all labelled "Tooth Pick", two priced 809 and
+    three priced 390 - different weapon grades wearing the same name. The price
+    separates them.
     """
 
     telemetry = observation.telemetry
@@ -1164,14 +1166,16 @@ def _bind_item_cell(
         where = f" in window {window!r}" if window is not None else ""
         return _unbound(f"No current item cell matches {cell_label!r}{where}.")
 
-    if len(matches) > 1 and item_value is not None:
-        # Base value is only ever a tie-breaker between cells that share a name - the
-        # Barman stocks five "Tooth Pick" at two grades. It is deliberately not
-        # an assertion about the sale: a shop charges its own multiplier on an
-        # item's value and that asking price is never exported, so requiring
-        # equality refused every real purchase while reporting that the cell had
-        # vanished. Narrow when it helps; never refuse.
-        narrowed = [control for control in matches if control.item_value == item_value]
+    if len(matches) > 1 and item_base_value is not None:
+        # A tie-breaker between cells that share a name - the Barman stocks five
+        # "Tooth Pick" at two grades. Narrowing stays permissive here even
+        # though the price is now exact, because the caller already rejects a
+        # mismatched price with the real one named; refusing here as well would
+        # report the cell as missing rather than mispriced, which is the less
+        # actionable of the two failures.
+        narrowed = [
+            control for control in matches if control.item_base_value == item_base_value
+        ]
         if narrowed:
             matches = narrowed
 
@@ -1183,7 +1187,7 @@ def _bind_item_cell(
         # live Barman's shelf actually did. Distinguishable duplicates still
         # fail closed.
         distinct = {
-            (control.window, control.item_name, control.item_value)
+            (control.window, control.item_name, control.item_base_value)
             for control in matches
         }
         if len(distinct) > 1 or matches[0].item_name is None:
@@ -1200,7 +1204,8 @@ def _bind_item_cell(
         resolved_bounds=cell.bounds.model_copy(deep=True),
         source_revision=observation.world_revision,
         item_name=cell.item_name,
-        item_value=cell.item_value,
+        item_base_value=cell.item_base_value,
+        item_sell_value=cell.item_sell_value,
         item_quantity=cell.item_quantity,
         section=cell.section,
     )
@@ -1213,9 +1218,9 @@ def bind_purchase_item(
     """Bind a purchase to one exact named seller-owned cell.
 
     Current producers export the cell's item facts directly. Older producers
-    fall back to a tooltip bound to the same cell. The exported `item_value` is
-    base worth rather than an authoritative shop charge, so it may disambiguate
-    stock but cannot prove the final debit. Deliberately says nothing about
+    fall back to a tooltip bound to the same cell. `item_base_value` is the
+    charge itself, so the declared price is checked against it before any input
+    is sent. Deliberately says nothing about
     *what kind* of item is worth buying: that is task intent, not purchase
     safety.
     """
@@ -1226,7 +1231,7 @@ def bind_purchase_item(
         action.cell_label,
         observation,
         window=action.window,
-        item_value=action.expected_price,
+        item_base_value=action.expected_price,
     )
     if not cell.bound:
         return cell
@@ -1239,19 +1244,28 @@ def bind_purchase_item(
     # purchase. Prefer the cell's facts; fall back to the tooltip only when a
     # plug-in too old to export them is installed.
     cell_name = cell.item_name
-    cell_value = cell.item_value
-    if cell_name is not None and cell_value is not None:
+    cell_price = cell.item_base_value
+    if cell_name is not None and cell_price is not None:
         if action.item_name != cell_name:
             return _unbound(
                 f"The cell holds {cell_name!r}, not {action.item_name!r}."
             )
-        # Deliberately not checked. `item_value` is the item's worth, not what
-        # this shop charges - a trader applies its own multiplier and the asking
-        # price is never exported - so an `expected_price` that disagrees is the
-        # planner being wrong about something it was never given, not evidence
-        # that the wrong item is about to be bought. What the cell *is* remains
-        # checked above, which is the part that protects against buying the
-        # wrong thing. Money is bounded by the purse and by nothing else here.
+        # This check used to be skipped, on the grounds that the asking price
+        # "is never exported" and so a disagreeing `expected_price` proved
+        # nothing. That was true of the old export, which shipped the sell
+        # value - what the trader pays *out* - under a neutral name. The cell
+        # now carries the charge itself: live-confirmed 2026-07-30, a cell
+        # priced 33 debited exactly 33. So the price is checkable, and a
+        # declared price that disagrees is a plan reasoning about money the
+        # game never quoted it.
+        #
+        # The rejection names the accepted value, because a plan told only that
+        # it is wrong can do nothing but guess again.
+        if action.expected_price != cell_price:
+            return _unbound(
+                f"{cell_name!r} costs {cell_price}, not {action.expected_price}; "
+                f"declare expected_price {cell_price}."
+            )
     else:
         tooltip_text = telemetry.ui.tooltip_text
         tooltip_bounds = telemetry.ui.tooltip_source_bounds
@@ -2590,10 +2604,11 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
         "controller rebinds each unit and proves purse loss plus carried gain."
     ),
     argument_source=(
-        "cell_label, item_name, expected unit price (from item_value), and window "
-        "come from one visible_controls item entry; seller_id is the exact stable "
-        "id of that vendor group; quantity is the useful bounded amount, 1-5. "
-        "item_value is base worth, not a guaranteed final shop charge."
+        "cell_label, item_name, expected_price and window come from one "
+        "visible_controls item entry; seller_id is the exact stable id of that "
+        "vendor group; quantity is the useful bounded amount, 1-5. "
+        "expected_price must equal that entry's buy_price exactly; sell_price "
+        "is what a trader pays you and is rejected here."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),

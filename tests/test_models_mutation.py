@@ -69,7 +69,7 @@ def _control(
     *,
     window: str = "",
     item_name: str | None = None,
-    item_value: int | None = None,
+    item_base_value: int | None = None,
     item_quantity: int | None = None,
     section: str = "",
 ) -> VisibleUIControl:
@@ -84,7 +84,7 @@ def _control(
             max_y=0.4,
         ),
         item_name=item_name,
-        item_value=item_value,
+        item_base_value=item_base_value,
         item_quantity=item_quantity,
         section=section,
     )
@@ -97,7 +97,7 @@ def _rich_observation(*, item_control_count: int = 61) -> Observation:
             "item",
             window="Vendor Stock",
             item_name=f"item-{index}",
-            item_value=1000 + index,
+            item_base_value=1000 + index,
             item_quantity=2000 + index,
             section=f"section-{index}",
         )
@@ -655,7 +655,7 @@ def test_visible_control_digest_preserves_item_metadata_and_button_ambiguity() -
             "item",
             window="Stock",
             item_name="Copper",
-            item_value=123,
+            item_base_value=123,
             item_quantity=4,
             section="backpack",
         ),
@@ -670,7 +670,8 @@ def test_visible_control_digest_preserves_item_metadata_and_button_ambiguity() -
             "window": "Stock",
             "ambiguous": False,
             "item_name": "Copper",
-            "item_value": 123,
+            "buy_price": 123,
+            "sell_price": None,
             "item_quantity": 4,
             "section": "backpack",
         },
@@ -827,7 +828,8 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
                 "window": "Vendor Stock",
                 "section": f"section-{index}",
                 "item_name": f"item-{index}",
-                "item_value": 1000 + index,
+                "item_base_value": 1000 + index,
+                "item_sell_value": None,
                 "item_quantity": 2000 + index,
             }
             for index in range(60)

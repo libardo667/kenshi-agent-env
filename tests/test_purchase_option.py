@@ -99,7 +99,7 @@ class PurchaseTelemetry:
                     role="item",
                     window="BURN",
                     item_name="Dried Meat",
-                    item_value=43,
+                    item_base_value=43,
                     item_quantity=self.stock,
                     bounds=_bounds(0),
                 )
