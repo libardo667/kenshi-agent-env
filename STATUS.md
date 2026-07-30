@@ -85,8 +85,8 @@ before planning and rejects native actions again at the guard and environment bo
 - No live plan has yet been retained in which the playing model itself authors `consult_advisor`
   and grounds its changed goal in both the attributed brief and current Kenshi evidence. One live
   call returned truncated invalid JSON; synthetic proofs do not satisfy the requirement.
-- Resource harvesting is live-proven on one Iron target, but no live receipt yet closes the
-  harvest-to-sale or food-purchase economic loop.
+- The food-purchase loop is closed live: `live-vendor-search-20260729-r1` went from a fresh solo
+  start with no vendor in range to two verified purchases. Harvest-to-sale has no such receipt.
 - FCS start `kae-01-broke-solo` is live-proven; no matrix run is fixture-attested.
 
 ## Known limitations
