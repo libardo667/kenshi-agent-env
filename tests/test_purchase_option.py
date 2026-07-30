@@ -81,6 +81,7 @@ class PurchaseTelemetry:
         self.stock = stock
         self.carried = 0
         self.money = money
+        self.message_text: str | None = None
         self.sequence = 0
         self.max_age_seconds = 3.0
         self.path = Path("purchase-telemetry.json")
@@ -92,7 +93,7 @@ class PurchaseTelemetry:
             if self.carried
             else []
         )
-        controls = (
+        controls: list[VisibleUIControl] = (
             [
                 VisibleUIControl(
                     label="Dried Meat",
@@ -107,6 +108,16 @@ class PurchaseTelemetry:
             if self.stock
             else []
         )
+        if self.message_text is not None:
+            controls.append(
+                VisibleUIControl(
+                    label=self.message_text,
+                    role="text",
+                    widget_name="ABC_MessageTextBox",
+                    widget_type="EditBox",
+                    bounds=_bounds(1),
+                )
+            )
         snapshot = TelemetrySnapshot(
             sequence=self.sequence,
             captured_at=datetime.now(UTC),
@@ -170,6 +181,7 @@ class PurchaseController(InputController):
         *,
         inventory_updates: bool = True,
         no_effect: bool = False,
+        message_on_no_effect: str | None = None,
     ) -> None:
         self.telemetry = telemetry
         self.inventory_updates = inventory_updates
@@ -177,6 +189,7 @@ class PurchaseController(InputController):
         # Observed in `live-price-check-20260730-132702` with the item both
         # affordable and in stock, and distinct from a partial transfer.
         self.no_effect = no_effect
+        self.message_on_no_effect = message_on_no_effect
         self.actions: list[PrimitiveInputAction] = []
 
     def focus_window(self) -> None:
@@ -199,6 +212,12 @@ class PurchaseController(InputController):
             # It was simply the wrong side of the trade - the sell value - and
             # three live purchases have since debited the buy price exactly.
             self.telemetry.money -= 43
+        elif (
+            isinstance(action, ClickAction)
+            and action.button is MouseButton.RIGHT
+            and self.no_effect
+        ):
+            self.telemetry.message_text = self.message_on_no_effect
         now = datetime.now(UTC)
         return ActionReceipt(
             action=action,
@@ -228,12 +247,14 @@ def purchase_environment(
     inventory_updates: bool = True,
     money: int = 1000,
     no_effect: bool = False,
+    message_on_no_effect: str | None = None,
 ) -> tuple[LiveEnvironment, PurchaseTelemetry, PurchaseController]:
     telemetry = PurchaseTelemetry(stock=stock, money=money)
     controller = PurchaseController(
         telemetry,
         inventory_updates=inventory_updates,
         no_effect=no_effect,
+        message_on_no_effect=message_on_no_effect,
     )
     environment = LiveEnvironment(
         run_id="purchase-option-test",
@@ -613,5 +634,32 @@ def test_a_purchase_that_clicks_and_moves_nothing_says_so_explicitly(
             for item in controller.actions
             if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
         ]
+
+    asyncio.run(scenario())
+
+
+def test_a_purchase_preserves_the_causally_new_game_refusal(
+    tmp_path: Path,
+) -> None:
+    """The game explained this no-delta result; the controller must not erase it."""
+
+    async def scenario() -> None:
+        action = _purchase(quantity=1)
+        environment, _, _ = purchase_environment(
+            tmp_path,
+            stock=3,
+            no_effect=True,
+            message_on_no_effect="No room for that item.",
+        )
+        environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+        await environment.reset()
+        transition = await environment.step(action)
+
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.purchase
+        assert evidence is not None
+        assert evidence.status is PurchaseStatus.NOT_PURCHASED
+        assert "Kenshi refused the purchase: No room for that item." in evidence.reason
+        assert "neither the purse nor the shelf explains this" not in evidence.reason
 
     asyncio.run(scenario())

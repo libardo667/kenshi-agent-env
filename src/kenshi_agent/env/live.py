@@ -137,6 +137,7 @@ from ..resource_transfer import (
 )
 from ..skills import MacroRegistry
 from ..telemetry import TelemetryReader, TelemetryReadError
+from ..ui_messages import causally_new_game_message, game_message_panel_texts
 from .base import AgentEnvironment
 
 
@@ -2027,7 +2028,7 @@ class LiveEnvironment(AgentEnvironment):
 
         for unit_index in range(action.quantity):
             if unit_index:
-                rebound, rebind_reason = self._try_rebind_trade(
+                rebound, rebind_reason, rebound_snapshot = self._try_rebind_trade(
                     action,
                     contract,
                     selected_character_id=selected_character_id,
@@ -2042,6 +2043,10 @@ class LiveEnvironment(AgentEnvironment):
                     )
                     break
                 binding = rebound
+                assert rebound_snapshot is not None
+                message_baseline = game_message_panel_texts(rebound_snapshot)
+            else:
+                message_baseline = game_message_panel_texts(telemetry)
 
             remaining = action.quantity - completed_quantity
             refusal = self._trade_refusal_before_input(
@@ -2091,6 +2096,7 @@ class LiveEnvironment(AgentEnvironment):
                 inventory_before=current_inventory,
                 after_sequence=current_sequence,
                 remaining_quantity=remaining,
+                message_baseline=message_baseline,
                 timeout_seconds=observation_timeout_seconds,
             )
             final_money = observed_money
@@ -2133,6 +2139,12 @@ class LiveEnvironment(AgentEnvironment):
                         direction=direction,
                         money=current_money,
                     )
+                )
+            elif transfer_status == "refused":
+                status = "partial" if completed_quantity else "not_completed"
+                reason = (
+                    f"Stopped after {completed_quantity}/{action.quantity}: "
+                    f"{outcome_reason}"
                 )
             else:
                 status = "outcome_unknown"
@@ -2217,17 +2229,17 @@ class LiveEnvironment(AgentEnvironment):
         selected_character_id: str,
         expected_money: int,
         expected_inventory: int,
-    ) -> tuple[ReferenceBinding | None, str]:
+    ) -> tuple[ReferenceBinding | None, str, TelemetrySnapshot | None]:
         try:
             result = self.telemetry_reader.read()
         except TelemetryReadError as exc:
-            return None, f"telemetry could not be read ({exc})."
+            return None, f"telemetry could not be read ({exc}).", None
         if result.stale:
-            return None, "telemetry became stale before the next unit."
+            return None, "telemetry became stale before the next unit.", None
         observation = self._observation_from_snapshot(result.snapshot)
         binding = contract.bind(action, observation)
         if not binding.bound or binding.resolved_bounds is None:
-            return None, binding.reason
+            return None, binding.reason, None
         try:
             character_id, money, inventory = self._trade_state(
                 result.snapshot,
@@ -2235,7 +2247,7 @@ class LiveEnvironment(AgentEnvironment):
                 expected_character_id=selected_character_id,
             )
         except RuntimeError as exc:
-            return None, str(exc)
+            return None, str(exc), None
         if (
             character_id != selected_character_id
             or money != expected_money
@@ -2244,8 +2256,9 @@ class LiveEnvironment(AgentEnvironment):
             return (
                 None,
                 "purse or selected-character inventory changed between bound units.",
+                None,
             )
-        return binding, binding.reason
+        return binding, binding.reason, result.snapshot
 
     def _ensure_trade_can_continue(self, operation: str) -> None:
         if self.controller.emergency_stop_pressed(self.emergency_stop_key):
@@ -2268,9 +2281,10 @@ class LiveEnvironment(AgentEnvironment):
         inventory_before: int,
         after_sequence: int,
         remaining_quantity: int,
+        message_baseline: dict[str, str],
         timeout_seconds: float,
     ) -> tuple[
-        Literal["transferred", "not_transferred", "outcome_unknown"],
+        Literal["transferred", "refused", "not_transferred", "outcome_unknown"],
         int | None,
         int | None,
         int | None,
@@ -2341,6 +2355,19 @@ class LiveEnvironment(AgentEnvironment):
                             f"{inventory_delta} do not conservatively match the "
                             f"remaining bound {remaining_quantity}."
                         )
+                    else:
+                        refusal = causally_new_game_message(
+                            result.snapshot,
+                            message_baseline,
+                        )
+                        if refusal is not None:
+                            return (
+                                "refused",
+                                money_after,
+                                inventory_after,
+                                result.snapshot.sequence,
+                                f"Kenshi refused the {direction}: {refusal}",
+                            )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 if mismatch_reason is not None:

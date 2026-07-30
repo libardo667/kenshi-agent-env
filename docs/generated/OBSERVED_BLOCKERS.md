@@ -14,14 +14,15 @@ total. Rows are never dropped, so a blocker that stops recurring stays
 visible with the run that last exhibited it.
 
 ```text
-newest run  live-diagnose-20260730-135539
-signatures  15
-open        3
+newest run  live-purchase-refusal-causality-20260730-r2
+signatures  16
+open        1
 ```
 
 | signature | example | runs | seen | last run | last seen |
 | --- | --- | ---: | ---: | --- | --- |
 | `Controller-owned camera recovery returned '*'.` | Controller-owned camera recovery returned 'failed_after_bounded_attempts'. | 1 | 1 | live-hub-survival-pair-20260729-r3 | 2026-07-30T18:11:34Z |
+| `Controller-owned purchase returned '*': Stopped after #/#: Kenshi refused the purchase: No room for that item.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/1: Kenshi refused the purchase: No room for that item. | 1 | 2 | live-purchase-refusal-causality-20260730-r2 | 2026-07-30T23:07:56Z |
 | `Controller-owned purchase returned '*': Stopped after #/#: No current item cell matches '*' in window '*'.` | Controller-owned purchase returned 'partially_purchased': Stopped after 1/5: No current item cell matches 'Greenfruit' in window 'BARMAN'. | 1 | 1 | live-diagnose-20260730-135539 | 2026-07-30T21:03:53Z |
 | `Controller-owned purchase returned '*': Stopped after #/#: later telemetry showed no purse or selected-inventory change.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/2: later telemetry showed no purse or selected-inventory change. | 3 | 23 | live-diagnose-20260730-135539 | 2026-07-30T21:03:53Z |
 | `Plan rejected before execution: plan purchase risk budget exceeds configured maximum` | Plan rejected before execution: plan purchase risk budget exceeds configured maximum | 1 | 5 | live-hub-survival-pair-20260729-r3 | 2026-07-30T18:11:34Z |
