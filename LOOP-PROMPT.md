@@ -60,9 +60,16 @@ Do not trust this prompt or a prior summary for current facts.
 4. Run the portable baseline and generated-artifact checks. On a host with
    Kenshi installed, the parity tests must compare the captured denominator
    with the installed game.
-5. Inspect the newest complete relevant `runs/<run-id>/` bundles. Use
-   `kenshi-agent summarize` and `kenshi-agent aggregate-affordances`; do not
-   infer a blocker from a final stop reason alone.
+5. Read the generated observed-blocker ledger for what recent runs actually
+   failed on, then inspect the newest complete relevant `runs/<run-id>/`
+   bundles behind the rows that matter. Use `kenshi-agent summarize` and
+   `kenshi-agent aggregate-affordances`; do not infer a blocker from a final
+   stop reason alone. The ledger groups failures into signatures and records
+   which run last exhibited each; it does not attribute an owning boundary or
+   decide anything is fixed, so both remain yours to establish. On a host
+   holding run bundles, regenerate it with
+   `python scripts/export_blocker_ledger.py` so new evidence enters the
+   record — a gate fails when it is behind.
 6. Record the observed-failure candidate, the unreachable-affordance candidate,
    their evidence, and the selected slice in the working commentary.
 

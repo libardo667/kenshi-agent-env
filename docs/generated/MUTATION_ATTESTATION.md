@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-74 shards: 3 attested, 17 unverified, 0 source-changed, 54 never; 1091 open mutants where the numbers still apply.
+75 shards: 3 attested, 17 unverified, 0 source-changed, 55 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -34,6 +34,7 @@ promises only that the module under test has not moved.
 | `affordance_surfaces` | — | — | — | — | — | never |
 | `approach` | — | — | — | — | — | never |
 | `authored_starts` | — | — | — | — | — | never |
+| `blocker_ledger` | — | — | — | — | — | never |
 | `camera_recovery` | — | — | — | — | — | never |
 | `campaign` | 21 | 21 | 0 | 2026-07-28T04:11:58Z | — | unverified |
 | `cli` | 1569 | 493 | 1076 | 2026-07-28T11:22:05Z | — | unverified |

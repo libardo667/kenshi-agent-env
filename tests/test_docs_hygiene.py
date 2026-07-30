@@ -33,6 +33,11 @@ from pathlib import Path
 
 import pytest
 
+from kenshi_agent.blocker_ledger import LEDGER_NAME as BLOCKER_LEDGER_NAME
+from kenshi_agent.blocker_ledger import (
+    export_blocker_ledger,
+    newest_run_bundles,
+)
 from kenshi_agent.doc_export import export_docs
 from kenshi_agent.mutation_ledger import (
     LEDGER_NAME,
@@ -424,3 +429,60 @@ def test_generated_documents_are_not_length_capped() -> None:
     # And at least one of them is genuinely over the prose cap, so this is not
     # vacuously true.
     assert any(_line_count(path) > DOC_LINE_CAP for path in generated)
+
+
+def test_the_blocker_ledger_round_trips_through_its_own_format(
+    tmp_path: Path,
+) -> None:
+    """Rendering and parsing must be exact inverses.
+
+    Deliberately weak, and named so nobody mistakes it for more: with no
+    `runs/` the export parses the committed file and re-renders it, so a
+    hand-edited count survives untouched. What it does catch is a format that
+    cannot be read back, which would silently drop every recorded row the next
+    time anyone regenerated. The gate below is the one that checks content, and
+    it needs evidence to do it.
+    """
+
+    fresh = export_blocker_ledger(
+        tmp_path,
+        existing=GENERATED_DOCS / BLOCKER_LEDGER_NAME,
+    )
+    checked_in = GENERATED_DOCS / BLOCKER_LEDGER_NAME
+    assert checked_in.exists(), (
+        f"{BLOCKER_LEDGER_NAME} is generated but not checked in; "
+        "run `python scripts/export_blocker_ledger.py`"
+    )
+    assert filecmp.cmp(fresh, checked_in, shallow=False), (
+        f"docs/generated/{BLOCKER_LEDGER_NAME} does not survive a round trip "
+        "through its own parser. Run `python scripts/export_blocker_ledger.py`."
+    )
+
+
+def test_the_blocker_ledger_matches_the_local_run_evidence(tmp_path: Path) -> None:
+    """On a machine holding bundles, the ledger must be what they derive.
+
+    This is the forcing function. It re-reads the evidence and compares the
+    whole document, so it fails both when runs have accumulated since the last
+    export and when a row was edited by hand - neither of which a clone can
+    detect, because the evidence is machine-local by design.
+
+    Skips where there is nothing to be behind, the same way binding parity only
+    compares against an installed game when one is present.
+    """
+
+    if not newest_run_bundles(ROOT / "runs", limit=1):
+        pytest.skip("no local run bundles to derive from")
+
+    fresh = export_blocker_ledger(
+        tmp_path,
+        runs_dir=ROOT / "runs",
+        existing=GENERATED_DOCS / BLOCKER_LEDGER_NAME,
+    )
+    assert filecmp.cmp(
+        fresh, GENERATED_DOCS / BLOCKER_LEDGER_NAME, shallow=False
+    ), (
+        f"docs/generated/{BLOCKER_LEDGER_NAME} disagrees with the run bundles "
+        "on this machine - either new runs have not been folded in or a row "
+        "was edited. Run `python scripts/export_blocker_ledger.py`."
+    )
