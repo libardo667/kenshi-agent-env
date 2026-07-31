@@ -378,6 +378,16 @@ namespace
         }
         if (EvaluateNativeMapTravel(
                 true,
+                true,
+                false,
+                true,
+                true) != MAP_TRAVEL_COMPLETE)
+        {
+            return Fail(
+                "a completed exact-town interior leg depended on optional wall geometry");
+        }
+        if (EvaluateNativeMapTravel(
+                true,
                 false,
                 false,
                 false,

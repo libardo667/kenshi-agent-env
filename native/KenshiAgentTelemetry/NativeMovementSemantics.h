@@ -107,18 +107,18 @@ namespace KenshiAgentTelemetry
         MAP_TRAVEL_CANCEL_UNCONFIRMED
     };
 
-    // Current-town identity is a present-tense fact used both for issue-time
-    // rejection and terminal revalidation. A gated town additionally requires
-    // an inside-walls observation.
+    // Present-tense "already reached" remains conservative at issue time: a
+    // gated town additionally requires an inside-walls observation. Ungated
+    // travel may also use this predicate as its immediate terminal.
     bool IsNativeMapDestinationPresentlyReached(
         bool currentTownIdentityMatches,
         bool destinationHasGates,
         bool insideTownWalls);
 
-    // Map markers resolve to direction-dependent gate waypoints. In a gated
-    // town, crossing the wall predicate is only a transition: the controller
-    // must finish its subsequent interior leg while exact town and wall facts
-    // remain true before reporting settlement arrival.
+    // Map markers resolve to direction-dependent gate waypoints. A gated town
+    // must finish the controller-owned interior leg. Once that exact leg
+    // reaches its native-resolved endpoint, exact town identity proves arrival;
+    // some valid town geometry never exposes an inside-walls state.
     NativeMapTravelDecision EvaluateNativeMapTravel(
         bool currentTownIdentityMatches,
         bool destinationHasGates,

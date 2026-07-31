@@ -85,7 +85,7 @@ though the retained recognized targets are sorted.
 `game.location` gates the display name; `game.location.identity` gates the
 all-null-or-complete exact ID/name/inside-walls tuple. Map destinations expose
 `has_gates`. Entry and terminal semantics are fixed by
-[settlement entry ownership](ADR_SETTLEMENT_ENTRY.md).
+[completed settlement arrival evidence](ADR_SETTLEMENT_ARRIVAL_EVIDENCE.md).
 
 ## Partial and unknown values
 

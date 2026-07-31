@@ -228,7 +228,7 @@ namespace KenshiAgentTelemetry
             return MAP_TRAVEL_CONTINUE;
         if (!interiorLegIssued)
             return MAP_TRAVEL_ISSUE_INTERIOR_ORDER;
-        return destinationReached
+        return currentTownIdentityMatches
             ? MAP_TRAVEL_COMPLETE
             : MAP_TRAVEL_CANCEL_UNCONFIRMED;
     }

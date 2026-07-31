@@ -75,12 +75,12 @@ arguments:
   carry an empty target plus the exact bearing and distance.
 - `travel_to_map_destination` resolves one exact discovered town and approaches
   its direction-dependent gate waypoint. A gated town then receives one
-  controller-owned interior order; completion requires that order to finish
-  while the exact town is the selected character's current location and Kenshi
-  reports the character inside its walls. Crossing the wall predicate does not
-  terminate the interior order. An ungated town requires exact current-location
-  identity. A reached interior leg without that evidence cancels rather than
-  inventing arrival.
+  controller-owned interior order. Crossing the wall predicate does not
+  terminate that order. Once its native-resolved endpoint is reached, exact
+  current-town identity completes the command even when that town's geometry
+  never exposes selected-character inside-walls state. An ungated town requires
+  exact current-location identity. A reached interior leg without exact town
+  identity cancels rather than inventing arrival.
 - `exit_current_building` requires the selected character's indoor handle to
   resolve to a valid building, then resolves its current unlocked exit and
   outside point without accepting model-authored geometry.
