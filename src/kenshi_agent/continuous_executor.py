@@ -64,6 +64,7 @@ from .models import (
     new_command_id,
     normalize_control_label,
 )
+from .non_progress import unchanged_definitive_no_op_reason
 from .options import (
     OptionLifecycleError,
     OptionPoll,
@@ -488,6 +489,25 @@ class ContinuousPlanExecutor:
                         "failure_conditions": self._evaluations_json(
                             failure_conditions
                         )
+                    },
+                )
+
+            unchanged_retry = unchanged_definitive_no_op_reason(
+                step.action,
+                observation,
+            )
+            if unchanged_retry is not None:
+                return self._abort(
+                    plan,
+                    step,
+                    observation,
+                    actions_completed,
+                    (
+                        "Step rejected before dispatch because its action "
+                        f"{unchanged_retry}."
+                    ),
+                    evidence={
+                        "non_progress_barrier": unchanged_retry,
                     },
                 )
 

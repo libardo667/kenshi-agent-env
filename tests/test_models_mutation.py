@@ -71,6 +71,7 @@ def _control(
     item_name: str | None = None,
     item_base_value: int | None = None,
     item_quantity: int | None = None,
+    selected_inventory_accepts_item: bool | None = None,
     section: str = "",
 ) -> VisibleUIControl:
     return VisibleUIControl(
@@ -86,6 +87,7 @@ def _control(
         item_name=item_name,
         item_base_value=item_base_value,
         item_quantity=item_quantity,
+        selected_inventory_accepts_item=selected_inventory_accepts_item,
         section=section,
     )
 
@@ -657,6 +659,7 @@ def test_visible_control_digest_preserves_item_metadata_and_button_ambiguity() -
             item_name="Copper",
             item_base_value=123,
             item_quantity=4,
+            selected_inventory_accepts_item=False,
             section="backpack",
         ),
         _control("Same", "button", window="Choice"),
@@ -673,6 +676,7 @@ def test_visible_control_digest_preserves_item_metadata_and_button_ambiguity() -
             "buy_price": 123,
             "sell_price": None,
             "item_quantity": 4,
+            "selected_inventory_accepts_item": False,
             "section": "backpack",
         },
         {
@@ -831,6 +835,7 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
                 "item_base_value": 1000 + index,
                 "item_sell_value": None,
                 "item_quantity": 2000 + index,
+                "selected_inventory_accepts_item": None,
             }
             for index in range(60)
         ],

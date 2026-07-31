@@ -18,6 +18,8 @@ from kenshi_agent.control.base import InputController, PrimitiveInputAction, Win
 from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.models import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
     ActionReceipt,
     CharacterState,
     ClickAction,
@@ -46,6 +48,7 @@ from kenshi_agent.models import (
     VisibleUIControl,
     WorldStateRevision,
 )
+from kenshi_agent.non_progress import retry_state_fingerprint
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import ActionGuard
@@ -77,10 +80,17 @@ def _bounds(index: int) -> NormalizedPointerBounds:
 
 
 class PurchaseTelemetry:
-    def __init__(self, *, stock: int, money: int = 1000) -> None:
+    def __init__(
+        self,
+        *,
+        stock: int,
+        money: int = 1000,
+        selected_inventory_accepts_item: bool = True,
+    ) -> None:
         self.stock = stock
         self.carried = 0
         self.money = money
+        self.selected_inventory_accepts_item = selected_inventory_accepts_item
         self.message_text: str | None = None
         self.sequence = 0
         self.max_age_seconds = 3.0
@@ -102,6 +112,9 @@ class PurchaseTelemetry:
                     item_name="Dried Meat",
                     item_base_value=43,
                     item_quantity=self.stock,
+                    selected_inventory_accepts_item=(
+                        self.selected_inventory_accepts_item
+                    ),
                     bounds=_bounds(0),
                 )
             ]
@@ -164,6 +177,7 @@ class PurchaseTelemetry:
                 selected_character_id="character-bark",
                 selected_character_ids=["character-bark"],
                 visible_controls=controls,
+                visible_controls_complete=True,
             ),
         )
         return TelemetryRead(
@@ -248,8 +262,13 @@ def purchase_environment(
     money: int = 1000,
     no_effect: bool = False,
     message_on_no_effect: str | None = None,
+    selected_inventory_accepts_item: bool = True,
 ) -> tuple[LiveEnvironment, PurchaseTelemetry, PurchaseController]:
-    telemetry = PurchaseTelemetry(stock=stock, money=money)
+    telemetry = PurchaseTelemetry(
+        stock=stock,
+        money=money,
+        selected_inventory_accepts_item=selected_inventory_accepts_item,
+    )
     controller = PurchaseController(
         telemetry,
         inventory_updates=inventory_updates,
@@ -492,6 +511,128 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
             assert result.reason == "Plan completed."
         else:
             assert expected_status in result.reason
+
+    asyncio.run(scenario())
+
+
+def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        action = _purchase(quantity=1)
+        environment, _, controller = purchase_environment(
+            tmp_path,
+            stock=3,
+            no_effect=True,
+            message_on_no_effect="No room for that item.",
+            selected_inventory_accepts_item=False,
+        )
+        environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+        observation = await environment.reset()
+        first = _purchase_plan(observation, action).steps[0].model_copy(
+            update={"on_failure": "retry"}
+        )
+        second = first.model_copy(
+            update={"step_id": "retry", "on_failure": None}
+        )
+        plan = _purchase_plan(observation, action).model_copy(
+            update={
+                "steps": [first, second],
+                "max_actions": 2,
+                "risk_budget": RiskBudget(
+                    max_pointer_actions=2,
+                    max_purchase_actions=2,
+                    max_native_assisted_actions=0,
+                ),
+            }
+        )
+
+        store = WorldStateStore(clock=clock)
+        store.publish(observation)
+        logger = SessionLogger(
+            tmp_path / "same-plan-no-op.jsonl",
+            "same-plan-no-op",
+        )
+
+        def observe_transition(
+            active_plan: PlanEnvelope,
+            step: PlanStep,
+            before: Observation,
+            transition: Transition,
+            command_id: str,
+            action_start_revision: WorldStateRevision,
+        ) -> Observation:
+            del before, command_id
+            purchase = transition.receipt.semantic
+            assert purchase is not None
+            assert purchase.purchase is not None
+            candidate = transition.observation
+            fingerprint = retry_state_fingerprint(action, candidate)
+            assert fingerprint is not None
+            outcome = ActionOutcome(
+                outcome_id="ao-1",
+                run_id=candidate.run_id,
+                plan_id=active_plan.plan_id,
+                plan_version=active_plan.plan_version,
+                step_id=step.step_id,
+                step_index=candidate.step_index,
+                intent="Attempt the bounded purchase.",
+                action=action,
+                executed=True,
+                assessment=ActionOutcomeAssessment.NO_OP,
+                causal_revision_advanced=True,
+                semantic_status=purchase.purchase.status.value,
+                feedback=purchase.purchase.reason,
+                started_after_revision=action_start_revision,
+                completed_at_revision=candidate.world_revision,
+                identity_session_id="session-purchase",
+                retry_state_fingerprint=fingerprint,
+            )
+            decorated = candidate.model_copy(
+                update={"recent_action_outcomes": [outcome]}
+            )
+            store.publish(candidate)
+            return store.decorate_latest(decorated)
+
+        executor = ContinuousPlanExecutor(
+            environment=environment,
+            guard=ActionGuard(
+                SafetyConfig(
+                    allow_action_kinds=["purchase_item"],
+                    max_actions_per_minute=100,
+                ),
+                MacroRegistry({}),
+                control_mode=ControlMode.NATIVE_ASSISTED,
+            ),
+            reflexes=ReflexEngine(),
+            logger=logger,
+            clock=clock,
+            state_store=store,
+            observe_transition=observe_transition,
+            planning_config=PlanningConfig(
+                mode=PlanningMode.CONTINUOUS,
+                max_purchase_actions_per_plan=2,
+            ),
+        )
+        try:
+            result = await executor.execute(
+                plan,
+                observation,
+                remaining_run_actions=2,
+            )
+        finally:
+            logger.close()
+
+        right_clicks = [
+            primitive
+            for primitive in controller.actions
+            if isinstance(primitive, ClickAction)
+            and primitive.button is MouseButton.RIGHT
+        ]
+        assert len(right_clicks) == 1
+        assert result.actions_completed == 1
+        assert "definitive no-op" in result.reason
 
     asyncio.run(scenario())
 

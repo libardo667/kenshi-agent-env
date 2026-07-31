@@ -11,6 +11,8 @@ from pydantic import ValidationError
 
 from kenshi_agent.config import MacroConfig, PlanningConfig
 from kenshi_agent.models import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
     ActivateVisibleControlAction,
     ActivePlanContext,
     ApproachDialogueTargetAction,
@@ -1238,6 +1240,51 @@ def purchase_step(step_id: str, *, on_success: str | None = None) -> PlanStep:
         timeout_seconds=1.0,
         on_success=on_success,
     )
+
+
+def test_plan_rejects_an_unchanged_retry_after_a_definitive_no_op() -> None:
+    current = observation(
+        sequence=5,
+        capabilities=["game.pause", "game.time", "game.money"],
+    )
+    step = purchase_step("purchase")
+    prior = ActionOutcome(
+        outcome_id="ao-1",
+        run_id=current.run_id,
+        plan_id="failed-purchase",
+        plan_version=1,
+        step_id="purchase",
+        step_index=0,
+        intent="Buy one Dried Meat.",
+        action=step.action,
+        executed=True,
+        assessment=ActionOutcomeAssessment.NO_OP,
+        causal_revision_advanced=True,
+        semantic_status="not_purchased",
+        feedback="Kenshi refused the purchase because there was no room.",
+        completed_at_revision=revision(4),
+    )
+    current = current.model_copy(update={"recent_action_outcomes": [prior]})
+    plan = plan_for(
+        current.world_revision,
+        steps=[step],
+        entry_step_id=step.step_id,
+        max_actions=1,
+    ).model_copy(
+        update={
+            "risk_budget": RiskBudget(
+                max_pointer_actions=1,
+                max_purchase_actions=1,
+                max_native_assisted_actions=0,
+            )
+        }
+    )
+
+    with pytest.raises(
+        PlanValidationError,
+        match="definitive no-op.*unchanged",
+    ):
+        validate_plan(plan, current, PlanningConfig(), MacroRegistry({}))
 
 
 def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> None:

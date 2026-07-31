@@ -1605,6 +1605,18 @@
           "default": null,
           "title": "Item Type"
         },
+        "selected_inventory_accepts_item": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Inventory Accepts Item"
+        },
         "section": {
           "default": "",
           "maxLength": 80,
@@ -1706,7 +1718,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.4.0",
+      "default": "1.5.0",
       "title": "Protocol Version",
       "type": "string"
     },

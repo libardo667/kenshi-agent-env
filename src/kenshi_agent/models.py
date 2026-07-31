@@ -715,6 +715,11 @@ class VisibleUIControl(StrictModel):
     item_sell_value: int | None = None
     item_quantity: int | None = Field(default=None, ge=0)
     item_type: int | None = None
+    # Kenshi's own `Character::hasRoomForItem` verdict for the current primary
+    # selected character and this exact item type. This is stronger than free
+    # cell count or visual movement: inventory capacity is rectangular, and
+    # ARRANGE may shuffle icons without changing whether the item fits.
+    selected_inventory_accepts_item: bool | None = None
     section: str = Field(default="", max_length=80)
     # `item` is an inventory or shop grid cell. It carries no caption of its
     # own, so its label is an ordinal from the deterministic export walk and
@@ -927,7 +932,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.4.0"
+    protocol_version: str = "1.5.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -2116,6 +2121,13 @@ class ActionOutcome(StrictModel):
     # an outcome describes while leaving `run_id` untouched, so run identity
     # cannot be the currency check once the agent can load for itself.
     identity_session_id: str | None = Field(default=None, max_length=200)
+    # Runtime-owned evidence for admitting an exact retry after a definitive
+    # no-op. It deliberately excludes time and generic UI churn: only state
+    # known to change the action's result belongs in this fingerprint.
+    retry_state_fingerprint: str | None = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+    )
 
 
 class PlanDisposition(StrEnum):
@@ -4403,6 +4415,9 @@ class Observation(StrictModel):
                 entry["buy_price"] = control.item_base_value
                 entry["sell_price"] = control.item_sell_value
                 entry["item_quantity"] = control.item_quantity
+                entry["selected_inventory_accepts_item"] = (
+                    control.selected_inventory_accepts_item
+                )
                 entry["section"] = control.section
             digest.append(entry)
         return digest
@@ -4540,6 +4555,9 @@ class Observation(StrictModel):
                         "item_base_value": control.item_base_value,
                         "item_sell_value": control.item_sell_value,
                         "item_quantity": control.item_quantity,
+                        "selected_inventory_accepts_item": (
+                            control.selected_inventory_accepts_item
+                        ),
                     }
                     for control in (telemetry.ui.visible_controls or [])
                     if control.role == "item"

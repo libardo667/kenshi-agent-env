@@ -332,6 +332,19 @@
           ],
           "default": null,
           "title": "Identity Session Id"
+        },
+        "retry_state_fingerprint": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retry State Fingerprint"
         }
       },
       "required": [
@@ -6051,7 +6064,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.4.0",
+          "default": "1.5.0",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -6679,6 +6692,18 @@
           ],
           "default": null,
           "title": "Item Type"
+        },
+        "selected_inventory_accepts_item": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Inventory Accepts Item"
         },
         "section": {
           "default": "",

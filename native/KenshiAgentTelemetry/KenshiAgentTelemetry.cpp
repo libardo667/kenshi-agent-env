@@ -126,7 +126,7 @@ namespace
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.4.0";
+    const char* PROTOCOL_VERSION = "1.5.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -1465,6 +1465,20 @@ namespace
         json << "\"item_type\":" << static_cast<int>(item->getItemType()) << ",";
     }
 
+    void AppendSelectedInventoryFit(
+        std::ostringstream& json,
+        Item* item,
+        Character* selected)
+    {
+        json << "\"selected_inventory_accepts_item\":";
+        GameData* itemData = item->getGameData();
+        if (selected != NULL && selected->isValid() && itemData != NULL)
+            json << JsonBool(selected->hasRoomForItem(itemData));
+        else
+            json << "null";
+        json << ",";
+    }
+
     // Inventory and shop cells, named. Walking the MyGUI tree can only report
     // that *a* cell exists at some bounds, which left the agent hovering cells
     // one at a time to discover what each held - a model call per cell, while a
@@ -1474,7 +1488,8 @@ namespace
         std::ostringstream& json,
         bool& first,
         unsigned int& appended,
-        bool& complete)
+        bool& complete,
+        Character* selected)
     {
         if (gui == NULL)
             return;
@@ -1530,6 +1545,7 @@ namespace
                     json << "\"label\":\"" << JsonEscape(name) << "\",";
                     json << "\"role\":\"item\",";
                     AppendItemFacts(json, icon->item);
+                    AppendSelectedInventoryFit(json, icon->item, selected);
                     json << "\"window\":\""
                          << JsonEscape(OwningWindowCaption(icon->image)) << "\",";
                     json << "\"section\":\"" << JsonEscape(sectionIt->first) << "\",";
@@ -1705,7 +1721,8 @@ namespace
     bool AppendVisibleUIControls(
         std::ostringstream& json,
         bool includeItemCells,
-        bool& complete)
+        bool& complete,
+        Character* selected)
     {
         complete = true;
         MyGUI::Gui* myGui = MyGUI::Gui::getInstancePtr();
@@ -1751,7 +1768,8 @@ namespace
                         json,
                         first,
                         appended,
-                        complete);
+                        complete,
+                        selected);
                 continue;
             }
             // Each pass re-walks the tree with its own visit budget so a wide
@@ -3104,7 +3122,8 @@ namespace
             AppendVisibleUIControls(
                 json,
                 inventoryOpen || tradeOpen,
-                visibleControlsComplete);
+                visibleControlsComplete,
+                selected);
         json << ",\"visible_controls_complete\":";
         if (visibleControlsAvailable)
             json << JsonBool(visibleControlsComplete);
@@ -3575,7 +3594,8 @@ namespace
             AppendVisibleUIControls(
                 json,
                 false,
-                visibleControlsComplete);
+                visibleControlsComplete,
+                NULL);
         json << ",\"visible_controls_complete\":";
         if (visibleControlsAvailable)
             json << JsonBool(visibleControlsComplete);

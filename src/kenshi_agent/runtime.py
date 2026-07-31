@@ -96,6 +96,7 @@ from .models import (
     WorldStateRevision,
     new_command_id,
 )
+from .non_progress import retry_state_fingerprint
 from .planners import Planner
 from .planners.base import (
     HostedPlannerCallDiagnostics,
@@ -3533,6 +3534,10 @@ class AgentRuntime:
                 after.telemetry.identity_session_id
                 if after.telemetry is not None
                 else None
+            ),
+            retry_state_fingerprint=retry_state_fingerprint(
+                receipt.action,
+                after,
             ),
         )
         self._ledger.record_action_outcome(outcome)

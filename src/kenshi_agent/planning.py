@@ -32,6 +32,7 @@ from .models import (
     WaitAction,
     WorldStateRevision,
 )
+from .non_progress import unchanged_definitive_no_op_reason
 from .skills import MacroRegistry, UnknownSkillError
 
 
@@ -630,6 +631,12 @@ def validate_plan(
         pointer_risk += pointer
         purchase_risk += purchase
         native_risk += native
+        unchanged_retry = unchanged_definitive_no_op_reason(
+            step.action,
+            observation,
+        )
+        if unchanged_retry is not None:
+            errors.append(f"step {step.step_id!r} {unchanged_retry}")
         if step.retry_budget and not isinstance(
             step.action,
             (NoopAction, WaitAction, PauseAction, SetSpeedAction),
