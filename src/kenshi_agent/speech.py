@@ -3,12 +3,15 @@ from __future__ import annotations
 import shutil
 import subprocess
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from os import environ
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from threading import Condition, Lock, Thread
 from typing import Protocol
+
+from .wave_player import play_windows_wave
 
 
 class SpeechUnavailableError(RuntimeError):
@@ -235,11 +238,7 @@ class WindowsSapiSpeaker:
                 self._process.wait(timeout=0.5)
 
 
-_PIPER_PLAY_SCRIPT = (
-    "$ErrorActionPreference='Stop';"
-    "$p=New-Object Media.SoundPlayer $args[0];"
-    "$p.PlaySync()"
-)
+WavePlayer = Callable[[Path], None]
 
 
 class PiperSpeaker:
@@ -258,20 +257,15 @@ class PiperSpeaker:
         executable: Path,
         model: Path,
         *,
-        player: str | None = None,
+        player: WavePlayer | None = None,
     ) -> None:
         if not executable.is_file():
             raise SpeechUnavailableError(f"Piper executable is missing: {executable}")
         if not model.is_file():
             raise SpeechUnavailableError(f"Piper voice model is missing: {model}")
-        resolved_player = player or shutil.which("powershell.exe") or shutil.which("powershell")
-        if resolved_player is None:
-            raise SpeechUnavailableError(
-                "No Windows audio player is available to play Piper output."
-            )
         self._executable = executable
         self._model = model
-        self._player = resolved_player
+        self._player = player or play_windows_wave
         self._closed = False
         self._lock = Lock()
         self._directory = TemporaryDirectory(prefix="kenshi-agent-piper-")
@@ -292,6 +286,8 @@ class PiperSpeaker:
                     str(self._executable),
                     "--model",
                     str(self._model),
+                    "--length_scale",
+                    "0.70",
                     "--output_file",
                     str(wave_path),
                 ],
@@ -304,20 +300,8 @@ class PiperSpeaker:
         except (OSError, subprocess.SubprocessError) as exc:
             raise RuntimeError(f"Piper synthesis failed: {exc}") from exc
         try:
-            subprocess.run(
-                [
-                    self._player,
-                    "-NoProfile",
-                    "-NonInteractive",
-                    "-Command",
-                    _PIPER_PLAY_SCRIPT,
-                    _windows_path(wave_path),
-                ],
-                capture_output=True,
-                check=True,
-                timeout=120,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
+            self._player(wave_path)
+        except (OSError, RuntimeError, ValueError) as exc:
             raise RuntimeError(f"Piper playback failed: {exc}") from exc
 
     def close(self) -> None:
@@ -326,25 +310,6 @@ class PiperSpeaker:
                 return
             self._closed = True
         self._directory.cleanup()
-
-
-def _windows_path(path: Path) -> str:
-    """Render a path for the Windows player, which cannot read WSL paths."""
-
-    if shutil.which("wslpath") is None:
-        return str(path)
-    try:
-        converted = subprocess.run(
-            ["wslpath", "-w", str(path)],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return str(path)
-    return converted.stdout.strip() or str(path)
-
 
 def windows_sapi_narrator() -> QueuedSpeechNarrator:
     """Build the supported offline narration mode for Windows or WSL."""
@@ -355,7 +320,10 @@ def windows_sapi_narrator() -> QueuedSpeechNarrator:
 def piper_narrator(executable: Path, model: Path) -> QueuedSpeechNarrator:
     """Build local neural narration from an installed Piper voice."""
 
-    return QueuedSpeechNarrator(PiperSpeaker(executable, model))
+    return QueuedSpeechNarrator(
+        PiperSpeaker(executable, model),
+        queue_limit=1,
+    )
 
 
 PIPER_HOME_VARIABLE = "KENSHI_AGENT_PIPER_HOME"

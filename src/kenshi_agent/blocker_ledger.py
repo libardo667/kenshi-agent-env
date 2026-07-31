@@ -99,11 +99,11 @@ def blocker_signature(reason: str) -> str:
     # Handles and hex ids before digits, or their digits survive as noise.
     collapsed = re.sub(r"\b[0-9a-f]{8,}\b", "<id>", collapsed)
     collapsed = re.sub(r"\d+(?:\.\d+)?", "#", collapsed)
-    return collapsed[:SIGNATURE_LENGTH]
+    return collapsed[:SIGNATURE_LENGTH].rstrip()
 
 
 def _example(reason: str) -> str:
-    return " ".join(reason.split())[:EXAMPLE_LENGTH]
+    return " ".join(reason.split())[:EXAMPLE_LENGTH].rstrip()
 
 
 def blockers_from_run(path: Path) -> dict[str, tuple[str, int]]:
@@ -254,14 +254,18 @@ def parse_ledger(text: str) -> tuple[dict[str, ObservedBlocker], str]:
             occurrences = int(fields[3])
         except ValueError:
             continue
-        blockers[signature[1:-1]] = ObservedBlocker(
-            signature=signature[1:-1],
+        canonical_signature = signature[1:-1].rstrip()
+        blocker = ObservedBlocker(
+            signature=canonical_signature,
             example=fields[1],
             runs=runs,
             occurrences=occurrences,
             last_run_id=fields[4],
             last_seen_at=fields[5],
         )
+        previous = blockers.get(canonical_signature)
+        if previous is None or blocker.last_seen_at >= previous.last_seen_at:
+            blockers[canonical_signature] = blocker
     return blockers, newest_run_id
 
 

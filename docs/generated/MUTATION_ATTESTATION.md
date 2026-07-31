@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-77 shards: 5 attested, 17 unverified, 0 source-changed, 55 never; 1091 open mutants where the numbers still apply.
+78 shards: 6 attested, 17 unverified, 1 source-changed, 54 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -97,10 +97,11 @@ promises only that the module under test has not moved.
 | `schema_export` | — | — | — | — | — | never |
 | `session_log` | — | — | — | — | — | never |
 | `skills.registry` | — | — | — | — | — | never |
-| `speech` | — | — | — | — | — | never |
+| `speech` | 290 | 74 | 216 | 2026-07-31T01:18:02Z | 09ab119bf769c763 | source-changed |
 | `telemetry.reader` | — | — | — | — | — | never |
 | `telemetry.sample` | — | — | — | — | — | never |
 | `telemetry.writer` | — | — | — | — | — | never |
 | `ui_affordances` | — | — | — | — | — | never |
 | `ui_messages` | 13 | 13 | 0 | 2026-07-30T23:14:03Z | 29e84b8eee68e5ce | attested |
+| `wave_player` | 13 | 13 | 0 | 2026-07-31T01:59:54Z | fe12ffe07ed3bac7 | attested |
 | `world_state` | — | — | — | — | — | never |

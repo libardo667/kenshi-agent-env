@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from threading import Event, Thread
+from typing import Any
 
 import pytest
 
@@ -10,6 +12,7 @@ from kenshi_agent.speech import (
     QueuedSpeechNarrator,
     SpeechUnavailableError,
     installed_piper_voice,
+    piper_narrator,
 )
 
 
@@ -106,5 +109,65 @@ def test_piper_speaker_refuses_to_start_without_its_voice(tmp_path: Path) -> Non
         PiperSpeaker(
             home / "piper" / "piper.exe",
             home / "absent.onnx",
-            player="/bin/true",
+            player=lambda path: None,
         )
+
+
+def test_piper_hands_synthesized_audio_to_its_owned_wave_player(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    home = _piper_home(tmp_path)
+    executable = home / "piper" / "piper.exe"
+    model = home / "en_US-lessac-medium.onnx"
+    wave_bytes = b"RIFF-owned-wave-player"
+    subprocess_calls: list[list[Any]] = []
+
+    def synthesize(
+        command: list[Any],
+        **kwargs: Any,
+    ) -> subprocess.CompletedProcess[str]:
+        subprocess_calls.append(command)
+        assert command[0] == str(executable)
+        output_index = command.index("--output_file") + 1
+        Path(command[output_index]).write_bytes(wave_bytes)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr("kenshi_agent.speech.subprocess.run", synthesize)
+    played: list[bytes] = []
+    speaker = PiperSpeaker(
+        executable,
+        model,
+        player=lambda path: played.append(path.read_bytes()),
+    )
+
+    speaker.speak("The natural voice must use the accepted audio path.")
+    speaker.close()
+
+    assert len(subprocess_calls) == 1
+    assert "--length_scale" in subprocess_calls[0]
+    length_scale_index = subprocess_calls[0].index("--length_scale") + 1
+    assert subprocess_calls[0][length_scale_index] == "0.70"
+    assert played == [wave_bytes]
+
+
+def test_piper_narration_keeps_only_the_latest_pending_update(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    speaker = BlockingSpeaker()
+    monkeypatch.setattr(
+        "kenshi_agent.speech.PiperSpeaker",
+        lambda executable, model: speaker,
+    )
+    narrator = piper_narrator(tmp_path / "piper.exe", tmp_path / "voice.onnx")
+    narrator.say("First update.")
+    assert speaker.started.wait(1.0)
+
+    narrator.say("Old plan.", key="decision")
+    narrator.say("Intermediate action.", key="action")
+    narrator.say("Newest result.", key="result")
+    speaker.release.set()
+    narrator.close(drain=True, timeout_seconds=2.0)
+
+    assert speaker.spoken == ["First update.", "Newest result."]
