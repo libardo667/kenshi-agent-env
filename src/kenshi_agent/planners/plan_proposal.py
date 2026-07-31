@@ -15,6 +15,7 @@ from typing import Literal
 from pydantic import Field
 
 from ..action_contracts import (
+    ActionExecution,
     CompletionOwner,
     completion_contract_for,
     contract_for,
@@ -137,6 +138,10 @@ class RejectedProposalSidecar:
 class CompiledPlanProposal:
     plan: PlanEnvelope
     rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
+
+
+_ATOMIC_EFFECT_TIMEOUT_SECONDS = 10.0
+_OWNED_OPTION_TIMEOUT_SECONDS = 300.0
 
 
 def _freshness_condition() -> Condition:
@@ -335,6 +340,21 @@ def _compile_fieldbook(proposal: FieldbookProposal) -> FieldbookOperation:
     )
 
 
+def _step_timeout_seconds(
+    *,
+    execution: ActionExecution | None,
+    plan_wall_seconds: float,
+) -> float:
+    """Give immediate effects a short terminal without clipping owned options."""
+
+    horizon = (
+        _OWNED_OPTION_TIMEOUT_SECONDS
+        if execution in {ActionExecution.MONITORED_OPTION, ActionExecution.COMPOSITE_OPTION}
+        else _ATOMIC_EFFECT_TIMEOUT_SECONDS
+    )
+    return min(horizon, plan_wall_seconds)
+
+
 def _sidecar_items(
     raw_items: object,
     *,
@@ -464,7 +484,10 @@ def compile_plan_proposal(
                 action=action,
                 preconditions=[fresh],
                 success_conditions=success_conditions,
-                timeout_seconds=min(300.0, planning.max_plan_wall_seconds),
+                timeout_seconds=_step_timeout_seconds(
+                    execution=contract.execution if contract is not None else None,
+                    plan_wall_seconds=planning.max_plan_wall_seconds,
+                ),
                 idempotency=idempotency,
                 on_success=next_step_id,
             )

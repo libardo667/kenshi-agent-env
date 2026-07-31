@@ -83,7 +83,7 @@ promises only that the module under test has not moved.
 | `planners.heuristic` | — | — | — | — | — | never |
 | `planners.openai_planner` | — | — | — | — | — | never |
 | `planners.openrouter_planner` | — | — | — | — | — | never |
-| `planners.plan_proposal` | 380 | 380 | 0 | 2026-07-31T06:00:52Z | ad61cf540442763e | attested |
+| `planners.plan_proposal` | 386 | 386 | 0 | 2026-07-31T13:37:53Z | b04125bc791be2cd | attested |
 | `planners.schema_dialect` | — | — | — | — | — | never |
 | `planners.scripted` | — | — | — | — | — | never |
 | `planners.subprocess_planner` | — | — | — | — | — | never |

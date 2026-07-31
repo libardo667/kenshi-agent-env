@@ -227,7 +227,71 @@ def test_runtime_derives_contract_risk_spend_and_completion_ownership() -> None:
     assert expected.max_age_seconds == 3.0
     assert expected.target_id == "entity-vendor"
     assert plan.steps[2].success_conditions == []
-    assert all(step.timeout_seconds == 300 for step in plan.steps)
+    assert [step.timeout_seconds for step in plan.steps] == [300.0, 10.0, 10.0]
+
+
+def test_runtime_gives_atomic_effects_a_shorter_horizon_than_owned_options() -> None:
+    observation = Observation(
+        run_id="proposal-timeout-contract",
+        step_index=0,
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        planning_mode=PlanningMode.CONTINUOUS,
+        telemetry=TelemetrySnapshot(
+            ui=UIState(
+                selected_character_id="entity-tassilo",
+                selected_character_ids=["entity-tassilo"],
+            )
+        ),
+    )
+    proposal = {
+        "objective": "Change selection, travel, and complete one bounded purchase.",
+        "steps": [
+            {
+                "action": {
+                    "kind": "use_game_binding",
+                    "binding": "change_squad",
+                    "expected_effect": "Select the next squad.",
+                }
+            },
+            {
+                "action": {
+                    "kind": "move_in_direction",
+                    "bearing_degrees": 90,
+                    "distance_units": 200,
+                    "expected_effect": "Scout east from the current position.",
+                }
+            },
+            {
+                "action": {
+                    "kind": "purchase_item",
+                    "cell_label": "cell 2",
+                    "item_name": "Dried Meat",
+                    "expected_price": 125,
+                    "quantity": 1,
+                    "window": "Barman",
+                    "seller_id": "entity-vendor",
+                }
+            },
+        ],
+    }
+
+    plan = compile_plan_proposal(
+        proposal,
+        observation=observation,
+        context_id="pc-timeouts",
+        planning=PlanningConfig(
+            max_plan_steps=4,
+            max_actions_per_plan=8,
+            max_plan_wall_seconds=360,
+            max_plan_game_seconds=3600,
+            max_pointer_actions_per_plan=8,
+            max_purchase_actions_per_plan=5,
+            max_native_assisted_actions_per_plan=4,
+        ),
+    ).plan
+
+    assert [step.timeout_seconds for step in plan.steps] == [10.0, 300.0, 300.0]
 
 
 def test_compiler_preserves_each_valid_memory_transition() -> None:
