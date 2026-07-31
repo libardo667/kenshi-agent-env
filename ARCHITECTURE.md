@@ -27,6 +27,7 @@ Python runtime
   │                                                   ↕ future/change-course patch
   ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted, subprocess, or vision LLM)
+  │     └─ hosted intent proposal ──> deterministic plan compiler
   ├─ strategic advisor (read-only hosted model + attributed guide corpus)
   │     └─ planner context only; no environment or controller authority
   ├─ schema + policy + rate-limit guard
@@ -38,21 +39,17 @@ Python runtime
 Every boundary ──> JSONL session log ──> lifecycle analysis and evaluation
 ```
 
-Full environment replay is a separate logging level. Default compact observation
-digests keep long live logs bounded and support lifecycle analysis, but
+Full replay is a separate logging level. Compact digests bound live logs;
 `ReplayEnvironment` requires `runtime.log_full_observations: true`.
 
 ## Environment contract
 
-`reset()` establishes an episode and returns an observation. `observe()` is
-side-effect free and requests a visual frame when capture exists.
-`observe_without_capture()` supplies telemetry without forcing a new frame.
-`dispatch(action, command=...)` is the causal execution seam: the runtime supplies
-one globally unique command ID and complete based-on revision, and the receipt
-binds the result to the later observation. `step(action)` is the legacy primitive
-beneath that seam. `close()` releases resources without manipulating the game;
-the runtime's final-state owner verifies pause across normal, budget, failure,
-cancellation, exception, and completion exits before environment close.
+`reset()` establishes an episode. `observe()` is side-effect free and requests a
+frame when capture exists; `observe_without_capture()` does not. `dispatch(action,
+command=...)` supplies a unique command ID and complete revision, and its receipt
+binds to the later observation. `step(action)` is the legacy primitive.
+`close()` releases resources without manipulating the game; final-state ownership
+verifies pause across every exit before environment close.
 
 ## Action hierarchy
 
@@ -66,9 +63,11 @@ list.
 Each `ActionContract` owns planner visibility, capability and control-mode
 requirements, pointer class, native requirement, risk cost, idempotency,
 reference binding, execution route, receipt kind, and completion authority. The
-planner composes these in a bounded continuous plan; it never
-micromanages primitive timing or coordinates. Legacy skills still expand into
-bounded primitives for compatibility and calibrated transport.
+planner composes semantic actions; for hosted idle planning the runtime derives
+the bounded envelope, causal fences, graph, retry policy, and budgets from those
+choices. It never asks the model to micromanage primitive timing or coordinates.
+Legacy skills still expand into bounded primitives for compatibility and
+calibrated transport.
 
 Completion is controller-terminal, runtime-derived at the immediate dispatch
 baseline, or planner-authored only for genuinely ambiguous effects. The
@@ -112,6 +111,7 @@ telemetry.
 | How far the plug-in may go | [ADR_NATIVE_INTEGRATION_SCOPE](docs/ADR_NATIVE_INTEGRATION_SCOPE.md) |
 | Read-only advisor boundary | [ADR_STRATEGIC_ADVISOR](docs/ADR_STRATEGIC_ADVISOR.md) |
 | Hosted context capacity and proactive projection | [ADR_HOSTED_CONTEXT_CAPACITY](docs/ADR_HOSTED_CONTEXT_CAPACITY.md) |
+| Hosted intent and deterministic plan compilation | [ADR_HOSTED_PLAN_PROPOSALS](docs/ADR_HOSTED_PLAN_PROPOSALS.md) |
 | Action-outcome continuity between calls | [ADR_ACTION_LEDGER](docs/ADR_ACTION_LEDGER.md) |
 | Exact entity memory retrieval | [ADR_ENTITY_SCOPED_MEMORY](docs/ADR_ENTITY_SCOPED_MEMORY.md) |
 | Continuity authority and commit timing | [ADR_CONTINUITY_AUTHORITY](docs/ADR_CONTINUITY_AUTHORITY.md) |

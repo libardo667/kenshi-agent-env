@@ -9,7 +9,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from ..config import PlannerConfig
+from ..config import PlannerConfig, PlanningConfig
 from ..models import (
     Observation,
     PlanEnvelope,
@@ -31,6 +31,7 @@ from .context_capacity import (
     conservative_text_token_estimate,
     hosted_context_envelope,
 )
+from .plan_proposal import PlanProposal, compile_plan_proposal
 
 
 def _planner_request_text(output_model: type[BaseModel]) -> str:
@@ -40,9 +41,10 @@ def _planner_request_text(output_model: type[BaseModel]) -> str:
             "world_revision; preserve the active step unless an exact guarded "
             "interrupt is warranted. "
         )
-    elif output_model is PlanEnvelope:
+    elif output_model is PlanProposal:
         request = (
-            "Return one bounded PlanEnvelope grounded in the exact world_revision. "
+            "Propose one short objective and ordered list of semantic actions. "
+            "The runtime derives all PlanEnvelope bookkeeping. "
         )
     else:
         request = "Choose exactly one next action from this observation. "
@@ -58,6 +60,7 @@ class OpenAIPlanner(Planner):
         prompt_file: Path,
         *,
         max_plan_steps: int = 4,
+        planning: PlanningConfig | None = None,
     ) -> None:
         try:
             from openai import AsyncOpenAI
@@ -69,6 +72,7 @@ class OpenAIPlanner(Planner):
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI()
         self.max_plan_steps = max_plan_steps
+        self.planning = planning or PlanningConfig(max_plan_steps=max_plan_steps)
 
     def prepare_input(
         self,
@@ -77,6 +81,7 @@ class OpenAIPlanner(Planner):
         context_id: str,
     ) -> PreparedPlannerInput:
         output_model = structured_output_model(observation)
+        response_model = PlanProposal if output_model is PlanEnvelope else output_model
         system_text = instructions_for_policy(
             self.instructions,
             observation.live_execution_policy,
@@ -104,8 +109,8 @@ class OpenAIPlanner(Planner):
                 max_plan_steps=self.max_plan_steps,
             ),
             system_text=system_text,
-            schema_text=json.dumps(output_model.model_json_schema()),
-            request_text=_planner_request_text(output_model),
+            schema_text=json.dumps(response_model.model_json_schema()),
+            request_text=_planner_request_text(response_model),
             screenshot_included=(
                 self.config.include_screenshot
                 and observation.screenshot_path is not None
@@ -147,11 +152,12 @@ class OpenAIPlanner(Planner):
         if prepared.payload is None:
             raise RuntimeError("OpenAI planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
+        response_model = PlanProposal if output_model is PlanEnvelope else output_model
         content: list[dict[str, Any]] = [
             {
                 "type": "input_text",
                 "text": (
-                    _planner_request_text(output_model)
+                    _planner_request_text(response_model)
                     + prepared.payload
                 ),
             }
@@ -176,7 +182,7 @@ class OpenAIPlanner(Planner):
                     observation.live_execution_policy,
                 ),
                 input=[{"role": "user", "content": content}],
-                text_format=output_model,
+                text_format=response_model,
                 reasoning={"effort": self.config.reasoning_effort},
                 max_output_tokens=output_token_budget(
                     self.config,
@@ -188,8 +194,25 @@ class OpenAIPlanner(Planner):
         if parsed is None:
             if not response.output_text:
                 raise RuntimeError("OpenAI response contained neither parsed output nor text.")
-            parsed = output_model.model_validate_json(response.output_text)
-        output = output_model.model_validate(parsed)
+            parsed = response_model.model_validate_json(response.output_text)
+        output: PlannerOutput
+        if output_model is PlanEnvelope:
+            if isinstance(parsed, BaseModel):
+                document = parsed.model_dump(mode="json")
+            else:
+                document = parsed
+            output = compile_plan_proposal(
+                document,
+                observation=observation,
+                context_id=prepared.context.manifest.context_id,
+                planning=getattr(
+                    self,
+                    "planning",
+                    PlanningConfig(max_plan_steps=self.max_plan_steps),
+                ),
+            ).plan
+        else:
+            output = output_model.model_validate(parsed)
         validate_planner_output_surface(
             output,
             allowed_action_kinds=planner_action_kinds(observation),

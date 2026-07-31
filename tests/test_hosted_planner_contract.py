@@ -13,7 +13,6 @@ import kenshi_agent.planners.context_capacity as context_capacity
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
-    Condition,
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
@@ -28,8 +27,6 @@ from kenshi_agent.models import (
     PlannerDecision,
     PlanningMode,
     PlanPatch,
-    PlanStep,
-    RiskBudget,
     SkillAction,
     StopAction,
     TelemetrySnapshot,
@@ -56,6 +53,11 @@ from kenshi_agent.planners.context_capacity import (
 )
 from kenshi_agent.planners.openai_planner import OpenAIPlanner
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
+from kenshi_agent.planners.plan_proposal import (
+    ContinuityProposal,
+    PlanProposal,
+    ProposedPlanStep,
+)
 from kenshi_agent.planners.schema_dialect import projected_response_format
 
 
@@ -618,14 +620,6 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
 
 def test_openrouter_request_carries_its_configured_generation_contract() -> None:
     current = observation(planning_mode=PlanningMode.CONTINUOUS)
-    fresh = Condition.model_validate(
-        {
-            "kind": "telemetry_fresh",
-            "operator": "equals",
-            "expected": True,
-            "max_age_seconds": 3.0,
-        }
-    )
 
     class FakeCompletions:
         def __init__(self) -> None:
@@ -633,36 +627,18 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
 
         async def create(self, **kwargs: Any) -> SimpleNamespace:
             self.kwargs = kwargs
-            plan = PlanEnvelope(
-                schema_version="1.0",
-                plan_id="generation-contract",
-                plan_version=1,
+            proposal = PlanProposal(
                 objective="Prove the continuous response budget reaches OpenRouter.",
-                control_mode=current.control_mode,
-                based_on_revision=current.world_revision,
-                assumptions=[fresh],
                 steps=[
-                    PlanStep(
-                        step_id="finish",
+                    ProposedPlanStep(
                         action=StopAction(reason="Test complete."),
-                        preconditions=[fresh],
-                        timeout_seconds=2.0,
                     )
                 ],
-                entry_step_id="finish",
-                max_actions=1,
-                max_wall_seconds=5.0,
-                max_game_seconds=5.0,
-                risk_budget=RiskBudget(
-                    max_pointer_actions=0,
-                    max_purchase_actions=0,
-                    max_native_assisted_actions=0,
-                ),
             )
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
-                        message=SimpleNamespace(content=plan.model_dump_json())
+                        message=SimpleNamespace(content=proposal.model_dump_json())
                     )
                 ],
                 usage=SimpleNamespace(
@@ -704,13 +680,95 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     system_blocks = completions.kwargs["messages"][0]["content"]
     assert system_blocks[-1]["cache_control"] == {"type": "ephemeral"}
     sent_schema = completions.kwargs["response_format"]["json_schema"]["schema"]
-    assert _schema_action_kinds(sent_schema, PlanEnvelope) == planner_action_kinds(
+    assert completions.kwargs["response_format"]["json_schema"]["name"] == "PlanProposal"
+    assert _schema_action_kinds(sent_schema, PlanProposal) == planner_action_kinds(
         current
     )
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.cached_tokens == 900
     assert diagnostics.cache_write_tokens == 0
+
+
+def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None:
+    class Completion:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            del kwargs
+            proposal = PlanProposal(
+                objective="Continue playing even if this memory proposal is incomplete.",
+                steps=[
+                    ProposedPlanStep(
+                        action=StopAction(reason="Boundary test complete."),
+                    )
+                ],
+                continuity_operations=[
+                    ContinuityProposal(
+                        operation="reinforce",
+                        memory_id=None,
+                    )
+                ],
+            )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=proposal.model_dump_json())
+                    )
+                ]
+            )
+
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(include_screenshot=False)
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=Completion()),
+    )
+
+    result = asyncio.run(planner.decide(observation()))
+
+    assert isinstance(result, PlanEnvelope)
+    assert result.continuity_operations == []
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert len(diagnostics.proposal_sidecar_rejections) == 1
+    assert diagnostics.proposal_sidecar_rejections[0].startswith(
+        "continuity_operations[0]:"
+    )
+
+
+def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> None:
+    class MalformedCompletion:
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            del kwargs
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        finish_reason="stop",
+                        message=SimpleNamespace(
+                            content=(
+                                '{"objective":"Explore","steps":'
+                                '[{"action" {"kind":"noop"}}]}'
+                            )
+                        ),
+                    )
+                ]
+            )
+
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(include_screenshot=False)
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=MalformedCompletion()),
+    )
+
+    result = asyncio.run(planner.decide(observation()))
+
+    assert isinstance(result, PlanEnvelope)
+    assert result.steps[0].action.kind == "noop"
+    assert "fresh look" in result.steps[0].action.reason
+    diagnostics = planner.take_call_diagnostics()
+    assert diagnostics is not None
+    assert diagnostics.proposal_fallback_reason is not None
+    assert "delimiter" in diagnostics.proposal_fallback_reason
 
 
 def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() -> None:
@@ -821,9 +879,9 @@ def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> Non
     error = captured.value
     assert error.category == "output_truncated"
     assert error.failure_signature == (
-        "openrouter:output_truncated:PlanEnvelope:length"
+        "openrouter:output_truncated:PlanProposal:length"
     )
-    assert "one compact PlanEnvelope" in error.retry_feedback
+    assert "one compact PlanProposal" in error.retry_feedback
 
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
@@ -842,41 +900,15 @@ def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> Non
 
 def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> None:
     current = observation()
-    fresh = Condition.model_validate(
-        {
-            "kind": "telemetry_fresh",
-            "operator": "equals",
-            "expected": True,
-            "max_age_seconds": 3.0,
-        }
-    )
-    plan = PlanEnvelope(
-        schema_version="1.0",
-        plan_id="continued-plan",
-        plan_version=1,
+    proposal = PlanProposal(
         objective="Finish the same thought without regenerating it.",
-        control_mode=current.control_mode,
-        based_on_revision=current.world_revision,
-        assumptions=[fresh],
         steps=[
-            PlanStep(
-                step_id="finish",
+            ProposedPlanStep(
                 action=StopAction(reason="Continuation complete."),
-                preconditions=[fresh],
-                timeout_seconds=2.0,
             )
         ],
-        entry_step_id="finish",
-        max_actions=1,
-        max_wall_seconds=5.0,
-        max_game_seconds=5.0,
-        risk_budget=RiskBudget(
-            max_pointer_actions=0,
-            max_purchase_actions=0,
-            max_native_assisted_actions=0,
-        ),
     )
-    encoded = plan.model_dump_json()
+    encoded = proposal.model_dump_json()
     split_at = len(encoded) // 2
     prefix = encoded[:split_at]
     suffix = encoded[split_at:]
@@ -954,7 +986,11 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
 
     result = asyncio.run(planner.decide(current))
 
-    assert result == plan
+    assert isinstance(result, PlanEnvelope)
+    assert result.objective == proposal.objective
+    assert result.steps[0].action == proposal.steps[0].action
+    assert result.plan_id == "plan-pc-1"
+    assert result.based_on_revision == current.world_revision
     assert len(completions.calls) == 2
     continuation = completions.calls[1]
     assert "response_format" not in continuation
@@ -1295,7 +1331,12 @@ def _schema_action_kinds(schema: dict[str, Any], model: type[Any]) -> set[str]:
     if model is PlannerDecision:
         action_schema = schema["properties"]["action"]
     else:
-        action_schema = schema["$defs"]["PlanStep"]["properties"]["action"]
+        step_name = (
+            "ProposedPlanStep"
+            if model is PlanProposal
+            else "PlanStep"
+        )
+        action_schema = schema["$defs"][step_name]["properties"]["action"]
     return {
         schema["$defs"][branch["$ref"].rsplit("/", 1)[-1]]
         ["properties"]["kind"]["enum"][0]
@@ -1324,6 +1365,29 @@ def test_projected_schema_matches_the_exact_authorable_action_surface() -> None:
     assert "activate_visible_control" in allowed
     assert "move_in_direction" not in allowed
     assert "skill" not in allowed
+
+
+def test_plan_proposal_schema_contains_choices_without_envelope_mechanics() -> None:
+    allowed = planner_action_kinds(observation())
+    proposal_schema = projected_response_format(
+        PlanProposal,
+        allowed_action_kinds=allowed,
+    )["json_schema"]["schema"]
+    envelope_schema = projected_response_format(
+        PlanEnvelope,
+        allowed_action_kinds=allowed,
+    )["json_schema"]["schema"]
+
+    assert set(proposal_schema["properties"]) == {
+        "objective",
+        "steps",
+        "continuity_operations",
+        "fieldbook_operations",
+    }
+    assert set(
+        proposal_schema["$defs"]["ProposedPlanStep"]["properties"]
+    ) == {"action", "expected_outcomes"}
+    assert len(json.dumps(proposal_schema)) < len(json.dumps(envelope_schema))
 
 
 def test_projected_schema_retains_only_reachable_definitions() -> None:

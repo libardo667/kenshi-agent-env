@@ -117,10 +117,11 @@ def _action_union(schema: dict[str, Any]) -> dict[str, Any]:
     root_action = schema.get("properties", {}).get("action")
     if isinstance(root_action, dict) and isinstance(root_action.get("anyOf"), list):
         return root_action
-    plan_step = schema.get("$defs", {}).get("PlanStep", {})
-    step_action = plan_step.get("properties", {}).get("action")
-    if isinstance(step_action, dict) and isinstance(step_action.get("anyOf"), list):
-        return step_action
+    definitions = schema.get("$defs", {})
+    for definition in definitions.values():
+        step_action = definition.get("properties", {}).get("action")
+        if isinstance(step_action, dict) and isinstance(step_action.get("anyOf"), list):
+            return step_action
     raise RuntimeError("planner output schema has no action union to project")
 
 

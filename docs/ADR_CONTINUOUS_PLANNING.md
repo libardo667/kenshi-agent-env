@@ -6,6 +6,8 @@ authority](ADR_INPUT_BOUNDARY_AUTHORITY.md), [calibration
 identity](ADR_CALIBRATION_IDENTITY.md), [stateful movement
 options](ADR_STATEFUL_MOVEMENT_OPTIONS.md), [safety
 supervisor](ADR_SAFETY_SUPERVISOR.md), [control modes](ADR_CONTROL_MODES.md).
+Hosted idle authoring is superseded by [hosted plan
+proposals](ADR_HOSTED_PLAN_PROPOSALS.md).
 
 ## Context
 
@@ -30,10 +32,11 @@ the option before it applies.
 
 Hosted structured output follows the same state machine rather than always
 asking for a plan: `single_step` requests `PlannerDecision`, idle continuous
-requests `PlanEnvelope`, and an observation carrying `ActivePlanContext` requests
-`PlanPatch`. `Condition.path` is a closed enum of the vocabulary the evaluator
-actually implements, so unsupported shorthand is visible to structured
-generation instead of failing at runtime.
+requests a fallible `PlanProposal` that deterministic code compiles into this
+envelope, and an observation carrying `ActivePlanContext` requests `PlanPatch`.
+`Condition.path` is a closed enum of the vocabulary the evaluator actually
+implements, so unsupported shorthand is visible to structured generation
+instead of failing at runtime.
 
 ## Decision: only causally later evidence can confirm an action
 

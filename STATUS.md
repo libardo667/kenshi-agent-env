@@ -31,8 +31,9 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 - A read-only guide-grounded strategic advisor. `consult_advisor` spends a strategic turn, creates
   no world command, emits zero primitives, fails closed on unknown source IDs, and suppresses
   unchanged-state requests pre-call.
-- Hosted calls project schemas, preserve stable prefixes, and record cache diagnostics; exact-model
-  token capacity owns observation compaction and rejection. See [the decision](docs/ADR_HOSTED_CONTEXT_CAPACITY.md).
+- Hosted calls project schemas and record cache diagnostics; exact-model capacity owns compaction.
+  Idle continuous intent compiles into plan mechanics, and malformed OpenRouter proposals safely
+  reobserve. See the [capacity](docs/ADR_HOSTED_CONTEXT_CAPACITY.md) and [proposal](docs/ADR_HOSTED_PLAN_PROPOSALS.md) decisions.
 - [Continuity](docs/ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md) separates world evidence, run-local
   `ao-`/`po-` history, and durable memory; IDs resolve to immutable typed snapshots and an
   admissibility matrix before rendering; non-effects cannot become world proof or close a

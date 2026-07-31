@@ -475,6 +475,8 @@ class HostedPlannerCallDiagnostics:
     provider_error_type: str | None = None
     cached_tokens: int | None = None
     cache_write_tokens: int | None = None
+    proposal_sidecar_rejections: tuple[str, ...] = ()
+    proposal_fallback_reason: str | None = None
 
     def event_payload(self) -> dict[str, Any]:
         return {
