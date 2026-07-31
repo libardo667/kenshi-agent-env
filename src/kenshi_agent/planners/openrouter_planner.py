@@ -36,6 +36,12 @@ from .base import (
     validate_planner_output_surface,
     validate_planner_prompt_budget,
 )
+from .context_capacity import (
+    HostedModelCapacity,
+    conservative_text_token_estimate,
+    hosted_context_envelope,
+    resolve_openrouter_model_capacity,
+)
 from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -115,6 +121,22 @@ def _contains_screenshot(value: object) -> bool:
     return any(_contains_screenshot(item) for item in value.values())
 
 
+def _planner_request_text(output_model: type[BaseModel]) -> str:
+    if output_model is PlanPatch:
+        request = (
+            "Return one PlanPatch grounded in active_plan and the exact "
+            "world_revision; preserve the active step unless an exact guarded "
+            "interrupt is warranted. "
+        )
+    elif output_model is PlanEnvelope:
+        request = (
+            "Return one bounded PlanEnvelope grounded in the exact world_revision. "
+        )
+    else:
+        request = "Choose exactly one next action from this observation. "
+    return request + f"Return the {output_model.__name__} schema only.\n\n"
+
+
 def _sum_optional(
     diagnostics: list[HostedPlannerCallDiagnostics],
     field: str,
@@ -192,6 +214,13 @@ class OpenRouterPlanner(Planner):
         self.instructions = prompt_file.read_text(encoding="utf-8")
         self.client: Any = AsyncOpenAI(api_key=api_key, base_url=config.openrouter_base_url)
         self.max_plan_steps = max_plan_steps
+        self._model_capacity = resolve_openrouter_model_capacity(
+            base_url=config.openrouter_base_url,
+            model=config.openrouter_model,
+            api_key=api_key,
+            timeout_seconds=config.model_metadata_timeout_seconds,
+            configured_context_window_tokens=config.context_window_tokens,
+        )
         self._schema_prompt_fallbacks: set[
             tuple[str, frozenset[str]]
         ] = set()
@@ -202,14 +231,77 @@ class OpenRouterPlanner(Planner):
         *,
         context_id: str,
     ) -> PreparedPlannerInput:
-        payload = observation.planner_payload(
-            max_chars=self.config.max_observation_chars,
-            max_context_chars=self.config.max_context_chars,
+        output_model = structured_output_model(observation)
+        allowed_action_kinds = planner_action_kinds(observation)
+        schema_text = json.dumps(
+            projected_response_format(
+                output_model,
+                allowed_action_kinds=allowed_action_kinds,
+            )["json_schema"]["schema"]
         )
+        system_text = instructions_for_policy(
+            self.instructions,
+            observation.live_execution_policy,
+        )
+        output_tokens = output_token_budget(
+            self.config,
+            observation,
+            max_plan_steps=self.max_plan_steps,
+        )
+        capacity = getattr(
+            self,
+            "_model_capacity",
+            HostedModelCapacity(
+                requested_model=self.config.openrouter_model,
+                context_window_tokens=self.config.context_window_tokens,
+                max_completion_tokens=None,
+                source=(
+                    "configured_override"
+                    if self.config.context_window_tokens is not None
+                    else "provider_metadata_unavailable"
+                ),
+                lookup_error=(
+                    None
+                    if self.config.context_window_tokens is not None
+                    else "planner constructed without provider metadata"
+                ),
+            ),
+        )
+        envelope = hosted_context_envelope(
+            capacity,
+            output_tokens=output_tokens,
+            system_text=system_text,
+            schema_text=schema_text,
+            request_text=_planner_request_text(output_model),
+            screenshot_included=(
+                self.config.include_screenshot
+                and observation.screenshot_path is not None
+                and observation.screenshot_path.exists()
+            ),
+        )
+        if envelope.compaction_target_tokens is None:
+            payload = observation.planner_payload()
+        else:
+            assert envelope.hard_observation_tokens is not None
+            payload = observation.planner_payload(
+                max_chars=envelope.compaction_target_tokens,
+                max_context_chars=envelope.hard_observation_tokens,
+                measure=conservative_text_token_estimate,
+                measurement=envelope.estimator,
+            )
         return prepared_budgeted_input(
             observation,
             context_id=context_id,
             payload=payload,
+            context_capacity_source=envelope.capacity.source,
+            context_window_tokens=envelope.capacity.context_window_tokens,
+            compaction_target_tokens=envelope.compaction_target_tokens,
+            hard_observation_tokens=envelope.hard_observation_tokens,
+            context_token_estimator=envelope.estimator,
+            reserved_output_tokens=envelope.reserved_output_tokens,
+            reserved_static_tokens=envelope.reserved_static_tokens,
+            reserved_image_tokens=envelope.reserved_image_tokens,
+            proactive_headroom_tokens=envelope.proactive_headroom_tokens,
         )
 
     async def decide(self, observation: Observation) -> PlannerOutput:
@@ -234,24 +326,11 @@ class OpenRouterPlanner(Planner):
         if schema_prompt_fallbacks is None:
             schema_prompt_fallbacks = set()
             self._schema_prompt_fallbacks = schema_prompt_fallbacks
-        if output_model is PlanPatch:
-            request = (
-                "Return one PlanPatch grounded in active_plan and the exact "
-                "world_revision; preserve the active step unless an exact guarded "
-                "interrupt is warranted. "
-            )
-        elif output_model is PlanEnvelope:
-            request = (
-                "Return one bounded PlanEnvelope grounded in the exact world_revision. "
-            )
-        else:
-            request = "Choose exactly one next action from this observation. "
         content: list[dict[str, Any]] = [
             {
                 "type": "text",
                 "text": (
-                    request
-                    + f"Return the {output_model.__name__} schema only.\n\n"
+                    _planner_request_text(output_model)
                     + prepared.payload
                 ),
             }

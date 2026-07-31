@@ -55,7 +55,6 @@ planner:
   max_output_continuations: 2
   include_screenshot: true
   screenshot_detail: high
-  max_observation_chars: 30000
 
 mock:
   seed: 7

@@ -26,7 +26,6 @@ from kenshi_agent.models import (
     KnownMapDestination,
     LiveContinuousPolicy,
     MemoryKind,
-    MemoryRecord,
     MemoryStatus,
     NearbyEntity,
     NormalizedPointerBounds,
@@ -40,7 +39,6 @@ from kenshi_agent.models import (
     WorldStateRevision,
     WorldTarget,
     _nearest_first,
-    _resolved_planner_payload_chars,
     budgeted_visible_controls,
     group_controls_by_window,
     is_semantic_action,
@@ -945,15 +943,12 @@ def test_fitted_controls_without_telemetry_is_empty() -> None:
 
 
 def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> None:
-    assert _resolved_planner_payload_chars(None) == 24000
-    assert _resolved_planner_payload_chars(12345) == 12345
-
     observation = _rich_observation(item_control_count=1)
     observation.objective = "See café inventory."
     assert observation.planner_payload() == observation.planner_payload(
-        max_chars=24000
+        max_chars=100_000
     )
-    payload_text = observation.planner_payload(max_chars=100_000)
+    payload_text = observation.planner_payload()
     payload = json.loads(payload_text)
 
     assert payload["semantic_actions"] == observation.semantic_action_digest()
@@ -967,58 +962,28 @@ def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> N
     assert payload_text == json.dumps(payload, indent=2, ensure_ascii=False)
 
 
-def test_planner_payload_passes_the_exact_safety_and_decision_floors(
+def test_planner_payload_passes_compaction_target_and_hard_envelope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from kenshi_agent import models as models_module
 
     observation = _rich_observation(item_control_count=4)
-    assert observation.telemetry is not None
-    observation.telemetry_stale = False
-    observation.memories = [
-        MemoryRecord(
-            memory_id="mem-current",
-            campaign_id="campaign",
-            kind=MemoryKind.FACT,
-            status=MemoryStatus.ACTIVE,
-            content="This exact vendor refuses the current request.",
-            salience=0.5,
-            target_id="entity-vendor",
-            created_run_id="rich-run",
-            created_at=NOW,
-        )
-    ]
-    payload = _planner_payload_base(observation)
-    controls = observation.visible_control_digest()
-
-    safety_floor = irreducible_payload(
-        payload,
-        preserve_current_target_memories=False,
-    )
-    safety_floor["visible_controls"] = []
-    safety_required = len(json.dumps(safety_floor, indent=2, ensure_ascii=False))
-
-    decision_floor = irreducible_payload(payload)
-    decision_floor["visible_controls"] = group_controls_by_window(
-        controls,
-        observation.window_owners(),
-    )
-    decision_required = len(
-        json.dumps(decision_floor, indent=2, ensure_ascii=False)
-    )
-    assert decision_required > safety_required
-
-    passed_budgets: list[int] = []
+    passed_budgets: list[tuple[int, int | None]] = []
 
     def capture_budget(
         payload: dict[str, Any],
         *,
         full_text: str,
         max_chars: int,
+        hard_max_chars: int | None = None,
+        measure: Any = len,
+        measurement: str = "characters",
     ) -> str:
         assert payload
         assert full_text
-        passed_budgets.append(max_chars)
+        assert measure(full_text) > 0
+        assert measurement == "characters"
+        passed_budgets.append((max_chars, hard_max_chars))
         return "{}"
 
     monkeypatch.setattr(
@@ -1028,15 +993,15 @@ def test_planner_payload_passes_the_exact_safety_and_decision_floors(
     )
 
     observation.planner_payload(
-        max_chars=safety_required,
+        max_chars=8_000,
         max_context_chars=1_000_000,
     )
     observation.planner_payload(
-        max_chars=safety_required - 1,
-        max_context_chars=1_000_000,
+        max_chars=12_000,
+        max_context_chars=900_000,
     )
 
-    assert passed_budgets == [decision_required, safety_required - 1]
+    assert passed_budgets == [(8_000, 1_000_000), (12_000, 900_000)]
 
 
 def test_planner_payload_truncation_is_explicit_and_only_above_the_exact_ceiling() -> None:

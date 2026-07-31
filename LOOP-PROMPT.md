@@ -185,10 +185,10 @@ project the schema to the exact current action surface, validate fallbacks
 against that surface, and expose cache read/write diagnostics. A cache claim
 without provider diagnostics is unverified.
 
-Prompt and schema budgets are hard ratchets. A new rule or action branch must
-pay for itself instead of silently growing every planner call. Preserve exact
-IDs, current-observation precedence, safety semantics, uncertain outcomes, and
-active-plan patch rules while reducing duplicated explanation.
+Prompt and schema budgets are hard ratchets; new branches must pay for themselves.
+Preserve exact IDs, current precedence, safety semantics, uncertain outcomes,
+and active-plan rules. Static ratchets are not termination authority: reserve
+the exact model's whole request, compact, and proceed when its hard envelope fits.
 
 ## Evidence and live work
 

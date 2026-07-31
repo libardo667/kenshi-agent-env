@@ -24,6 +24,7 @@ from kenshi_agent.models import (
     LiveContinuousPolicy,
     MemoryKind,
     MemoryRecord,
+    MemorySearchResult,
     MemoryStatus,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
@@ -43,7 +44,7 @@ from kenshi_agent.models import (
     WorldTarget,
 )
 from kenshi_agent.observation_budget import (
-    PlannerPayloadBudgetError,
+    PlannerPayloadContextError,
     budget_observation_payload,
     irreducible_payload,
 )
@@ -322,9 +323,9 @@ def _minimum_fitting_budget(observation: Observation) -> tuple[int, str]:
     for _ in range(8):
         try:
             return budget, observation.planner_payload(max_chars=budget)
-        except PlannerPayloadBudgetError as exc:
-            assert exc.required_chars > budget
-            budget = exc.required_chars
+        except PlannerPayloadContextError as exc:
+            assert exc.required_units > budget
+            budget = exc.required_units
     raise AssertionError("irreducible planner payload size did not converge")
 
 
@@ -394,8 +395,9 @@ def test_semantic_budget_preserves_critical_fields_and_reports_omissions() -> No
     metadata = document["observation_budget"]
     assert metadata["truncated"] is True
     assert metadata["strategy"] == "semantic-v1"
-    assert metadata["max_chars"] == budget
-    assert metadata["original_chars"] > budget
+    assert metadata["measurement"] == "characters"
+    assert metadata["target_units"] == budget
+    assert metadata["original_units"] > budget
 
     counts = metadata["omitted"]["collections"]
     assert counts["events"] == {"original": 24, "retained": 0}
@@ -565,12 +567,59 @@ def test_semantic_budget_rejects_budget_below_irreducible_envelope() -> None:
     observation = _oversized_observation()
 
     for budget in (0, 1, 100, 1000):
-        with pytest.raises(PlannerPayloadBudgetError) as raised:
+        with pytest.raises(PlannerPayloadContextError) as raised:
             observation.planner_payload(max_chars=budget)
 
-        assert raised.value.max_chars == budget
-        assert raised.value.required_chars > raised.value.max_chars
-        assert "irreducible safety envelope" in str(raised.value)
+        assert raised.value.hard_max_units == budget
+        assert raised.value.required_units > raised.value.hard_max_units
+        assert "hard request envelope" in str(raised.value)
+
+
+def test_compaction_target_cannot_terminate_context_that_fits_the_hard_envelope() -> None:
+    """A proactive reduction target is not provider context authority.
+
+    An explicit memory read is decision-critical for the planner call that
+    requested it. If that read exceeds the compaction target but fits the hard
+    request envelope, the payload must expand past the target and preserve the
+    read instead of terminating continuous play locally.
+    """
+
+    observation = _oversized_observation()
+    recalled = observation.memories[0].model_copy(
+        update={
+            "content": (
+                "Explicitly recalled evidence that must reach this planner call. "
+                + "x" * 35_000
+            )
+        }
+    )
+    observation = observation.model_copy(
+        update={
+            "memory_search": MemorySearchResult(
+                query="What exact evidence did I deliberately recall?",
+                records=[recalled],
+                matched=1,
+            )
+        }
+    )
+
+    payload = observation.planner_payload(
+        max_chars=30_000,
+        max_context_chars=1_000_000,
+    )
+    document = json.loads(payload)
+
+    assert len(payload) > 30_000
+    assert len(payload) <= 1_000_000
+    assert document["memory_search"]["records"][0]["memory_id"] == recalled.memory_id
+    assert document["memory_search"]["records"][0]["content"] == recalled.content
+    metadata = document["observation_budget"]
+    assert metadata["truncated"] is True
+    assert metadata["strategy"] == "semantic-v1"
+    assert metadata["target_units"] == 30_000
+    assert metadata["hard_max_units"] == 1_000_000
+    assert metadata["original_units"] > 30_000
+    assert metadata["measurement"] == "characters"
 
 
 def test_low_priority_reordering_does_not_change_budgeted_payload() -> None:
@@ -635,6 +684,15 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         {"receipt_id": "cor-1", "status": "rejected"},
         {"receipt_id": "cor-2", "status": "accepted"},
         {"receipt_id": "cor-3", "status": "failed"},
+    ]
+    original["recent_fieldbook_receipts"] = [
+        {"receipt_id": "fbor-1", "status": "accepted"},
+        {"receipt_id": "fbor-2", "status": "failed"},
+        {"receipt_id": "fbor-3", "status": "accepted"},
+    ]
+    original["fieldbook_projects"] = [
+        {"project_id": "fbp-1", "title": "First project"},
+        {"project_id": "fbp-2", "title": "Second project"},
     ]
     original["telemetry"]["camera"] = {
         "mode": "follow",
@@ -731,8 +789,10 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
     assert metadata == {
         "truncated": True,
         "strategy": "semantic-v1",
-        "max_chars": 1_000_000,
-        "original_chars": 1_000_001,
+        "target_units": 1_000_000,
+        "hard_max_units": 1_000_000,
+        "original_units": 1_000_001,
+        "measurement": "characters",
         "omitted": {"collections": {}, "fields": []},
     }
     _assert_semantic_conservation(original, reduced)
@@ -744,6 +804,11 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         reduced["recent_continuity_receipts"]
         == original["recent_continuity_receipts"]
     )
+    assert (
+        reduced["recent_fieldbook_receipts"]
+        == original["recent_fieldbook_receipts"]
+    )
+    assert reduced["fieldbook_projects"] == original["fieldbook_projects"]
     assert reduced["available_skills"] == sorted(original["available_skills"])
     assert reduced["skill_specs"] == sorted(
         original["skill_specs"],
@@ -1277,14 +1342,164 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
 
 
 def test_budget_error_reports_the_exact_unsatisfied_envelope() -> None:
-    error = PlannerPayloadBudgetError(max_chars=10, required_chars=25)
-
-    assert error.max_chars == 10
-    assert error.required_chars == 25
-    assert str(error) == (
-        "Planner observation budget is too small for the irreducible safety "
-        "envelope: max_chars=10, required_chars=25"
+    error = PlannerPayloadContextError(
+        measurement="characters",
+        hard_max_units=10,
+        required_units=25,
     )
+
+    assert error.measurement == "characters"
+    assert error.hard_max_units == 10
+    assert error.required_units == 25
+    assert str(error) == (
+        "Planner observation cannot fit the hard request envelope: "
+        "measurement=characters, hard_max_units=10, required_units=25"
+    )
+
+
+def test_custom_measurement_survives_irreducible_context_failure() -> None:
+    minimal = {
+        "events": [],
+        "recent_action_outcomes": [],
+        "recent_plan_outcomes": [],
+        "recent_continuity_receipts": [],
+        "recent_fieldbook_receipts": [],
+        "available_skills": [],
+        "skill_specs": [],
+        "memories": [],
+        "fieldbook_projects": [],
+        "telemetry": None,
+    }
+
+    with pytest.raises(PlannerPayloadContextError) as raised:
+        budget_observation_payload(
+            minimal,
+            full_text="食料",
+            max_chars=0,
+            hard_max_chars=0,
+            measure=lambda text: len(text.encode("utf-8")),
+            measurement="utf8_bytes_upper_bound",
+        )
+
+    assert raised.value.measurement == "utf8_bytes_upper_bound"
+
+
+def test_compaction_target_cannot_exceed_the_hard_envelope() -> None:
+    with pytest.raises(
+        ValueError,
+        match="^max_chars cannot exceed hard_max_chars$",
+    ):
+        budget_observation_payload(
+            {},
+            full_text="{}",
+            max_chars=2,
+            hard_max_chars=1,
+        )
+
+
+def test_irreducible_payload_tolerates_absent_optional_continuity_receipts() -> None:
+    original = json.loads(_oversized_observation().model_dump_json())
+    del original["recent_continuity_receipts"]
+
+    retained = irreducible_payload(original)
+
+    assert retained["recent_continuity_receipts"] == []
+
+
+def test_irreducible_fieldbook_fallback_is_the_latest_nonadverse_receipt() -> None:
+    original = json.loads(_oversized_observation().model_dump_json())
+    original["recent_fieldbook_receipts"] = [
+        {
+            "receipt_id": "fbor-" + "1" * 32,
+            "status": "accepted",
+            "detail": {"value": "earlier"},
+        },
+        {
+            "receipt_id": "fbor-" + "2" * 32,
+            "status": "accepted",
+            "detail": {"value": "middle"},
+        },
+        {
+            "receipt_id": "fbor-" + "3" * 32,
+            "status": "accepted",
+            "detail": {"value": "latest"},
+        },
+    ]
+
+    retained = irreducible_payload(original)
+
+    assert retained["recent_fieldbook_receipts"] == [
+        original["recent_fieldbook_receipts"][-1]
+    ]
+    assert (
+        retained["recent_fieldbook_receipts"][0]
+        is not original["recent_fieldbook_receipts"][-1]
+    )
+    assert (
+        retained["recent_fieldbook_receipts"][0]["detail"]
+        is not original["recent_fieldbook_receipts"][-1]["detail"]
+    )
+
+
+def test_partial_fieldbook_restoration_never_discards_the_latest_adverse_receipt() -> None:
+    receipts = [
+        {
+            "receipt_id": "fbor-" + "1" * 32,
+            "status": "rejected",
+            "detail": "adverse " + "a" * 800,
+        },
+        {
+            "receipt_id": "fbor-" + "2" * 32,
+            "status": "accepted",
+            "detail": "earlier " + "b" * 800,
+        },
+        {
+            "receipt_id": "fbor-" + "3" * 32,
+            "status": "accepted",
+            "detail": "latest " + "c" * 800,
+        },
+    ]
+    original = {
+        "events": [],
+        "recent_action_outcomes": [],
+        "recent_plan_outcomes": [],
+        "recent_continuity_receipts": [],
+        "recent_fieldbook_receipts": receipts,
+        "available_skills": [],
+        "skill_specs": [],
+        "memories": [],
+        "fieldbook_projects": [],
+        "telemetry": None,
+    }
+    full_text = observation_budget._compact_json(original)
+    candidate = irreducible_payload(original)
+    candidate["recent_fieldbook_receipts"] = [receipts[0], receipts[2]]
+
+    boundary = 1_000
+    for _ in range(8):
+        boundary = len(
+            observation_budget._serialize_budgeted(
+                original,
+                candidate,
+                max_chars=boundary,
+                hard_max_chars=boundary,
+                original_chars=len(full_text),
+                measurement="characters",
+            )
+        )
+
+    reduced = json.loads(
+        budget_observation_payload(
+            original,
+            full_text=full_text,
+            max_chars=boundary,
+        )
+    )
+
+    assert [
+        receipt["receipt_id"]
+        for receipt in reduced["recent_fieldbook_receipts"]
+    ] == [receipts[0]["receipt_id"], receipts[2]["receipt_id"]]
 
 
 def test_budget_boundaries_are_inclusive_for_full_and_semantic_payloads() -> None:
@@ -1315,14 +1530,18 @@ def test_budget_boundaries_are_inclusive_for_full_and_semantic_payloads() -> Non
                 minimal,
                 candidate,
                 max_chars=boundary,
+                hard_max_chars=boundary,
                 original_chars=10_000,
+                measurement="characters",
             )
         )
     candidate_text = observation_budget._serialize_budgeted(
         minimal,
         candidate,
         max_chars=boundary,
+        hard_max_chars=boundary,
         original_chars=10_000,
+        measurement="characters",
     )
     assert len(candidate_text) == boundary
 

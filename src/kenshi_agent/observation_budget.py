@@ -40,15 +40,23 @@ _UI_DEFERRED_FIELDS = {
 }
 
 
-class PlannerPayloadBudgetError(ValueError):
-    """Raised when the exact safety envelope cannot fit the configured budget."""
+class PlannerPayloadContextError(ValueError):
+    """Raised when irreducible state cannot fit the hard request envelope."""
 
-    def __init__(self, *, max_chars: int, required_chars: int) -> None:
-        self.max_chars = max_chars
-        self.required_chars = required_chars
+    def __init__(
+        self,
+        *,
+        measurement: str,
+        hard_max_units: int,
+        required_units: int,
+    ) -> None:
+        self.measurement = measurement
+        self.hard_max_units = hard_max_units
+        self.required_units = required_units
         super().__init__(
-            "Planner observation budget is too small for the irreducible "
-            f"safety envelope: max_chars={max_chars}, required_chars={required_chars}"
+            "Planner observation cannot fit the hard request envelope: "
+            f"measurement={measurement}, hard_max_units={hard_max_units}, "
+            f"required_units={required_units}"
         )
 
 
@@ -57,10 +65,23 @@ def budget_observation_payload(
     *,
     full_text: str,
     max_chars: int,
+    hard_max_chars: int | None = None,
+    measure: Callable[[str], int] = len,
+    measurement: str = "characters",
 ) -> str:
-    """Return full observation JSON or a deterministic semantic reduction."""
+    """Return full observation JSON or a deterministic semantic reduction.
 
-    if len(full_text) <= max_chars:
+    ``max_chars`` is the proactive compaction target. ``hard_max_chars`` is
+    the request envelope that may actually reject an irreducible payload. A
+    decision-critical envelope may expand past the target, but never past the
+    hard limit.
+    """
+
+    hard_max_chars = max_chars if hard_max_chars is None else hard_max_chars
+    if max_chars > hard_max_chars:
+        raise ValueError("max_chars cannot exceed hard_max_chars")
+    original_units = measure(full_text)
+    if original_units <= max_chars:
         return full_text
 
     original = deepcopy(payload)
@@ -69,12 +90,17 @@ def budget_observation_payload(
         original,
         retained,
         max_chars=max_chars,
-        original_chars=len(full_text),
+        hard_max_chars=hard_max_chars,
+        original_chars=original_units,
+        measurement=measurement,
     )
-    if len(text) > max_chars:
-        raise PlannerPayloadBudgetError(
-            max_chars=max_chars,
-            required_chars=len(text),
+    required_units = measure(text)
+    effective_max_chars = max(max_chars, required_units)
+    if effective_max_chars > hard_max_chars:
+        raise PlannerPayloadContextError(
+            measurement=measurement,
+            hard_max_units=hard_max_chars,
+            required_units=required_units,
         )
 
     def attempt(mutator: Callable[[JsonObject], None]) -> None:
@@ -85,9 +111,11 @@ def budget_observation_payload(
             original,
             candidate,
             max_chars=max_chars,
-            original_chars=len(full_text),
+            hard_max_chars=hard_max_chars,
+            original_chars=original_units,
+            measurement=measurement,
         )
-        if len(candidate_text) <= max_chars:
+        if measure(candidate_text) <= effective_max_chars:
             retained = candidate
             text = candidate_text
 
@@ -247,7 +275,8 @@ def budget_observation_payload(
         str(receipt["receipt_id"])
         for receipt in retained["recent_fieldbook_receipts"]
     }
-    for receipt in reversed(original.get("recent_fieldbook_receipts", [])):
+    fieldbook_receipts = original.get("recent_fieldbook_receipts", [])
+    for receipt in reversed(fieldbook_receipts):
         receipt_id = str(receipt["receipt_id"])
         if receipt_id in retained_fieldbook_receipt_ids:
             continue
@@ -257,7 +286,7 @@ def budget_observation_payload(
                 "recent_fieldbook_receipts",
                 [
                     item
-                    for item in original.get("recent_fieldbook_receipts", [])
+                    for item in fieldbook_receipts
                     if str(item["receipt_id"]) in wanted_ids
                 ],
             )
@@ -543,14 +572,18 @@ def _serialize_budgeted(
     retained: JsonObject,
     *,
     max_chars: int,
+    hard_max_chars: int,
     original_chars: int,
+    measurement: str,
 ) -> str:
     document = deepcopy(retained)
     document["observation_budget"] = {
         "truncated": True,
         "strategy": "semantic-v1",
-        "max_chars": max_chars,
-        "original_chars": original_chars,
+        "target_units": max_chars,
+        "hard_max_units": hard_max_chars,
+        "original_units": original_chars,
+        "measurement": measurement,
         "omitted": _omission_metadata(original, retained),
     }
     return _compact_json(document)

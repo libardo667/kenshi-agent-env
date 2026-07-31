@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-78 shards: 6 attested, 17 unverified, 1 source-changed, 54 never; 1091 open mutants where the numbers still apply.
+79 shards: 8 attested, 16 unverified, 1 source-changed, 54 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -75,10 +75,11 @@ promises only that the module under test has not moved.
 | `native_commands` | — | — | — | — | — | never |
 | `native_contract_export` | — | — | — | — | — | never |
 | `non_progress` | 96 | 96 | 0 | 2026-07-31T00:36:47Z | daefc5759dbef1a5 | attested |
-| `observation_budget` | 885 | 885 | 0 | 2026-07-28T08:34:24Z | — | unverified |
+| `observation_budget` | 1010 | 1010 | 0 | 2026-07-31T04:12:17Z | c1d37b06056151ff | attested |
 | `options` | — | — | — | — | — | never |
 | `overlay` | — | — | — | — | — | never |
 | `planners.base` | 330 | 330 | 0 | 2026-07-28T11:54:15Z | — | unverified |
+| `planners.context_capacity` | 152 | 152 | 0 | 2026-07-31T03:40:46Z | 23893d25b63b7080 | attested |
 | `planners.heuristic` | — | — | — | — | — | never |
 | `planners.openai_planner` | — | — | — | — | — | never |
 | `planners.openrouter_planner` | — | — | — | — | — | never |

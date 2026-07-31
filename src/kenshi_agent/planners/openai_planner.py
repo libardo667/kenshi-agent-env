@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import mimetypes
 from pathlib import Path
 from typing import Any
+
+from pydantic import BaseModel
 
 from ..config import PlannerConfig
 from ..models import (
@@ -23,6 +26,27 @@ from .base import (
     structured_output_model,
     validate_planner_output_surface,
 )
+from .context_capacity import (
+    HostedModelCapacity,
+    conservative_text_token_estimate,
+    hosted_context_envelope,
+)
+
+
+def _planner_request_text(output_model: type[BaseModel]) -> str:
+    if output_model is PlanPatch:
+        request = (
+            "Return one PlanPatch grounded in active_plan and the exact "
+            "world_revision; preserve the active step unless an exact guarded "
+            "interrupt is warranted. "
+        )
+    elif output_model is PlanEnvelope:
+        request = (
+            "Return one bounded PlanEnvelope grounded in the exact world_revision. "
+        )
+    else:
+        request = "Choose exactly one next action from this observation. "
+    return request + f"Return the {output_model.__name__} schema only.\n\n"
 
 
 class OpenAIPlanner(Planner):
@@ -52,14 +76,65 @@ class OpenAIPlanner(Planner):
         *,
         context_id: str,
     ) -> PreparedPlannerInput:
-        payload = observation.planner_payload(
-            max_chars=self.config.max_observation_chars,
-            max_context_chars=self.config.max_context_chars,
+        output_model = structured_output_model(observation)
+        system_text = instructions_for_policy(
+            self.instructions,
+            observation.live_execution_policy,
         )
+        capacity = HostedModelCapacity(
+            requested_model=self.config.model,
+            context_window_tokens=self.config.context_window_tokens,
+            max_completion_tokens=None,
+            source=(
+                "configured_override"
+                if self.config.context_window_tokens is not None
+                else "provider_metadata_unavailable"
+            ),
+            lookup_error=(
+                None
+                if self.config.context_window_tokens is not None
+                else "OpenAI model metadata exposes no context capacity"
+            ),
+        )
+        envelope = hosted_context_envelope(
+            capacity,
+            output_tokens=output_token_budget(
+                self.config,
+                observation,
+                max_plan_steps=self.max_plan_steps,
+            ),
+            system_text=system_text,
+            schema_text=json.dumps(output_model.model_json_schema()),
+            request_text=_planner_request_text(output_model),
+            screenshot_included=(
+                self.config.include_screenshot
+                and observation.screenshot_path is not None
+                and observation.screenshot_path.exists()
+            ),
+        )
+        if envelope.compaction_target_tokens is None:
+            payload = observation.planner_payload()
+        else:
+            assert envelope.hard_observation_tokens is not None
+            payload = observation.planner_payload(
+                max_chars=envelope.compaction_target_tokens,
+                max_context_chars=envelope.hard_observation_tokens,
+                measure=conservative_text_token_estimate,
+                measurement=envelope.estimator,
+            )
         return prepared_budgeted_input(
             observation,
             context_id=context_id,
             payload=payload,
+            context_capacity_source=envelope.capacity.source,
+            context_window_tokens=envelope.capacity.context_window_tokens,
+            compaction_target_tokens=envelope.compaction_target_tokens,
+            hard_observation_tokens=envelope.hard_observation_tokens,
+            context_token_estimator=envelope.estimator,
+            reserved_output_tokens=envelope.reserved_output_tokens,
+            reserved_static_tokens=envelope.reserved_static_tokens,
+            reserved_image_tokens=envelope.reserved_image_tokens,
+            proactive_headroom_tokens=envelope.proactive_headroom_tokens,
         )
 
     async def decide(self, observation: Observation) -> PlannerOutput:
@@ -72,24 +147,11 @@ class OpenAIPlanner(Planner):
         if prepared.payload is None:
             raise RuntimeError("OpenAI planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
-        if output_model is PlanPatch:
-            request = (
-                "Return one PlanPatch grounded in active_plan and the exact "
-                "world_revision; preserve the active step unless an exact guarded "
-                "interrupt is warranted. "
-            )
-        elif output_model is PlanEnvelope:
-            request = (
-                "Return one bounded PlanEnvelope grounded in the exact world_revision. "
-            )
-        else:
-            request = "Choose exactly one next action from this observation. "
         content: list[dict[str, Any]] = [
             {
                 "type": "input_text",
                 "text": (
-                    request
-                    + f"Return the {output_model.__name__} schema only.\n\n"
+                    _planner_request_text(output_model)
                     + prepared.payload
                 ),
             }

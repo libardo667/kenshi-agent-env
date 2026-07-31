@@ -210,6 +210,15 @@ def planner_context_manifest(
     input_kind: Literal["full_observation", "budgeted_json", "scripted"],
     payload: dict[str, Any] | None = None,
     payload_characters: int | None = None,
+    context_capacity_source: str | None = None,
+    context_window_tokens: int | None = None,
+    compaction_target_tokens: int | None = None,
+    hard_observation_tokens: int | None = None,
+    context_token_estimator: str | None = None,
+    reserved_output_tokens: int | None = None,
+    reserved_static_tokens: int | None = None,
+    reserved_image_tokens: int | None = None,
+    proactive_headroom_tokens: int | None = None,
 ) -> PlannerContextManifest:
     """Describe only identities the final planner representation contains."""
 
@@ -413,6 +422,15 @@ def planner_context_manifest(
         advisor_brief_ids=sorted(advisor_brief_ids),
         candidate_memory_count=len(candidate_memory_ids),
         payload_characters=payload_characters,
+        context_capacity_source=context_capacity_source,
+        context_window_tokens=context_window_tokens,
+        compaction_target_tokens=compaction_target_tokens,
+        hard_observation_tokens=hard_observation_tokens,
+        context_token_estimator=context_token_estimator,
+        reserved_output_tokens=reserved_output_tokens,
+        reserved_static_tokens=reserved_static_tokens,
+        reserved_image_tokens=reserved_image_tokens,
+        proactive_headroom_tokens=proactive_headroom_tokens,
         created_at=datetime.now(UTC),
     )
 
@@ -556,6 +574,15 @@ def prepared_budgeted_input(
     *,
     context_id: str,
     payload: str,
+    context_capacity_source: str | None = None,
+    context_window_tokens: int | None = None,
+    compaction_target_tokens: int | None = None,
+    hard_observation_tokens: int | None = None,
+    context_token_estimator: str | None = None,
+    reserved_output_tokens: int | None = None,
+    reserved_static_tokens: int | None = None,
+    reserved_image_tokens: int | None = None,
+    proactive_headroom_tokens: int | None = None,
 ) -> PreparedPlannerInput:
     document = json.loads(payload)
     if not isinstance(document, dict):
@@ -568,6 +595,15 @@ def prepared_budgeted_input(
                 input_kind="budgeted_json",
                 payload=document,
                 payload_characters=len(payload),
+                context_capacity_source=context_capacity_source,
+                context_window_tokens=context_window_tokens,
+                compaction_target_tokens=compaction_target_tokens,
+                hard_observation_tokens=hard_observation_tokens,
+                context_token_estimator=context_token_estimator,
+                reserved_output_tokens=reserved_output_tokens,
+                reserved_static_tokens=reserved_static_tokens,
+                reserved_image_tokens=reserved_image_tokens,
+                proactive_headroom_tokens=proactive_headroom_tokens,
             ),
             observation=observation,
         ),

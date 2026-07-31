@@ -104,15 +104,19 @@ class PlannerConfig(ConfigModel):
     max_output_continuations: int = Field(default=2, ge=0, le=8)
     include_screenshot: bool = True
     screenshot_detail: Literal["low", "high", "auto"] = "high"
-    # What an observation may normally cost. A spending decision, not a limit
-    # of the model, so it governs optional content only: the action surface is
-    # rendered whole even when it costs more than this, because a control the
-    # planner was not shown is one it cannot press.
-    max_observation_chars: int = Field(default=24000, ge=1000, le=200000)
-    # The model's actual ceiling, which the observation may never cross. Raise
-    # it for a long-context model; the default clears every model we run by a
-    # wide margin and only exists so a runaway screen fails loudly.
-    max_context_chars: int = Field(default=400000, ge=10000, le=4000000)
+    # Hosted context authority is token capacity for the exact model, not a
+    # local character-spending preference. OpenRouter resolves this from model
+    # metadata. Set an override only for providers that expose no equivalent.
+    context_window_tokens: int | None = Field(
+        default=None,
+        ge=10_000,
+        le=10_000_000,
+    )
+    model_metadata_timeout_seconds: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=60.0,
+    )
     openrouter_model: str = "openai/gpt-5.6-luna"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_provider_sort: Literal["latency", "throughput", "price"] = "latency"

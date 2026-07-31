@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from bisect import bisect_right
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -487,18 +487,9 @@ class NormalizedPointerBounds(StrictModel):
         return self.min_x <= x <= self.max_x and self.min_y <= y <= self.max_y
 
 
-# The ceiling on a rendered observation, in characters. This is a property of
-# the model, not a preference, so it belongs with the planner config that knows
-# which model is being used - `PlannerConfig.max_context_chars` overrides it.
-# The default is deliberately far below any current model (the smallest context
-# we run against holds roughly a hundred times this) because exceeding it is a
-# hard failure, while sitting under it costs nothing: what an observation
-# actually spends is governed by `max_observation_chars`.
-MAX_PLANNER_CONTEXT_CHARS = 400_000
-
 # Only a backstop against a pathological control list, not the working limit:
 # how many controls the planner actually sees is decided by how many fit in the
-# payload's character budget. A hand-picked count is wrong on both sides - it
+# payload's measured envelope. A hand-picked count is wrong on both sides - it
 # starves a dense trade screen while leaving room unused on a sparse one - and
 # picking a new one just moves the cliff.
 MAX_DIGESTED_VISIBLE_CONTROLS = 4096
@@ -3173,6 +3164,15 @@ class PlannerContextManifest(StrictModel):
     advisor_brief_ids: list[str] = Field(default_factory=list, max_length=8)
     candidate_memory_count: int = Field(default=0, ge=0)
     payload_characters: int | None = Field(default=None, ge=0)
+    context_capacity_source: str | None = None
+    context_window_tokens: int | None = Field(default=None, ge=1)
+    compaction_target_tokens: int | None = Field(default=None, ge=1)
+    hard_observation_tokens: int | None = Field(default=None, ge=1)
+    context_token_estimator: str | None = None
+    reserved_output_tokens: int | None = Field(default=None, ge=0)
+    reserved_static_tokens: int | None = Field(default=None, ge=0)
+    reserved_image_tokens: int | None = Field(default=None, ge=0)
+    proactive_headroom_tokens: int | None = Field(default=None, ge=0)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -4014,12 +4014,6 @@ class ActivePlanContext(StrictModel):
     remaining_actions: int = Field(ge=0, le=16)
 
 
-def _resolved_planner_payload_chars(max_chars: int | None) -> int:
-    """Resolve the public default inside mutation-visible behavior."""
-
-    return 24000 if max_chars is None else max_chars
-
-
 def _planner_json(value: Any) -> str:
     """Render the canonical human-readable planner document."""
 
@@ -4601,24 +4595,26 @@ class Observation(StrictModel):
         self,
         payload: dict[str, Any],
         max_chars: int,
+        *,
+        measure: Callable[[str], int] = len,
     ) -> list[dict[str, Any]]:
         """As many controls as the payload has room for, role-balanced.
 
-        The control digest is preserved whole through payload budgeting - the
+        The control digest is preserved whole through prompt compaction - the
         planner may only act on a control it was shown, so a half-listed action
         surface is worse than a smaller observation elsewhere. That made it the
         one collection nothing bounded, which is why it carried a hand-picked
         cap of 120 for so long. Measuring the room that is actually left keeps
         the fail-closed guarantee without guessing the number: a dialogue with
         nine controls surfaces all nine, a trade screen surfaces what fits, and
-        raising the payload budget widens both without another edit here.
+        raising the measured envelope widens both without another edit here.
         """
 
-        # Measured against the irreducible payload, not the full one. Budgeting
+        # Measured against the irreducible payload, not the full one. Compaction
         # has not run yet, so the payload still carries whole telemetry and is
-        # normally larger than the budget on its own; comparing against it would
+        # normally larger than the target on its own; comparing against it would
         # conclude there is never room for a single control. What the digest
-        # actually competes with is the content that budgeting can never drop.
+        # actually competes with is the content that compaction can never drop.
         floor = irreducible_payload(payload)
         owners = self.window_owners()
 
@@ -4632,7 +4628,7 @@ class Observation(StrictModel):
                 owners,
             )
             # pragma: no mutate end
-            return len(_planner_json(floor))
+            return measure(_planner_json(floor))
 
         controls = (
             self.telemetry.ui.visible_controls
@@ -4661,25 +4657,20 @@ class Observation(StrictModel):
         self,
         *,
         max_chars: int | None = None,
-        max_context_chars: int = MAX_PLANNER_CONTEXT_CHARS,
+        max_context_chars: int | None = None,
+        measure: Callable[[str], int] = len,
+        measurement: str = "characters",
     ) -> str:
-        """Render this observation for the planner within a character budget.
+        """Render this observation within a proactive target and hard envelope.
 
-        `max_chars` bounds what the observation *costs*, which is a spending
-        decision, not a limit of the model - the configured 30k is under one
-        percent of a current context window. It therefore governs the optional
-        content only. The control list and exact current-target memories are not
-        optional: the planner may act only on a control it was shown, and a
-        learned entity constraint must not vanish merely because later general
-        facts filled the recall list. When either decision-critical surface
-        costs more than the budget, the spending budget gives way.
-
-        `max_context_chars` is the genuine ceiling, being a property of the
-        model rather than a preference. Crossing it is a real failure and says
-        so, rather than quietly dropping controls.
+        The caller owns the measurement. Direct callers use characters; hosted
+        planners supply a conservative token estimator and model-derived token
+        limits. ``max_chars`` is only the compaction target. The control list,
+        exact current-target memories, and explicit reads may expand past it
+        while they fit ``max_context_chars``. Only that hard envelope can
+        reject decision-critical context.
         """
 
-        max_chars = _resolved_planner_payload_chars(max_chars)
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         # Surface the deterministic talk-target list the planner must trust
         # rather than re-derive. A top-level non-collection key is preserved
@@ -4691,38 +4682,37 @@ class Observation(StrictModel):
         payload["semantic_actions"] = self.semantic_action_digest()
 
         controls = self.visible_control_digest()
-        floor = irreducible_payload(payload)
-        # A budget too small for the safety envelope is still a hard
-        # configuration error. Current-target memories, like controls, may push
-        # past the spending preference because silently dropping them changes
-        # the planner's effective state.
-        # pragma: no mutate start
-        safety_floor = irreducible_payload(
-            payload,
-            # None is deliberately equivalent to False at this bool boundary.
-            preserve_current_target_memories=False,
+        payload["visible_controls"] = group_controls_by_window(
+            controls,
+            self.window_owners(),
         )
-        # pragma: no mutate end
-        # These two scratch documents are measured and discarded. The canonical
-        # key itself is asserted on the final planner payload below.
-        # pragma: no mutate start
-        safety_floor["visible_controls"] = []
-        # pragma: no mutate end
-        safety_required = len(_planner_json(safety_floor))
+        if max_chars is None and max_context_chars is None:
+            return _planner_json(payload)
+        if max_chars is None:
+            assert max_context_chars is not None
+            max_chars = max_context_chars
+        if max_context_chars is None:
+            max_context_chars = max_chars
+
+        floor = irreducible_payload(payload)
+        # This scratch document is measured and discarded. The canonical key
+        # itself is asserted on the final planner payload below.
         # pragma: no mutate start
         floor["visible_controls"] = group_controls_by_window(
             controls,
             self.window_owners(),
         )
         # pragma: no mutate end
-        required = len(_planner_json(floor))
-        if max_chars < safety_required:
-            required = max_chars
+        required = measure(_planner_json(floor))
         if required > max_context_chars:
             # Only here is dropping a control the lesser evil. Say so in the
             # payload: an agent that knows its view is incomplete can ask for a
             # simpler screen, where one that is silently blinded cannot.
-            shown = self._fitted_visible_controls(payload, max_context_chars)
+            shown = self._fitted_visible_controls(
+                payload,
+                max_context_chars,
+                measure=measure,
+            )
             payload["visible_controls_truncated"] = {
                 "shown": len(shown),
                 "total": len(controls),
@@ -4733,12 +4723,18 @@ class Observation(StrictModel):
             }
             controls = shown
 
-        payload["visible_controls"] = group_controls_by_window(controls, self.window_owners())
+        payload["visible_controls"] = group_controls_by_window(
+            controls,
+            self.window_owners(),
+        )
         text = _planner_json(payload)
         return budget_observation_payload(
             payload,
             full_text=text,
-            max_chars=min(max(max_chars, required), max_context_chars),
+            max_chars=min(max_chars, max_context_chars),
+            hard_max_chars=max_context_chars,
+            measure=measure,
+            measurement=measurement,
         )
 
 

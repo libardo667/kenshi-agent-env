@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 
+import kenshi_agent.planners.context_capacity as context_capacity
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
@@ -45,6 +46,14 @@ from kenshi_agent.planners.base import (
     validate_planner_output_surface,
     validate_planner_prompt_budget,
 )
+from kenshi_agent.planners.context_capacity import (
+    HostedContextEnvelope,
+    HostedModelCapacity,
+    _fetch_json,
+    _positive_integer,
+    hosted_context_envelope,
+    resolve_openrouter_model_capacity,
+)
 from kenshi_agent.planners.openai_planner import OpenAIPlanner
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 from kenshi_agent.planners.schema_dialect import projected_response_format
@@ -66,6 +75,365 @@ def observation(
         telemetry=TelemetrySnapshot(ui=UIState(active_screen=screen)),
         active_plan=active_plan,
     )
+
+
+def test_openrouter_capacity_comes_from_the_exact_model_metadata() -> None:
+    calls: list[tuple[str, dict[str, str], float]] = []
+
+    def fetch(url: str, headers: dict[str, str], timeout: float) -> dict[str, Any]:
+        calls.append((url, headers, timeout))
+        return {
+            "data": {
+                "id": "google/gemini-3.1-flash-lite",
+                "context_length": 1_048_576,
+                "top_provider": {"max_completion_tokens": 65_536},
+            }
+        }
+
+    capacity = resolve_openrouter_model_capacity(
+        base_url="https://openrouter.example/api/v1",
+        model="google/gemini-3.1-flash-lite",
+        api_key="secret",
+        timeout_seconds=7.5,
+        fetch_json=fetch,
+    )
+
+    assert capacity == HostedModelCapacity(
+        requested_model="google/gemini-3.1-flash-lite",
+        context_window_tokens=1_048_576,
+        max_completion_tokens=65_536,
+        source="openrouter_models_api",
+    )
+    assert calls == [
+        (
+            "https://openrouter.example/api/v1/model/"
+            "google/gemini-3.1-flash-lite",
+            {
+                "Accept": "application/json",
+                "Authorization": "Bearer secret",
+            },
+            7.5,
+        )
+    ]
+
+
+def test_default_metadata_fetcher_preserves_request_auth_timeout_and_json(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[Any, float]] = []
+
+    class Response:
+        def __enter__(self) -> Response:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            del args
+
+        def read(self) -> bytes:
+            return b'{"data": {"context_length": 12345}}'
+
+    def open_request(request: Any, *, timeout: float) -> Response:
+        calls.append((request, timeout))
+        return Response()
+
+    monkeypatch.setattr(context_capacity, "urlopen", open_request)
+
+    result = _fetch_json(
+        "https://openrouter.example/api/v1/model/provider/model",
+        {"Accept": "application/json", "Authorization": "Bearer secret"},
+        7.5,
+    )
+
+    assert result == {"data": {"context_length": 12_345}}
+    assert len(calls) == 1
+    request, timeout = calls[0]
+    assert request.full_url == (
+        "https://openrouter.example/api/v1/model/provider/model"
+    )
+    assert request.get_header("Accept") == "application/json"
+    assert request.get_header("Authorization") == "Bearer secret"
+    assert timeout == 7.5
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (1, 1),
+        (2, 2),
+        (0, None),
+        (-1, None),
+        (True, None),
+        (False, None),
+        (1.5, None),
+        ("1", None),
+    ],
+)
+def test_model_capacity_numbers_are_strict_positive_plain_integers(
+    value: Any,
+    expected: int | None,
+) -> None:
+    assert _positive_integer(value) == expected
+
+
+def test_configured_capacity_is_exact_authority_and_skips_metadata() -> None:
+    def unexpected_fetch(
+        url: str,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> Any:
+        del url, headers, timeout
+        raise AssertionError("configured authority must skip provider metadata")
+
+    capacity = resolve_openrouter_model_capacity(
+        base_url="https://openrouter.example/api/v1/",
+        model="provider/model",
+        api_key="secret",
+        timeout_seconds=3.0,
+        configured_context_window_tokens=123_456,
+        fetch_json=unexpected_fetch,
+    )
+
+    assert capacity == HostedModelCapacity(
+        requested_model="provider/model",
+        context_window_tokens=123_456,
+        max_completion_tokens=None,
+        source="configured_override",
+        lookup_error=None,
+    )
+
+
+def test_capacity_endpoint_normalizes_base_and_quotes_model_name() -> None:
+    calls: list[str] = []
+
+    def fetch(
+        url: str,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> dict[str, Any]:
+        del headers, timeout
+        calls.append(url)
+        return {"data": {"context_length": 123_456}}
+
+    resolve_openrouter_model_capacity(
+        base_url="https://openrouter.example/api/vX/",
+        model="provider/model name",
+        api_key="secret",
+        timeout_seconds=3.0,
+        fetch_json=fetch,
+    )
+
+    assert calls == [
+        "https://openrouter.example/api/vX/model/provider/model%20name"
+    ]
+
+
+def test_capacity_lookup_outage_does_not_invent_a_local_limit() -> None:
+    def unavailable(
+        url: str,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> dict[str, Any]:
+        del url, headers, timeout
+        raise OSError("metadata route unavailable")
+
+    capacity = resolve_openrouter_model_capacity(
+        base_url="https://openrouter.example/api/v1",
+        model="provider/model",
+        api_key="secret",
+        timeout_seconds=3.0,
+        fetch_json=unavailable,
+    )
+    envelope = hosted_context_envelope(
+        capacity,
+        output_tokens=4_096,
+        system_text="system",
+        schema_text="schema",
+        request_text="request",
+        screenshot_included=False,
+    )
+
+    assert capacity == HostedModelCapacity(
+        requested_model="provider/model",
+        context_window_tokens=None,
+        max_completion_tokens=None,
+        source="provider_metadata_unavailable",
+        lookup_error="OSError: metadata route unavailable",
+    )
+    assert envelope == HostedContextEnvelope(
+        capacity=capacity,
+        compaction_target_tokens=None,
+        hard_observation_tokens=None,
+        reserved_output_tokens=4_096,
+        reserved_static_tokens=len(b"systemschemarequest"),
+        reserved_image_tokens=0,
+        proactive_headroom_tokens=4_096,
+    )
+
+
+@pytest.mark.parametrize(
+    ("document", "expected_error"),
+    [
+        (
+            {"data": []},
+            "TypeError: model metadata data must be an object",
+        ),
+        (
+            {"data": {}},
+            "ValueError: model metadata has no positive context_length",
+        ),
+        (
+            {"data": {"context_length": True}},
+            "ValueError: model metadata has no positive context_length",
+        ),
+    ],
+)
+def test_malformed_provider_capacity_fails_open_without_inventing_a_limit(
+    document: dict[str, Any],
+    expected_error: str,
+) -> None:
+    capacity = resolve_openrouter_model_capacity(
+        base_url="https://openrouter.example/api/v1/",
+        model="provider/model with space",
+        api_key="secret",
+        timeout_seconds=3.0,
+        fetch_json=lambda url, headers, timeout: document,
+    )
+
+    assert capacity == HostedModelCapacity(
+        requested_model="provider/model with space",
+        context_window_tokens=None,
+        max_completion_tokens=None,
+        source="provider_metadata_unavailable",
+        lookup_error=expected_error,
+    )
+
+
+def test_capacity_lookup_error_detail_is_bounded() -> None:
+    detail = "x" * 500
+
+    def unavailable(
+        url: str,
+        headers: dict[str, str],
+        timeout: float,
+    ) -> Any:
+        del url, headers, timeout
+        raise OSError(detail)
+
+    capacity = resolve_openrouter_model_capacity(
+        base_url="https://openrouter.example/api/v1",
+        model="provider/model",
+        api_key="secret",
+        timeout_seconds=3.0,
+        fetch_json=unavailable,
+    )
+
+    assert capacity.lookup_error == "OSError: " + ("x" * 291)
+    assert len(capacity.lookup_error) == 300
+
+
+def test_context_envelope_reserves_response_static_image_and_headroom() -> None:
+    capacity = HostedModelCapacity(
+        requested_model="provider/model",
+        context_window_tokens=100_000,
+        max_completion_tokens=8_192,
+        source="configured_override",
+    )
+
+    envelope = hosted_context_envelope(
+        capacity,
+        output_tokens=4_096,
+        system_text="system",
+        schema_text="schema",
+        request_text="request",
+        screenshot_included=True,
+    )
+
+    static = len(b"systemschemarequest")
+    assert envelope.reserved_static_tokens == static
+    assert envelope.reserved_output_tokens == 4_096
+    assert envelope.reserved_image_tokens == 4_096
+    assert envelope.hard_observation_tokens == 100_000 - 4_096 - 4_096 - static
+    assert envelope.compaction_target_tokens == (
+        envelope.hard_observation_tokens - 4_096
+    )
+
+
+def test_context_envelope_accepts_exact_completion_limit_and_one_token_payload() -> None:
+    capacity = HostedModelCapacity(
+        requested_model="provider/model",
+        context_window_tokens=10,
+        max_completion_tokens=4,
+        source="configured_override",
+    )
+
+    envelope = hosted_context_envelope(
+        capacity,
+        output_tokens=4,
+        system_text="12345",
+        schema_text="",
+        request_text="",
+        screenshot_included=False,
+    )
+
+    assert envelope == HostedContextEnvelope(
+        capacity=capacity,
+        compaction_target_tokens=1,
+        hard_observation_tokens=1,
+        reserved_output_tokens=4,
+        reserved_static_tokens=5,
+        reserved_image_tokens=0,
+        proactive_headroom_tokens=1,
+    )
+
+
+def test_context_envelope_rejects_output_over_model_completion_limit() -> None:
+    capacity = HostedModelCapacity(
+        requested_model="provider/model",
+        context_window_tokens=100,
+        max_completion_tokens=4,
+        source="configured_override",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "requested output allowance 5 exceeds provider/model "
+            "maximum completion allowance 4"
+        ),
+    ):
+        hosted_context_envelope(
+            capacity,
+            output_tokens=5,
+            system_text="",
+            schema_text="",
+            request_text="",
+            screenshot_included=False,
+        )
+
+
+def test_context_envelope_rejects_zero_room_after_static_reservations() -> None:
+    capacity = HostedModelCapacity(
+        requested_model="provider/model",
+        context_window_tokens=10,
+        max_completion_tokens=None,
+        source="configured_override",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match=(
+            "static request reservations consume the 10-token context window "
+            "for provider/model"
+        ),
+    ):
+        hosted_context_envelope(
+            capacity,
+            output_tokens=4,
+            system_text="123456",
+            schema_text="",
+            request_text="",
+            screenshot_included=False,
+        )
 
 
 def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> None:
@@ -180,9 +548,7 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     planner = object.__new__(OpenAIPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        # Above the irreducible safety envelope, which grows as actions are
-        # added to the catalog; real profiles budget 24k-30k.
-        max_observation_chars=4000,
+        context_window_tokens=80_000,
     )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(responses=responses)
@@ -199,8 +565,9 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     input_text = responses.kwargs["input"][0]["content"][0]["text"]
     planner_payload = input_text.split("\n\n", maxsplit=1)[1]
     parsed_payload = json.loads(planner_payload)
-    assert len(planner_payload) <= 4000
-    assert parsed_payload["observation_budget"]["truncated"] is True
+    assert len(planner_payload) > 4_000
+    assert len(parsed_payload["events"]) == 20
+    assert "observation_budget" not in parsed_payload
 
 
 def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
@@ -228,9 +595,7 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     planner = object.__new__(OpenRouterPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        # Above the irreducible safety envelope, which grows as actions are
-        # added to the catalog; real profiles budget 24k-30k.
-        max_observation_chars=4000,
+        context_window_tokens=80_000,
     )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(
@@ -246,8 +611,9 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     input_text = completions.kwargs["messages"][1]["content"][0]["text"]
     planner_payload = input_text.split("\n\n", maxsplit=1)[1]
     parsed_payload = json.loads(planner_payload)
-    assert len(planner_payload) <= 4000
-    assert parsed_payload["observation_budget"]["truncated"] is True
+    assert len(planner_payload) > 4_000
+    assert len(parsed_payload["events"]) == 20
+    assert "observation_budget" not in parsed_payload
 
 
 def test_openrouter_request_carries_its_configured_generation_contract() -> None:
@@ -440,7 +806,7 @@ def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> Non
     planner = object.__new__(OpenRouterPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        max_observation_chars=4000,
+        context_window_tokens=80_000,
         openrouter_model="google/gemini-3.1-flash-lite",
         max_output_continuations=0,
     )
@@ -578,7 +944,7 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
     planner = object.__new__(OpenRouterPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        max_observation_chars=4000,
+        context_window_tokens=80_000,
         openrouter_model="google/gemini-3.1-flash-lite",
     )
     planner.instructions = "Return the requested schema."
@@ -642,7 +1008,7 @@ def test_openrouter_continuation_budget_is_exact() -> None:
     planner = object.__new__(OpenRouterPlanner)
     planner.config = PlannerConfig(
         include_screenshot=False,
-        max_observation_chars=4000,
+        context_window_tokens=80_000,
         openrouter_model="google/gemini-3.1-flash-lite",
         max_output_continuations=2,
     )
@@ -688,8 +1054,10 @@ def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> Non
         planner = object.__new__(planner_type)
         planner.config = PlannerConfig(
             include_screenshot=False,
-            max_observation_chars=4000,
+            context_window_tokens=52_000,
         )
+        planner.instructions = "Return the requested schema."
+        planner.max_plan_steps = 4
 
         prepared = planner.prepare_input(oversized, context_id="pc-1")
 
@@ -699,6 +1067,11 @@ def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> Non
         assert set(prepared.context.manifest.memory_ids) == included
         assert included < {record.memory_id for record in memories}
         assert prepared.context.manifest.payload_characters == len(prepared.payload)
+        assert prepared.context.manifest.context_capacity_source == (
+            "configured_override"
+        )
+        assert prepared.context.manifest.context_window_tokens == 52_000
+        assert prepared.context.manifest.compaction_target_tokens is not None
 
 
 def test_memory_text_cannot_smuggle_target_authority_into_a_budgeted_input() -> None:
@@ -1119,7 +1492,10 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
 
     completions = Refuses()
     planner = object.__new__(OpenRouterPlanner)
-    planner.config = PlannerConfig(include_screenshot=False, max_observation_chars=4000)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        context_window_tokens=80_000,
+    )
     planner.instructions = "Return the requested schema."
     planner.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
@@ -1178,9 +1554,8 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
 
     Truncating the control list does not buy a smaller observation, it buys an
     agent that cannot press a button it is looking at and has no way to learn
-    the button exists. `max_observation_chars` is a spending preference, so the
-    action surface is rendered whole even when it costs more than that; only
-    the model's real context ceiling may cut it, and that says so out loud.
+    the button exists. A proactive target therefore cannot cut this surface;
+    only the hard request envelope may do so, and that says so out loud.
     """
     from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
 
@@ -1204,6 +1579,7 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
     )
 
     def shown(max_chars: int, **kwargs: Any) -> dict[str, Any]:
+        kwargs.setdefault("max_context_chars", 1_000_000)
         return json.loads(crowded.planner_payload(max_chars=max_chars, **kwargs))
 
     def listed(payload: dict[str, Any]) -> list[dict[str, Any]]:
