@@ -21,6 +21,7 @@ from kenshi_agent.models import (
     HarvestResourceAction,
     IdempotencyPolicy,
     InterruptPolicy,
+    MoveToCharacterAction,
     Observation,
     PlanEnvelope,
     PlannerAction,
@@ -31,7 +32,11 @@ from kenshi_agent.models import (
     RiskBudget,
 )
 
-SmokeActionKind = Literal["exit_current_building", "harvest_resource"]
+SmokeActionKind = Literal[
+    "exit_current_building",
+    "harvest_resource",
+    "move_to_character",
+]
 
 
 def _selected_character(observation: Observation) -> CharacterState:
@@ -66,7 +71,25 @@ def _smoke_action(
         )
 
     if not target_id:
-        raise ValueError("context-action smoke requires --target-id")
+        raise ValueError("targeted native smoke requires --target-id")
+    if action_kind == "move_to_character":
+        characters = [
+            entity
+            for entity in telemetry.nearby_entities
+            if entity.id == target_id
+            and entity.kind == "character"
+            and entity.is_animal is False
+        ]
+        if len(characters) != 1:
+            raise ValueError(
+                f"character target {target_id!r} is not currently nearby"
+            )
+        character = characters[0]
+        return (
+            MoveToCharacterAction(target_id=character.id),
+            f"Walk to the exact currently nearby character {character.name}.",
+        )
+
     targets = [
         target
         for target in telemetry.world_targets
@@ -141,7 +164,9 @@ def build_plan(
                 timeout_seconds=(
                     300.0
                     if isinstance(action, HarvestResourceAction)
-                    else 30.0
+                    else (
+                        60.0 if isinstance(action, MoveToCharacterAction) else 30.0
+                    )
                 ),
                 idempotency=IdempotencyPolicy.AT_MOST_ONCE,
                 interrupt_policy=InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH,
@@ -230,7 +255,11 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--action",
-        choices=["exit_current_building", "harvest_resource"],
+        choices=[
+            "exit_current_building",
+            "harvest_resource",
+            "move_to_character",
+        ],
         required=True,
     )
     parser.add_argument("--target-id")

@@ -1,4 +1,4 @@
-"""Targetless native movement is owned by its keyed acknowledgement."""
+"""Native movement is owned by its exact keyed acknowledgement."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import asyncio
 from datetime import UTC, datetime
 
 from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
+from kenshi_agent.config import PlanningConfig
+from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
@@ -17,10 +19,13 @@ from kenshi_agent.models import (
     GameState,
     KnownMapDestination,
     MoveInDirectionAction,
+    MoveToCharacterAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeControlState,
+    NearbyEntity,
     Observation,
+    PauseAction,
     PerformContextAction,
     ProduceResourceOutputAction,
     TelemetrySnapshot,
@@ -31,11 +36,31 @@ from kenshi_agent.models import (
     WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.movement_ownership import has_keyed_native_movement_terminal
 from kenshi_agent.options import OptionStatus, StatefulNativeMovementOption
 from kenshi_agent.world_state import SequenceStatus, StateDelta, StoreUpdate
 
 COMMAND_ID = "cmd-0123456789abcdef0123456789abcdef"
 SELECTED_ID = "entity-selected"
+TARGET_ID = "entity-moving-target"
+
+
+def test_native_movement_terminal_ownership_is_complete_and_exclusive() -> None:
+    native_owned = (
+        MoveInDirectionAction(
+            bearing_degrees=90.0,
+            distance_units=25.0,
+            expected_effect="move east",
+        ),
+        MoveToCharacterAction(target_id=TARGET_ID),
+        TravelToMapDestinationAction(destination_id="destination-hub"),
+        ExitCurrentBuildingAction(),
+        PerformContextAction(target_id="entity-copper", context_action="operate"),
+        ProduceResourceOutputAction(target_id="entity-copper"),
+    )
+
+    assert all(has_keyed_native_movement_terminal(action) for action in native_owned)
+    assert not has_keyed_native_movement_terminal(PauseAction())
 
 
 def acknowledgement(
@@ -176,6 +201,98 @@ def map_travel_observation(
                     distance=1250.0,
                 )
             ],
+            native_control=NativeControlState(
+                active_command_id=(
+                    ack.command_id
+                    if ack is not None
+                    and ack.status is NativeCommandStatus.ACCEPTED
+                    else None
+                ),
+                acknowledgements=[ack] if ack is not None else [],
+            ),
+        ),
+        telemetry_age_seconds=0.0,
+    )
+
+
+def character_acknowledgement(
+    sequence: int,
+    status: NativeCommandStatus,
+    *,
+    target_id: str = TARGET_ID,
+) -> NativeCommandAcknowledgement:
+    terminal = status is not NativeCommandStatus.ACCEPTED
+    return NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="move_to_character",
+        status=status,
+        reason=(
+            "issued"
+            if status is NativeCommandStatus.ACCEPTED
+            else (
+                NATIVE_WALK_DESTINATION_REACHED_RESULT
+                if status is NativeCommandStatus.COMPLETED
+                else "target_lifetime_changed"
+            )
+        ),
+        target_id=target_id,
+        selected_character_ids=[SELECTED_ID],
+        based_on_telemetry_sequence=1,
+        acknowledged_at_telemetry_sequence=2,
+        accepted_at_telemetry_sequence=2,
+        terminal_at_telemetry_sequence=sequence if terminal else None,
+    )
+
+
+def character_observation(
+    sequence: int,
+    *,
+    ack: NativeCommandAcknowledgement | None = None,
+    target_present: bool = True,
+    target_distance: float = 200.0,
+) -> Observation:
+    return Observation(
+        run_id="native-character-movement-option-test",
+        step_index=sequence,
+        mode="mock",
+        world_revision=WorldStateRevision(
+            telemetry_sequence=sequence,
+            capability_epoch=1,
+            observed_at_monotonic=float(sequence),
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=sequence,
+            captured_at=datetime.now(UTC),
+            identity_session_id="session-native-character-movement",
+            capabilities=[
+                "game.pause",
+                "control.move_to_character",
+                "identity.stable_handles",
+                "nearby.characters",
+            ],
+            game=GameState(paused=True, elapsed_minutes=0.0),
+            ui=UIState(
+                selected_character_id=SELECTED_ID,
+                selected_character_ids=[SELECTED_ID],
+            ),
+            squad=[
+                CharacterState(
+                    id=SELECTED_ID,
+                    name="Hep",
+                    selected=True,
+                )
+            ],
+            nearby_entities=(
+                [
+                    NearbyEntity(
+                        id=TARGET_ID,
+                        name="Wandering Nomad",
+                        distance=target_distance,
+                    )
+                ]
+                if target_present
+                else []
+            ),
             native_control=NativeControlState(
                 active_command_id=(
                     ack.command_id
@@ -449,6 +566,32 @@ class InstantNativeMovementEnvironment(AgentEnvironment):
         return None
 
 
+class InstantCharacterMovementEnvironment(AgentEnvironment):
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return character_observation(1)
+
+    async def observe(self) -> Observation:
+        return character_observation(1)
+
+    async def step(self, action: Action) -> Transition:
+        accepted = character_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="exact character walk issued",
+                native_acknowledgement=accepted,
+            ),
+            observation=character_observation(2, ack=accepted),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
 class AdoptedNativeMovementEnvironment(InstantNativeMovementEnvironment):
     def __init__(self, native_command_id: str) -> None:
         self.native_command_id = native_command_id
@@ -623,6 +766,149 @@ def test_direction_option_waits_for_terminal_acknowledgement() -> None:
         assert movement.result().receipt.accepted is True
 
     asyncio.run(scenario())
+
+
+def test_character_walk_uses_the_exact_native_terminal_not_a_second_radius() -> None:
+    async def scenario() -> None:
+        action = MoveToCharacterAction(target_id=TARGET_ID)
+        assert StatefulNativeMovementOption.supports(action)
+        movement = StatefulNativeMovementOption(
+            option_id="native-character-1",
+            action=action,
+            environment=InstantCharacterMovementEnvironment(),
+        )
+        movement.prepare(character_observation(1))
+        await movement.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=character_observation(1).world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        accepted = character_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        still_walking = movement.poll(
+            update(
+                character_observation(
+                    2,
+                    ack=accepted,
+                    target_distance=40.0,
+                )
+            )
+        )
+        assert still_walking.status is OptionStatus.RUNNING
+
+        completed = character_acknowledgement(3, NativeCommandStatus.COMPLETED)
+        arrived = movement.poll(
+            update(
+                character_observation(
+                    3,
+                    ack=completed,
+                    target_present=False,
+                )
+            )
+        )
+        assert arrived.status is OptionStatus.SUCCEEDED
+        assert NATIVE_WALK_DESTINATION_REACHED_RESULT in arrived.reason
+
+    asyncio.run(scenario())
+
+
+def test_character_walk_does_not_infer_arrival_from_target_loss() -> None:
+    async def scenario() -> None:
+        movement = StatefulNativeMovementOption(
+            option_id="native-character-departed",
+            action=MoveToCharacterAction(target_id=TARGET_ID),
+            environment=InstantCharacterMovementEnvironment(),
+        )
+        movement.prepare(character_observation(1))
+        await movement.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=character_observation(1).world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        accepted = character_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        target_departed = movement.poll(
+            update(
+                character_observation(
+                    3,
+                    ack=accepted,
+                    target_present=False,
+                )
+            )
+        )
+
+        assert target_departed.status is OptionStatus.RUNNING
+        assert "accepted" in target_departed.reason.lower()
+
+        cancelled = character_acknowledgement(4, NativeCommandStatus.CANCELLED)
+        target_lost = movement.poll(
+            update(
+                character_observation(
+                    4,
+                    ack=cancelled,
+                    target_present=False,
+                )
+            )
+        )
+        assert target_lost.status is OptionStatus.FAILED
+        assert "target_lifetime_changed" in target_lost.reason
+
+    asyncio.run(scenario())
+
+
+def test_character_walk_rejects_terminal_for_inexact_command_identity() -> None:
+    async def scenario() -> None:
+        async def assert_rejected(
+            acknowledgement: NativeCommandAcknowledgement,
+        ) -> None:
+            movement = StatefulNativeMovementOption(
+                option_id="native-character-identity",
+                action=MoveToCharacterAction(target_id=TARGET_ID),
+                environment=InstantCharacterMovementEnvironment(),
+            )
+            movement.prepare(character_observation(1))
+            await movement.start(
+                CommandDispatchContext(
+                    command_id=COMMAND_ID,
+                    based_on_revision=character_observation(1).world_revision,
+                )
+            )
+            await asyncio.sleep(0)
+            rejected = movement.poll(
+                update(
+                    character_observation(
+                        acknowledgement.terminal_at_telemetry_sequence or 3,
+                        ack=acknowledgement,
+                    )
+                )
+            )
+            assert rejected.status is OptionStatus.FAILED
+            assert "identity" in rejected.reason.lower()
+
+        await assert_rejected(
+            character_acknowledgement(
+                3,
+                NativeCommandStatus.COMPLETED,
+                target_id="entity-someone-else",
+            )
+        )
+    asyncio.run(scenario())
+
+
+def test_character_walk_has_no_competing_proximity_approach_owner() -> None:
+    executor = object.__new__(ContinuousPlanExecutor)
+    executor.planning_config = PlanningConfig()
+
+    assert (
+        executor._resolve_approach_params(  # noqa: SLF001 - ownership invariant
+            MoveToCharacterAction(target_id=TARGET_ID)
+        )
+        is None
+    )
 
 
 def test_map_travel_option_owns_one_exact_destination_until_native_arrival() -> None:

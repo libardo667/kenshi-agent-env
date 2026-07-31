@@ -21,6 +21,8 @@ from kenshi_agent.models import (
     GameState,
     HarvestResourceAction,
     InterruptPolicy,
+    MoveToCharacterAction,
+    NearbyEntity,
     Observation,
     PauseAction,
     PlanEnvelope,
@@ -37,6 +39,7 @@ from kenshi_agent.models import (
 from kenshi_agent.planners import SubprocessPlanner
 
 TARGET_ID = "entity-copper"
+CHARACTER_TARGET_ID = "entity-max"
 
 
 def observation(*, indoors: bool, advertise_operate: bool = True) -> Observation:
@@ -69,6 +72,7 @@ def observation(*, indoors: bool, advertise_operate: bool = True) -> Observation
             identity_session_id="session-live-native-smoke",
             capabilities=[
                 "control.exit_current_building",
+                "control.move_to_character",
                 "control.produce_resource_output",
                 "control.open_context_inventory",
                 "game.pause",
@@ -98,6 +102,16 @@ def observation(*, indoors: bool, advertise_operate: bool = True) -> Observation
                     in_combat=False,
                     indoors=indoors,
                     inventory_complete=True,
+                )
+            ],
+            nearby_entities=[
+                NearbyEntity(
+                    id=CHARACTER_TARGET_ID,
+                    name="Max",
+                    kind="character",
+                    is_animal=False,
+                    has_dialogue=False,
+                    distance=162.0,
                 )
             ],
             world_targets=[target],
@@ -145,6 +159,24 @@ def test_harvest_plan_requires_the_exact_advertised_action() -> None:
         target_id=TARGET_ID,
         quantity=1,
     )
+
+
+def test_character_walk_smoke_requires_one_exact_current_character() -> None:
+    plan = build_plan(
+        observation(indoors=False),
+        action_kind="move_to_character",
+        target_id=CHARACTER_TARGET_ID,
+    )
+
+    assert plan.steps[0].action == MoveToCharacterAction(
+        target_id=CHARACTER_TARGET_ID
+    )
+    with pytest.raises(ValueError, match="not currently nearby"):
+        build_plan(
+            observation(indoors=False),
+            action_kind="move_to_character",
+            target_id="entity-absent",
+        )
 
 
 def test_single_step_refuses_the_continuous_harvest_option() -> None:

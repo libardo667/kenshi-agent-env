@@ -39,7 +39,6 @@ from .models import (
     ObservationPolicy,
     OpenContextInventoryAction,
     PauseAction,
-    PerformContextAction,
     PlanEnvelope,
     PlannerDecision,
     PlanPatch,
@@ -64,6 +63,7 @@ from .models import (
     new_command_id,
     normalize_control_label,
 )
+from .movement_ownership import has_keyed_native_movement_terminal
 from .non_progress import unchanged_definitive_no_op_reason
 from .options import (
     OptionLifecycleError,
@@ -839,20 +839,17 @@ class ContinuousPlanExecutor:
     def _resolve_approach_params(self, action: Action) -> ApproachOptionParams | None:
         """Decide whether this action is owned by a monitored approach option.
 
-        A contracted semantic approach always is — the option is how the action
-        is defined, not an optional optimization, because the native order is
-        acknowledged long before the character stops walking. The legacy macro
-        path keeps its existing feature flag.
+        Dialogue approach owns exact-dialogue/proximity progress. Contracted
+        movement with a keyed native terminal has a different sole owner, even
+        when it names a character. The legacy macro path keeps its existing
+        feature flag.
         """
 
         contract = contract_for(action)
         if contract is not None:
             if contract.execution is not ActionExecution.MONITORED_OPTION:
                 return None
-            if isinstance(
-                action,
-                (PerformContextAction, ProduceResourceOutputAction),
-            ):
+            if has_keyed_native_movement_terminal(action):
                 return None
             target_id = getattr(action, "target_id", None)
             if not isinstance(target_id, str) or not target_id:

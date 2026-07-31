@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-80 shards: 9 attested, 16 unverified, 1 source-changed, 54 never; 1091 open mutants where the numbers still apply.
+81 shards: 10 attested, 16 unverified, 2 source-changed, 53 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -70,13 +70,14 @@ promises only that the module under test has not moved.
 | `memory` | 1476 | 1476 | 0 | 2026-07-28T16:03:50Z | — | unverified |
 | `memory_compaction` | 114 | 114 | 0 | 2026-07-28T15:50:29Z | — | unverified |
 | `models` | 621 | 621 | 0 | 2026-07-28T11:51:55Z | — | unverified |
+| `movement_ownership` | 5 | 5 | 0 | 2026-07-31T15:11:17Z | 160084c0bf1037d5 | attested |
 | `mutation_campaign` | 508 | 508 | 0 | 2026-07-29T21:33:57Z | 7ec6f5cbc6d2452a | attested |
 | `mutation_ledger` | 277 | 277 | 0 | 2026-07-28T18:31:37Z | b3c59cc2c0473cf3 | attested |
 | `native_commands` | — | — | — | — | — | never |
 | `native_contract_export` | — | — | — | — | — | never |
 | `non_progress` | 96 | 96 | 0 | 2026-07-31T00:36:47Z | daefc5759dbef1a5 | attested |
 | `observation_budget` | 1010 | 1010 | 0 | 2026-07-31T04:12:17Z | c1d37b06056151ff | attested |
-| `options` | — | — | — | — | — | never |
+| `options` | 726 | 299 | 427 | 2026-07-31T14:23:45Z | 18ffc603096bc07d | source-changed |
 | `overlay` | — | — | — | — | — | never |
 | `planners.base` | 330 | 330 | 0 | 2026-07-28T11:54:15Z | — | unverified |
 | `planners.context_capacity` | 152 | 152 | 0 | 2026-07-31T03:40:46Z | 23893d25b63b7080 | attested |

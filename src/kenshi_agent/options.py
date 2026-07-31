@@ -14,6 +14,7 @@ from .models import (
     CommandDispatchContext,
     ExitCurrentBuildingAction,
     MoveInDirectionAction,
+    MoveToCharacterAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     Observation,
@@ -24,10 +25,12 @@ from .models import (
     TravelToMapDestinationAction,
     WorldStateRevision,
 )
+from .movement_ownership import has_keyed_native_movement_terminal
 from .world_state import StoreUpdate
 
 NativeMovementAction: TypeAlias = (
     MoveInDirectionAction
+    | MoveToCharacterAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
     | PerformContextAction
@@ -188,7 +191,8 @@ class StatefulMovementOption:
 class StatefulNativeMovementOption:
     """Own one native command until its exact acknowledgement becomes terminal.
 
-    Directional movement and building exits finish after native pathing.
+    Directional, exact-character, and building-exit movement finish after
+    native pathing proves their command-specific terminal.
     Context actions finish when native code proves that Kenshi's AI accepted
     the exact reviewed task/subject pair. In every case the acknowledgement is
     keyed by command ID and fenced by the complete command identity.
@@ -198,16 +202,7 @@ class StatefulNativeMovementOption:
     def supports(cls, action: Action) -> TypeGuard[NativeMovementAction]:
         """Whether this lifecycle owns the action's native terminal."""
 
-        return isinstance(
-            action,
-            (
-                MoveInDirectionAction,
-                TravelToMapDestinationAction,
-                ExitCurrentBuildingAction,
-                PerformContextAction,
-                ProduceResourceOutputAction,
-            ),
-        )
+        return has_keyed_native_movement_terminal(action)
 
     def __init__(
         self,
@@ -237,6 +232,8 @@ class StatefulNativeMovementOption:
 
     @property
     def _wire_command(self) -> str:
+        if isinstance(self.action, MoveToCharacterAction):
+            return "move_to_character"
         if isinstance(self.action, TravelToMapDestinationAction):
             return "travel_to_map_destination"
         if isinstance(self.action, ProduceResourceOutputAction):
@@ -249,6 +246,8 @@ class StatefulNativeMovementOption:
 
     @property
     def _required_capability(self) -> str:
+        if isinstance(self.action, MoveToCharacterAction):
+            return "control.move_to_character"
         if isinstance(self.action, TravelToMapDestinationAction):
             return "control.travel_to_map_destination"
         if isinstance(self.action, ProduceResourceOutputAction):
@@ -286,6 +285,17 @@ class StatefulNativeMovementOption:
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
         self.selected_character_ids = list(selected_ids)
+        if isinstance(self.action, MoveToCharacterAction):
+            character_targets = [
+                entity
+                for entity in telemetry.nearby_entities
+                if entity.id == self.action.target_id
+            ]
+            if len(character_targets) != 1:
+                raise OptionLifecycleError(
+                    "Character-movement option requires one exact currently "
+                    "nearby target."
+                )
         if isinstance(self.action, TravelToMapDestinationAction):
             destinations = [
                 destination
@@ -385,6 +395,11 @@ class StatefulNativeMovementOption:
             self.reason = (
                 "Map-travel order dispatched; awaiting arrival at the exact "
                 "known destination."
+            )
+        elif isinstance(self.action, MoveToCharacterAction):
+            self.reason = (
+                "Exact-character walk dispatched; awaiting its keyed native "
+                "arrival terminal."
             )
         else:
             self.reason = (
@@ -594,6 +609,12 @@ class StatefulNativeMovementOption:
         if isinstance(self.action, TravelToMapDestinationAction):
             return bool(
                 acknowledgement.target_id == self.action.destination_id
+                and acknowledgement.bearing_degrees == 0.0
+                and acknowledgement.distance_units == 0.0
+            )
+        if isinstance(self.action, MoveToCharacterAction):
+            return bool(
+                acknowledgement.target_id == self.action.target_id
                 and acknowledgement.bearing_degrees == 0.0
                 and acknowledgement.distance_units == 0.0
             )
