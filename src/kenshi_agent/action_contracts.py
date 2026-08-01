@@ -1128,6 +1128,7 @@ def _bind_item_cell(
     item_name: str | None = None,
     item_quantity: int | None = None,
     section: str | None = None,
+    require_selected_inventory_accepts_item: bool = False,
 ) -> ReferenceBinding:
     """Resolve one exact inventory or shop cell from current telemetry.
 
@@ -1165,6 +1166,14 @@ def _bind_item_cell(
     if not matches:
         where = f" in window {window!r}" if window is not None else ""
         return _unbound(f"No current item cell matches {cell_label!r}{where}.")
+
+    if require_selected_inventory_accepts_item and any(
+        control.selected_inventory_accepts_item is not True for control in matches
+    ):
+        return _unbound(
+            f"The selected character's inventory does not explicitly accept "
+            f"{item_name or cell_label!r}; the transfer cannot be authorized."
+        )
 
     if len(matches) > 1 and item_base_value is not None:
         # A tie-breaker between cells that share a name - the Barman stocks five
@@ -1540,6 +1549,7 @@ def bind_collect_resource_output(
         item_name=action.item_name,
         item_quantity=action.source_quantity,
         section=action.section,
+        require_selected_inventory_accepts_item=True,
     )
     if not cell.bound:
         return cell

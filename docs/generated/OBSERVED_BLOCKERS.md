@@ -14,15 +14,15 @@ total. Rows are never dropped, so a blocker that stops recurring stays
 visible with the run that last exhibited it.
 
 ```text
-newest run  live-character-terminal-soak-20260731-r3
+newest run  live-resource-full-inventory-guard-20260801-r1
 signatures  33
-open        4
+open        0
 ```
 
 | signature | example | runs | seen | last run | last seen |
 | --- | --- | ---: | ---: | --- | --- |
 | `Controller-owned camera recovery returned '*'.` | Controller-owned camera recovery returned 'failed_after_bounded_attempts'. | 1 | 1 | live-character-terminal-soak-20260731-r1 | 2026-07-31T14:59:25Z |
-| `Controller-owned purchase returned '*': Stopped after #/#: Kenshi refused the purchase: No room for that item.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/1: Kenshi refused the purchase: No room for that item. | 2 | 2 | live-purchase-fit-barrier-20260730-r6 | 2026-07-31T00:57:56Z |
+| `Controller-owned purchase returned '*': Stopped after #/#: Kenshi refused the purchase: No room for that item.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/1: Kenshi refused the purchase: No room for that item. | 1 | 1 | live-purchase-fit-barrier-20260730-r6 | 2026-07-31T00:57:56Z |
 | `Controller-owned purchase returned '*': Stopped after #/#: No current item cell matches '*' in window '*'.` | Controller-owned purchase returned 'partially_purchased': Stopped after 1/5: No current item cell matches 'Greenfruit' in window 'BARMAN'. | 1 | 1 | live-diagnose-20260730-135539 | 2026-07-30T21:03:53Z |
 | `Controller-owned purchase returned '*': Stopped after #/#: later telemetry showed no purse or selected-inventory change.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/1: later telemetry showed no purse or selected-inventory change. When the click was sent the | 1 | 1 | live-purchase-fit-barrier-20260730-r1 | 2026-07-31T00:18:48Z |
 | `Controller-owned resource harvest returned '*': Resource transfer lacked exact bounded conservation proof.` | Controller-owned resource harvest returned 'not_harvested': Resource transfer lacked exact bounded conservation proof. | 1 | 1 | live-character-terminal-soak-20260731-r3 | 2026-07-31T15:09:38Z |
@@ -43,7 +43,7 @@ open        4
 | `Plan rejected before execution: step '*' failure condition is already true before dispatch: Observed True; expected equa` | Plan rejected before execution: step 'inventory-first' failure condition is already true before dispatch: Observed True; expected equals True. | 1 | 3 | live-open-screen-20260729-r1 | 2026-07-30T17:03:09Z |
 | `Plan rejected before execution: step '*' failure condition is not observable before dispatch: Condition value for <Field` | Plan rejected before execution: step 'buy-bread-1' failure condition is not observable before dispatch: Condition value for <FieldConditionPath.TELEMETRY_UI_TOO | 1 | 1 | live-hub-survival-pair-20260729-r3 | 2026-07-30T18:11:34Z |
 | `Plan rejected before execution: step '*' has no causal success condition; success must be observable in a later world re` | Plan rejected before execution: step 'step-2' has no causal success condition; success must be observable in a later world revision rather than assumed from dis | 3 | 3 | live-character-terminal-soak-20260731-r1 | 2026-07-31T14:59:25Z |
-| `Plan rejected before execution: step '*' repeats definitive no-op ao-#; relevant purchase state is unchanged or cannot b` | Plan rejected before execution: step 'purchase-water' repeats definitive no-op ao-1; relevant purchase state is unchanged or cannot be proved changed | 2 | 6 | live-purchase-fit-barrier-20260730-r6 | 2026-07-31T00:57:56Z |
+| `Plan rejected before execution: step '*' repeats definitive no-op ao-#; relevant purchase state is unchanged or cannot b` | Plan rejected before execution: step 'purchase-water-1' repeats definitive no-op ao-3; relevant purchase state is unchanged or cannot be proved changed; step 'p | 1 | 5 | live-purchase-fit-barrier-20260730-r6 | 2026-07-31T00:57:56Z |
 | `Plan rejected before execution: step '*' requests direct live unpause, which the action guard cannot authorize. Do not a` | Plan rejected before execution: step 'set-speed' requests direct live unpause, which the action guard cannot authorize. Do not add an unpause step before moveme | 6 | 16 | live-character-terminal-soak-20260731-r3 | 2026-07-31T15:09:38Z |
 | `Plan rejected before execution: the world moved on while the plan was being written, so what it points at is no longer t` | Plan rejected before execution: the world moved on while the plan was being written, so what it points at is no longer there: step 'move-to-copper' pointed at s | 6 | 13 | live-character-terminal-soak-20260731-r3 | 2026-07-31T15:09:38Z |
 | `The action completed but did not have its intended effect within #s: telemetry.ui.dialogue_option_#: Condition value for` | The action completed but did not have its intended effect within 10.0s: telemetry.ui.dialogue_option_0: Condition value for <FieldConditionPath.TELEMETRY_UI_DIA | 1 | 1 | live-funded-pair-open-ended-20260730-r3 | 2026-07-31T02:56:21Z |

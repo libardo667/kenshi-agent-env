@@ -693,6 +693,7 @@ class TestCollectResourceOutput:
         source_quantity: int = 2,
         player_inventory_open: bool = True,
         active_shop_trader_count: int = 0,
+        selected_inventory_accepts_item: bool | None = True,
     ) -> Observation:
         target = natural_resource()
         visible_controls = [
@@ -702,6 +703,7 @@ class TestCollectResourceOutput:
                 role="item",
                 item_name="Raw Iron",
                 item_quantity=source_quantity,
+                selected_inventory_accepts_item=selected_inventory_accepts_item,
                 section=section,
                 bounds=_bounds(0.5),
             )
@@ -782,6 +784,18 @@ class TestCollectResourceOutput:
         assert not binding.bound
         assert "selected character" in binding.reason
         assert "inventory" in binding.reason
+
+    def test_requires_the_game_owned_destination_fit_verdict(self) -> None:
+        contract = ACTION_CONTRACTS["collect_resource_output"]
+
+        for accepts_item in (False, None):
+            binding = contract.bind(
+                self._action(),
+                self._state(selected_inventory_accepts_item=accepts_item),
+            )
+
+            assert not binding.bound
+            assert "does not explicitly accept" in binding.reason
 
     def test_loaded_shop_traders_never_override_exact_resource_window_owners(
         self,

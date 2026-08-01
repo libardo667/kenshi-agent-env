@@ -134,6 +134,7 @@ class HarvestEnvironment(AgentEnvironment):
                         section="out",
                         item_name=ITEM_NAME,
                         item_quantity=self.source_quantity,
+                        selected_inventory_accepts_item=True,
                         bounds=_bounds(0.10, 0.20, 0.18, 0.28),
                     ),
                 ]

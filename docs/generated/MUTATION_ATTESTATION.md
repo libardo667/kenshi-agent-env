@@ -23,12 +23,12 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-81 shards: 10 attested, 16 unverified, 2 source-changed, 53 never; 1091 open mutants where the numbers still apply.
+81 shards: 11 attested, 16 unverified, 2 source-changed, 52 never; 2194 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
 | `action_completeness` | — | — | — | — | — | never |
-| `action_contracts` | — | — | — | — | — | never |
+| `action_contracts` | 2216 | 1113 | 1103 | 2026-08-01T14:04:56Z | 9d5ff143a441306c | attested |
 | `advisor` | — | — | — | — | — | never |
 | `affordance_parity` | — | — | — | — | — | never |
 | `affordance_surfaces` | — | — | — | — | — | never |

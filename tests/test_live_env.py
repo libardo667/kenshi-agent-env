@@ -1095,12 +1095,14 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
         *,
         player_inventory_open: bool = True,
         loaded_shop_trader_count: int = 0,
+        selected_inventory_accepts_item: bool | None = True,
     ) -> None:
         super().__init__()
         self.path = path
         self.transferred = False
         self.player_inventory_open = player_inventory_open
         self.loaded_shop_trader_count = loaded_shop_trader_count
+        self.selected_inventory_accepts_item = selected_inventory_accepts_item
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -1151,6 +1153,9 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                                     item_name="Raw Iron",
                                     item_quantity=2,
                                     section="out",
+                                    selected_inventory_accepts_item=(
+                                        self.selected_inventory_accepts_item
+                                    ),
                                     bounds=bounds,
                                 )
                             ]
@@ -2229,6 +2234,54 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
                 ),
                 command=CommandDispatchContext(
                     command_id="cmd-" + "6" * 32,
+                    based_on_revision=initial.world_revision,
+                ),
+            )
+
+        assert controller.actions == []
+
+    asyncio.run(scenario())
+
+
+def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = ResourceTransferPulseTelemetry(
+            tmp_path / "telemetry.latest.json",
+            selected_inventory_accepts_item=False,
+        )
+        controller = ResourceTransferController(telemetry)
+        environment = LiveEnvironment(
+            run_id="resource-transfer-full-destination",
+            run_dir=tmp_path,
+            telemetry=telemetry,  # type: ignore[arg-type]
+            controller=controller,
+            macros=MacroRegistry({}),
+            runtime_config=RuntimeConfig(settle_seconds=0.0),
+            controls_config=ControlsConfig(
+                post_input_delay_seconds=0.0,
+                item_cell_hover_seconds=0.0,
+            ),
+            capture_config=CaptureConfig(enabled=False),
+            execute_actions=True,
+            emergency_stop_key="f12",
+            available_skills=[],
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        )
+        initial = await environment.reset()
+
+        with pytest.raises(RuntimeError, match="does not explicitly accept"):
+            await environment.dispatch(
+                CollectResourceOutputAction(
+                    target_id="entity-copper",
+                    cell_label="Raw Iron 0",
+                    item_name="Raw Iron",
+                    source_quantity=2,
+                    window="COPPER RESOURCE",
+                ),
+                command=CommandDispatchContext(
+                    command_id="cmd-" + "7" * 32,
                     based_on_revision=initial.world_revision,
                 ),
             )
