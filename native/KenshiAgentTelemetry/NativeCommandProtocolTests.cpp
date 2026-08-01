@@ -17,6 +17,7 @@
 #include "WorldTargetProtocol.cpp"
 #include "GameplayCapabilities.generated.h"
 #include "InventoryScreenSemantics.h"
+#include "RuntimeContextMenuSemantics.h"
 
 namespace
 {
@@ -131,6 +132,8 @@ namespace
         if (baseline.find("\"game.pause\"") == std::string::npos ||
             baseline.find("\"control.perform_context_action\"") ==
                 std::string::npos ||
+            baseline.find("\"ui.context_menu.orders\"") ==
+                std::string::npos ||
             baseline.find("\"world.context_target_screen_positions\"") ==
                 std::string::npos)
         {
@@ -201,6 +204,95 @@ namespace
                 }
             }
         }
+        return 0;
+    }
+
+    int TestRuntimeContextMenuSemantics()
+    {
+        using namespace KenshiAgentTelemetry;
+
+        RuntimeContextMenuTargetOwnership ownership;
+        std::vector<int> taskTypeValues;
+        RuntimeContextMenuObservation closed = ResolveRuntimeContextMenu(
+            false,
+            ownership,
+            taskTypeValues,
+            2);
+        if (closed.open || closed.captured ||
+            closed.probe != RUNTIME_CONTEXT_MENU_CLOSED)
+        {
+            return Fail("a closed context menu produced runtime orders");
+        }
+
+        UpdateRuntimeContextMenuTargetOwnership(
+            ownership,
+            true,
+            true,
+            "entity-target",
+            "Iron Resource");
+        taskTypeValues.push_back(87);
+        taskTypeValues.push_back(9999);
+        RuntimeContextMenuObservation exact = ResolveRuntimeContextMenu(
+            true,
+            ownership,
+            taskTypeValues,
+            2);
+        if (!exact.open || !exact.captured ||
+            exact.probe != RUNTIME_CONTEXT_MENU_CAPTURED ||
+            exact.targetId != "entity-target" ||
+            exact.taskTypeValues.size() != 2 ||
+            exact.taskTypeValues[0] != 87 ||
+            exact.taskTypeValues[1] != 9999 ||
+            !exact.taskTypeValuesComplete)
+        {
+            return Fail(
+                "an exact context menu did not preserve game-owned task IDs");
+        }
+
+        RuntimeContextMenuObservation bounded = ResolveRuntimeContextMenu(
+            true,
+            ownership,
+            taskTypeValues,
+            1);
+        if (!bounded.captured || bounded.taskTypeValues.size() != 1 ||
+            bounded.taskTypeValues[0] != 87 ||
+            bounded.taskTypeValuesComplete)
+        {
+            return Fail("context menu order truncation was not explicit");
+        }
+
+        UpdateRuntimeContextMenuTargetOwnership(
+            ownership,
+            true,
+            false,
+            "entity-stale-target",
+            "Stale Resource");
+        RuntimeContextMenuObservation invalidTarget = ResolveRuntimeContextMenu(
+            true,
+            ownership,
+            taskTypeValues,
+            2);
+        if (invalidTarget.captured ||
+            invalidTarget.probe != RUNTIME_CONTEXT_MENU_INVALID_TARGET)
+        {
+            return Fail("an invalid context-menu target exposed orders");
+        }
+
+        UpdateRuntimeContextMenuTargetOwnership(
+            ownership,
+            true,
+            true,
+            "entity-target",
+            "Iron Resource");
+        UpdateRuntimeContextMenuTargetOwnership(
+            ownership,
+            false,
+            true,
+            "entity-target",
+            "Iron Resource");
+        if (ownership.captured || !ownership.targetId.empty())
+            return Fail("closing a context menu retained its target authority");
+
         return 0;
     }
 
@@ -745,6 +837,9 @@ int main(int argc, char** argv)
     const int inventoryScreenResult = TestInventoryScreenSemantics();
     if (inventoryScreenResult != 0)
         return inventoryScreenResult;
+    const int runtimeContextMenuResult = TestRuntimeContextMenuSemantics();
+    if (runtimeContextMenuResult != 0)
+        return runtimeContextMenuResult;
     const int resourceProductionResult = TestResourceProductionSemantics();
     if (resourceProductionResult != 0)
         return resourceProductionResult;

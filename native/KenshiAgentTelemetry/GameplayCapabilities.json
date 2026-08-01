@@ -21,6 +21,7 @@
     "ui.tooltip",
     "ui.visible_controls",
     "ui.context_inventory_target",
+    "ui.context_menu.orders",
     "nearby.characters",
     "nearby.roles",
     "control.approach_vendor",

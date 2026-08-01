@@ -24,6 +24,10 @@ from pydantic import (
 )
 
 from .observation_budget import budget_observation_payload, irreducible_payload
+from .runtime_context_menu import (
+    require_consistent_context_menu_state,
+    require_truthful_context_menu_capability,
+)
 
 
 class StrictModel(BaseModel):
@@ -737,6 +741,31 @@ class ToolTipLine(StrictModel):
     value: str = Field(default="", max_length=200)
 
 
+class ContextMenuProbe(StrEnum):
+    """What the native sampler could prove about Kenshi's context menu."""
+
+    CLOSED = "closed"
+    CAPTURED = "captured"
+    INVALID_TARGET = "invalid_target"
+
+
+class RuntimeContextMenu(StrictModel):
+    """Exact game-owned menu orders, distinct from reviewed action authority.
+
+    ``task_type_values`` deliberately retains numeric values that the pinned
+    TaskType vocabulary does not yet name. Observing a menu item must never
+    make it executable; only ``WorldTarget.context_actions`` carries that
+    separately reviewed authority.
+    """
+
+    target_id: str = Field(min_length=1, max_length=200)
+    target_name: str | None = Field(default=None, max_length=200)
+    task_type_values: list[int] = Field(default_factory=list, max_length=64)
+    # False means the menu had more entries than the bounded native export.
+    # Absence from task_type_values is usable as absence only when this is true.
+    task_type_values_complete: bool
+
+
 class UIState(StrictModel):
     active_screen: str | None = None
     modal_open: bool | None = None
@@ -773,6 +802,11 @@ class UIState(StrictModel):
     # share the same name.
     context_inventory_target_id: str | None = Field(default=None, max_length=200)
     context_menu_open: bool | None = None
+    # A visible menu can outlive its target or briefly overlap a delayed old
+    # menu. Keep that distinction instead of flattening every failed read to
+    # an empty order list, which would falsely mean "this target has no menu."
+    context_menu_probe: ContextMenuProbe | None = None
+    context_menu: RuntimeContextMenu | None = None
     # Additional screen signals. `active_screen` collapses everything to
     # dialogue/trade/inventory/world, which cannot express "the stats window is
     # up" or "two inventory windows are open".
@@ -786,6 +820,15 @@ class UIState(StrictModel):
     selected_character_ids: list[str] = Field(default_factory=list)
     client_width: int | None = Field(default=None, gt=0)
     client_height: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def runtime_context_menu_is_internally_consistent(self) -> UIState:
+        require_consistent_context_menu_state(
+            context_menu_open=self.context_menu_open,
+            context_menu_probe=self.context_menu_probe,
+            context_menu=self.context_menu,
+        )
+        return self
 
 
 class NativeCommandStatus(StrEnum):
@@ -923,7 +966,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.5.0"
+    protocol_version: str = "1.6.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -949,6 +992,16 @@ class TelemetrySnapshot(StrictModel):
         if value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value
+
+    @model_validator(mode="after")
+    def runtime_context_menu_capability_is_truthful(self) -> TelemetrySnapshot:
+        require_truthful_context_menu_capability(
+            capabilities=self.capabilities,
+            context_menu_open=self.ui.context_menu_open,
+            context_menu_probe=self.ui.context_menu_probe,
+            context_menu=self.ui.context_menu,
+        )
+        return self
 
     @model_validator(mode="after")
     def stable_identity_must_be_complete_and_consistent(self) -> TelemetrySnapshot:

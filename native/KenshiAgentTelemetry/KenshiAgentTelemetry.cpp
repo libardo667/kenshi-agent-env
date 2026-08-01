@@ -89,6 +89,7 @@
 #include "NativeCommandTiming.h"
 #include "NativeMovementSemantics.h"
 #include "ResourceProductionSemantics.h"
+#include "RuntimeContextMenuSemantics.h"
 #include "WorldTargetProtocol.h"
 
 namespace
@@ -124,13 +125,15 @@ namespace
     const unsigned int MAX_UI_WIDGET_DEPTH = 32;
     const unsigned int MAX_NATIVE_COMMAND_BYTES = 16384;
     const unsigned int MAX_NATIVE_ACKNOWLEDGEMENTS = 16;
+    const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.5.0";
+    const char* PROTOCOL_VERSION = "1.6.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
     typedef void (*GameWorldResetFunction)(GameWorld*);
+    typedef void (*ContextMenuShowFunction)(ContextMenu*, bool, RootObject*);
     typedef ShopTrader* (*ShopTraderConstructorFunction)(ShopTrader*, Character*);
     typedef void (*ShopTraderDestructorFunction)(ShopTrader*);
 
@@ -178,6 +181,7 @@ namespace
     PlayerInterfaceUpdateFunction g_originalPlayerInterfaceUpdate = NULL;
     TitleScreenUpdateFunction g_originalTitleScreenUpdate = NULL;
     GameWorldResetFunction g_originalGameWorldReset = NULL;
+    ContextMenuShowFunction g_originalContextMenuShow = NULL;
     ShopTraderConstructorFunction g_originalShopTraderConstructor = NULL;
     ShopTraderDestructorFunction g_originalShopTraderDestructor = NULL;
     TrackedShopTrader g_trackedShopTraders[MAX_TRACKED_SHOP_TRADERS];
@@ -199,6 +203,8 @@ namespace
         g_nativeAcknowledgements[MAX_NATIVE_ACKNOWLEDGEMENTS];
     unsigned int g_nativeAcknowledgementCount = 0;
     ActiveNativeCommand g_activeNativeCommand;
+    KenshiAgentTelemetry::RuntimeContextMenuTargetOwnership
+        g_runtimeContextMenuTarget;
     std::wstring g_outputDirectory;
 
     class SamplingGuard
@@ -235,6 +241,12 @@ namespace
         g_lastNativeCommandTarget.clear();
         g_lastNativeCommandTargetId.clear();
         g_nativeAcknowledgementCount = 0;
+        KenshiAgentTelemetry::UpdateRuntimeContextMenuTargetOwnership(
+            g_runtimeContextMenuTarget,
+            false,
+            false,
+            "",
+            "");
         g_activeNativeCommand.active = false;
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.targetId.clear();
@@ -362,6 +374,66 @@ namespace
         if (character == NULL || !character->isValid())
             return "";
         return StableEntityId(character->getHandle());
+    }
+
+    KenshiAgentTelemetry::RuntimeContextMenuObservation
+    ObserveRuntimeContextMenu(PlayerInterface* player)
+    {
+        using KenshiAgentTelemetry::ResolveRuntimeContextMenu;
+        std::vector<int> taskTypeValues;
+        if (player == NULL)
+        {
+            return ResolveRuntimeContextMenu(
+                false,
+                g_runtimeContextMenuTarget,
+                taskTypeValues,
+                MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES);
+        }
+
+        ContextMenu& contextMenu = player->contextMenu;
+        const bool menuOpen = contextMenu.isVisible();
+        if (!menuOpen)
+        {
+            KenshiAgentTelemetry::UpdateRuntimeContextMenuTargetOwnership(
+                g_runtimeContextMenuTarget,
+                false,
+                false,
+                "",
+                "");
+        }
+        if (menuOpen)
+        {
+            for (unsigned int orderIndex = 0;
+                 orderIndex < contextMenu.orders.size();
+                 ++orderIndex)
+            {
+                taskTypeValues.push_back(contextMenu.orders[orderIndex]);
+            }
+        }
+        return ResolveRuntimeContextMenu(
+            menuOpen,
+            g_runtimeContextMenuTarget,
+            taskTypeValues,
+            MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES);
+    }
+
+    void ContextMenuShowHook(ContextMenu* menu, bool on, RootObject* target)
+    {
+        std::string targetId;
+        std::string targetName;
+        const bool targetValid = target != NULL && target->isValid();
+        if (targetValid)
+        {
+            targetId = StableEntityId(target->getHandle());
+            targetName = target->getName();
+        }
+        KenshiAgentTelemetry::UpdateRuntimeContextMenuTargetOwnership(
+            g_runtimeContextMenuTarget,
+            on,
+            targetValid,
+            targetId,
+            targetName);
+        g_originalContextMenuShow(menu, on, target);
     }
 
     bool SameHandleIdentity(const hand& left, const hand& right)
@@ -3150,6 +3222,49 @@ namespace
         {
             json << "null";
         }
+        const KenshiAgentTelemetry::RuntimeContextMenuObservation
+            contextMenuObservation = ObserveRuntimeContextMenu(player);
+        json << ",\"context_menu_open\":"
+             << JsonBool(contextMenuObservation.open);
+        json << ",\"context_menu_probe\":\""
+             << KenshiAgentTelemetry::RuntimeContextMenuProbeName(
+                    contextMenuObservation.probe)
+             << "\"";
+        json << ",\"context_menu\":";
+        if (contextMenuObservation.captured)
+        {
+            json << "{";
+            json << "\"target_id\":\""
+                 << JsonEscape(contextMenuObservation.targetId) << "\",";
+            json << "\"target_name\":";
+            if (!contextMenuObservation.targetName.empty())
+            {
+                json << "\""
+                     << JsonEscape(contextMenuObservation.targetName)
+                     << "\"";
+            }
+            else
+            {
+                json << "null";
+            }
+            json << ",\"task_type_values\":[";
+            for (unsigned int index = 0;
+                 index < contextMenuObservation.taskTypeValues.size();
+                 ++index)
+            {
+                if (index > 0)
+                    json << ",";
+                json << contextMenuObservation.taskTypeValues[index];
+            }
+            json << "],\"task_type_values_complete\":"
+                 << JsonBool(
+                        contextMenuObservation.taskTypeValuesComplete);
+            json << "}";
+        }
+        else
+        {
+            json << "null";
+        }
         json << ",";
         const std::string selectedId = StableEntityId(selected);
         if (!selectedId.empty() &&
@@ -3714,7 +3829,19 @@ __declspec(dllexport) void startPlugin()
     g_outputDirectory = KenshiAgentTelemetry::ResolveTelemetryDirectory();
     WriteStatus(
         "starting",
-        "Installing Kenshi title/player telemetry and ShopTrader lifecycle hooks.");
+        "Installing Kenshi title/player/context telemetry and ShopTrader lifecycle hooks.");
+
+    const KenshiLib::HookStatus contextMenuStatus = KenshiLib::AddHook(
+        KenshiLib::GetRealAddress(&ContextMenu::showContextMenu),
+        ContextMenuShowHook,
+        &g_originalContextMenuShow);
+    if (contextMenuStatus != KenshiLib::SUCCESS)
+    {
+        ErrorLog(
+            "KenshiAgentTelemetry: could not hook ContextMenu::showContextMenu.");
+        WriteStatus("error", "Could not hook ContextMenu::showContextMenu.");
+        return;
+    }
 
     const KenshiLib::HookStatus updateStatus = KenshiLib::AddHook(
         KenshiLib::GetRealAddress(&PlayerInterface::update),
@@ -3763,10 +3890,10 @@ __declspec(dllexport) void startPlugin()
     }
 
     DebugLog(
-        "KenshiAgentTelemetry: Kenshi title/player telemetry hooks installed.");
+        "KenshiAgentTelemetry: Kenshi title/player/context telemetry hooks installed.");
     WriteStatus(
         "ready",
         g_shopTraderRegistryReady
-            ? "Kenshi title/player telemetry and session-scoped ShopTrader lifecycle hooks installed."
-            : "Kenshi title/player telemetry installed; exact session-scoped ShopTrader registry unavailable.");
+            ? "Kenshi title/player/context telemetry and session-scoped ShopTrader lifecycle hooks installed."
+            : "Kenshi title/player/context telemetry installed; exact session-scoped ShopTrader registry unavailable.");
 }

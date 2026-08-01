@@ -87,6 +87,7 @@
   <ItemGroup>
     <ClInclude Include="GameplayCapabilities.generated.h" />
     <ClInclude Include="InventoryScreenSemantics.h" />
+    <ClInclude Include="RuntimeContextMenuSemantics.h" />
     <ClInclude Include="NativeCommandProtocol.h" />
     <ClInclude Include="NativeCommandTiming.h" />
     <ClInclude Include="NativeMovementSemantics.h" />

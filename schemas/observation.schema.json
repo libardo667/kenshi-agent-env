@@ -2011,6 +2011,16 @@
       "title": "ContextActionKind",
       "type": "string"
     },
+    "ContextMenuProbe": {
+      "description": "What the native sampler could prove about Kenshi's context menu.",
+      "enum": [
+        "closed",
+        "captured",
+        "invalid_target"
+      ],
+      "title": "ContextMenuProbe",
+      "type": "string"
+    },
     "ContinuityOperationStatus": {
       "enum": [
         "accepted",
@@ -5534,6 +5544,49 @@
       "title": "RotateCameraAction",
       "type": "object"
     },
+    "RuntimeContextMenu": {
+      "additionalProperties": false,
+      "description": "Exact game-owned menu orders, distinct from reviewed action authority.\n\n``task_type_values`` deliberately retains numeric values that the pinned\nTaskType vocabulary does not yet name. Observing a menu item must never\nmake it executable; only ``WorldTarget.context_actions`` carries that\nseparately reviewed authority.",
+      "properties": {
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "target_name": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Name"
+        },
+        "task_type_values": {
+          "items": {
+            "type": "integer"
+          },
+          "maxItems": 64,
+          "title": "Task Type Values",
+          "type": "array"
+        },
+        "task_type_values_complete": {
+          "title": "Task Type Values Complete",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "target_id",
+        "task_type_values_complete"
+      ],
+      "title": "RuntimeContextMenu",
+      "type": "object"
+    },
     "ScrollAction": {
       "additionalProperties": false,
       "properties": {
@@ -6064,7 +6117,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.5.0",
+          "default": "1.6.0",
           "title": "Protocol Version",
           "type": "string"
         },
@@ -6406,6 +6459,28 @@
           ],
           "default": null,
           "title": "Context Menu Open"
+        },
+        "context_menu_probe": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContextMenuProbe"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "context_menu": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RuntimeContextMenu"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "stats_window_open": {
           "anyOf": [

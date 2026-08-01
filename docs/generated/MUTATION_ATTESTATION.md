@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-82 shards: 13 attested, 16 unverified, 2 source-changed, 51 never; 2194 open mutants where the numbers still apply.
+83 shards: 14 attested, 16 unverified, 2 source-changed, 51 never; 2194 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -94,6 +94,7 @@ promises only that the module under test has not moved.
 | `reporting` | — | — | — | — | — | never |
 | `resource_transfer` | 197 | 197 | 0 | 2026-07-27T23:24:49Z | — | unverified |
 | `runtime` | — | — | — | — | — | never |
+| `runtime_context_menu` | 59 | 59 | 0 | 2026-08-01T15:52:22Z | 8d37c084a1391825 | attested |
 | `runtime_continuity` | 105 | 105 | 0 | 2026-07-28T11:50:39Z | — | unverified |
 | `safety` | 554 | 554 | 0 | 2026-07-27T23:21:51Z | — | unverified |
 | `safety_supervisor` | — | — | — | — | — | never |
