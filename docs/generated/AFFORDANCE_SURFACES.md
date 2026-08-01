@@ -32,8 +32,10 @@ ui_widget  [captured]  enumerated: 563
 
 world_context_action  [source_identified]  enumerated: —
     Orders a player can give a world object by right-click.
-    source: KenshiLib `enum TaskType` (290 members), filtered at runtime by `PlayerInterface::isOrderValidForSelection`, with the exact per-target list in `ContextMenu::orders`.
-    note: Nothing captured. Today's export is typed around one kind: `NaturalResourceTargetSnapshot`, hard-coded to natural_resource.
+    source: KenshiLib `enum TaskType`, filtered at runtime by `PlayerInterface::isOrderValidForSelection`, with the exact per-target list in `ContextMenu::orders`.
+    note: Today's export is typed around one kind: `NaturalResourceTargetSnapshot`, hard-coded to natural_resource.
+    candidate vocabulary: 291 from game_sources/kenshi/TaskType.h
+    limitation: Upper bound only: most TaskType values are internal AI tasks. The runtime-filtered per-target ContextMenu::orders denominator is still uncaptured.
 
 game_content  [unexamined]  enumerated: —
     The things acted upon: items, buildings, research, factions, dialogue, towns.

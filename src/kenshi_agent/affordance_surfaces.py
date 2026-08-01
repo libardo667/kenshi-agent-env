@@ -26,6 +26,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
+
+from .context_action_vocabulary import TASK_TYPES_SNAPSHOT, load_task_types
 
 
 class SurfaceStatus(StrEnum):
@@ -55,6 +58,17 @@ class AffordanceSurface:
     # clothes.
     enumerated: int | None = None
     note: str = ""
+    candidate_vocabulary: CandidateVocabulary | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CandidateVocabulary:
+    """A captured source vocabulary that is broader than the denominator."""
+
+    path: Path
+    display_path: str
+    enumerated: int
+    limitation: str
 
 
 SURFACES: tuple[AffordanceSurface, ...] = (
@@ -89,13 +103,23 @@ SURFACES: tuple[AffordanceSurface, ...] = (
         what_it_enumerates="Orders a player can give a world object by right-click.",
         status=SurfaceStatus.SOURCE_IDENTIFIED,
         source=(
-            "KenshiLib `enum TaskType` (290 members), filtered at runtime by "
+            "KenshiLib `enum TaskType`, filtered at runtime by "
             "`PlayerInterface::isOrderValidForSelection`, with the exact per-target "
             "list in `ContextMenu::orders`."
         ),
         note=(
-            "Nothing captured. Today's export is typed around one kind: "
+            "Today's export is typed around one kind: "
             "`NaturalResourceTargetSnapshot`, hard-coded to natural_resource."
+        ),
+        candidate_vocabulary=CandidateVocabulary(
+            path=TASK_TYPES_SNAPSHOT,
+            display_path="game_sources/kenshi/TaskType.h",
+            enumerated=len(load_task_types().entries),
+            limitation=(
+                "Upper bound only: most TaskType values are internal AI tasks. "
+                "The runtime-filtered per-target ContextMenu::orders denominator "
+                "is still uncaptured."
+            ),
         ),
     ),
     AffordanceSurface(
@@ -150,5 +174,12 @@ def render_surface_registry() -> list[str]:
         lines.append(f"    source: {surface.source}")
         if surface.note:
             lines.append(f"    note: {surface.note}")
+        if surface.candidate_vocabulary is not None:
+            vocabulary = surface.candidate_vocabulary
+            lines.append(
+                "    candidate vocabulary: "
+                f"{vocabulary.enumerated} from {vocabulary.display_path}"
+            )
+            lines.append(f"    limitation: {vocabulary.limitation}")
         lines.append("")
     return lines

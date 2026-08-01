@@ -14,9 +14,9 @@ total. Rows are never dropped, so a blocker that stops recurring stays
 visible with the run that last exhibited it.
 
 ```text
-newest run  live-resource-full-inventory-guard-20260801-r1
-signatures  33
-open        0
+newest run  live-resource-fit-guard-20260801-r2
+signatures  34
+open        1
 ```
 
 | signature | example | runs | seen | last run | last seen |
@@ -25,6 +25,7 @@ open        0
 | `Controller-owned purchase returned '*': Stopped after #/#: Kenshi refused the purchase: No room for that item.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/1: Kenshi refused the purchase: No room for that item. | 1 | 1 | live-purchase-fit-barrier-20260730-r6 | 2026-07-31T00:57:56Z |
 | `Controller-owned purchase returned '*': Stopped after #/#: No current item cell matches '*' in window '*'.` | Controller-owned purchase returned 'partially_purchased': Stopped after 1/5: No current item cell matches 'Greenfruit' in window 'BARMAN'. | 1 | 1 | live-diagnose-20260730-135539 | 2026-07-30T21:03:53Z |
 | `Controller-owned purchase returned '*': Stopped after #/#: later telemetry showed no purse or selected-inventory change.` | Controller-owned purchase returned 'not_purchased': Stopped after 0/1: later telemetry showed no purse or selected-inventory change. When the click was sent the | 1 | 1 | live-purchase-fit-barrier-20260730-r1 | 2026-07-31T00:18:48Z |
+| `Controller-owned resource harvest returned '*': Resource harvest inventory phase failed closed: SafetyViolation: Action` | Controller-owned resource harvest returned 'not_harvested': Resource harvest inventory phase failed closed: SafetyViolation: Action 'collect_resource_output' do | 1 | 1 | live-resource-fit-guard-20260801-r2 | 2026-08-01T14:28:55Z |
 | `Controller-owned resource harvest returned '*': Resource transfer lacked exact bounded conservation proof.` | Controller-owned resource harvest returned 'not_harvested': Resource transfer lacked exact bounded conservation proof. | 1 | 1 | live-character-terminal-soak-20260731-r3 | 2026-07-31T15:09:38Z |
 | `Environment failed after command dispatch; the reserved action was conservatively committed: OptionLifecycleError: Nativ` | Environment failed after command dispatch; the reserved action was conservatively committed: OptionLifecycleError: Native movement option has no successful tran | 1 | 1 | live-character-terminal-soak-20260731-r1 | 2026-07-31T14:59:25Z |
 | `Existing action guard rejected the step: Action '*' does not bind to current state: # characters are selected; exactly o` | Existing action guard rejected the step: Action 'move_in_direction' does not bind to current state: 2 characters are selected; exactly one must be, so the order | 1 | 1 | live-context-envelope-funded-pair-20260730-r1 | 2026-07-31T04:29:45Z |

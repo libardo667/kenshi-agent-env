@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-81 shards: 11 attested, 16 unverified, 2 source-changed, 52 never; 2194 open mutants where the numbers still apply.
+82 shards: 13 attested, 16 unverified, 2 source-changed, 51 never; 2194 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -31,7 +31,7 @@ promises only that the module under test has not moved.
 | `action_contracts` | 2216 | 1113 | 1103 | 2026-08-01T14:04:56Z | 9d5ff143a441306c | attested |
 | `advisor` | — | — | — | — | — | never |
 | `affordance_parity` | — | — | — | — | — | never |
-| `affordance_surfaces` | — | — | — | — | — | never |
+| `affordance_surfaces` | 19 | 19 | 0 | 2026-08-01T14:52:32Z | cae2692da14339c9 | attested |
 | `approach` | — | — | — | — | — | never |
 | `authored_starts` | — | — | — | — | — | never |
 | `blocker_ledger` | — | — | — | — | — | never |
@@ -39,6 +39,7 @@ promises only that the module under test has not moved.
 | `campaign` | 21 | 21 | 0 | 2026-07-28T04:11:58Z | — | unverified |
 | `cli` | 1569 | 493 | 1076 | 2026-07-28T11:22:05Z | — | unverified |
 | `config` | — | — | — | — | — | never |
+| `context_action_vocabulary` | 60 | 60 | 0 | 2026-08-01T14:51:31Z | cd914f092c6e8bb6 | attested |
 | `continuity` | 627 | 627 | 0 | 2026-07-28T07:58:43Z | — | unverified |
 | `continuous_executor` | — | — | — | — | — | never |
 | `control.base` | — | — | — | — | — | never |
