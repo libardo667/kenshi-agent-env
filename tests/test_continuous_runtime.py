@@ -4,6 +4,7 @@ import asyncio
 import json
 import re
 from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -2881,6 +2882,13 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
         pump_clock = ManualPumpClock()
         environment = AdvancingMovementEnvironment(clock=plan_clock)
         planner = StalePatchPlanner()
+        stream = StringIO()
+        reporter = ConsoleDecisionReporter(
+            run_id="continuous",
+            planner_name="scripted",
+            model_name=None,
+            stream=stream,
+        )
         runtime, logger = runtime_for(
             tmp_path,
             environment,
@@ -2888,6 +2896,7 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
             plan_clock,
             observation_pump_enabled=True,
             observation_clock=pump_clock,
+            reporter=reporter,
         )
         try:
             run = asyncio.create_task(runtime.run(max_steps=2))
@@ -2915,6 +2924,8 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
         assert metrics.plan_patches_staged == 0
         assert metrics.plan_patches_applied == 0
         assert metrics.plan_patches_rejected == 1
+        assert "!!! PLAN PATCH REJECTED !!!" in stream.getvalue()
+        assert "stale" in stream.getvalue()
 
     asyncio.run(scenario())
 
@@ -3100,7 +3111,20 @@ def test_stale_plan_output_is_rejected_without_executing_an_action(
         clock = FakeClock()
         environment = RevisionEnvironment(clock=clock)
         planner = PlanThenStopPlanner(stale_basis=True)
-        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        stream = StringIO()
+        reporter = ConsoleDecisionReporter(
+            run_id="continuous",
+            planner_name="scripted",
+            model_name=None,
+            stream=stream,
+        )
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            reporter=reporter,
+        )
         try:
             summary = await runtime.run(max_steps=2)
         finally:
@@ -3117,6 +3141,8 @@ def test_stale_plan_output_is_rejected_without_executing_an_action(
         rejected = [event for event in events if event["event_type"] == "plan_rejected"]
         assert len(rejected) == 1
         assert "stale" in str(rejected[0]["payload"])
+        assert "!!! PLAN REJECTED !!!" in stream.getvalue()
+        assert "stale" in stream.getvalue()
 
     asyncio.run(scenario())
 
@@ -3129,7 +3155,20 @@ def test_reflex_preempts_a_future_plan_step_before_execution(tmp_path: Path) -> 
             threat_after_first_action=True,
         )
         planner = PlanThenStopPlanner()
-        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        stream = StringIO()
+        reporter = ConsoleDecisionReporter(
+            run_id="continuous",
+            planner_name="scripted",
+            model_name=None,
+            stream=stream,
+        )
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            reporter=reporter,
+        )
         try:
             summary = await runtime.run(max_steps=2)
         finally:
@@ -3144,6 +3183,8 @@ def test_reflex_preempts_a_future_plan_step_before_execution(tmp_path: Path) -> 
         events = read_events(tmp_path / "events.jsonl")
         assert sum(event["event_type"] == "safety_preempted" for event in events) == 1
         assert sum(event["event_type"] == "plan_aborted" for event in events) == 1
+        assert "!!! PLAN ABORTED !!!" in stream.getvalue()
+        assert "safety reflex preempted the active plan" in stream.getvalue()
 
     asyncio.run(scenario())
 

@@ -131,6 +131,99 @@ def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:
     ]
 
 
+def test_console_reporter_makes_plan_failures_immediate_and_summarizes_them() -> None:
+    stream = StringIO()
+    narrator = RecordingNarrator()
+    reporter = ConsoleDecisionReporter(
+        run_id="failure-run",
+        planner_name="openrouter",
+        model_name="reasoning-model",
+        narrator=narrator,
+        stream=stream,
+    )
+
+    reporter.plan_failure(
+        event_type="plan_rejected",
+        step_index=7,
+        plan_id="plan-pc-8",
+        plan_version=1,
+        step_id=None,
+        reason="The plan requested direct live unpause.",
+    )
+    reporter.plan_failure(
+        event_type="plan_patch_rejected",
+        step_index=8,
+        plan_id="plan-pc-9",
+        plan_version=2,
+        step_id="find-shop",
+        reason="The patch pointed at a stale character.",
+    )
+    reporter.plan_failure(
+        event_type="concurrent_planner_discarded",
+        step_index=8,
+        plan_id="plan-pc-9",
+        plan_version=2,
+        step_id="find-shop",
+        reason="Concurrent option planning returned a fresh plan instead of a patch.",
+    )
+    reporter.plan_failure(
+        event_type="plan_aborted",
+        step_index=9,
+        plan_id="plan-pc-9",
+        plan_version=2,
+        step_id="find-shop",
+        reason="Kenshi cancelled the movement as movement_stalled.",
+    )
+    reporter.run_finished(steps_completed=9, stop_reason="Stopped for review.")
+
+    output = stream.getvalue()
+    assert "!!! PLAN REJECTED !!!" in output
+    assert "step 07 | plan-pc-8 v1" in output
+    assert "The plan requested direct live unpause." in output
+    assert "!!! PLAN PATCH REJECTED !!!" in output
+    assert "step find-shop" in output
+    assert "!!! PATCH ADVISORY DISCARDED !!!" in output
+    assert "!!! PLAN ABORTED !!!" in output
+    assert "movement_stalled" in output
+    assert (
+        "PLAN FAILURE SUMMARY | 1 rejected | 1 aborted | "
+        "1 patch rejected | 1 advisory discarded"
+    ) in output
+    assert "Last plan rejection | plan-pc-8 v1" in output
+    assert "Last plan abort | plan-pc-9 v2 | step find-shop" in output
+
+    spoken = [text for text, _ in narrator.utterances]
+    assert "The plan was rejected. I'm replanning." in spoken
+    assert "The plan patch was rejected. I'm keeping the current plan." in spoken
+    assert "The plan stopped early. I'm replanning." in spoken
+    assert all("movement_stalled" not in text for text in spoken)
+
+
+def test_console_reporter_summarizes_failures_when_run_does_not_finish() -> None:
+    stream = StringIO()
+    reporter = ConsoleDecisionReporter(
+        run_id="interrupted-run",
+        planner_name="openrouter",
+        model_name="reasoning-model",
+        stream=stream,
+    )
+    reporter.plan_failure(
+        event_type="plan_rejected",
+        step_index=2,
+        plan_id="plan-pc-2",
+        plan_version=1,
+        step_id=None,
+        reason="The plan had no causal success condition.",
+    )
+
+    reporter.close()
+
+    output = stream.getvalue()
+    assert "RUN ENDED WITHOUT NORMAL FINISH" in output
+    assert "PLAN FAILURE SUMMARY | 1 rejected" in output
+    assert "no causal success condition" in output
+
+
 def test_runtime_authored_reasoning_is_never_read_aloud() -> None:
     """Reflex and supervisor rationales are diagnostics, not the agent's thoughts.
 

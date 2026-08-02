@@ -100,6 +100,21 @@ TransitionObserver = Callable[
     Observation,
 ]
 ActionStartedReporter = Callable[[int, Action], None]
+
+
+class PlanFailureReporter(Protocol):
+    def __call__(
+        self,
+        *,
+        event_type: str,
+        step_index: int,
+        plan_id: str,
+        plan_version: int,
+        step_id: str | None,
+        reason: str,
+    ) -> None: ...
+
+
 ConcurrentPlanner = Callable[
     [Observation],
     Coroutine[Any, Any, AuthoredPlannerOutput],
@@ -253,6 +268,7 @@ class ContinuousPlanExecutor:
         read_memory: MemoryReader | None = None,
         read_fieldbook: FieldbookReader | None = None,
         report_action_started: ActionStartedReporter | None = None,
+        report_plan_failure: PlanFailureReporter | None = None,
     ) -> None:
         self.environment = environment
         self.guard = guard
@@ -268,6 +284,7 @@ class ContinuousPlanExecutor:
         self.read_memory = read_memory
         self.read_fieldbook = read_fieldbook
         self.report_action_started = report_action_started
+        self.report_plan_failure = report_plan_failure
         # Which steps of the plan currently in flight actually finished. One
         # executor owns one plan, so this is that plan's answer, and every
         # terminal result reports it rather than only why the plan stopped.
@@ -3721,6 +3738,19 @@ class ContinuousPlanExecutor:
                 "evidence": evidence or {},
             },
         )
+        if self.report_plan_failure is not None and event_type in {
+            "plan_patch_rejected",
+            "concurrent_planner_discarded",
+            "plan_aborted",
+        }:
+            self.report_plan_failure(
+                event_type=event_type,
+                step_index=observation.step_index,
+                plan_id=plan.plan_id,
+                plan_version=plan.plan_version,
+                step_id=step.step_id if step is not None else None,
+                reason=reason,
+            )
 
     @staticmethod
     def _first_non_true(

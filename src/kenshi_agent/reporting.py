@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from collections import Counter
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TextIO, cast
 
@@ -41,6 +43,43 @@ MODEL_AUTHORED_DECISION_SOURCES = frozenset({"planner"})
 # Reasoning is the point of listening, so it gets room that a status line does
 # not. Clipping a thought at 150 characters produces a fragment ending in "…".
 MAX_SPOKEN_REASONING_CHARS = 400
+
+_PLAN_FAILURE_LABELS: dict[str, str] = {
+    "plan_rejected": "PLAN REJECTED",
+    "plan_patch_rejected": "PLAN PATCH REJECTED",
+    "concurrent_planner_discarded": "PATCH ADVISORY DISCARDED",
+    "plan_aborted": "PLAN ABORTED",
+}
+_PLAN_FAILURE_SPEECH: dict[str, str] = {
+    "plan_rejected": "The plan was rejected. I'm replanning.",
+    "plan_patch_rejected": (
+        "The plan patch was rejected. I'm keeping the current plan."
+    ),
+    "concurrent_planner_discarded": (
+        "The background plan update was unusable. I'm continuing."
+    ),
+    "plan_aborted": "The plan stopped early. I'm replanning.",
+}
+_PLAN_FAILURE_SUMMARY_LABELS: tuple[tuple[str, str], ...] = (
+    ("plan_rejected", "rejected"),
+    ("plan_aborted", "aborted"),
+    ("plan_patch_rejected", "patch rejected"),
+    ("concurrent_planner_discarded", "advisory discarded"),
+)
+_PLAN_FAILURE_LAST_LABELS: dict[str, str] = {
+    "plan_rejected": "Last plan rejection",
+    "plan_aborted": "Last plan abort",
+    "plan_patch_rejected": "Last patch rejection",
+    "concurrent_planner_discarded": "Last discarded advisory",
+}
+
+
+@dataclass(frozen=True, slots=True)
+class _PlanFailure:
+    plan_id: str
+    plan_version: int
+    step_id: str | None
+    reason: str
 
 _RUNTIME_DECISION_SUMMARIES: tuple[tuple[str, str], ...] = (
     ("human input", "You've taken over, so I'm standing down."),
@@ -265,6 +304,9 @@ class ConsoleDecisionReporter:
         self.stream = stream or sys.stdout
         self.narrator = narrator
         self._last_spoken_planning_step: int | None = None
+        self._plan_failure_counts: Counter[str] = Counter()
+        self._last_plan_failure: dict[str, _PlanFailure] = {}
+        self._plan_failure_summary_written = False
 
     def run_started(self, max_steps: int) -> None:
         model = f" | {self.model_name}" if self.model_name else ""
@@ -315,6 +357,39 @@ class ConsoleDecisionReporter:
             key="decision",
         )
 
+    def plan_failure(
+        self,
+        *,
+        event_type: str,
+        step_index: int,
+        plan_id: str,
+        plan_version: int,
+        step_id: str | None,
+        reason: str,
+    ) -> None:
+        """Make a rejected or aborted planning decision impossible to miss."""
+
+        label = _PLAN_FAILURE_LABELS.get(event_type)
+        if label is None:
+            raise ValueError(f"Unsupported loud plan event: {event_type}")
+        failure = _PlanFailure(
+            plan_id=plan_id,
+            plan_version=plan_version,
+            step_id=step_id,
+            reason=reason,
+        )
+        self._plan_failure_counts[event_type] += 1
+        self._last_plan_failure[event_type] = failure
+        step_detail = f" | step {step_id}" if step_id is not None else ""
+        self._write(
+            "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            f"!!! {label} !!!\n"
+            f"step {step_index:02d} | {plan_id} v{plan_version}{step_detail}\n"
+            f"{reason}\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n"
+        )
+        self._say(_PLAN_FAILURE_SPEECH[event_type], key="result")
+
     def action_started(self, step_index: int, action: Action) -> None:
         self._write(
             f"[{self._clock()}] step {step_index:02d}  ACT     "
@@ -361,11 +436,39 @@ class ConsoleDecisionReporter:
         self._write(
             f"Kenshi Agent finished | {steps_completed} turns | {stop_reason}\n"
         )
+        self._write_plan_failure_summary()
         self._say("The run is finished.", key="run")
 
     def close(self) -> None:
+        if self._plan_failure_counts and not self._plan_failure_summary_written:
+            self._write("\n!!! RUN ENDED WITHOUT NORMAL FINISH !!!\n")
+            self._write_plan_failure_summary()
         if self.narrator is not None:
             self.narrator.close()
+
+    def _write_plan_failure_summary(self) -> None:
+        if self._plan_failure_summary_written:
+            return
+        self._plan_failure_summary_written = True
+        parts = [
+            f"{self._plan_failure_counts[event_type]} {label}"
+            for event_type, label in _PLAN_FAILURE_SUMMARY_LABELS
+        ]
+        self._write("PLAN FAILURE SUMMARY | " + " | ".join(parts) + "\n")
+        for event_type, _ in _PLAN_FAILURE_SUMMARY_LABELS:
+            failure = self._last_plan_failure.get(event_type)
+            if failure is None:
+                continue
+            step_detail = (
+                f" | step {failure.step_id}"
+                if failure.step_id is not None
+                else ""
+            )
+            self._write(
+                f"{_PLAN_FAILURE_LAST_LABELS[event_type]} | "
+                f"{failure.plan_id} v{failure.plan_version}{step_detail}\n"
+                f"  {failure.reason}\n"
+            )
 
     def _say(self, value: str, *, key: str) -> None:
         if self.narrator is not None:

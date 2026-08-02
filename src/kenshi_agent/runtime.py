@@ -1339,6 +1339,11 @@ class AgentRuntime:
                         if self.reporter is not None
                         else None
                     ),
+                    report_plan_failure=(
+                        self.reporter.plan_failure
+                        if self.reporter is not None
+                        else None
+                    ),
                 )
                 result, preemption = await self._race_with_safety_supervisor(
                     executor.execute(
@@ -2547,6 +2552,15 @@ class AgentRuntime:
                 "evidence": evidence or {},
             },
         )
+        if self.reporter is not None and event_type == "plan_rejected":
+            self.reporter.plan_failure(
+                event_type=event_type,
+                step_index=observation.step_index,
+                plan_id=plan_id,
+                plan_version=plan_version,
+                step_id=None,
+                reason=reason,
+            )
 
     def _with_memories(self, observation: Observation) -> Observation:
         advisor_availability = (

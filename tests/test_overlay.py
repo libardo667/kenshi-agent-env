@@ -176,6 +176,40 @@ def test_the_overlay_narrates_continuous_mode() -> None:
     )
     assert rejected is not None and "the tooltip does not name that item" in rejected
 
+    patch_rejected = format_event(
+        {
+            "event_type": "plan_patch_rejected",
+            "step_index": 1,
+            "payload": {
+                "plan_id": "goal-1",
+                "plan_version": 2,
+                "step_id": "buy-food",
+                "reason": "the referenced shopkeeper is stale",
+            },
+        }
+    )
+    assert patch_rejected is not None
+    assert "PLAN PATCH REJECTED" in patch_rejected
+    assert "goal-1 v2" in patch_rejected
+    assert "buy-food" in patch_rejected
+    assert "the referenced shopkeeper is stale" in patch_rejected
+
+    aborted = format_event(
+        {
+            "event_type": "plan_aborted",
+            "step_index": 2,
+            "payload": {
+                "plan_id": "goal-1",
+                "plan_version": 2,
+                "step_id": "buy-food",
+                "reason": "movement_stalled",
+            },
+        }
+    )
+    assert aborted is not None
+    assert "PLAN ABORTED" in aborted
+    assert "movement_stalled" in aborted
+
     for event_type, payload, expected in (
         ("plan_step_started", {"step_id": "approach"}, "approach"),
         ("plan_completed", {"plan_id": "goal-1"}, "goal-1"),
@@ -209,6 +243,7 @@ def test_events_are_colour_coded_by_what_the_operator_must_notice() -> None:
     assert event_category({"event_type": "plan_proposed"}) == "goal"
     assert event_category({"event_type": "plan_completed"}) == "progress"
     assert event_category({"event_type": "plan_rejected"}) == "refused"
+    assert event_category({"event_type": "plan_patch_rejected"}) == "refused"
     assert event_category({"event_type": "planner_error"}) == "error"
     assert event_category({"event_type": "safety_supervisor_preempted"}) == "safety"
     assert event_category({"event_type": "control_ownership_changed"}) == "control"

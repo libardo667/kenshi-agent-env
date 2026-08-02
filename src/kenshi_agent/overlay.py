@@ -232,7 +232,24 @@ def format_event(record: dict[str, Any]) -> str | None:
     if event_type == "plan_accepted":
         return f"{step} | PLAN ACCEPTED | {payload.get('plan_id', '?')}\n"
     if event_type == "plan_rejected":
-        return f"{step} | PLAN REJECTED\n{payload.get('reason', 'No reason given.')}\n"
+        return (
+            f"!!! PLAN REJECTED !!! | {payload.get('plan_id', '?')} "
+            f"v{payload.get('plan_version', '?')}\n"
+            f"{payload.get('reason', 'No reason given.')}\n"
+        )
+    if event_type == "plan_patch_rejected":
+        return (
+            f"!!! PLAN PATCH REJECTED !!! | {payload.get('plan_id', '?')} "
+            f"v{payload.get('plan_version', '?')} | "
+            f"{payload.get('step_id', '?')}\n"
+            f"{payload.get('reason', 'No reason given.')}\n"
+        )
+    if event_type == "concurrent_planner_discarded":
+        return (
+            f"!!! PATCH ADVISORY DISCARDED !!! | "
+            f"{payload.get('plan_id', '?')} v{payload.get('plan_version', '?')}\n"
+            f"{payload.get('reason', 'No reason given.')}\n"
+        )
     if event_type == "plan_step_started":
         return f"{step} | RUNNING {payload.get('step_id', '?')}\n"
     if event_type == "plan_step_succeeded":
@@ -247,10 +264,17 @@ def format_event(record: dict[str, Any]) -> str | None:
             f"{step} | MOVEMENT INTERRUPTED {payload.get('step_id', '?')}\n"
             f"{payload.get('reason', '')}\n"
         )
-    if event_type in {"plan_step_cancelled", "plan_aborted"}:
+    if event_type == "plan_step_cancelled":
         return (
             f"{step} | STEP STOPPED {payload.get('step_id', '?')}\n"
             f"{payload.get('reason', '')}\n"
+        )
+    if event_type == "plan_aborted":
+        return (
+            f"!!! PLAN ABORTED !!! | {payload.get('plan_id', '?')} "
+            f"v{payload.get('plan_version', '?')} | "
+            f"{payload.get('step_id', '?')}\n"
+            f"{payload.get('reason', 'No reason given.')}\n"
         )
     if event_type == "plan_completed":
         return f"{step} | PLAN COMPLETE | {payload.get('plan_id', '?')}\n"
@@ -316,8 +340,10 @@ _EVENT_CATEGORIES: dict[str, str] = {
     "plan_completed": "progress",
     "action_receipt": "progress",
     "plan_rejected": "refused",
+    "plan_patch_rejected": "refused",
+    "concurrent_planner_discarded": "refused",
     "plan_step_cancelled": "refused",
-    "plan_aborted": "refused",
+    "plan_aborted": "error",
     "action_rejected": "refused",
     "planner_error": "error",
     "replan_stalled": "safety",
