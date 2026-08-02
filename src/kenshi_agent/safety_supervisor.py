@@ -8,6 +8,10 @@ from enum import StrEnum
 from .models import Observation, PauseAction, PlannerDecision, StopAction
 from .reflexes import ReflexEngine
 from .terminal_state import terminal_window_from_events
+from .threat_response import (
+    THREAT_RESPONSE_ACTION_KIND,
+    visible_immediate_hostile,
+)
 from .world_state import (
     SequenceStatus,
     StoreUpdate,
@@ -264,6 +268,26 @@ class SafetySupervisor:
             )
 
         reflex = self.reflexes.decide(observation)
+        authorized_threat_response = bool(
+            update.active_command is not None
+            and update.active_command.action_kind == THREAT_RESPONSE_ACTION_KIND
+        )
+        catastrophic_body_state = bool(
+            telemetry is not None
+            and any(member.getting_eaten is True for member in telemetry.squad)
+        )
+        if (
+            reflex is not None
+            and authorized_threat_response
+            and isinstance(reflex.action, PauseAction)
+            and visible_immediate_hostile(observation)
+            and not catastrophic_body_state
+        ):
+            # The model chose engage or withdraw while safely paused. This
+            # monitored option now owns the ordinary visible-hostile condition;
+            # stale state, human input, terminal windows, capability loss, and
+            # catastrophic body state still preempt above or below this seam.
+            reflex = None
         if reflex is not None:
             decision = reflex
             if isinstance(reflex.action, PauseAction) and "game.pause" not in capabilities:

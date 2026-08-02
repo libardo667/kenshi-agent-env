@@ -1205,8 +1205,8 @@ def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     assert not _is_causal_condition(ConditionKind.FIELD, "control_mode")
 
 
-def test_raw_time_binding_is_rejected_in_favor_of_playback_state() -> None:
-    """The planner gets one playback action, not Kenshi's motor-key sequence."""
+def test_raw_time_binding_is_rejected_in_favor_of_semantic_intent() -> None:
+    """The model states gameplay intent, not Kenshi's motor-key sequence."""
 
     speed_effect = Condition(
         kind=ConditionKind.FIELD,
@@ -1237,4 +1237,4 @@ def test_raw_time_binding_is_rejected_in_favor_of_playback_state() -> None:
     )
 
     assert any("raw time binding 'speed_3'" in error for error in errors)
-    assert any("set_speed" in error for error in errors)
+    assert any("semantic gameplay intention" in error for error in errors)

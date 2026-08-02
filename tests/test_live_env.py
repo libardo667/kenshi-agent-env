@@ -46,11 +46,13 @@ from kenshi_agent.models import (
     PointerActionClass,
     ProduceResourceOutputAction,
     ResourceTransferStatus,
+    RespondToImmediateThreatAction,
     RotateCameraAction,
     SelectSquadMemberAction,
     SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
+    ThreatResponseStrategy,
     TravelToMapDestinationAction,
     UIState,
     UseGameBindingAction,
@@ -844,6 +846,40 @@ def test_set_speed_reissues_an_idempotent_gear_after_a_dropped_key(
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 1.0
         assert transition.receipt.primitive_actions == 2
+
+    asyncio.run(scenario())
+
+
+def test_engage_threat_intent_owns_normal_speed_playback(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.capabilities = ["game.pause", "game.speed"]
+        controller = PulseController(telemetry)
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        )
+
+        await environment.reset()
+        action = RespondToImmediateThreatAction(
+            actor_id="entity-bark",
+            strategy=ThreatResponseStrategy.ENGAGE,
+        )
+        transition = await environment.step(action)
+
+        assert [
+            primitive.key
+            for primitive in controller.actions
+            if isinstance(primitive, KeyAction)
+        ] == ["f2"]
+        assert telemetry.paused is False
+        assert telemetry.speed_multiplier == 1.0
+        assert transition.receipt.action == action
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.target_id == "entity-bark"
 
     asyncio.run(scenario())
 

@@ -864,7 +864,7 @@ def test_raw_time_key_cannot_bind_as_a_planner_affordance(
     result = USE_GAME_BINDING_CONTRACT.bind(action, observation())
 
     assert not result.bound
-    assert "set_speed" in result.reason
+    assert "semantic gameplay intent" in result.reason
 
 
 def test_inventory_binding_owns_its_inventory_signal() -> None:

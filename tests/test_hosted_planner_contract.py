@@ -1490,6 +1490,24 @@ def test_paused_live_surface_leaves_resuming_time_to_semantic_movement() -> None
     assert _schema_action_kinds(schema, PlanProposal) == allowed
 
 
+def test_running_live_surface_also_keeps_playback_out_of_model_control() -> None:
+    current = observation().model_copy(
+        update={
+            "control_mode": ControlMode.NATIVE_ASSISTED,
+            "telemetry": TelemetrySnapshot(
+                game=GameState(paused=False, speed_multiplier=1.0),
+                ui=UIState(active_screen="world"),
+                capabilities=["game.pause", "game.speed"],
+            ),
+        }
+    )
+
+    allowed = planner_action_kinds(current)
+
+    assert "pause" not in allowed
+    assert "set_speed" not in allowed
+
+
 def test_plan_proposal_schema_contains_choices_without_envelope_mechanics() -> None:
     allowed = planner_action_kinds(observation())
     proposal_schema = projected_response_format(

@@ -151,6 +151,13 @@ def describe_action(action: Action) -> str:
         return "Waiting for the resource to produce an item."
     if kind == "harvest_resource":
         return f"Harvesting {cast(int, values['quantity'])} units of resources."
+    if kind == "respond_to_immediate_threat":
+        strategy = cast(str, values["strategy"])
+        return (
+            "Withdrawing from the immediate threat."
+            if strategy == "withdraw"
+            else "Engaging the immediate threat."
+        )
     if kind == "open_context_inventory":
         return "Opening the resource inventory."
     if kind == "move_in_direction":

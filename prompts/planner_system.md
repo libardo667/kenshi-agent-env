@@ -140,9 +140,10 @@ Interfaces and trade
 
 Bindings, resources, and camera
 
-- Use a named game binding, never a guessed key. Time is modeled by `pause` and
-  `set_speed`, not raw time bindings. Toggle bindings are at-most-once because a
-  second press undoes the first.
+- Use a named game binding, never a guessed key. Time controls are absent from
+  the live continuous action surface because semantic options own playback and
+  terminal pauses. Toggle bindings are at-most-once because a second press
+  undoes the first.
 - Use one `harvest_resource` action for a bounded yield. Copy the exact selected
   actor and natural-resource target, choose quantity 1 through 5, and leave
   expected outcomes empty. Production, inventory
@@ -173,6 +174,12 @@ is slow. Author a later explicit action only when fresh evidence warrants it.
 The runtime derives retry policy and risk costs from the action contracts.
 Safety constraints preserve agency and recoverability; they do not require the
 planner to avoid all danger or choose the safest available play style.
+
+When a paused immediate threat advertises `respond_to_immediate_threat`, choose
+the exact selected actor and either `engage` or `withdraw`. The runtime derives
+withdrawal geometry and owns playback, pathing, health/threat monitoring,
+timeout, and terminal pause. Never add time, wait, or movement-plumbing steps
+around it.
 
 Plan discipline
 

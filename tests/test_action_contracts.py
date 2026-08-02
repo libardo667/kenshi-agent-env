@@ -239,6 +239,44 @@ class TestApproachBindsAnyDialogueTarget:
 
 
 class TestVisibleControlBinding:
+    def test_runtime_owned_time_widgets_are_not_generic_controls(self) -> None:
+        speed_name = "0,000,000,073,247,990_TimeSpeedButton2"
+        controls = [
+            VisibleUIControl(
+                label=speed_name,
+                role="button",
+                widget_name=speed_name,
+                bounds=_bounds(0.5),
+            ),
+            VisibleUIControl(
+                label="Show me your goods.",
+                role="button",
+                widget_name="0,000,000,073,247,990_DialogueChoiceButton",
+                bounds=_bounds(0.6),
+            ),
+        ]
+        state = observation(controls=controls, capabilities=["ui.visible_controls"])
+
+        assert [
+            entry["exact_label"] for entry in state.visible_control_digest()
+        ] == ["Show me your goods."]
+
+        speed_binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(exact_label=speed_name, role="button"),
+            state,
+        )
+        dialogue_binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+            ActivateVisibleControlAction(
+                exact_label="Show me your goods.",
+                role="button",
+            ),
+            state,
+        )
+
+        assert not speed_binding.bound
+        assert "runtime-owned" in speed_binding.reason
+        assert dialogue_binding.bound
+
     def test_binds_two_unrelated_labels_with_the_same_action(self) -> None:
         controls = [
             VisibleUIControl(label="Show me your goods.", role="button", bounds=_bounds(0.5)),
@@ -926,6 +964,7 @@ class TestContractCatalog:
             "perform_context_action",
             "produce_resource_output",
             "harvest_resource",
+            "respond_to_immediate_threat",
             "open_context_inventory",
             "collect_resource_output",
             "activate_visible_control",
@@ -1217,6 +1256,64 @@ class TestSemanticActionsAreAdvertised:
         kinds = {entry["kind"] for entry in digest}
         assert {"approach_dialogue_target", "activate_visible_control", "dismiss_screen"} <= kinds
         assert all(entry["argument_source"] for entry in digest)
+
+    def test_threat_response_is_offered_only_for_a_grounded_safe_paused_threat(
+        self,
+    ) -> None:
+        capabilities = [
+            "game.pause",
+            "game.speed",
+            "control.move_in_direction",
+            "nearby.visible_entities",
+            "squad.health",
+        ]
+        threatened = observation(
+            entities=[
+                NearbyEntity(
+                    id="entity-bandit",
+                    name="Dust Bandit",
+                    disposition=Disposition.HOSTILE,
+                    distance=8.0,
+                    visible=True,
+                    position=Vec3(x=0.0, y=0.0, z=0.0),
+                )
+            ],
+            capabilities=capabilities,
+            squad=[
+                CharacterState(
+                    id="entity-bark",
+                    name="Bark",
+                    selected=True,
+                    alive=True,
+                    conscious=True,
+                    blood=100.0,
+                    in_combat=True,
+                    position=Vec3(x=10.0, y=0.0, z=0.0),
+                )
+            ],
+            ui=UIState(
+                selected_character_id="entity-bark",
+                selected_character_ids=["entity-bark"],
+            ),
+            game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
+        )
+
+        assert "respond_to_immediate_threat" in {
+            entry["kind"] for entry in threatened.semantic_action_digest()
+        }
+
+        assert threatened.telemetry is not None
+        clear = threatened.model_copy(
+            update={
+                "telemetry": threatened.telemetry.model_copy(
+                    update={"nearby_entities": []}
+                )
+            },
+            deep=True,
+        )
+        assert "respond_to_immediate_threat" not in {
+            entry["kind"] for entry in clear.semantic_action_digest()
+        }
 
     def test_modal_withholds_blocked_world_action_but_keeps_recovery(self) -> None:
         target = WorldTarget(

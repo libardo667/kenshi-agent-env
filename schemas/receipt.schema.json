@@ -2626,6 +2626,33 @@
       "title": "ResourceTransferStatus",
       "type": "string"
     },
+    "RespondToImmediateThreatAction": {
+      "additionalProperties": false,
+      "description": "Choose whether one selected actor engages or withdraws from a threat.\n\nThe runtime owns playback, an observed escape vector for withdrawal,\ncontinuous threat and squad-health observation, timeout, interruption, and\nthe terminal pause. The planner chooses only the actor and gameplay policy.",
+      "properties": {
+        "kind": {
+          "const": "respond_to_immediate_threat",
+          "default": "respond_to_immediate_threat",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "strategy": {
+          "$ref": "#/$defs/ThreatResponseStrategy"
+        }
+      },
+      "required": [
+        "actor_id",
+        "strategy"
+      ],
+      "title": "RespondToImmediateThreatAction",
+      "type": "object"
+    },
     "RotateCameraAction": {
       "additionalProperties": false,
       "description": "Rotate the world camera one bounded horizontal increment.",
@@ -3227,6 +3254,14 @@
       "title": "TelemetryFreshCondition",
       "type": "object"
     },
+    "ThreatResponseStrategy": {
+      "enum": [
+        "engage",
+        "withdraw"
+      ],
+      "title": "ThreatResponseStrategy",
+      "type": "string"
+    },
     "TravelToMapDestinationAction": {
       "additionalProperties": false,
       "description": "Travel to one exact settlement marker already known to the player.\n\nNative code re-resolves the discovered marker, chooses Kenshi's waypoint,\nissues one pathing order, and owns camera follow and arrival. The planner\nnever supplies map coordinates or re-authors movement pulses.",
@@ -3419,6 +3454,9 @@
         },
         {
           "$ref": "#/$defs/HarvestResourceAction"
+        },
+        {
+          "$ref": "#/$defs/RespondToImmediateThreatAction"
         },
         {
           "$ref": "#/$defs/MoveToCharacterAction"

@@ -52,6 +52,7 @@ from .models import (
     ResourceHarvestStatus,
     ResourceTransferEvidence,
     ResourceTransferStatus,
+    RespondToImmediateThreatAction,
     SaleStatus,
     SemanticActionReceipt,
     SetSpeedAction,
@@ -72,6 +73,7 @@ from .options import (
     StatefulApproachOption,
     StatefulMovementOption,
     StatefulNativeMovementOption,
+    StatefulThreatResponseOption,
 )
 from .planning import (
     PlanBudgetError,
@@ -1079,6 +1081,58 @@ class ContinuousPlanExecutor:
                 },
             )
 
+        threat_response_option: StatefulThreatResponseOption | None = None
+        if isinstance(action, RespondToImmediateThreatAction):
+            threat_response_option = StatefulThreatResponseOption(
+                option_id=(
+                    f"threat-response-{plan.plan_id}-{plan.plan_version}-{step.step_id}"
+                ),
+                action=action,
+                environment=self.environment,
+            )
+            try:
+                prepared = threat_response_option.prepare(observation)
+            except OptionLifecycleError as exc:
+                budget.release(reserved_risk)
+                self.guard.release(guard_reservation)
+                reason = f"Threat-response option preparation failed: {exc}"
+                self._event(
+                    "plan_budget_released",
+                    plan,
+                    observation,
+                    step=step,
+                    reason="No threat-response mechanics were dispatched.",
+                )
+                self._event(
+                    "option_failed",
+                    plan,
+                    observation,
+                    step=step,
+                    reason=reason,
+                    evidence={
+                        "option_id": threat_response_option.option_id,
+                        "option_status": threat_response_option.status.value,
+                    },
+                )
+                return _StepResult(
+                    observation=observation,
+                    succeeded=False,
+                    actions_completed=0,
+                    reason=reason,
+                )
+            self._event(
+                "option_prepared",
+                plan,
+                observation,
+                step=step,
+                reason=prepared.reason,
+                evidence={
+                    "option_id": prepared.option_id,
+                    "option_status": prepared.status.value,
+                    "start_revision": prepared.revision.model_dump(mode="json"),
+                },
+            )
+
         native_movement_option: StatefulNativeMovementOption | None = None
         contract = contract_for(action)
         if (
@@ -1275,8 +1329,16 @@ class ContinuousPlanExecutor:
                     protected_step_ids=protected_step_ids,
                     token=token,
                 )
-            elif native_movement_option is not None or approach_option is not None:
-                monitored_option = native_movement_option or approach_option
+            elif (
+                threat_response_option is not None
+                or native_movement_option is not None
+                or approach_option is not None
+            ):
+                monitored_option = (
+                    threat_response_option
+                    or native_movement_option
+                    or approach_option
+                )
                 assert monitored_option is not None
                 (
                     transition,
@@ -1492,7 +1554,7 @@ class ContinuousPlanExecutor:
                 succeeded=False,
                 actions_completed=1,
                 reason=(
-                    "The monitored native option did not reach its terminal success, "
+                    "The monitored option did not reach its terminal success, "
                     f"so the step cannot succeed: {monitored_outcome.reason}"
                 ),
                 terminated=transition.terminated,
@@ -3259,7 +3321,11 @@ class ContinuousPlanExecutor:
 
     async def _execute_monitored_option(
         self,
-        option: StatefulApproachOption | StatefulNativeMovementOption,
+        option: (
+            StatefulApproachOption
+            | StatefulNativeMovementOption
+            | StatefulThreatResponseOption
+        ),
         plan: PlanEnvelope,
         step: PlanStep,
         observation: Observation,
@@ -3301,6 +3367,7 @@ class ContinuousPlanExecutor:
         if (
             self.planning_config.concurrent_option_planning_enabled
             and self.concurrent_planner is not None
+            and not isinstance(option, StatefulThreatResponseOption)
             and self._has_concurrent_future_authority(
                 budget,
                 remaining_run_actions,
@@ -3435,8 +3502,11 @@ class ContinuousPlanExecutor:
 
             if timed_out:
                 await option.cancel(
-                    "Monitored native movement exceeded its step timeout before terminal success."
+                    "The monitored option exceeded its step timeout before terminal success."
                 )
+
+            if isinstance(option, StatefulThreatResponseOption):
+                await option.finish()
 
             terminal = option.poll()
             latest = self.state_store.latest or observation
@@ -3459,7 +3529,7 @@ class ContinuousPlanExecutor:
                     latest,
                     step=step,
                     reason=(
-                        "Monitored native movement timed out before terminal success."
+                        "The monitored option timed out before terminal success."
                         if timed_out
                         else terminal.reason
                     ),

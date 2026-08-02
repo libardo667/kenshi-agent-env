@@ -729,6 +729,34 @@ class VisibleUIControl(StrictModel):
         )
 
 
+RUNTIME_OWNED_TIME_WIDGETS = frozenset(
+    {
+        "TimeSpeedButton1",
+        "TimeSpeedButton2",
+        "TimeSpeedButton3",
+        "TimeSpeedButton4",
+    }
+)
+
+
+def is_runtime_owned_visible_control(control: VisibleUIControl) -> bool:
+    """Whether a visible widget is mechanics owned by a semantic option.
+
+    Kenshi's time buttons are caption-less, so the exporter advertises their
+    opaque MyGUI instance names as labels. They are real visible controls, but
+    they are not independent gameplay intentions: monitored options own the
+    corresponding pause, playback, observation, and terminal cleanup. Keep the
+    widget identity out of the generic action surface even when an older
+    snapshot carries it only in ``label`` rather than ``widget_name``.
+    """
+
+    return any(
+        layout_widget_name_of(name) in RUNTIME_OWNED_TIME_WIDGETS
+        for name in (control.widget_name, control.label)
+        if name
+    )
+
+
 class ToolTipLine(StrictModel):
     """One tooltip row as the game stores it: a label and its value.
 
@@ -1342,6 +1370,24 @@ class HarvestResourceAction(StrictModel):
     quantity: int = Field(ge=1, le=5)
 
 
+class ThreatResponseStrategy(StrEnum):
+    ENGAGE = "engage"
+    WITHDRAW = "withdraw"
+
+
+class RespondToImmediateThreatAction(StrictModel):
+    """Choose whether one selected actor engages or withdraws from a threat.
+
+    The runtime owns playback, an observed escape vector for withdrawal,
+    continuous threat and squad-health observation, timeout, interruption, and
+    the terminal pause. The planner chooses only the actor and gameplay policy.
+    """
+
+    kind: Literal["respond_to_immediate_threat"] = "respond_to_immediate_threat"
+    actor_id: str = Field(min_length=1, max_length=200)
+    strategy: ThreatResponseStrategy
+
+
 class OpenContextInventoryAction(StrictModel):
     """Open the ordinary inventory UI for one exact observed world target."""
 
@@ -1835,7 +1881,7 @@ TIME_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.SPEED_3,
     }
 )
-"""Low-level time keys represented to planners by pause/set_speed actions."""
+"""Low-level time keys reserved for runtime-owned option mechanics."""
 
 
 # The agent kept trying to reach screens by hunting for a widget to click -
@@ -1845,7 +1891,7 @@ TIME_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
 # key keeps the intention readable and the default mapping in one place;
 # customized keymaps are not yet read. The enum is a semantic vocabulary, not an
 # escape hatch to arbitrary keys. Time keys stay controller details behind
-# PauseAction and SetSpeedAction.
+# monitored semantic options.
 class UseGameBindingAction(StrictModel):
     """Press one named Kenshi control through the shipped-default keymap.
 
@@ -1909,7 +1955,9 @@ PlannerAtomicSemanticAction: TypeAlias = (
 )
 """Reusable atomic game/UI intentions either planner mode may author."""
 
-PlannerCompositeSemanticAction: TypeAlias = HarvestResourceAction
+PlannerCompositeSemanticAction: TypeAlias = (
+    HarvestResourceAction | RespondToImmediateThreatAction
+)
 """Executor-owned options that require continuous plan supervision."""
 
 PlannerSemanticAction: TypeAlias = (
@@ -1961,6 +2009,7 @@ Action: TypeAlias = (
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
     | HarvestResourceAction
+    | RespondToImmediateThreatAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
@@ -1988,6 +2037,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "produce_resource_output",
         "open_context_inventory",
         "harvest_resource",
+        "respond_to_immediate_threat",
         "move_to_character",
         "move_in_direction",
         "travel_to_map_destination",
@@ -4416,7 +4466,11 @@ class Observation(StrictModel):
             return []
         if "ui.visible_controls" not in telemetry.capabilities:
             return []
-        controls = telemetry.ui.visible_controls
+        controls = [
+            control
+            for control in telemetry.ui.visible_controls
+            if not is_runtime_owned_visible_control(control)
+        ]
         # Ambiguity is judged the way the binder judges it, or the advice is
         # stricter than the rule it describes. The binder resolves duplicate item
         # cells that are interchangeable - same window, same item, same price -

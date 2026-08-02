@@ -56,6 +56,7 @@ from kenshi_agent.models import (
     PlanPatch,
     PlanStep,
     ReadFieldbookAction,
+    RespondToImmediateThreatAction,
     RiskBudget,
     SemanticActionReceipt,
     SetSpeedAction,
@@ -63,9 +64,11 @@ from kenshi_agent.models import (
     SkillArgument,
     StopAction,
     TelemetrySnapshot,
+    ThreatResponseStrategy,
     Transition,
     UIState,
     UseGameBindingAction,
+    Vec3,
     VisibleUIControl,
     WorldStateRevision,
 )
@@ -521,6 +524,7 @@ def runtime_for(
             "stop",
             "approach_dialogue_target",
             "move_in_direction",
+            "respond_to_immediate_threat",
             "activate_visible_control",
         ],
         max_actions_per_minute=max_actions_per_minute,
@@ -563,6 +567,258 @@ def runtime_for(
 
 def read_events(path: Path) -> list[dict[str, object]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+class ThreatResponseEnvironment(RevisionEnvironment):
+    def __init__(
+        self,
+        *,
+        clock: PlanningClock,
+        reach_health_floor: bool = False,
+    ) -> None:
+        super().__init__(clock=clock, control_mode=ControlMode.NATIVE_ASSISTED)
+        self.threatened = True
+        self.in_combat = True
+        self.blood = 100.0
+        self.reach_health_floor = reach_health_floor
+        self.response_started = asyncio.Event()
+        self.observations_after_response = 0
+
+    def observation(self) -> Observation:
+        current = super().observation()
+        assert current.telemetry is not None
+        return current.model_copy(
+            update={
+                "telemetry": current.telemetry.model_copy(
+                    update={
+                        "capabilities": [
+                            *current.telemetry.capabilities,
+                            "control.move_in_direction",
+                            "nearby.visible_entities",
+                            "squad.health",
+                        ],
+                        "ui": UIState(
+                            selected_character_id="entity-bark",
+                            selected_character_ids=["entity-bark"],
+                        ),
+                        "squad": [
+                            CharacterState(
+                                id="entity-bark",
+                                name="Bark",
+                                selected=True,
+                                alive=True,
+                                conscious=True,
+                                down=False,
+                                blood=self.blood,
+                                in_combat=self.in_combat,
+                                position=Vec3(x=10.0, y=0.0, z=0.0),
+                            )
+                        ],
+                        "nearby_entities": (
+                            [
+                                NearbyEntity(
+                                    id="entity-bandit",
+                                    name="Dust Bandit",
+                                    disposition=Disposition.HOSTILE,
+                                    distance=8.0,
+                                    visible=True,
+                                    position=Vec3(x=0.0, y=0.0, z=0.0),
+                                )
+                            ]
+                            if self.threatened
+                            else []
+                        ),
+                    }
+                )
+            },
+            deep=True,
+        )
+
+    async def step(self, action: Action) -> Transition:
+        if isinstance(action, RespondToImmediateThreatAction):
+            self.actions.append(action)
+            self.paused = False
+            self.speed = 1.0
+            self.step_index += 1
+            self.sequence += 1
+            self.response_started.set()
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.NATIVE_ASSISTED,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=1,
+                    message="normal-speed engagement started",
+                ),
+                observation=self.observation(),
+            )
+        return await super().step(action)
+
+    async def observe_without_capture(self) -> Observation:
+        self.sequence += 1
+        if self.response_started.is_set():
+            self.observations_after_response += 1
+            if self.reach_health_floor:
+                self.blood = 50.0
+            elif self.observations_after_response >= 2:
+                self.threatened = False
+                self.in_combat = False
+        return self.observation()
+
+
+class ThreatResponsePlanner(Planner):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def decide(self, observation: Observation) -> PlannerOutput:
+        self.calls += 1
+        if self.calls > 1:
+            return PlannerDecision(
+                intent="Stop after the threat response proof.",
+                rationale="The response completed safely.",
+                action=StopAction(reason="threat response proof complete"),
+                confidence=1.0,
+            )
+        return PlanEnvelope(
+            schema_version="1.0",
+            plan_id="threat-response-proof",
+            plan_version=1,
+            objective="Engage the immediate threat.",
+            control_mode=observation.control_mode,
+            based_on_revision=observation.world_revision,
+            assumptions=[fresh()],
+            steps=[
+                PlanStep(
+                    step_id="respond",
+                    action=RespondToImmediateThreatAction(
+                        actor_id="entity-bark",
+                        strategy=ThreatResponseStrategy.ENGAGE,
+                    ),
+                    preconditions=[fresh()],
+                    success_conditions=[],
+                    failure_conditions=[],
+                    timeout_seconds=5.0,
+                    retry_budget=0,
+                    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                )
+            ],
+            entry_step_id="respond",
+            max_actions=1,
+            max_wall_seconds=10.0,
+            max_game_seconds=10.0,
+            risk_budget=RiskBudget(
+                max_pointer_actions=0,
+                max_purchase_actions=0,
+                max_native_assisted_actions=1,
+            ),
+        )
+
+
+def test_threat_response_runs_under_monitoring_without_reflex_loop(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = ThreatResponseEnvironment(clock=clock)
+        planner = ThreatResponsePlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_enabled=False,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.response_started.wait(), timeout=1.0)
+            for _ in range(12):
+                pump_clock.advance(0.1)
+                await asyncio.sleep(0)
+                if run.done():
+                    break
+            summary = await asyncio.wait_for(run, timeout=2.0)
+        finally:
+            logger.close()
+
+        assert summary.stop_reason == "threat response proof complete"
+        assert environment.paused is True
+        assert [action.kind for action in environment.actions] == [
+            "respond_to_immediate_threat",
+            "pause",
+            "stop",
+        ]
+        events = read_events(tmp_path / "events.jsonl")
+        assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
+        assert not any(
+            event["event_type"] == "safety_supervisor_preempted"
+            for event in events
+        )
+        response_receipt = next(
+            event["payload"]
+            for event in events
+            if event["event_type"] == "action_receipt"
+            and event["payload"]["action"]["kind"]
+            == "respond_to_immediate_threat"
+        )
+        assert response_receipt["semantic"]["action_kind"] == (
+            "respond_to_immediate_threat"
+        )
+        assert response_receipt["semantic"]["option_id"] == (
+            "threat-response-threat-response-proof-1-respond"
+        )
+
+    asyncio.run(scenario())
+
+
+def test_threat_health_boundary_pauses_and_returns_to_planning(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = ThreatResponseEnvironment(
+            clock=clock,
+            reach_health_floor=True,
+        )
+        planner = ThreatResponsePlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_enabled=False,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.response_started.wait(), timeout=1.0)
+            for _ in range(12):
+                pump_clock.advance(0.1)
+                await asyncio.sleep(0)
+                if run.done():
+                    break
+            summary = await asyncio.wait_for(run, timeout=2.0)
+        finally:
+            logger.close()
+
+        assert summary.stop_reason == "threat response proof complete"
+        assert planner.calls == 2
+        assert environment.paused is True
+        events = read_events(tmp_path / "events.jsonl")
+        assert any(event["event_type"] == "option_failed" for event in events)
+        assert any(event["event_type"] == "plan_aborted" for event in events)
+
+    asyncio.run(scenario())
 
 
 def test_one_strategic_call_executes_two_guarded_actions_and_replays(

@@ -4,6 +4,7 @@ import asyncio
 from datetime import UTC, datetime
 
 from kenshi_agent.models import (
+    CharacterState,
     Disposition,
     GameState,
     NearbyEntity,
@@ -393,3 +394,57 @@ def test_an_unpaused_game_can_be_normal_for_a_continuously_playing_agent() -> No
 
     # The same state is unremarkable for an agent that is meant to be playing.
     assert relaxed._evaluate(update) is None
+
+
+def test_authorized_threat_response_owns_ordinary_hostility_but_not_catastrophe() -> None:
+    store = WorldStateStore()
+    initial = store.publish(observation(1)).observation
+    store.activate_plan("threat-plan", 1, initial.world_revision)
+    store.activate_step("respond")
+    store.begin_command(
+        plan_id="threat-plan",
+        plan_version=1,
+        step_id="respond",
+        action_kind="respond_to_immediate_threat",
+        start_revision=initial.world_revision,
+    )
+    supervisor = SafetySupervisor(
+        store=store,
+        reflexes=ReflexEngine(),
+        max_sequence_stalls=3,
+    )
+
+    ordinary = store.publish(
+        observation(2, paused=False, threatened=True)
+    )
+    assert supervisor._evaluate(ordinary) is None
+
+    catastrophic_observation = observation(
+        3,
+        paused=False,
+        threatened=True,
+    )
+    assert catastrophic_observation.telemetry is not None
+    catastrophic_observation = catastrophic_observation.model_copy(
+        update={
+            "telemetry": catastrophic_observation.telemetry.model_copy(
+                update={
+                    "squad": [
+                        CharacterState(
+                            id="entity-bark",
+                            name="Bark",
+                            alive=True,
+                            conscious=True,
+                            getting_eaten=True,
+                        )
+                    ]
+                }
+            )
+        },
+        deep=True,
+    )
+    catastrophic = store.publish(catastrophic_observation)
+
+    preemption = supervisor._evaluate(catastrophic)
+    assert preemption is not None
+    assert preemption.cause is SafetyCause.REFLEX

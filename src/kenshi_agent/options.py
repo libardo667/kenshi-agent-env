@@ -18,14 +18,24 @@ from .models import (
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     Observation,
+    PauseAction,
     PerformContextAction,
     ProduceResourceOutputAction,
+    RespondToImmediateThreatAction,
+    SemanticActionReceipt,
     SkillAction,
+    ThreatResponseStrategy,
     Transition,
     TravelToMapDestinationAction,
     WorldStateRevision,
 )
 from .movement_ownership import has_keyed_native_movement_terminal
+from .threat_response import (
+    threat_response_authority_error,
+    threat_response_health_error,
+    threat_response_terminal_reached,
+    withdrawal_move,
+)
 from .world_state import StoreUpdate
 
 NativeMovementAction: TypeAlias = (
@@ -180,6 +190,289 @@ class StatefulMovementOption:
             revision = WorldStateRevision()
         else:
             revision = observation.world_revision.model_copy(deep=True)
+        return OptionPoll(
+            option_id=self.option_id,
+            status=self.status,
+            reason=self.reason,
+            revision=revision,
+        )
+
+
+class StatefulThreatResponseOption:
+    """Own engage/withdraw mechanics through a confirmed terminal pause."""
+
+    def __init__(
+        self,
+        *,
+        option_id: str,
+        action: RespondToImmediateThreatAction,
+        environment: AgentEnvironment,
+    ) -> None:
+        self.option_id = option_id
+        self.action = action.model_copy(deep=True)
+        self.environment = environment
+        self.status = OptionStatus.CREATED
+        self.start_observation: Observation | None = None
+        self.latest_observation: Observation | None = None
+        self.task: asyncio.Task[Transition] | None = None
+        self.transition: Transition | None = None
+        self.movement_option: StatefulNativeMovementOption | None = None
+        self.reason = "Threat-response option has not been prepared."
+        self._finished = False
+
+    def prepare(self, observation: Observation) -> OptionPoll:
+        if self.status is not OptionStatus.CREATED:
+            raise OptionLifecycleError(
+                "Threat-response option can only be prepared once."
+            )
+        if reason := threat_response_authority_error(self.action, observation):
+            raise OptionLifecycleError(reason)
+        self.start_observation = observation.model_copy(deep=True)
+        self.latest_observation = observation.model_copy(deep=True)
+        if self.action.strategy is ThreatResponseStrategy.WITHDRAW:
+            movement = withdrawal_move(self.action, observation)
+            if movement is None:
+                raise OptionLifecycleError(
+                    "Withdrawal geometry could not be derived from current positions."
+                )
+            self.movement_option = StatefulNativeMovementOption(
+                option_id=f"{self.option_id}-withdrawal",
+                action=movement,
+                environment=self.environment,
+                require_paused_start=True,
+            )
+            self.movement_option.prepare(observation)
+        self.status = OptionStatus.PREPARED
+        self.reason = (
+            f"Paused immediate threat is grounded for {self.action.strategy.value}."
+        )
+        return self._poll_result()
+
+    def start(
+        self,
+        command: CommandDispatchContext | None = None,
+        *,
+        token: ExecutionToken | None = None,
+    ) -> asyncio.Task[Transition]:
+        if self.status is not OptionStatus.PREPARED:
+            raise OptionLifecycleError(
+                "Threat-response option must be prepared before start."
+            )
+        if command is None:
+            raise OptionLifecycleError(
+                "Threat-response option requires a keyed command context."
+            )
+        self.status = OptionStatus.RUNNING
+        if self.movement_option is not None:
+            self.reason = (
+                "Runtime issued a grounded withdrawal away from the nearest hostile."
+            )
+            self.task = self.movement_option.start(command, token=token)
+        else:
+            self.reason = (
+                "Runtime is establishing normal-speed playback for the chosen engagement."
+            )
+            self.task = asyncio.create_task(
+                self.environment.dispatch(self.action, command=command, token=token),
+                name=f"kenshi-agent-{self.option_id}",
+            )
+        return self.task
+
+    def poll(self, update: StoreUpdate | None = None) -> OptionPoll:
+        if update is not None:
+            self.latest_observation = update.observation.model_copy(deep=True)
+        if self.status is not OptionStatus.RUNNING:
+            return self._poll_result()
+
+        movement_status: OptionStatus | None = None
+        if self.movement_option is not None:
+            movement_poll = self.movement_option.poll(update)
+            movement_status = movement_poll.status
+            self.transition = self.movement_option.transition
+            if movement_status in {OptionStatus.FAILED, OptionStatus.CANCELLED}:
+                self.status = movement_status
+                self.reason = movement_poll.reason
+                return self._poll_result()
+        else:
+            task = self.task
+            if task is not None and task.done():
+                if task.cancelled():
+                    self.status = OptionStatus.CANCELLED
+                    self.reason = "Threat-response playback task was cancelled."
+                    return self._poll_result()
+                if error := task.exception():
+                    self.status = OptionStatus.FAILED
+                    self.reason = (
+                        f"Threat-response playback failed: {type(error).__name__}: {error}"
+                    )
+                    return self._poll_result()
+                if self.transition is None:
+                    self.transition = task.result()
+                    if update is None:
+                        self.latest_observation = self.transition.observation.model_copy(
+                            deep=True
+                        )
+                    if (
+                        not self.transition.receipt.accepted
+                        or not self.transition.receipt.executed
+                    ):
+                        self.status = OptionStatus.FAILED
+                        self.reason = (
+                            "Threat-response playback was not executed: "
+                            f"{self.transition.receipt.message}"
+                        )
+                        return self._poll_result()
+
+        if self.transition is None:
+            return self._poll_result()
+        latest = self.latest_observation
+        if latest is None:
+            return self._poll_result()
+        if reason := threat_response_health_error(latest):
+            self.status = OptionStatus.FAILED
+            self.reason = (
+                "Threat response reached its deterministic disengagement boundary: "
+                f"{reason}"
+            )
+        elif threat_response_terminal_reached(self.action, latest):
+            self.status = OptionStatus.SUCCEEDED
+            self.reason = (
+                "The immediate hostile and selected actor's combat state are clear."
+            )
+        elif movement_status is OptionStatus.SUCCEEDED:
+            self.status = OptionStatus.FAILED
+            self.reason = (
+                "The bounded withdrawal finished, but the immediate threat remains."
+            )
+        else:
+            self.reason = (
+                f"The chosen {self.action.strategy.value} response remains in progress."
+            )
+        return self._poll_result()
+
+    async def finish(self) -> OptionPoll:
+        """Pause and confirm the world without changing the terminal verdict."""
+
+        if self._finished:
+            return self._poll_result()
+        self._finished = True
+        try:
+            pause_transition = await self.environment.step(PauseAction(paused=True))
+        except Exception as exc:
+            self.status = OptionStatus.FAILED
+            self.reason = (
+                "Threat-response terminal pause failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            return self._poll_result()
+
+        paused = pause_transition.observation.telemetry
+        if (
+            not pause_transition.receipt.accepted
+            or not pause_transition.receipt.executed
+            or pause_transition.observation.telemetry_stale
+            or paused is None
+            or paused.game.paused is not True
+        ):
+            self.status = OptionStatus.FAILED
+            self.reason = (
+                "Threat-response cleanup did not confirm a fresh terminal pause."
+            )
+            return self._poll_result()
+
+        primary = self.transition
+        self.latest_observation = pause_transition.observation.model_copy(deep=True)
+        if primary is not None:
+            receipt = primary.receipt.model_copy(
+                update={
+                    "action": self.action,
+                    "completed_at_revision": pause_transition.observation.world_revision,
+                    "finished_at": pause_transition.receipt.finished_at,
+                    "primitive_actions": (
+                        primary.receipt.primitive_actions
+                        + pause_transition.receipt.primitive_actions
+                    ),
+                    "semantic": SemanticActionReceipt(
+                        action_kind=self.action.kind,
+                        contract_version="1.0",
+                        target_id=self.action.actor_id,
+                        source_revision=(
+                            self.start_observation.world_revision
+                            if self.start_observation is not None
+                            else None
+                        ),
+                        option_id=self.option_id,
+                        revalidation=(
+                            "The runtime rebound the exact selected actor and "
+                            "immediate threat before dispatch, then monitored "
+                            "threat and squad health through a confirmed pause."
+                        ),
+                    ),
+                    "message": (
+                        f"{primary.receipt.message} {self.reason} "
+                        "Runtime confirmed the terminal pause."
+                    ),
+                }
+            )
+            self.transition = primary.model_copy(
+                update={
+                    "receipt": receipt,
+                    "observation": pause_transition.observation,
+                    "events": pause_transition.events,
+                },
+                deep=True,
+            )
+        self.reason += " Runtime confirmed the terminal pause."
+        return self._poll_result()
+
+    async def cancel(self, reason: str) -> OptionPoll:
+        if self.status in {
+            OptionStatus.SUCCEEDED,
+            OptionStatus.FAILED,
+            OptionStatus.CANCELLED,
+        } and self._finished:
+            return self._poll_result()
+        if self.movement_option is not None:
+            await self.movement_option.cancel(reason)
+            self.transition = self.movement_option.transition
+        else:
+            task = self.task
+            if task is not None and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+                except Exception as exc:
+                    self.status = OptionStatus.FAILED
+                    self.reason = (
+                        "Threat-response cancellation failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+                    return await self.finish()
+        self.status = OptionStatus.CANCELLED
+        self.reason = reason
+        return await self.finish()
+
+    def result(self) -> Transition:
+        if self.status is not OptionStatus.SUCCEEDED or self.transition is None:
+            raise OptionLifecycleError(
+                "Threat-response option has no successful transition in state "
+                f"{self.status.value!r}."
+            )
+        if not self._finished:
+            raise OptionLifecycleError(
+                "Threat-response option has not confirmed its terminal pause."
+            )
+        return self.transition.model_copy(deep=True)
+
+    def _poll_result(self) -> OptionPoll:
+        observation = self.latest_observation or self.start_observation
+        revision = (
+            observation.world_revision.model_copy(deep=True)
+            if observation is not None
+            else WorldStateRevision()
+        )
         return OptionPoll(
             option_id=self.option_id,
             status=self.status,

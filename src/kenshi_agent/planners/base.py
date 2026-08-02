@@ -56,14 +56,11 @@ def planner_action_kinds(observation: Observation) -> frozenset[str]:
         observation.mode == "live"
         and observation.planning_mode is PlanningMode.CONTINUOUS
     )
-    if semantic_live_planning and (
-        observation.telemetry is None
-        or observation.telemetry.game.paused is not False
-    ):
-        # Live semantic movement owns the paused-to-running transition. Showing
-        # pause/set_speed here asks the model to sequence runtime plumbing that
-        # the live guard must reject, even though the movement actions beside it
-        # are already able to do the whole job.
+    if semantic_live_planning:
+        # Live semantic options own time transitions. Showing pause/set_speed
+        # asks the model to sequence runtime plumbing rather than state a
+        # gameplay intention, regardless of whether the current frame happens
+        # to be paused or running.
         kinds.difference_update({"pause", "set_speed"})
     if observation.available_skills and not semantic_live_planning:
         kinds.add("skill")

@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-88 shards: 15 attested, 15 unverified, 8 source-changed, 50 never; 1091 open mutants where the numbers still apply.
+89 shards: 15 attested, 15 unverified, 8 source-changed, 51 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -110,6 +110,7 @@ promises only that the module under test has not moved.
 | `telemetry.sample` | — | — | — | — | — | never |
 | `telemetry.writer` | — | — | — | — | — | never |
 | `terminal_state` | — | — | — | — | — | never |
+| `threat_response` | — | — | — | — | — | never |
 | `ui_affordances` | — | — | — | — | — | never |
 | `ui_messages` | 13 | 13 | 0 | 2026-07-30T23:14:03Z | 29e84b8eee68e5ce | attested |
 | `wave_player` | 13 | 13 | 0 | 2026-07-31T01:59:54Z | fe12ffe07ed3bac7 | attested |

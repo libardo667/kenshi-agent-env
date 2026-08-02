@@ -130,6 +130,9 @@
               "$ref": "#/$defs/HarvestResourceAction"
             },
             {
+              "$ref": "#/$defs/RespondToImmediateThreatAction"
+            },
+            {
               "$ref": "#/$defs/MoveToCharacterAction"
             },
             {
@@ -5487,6 +5490,33 @@
       "title": "ResolvedEvidenceSnapshot",
       "type": "object"
     },
+    "RespondToImmediateThreatAction": {
+      "additionalProperties": false,
+      "description": "Choose whether one selected actor engages or withdraws from a threat.\n\nThe runtime owns playback, an observed escape vector for withdrawal,\ncontinuous threat and squad-health observation, timeout, interruption, and\nthe terminal pause. The planner chooses only the actor and gameplay policy.",
+      "properties": {
+        "kind": {
+          "const": "respond_to_immediate_threat",
+          "default": "respond_to_immediate_threat",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "strategy": {
+          "$ref": "#/$defs/ThreatResponseStrategy"
+        }
+      },
+      "required": [
+        "actor_id",
+        "strategy"
+      ],
+      "title": "RespondToImmediateThreatAction",
+      "type": "object"
+    },
     "RetractMemoryOperation": {
       "additionalProperties": false,
       "description": "Withdraw a record from active recall without deleting its history.",
@@ -6211,6 +6241,14 @@
       },
       "title": "TelemetrySnapshot",
       "type": "object"
+    },
+    "ThreatResponseStrategy": {
+      "enum": [
+        "engage",
+        "withdraw"
+      ],
+      "title": "ThreatResponseStrategy",
+      "type": "string"
     },
     "ToolTipLine": {
       "additionalProperties": false,

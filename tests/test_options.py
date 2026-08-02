@@ -7,14 +7,25 @@ from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
+    CharacterState,
+    Disposition,
     GameState,
+    NearbyEntity,
     Observation,
+    RespondToImmediateThreatAction,
     SkillAction,
     TelemetrySnapshot,
+    ThreatResponseStrategy,
     Transition,
+    UIState,
+    Vec3,
     WorldStateRevision,
 )
-from kenshi_agent.options import OptionStatus, StatefulMovementOption
+from kenshi_agent.options import (
+    OptionStatus,
+    StatefulMovementOption,
+    StatefulThreatResponseOption,
+)
 
 
 def observation(sequence: int, *, paused: bool = True) -> Observation:
@@ -194,3 +205,89 @@ def test_approach_can_start_from_a_running_world() -> None:
         require_paused_start=False,
     )
     assert relaxed.prepare(running).status is OptionStatus.PREPARED
+
+
+def _threat_observation(
+    sequence: int,
+    *,
+    paused: bool,
+    threatened: bool,
+    in_combat: bool,
+    blood: float = 100.0,
+) -> Observation:
+    current = observation(sequence, paused=paused)
+    assert current.telemetry is not None
+    return current.model_copy(
+        update={
+            "telemetry": current.telemetry.model_copy(
+                update={
+                    "capabilities": [
+                        "game.pause",
+                        "game.speed",
+                        "control.move_in_direction",
+                        "nearby.visible_entities",
+                        "squad.health",
+                    ],
+                    "game": current.telemetry.game.model_copy(
+                        update={"loaded": True, "speed_multiplier": 1.0}
+                    ),
+                    "squad": [
+                        CharacterState(
+                            id="entity-bark",
+                            name="Bark",
+                            selected=True,
+                            alive=True,
+                            conscious=True,
+                            down=False,
+                            blood=blood,
+                            in_combat=in_combat,
+                            position=Vec3(x=10.0, y=0.0, z=0.0),
+                        )
+                    ],
+                    "ui": UIState(
+                        selected_character_id="entity-bark",
+                        selected_character_ids=["entity-bark"],
+                    ),
+                    "nearby_entities": (
+                        [
+                            NearbyEntity(
+                                id="entity-bandit",
+                                name="Dust Bandit",
+                                disposition=Disposition.HOSTILE,
+                                distance=8.0,
+                                visible=True,
+                                position=Vec3(x=0.0, y=0.0, z=0.0),
+                            )
+                        ]
+                        if threatened
+                        else []
+                    ),
+                }
+            )
+        },
+        deep=True,
+    )
+
+
+def test_withdrawal_derives_the_escape_vector_instead_of_asking_the_model() -> None:
+    option = StatefulThreatResponseOption(
+        option_id="threat-withdrawal",
+        action=RespondToImmediateThreatAction(
+            actor_id="entity-bark",
+            strategy=ThreatResponseStrategy.WITHDRAW,
+        ),
+        environment=BlockingEnvironment(),
+    )
+
+    option.prepare(
+        _threat_observation(
+            1,
+            paused=True,
+            threatened=True,
+            in_combat=True,
+        )
+    )
+
+    assert option.movement_option is not None
+    assert option.movement_option.action.bearing_degrees == 90.0
+    assert option.movement_option.action.distance_units == 160.0

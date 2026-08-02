@@ -106,6 +106,7 @@ from ..models import (
     QuicksaveStatus,
     RecoverCameraViewAction,
     ResourceTransferStatus,
+    RespondToImmediateThreatAction,
     RotateCameraAction,
     SaleEvidence,
     SaleStatus,
@@ -119,6 +120,7 @@ from ..models import (
     SkillArgument,
     StopAction,
     TelemetrySnapshot,
+    ThreatResponseStrategy,
     Transition,
     TravelToMapDestinationAction,
     UseGameBindingAction,
@@ -818,6 +820,35 @@ class LiveEnvironment(AgentEnvironment):
             )
         if isinstance(action, SetSpeedAction):
             return await self._execute_playback_speed(action, started)
+        if isinstance(action, RespondToImmediateThreatAction):
+            if action.strategy is not ThreatResponseStrategy.ENGAGE:
+                raise RuntimeError(
+                    "Withdrawal must be compiled to runtime-owned native movement."
+                )
+            playback = await self._execute_playback_speed(
+                SetSpeedAction(speed=1),
+                started,
+            )
+            return playback.model_copy(
+                update={
+                    "action": action,
+                    "message": (
+                        "Runtime established normal-speed playback for the chosen "
+                        "engagement; threat and squad-health monitoring now own "
+                        "the terminal. "
+                        + playback.message
+                    ),
+                    "semantic": SemanticActionReceipt(
+                        action_kind=action.kind,
+                        contract_version="1.0",
+                        target_id=action.actor_id,
+                        revalidation=(
+                            "The exact selected actor and immediate hostile state "
+                            "were revalidated inside the input lease."
+                        ),
+                    ),
+                }
+            )
         if isinstance(action, ApproachDialogueTargetAction):
             if command is None:
                 raise RuntimeError(

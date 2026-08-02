@@ -27,6 +27,7 @@ from kenshi_agent.models import (
     PlannerOutput,
     PlanningMode,
     PlanStep,
+    RespondToImmediateThreatAction,
     RiskBudget,
 )
 
@@ -209,9 +210,12 @@ def build_decision(
         action_kind=action_kind,
         target_id=target_id,
     )
-    if isinstance(action, HarvestResourceAction):
+    if isinstance(
+        action,
+        (HarvestResourceAction, RespondToImmediateThreatAction),
+    ):
         raise ValueError(
-            "harvest_resource requires continuous option ownership"
+            f"{action.kind} requires continuous option ownership"
         )
     return PlannerDecision(
         intent=objective,

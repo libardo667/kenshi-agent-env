@@ -22,6 +22,7 @@ Regenerate with `python scripts/export_docs.py`.
 | `produce_resource_output` | 1.0 | no | monitored_option | controller terminal | yes | 7 | `control.produce_resource_output`, `game.pause`, `identity.stable_handles`, `world.context_targets` |
 | `purchase_item` | 2.0 | yes | composite_option | controller terminal | no | 10 | `game.money`, `game.pause`, `identity.stable_handles`, `nearby.characters`, `nearby.shop_owners`, `squad.basic`, `ui.inventory`, `ui.tooltip`, `ui.visible_controls` |
 | `recover_camera_view` | 1.0 | yes | atomic_handler | controller terminal | no | 15 | `camera.position`, `camera.recovery`, `game.pause`, `squad.basic`, `ui.visible_controls` |
+| `respond_to_immediate_threat` | 1.0 | yes | monitored_option | controller terminal | yes | 5 | `control.move_in_direction`, `game.pause`, `game.speed`, `nearby.visible_entities`, `squad.health` |
 | `rotate_camera` | 1.0 | yes | atomic_handler | planner conditions | no | 1 | — |
 | `scroll_screen` | 1.0 | yes | atomic_handler | planner conditions | no | 1 | `ui.visible_controls` |
 | `select_squad_member` | 1.0 | yes | atomic_handler | runtime-derived | no | 1 | `squad.basic`, `ui.visible_controls` |

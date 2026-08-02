@@ -71,6 +71,7 @@ from .models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     RecoverCameraViewAction,
+    RespondToImmediateThreatAction,
     RotateCameraAction,
     ScrollScreenAction,
     SelectSquadMemberAction,
@@ -78,6 +79,7 @@ from .models import (
     SetSpeedAction,
     SkillAction,
     StopAction,
+    ThreatResponseStrategy,
     TravelToMapDestinationAction,
     UseGameBindingAction,
     WaitAction,
@@ -85,6 +87,7 @@ from .models import (
     WorldTarget,
     dialogue_targets,
     game_binding_success_condition,
+    is_runtime_owned_visible_control,
     map_destination_already_reached,
     map_destination_travel_available,
     normalize_control_label,
@@ -92,6 +95,7 @@ from .models import (
     screen_is_open,
 )
 from .resource_transfer import resource_transfer_layout_error
+from .threat_response import threat_response_authority_error
 
 # The installed plug-in still names this capability and wire command after the
 # vendor specialization it was first built for, but the fact it authorizes is
@@ -1077,6 +1081,11 @@ def bind_visible_control(
         # label that several open windows share, such as a close button.
         and (not action.window or control.window == action.window)
     ]
+    if any(is_runtime_owned_visible_control(control) for control in matches):
+        return _unbound(
+            "The matching control is a runtime-owned time widget; author a "
+            "semantic gameplay intent and let its monitored option own playback."
+        )
     if not matches:
         return _unbound(
             f"No current {action.role} control matches label {action.exact_label!r}."
@@ -1100,6 +1109,39 @@ def bind_visible_control(
         resolved_bounds=control.bounds.model_copy(deep=True),
         source_revision=observation.world_revision,
     )
+
+
+def bind_respond_to_immediate_threat(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    if not isinstance(action, RespondToImmediateThreatAction):
+        return _unbound("Action is not a respond_to_immediate_threat action.")
+    if reason := threat_response_authority_error(action, observation):
+        return _unbound(reason)
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound selected actor {action.actor_id!r} and strategy "
+            f"{action.strategy.value!r} to one runtime-owned immediate-threat response."
+        ),
+        target_id=action.actor_id,
+        source_revision=observation.world_revision,
+    )
+
+
+def threat_response_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return False
+    selected = [member for member in telemetry.squad if member.selected]
+    if len(selected) != 1:
+        return False
+    probe = RespondToImmediateThreatAction(
+        actor_id=selected[0].id,
+        strategy=ThreatResponseStrategy.ENGAGE,
+    )
+    return threat_response_authority_error(probe, observation) is None
 
 
 ITEM_ROLE = "item"
@@ -1731,8 +1773,8 @@ def bind_use_game_binding(
         )
     if action.binding in TIME_GAME_BINDINGS:
         return _unbound(
-            "Raw time bindings are not planner affordances; use pause to stop "
-            "the world or set_speed to establish one running playback state."
+            "Raw time bindings are runtime-owned mechanics; author a semantic "
+            "gameplay intent whose monitored option owns playback."
         )
     mapped_input = GAME_BINDING_KEYS.get(action.binding)
     if mapped_input is None:
@@ -2362,6 +2404,50 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
     authorable_when=harvest_resource_is_currently_authorable,
 )
 
+
+RESPOND_TO_IMMEDIATE_THREAT_CONTRACT = ActionContract(
+    kind="respond_to_immediate_threat",
+    version="1.0",
+    model=RespondToImmediateThreatAction,
+    summary=(
+        "Choose whether the exact selected actor engages or withdraws from an "
+        "immediate threat. The runtime owns normal-speed playback, withdrawal "
+        "geometry and pathing, threat and health monitoring, timeout, interruption, "
+        "and a confirmed terminal pause."
+    ),
+    argument_source=(
+        "actor_id must be the exact currently selected squad member; strategy is "
+        "'engage' or 'withdraw'. This action appears only from a fresh paused "
+        "immediate-threat state with grounded positions and safe squad health."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            "game.pause",
+            "game.speed",
+            "nearby.visible_entities",
+            "squad.health",
+            NATIVE_DIRECTION_CAPABILITY,
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    requires_exact_selection=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    # Withdrawal may spend the complete four-primitive native movement budget;
+    # the wrapper then owns one additional terminal pause.
+    max_primitive_actions=5,
+    reference_fields=("actor_id", "strategy"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_threat_response",
+    bind=bind_respond_to_immediate_threat,
+    controller_verified=True,
+    authorable_when=threat_response_is_currently_authorable,
+)
+
 OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     kind="open_context_inventory",
     version="1.0",
@@ -2563,8 +2649,8 @@ ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
         "its observed bounds re-resolved inside the input lease."
     ),
     argument_source=(
-        "exact_label and role must match exactly one non-ambiguous entry of the "
-        "observation's visible_controls."
+        "exact_label and role must match exactly one non-ambiguous, non-runtime-owned "
+        "entry of the observation's visible_controls."
     ),
     planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
@@ -2761,7 +2847,7 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     ),
     argument_source=(
         "binding must be one of the GameBinding values in the projected action "
-        "schema; raw time controls use pause/set_speed instead. "
+        "schema; live continuous time controls are runtime-owned instead. "
         "expected_effect states in one phrase what the press should change, "
         "and the step's success conditions must check it."
     ),
@@ -2999,6 +3085,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         PERFORM_CONTEXT_ACTION_CONTRACT,
         PRODUCE_RESOURCE_OUTPUT_CONTRACT,
         HARVEST_RESOURCE_CONTRACT,
+        RESPOND_TO_IMMEDIATE_THREAT_CONTRACT,
         OPEN_CONTEXT_INVENTORY_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,
