@@ -411,6 +411,26 @@ class ConsoleDecisionReporter:
         self._write(f"[{self._clock()}] step {step_index:02d}  {label} | {message}\n\n")
         self._say("That didn't work. I'm reconsidering.", key="result")
 
+    def safety_failure(self, *, step_index: int, cause: str, reason: str) -> None:
+        label = (
+            "KENSHI CRASH DETECTED"
+            if cause == "host_terminal"
+            else "SAFETY FAILURE"
+        )
+        self._write(
+            "\n!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            f"!!! {label} !!!\n"
+            f"step {step_index:02d} | {cause}\n"
+            f"{reason}\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n\n"
+        )
+        self._say(
+            "Kenshi crashed. The run is stopping."
+            if cause == "host_terminal"
+            else "A safety failure stopped the run.",
+            key="result",
+        )
+
     def control_ownership(self, event: ControlOwnershipEvent) -> None:
         if event.event_type is ControlOwnershipEventType.COUNTDOWN:
             self._write(

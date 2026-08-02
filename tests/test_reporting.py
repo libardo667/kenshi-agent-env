@@ -199,6 +199,27 @@ def test_console_reporter_makes_plan_failures_immediate_and_summarizes_them() ->
     assert all("movement_stalled" not in text for text in spoken)
 
 
+def test_console_reporter_makes_host_terminal_failure_impossible_to_miss() -> None:
+    stream = StringIO()
+    reporter = ConsoleDecisionReporter(
+        run_id="crashed-run",
+        planner_name="openrouter",
+        model_name="playing-model",
+        stream=stream,
+    )
+
+    reporter.safety_failure(
+        step_index=6,
+        cause="host_terminal",
+        reason="Kenshi entered terminal window 'Kenshi has crashed'.",
+    )
+
+    output = stream.getvalue()
+    assert "!!! KENSHI CRASH DETECTED !!!" in output
+    assert "step 06 | host_terminal" in output
+    assert "Kenshi has crashed" in output
+
+
 def test_console_reporter_summarizes_failures_when_run_does_not_finish() -> None:
     stream = StringIO()
     reporter = ConsoleDecisionReporter(

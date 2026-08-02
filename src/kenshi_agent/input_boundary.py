@@ -27,6 +27,7 @@ from .models import (
     WorldStateRevision,
 )
 from .planning import evaluate_conditions
+from .terminal_state import TERMINAL_WINDOW_EVENT_PREFIX
 
 _MAX_REPORTED_EVALUATIONS = 24
 
@@ -193,7 +194,12 @@ class ExecutionToken(_ExecutionTokenState):
                 boundary_revision=boundary_revision,
             )
 
-        blocking = [event for event in observation.events if event in _BLOCKING_EVENTS]
+        blocking = [
+            event
+            for event in observation.events
+            if event in _BLOCKING_EVENTS
+            or event.startswith(TERMINAL_WINDOW_EVENT_PREFIX)
+        ]
         if blocking:
             return self._reject(
                 "Input authority was withdrawn at the boundary "  # mutation: diagnostic-only

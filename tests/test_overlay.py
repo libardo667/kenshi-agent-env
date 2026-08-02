@@ -88,6 +88,24 @@ def test_run_finished_safety_is_prominent_and_failure_is_a_safety_event() -> Non
     assert event_category(unverified) == "safety"
 
 
+def test_host_terminal_is_rendered_as_a_crash_not_a_generic_safety_stop() -> None:
+    rendered = format_event(
+        {
+            "event_type": "safety_supervisor_preempted",
+            "step_index": 6,
+            "payload": {
+                "cause": "host_terminal",
+                "reason": "Kenshi entered terminal window 'Kenshi has crashed'.",
+            },
+        }
+    )
+
+    assert rendered is not None
+    assert "!!! KENSHI CRASH DETECTED !!!" in rendered
+    assert "Kenshi has crashed" in rendered
+    assert "SAFETY STOP" not in rendered
+
+
 def test_takeover_countdown_is_prominent_in_feed_and_banner() -> None:
     record = {
         "event_type": "agent_takeover_countdown",

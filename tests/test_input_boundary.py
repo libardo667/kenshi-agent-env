@@ -256,6 +256,17 @@ def test_every_observation_bound_decision_preserves_authority_evidence() -> None
             InputBoundaryDecision.REJECTED,
         ),
         (
+            token_for(
+                [
+                    observation(
+                        sequence=11,
+                        events=("terminal_window_detected: Kenshi has crashed",),
+                    )
+                ]
+            ),
+            InputBoundaryDecision.REJECTED,
+        ),
+        (
             ExecutionToken(
                 plan_id="boundary-plan",
                 plan_version=1,
@@ -484,6 +495,24 @@ def test_emergency_stop_at_boundary_blocks_input(tmp_path: Path) -> None:
         boundary = transition.receipt.input_boundary  # type: ignore[attr-defined]
         assert boundary.decision is InputBoundaryDecision.REJECTED
         assert "emergency_stop_detected" in boundary.reason
+
+    asyncio.run(scenario())
+
+
+def test_terminal_crash_at_boundary_blocks_input(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        controller, transition = await dispatch_with_blocking_lease(
+            tmp_path,
+            conflict=observation(
+                sequence=11,
+                events=("terminal_window_detected: Kenshi has crashed",),
+            ),
+        )
+
+        assert controller.actions == []
+        boundary = transition.receipt.input_boundary  # type: ignore[attr-defined]
+        assert boundary.decision is InputBoundaryDecision.REJECTED
+        assert "Kenshi has crashed" in boundary.reason
 
     asyncio.run(scenario())
 

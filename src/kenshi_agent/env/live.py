@@ -137,6 +137,7 @@ from ..resource_transfer import (
 )
 from ..skills import MacroRegistry
 from ..telemetry import TelemetryReader, TelemetryReadError
+from ..terminal_state import terminal_window_event, terminal_window_title
 from ..ui_messages import causally_new_game_message, game_message_panel_texts
 from .base import AgentEnvironment
 
@@ -303,6 +304,16 @@ class LiveEnvironment(AgentEnvironment):
         if self.controller.emergency_stop_pressed(self.emergency_stop_key):
             events.append("emergency_stop_detected")
         try:
+            terminal_title = terminal_window_title(self.controller)
+        except (OSError, RuntimeError, ValueError) as exc:
+            events.append(
+                "Terminal-window probe failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        else:
+            if terminal_title is not None:
+                events.append(terminal_window_event(terminal_title))
+        try:
             result = self.telemetry_reader.read()
         except TelemetryReadError as exc:
             return Observation(
@@ -340,6 +351,16 @@ class LiveEnvironment(AgentEnvironment):
                 events.append(diagnostic)
         if self.controller.emergency_stop_pressed(self.emergency_stop_key):
             events.append("emergency_stop_detected")
+        try:
+            terminal_title = terminal_window_title(self.controller)
+        except (OSError, RuntimeError, ValueError) as exc:
+            events.append(
+                "Terminal-window probe failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        else:
+            if terminal_title is not None:
+                events.append(terminal_window_event(terminal_title))
         telemetry_snapshot = None
         telemetry_stale = True
         telemetry_age = None

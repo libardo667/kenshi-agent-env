@@ -117,6 +117,7 @@ class PulseController(InputController):
         client_width: int = 1920,
         client_height: int = 1080,
         ignore_speed_key_once: str | None = None,
+        visible_titles: list[str] | None = None,
     ) -> None:
         self.telemetry = telemetry
         self.actions: list[PrimitiveInputAction] = []
@@ -129,6 +130,7 @@ class PulseController(InputController):
         self.client_height = client_height
         self.ignore_speed_key_once = ignore_speed_key_once
         self.ignored_speed_key = False
+        self.visible_titles = visible_titles
 
     def focus_window(self) -> None:
         return None
@@ -191,6 +193,11 @@ class PulseController(InputController):
 
     def continuous_user_input_detected(self) -> bool:
         return self.continuous_user_input
+
+    def visible_window_titles(self) -> list[str]:
+        if self.visible_titles is not None:
+            return self.visible_titles
+        return super().visible_window_titles()
 
     def client_rect(self) -> WindowRect:
         return WindowRect(
@@ -502,6 +509,36 @@ def test_live_close_causally_pauses_once_and_is_idempotent(tmp_path: Path) -> No
         assert repeated == outcome
         assert controller.actions == [KeyAction(key="space")]
         assert telemetry.paused is True
+
+    asyncio.run(scenario())
+
+
+def test_terminal_crash_invalidates_frozen_pause_and_emits_no_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        telemetry = PulseTelemetry()
+        telemetry.paused = True
+        telemetry.capabilities = ["game.pause"]
+        controller = PulseController(
+            telemetry,
+            visible_titles=["Kenshi 1.0.65", "Kenshi has crashed"],
+        )
+        environment = live_environment(
+            tmp_path,
+            telemetry,
+            controller,
+            movement_registry(),
+        )
+
+        observation = await environment.observe_without_capture()
+        outcome = await environment.close()
+
+        assert "terminal_window_detected: Kenshi has crashed" in observation.events
+        assert outcome.status == "pause_unverified"
+        assert "Kenshi has crashed" in outcome.reason
+        assert outcome.input_attempted is False
+        assert controller.actions == []
 
     asyncio.run(scenario())
 

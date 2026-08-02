@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from .control.base import InputController, PrimitiveInputAction
 from .telemetry import TelemetryReader, TelemetryReadError
+from .terminal_state import terminal_window_title
 
 
 class FinalSafeStateStatus(StrEnum):
@@ -29,6 +30,40 @@ class FinalSafeStateOutcome(BaseModel):
     input_executed: bool = False
 
 
+def _terminal_window_failure(
+    controller: InputController,
+    *,
+    initial_sequence: int | None = None,
+    input_attempted: bool = False,
+    input_executed: bool = False,
+) -> FinalSafeStateOutcome | None:
+    try:
+        title = terminal_window_title(controller)
+    except (OSError, RuntimeError, ValueError) as exc:
+        return FinalSafeStateOutcome(
+            status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
+            reason=(
+                "Terminal-window health could not be verified "
+                f"({type(exc).__name__}: {exc})."
+            ),
+            initial_sequence=initial_sequence,
+            input_attempted=input_attempted,
+            input_executed=input_executed,
+        )
+    if title is None:
+        return None
+    return FinalSafeStateOutcome(
+        status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
+        reason=(
+            f"Kenshi terminal window {title!r} is visible; frozen telemetry "
+            "cannot prove a safe pause."
+        ),
+        initial_sequence=initial_sequence,
+        input_attempted=input_attempted,
+        input_executed=input_executed,
+    )
+
+
 async def ensure_final_safe_state(
     *,
     controller: InputController,
@@ -44,6 +79,10 @@ async def ensure_final_safe_state(
             status=FinalSafeStateStatus.NOT_REQUIRED,
             reason="Live action execution was not authorized; no cleanup input was sent.",
         )
+
+    terminal_failure = _terminal_window_failure(controller)
+    if terminal_failure is not None:
+        return terminal_failure
 
     try:
         initial = telemetry.read()
@@ -90,6 +129,14 @@ async def ensure_final_safe_state(
     try:
         async with controller.safety_input_lease():
             for primitive in pause_primitives:
+                terminal_failure = _terminal_window_failure(
+                    controller,
+                    initial_sequence=initial_sequence,
+                    input_attempted=input_executed,
+                    input_executed=input_executed,
+                )
+                if terminal_failure is not None:
+                    return terminal_failure
                 receipt = await controller.execute_safety(primitive)
                 input_executed = input_executed or receipt.executed
                 if not receipt.executed:
@@ -117,6 +164,14 @@ async def ensure_final_safe_state(
 
     deadline = time.monotonic() + timeout_seconds
     while True:
+        terminal_failure = _terminal_window_failure(
+            controller,
+            initial_sequence=initial_sequence,
+            input_attempted=True,
+            input_executed=input_executed,
+        )
+        if terminal_failure is not None:
+            return terminal_failure
         try:
             result = telemetry.read()
         except TelemetryReadError:

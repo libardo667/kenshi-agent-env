@@ -91,6 +91,7 @@ from .scenario_fixtures import (
     write_scenario_attestation,
 )
 from .telemetry import TelemetryRead, TelemetryReader, TelemetryReadError
+from .terminal_state import terminal_window_title
 
 
 class LaunchInterrupted(RuntimeError):
@@ -238,14 +239,6 @@ class _StartupInputGate:
         """Expose the lease without hiding its decisions behind a decorator."""
 
         return asynccontextmanager(self._yield_input_lease)()
-
-
-_TERMINAL_WINDOW_MARKERS = (
-    "crash reporter",
-    "has crashed",
-    "steam dll error",
-    "steam - error",
-)
 
 
 def _validate_safe_close_snapshot(
@@ -572,13 +565,7 @@ async def _wait_for_startup_input(
 
 
 def _terminal_window_title(controller: InputController) -> str | None:
-    for title in controller.visible_window_titles():
-        normalized = title.strip().casefold()
-        if normalized == "bad stuff" or any(
-            marker in normalized for marker in _TERMINAL_WINDOW_MARKERS
-        ):
-            return title
-    return None
+    return terminal_window_title(controller)
 
 
 async def _wait_until(

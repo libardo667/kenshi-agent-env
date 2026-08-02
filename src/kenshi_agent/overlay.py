@@ -287,6 +287,11 @@ def format_event(record: dict[str, Any]) -> str | None:
             f"{payload.get('reason', '')[:300]}\n"
         )
     if event_type == "safety_supervisor_preempted":
+        if payload.get("cause") == "host_terminal":
+            return (
+                "!!! KENSHI CRASH DETECTED !!!\n"
+                f"{payload.get('reason', '')}\n"
+            )
         return (
             f"{step} | SAFETY STOP | {payload.get('cause', 'unknown')}\n"
             f"{payload.get('reason', '')}\n"

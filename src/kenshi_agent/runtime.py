@@ -2018,6 +2018,12 @@ class AgentRuntime:
             },
         )
         if self.reporter is not None:
+            if preemption.cause is SafetyCause.HOST_TERMINAL:
+                self.reporter.safety_failure(
+                    step_index=observation.step_index,
+                    cause=preemption.cause.value,
+                    reason=preemption.reason,
+                )
             self.reporter.decision(
                 step_index=observation.step_index,
                 source="safety_supervisor",
@@ -2029,7 +2035,13 @@ class AgentRuntime:
             paused = (
                 observation.telemetry.game.paused if observation.telemetry is not None else None
             )
-            status = "safe_paused" if paused is True else "stopped_unverified"
+            status = (
+                "terminal_failure"
+                if preemption.cause is SafetyCause.HOST_TERMINAL
+                else "safe_paused"
+                if paused is True
+                else "stopped_unverified"
+            )
             self._log_safety_terminal(
                 preemption,
                 observation,

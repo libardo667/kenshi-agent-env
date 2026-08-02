@@ -1565,6 +1565,52 @@ def test_emergency_stop_remains_terminal_after_confirmed_pause(
     asyncio.run(scenario())
 
 
+def test_host_terminal_never_relabels_frozen_paused_telemetry_as_safe(
+    tmp_path: Path,
+) -> None:
+    class CrashedEnvironment(RevisionEnvironment):
+        async def observe_without_capture(self) -> Observation:
+            return self.observation().model_copy(
+                update={"events": ["terminal_window_detected: Kenshi has crashed"]}
+            )
+
+    async def scenario() -> None:
+        plan_clock = FakeClock()
+        pump_clock = ManualPumpClock()
+        environment = CrashedEnvironment(clock=plan_clock)
+        planner = BlockedPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=3))
+            await planner.started.wait()
+            pump_clock.advance(0.1)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert planner.cancelled.is_set()
+        assert summary.terminated
+        assert "Kenshi has crashed" in summary.stop_reason
+        assert environment.actions == []
+        terminal = [
+            event
+            for event in read_events(tmp_path / "events.jsonl")
+            if event["event_type"] == "safety_supervisor_terminal"
+        ]
+        assert len(terminal) == 1
+        assert terminal[0]["payload"]["cause"] == "host_terminal"
+        assert terminal[0]["payload"]["status"] == "terminal_failure"
+
+    asyncio.run(scenario())
+
+
 def test_supervisor_cancels_blocked_plan_then_replans_from_automated_pause(
     tmp_path: Path,
 ) -> None:

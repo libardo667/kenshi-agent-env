@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from .models import Observation, PauseAction, PlannerDecision, StopAction
 from .reflexes import ReflexEngine
+from .terminal_state import terminal_window_from_events
 from .world_state import (
     SequenceStatus,
     StoreUpdate,
@@ -17,6 +18,7 @@ from .world_state import (
 
 
 class SafetyCause(StrEnum):
+    HOST_TERMINAL = "host_terminal"
     REFLEX = "reflex"
     HUMAN_INPUT = "human_input"
     EMERGENCY_STOP = "emergency_stop"
@@ -45,6 +47,7 @@ class SafetySupervisorMetrics:
     unexpected_unpause_preemptions: int = 0
     human_input_preemptions: int = 0
     emergency_stop_preemptions: int = 0
+    host_terminal_preemptions: int = 0
 
 
 class SafetySupervisor:
@@ -144,6 +147,8 @@ class SafetySupervisor:
             self.metrics.human_input_preemptions += 1
         elif cause is SafetyCause.EMERGENCY_STOP:
             self.metrics.emergency_stop_preemptions += 1
+        elif cause is SafetyCause.HOST_TERMINAL:
+            self.metrics.host_terminal_preemptions += 1
         self.store.record_event(
             "safety_preemption_requested",
             revision=observation.world_revision,
@@ -181,6 +186,18 @@ class SafetySupervisor:
         observation = update.observation
         telemetry = observation.telemetry
         capabilities = set(telemetry.capabilities) if telemetry is not None else set()
+        terminal_title = terminal_window_from_events(observation.events)
+        if terminal_title is not None:
+            reason = (
+                f"Kenshi entered terminal window {terminal_title!r}; frozen "
+                "telemetry cannot prove a safe pause."
+            )
+            return SafetyPreemption(
+                cause=SafetyCause.HOST_TERMINAL,
+                reason=reason,
+                observation=observation,
+                decision=self._stop_decision(reason),
+            )
         pause_withdrawn = False
         for event in update.events:
             removed = event.payload.get("removed")

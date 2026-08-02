@@ -170,6 +170,37 @@ def test_sequence_stall_threshold_is_consecutive_and_deterministic() -> None:
     asyncio.run(scenario())
 
 
+def test_terminal_window_preempts_before_sequence_stall_and_never_requests_pause() -> None:
+    async def scenario() -> None:
+        store = WorldStateStore()
+        current = store.publish(observation(1)).observation
+        supervisor = SafetySupervisor(
+            store=store,
+            reflexes=ReflexEngine(),
+            max_sequence_stalls=2,
+        )
+        await supervisor.start()
+
+        store.publish(
+            current.model_copy(
+                update={"events": ["terminal_window_detected: Kenshi has crashed"]}
+            )
+        )
+
+        preemption = await asyncio.wait_for(
+            supervisor.wait_for_preemption(),
+            timeout=1.0,
+        )
+        assert preemption.cause.value == "host_terminal"
+        assert preemption.decision.action.kind == "stop"
+        assert "Kenshi has crashed" in preemption.reason
+        assert supervisor.metrics.host_terminal_preemptions == 1
+        assert supervisor.metrics.sequence_stall_preemptions == 0
+        await supervisor.stop()
+
+    asyncio.run(scenario())
+
+
 def test_live_sequence_stall_waits_for_wall_age_before_counting_duplicates() -> None:
     async def scenario() -> None:
         store = WorldStateStore()
