@@ -442,13 +442,18 @@ def test_corpus_keeps_claims_and_attribution_together() -> None:
 
 
 def test_advisor_payload_defines_live_hunger_and_fallible_food_semantics() -> None:
-    payload = advisor_world_payload(observation())
+    current = observation()
+    payload = advisor_world_payload(current)
     semantics = payload["telemetry_semantics"]
 
-    assert "3.0 is full" in semantics["selected.hunger"]
-    assert "0.0 is starving" in semantics["selected.hunger"]
-    assert "below 2.0" in semantics["selected.hunger"]
-    assert "layered HUD bar" in semantics["selected.hunger"]
+    assert payload["squad_nutrition"] == current.squad_nutrition_digest()
+    selected = payload["telemetry"]["selected"]
+    assert selected["nutrition_reserve"] == 2.5
+    assert "hunger" not in selected
+    assert semantics["selected.nutrition_reserve"] == (
+        "The current reserve on the squad_nutrition scale. Use that "
+        "digest's status and thresholds to decide urgency."
+    )
     assert "fallible" in semantics["selected.food_items"]
     assert "not authoritative visual containment" in semantics["selected.indoors"]
 

@@ -1214,6 +1214,7 @@ def test_planner_prompt_contains_one_semantic_surface_without_legacy_recipe() ->
     instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
 
     assert "approach_dialogue_target" in instructions
+    assert "`squad_nutrition`" in instructions
     assert "Show me your goods." not in instructions
     assert "move_visible_terrain" not in instructions
     assert "Your priorities, in order:" in instructions

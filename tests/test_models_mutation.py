@@ -43,6 +43,7 @@ from kenshi_agent.models import (
     is_semantic_action,
     normalize_control_label,
 )
+from kenshi_agent.nutrition import model_facing_telemetry_payload
 from kenshi_agent.observation_budget import irreducible_payload
 
 NOW = datetime(2026, 7, 28, 1, 2, 3, tzinfo=UTC)
@@ -879,11 +880,13 @@ def test_log_digest_marks_absent_telemetry_without_inventing_nested_state() -> N
 
 def _planner_payload_base(observation: Observation) -> dict[str, Any]:
     payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
+    payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
     payload["dialogue_targets"] = observation.dialogue_target_digest()
     payload["travel_destinations"] = observation.travel_destination_digest()
     payload["known_map_destinations"] = observation.known_map_destination_digest()
     payload["context_targets"] = observation.context_target_digest()
     payload["semantic_actions"] = observation.semantic_action_digest()
+    payload["squad_nutrition"] = observation.squad_nutrition_digest()
     return payload
 
 
@@ -955,6 +958,121 @@ def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> N
     assert payload["visible_controls"][0]["seller_id"] == "entity-vendor"
     assert "\\u00e9" not in payload_text
     assert payload_text == json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> None:
+    observation = _rich_observation(item_control_count=0)
+    assert observation.telemetry is not None
+    empty = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(update={"squad": []})
+        }
+    )
+    assert empty.squad_nutrition_digest() == {}
+    observation.telemetry = observation.telemetry.model_copy(
+        update={
+            "squad": [
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    hunger=2.775886,
+                ),
+                CharacterState(id="entity-boundary", name="Boundary", hunger=2.5),
+                CharacterState(id="entity-eating", name="Eating", hunger=2.4),
+                CharacterState(id="entity-two", name="Two", hunger=2.0),
+                CharacterState(id="entity-malnourished", name="Mal", hunger=1.9),
+                CharacterState(id="entity-one", name="One", hunger=1.0),
+                CharacterState(id="entity-starving", name="Starving", hunger=0.9),
+                CharacterState(id="entity-unknown", name="Unknown", hunger=None),
+            ]
+        }
+    )
+    expected = {
+        "scale": {
+            "direction": "counts_down_from_full_to_starving",
+            "full": 3.0,
+            "automatic_eating_below": 2.5,
+            "malnutrition_below": 2.0,
+            "starvation_fainting_risk_below": 1.0,
+        },
+        "members": [
+            {
+                "id": "entity-hep",
+                "name": "Hep",
+                "selected": True,
+                "nutrition_reserve": 2.775886,
+                "status": "well_fed",
+            },
+            {
+                "id": "entity-boundary",
+                "name": "Boundary",
+                "selected": False,
+                "nutrition_reserve": 2.5,
+                "status": "well_fed",
+            },
+            {
+                "id": "entity-eating",
+                "name": "Eating",
+                "selected": False,
+                "nutrition_reserve": 2.4,
+                "status": "automatic_eating_range",
+            },
+            {
+                "id": "entity-two",
+                "name": "Two",
+                "selected": False,
+                "nutrition_reserve": 2.0,
+                "status": "automatic_eating_range",
+            },
+            {
+                "id": "entity-malnourished",
+                "name": "Mal",
+                "selected": False,
+                "nutrition_reserve": 1.9,
+                "status": "malnourished",
+            },
+            {
+                "id": "entity-one",
+                "name": "One",
+                "selected": False,
+                "nutrition_reserve": 1.0,
+                "status": "malnourished",
+            },
+            {
+                "id": "entity-starving",
+                "name": "Starving",
+                "selected": False,
+                "nutrition_reserve": 0.9,
+                "status": "starvation_fainting_risk",
+            },
+            {
+                "id": "entity-unknown",
+                "name": "Unknown",
+                "selected": False,
+                "nutrition_reserve": None,
+                "status": "unknown",
+            },
+        ],
+    }
+
+    full_payload = json.loads(observation.planner_payload())
+    assert full_payload["squad_nutrition"] == expected
+    model_facing_squad = full_payload["telemetry"]["squad"]
+    assert [member["nutrition_reserve"] for member in model_facing_squad] == [
+        2.775886,
+        2.5,
+        2.4,
+        2.0,
+        1.9,
+        1.0,
+        0.9,
+        None,
+    ]
+    assert all("hunger" not in member for member in model_facing_squad)
+    assert json.loads(
+        observation.planner_payload(max_chars=1, max_context_chars=1_000_000)
+    )["squad_nutrition"] == expected
 
 
 def test_planner_payload_passes_compaction_target_and_hard_envelope(

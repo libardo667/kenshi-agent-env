@@ -23,6 +23,12 @@ from pydantic import (
     model_validator,
 )
 
+from .nutrition import (
+    model_facing_telemetry_payload,
+)
+from .nutrition import (
+    squad_nutrition_digest as build_squad_nutrition_digest,
+)
 from .observation_budget import budget_observation_payload, irreducible_payload
 from .runtime_context_menu import (
     require_consistent_context_menu_state,
@@ -3401,7 +3407,7 @@ class FieldConditionPath(StrEnum):
     SELECTED_POSITION_Y = "selected.position.y"
     SELECTED_POSITION_Z = "selected.position.z"
     SELECTED_MOVEMENT_SPEED = "selected.movement_speed"
-    SELECTED_HUNGER = "selected.hunger"
+    SELECTED_NUTRITION_RESERVE = "selected.nutrition_reserve"
     SELECTED_BLEEDING_RATE = "selected.bleeding_rate"
     SELECTED_FOOD_ITEMS = "selected.food_items"
     SELECTED_FIRST_AID_KITS = "selected.first_aid_kits"
@@ -4152,6 +4158,17 @@ class Observation(StrictModel):
     fieldbook_read: FieldbookReadReceipt | None = None
     advisor: AdvisorAvailability = Field(default_factory=AdvisorAvailability)
 
+    def squad_nutrition_digest(self) -> dict[str, Any]:
+        """Interpret Kenshi's backwards-named hunger field for every member.
+
+        The native field is a reserve that falls as hunger worsens. Internal
+        telemetry retains its wire name, while model-facing telemetry and
+        conditions use ``nutrition_reserve`` and this compact semantic view.
+        """
+
+        squad = self.telemetry.squad if self.telemetry is not None else []
+        return build_squad_nutrition_digest(squad)
+
     def current_memory_target_ids(self) -> set[str]:
         """Return exact identities safe to use for entity-scoped recall.
 
@@ -4716,6 +4733,7 @@ class Observation(StrictModel):
         """
 
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
+        payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
         # Surface the deterministic talk-target list the planner must trust
         # rather than re-derive. A top-level non-collection key is preserved
         # through budgeting.
@@ -4724,6 +4742,7 @@ class Observation(StrictModel):
         payload["known_map_destinations"] = self.known_map_destination_digest()
         payload["context_targets"] = self.context_target_digest()
         payload["semantic_actions"] = self.semantic_action_digest()
+        payload["squad_nutrition"] = self.squad_nutrition_digest()
 
         controls = self.visible_control_digest()
         payload["visible_controls"] = group_controls_by_window(

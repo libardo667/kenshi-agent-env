@@ -165,11 +165,18 @@ Bindings, resources, and camera
 
 Safety and retries
 
-Check combat, falling blood, consciousness, and current hunger before economy or
-exploration. Hunger counts down from about 3.0 full toward 0.0 starving;
-malnutrition begins around 2.0. Read actual inventory: `food_items` has been
-observed at zero while food-like inventory entries existed, so it cannot prove
-the character carries nothing.
+Check combat, falling blood, consciousness, and the top-level `squad_nutrition`
+before economy or exploration. Model-facing squad records expose the same
+scalar as `nutrition_reserve`; internal protocol naming is not a second source
+of meaning. The digest supplies the game-derived direction, thresholds, and
+current status. A `well_fed` member needs no food-seeking, food-buying,
+inventory-opening, or waiting plan merely to correct a current deficit: there
+is none. That does not prohibit stocking food for future travel or work when
+the route, funds, and broader objective make preparation worthwhile. Do not
+call a `well_fed` member hungry, wait for the reserve to fall, or abandon useful
+work solely to fix the current reserve. Read actual inventory: `food_items` has
+been observed at zero while food-like inventory entries existed, so it cannot
+prove the character carries nothing.
 
 Read `recent_changes` and the outcome ledger before retrying. Never immediately
 repeat a `no_op`, and never repeat an at-most-once action because confirmation

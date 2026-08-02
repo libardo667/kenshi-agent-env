@@ -1271,7 +1271,7 @@
         "selected.position.y",
         "selected.position.z",
         "selected.movement_speed",
-        "selected.hunger",
+        "selected.nutrition_reserve",
         "selected.bleeding_rate",
         "selected.food_items",
         "selected.first_aid_kits",

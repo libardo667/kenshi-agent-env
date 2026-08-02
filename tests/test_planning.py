@@ -408,7 +408,7 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
         FieldConditionPath.SELECTED_POSITION_Z: 3.75,
         FieldConditionPath.SELECTED_MOVEMENT_SPEED: 4.5,
         FieldConditionPath.SELECTED_INDOORS: True,
-        FieldConditionPath.SELECTED_HUNGER: 2.75,
+        FieldConditionPath.SELECTED_NUTRITION_RESERVE: 2.75,
         FieldConditionPath.SELECTED_BLEEDING_RATE: 0.125,
         FieldConditionPath.SELECTED_FOOD_ITEMS: 2,
         FieldConditionPath.SELECTED_FIRST_AID_KITS: 1,
@@ -2039,6 +2039,8 @@ def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
 
     assert schema["type"] == "object"
     assert "telemetry.game.paused" in condition_paths
+    assert "selected.nutrition_reserve" in condition_paths
+    assert "selected.hunger" not in condition_paths
     assert "target.shop_inventory_owner" in condition_paths
     assert "game.paused" not in condition_paths
     assert "exists" not in schema["$defs"]["ConditionOperator"]["enum"]

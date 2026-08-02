@@ -1499,12 +1499,18 @@ def test_the_observation_can_carry_planner_feedback() -> None:
     with_feedback = base.model_copy(
         update={"planner_feedback": "Fix exactly this: capability needs a path."}
     )
-    payload = with_feedback.planner_payload(max_chars=6000)
-    assert "capability needs a path" in payload
-    # Survives a budget far too small for the whole observation, because a
-    # correction the planner cannot see is a correction that does not happen.
-    tight = with_feedback.planner_payload(max_chars=4200)
+    full = with_feedback.planner_payload()
+    assert "capability needs a path" in full
+    # Force proactive compaction without pretending the old irreducible JSON
+    # size is a product limit. A correction the planner cannot see is a
+    # correction that does not happen, so it survives whenever the real hard
+    # envelope can hold decision-critical state.
+    tight = with_feedback.planner_payload(
+        max_chars=1,
+        max_context_chars=len(full),
+    )
     assert "capability needs a path" in tight
+    assert "observation_budget" in tight
 
 
 def test_a_long_caption_does_not_blind_the_agent() -> None:

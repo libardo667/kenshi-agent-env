@@ -96,6 +96,7 @@ from .models import (
     new_command_id,
 )
 from .non_progress import retry_state_fingerprint
+from .nutrition import nutrition_reserve_change
 from .planners import Planner
 from .planners.base import (
     HostedPlannerCallDiagnostics,
@@ -3863,16 +3864,12 @@ class AgentRuntime:
             changed("alive", selected_before.alive, selected_after.alive)
             changed("conscious", selected_before.conscious, selected_after.conscious)
             changed("in combat", selected_before.in_combat, selected_after.in_combat)
-            if (
-                selected_before.hunger is not None
-                and selected_after.hunger is not None
-                and abs(selected_before.hunger - selected_after.hunger) >= 0.1
-            ):
-                changes.append(
-                    TelemetryChange(
-                        f"hunger: {selected_before.hunger:.2f} -> {selected_after.hunger:.2f}"
-                    )
-                )
+            reserve_change = nutrition_reserve_change(
+                selected_before.hunger,
+                selected_after.hunger,
+            )
+            if reserve_change is not None:
+                changes.append(TelemetryChange(reserve_change))
             if selected_before.position is not None and selected_after.position is not None:
                 distance = dist(
                     (

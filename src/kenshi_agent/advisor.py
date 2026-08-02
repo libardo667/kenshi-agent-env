@@ -42,6 +42,7 @@ from .models import (
     Observation,
     StrictModel,
 )
+from .nutrition import model_facing_telemetry_payload
 from .planners.schema_dialect import portable_response_format
 
 
@@ -529,15 +530,12 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
         "objective": observation.objective,
         "step_index": observation.step_index,
         "world_revision": observation.world_revision.model_dump(mode="json"),
-        "telemetry": digest.get("telemetry"),
+        "telemetry": model_facing_telemetry_payload(digest.get("telemetry")),
+        "squad_nutrition": observation.squad_nutrition_digest(),
         "telemetry_semantics": {
-            "selected.hunger": (
-                "Nutrition reserve on Kenshi's native 0.0-to-3.0 scale: 3.0 is "
-                "full and 0.0 is starving, corresponding to the HUD's 0-to-300 "
-                "number. It counts down as hunger worsens. Automatic eating begins "
-                "below 2.5, malnutrition/stat penalties below 2.0, and starvation "
-                "fainting below about 1.0. The layered HUD bar is not evidence of "
-                "a linear percentage; use these numeric thresholds for urgency."
+            "selected.nutrition_reserve": (
+                "The current reserve on the squad_nutrition scale. Use that "
+                "digest's status and thresholds to decide urgency."
             ),
             "selected.food_items": (
                 "A fallible native scalar that has disagreed with carried item "

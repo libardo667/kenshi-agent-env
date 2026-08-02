@@ -23,13 +23,13 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-85 shards: 15 attested, 16 unverified, 4 source-changed, 50 never; 1091 open mutants where the numbers still apply.
+86 shards: 16 attested, 15 unverified, 6 source-changed, 49 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
 | `action_completeness` | — | — | — | — | — | never |
 | `action_contracts` | 2258 | 1143 | 1115 | 2026-08-01T17:05:35Z | afa18aaf02d09a6e | source-changed |
-| `advisor` | — | — | — | — | — | never |
+| `advisor` | 699 | 284 | 415 | 2026-08-02T07:43:52Z | 59565c7a3338899e | source-changed |
 | `affordance_parity` | — | — | — | — | — | never |
 | `affordance_surfaces` | 19 | 19 | 0 | 2026-08-01T14:52:32Z | cae2692da14339c9 | source-changed |
 | `approach` | — | — | — | — | — | never |
@@ -72,13 +72,14 @@ promises only that the module under test has not moved.
 | `live_smoke_planner` | — | — | — | — | — | never |
 | `memory` | 1476 | 1476 | 0 | 2026-07-28T16:03:50Z | — | unverified |
 | `memory_compaction` | 114 | 114 | 0 | 2026-07-28T15:50:29Z | — | unverified |
-| `models` | 621 | 621 | 0 | 2026-07-28T11:51:55Z | — | unverified |
+| `models` | 1044 | 940 | 104 | 2026-08-02T07:48:19Z | f51ece7103359dff | source-changed |
 | `movement_ownership` | 5 | 5 | 0 | 2026-07-31T15:11:17Z | 160084c0bf1037d5 | attested |
 | `mutation_campaign` | 508 | 508 | 0 | 2026-07-29T21:33:57Z | 7ec6f5cbc6d2452a | attested |
 | `mutation_ledger` | 277 | 277 | 0 | 2026-07-28T18:31:37Z | b3c59cc2c0473cf3 | attested |
 | `native_commands` | — | — | — | — | — | never |
 | `native_contract_export` | — | — | — | — | — | never |
 | `non_progress` | 96 | 96 | 0 | 2026-07-31T00:36:47Z | daefc5759dbef1a5 | attested |
+| `nutrition` | 68 | 68 | 0 | 2026-08-02T14:19:07Z | 66245e5af7c9f013 | attested |
 | `observation_budget` | 1010 | 1010 | 0 | 2026-07-31T04:12:17Z | c1d37b06056151ff | attested |
 | `options` | 726 | 299 | 427 | 2026-07-31T14:23:45Z | 18ffc603096bc07d | source-changed |
 | `overlay` | — | — | — | — | — | never |

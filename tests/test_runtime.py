@@ -657,6 +657,28 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
     )
 
 
+def test_telemetry_changes_name_nutrition_by_its_model_facing_meaning() -> None:
+    before = TelemetrySnapshot.model_validate(
+        {
+            "squad": [
+                {"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.8}
+            ]
+        }
+    )
+    after = TelemetrySnapshot.model_validate(
+        {
+            "squad": [
+                {"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.6}
+            ]
+        }
+    )
+
+    labels = AgentRuntime._telemetry_changes(before, after)
+
+    assert "nutrition reserve: 2.80 -> 2.60" in labels
+    assert not any(label.startswith("hunger") for label in labels)
+
+
 def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
     tmp_path: Path,
 ) -> None:
