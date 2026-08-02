@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from .models import Observation, PauseAction, PlannerDecision, StopAction
-from .threat_response import visible_immediate_hostile
 
 
 class ReflexEngine:
@@ -42,17 +41,11 @@ class ReflexEngine:
                 action=StopAction(reason="No living squad members remain."),
                 confidence=1.0,
             )
-        immediate_threat = visible_immediate_hostile(observation)
         catastrophic_body_state = any(member.getting_eaten is True for member in squad)
-        if (immediate_threat or catastrophic_body_state) and telemetry.game.paused is False:
-            reason = (
-                "A visible hostile is close."
-                if immediate_threat
-                else "A squad member is being eaten."
-            )
+        if catastrophic_body_state and telemetry.game.paused is False:
             return PlannerDecision(
                 intent="Pause for emergency reassessment.",
-                rationale=reason,
+                rationale="A squad member is being eaten.",
                 action=PauseAction(paused=True),
                 confidence=0.98,
             )

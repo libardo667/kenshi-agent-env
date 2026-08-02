@@ -25,6 +25,7 @@ def observation(
     paused: bool = True,
     capabilities: list[str] | None = None,
     threatened: bool = False,
+    getting_eaten: bool = False,
     mode: str = "mock",
     age_seconds: float = 0.0,
     events: list[str] | None = None,
@@ -59,6 +60,19 @@ def observation(
                     )
                 ]
                 if threatened
+                else []
+            ),
+            squad=(
+                [
+                    CharacterState(
+                        id="entity-bark",
+                        name="Bark",
+                        alive=True,
+                        conscious=True,
+                        getting_eaten=True,
+                    )
+                ]
+                if getting_eaten
                 else []
             ),
         ),
@@ -237,7 +251,7 @@ def test_live_sequence_stall_waits_for_wall_age_before_counting_duplicates() -> 
     asyncio.run(scenario())
 
 
-def test_reflex_without_pause_capability_stops_instead_of_claiming_cleanup() -> None:
+def test_catastrophic_reflex_without_pause_capability_stops() -> None:
     async def scenario() -> None:
         store = WorldStateStore()
         store.publish(observation(1, capabilities=["game.time"]))
@@ -253,7 +267,7 @@ def test_reflex_without_pause_capability_stops_instead_of_claiming_cleanup() -> 
                 2,
                 paused=False,
                 capabilities=["game.time"],
-                threatened=True,
+                getting_eaten=True,
             )
         )
 
@@ -396,22 +410,14 @@ def test_an_unpaused_game_can_be_normal_for_a_continuously_playing_agent() -> No
     assert relaxed._evaluate(update) is None
 
 
-def test_authorized_threat_response_owns_ordinary_hostility_but_not_catastrophe() -> None:
+def test_hostility_is_ordinary_but_getting_eaten_still_preempts() -> None:
     store = WorldStateStore()
-    initial = store.publish(observation(1)).observation
-    store.activate_plan("threat-plan", 1, initial.world_revision)
-    store.activate_step("respond")
-    store.begin_command(
-        plan_id="threat-plan",
-        plan_version=1,
-        step_id="respond",
-        action_kind="respond_to_immediate_threat",
-        start_revision=initial.world_revision,
-    )
+    store.publish(observation(1))
     supervisor = SafetySupervisor(
         store=store,
         reflexes=ReflexEngine(),
         max_sequence_stalls=3,
+        require_paused_between_actions=False,
     )
 
     ordinary = store.publish(

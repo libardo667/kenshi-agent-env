@@ -1668,7 +1668,7 @@ def test_continuous_retry_preserves_typed_hosted_terminal_and_compact_feedback(
     asyncio.run(scenario())
 
 
-def test_independent_supervisor_replans_after_confirming_an_automated_pause(
+def test_independent_supervisor_replans_after_confirming_a_catastrophic_pause(
     tmp_path: Path,
 ) -> None:
     class UnsafeObserveEnvironment(RevisionEnvironment):
@@ -1684,13 +1684,13 @@ def test_independent_supervisor_replans_after_confirming_an_automated_pause(
                 update={
                     "telemetry": current.telemetry.model_copy(
                         update={
-                            "nearby_entities": [
-                                NearbyEntity(
-                                    id="threat",
-                                    name="Hungry Bandit",
-                                    disposition=Disposition.HOSTILE,
-                                    distance=10.0,
-                                    visible=True,
+                            "squad": [
+                                CharacterState(
+                                    id="entity-bark",
+                                    name="Bark",
+                                    alive=True,
+                                    conscious=True,
+                                    getting_eaten=True,
                                 )
                             ]
                         }
@@ -1736,7 +1736,7 @@ def test_independent_supervisor_replans_after_confirming_an_automated_pause(
         assert replanning_observation.telemetry_stale is False
         assert replanning_observation.planner_feedback is not None
         assert "reflex" in replanning_observation.planner_feedback
-        assert "visible hostile is close" in replanning_observation.planner_feedback
+        assert "being eaten" in replanning_observation.planner_feedback
         assert [
             action.paused for action in environment.actions if isinstance(action, PauseAction)
         ] == [True]
@@ -1889,13 +1889,13 @@ def test_supervisor_cancels_blocked_plan_then_replans_from_automated_pause(
                 update={
                     "telemetry": current.telemetry.model_copy(
                         update={
-                            "nearby_entities": [
-                                NearbyEntity(
-                                    id="threat",
-                                    name="Hungry Bandit",
-                                    disposition=Disposition.HOSTILE,
-                                    distance=8.0,
-                                    visible=True,
+                            "squad": [
+                                CharacterState(
+                                    id="entity-bark",
+                                    name="Bark",
+                                    alive=True,
+                                    conscious=True,
+                                    getting_eaten=True,
                                 )
                             ]
                         }
@@ -2213,7 +2213,7 @@ def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
             super().__init__(clock=clock)
             self.movement_started = asyncio.Event()
             self.movement_cancelled = asyncio.Event()
-            self.emit_threat = False
+            self.emit_catastrophe = False
             self.emit_human_input = False
             self.unsafe = False
 
@@ -2225,13 +2225,13 @@ def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
                 update={
                     "telemetry": current.telemetry.model_copy(
                         update={
-                            "nearby_entities": [
-                                NearbyEntity(
-                                    id="threat",
-                                    name="Hungry Bandit",
-                                    disposition=Disposition.HOSTILE,
-                                    distance=10.0,
-                                    visible=True,
+                            "squad": [
+                                CharacterState(
+                                    id="entity-bark",
+                                    name="Bark",
+                                    alive=True,
+                                    conscious=True,
+                                    getting_eaten=True,
                                 )
                             ]
                         }
@@ -2242,8 +2242,8 @@ def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
         async def observe_without_capture(self) -> Observation:
             self.sequence += 1
             events: list[str] = []
-            if self.emit_threat:
-                self.emit_threat = False
+            if self.emit_catastrophe:
+                self.emit_catastrophe = False
                 self.unsafe = True
             if self.emit_human_input:
                 self.emit_human_input = False
@@ -2311,7 +2311,7 @@ def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
         try:
             run = asyncio.create_task(runtime.run(max_steps=4))
             await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
-            environment.emit_threat = True
+            environment.emit_catastrophe = True
             pump_clock.advance(0.1)
             await asyncio.wait_for(planner.safety_replan_started.wait(), timeout=1.0)
 
@@ -3779,7 +3779,7 @@ def test_stale_plan_output_is_rejected_without_executing_an_action(
     asyncio.run(scenario())
 
 
-def test_reflex_preempts_a_future_plan_step_before_execution(tmp_path: Path) -> None:
+def test_hostility_does_not_preempt_a_normal_future_plan_step(tmp_path: Path) -> None:
     async def scenario() -> None:
         clock = FakeClock()
         environment = RevisionEnvironment(
@@ -3810,13 +3810,12 @@ def test_reflex_preempts_a_future_plan_step_before_execution(tmp_path: Path) -> 
         assert planner.calls == 1
         assert [
             action.paused for action in environment.actions if isinstance(action, PauseAction)
-        ] == [False, True]
-        assert not any(isinstance(action, SetSpeedAction) for action in environment.actions)
+        ] == [False]
+        assert any(isinstance(action, SetSpeedAction) for action in environment.actions)
         events = read_events(tmp_path / "events.jsonl")
-        assert sum(event["event_type"] == "safety_preempted" for event in events) == 1
-        assert sum(event["event_type"] == "plan_aborted" for event in events) == 1
-        assert "!!! PLAN ABORTED !!!" in stream.getvalue()
-        assert "safety reflex preempted the active plan" in stream.getvalue()
+        assert not any(event["event_type"] == "safety_preempted" for event in events)
+        assert not any(event["event_type"] == "plan_aborted" for event in events)
+        assert "!!! PLAN ABORTED !!!" not in stream.getvalue()
 
     asyncio.run(scenario())
 
