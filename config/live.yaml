@@ -15,9 +15,10 @@ planning:
   # are its arrival/threat radii, not a feature flag.
   semantic_approach_arrival_distance: 5.0
   semantic_approach_threat_distance: 15.0
-  # The strategic call overlaps the walk, which is the whole point of a long
-  # monitored option.
+  # Only an option that remains active past the holdoff earns a concurrent
+  # strategic call. Short movement should finish without model work to discard.
   concurrent_option_planning_enabled: true
+  concurrent_option_planning_delay_seconds: 20
   observation_pump_seconds: 0.1
   state_history_limit: 128
   state_delta_limit: 128

@@ -31,6 +31,7 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.planning.max_native_assisted_actions_per_plan == 0
     assert config.planning.stateful_movement_options_enabled
     assert config.planning.concurrent_option_planning_enabled
+    assert config.planning.concurrent_option_planning_delay_seconds == 20.0
     assert config.memory.retrieval_policy is MemoryRetrievalPolicy.DETERMINISTIC
     assert config.safety.supervisor_enabled
     assert config.safety.supervisor_max_sequence_stalls == 3

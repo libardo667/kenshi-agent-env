@@ -218,6 +218,20 @@ class _StagedPatch:
         return self.patch.interrupt_active_step_id is not None
 
 
+@dataclass(slots=True)
+class _DeferredConcurrentPlanner:
+    clock: PlanningClock
+    delay_seconds: float
+    planner: ConcurrentPlanner
+    observation: Observation
+    started_at: float | None = None
+
+    async def run(self) -> AuthoredPlannerOutput:
+        await self.clock.sleep(self.delay_seconds)
+        self.started_at = self.clock.monotonic()
+        return await self.planner(self.observation)
+
+
 def _unmet_postcondition_reason(
     success_evaluations: Sequence[ConditionEvaluation],
     *,
@@ -2273,7 +2287,7 @@ class ContinuousPlanExecutor:
         update_task: asyncio.Task[Any] | None = asyncio.create_task(subscription.get())
         planner_task: asyncio.Task[AuthoredPlannerOutput] | None = None
         planner_observation: Observation | None = None
-        planner_started_at: float | None = None
+        planner_call: _DeferredConcurrentPlanner | None = None
         staged_patch: _StagedPatch | None = None
 
         if (
@@ -2293,9 +2307,16 @@ class ContinuousPlanExecutor:
                 },
                 deep=True,
             )
-            planner_started_at = self.clock.monotonic()
+            planner_call = _DeferredConcurrentPlanner(
+                clock=self.clock,
+                delay_seconds=(
+                    self.planning_config.concurrent_option_planning_delay_seconds
+                ),
+                planner=self.concurrent_planner,
+                observation=planner_observation,
+            )
             planner_task = asyncio.create_task(
-                self.concurrent_planner(planner_observation),
+                planner_call.run(),
                 name=f"kenshi-agent-advisory-{option.option_id}",
             )
 
@@ -2313,7 +2334,8 @@ class ContinuousPlanExecutor:
 
                 if planner_task is not None and planner_task in done:
                     assert planner_observation is not None
-                    assert planner_started_at is not None
+                    assert planner_call is not None
+                    assert planner_call.started_at is not None
                     staged_patch = self._consume_concurrent_planner_result(
                         planner_task,
                         plan,
@@ -2322,7 +2344,9 @@ class ContinuousPlanExecutor:
                         budget,
                         remaining_run_actions=remaining_run_actions - 1,
                         protected_step_ids=protected_step_ids,
-                        planner_latency_seconds=(self.clock.monotonic() - planner_started_at),
+                        planner_latency_seconds=(
+                            self.clock.monotonic() - planner_call.started_at
+                        ),
                     )
                     planner_task = None
 
@@ -2404,29 +2428,28 @@ class ContinuousPlanExecutor:
                     planner_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await planner_task
-                self.logger.write(
-                    "strategic_planner_call",
-                    step_index=observation.step_index,
-                    payload={
-                        "source": "concurrent_option_cancelled",
-                        "planner_latency_seconds": (
-                            self.clock.monotonic() - planner_started_at
-                            if planner_started_at is not None
-                            else 0.0
-                        ),
-                        "world_revision": observation.world_revision.model_dump(mode="json"),
-                        "control_mode": observation.control_mode.value,
-                        "output_type": "cancelled",
-                    },
-                )
-                self._event(
-                    "concurrent_planner_discarded",
-                    plan,
-                    self.state_store.latest or observation,
-                    step=step,
-                    reason="Movement ended before the concurrent advisory completed.",
-                    evidence={"option_id": option.option_id},
-                )
+                if planner_call is not None and planner_call.started_at is not None:
+                    self.logger.write(
+                        "strategic_planner_call",
+                        step_index=observation.step_index,
+                        payload={
+                            "source": "concurrent_option_cancelled",
+                            "planner_latency_seconds": (
+                                self.clock.monotonic() - planner_call.started_at
+                            ),
+                            "world_revision": observation.world_revision.model_dump(mode="json"),
+                            "control_mode": observation.control_mode.value,
+                            "output_type": "cancelled",
+                        },
+                    )
+                    self._event(
+                        "concurrent_planner_discarded",
+                        plan,
+                        self.state_store.latest or observation,
+                        step=step,
+                        reason="Movement ended before the concurrent advisory completed.",
+                        evidence={"option_id": option.option_id},
+                    )
 
     def _harvest_actor_error(
         self,
@@ -3259,7 +3282,7 @@ class ContinuousPlanExecutor:
         update_task: asyncio.Task[Any] | None = asyncio.create_task(subscription.get())
         planner_task: asyncio.Task[AuthoredPlannerOutput] | None = None
         planner_observation: Observation | None = None
-        planner_started_at: float | None = None
+        planner_call: _DeferredConcurrentPlanner | None = None
         staged_patch: _StagedPatch | None = None
         timed_out = False
         interrupted = False
@@ -3282,9 +3305,16 @@ class ContinuousPlanExecutor:
                 },
                 deep=True,
             )
-            planner_started_at = self.clock.monotonic()
+            planner_call = _DeferredConcurrentPlanner(
+                clock=self.clock,
+                delay_seconds=(
+                    self.planning_config.concurrent_option_planning_delay_seconds
+                ),
+                planner=self.concurrent_planner,
+                observation=planner_observation,
+            )
             planner_task = asyncio.create_task(
-                self.concurrent_planner(planner_observation),
+                planner_call.run(),
                 name=f"kenshi-agent-advisory-{option.option_id}",
             )
 
@@ -3319,7 +3349,8 @@ class ContinuousPlanExecutor:
 
                 if planner_task is not None and planner_task in done:
                     assert planner_observation is not None
-                    assert planner_started_at is not None
+                    assert planner_call is not None
+                    assert planner_call.started_at is not None
                     staged_patch = self._consume_concurrent_planner_result(
                         planner_task,
                         plan,
@@ -3328,7 +3359,9 @@ class ContinuousPlanExecutor:
                         budget,
                         remaining_run_actions=remaining_run_actions - 1,
                         protected_step_ids=protected_step_ids,
-                        planner_latency_seconds=(self.clock.monotonic() - planner_started_at),
+                        planner_latency_seconds=(
+                            self.clock.monotonic() - planner_call.started_at
+                        ),
                     )
                     planner_task = None
 
@@ -3460,31 +3493,31 @@ class ContinuousPlanExecutor:
                     planner_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await planner_task
-                self.logger.write(
-                    "strategic_planner_call",
-                    step_index=observation.step_index,
-                    payload={
-                        "source": "concurrent_option_cancelled",
-                        "planner_latency_seconds": (
-                            self.clock.monotonic() - planner_started_at
-                            if planner_started_at is not None
-                            else 0.0
+                if planner_call is not None and planner_call.started_at is not None:
+                    self.logger.write(
+                        "strategic_planner_call",
+                        step_index=observation.step_index,
+                        payload={
+                            "source": "concurrent_option_cancelled",
+                            "planner_latency_seconds": (
+                                self.clock.monotonic() - planner_call.started_at
+                            ),
+                            "world_revision": observation.world_revision.model_dump(mode="json"),
+                            "control_mode": observation.control_mode.value,
+                            "output_type": "cancelled",
+                        },
+                    )
+                    self._event(
+                        "concurrent_planner_discarded",
+                        plan,
+                        self.state_store.latest or observation,
+                        step=step,
+                        reason=(
+                            "Monitored native option ended before the concurrent advisory "
+                            "completed."
                         ),
-                        "world_revision": observation.world_revision.model_dump(mode="json"),
-                        "control_mode": observation.control_mode.value,
-                        "output_type": "cancelled",
-                    },
-                )
-                self._event(
-                    "concurrent_planner_discarded",
-                    plan,
-                    self.state_store.latest or observation,
-                    step=step,
-                    reason=(
-                        "Monitored native option ended before the concurrent advisory completed."
-                    ),
-                    evidence={"option_id": option.option_id},
-                )
+                        evidence={"option_id": option.option_id},
+                    )
 
     def _consume_concurrent_planner_result(
         self,

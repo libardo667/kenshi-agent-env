@@ -482,12 +482,13 @@ def runtime_for(
     tmp_path: Path,
     environment: RevisionEnvironment,
     planner: Planner,
-    clock: FakeClock,
+    clock: PlanningClock,
     *,
     observation_pump_enabled: bool = False,
     observation_clock: PlanningClock | None = None,
     automatic_takeover_enabled: bool = False,
     concurrent_option_planning_enabled: bool = True,
+    concurrent_option_planning_delay_seconds: float = 0.0,
     stateful_approach_options_enabled: bool = False,
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
     max_native_assisted_actions_per_plan: int = 0,
@@ -547,6 +548,9 @@ def runtime_for(
             max_plan_game_seconds=12.0,
             observation_pump_enabled=observation_pump_enabled,
             concurrent_option_planning_enabled=concurrent_option_planning_enabled,
+            concurrent_option_planning_delay_seconds=(
+                concurrent_option_planning_delay_seconds
+            ),
             stateful_approach_options_enabled=stateful_approach_options_enabled,
             max_native_assisted_actions_per_plan=max_native_assisted_actions_per_plan,
         ),
@@ -2101,6 +2105,87 @@ def test_movement_option_overlaps_and_applies_a_valid_future_patch(
             "move",
             "patched-speed",
         ]
+
+    asyncio.run(scenario())
+
+
+def test_short_option_finishes_before_concurrent_planner_holdoff(
+    tmp_path: Path,
+) -> None:
+    class ShortMovementEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.release_movement = asyncio.Event()
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            return self.observation()
+
+        async def step(self, action: Action) -> Transition:
+            if not isinstance(action, SkillAction):
+                return await super().step(action)
+            self.actions.append(action)
+            self.movement_started.set()
+            await self.release_movement.wait()
+            self.step_index += 1
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.INTERFACE_ONLY,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=2,
+                ),
+                observation=self.observation(),
+            )
+
+    class CountingPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return patchable_movement_plan(current)
+            raise AssertionError("short movement must not start a concurrent planner call")
+
+    async def scenario() -> None:
+        environment_clock = FakeClock()
+        planning_clock = ManualPumpClock()
+        pump_clock = ManualPumpClock()
+        environment = ShortMovementEnvironment(clock=environment_clock)
+        planner = CountingPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            planning_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            concurrent_option_planning_delay_seconds=20.0,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=2))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            for _ in range(5):
+                await asyncio.sleep(0)
+            pump_clock.advance(0.1)
+            await asyncio.sleep(0)
+            environment.release_movement.set()
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 2
+        assert planner.calls == 1
+        events = read_events(tmp_path / "events.jsonl")
+        assert not any(
+            event["event_type"] == "concurrent_planner_discarded"
+            for event in events
+        )
 
     asyncio.run(scenario())
 

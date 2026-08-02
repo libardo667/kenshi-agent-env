@@ -72,6 +72,11 @@ class PlanningConfig(ConfigModel):
     # rather than acting.
     require_paused_between_actions: bool = True
     concurrent_option_planning_enabled: bool = True
+    concurrent_option_planning_delay_seconds: float = Field(
+        default=20.0,
+        ge=0.0,
+        le=120.0,
+    )
     observation_pump_seconds: float = Field(default=0.1, gt=0.0, le=5.0)
     state_history_limit: int = Field(default=128, ge=8, le=4096)
     state_delta_limit: int = Field(default=128, ge=8, le=4096)
