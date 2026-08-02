@@ -101,6 +101,7 @@ def test_every_binding_maps_to_exactly_one_input() -> None:
         (GameBinding.GIZMO_MOVE, "h", 0x48),
         (GameBinding.GIZMO_ROTATE, "j", 0x4A),
         (GameBinding.GIZMO_SCALE, "k", 0x4B),
+        (GameBinding.SELECT_ALL, "grave", 0xC0),
     ],
 )
 def test_queued_binding_is_reachable_through_the_semantic_binding_action(
