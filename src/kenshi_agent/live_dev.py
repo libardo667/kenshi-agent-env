@@ -2889,8 +2889,6 @@ def _run_agent(
                         "Kenshi Control Ownership",
                         "--layout",
                         "companion",
-                        "--auto-close-seconds",
-                        "30",
                     ],
                     cwd=Path.cwd(),
                 )
@@ -2899,12 +2897,8 @@ def _run_agent(
                 if monitor is not None:
                     monitor.raise_if_new(force=True)
             finally:
-                if (
-                    (result is None or result != 0)
-                    and overlay is not None
-                    and overlay.poll() is None
-                ):
-                    overlay.terminate()
+                if overlay is not None:
+                    _terminate_owned_process(overlay)
     except (
         DisplayLeaseError,
         GpuTdrDetected,
@@ -2916,6 +2910,29 @@ def _run_agent(
         return 4
     assert result is not None
     return result
+
+
+def _terminate_owned_process(
+    process: subprocess.Popen[bytes],
+    *,
+    timeout_seconds: float = 1.0,
+) -> None:
+    """End one child process with a bounded terminate-to-kill fallback."""
+
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=timeout_seconds)
+    except OSError as exc:
+        if process.poll() is None:
+            print(
+                f"Could not close the run-owned companion process: {exc}",
+                file=sys.stderr,
+            )
 
 
 def _launch_and_run(args: argparse.Namespace) -> int:

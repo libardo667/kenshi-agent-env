@@ -3120,13 +3120,24 @@ def test_run_ownership_overlay_follows_exclusive_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     opened: list[list[str]] = []
+    terminated: list[bool] = []
 
     class OverlayProcess:
+        running = True
+
         def poll(self) -> None:
             return None
 
         def terminate(self) -> None:
-            raise AssertionError("a successful run leaves its ownership overlay to auto-close")
+            terminated.append(True)
+            self.running = False
+
+        def wait(self, timeout: float) -> int:
+            assert timeout == 1.0
+            return 0
+
+        def kill(self) -> None:
+            raise AssertionError("a responsive companion should terminate cleanly")
 
     monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)
     monkeypatch.setattr(
@@ -3145,6 +3156,41 @@ def test_run_ownership_overlay_follows_exclusive_control(
         == 0
     )
     assert len(opened) == 1
+    assert terminated == [True]
+    assert "--auto-close-seconds" not in opened[0]
+
+
+def test_run_owned_overlay_escalates_to_kill_when_terminate_stalls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class StuckOverlayProcess:
+        def poll(self) -> None:
+            return None
+
+        def terminate(self) -> None:
+            calls.append("terminate")
+
+        def wait(self, timeout: float) -> int:
+            assert timeout == 1.0
+            calls.append("wait")
+            if "kill" not in calls:
+                raise live_dev.subprocess.TimeoutExpired("overlay", timeout)
+            return 0
+
+        def kill(self) -> None:
+            calls.append("kill")
+
+    monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)
+    monkeypatch.setattr(
+        live_dev.subprocess,
+        "Popen",
+        lambda *_args, **_kwargs: StuckOverlayProcess(),
+    )
+
+    assert live_dev._run_agent(_run_args("--control", "exclusive-live")) == 0
+    assert calls == ["terminate", "wait", "kill", "wait"]
 
 
 def test_startup_clicks_hold_long_enough_for_mygui() -> None:
