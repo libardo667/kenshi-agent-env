@@ -13,6 +13,7 @@ from pathlib import Path
 
 LIVE_CONFIG = "config/live.yaml"
 CONTROL_MODES = ("plan-only", "polite-live", "exclusive-live")
+DISPLAY_MODES = ("configured", "keep-current")
 
 
 class _HelpFormatter(argparse.ArgumentDefaultsHelpFormatter):
@@ -75,6 +76,18 @@ def _add_control_option(parser: argparse.ArgumentParser) -> None:
         help=(
             "plan-only sends no gameplay actions; polite-live restores host focus and cursor; "
             "exclusive-live retains desktop ownership."
+        ),
+    )
+
+
+def _add_display_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--display",
+        choices=DISPLAY_MODES,
+        default="configured",
+        help=(
+            "configured uses the canonical display lease; keep-current verifies the "
+            "internal panel and external 1920x1080 display but leaves both active."
         ),
     )
 
@@ -166,6 +179,7 @@ def build_parser(
         help="Maximum seconds for bounded readiness checks.",
     )
     _add_start_source(doctor)
+    _add_display_option(doctor)
     doctor.set_defaults(resume_launcher=False, preflight_only=True)
 
     launch = commands.add_parser(
@@ -193,6 +207,7 @@ def build_parser(
         action="store_true",
         help="Resume one verified pre-game launcher left by an interruption.",
     )
+    _add_display_option(launch)
     launch.set_defaults(preflight_only=False)
 
     run = commands.add_parser(
@@ -212,6 +227,7 @@ def build_parser(
     )
     _add_start_source(run)
     _add_agent_options(run)
+    _add_display_option(run)
     run.set_defaults(resume_launcher=False, preflight_only=False)
 
     telemetry = commands.add_parser(

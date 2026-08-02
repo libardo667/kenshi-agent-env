@@ -36,15 +36,20 @@ Examples:
 
 ```text
 usage: ./dev doctor [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START]
+                    [--display {configured,keep-current}]
 
 Check Steam, memory, graphics, display, crash, and selected start state.
 
 options:
-  -h, --help               show this help message and exit
-  --timeout TIMEOUT        Maximum seconds for bounded readiness checks. (default: 60.0)
-  --scenario SCENARIO      Use this exact restored and attested scenario fixture. (default: None)
-  --game-start GAME_START  Start this exact bundled authored start and prove its initial state.
-                           (default: None)
+  -h, --help                  show this help message and exit
+  --timeout TIMEOUT           Maximum seconds for bounded readiness checks. (default: 60.0)
+  --scenario SCENARIO         Use this exact restored and attested scenario fixture. (default: None)
+  --game-start GAME_START     Start this exact bundled authored start and prove its initial state.
+                              (default: None)
+  --display {configured,keep-current}
+                              configured uses the canonical display lease; keep-current verifies the
+                              internal panel and external 1920x1080 display but leaves both active.
+                              (default: configured)
 ```
 
 ## `./dev launch`
@@ -52,18 +57,23 @@ options:
 ```text
 usage: ./dev launch [-h] [--timeout TIMEOUT]
                     [--scenario SCENARIO | --game-start GAME_START | --title] [--resume-launcher]
+                    [--display {configured,keep-current}]
 
 Launch Kenshi and optionally load one exact start source.
 
 options:
-  -h, --help               show this help message and exit
-  --timeout TIMEOUT        Maximum seconds for each bounded startup wait. (default: 60.0)
-  --scenario SCENARIO      Use this exact restored and attested scenario fixture. (default: None)
-  --game-start GAME_START  Start this exact bundled authored start and prove its initial state.
-                           (default: None)
-  --title                  Stop at the title screen instead of loading a world. (default: True)
-  --resume-launcher        Resume one verified pre-game launcher left by an interruption. (default:
-                           False)
+  -h, --help                  show this help message and exit
+  --timeout TIMEOUT           Maximum seconds for each bounded startup wait. (default: 60.0)
+  --scenario SCENARIO         Use this exact restored and attested scenario fixture. (default: None)
+  --game-start GAME_START     Start this exact bundled authored start and prove its initial state.
+                              (default: None)
+  --title                     Stop at the title screen instead of loading a world. (default: True)
+  --resume-launcher           Resume one verified pre-game launcher left by an interruption.
+                              (default: False)
+  --display {configured,keep-current}
+                              configured uses the canonical display lease; keep-current verifies the
+                              internal panel and external 1920x1080 display but leaves both active.
+                              (default: configured)
 ```
 
 ## `./dev run`
@@ -72,6 +82,7 @@ options:
 usage: ./dev run [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START]
                  [--objective OBJECTIVE] [--campaign CAMPAIGN] [--steps STEPS] [--run-id RUN_ID]
                  [--control {plan-only,polite-live,exclusive-live}]
+                 [--display {configured,keep-current}]
 
 Run the agent in a fresh or already-loaded world. Ambiguous live state fails closed.
 
@@ -90,6 +101,10 @@ options:
                               plan-only sends no gameplay actions; polite-live restores host focus
                               and cursor; exclusive-live retains desktop ownership. (default: plan-
                               only)
+  --display {configured,keep-current}
+                              configured uses the canonical display lease; keep-current verifies the
+                              internal panel and external 1920x1080 display but leaves both active.
+                              (default: configured)
 ```
 
 ## `./dev telemetry`

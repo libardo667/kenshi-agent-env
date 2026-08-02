@@ -211,6 +211,23 @@ def test_run_control_mode_is_one_explicit_authority_choice() -> None:
     )
 
 
+def test_live_commands_expose_an_explicit_keep_current_display_mode() -> None:
+    parser = live_dev.build_parser()
+
+    assert parser.parse_args(["doctor"]).display == "configured"
+    assert parser.parse_args(["launch"]).display == "configured"
+    assert parser.parse_args(["run"]).display == "configured"
+    assert parser.parse_args(["doctor", "--display", "keep-current"]).display == (
+        "keep-current"
+    )
+    assert parser.parse_args(["launch", "--display", "keep-current"]).display == (
+        "keep-current"
+    )
+    assert parser.parse_args(["run", "--display", "keep-current"]).display == (
+        "keep-current"
+    )
+
+
 def test_telemetry_watch_and_snapshot_are_first_class_commands() -> None:
     parser = live_dev.build_parser()
 
@@ -2268,6 +2285,56 @@ def test_launch_and_run_owns_one_display_lease(
         "launch:False",
         "agent:False",
         "lease-exit",
+    ]
+
+
+def test_launch_and_run_keep_current_display_validates_without_switching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+
+    class DisplayController:
+        def validate_ready(self) -> None:
+            calls.append("display-ready")
+
+    class Config:
+        class launch:
+            external_display_only = True
+
+    async def launch(_: object, *, manage_display_lease: bool = True) -> int:
+        calls.append(f"launch:{manage_display_lease}")
+        return 0
+
+    def run_agent(_: object, *, manage_display_lease: bool = True) -> int:
+        calls.append(f"agent:{manage_display_lease}")
+        return 0
+
+    monkeypatch.setattr(live_dev, "load_config", lambda _: Config())
+    monkeypatch.setattr(live_dev, "DisplayTopologyController", DisplayController)
+    monkeypatch.setattr(
+        live_dev,
+        "external_display_lease",
+        lambda _: (_ for _ in ()).throw(
+            AssertionError("keep-current must not switch display topology")
+        ),
+    )
+    monkeypatch.setattr(live_dev, "_launch", launch)
+    monkeypatch.setattr(live_dev, "_run_agent", run_agent)
+
+    args = live_dev.build_parser().parse_args(
+        [
+            "run",
+            "--config",
+            "config/live.yaml",
+            "--display",
+            "keep-current",
+        ]
+    )
+    assert live_dev._launch_and_run(args) == 0
+    assert calls == [
+        "display-ready",
+        "launch:False",
+        "agent:False",
     ]
 
 

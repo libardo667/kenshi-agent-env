@@ -12,11 +12,12 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import (
     AbstractAsyncContextManager,
     AbstractContextManager,
     asynccontextmanager,
+    contextmanager,
     nullcontext,
 )
 from datetime import UTC, datetime
@@ -1784,6 +1785,35 @@ async def _perform_launch(
         monitor.raise_if_new(force=True)
 
 
+@contextmanager
+def _retained_display_context() -> Iterator[None]:
+    print(
+        "Display mode active: internal panel and external 1920x1080 display "
+        "left on in the current topology."
+    )
+    try:
+        yield
+    finally:
+        print("Display mode released: display topology was not changed.")
+
+
+def _prepared_display_context(
+    config: AppConfig,
+    args: argparse.Namespace,
+    *,
+    enabled: bool = True,
+) -> AbstractContextManager[None]:
+    """Validate one display authority and return its bounded context."""
+
+    if not enabled or not config.launch.external_display_only:
+        return nullcontext()
+    controller = DisplayTopologyController()
+    controller.validate_ready()
+    if getattr(args, "display", "configured") == "keep-current":
+        return _retained_display_context()
+    return external_display_lease(controller)
+
+
 async def _launch(
     args: argparse.Namespace,
     *,
@@ -1792,14 +1822,10 @@ async def _launch(
     if os.name != "nt":
         raise SystemExit("The live developer launcher must run with Windows Python.")
     config = load_config(_config_path(args))
-    display_controller = (
-        DisplayTopologyController()
-        if manage_display_lease and config.launch.external_display_only
-        else None
-    )
     monitor = GpuTdrMonitor() if config.launch.monitor_gpu_tdr else None
     scenario_manifest: ScenarioFixtureManifest | None = None
     game_start: AuthoredGameStart | None = None
+    display_context: AbstractContextManager[None] = nullcontext()
     try:
         if args.scenario is not None:
             if not args.continue_game:
@@ -1874,8 +1900,11 @@ async def _launch(
             )
         if args.resume_launcher:
             _validate_resumable_launcher_rect(controller.client_rect())
-        if display_controller is not None:
-            display_controller.validate_ready()
+        display_context = _prepared_display_context(
+            config,
+            args,
+            enabled=manage_display_lease,
+        )
         if monitor is not None:
             monitor.start()
     except (FileNotFoundError, LaunchFailed, OSError, RuntimeError, ValueError) as exc:
@@ -1902,11 +1931,6 @@ async def _launch(
 
     current_attestation_path(_scenario_store()).unlink(missing_ok=True)
 
-    display_context: AbstractContextManager[None] = (
-        external_display_lease(display_controller)
-        if display_controller is not None
-        else nullcontext()
-    )
     try:
         with display_context:
             try:
@@ -2833,13 +2857,11 @@ def _run_agent(
         print(str(exc), file=sys.stderr)
         return 4
     event_log = config.paths.runs_dir / run_id / "events.jsonl"
-    display_controller: DisplayTopologyController | None = None
+    display_context: AbstractContextManager[None] = nullcontext()
     monitor: GpuTdrMonitor | None = None
     try:
         if manage_display_lease and args.control != "plan-only" and os.name == "nt":
-            if config.launch.external_display_only:
-                display_controller = DisplayTopologyController()
-                display_controller.validate_ready()
+            display_context = _prepared_display_context(config, args)
             if config.launch.monitor_gpu_tdr:
                 monitor = GpuTdrMonitor()
                 monitor.start()
@@ -2847,11 +2869,6 @@ def _run_agent(
         print(str(exc), file=sys.stderr)
         return 4
 
-    display_context: AbstractContextManager[None] = (
-        external_display_lease(display_controller)
-        if display_controller is not None
-        else nullcontext()
-    )
     result: int | None = None
     try:
         with display_context:
@@ -2906,18 +2923,7 @@ def _launch_and_run(args: argparse.Namespace) -> int:
 
     try:
         config = load_config(_config_path(args))
-        display_controller = (
-            DisplayTopologyController()
-            if config.launch.external_display_only
-            else None
-        )
-        if display_controller is not None:
-            display_controller.validate_ready()
-        display_context: AbstractContextManager[None] = (
-            external_display_lease(display_controller)
-            if display_controller is not None
-            else nullcontext()
-        )
+        display_context = _prepared_display_context(config, args)
         with display_context:
             launch_result = asyncio.run(
                 _launch(args, manage_display_lease=False)
