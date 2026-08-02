@@ -441,6 +441,23 @@ def test_corpus_keeps_claims_and_attribution_together() -> None:
     assert source.url.startswith("https://www.reddit.com/r/Kenshi/")
 
 
+def test_corpus_carries_sourced_mechanics_without_turning_them_into_a_playbook() -> None:
+    corpus = GuideCorpus.load(ROOT / "knowledge" / "kenshi_strategy_v1.yaml")
+    facts = {fact.fact_id: fact for fact in corpus.facts}
+    sources = corpus.source_map()
+
+    expected = {
+        "persistent_jobs_use_shift_right_click": "kenshi_wiki_jobs",
+        "right_click_commands_and_context_menu": "kenshi_wiki_controls",
+        "squad_selection_supports_multiple_characters": "kenshi_wiki_controls",
+        "strength_training_is_activity_bound": "kenshi_wiki_strength",
+        "toughness_training_is_activity_bound": "fandom_training_statistics",
+    }
+    for fact_id, source_id in expected.items():
+        assert source_id in facts[fact_id].source_ids
+        assert sources[source_id].url.startswith("https://kenshi.")
+
+
 def test_advisor_payload_defines_live_hunger_and_fallible_food_semantics() -> None:
     current = observation()
     payload = advisor_world_payload(current)
@@ -590,6 +607,10 @@ def test_openrouter_advisor_continues_an_exact_truncated_json_suffix() -> None:
 
         assert result == draft
         assert len(completions.calls) == 2
+        system_message = completions.calls[0]["messages"][0]["content"]
+        assert "creative strategic collaborator" in system_message
+        assert "possibilities, not a progression script" in system_message
+        assert "Rank useful goals" not in system_message
         continuation = completions.calls[1]
         assert "response_format" not in continuation
         assistant = continuation["messages"][-2]

@@ -28,8 +28,8 @@ class Member:
         (0.9, NutritionStatus.STARVATION_FAINTING_RISK),
         (1.0, NutritionStatus.MALNOURISHED),
         (1.9, NutritionStatus.MALNOURISHED),
-        (2.0, NutritionStatus.AUTOMATIC_EATING_RANGE),
-        (2.4, NutritionStatus.AUTOMATIC_EATING_RANGE),
+        (2.0, NutritionStatus.ORDINARY_FOOD_AUTOMATIC_EATING_RANGE),
+        (2.4, NutritionStatus.ORDINARY_FOOD_AUTOMATIC_EATING_RANGE),
         (2.5, NutritionStatus.WELL_FED),
         (3.0, NutritionStatus.WELL_FED),
     ],
@@ -55,9 +55,11 @@ def test_squad_digest_covers_every_member_and_preserves_unknown() -> None:
         "scale": {
             "direction": "counts_down_from_full_to_starving",
             "full": 3.0,
-            "automatic_eating_below": 2.5,
+            "ordinary_food_automatic_eating_below": 2.5,
+            "edible_ingredient_automatic_eating_below": 2.0,
             "malnutrition_below": 2.0,
-            "starvation_fainting_risk_below": 1.0,
+            "starvation_fainting_baseline_below": 1.0,
+            "starvation_fainting_onset_uses_knockout_point": True,
         },
         "members": [
             {

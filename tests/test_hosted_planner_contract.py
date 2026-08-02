@@ -1206,18 +1206,48 @@ def test_manifest_names_only_continuity_receipts_in_the_final_payload() -> None:
     assert receipts[0].receipt_id not in manifest.continuity_receipt_ids
 
 
-def test_planner_prompt_contains_one_semantic_surface_without_legacy_recipe() -> None:
-
+def test_planner_prompt_grants_creative_agency_without_legacy_recipe() -> None:
     from pathlib import Path
 
+    class Captures:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, Any] = {}
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            self.kwargs = kwargs
+            proposal = PlanProposal(
+                objective="Exercise the shipped planner instructions.",
+                steps=[ProposedPlanStep(action=StopAction(reason="Test complete."))],
+            )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=proposal.model_dump_json())
+                    )
+                ]
+            )
+
     root = Path(__file__).resolve().parents[1]
-    instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
+    completions = Captures()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(include_screenshot=False)
+    planner.instructions = (root / "prompts" / "planner_system.md").read_text(
+        encoding="utf-8"
+    )
+    planner.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    assert isinstance(asyncio.run(planner.decide(observation())), PlanEnvelope)
+
+    instructions = completions.kwargs["messages"][0]["content"][0]["text"]
+    normalized = " ".join(instructions.split())
 
     assert "approach_dialogue_target" in instructions
     assert "`squad_nutrition`" in instructions
     assert "Show me your goods." not in instructions
     assert "move_visible_terrain" not in instructions
-    assert "Your priorities, in order:" in instructions
+    assert "The observation is a possibility space, not a task list." in normalized
+    assert "There is no required Kenshi progression route." in normalized
+    assert "Your priorities, in order:" not in instructions
     assert "<!-- policy:" not in instructions
     assert "<!-- /policy -->" not in instructions
 

@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "source_wiki": "https://kenshi.fandom.com",
+  "source_api": "https://kenshi.fandom.com/api.php",
+  "namespace": 0,
+  "content_format": "MediaWiki wikitext",
+  "article_count": 2546,
+  "snapshot_sha256": "7099b757fe7d94e58b60224aa7578cccca071c480d891e0ddc0e14dd279510b8",
+  "snapshot_generated_at": "2026-08-02T14:33:26.942175+00:00",
+  "latest_revision_timestamp": "2026-08-02T06:22:09Z",
+  "license": "CC-BY-SA-3.0",
+  "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
+  "attribution": "Kenshi Wiki contributors; each row preserves its canonical article URL and exact revision ID.",
+  "excluded": [
+    "non-main namespaces",
+    "images and other binary media",
+    "rendered site chrome",
+    "revision history before the captured revision"
+  ]
+}

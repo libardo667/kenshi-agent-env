@@ -992,9 +992,11 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
         "scale": {
             "direction": "counts_down_from_full_to_starving",
             "full": 3.0,
-            "automatic_eating_below": 2.5,
+            "ordinary_food_automatic_eating_below": 2.5,
+            "edible_ingredient_automatic_eating_below": 2.0,
             "malnutrition_below": 2.0,
-            "starvation_fainting_risk_below": 1.0,
+            "starvation_fainting_baseline_below": 1.0,
+            "starvation_fainting_onset_uses_knockout_point": True,
         },
         "members": [
             {
@@ -1016,14 +1018,14 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
                 "name": "Eating",
                 "selected": False,
                 "nutrition_reserve": 2.4,
-                "status": "automatic_eating_range",
+                "status": "ordinary_food_automatic_eating_range",
             },
             {
                 "id": "entity-two",
                 "name": "Two",
                 "selected": False,
                 "nutrition_reserve": 2.0,
-                "status": "automatic_eating_range",
+                "status": "ordinary_food_automatic_eating_range",
             },
             {
                 "id": "entity-malnourished",

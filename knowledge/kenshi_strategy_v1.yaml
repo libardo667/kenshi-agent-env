@@ -1,5 +1,5 @@
 corpus_version: kenshi-strategy-v1
-updated_on: 2026-07-26
+updated_on: 2026-08-02
 
 sources:
   - source_id: steam_objective_guide_reignswolf
@@ -51,6 +51,34 @@ sources:
     source_type: attributed community discussion
     accessed_on: 2026-07-26
 
+  - source_id: kenshi_wiki_jobs
+    title: Jobs
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.wiki/w/Jobs
+    source_type: community wiki mechanic reference
+    accessed_on: 2026-08-02
+
+  - source_id: kenshi_wiki_controls
+    title: Controls
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.wiki/index.php?title=Controls
+    source_type: community wiki control reference
+    accessed_on: 2026-08-02
+
+  - source_id: kenshi_wiki_strength
+    title: Strength
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.wiki/w/Strength
+    source_type: community wiki mechanic reference
+    accessed_on: 2026-08-02
+
+  - source_id: fandom_training_statistics
+    title: Guide to Training Statistics
+    creator: Kenshi Wiki contributors
+    url: https://kenshi.fandom.com/wiki/Guide_to_Training_Statistics
+    source_type: community wiki mechanic guide
+    accessed_on: 2026-08-02
+
 facts:
   - fact_id: greenfruit_is_ingredient
     claim: Greenfruit is a cooking ingredient, not an edible food item by itself.
@@ -69,12 +97,60 @@ facts:
     confidence: high
 
   - fact_id: hunger_thresholds
-    claim: Player hunger is shown on a 0-to-300 reserve. Characters begin automatic eating below 250, suffer malnutrition and stat penalties below 200, and begin hunger fainting below roughly 100 depending on their KO point.
+    claim: Player hunger is shown on a 0-to-300 reserve. Characters with ordinary food begin automatic eating below 250, suffer malnutrition and stat penalties below 200, and begin hunger fainting below roughly 100 with the exact onset tied to their KO point.
     source_ids:
       - fandom_guide_to_health
+      - kenshi_wiki_food
     tags: [food, survival, general]
     confidence: high
     note: Native telemetry exports the same reserve divided by 100, so 2.47 corresponds to about 247 on the HUD scale.
+
+  - fact_id: edible_ingredients_have_a_later_eating_threshold
+    claim: If a character carries only food items that are also edible ingredients, automatic eating may wait until the hunger reserve drops below 200 rather than 250.
+    source_ids:
+      - kenshi_wiki_food
+    tags: [food, survival, general]
+    confidence: high
+
+  - fact_id: persistent_jobs_use_shift_right_click
+    claim: Holding Shift while right-clicking a task adds it to the selected character's ordered Jobs list; enabled characters attempt jobs from the top and may fall through when a higher job cannot run.
+    source_ids:
+      - kenshi_wiki_jobs
+    tags: [economy, general]
+    confidence: high
+    note: This is distinct from issuing an immediate default or context-menu command without Shift.
+
+  - fact_id: right_click_commands_and_context_menu
+    claim: Holding the right mouse button on a person, building, or supported object opens its action menu, while an ordinary right-click performs the current default action.
+    source_ids:
+      - kenshi_wiki_controls
+    tags: [general]
+    confidence: high
+    note: The exact menu entries and default action remain current-world evidence and must not be inferred from object type alone.
+
+  - fact_id: squad_selection_supports_multiple_characters
+    claim: Kenshi supports multi-character control through Shift-left-click selection, drag-box selection, and a select-all-squad binding.
+    source_ids:
+      - kenshi_wiki_controls
+    tags: [general]
+    confidence: high
+
+  - fact_id: strength_training_is_activity_bound
+    claim: Strength can improve through travel while heavily encumbered, carrying another character, and appropriate combat activity such as using demanding weapons.
+    source_ids:
+      - kenshi_wiki_strength
+      - fandom_getting_started
+    tags: [general]
+    confidence: high
+    note: These are possible mechanics, not a recommendation that the current squad should train this way.
+
+  - fact_id: toughness_training_is_activity_bound
+    claim: Toughness gains from received damage, and getting up instead of remaining in the Playing Dead state can grant a much larger gain while enemies are nearby.
+    source_ids:
+      - fandom_training_statistics
+    tags: [general]
+    confidence: high
+    note: Deliberately seeking this progression can still be lethal or lead to capture, enslavement, or being eaten depending on the opponent and location.
 
   - fact_id: hub_has_nearby_ore
     claim: The Hub has nearby copper and iron resources, making mining and selling ore one available early-money route.

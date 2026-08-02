@@ -96,12 +96,12 @@ is valid only when the capability says the list was actually enumerated.
 complete empty enumeration from bounded truncation. Resource transfer requires
 both true plus `ui.context_inventory_target_id` matching the exact target.
 
-Despite the field name, `squad[].hunger` is a **nutrition reserve**: `3.0` is
-full and `0.0` is starving, matching Kenshi's UI value divided by 100. The
-native `food_items` scalar has disagreed with observed carried items and must
-not override the named `inventory` list. `squad.health` makes
-life/down/conscious/crippled/combat, nutrition, and blood authoritative — it does
-not make `bleeding_rate` or body-part wounds authoritative.
+Despite the wire name, `squad[].hunger` is a reserve: `3.0` full to `0.0`
+starving (UI/100). Ordinary food is eaten below `2.5`; edible ingredients may
+wait until below `2.0`, where malnutrition starts; fainting near `1.0` varies
+with KO point. Native `food_items` has disagreed with carried items and must not
+override named `inventory`. `squad.health` makes alive/down/conscious/crippled,
+combat, nutrition, and blood authoritative, but not wounds or `bleeding_rate`.
 
 `squad[].indoors` is true only when the native handle resolves to a valid current
 building. A valid-looking stale handle fails closed, matching exit authority.

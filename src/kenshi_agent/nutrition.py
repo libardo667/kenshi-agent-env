@@ -15,7 +15,9 @@ MEANINGFUL_NUTRITION_RESERVE_DELTA = 0.1
 
 class NutritionStatus(StrEnum):
     WELL_FED = "well_fed"
-    AUTOMATIC_EATING_RANGE = "automatic_eating_range"
+    ORDINARY_FOOD_AUTOMATIC_EATING_RANGE = (
+        "ordinary_food_automatic_eating_range"
+    )
     MALNOURISHED = "malnourished"
     STARVATION_FAINTING_RISK = "starvation_fainting_risk"
     UNKNOWN = "unknown"
@@ -36,7 +38,7 @@ def nutrition_status(reserve: float | None) -> NutritionStatus:
     if reserve < MALNUTRITION_RESERVE_THRESHOLD:
         return NutritionStatus.MALNOURISHED
     if reserve < AUTOMATIC_EATING_RESERVE_THRESHOLD:
-        return NutritionStatus.AUTOMATIC_EATING_RANGE
+        return NutritionStatus.ORDINARY_FOOD_AUTOMATIC_EATING_RANGE
     return NutritionStatus.WELL_FED
 
 
@@ -49,11 +51,17 @@ def squad_nutrition_digest(squad: Sequence[NutritionMember]) -> dict[str, Any]:
         "scale": {
             "direction": "counts_down_from_full_to_starving",
             "full": NUTRITION_RESERVE_FULL,
-            "automatic_eating_below": AUTOMATIC_EATING_RESERVE_THRESHOLD,
+            "ordinary_food_automatic_eating_below": (
+                AUTOMATIC_EATING_RESERVE_THRESHOLD
+            ),
+            "edible_ingredient_automatic_eating_below": (
+                MALNUTRITION_RESERVE_THRESHOLD
+            ),
             "malnutrition_below": MALNUTRITION_RESERVE_THRESHOLD,
-            "starvation_fainting_risk_below": (
+            "starvation_fainting_baseline_below": (
                 STARVATION_FAINTING_RESERVE_THRESHOLD
             ),
+            "starvation_fainting_onset_uses_knockout_point": True,
         },
         "members": [
             {
