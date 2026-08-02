@@ -687,7 +687,6 @@ def validate_future_plan_patch(
     budget: PlanBudgetLedger,
     remaining_run_actions: int,
     protected_step_ids: set[str],
-    require_current_basis: bool,
 ) -> PlanEnvelope:
     errors: list[str] = []
     if patch.plan_id != active_plan.plan_id:
@@ -705,13 +704,6 @@ def validate_future_plan_patch(
         errors.append(
             "patch basis does not match its immutable "  # mutation: diagnostic-only
             "planner snapshot"
-        )
-    if require_current_basis and not patch.based_on_revision.same_snapshot_as(
-        current_observation.world_revision
-    ):
-        errors.append(
-            "patch became stale while the concurrent "  # mutation: diagnostic-only
-            "planner was running"
         )
     if patch.interrupt_active_step_id is not None:
         active_context = planner_observation.active_plan

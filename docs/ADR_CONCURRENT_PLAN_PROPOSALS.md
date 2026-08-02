@@ -28,6 +28,14 @@ step IDs disjoint from active and completed steps; derives the future graph,
 conditions, budgets, and sidecars; and leaves `interrupt_active_step_id` null.
 The model cannot author graph identity or interruption mechanics.
 
+The immutable revision proves which observation the proposal was authored
+from; it does not require telemetry to freeze while the model answers. The
+executor deterministically constructs a candidate on current state, requires
+the entry action to retain current authority, and repeats latest-state and
+budget validation after the active option reaches its terminal. Changed or
+missing references still fail closed; an advancing sequence alone is not a
+rejection reason.
+
 Urgent cancellation remains owned by deterministic safety reflexes. A future
 model-facing strategic interruption, if needed, requires its own small intent
 contract and runtime-compiled pause handoff; it must not expose raw patch graph
@@ -37,7 +45,8 @@ mechanics again.
 
 - Concurrent deliberation can still overlap genuinely long options and stage
   useful future play.
-- Model latency may still make advice stale or finish after a short option; the
-  scheduler must avoid calls that cannot affect execution.
+- Model latency may still invalidate a referenced action or outlast its active
+  option; latest-state validation rejects the former, and the scheduler avoids
+  calls that cannot affect the latter.
 - Patch validation remains strict, but failures now attribute runtime/compiler
   defects rather than model-authored bookkeeping.

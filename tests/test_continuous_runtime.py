@@ -2928,7 +2928,7 @@ def test_native_move_timeout_pauses_before_the_planner_can_run_again(
     asyncio.run(scenario())
 
 
-def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
+def test_concurrent_future_patch_revalidates_after_unrelated_world_advance(
     tmp_path: Path,
 ) -> None:
     class AdvancingMovementEnvironment(RevisionEnvironment):
@@ -2961,7 +2961,7 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
                 observation=self.observation(),
             )
 
-    class StalePatchPlanner(Planner):
+    class RebasingPatchPlanner(Planner):
         def __init__(self) -> None:
             self.calls = 0
             self.advisory_returned = asyncio.Event()
@@ -2983,7 +2983,7 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
                 based_on_revision=current.world_revision,
                 replace_future_steps=[
                     PlanStep(
-                        step_id="stale-speed",
+                        step_id="rebased-speed",
                         action=SetSpeedAction(speed=3),
                         preconditions=[
                             condition(
@@ -3005,14 +3005,14 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
                         idempotency=IdempotencyPolicy.AT_MOST_ONCE,
                     )
                 ],
-                rationale="This advisory is intentionally stale.",
+                rationale="Future intent remains valid after unrelated movement updates.",
             )
 
     async def scenario() -> None:
         plan_clock = FakeClock()
         pump_clock = ManualPumpClock()
         environment = AdvancingMovementEnvironment(clock=plan_clock)
-        planner = StalePatchPlanner()
+        planner = RebasingPatchPlanner()
         stream = StringIO()
         reporter = ConsoleDecisionReporter(
             run_id="continuous",
@@ -3045,18 +3045,16 @@ def test_stale_concurrent_patch_is_rejected_and_original_future_step_runs(
 
         assert summary.steps_completed == 2
         assert isinstance(environment.actions[1], SetSpeedAction)
-        assert environment.actions[1].speed == 2
+        assert environment.actions[1].speed == 3
         events = read_events(tmp_path / "events.jsonl")
-        rejected = [event for event in events if event["event_type"] == "plan_patch_rejected"]
-        assert len(rejected) == 1
-        assert "stale" in str(rejected[0]["payload"])
-        assert sum(event["event_type"] == "plan_patched" for event in events) == 0
+        assert sum(event["event_type"] == "plan_patch_staged" for event in events) == 1
+        assert sum(event["event_type"] == "plan_patched" for event in events) == 1
+        assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 0
         metrics = evaluate_log(tmp_path / "events.jsonl")
-        assert metrics.plan_patches_staged == 0
-        assert metrics.plan_patches_applied == 0
-        assert metrics.plan_patches_rejected == 1
-        assert "!!! PLAN PATCH REJECTED !!!" in stream.getvalue()
-        assert "stale" in stream.getvalue()
+        assert metrics.plan_patches_staged == 1
+        assert metrics.plan_patches_applied == 1
+        assert metrics.plan_patches_rejected == 0
+        assert "!!! PLAN PATCH REJECTED !!!" not in stream.getvalue()
 
     asyncio.run(scenario())
 
@@ -4156,10 +4154,12 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
     asyncio.run(scenario())
 
 
-def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
+def test_a_rejected_patch_with_mismatched_authored_basis_writes_nothing_durable(
+    tmp_path: Path,
+) -> None:
     """The patch that never took effect must leave no trace in memory."""
 
-    class StalePatchPlanner(Planner):
+    class MismatchedBasisPatchPlanner(Planner):
         def __init__(self) -> None:
             self.calls = 0
             self.advisory_returned = asyncio.Event()
@@ -4173,16 +4173,28 @@ def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
             self.advisory_started.set()
             await self.release_advisory.wait()
             self.advisory_returned.set()
-            return _future_speed_patch(current, "stale-speed")
+            patch = _future_speed_patch(current, "mismatched-basis-speed")
+            sequence = patch.based_on_revision.telemetry_sequence or 0
+            return patch.model_copy(
+                update={
+                    "based_on_revision": patch.based_on_revision.model_copy(
+                        update={"telemetry_sequence": sequence + 100}
+                    )
+                },
+                deep=True,
+            )
 
     async def scenario() -> None:
         plan_clock = FakeClock()
         pump_clock = ManualPumpClock()
         environment = _PatchMemoryEnvironment(clock=plan_clock)
-        planner = StalePatchPlanner()
+        planner = MismatchedBasisPatchPlanner()
         store = MemoryStore(
             tmp_path / "memory.sqlite3",
-            CampaignScope(campaign_id="stale", origin=CampaignScopeOrigin.CONFIGURED),
+            CampaignScope(
+                campaign_id="mismatched-basis",
+                origin=CampaignScopeOrigin.CONFIGURED,
+            ),
         )
         runtime, logger = runtime_for(
             tmp_path,
@@ -4211,7 +4223,11 @@ def test_a_rejected_stale_patch_writes_nothing_durable(tmp_path: Path) -> None:
             logger.close()
 
         events = read_events(tmp_path / "events.jsonl")
-        assert sum(event["event_type"] == "plan_patch_rejected" for event in events) == 1
+        rejected = [
+            event for event in events if event["event_type"] == "plan_patch_rejected"
+        ]
+        assert len(rejected) == 1
+        assert "immutable planner snapshot" in str(rejected[0]["payload"])
         assert sum(event["event_type"] == "plan_patched" for event in events) == 0
         assert kept == []
         assert projects == []

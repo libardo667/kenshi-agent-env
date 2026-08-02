@@ -1528,7 +1528,7 @@ def test_plan_patch_names_the_exact_active_step_when_requesting_interruption() -
     assert patch.interrupt_active_step_id == "resume"
 
 
-def test_future_patch_requires_current_basis_and_cannot_restart_protected_steps() -> None:
+def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_steps() -> None:
     current = observation(sequence=7)
     active_plan = plan_for(current.world_revision)
     ledger = PlanBudgetLedger.from_plan(active_plan)
@@ -1553,26 +1553,24 @@ def test_future_patch_requires_current_basis_and_cannot_restart_protected_steps(
         budget=ledger,
         remaining_run_actions=1,
         protected_step_ids={"resume"},
-        require_current_basis=True,
     )
 
     assert candidate.plan_version == 2
     assert candidate.entry_step_id == "patched-speed"
     assert candidate.max_actions == 1
 
-    with pytest.raises(PlanValidationError, match="stale"):
-        validate_future_plan_patch(
-            patch,
-            active_plan=active_plan,
-            planner_observation=current,
-            current_observation=observation(sequence=8),
-            config=PlanningConfig(),
-            macros=MacroRegistry({}),
-            budget=ledger,
-            remaining_run_actions=1,
-            protected_step_ids={"resume"},
-            require_current_basis=True,
-        )
+    rebased = validate_future_plan_patch(
+        patch,
+        active_plan=active_plan,
+        planner_observation=current,
+        current_observation=observation(sequence=8),
+        config=PlanningConfig(),
+        macros=MacroRegistry({}),
+        budget=ledger,
+        remaining_run_actions=1,
+        protected_step_ids={"resume"},
+    )
+    assert rebased.based_on_revision.same_snapshot_as(revision(8))
 
     protected_patch = patch.model_copy(
         update={"replace_future_steps": [speed_step("resume")]}
@@ -1588,7 +1586,35 @@ def test_future_patch_requires_current_basis_and_cannot_restart_protected_steps(
             budget=ledger,
             remaining_run_actions=1,
             protected_step_ids={"resume"},
-            require_current_basis=True,
+        )
+
+
+def test_future_patch_rebase_still_requires_latest_entry_authority() -> None:
+    planner_observation = observation(sequence=7, paused=False).model_copy(
+        update={"mode": "live"}
+    )
+    active_plan = plan_for(planner_observation.world_revision)
+    patch = PlanPatch(
+        schema_version="1.0",
+        plan_id=active_plan.plan_id,
+        based_on_plan_version=active_plan.plan_version,
+        based_on_revision=planner_observation.world_revision,
+        replace_future_steps=[speed_step("future-speed")],
+        rationale="Keep the future speed intent only while latest state authorizes it.",
+    )
+    current = observation(sequence=8, paused=True).model_copy(update={"mode": "live"})
+
+    with pytest.raises(PlanValidationError, match="direct live unpause"):
+        validate_future_plan_patch(
+            patch,
+            active_plan=active_plan,
+            planner_observation=planner_observation,
+            current_observation=current,
+            config=PlanningConfig(),
+            macros=MacroRegistry({}),
+            budget=PlanBudgetLedger.from_plan(active_plan),
+            remaining_run_actions=1,
+            protected_step_ids=set(),
         )
 
 
@@ -1642,7 +1668,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             budget=ledger,
             remaining_run_actions=2,
             protected_step_ids={"resume"},
-            require_current_basis=True,
         )
 
     no_pause = wrong_step.model_copy(
@@ -1662,7 +1687,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             budget=ledger,
             remaining_run_actions=2,
             protected_step_ids={"resume"},
-            require_current_basis=True,
         )
 
     non_interruptible = active_plan.model_copy(
@@ -1689,7 +1713,6 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             budget=ledger,
             remaining_run_actions=2,
             protected_step_ids={"resume"},
-            require_current_basis=True,
         )
 
     candidate = validate_future_plan_patch(
@@ -1702,13 +1725,12 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
         budget=ledger,
         remaining_run_actions=2,
         protected_step_ids={"resume"},
-        require_current_basis=True,
     )
 
     assert candidate.steps == [interruption_pause_step()]
 
 
-def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
+def test_future_patch_rejects_wrong_identity_protected_steps_and_empty_budget() -> None:
     current = observation(sequence=7)
     active_plan = plan_for(current.world_revision)
     ledger = PlanBudgetLedger.from_plan(active_plan)
@@ -1729,7 +1751,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
             ledger,
             1,
             set(),
-            True,
         ),
         (
             base.model_copy(update={"based_on_plan_version": 2}),
@@ -1738,7 +1759,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
             ledger,
             1,
             set(),
-            True,
         ),
         (
             base.model_copy(update={"based_on_revision": revision(6)}),
@@ -1747,16 +1767,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
             ledger,
             1,
             set(),
-            True,
-        ),
-        (
-            base,
-            current,
-            observation(sequence=8),
-            ledger,
-            1,
-            set(),
-            True,
         ),
         (
             base,
@@ -1765,7 +1775,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
             ledger,
             1,
             {"patched"},
-            True,
         ),
         (
             base,
@@ -1779,7 +1788,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
             ),
             1,
             set(),
-            True,
         ),
         (
             base,
@@ -1788,7 +1796,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
             ledger,
             0,
             set(),
-            True,
         ),
     ]
 
@@ -1799,7 +1806,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
         budget,
         remaining_run_actions,
         protected,
-        require_current_basis,
     ) in invalid_cases:
         with pytest.raises(PlanValidationError):
             validate_future_plan_patch(
@@ -1812,7 +1818,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
                 budget=budget,
                 remaining_run_actions=remaining_run_actions,
                 protected_step_ids=protected,
-                require_current_basis=require_current_basis,
             )
 
     candidate = validate_future_plan_patch(
@@ -1825,7 +1830,6 @@ def test_future_patch_rejects_every_stale_identity_and_empty_budget() -> None:
         budget=ledger,
         remaining_run_actions=1,
         protected_step_ids=set(),
-        require_current_basis=False,
     )
     assert candidate.based_on_revision.same_snapshot_as(revision(8))
 
@@ -1917,7 +1921,6 @@ def test_interrupt_patch_requires_every_fact_in_the_pause_handoff() -> None:
                 budget=ledger,
                 remaining_run_actions=2,
                 protected_step_ids=set(),
-                require_current_basis=True,
             )
 
 
@@ -1971,7 +1974,6 @@ def test_future_patch_validates_replacement_risk_with_the_supplied_registry() ->
         budget=PlanBudgetLedger.from_plan(active_plan),
         remaining_run_actions=1,
         protected_step_ids=set(),
-        require_current_basis=True,
     )
 
     assert candidate.steps == [replacement]
@@ -2000,7 +2002,6 @@ def test_future_patch_labels_an_invalid_replacement_graph() -> None:
             budget=PlanBudgetLedger.from_plan(active_plan),
             remaining_run_actions=2,
             protected_step_ids=set(),
-            require_current_basis=True,
         )
 
 

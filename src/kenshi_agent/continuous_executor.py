@@ -612,7 +612,6 @@ class ContinuousPlanExecutor:
                                 remaining_run_actions - actions_completed
                             ),
                             protected_step_ids=completed_step_ids | {step.step_id},
-                            require_current_basis=False,
                         )
                     except PlanValidationError as exc:
                         reason = (
@@ -713,7 +712,6 @@ class ContinuousPlanExecutor:
                                 budget=budget,
                                 remaining_run_actions=(remaining_run_actions - actions_completed),
                                 protected_step_ids=completed_step_ids,
-                                require_current_basis=False,
                             )
                         except PlanValidationError as exc:
                             self._event(
@@ -3580,7 +3578,6 @@ class ContinuousPlanExecutor:
             return None
 
         latest = self.state_store.latest or planner_observation
-        interrupts_active_step = output.interrupt_active_step_id is not None
         try:
             validate_future_plan_patch(
                 output,
@@ -3592,10 +3589,6 @@ class ContinuousPlanExecutor:
                 budget=budget,
                 remaining_run_actions=remaining_run_actions,
                 protected_step_ids=protected_step_ids,
-                # An explicit interrupt is useful only while the world keeps
-                # moving. Its effect is restricted to a guarded pause handoff,
-                # then every replacement action is revalidated on latest state.
-                require_current_basis=not interrupts_active_step,
             )
         except PlanValidationError as exc:
             self._event(
@@ -3609,16 +3602,21 @@ class ContinuousPlanExecutor:
             return None
 
         self._event(
-            "plan_interrupt_staged" if interrupts_active_step else "plan_patch_staged",
+            (
+                "plan_interrupt_staged"
+                if output.interrupt_active_step_id is not None
+                else "plan_patch_staged"
+            ),
             plan,
             latest,
             step=step,
             reason=(
                 "Concurrent revision names the exact interruptible active "
                 "step and begins with a guarded pause handoff."
-                if interrupts_active_step
-                else "Concurrent future patch matches the active plan and "
-                "immutable planner revision; application awaits option completion."
+                if output.interrupt_active_step_id is not None
+                else "Concurrent future patch matches its immutable planner "
+                "revision and passed latest-state validation; application awaits "
+                "option completion."
             ),
             evidence={"patch": output.model_dump(mode="json")},
         )
