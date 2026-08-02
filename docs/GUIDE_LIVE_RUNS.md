@@ -39,7 +39,8 @@ configuration path once, and invokes the checked-in live launcher without a pseu
 a single display lease. A stale, terminal, unloaded, or otherwise ambiguous
 existing client fails closed with an exact recovery instruction. Every command
 uses the one canonical `config/live.yaml`; it is not selectable from the normal
-surface. Narration is default and `--no-tts` disables it. Deterministic planner
+surface. Every live run narrates through TTS; if narration is unavailable, stop
+at preflight instead of bypassing the supported command. Deterministic planner
 scripts are not a second live workflow; action-level checks belong in portable
 or native conformance tests, while live acceptance uses the ordinary `run` path.
 Never substitute direct Windows-Python, native-file, input-snippet, or PTY workarounds.

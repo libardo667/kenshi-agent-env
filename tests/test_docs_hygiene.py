@@ -61,6 +61,7 @@ REPORT_NAME = re.compile(r"^REPORT_\d{8}_[a-z0-9-]+\.md$")
 # document that is in neither — being uncapped must be a decision, not an
 # omission. Lower a ceiling freely; raising one is the loud part.
 ROOT_DOC_CAPS: dict[str, int] = {
+    "AGENTS.md": 40,
     "README.md": DOC_LINE_CAP,
     "ARCHITECTURE.md": DOC_LINE_CAP,
     "STATUS.md": DOC_LINE_CAP,

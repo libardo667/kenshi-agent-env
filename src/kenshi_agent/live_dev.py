@@ -2786,8 +2786,7 @@ def _agent_argv(
         argv.extend(["--campaign", args.campaign])
     if scenario_attestation is not None:
         argv.extend(["--scenario-attestation", str(scenario_attestation)])
-    if args.tts:
-        argv.append("--tts")
+    argv.append("--tts")
     if args.control != "plan-only":
         argv.extend(
             [

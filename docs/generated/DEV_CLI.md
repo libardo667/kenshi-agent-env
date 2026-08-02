@@ -71,7 +71,7 @@ options:
 ```text
 usage: ./dev run [-h] [--timeout TIMEOUT] [--scenario SCENARIO | --game-start GAME_START]
                  [--objective OBJECTIVE] [--campaign CAMPAIGN] [--steps STEPS] [--run-id RUN_ID]
-                 [--tts | --no-tts] [--control {plan-only,polite-live,exclusive-live}]
+                 [--control {plan-only,polite-live,exclusive-live}]
 
 Run the agent in a fresh or already-loaded world. Ambiguous live state fails closed.
 
@@ -86,8 +86,6 @@ options:
                               None)
   --steps STEPS               Override the configured step ceiling. (default: None)
   --run-id RUN_ID             Exact run identifier; generated when omitted. (default: None)
-  --tts                       Narrate planning and action updates. (default: True)
-  --no-tts                    Disable spoken planning and action updates. (default: True)
   --control {plan-only,polite-live,exclusive-live}
                               plan-only sends no gameplay actions; polite-live restores host focus
                               and cursor; exclusive-live retains desktop ownership. (default: plan-

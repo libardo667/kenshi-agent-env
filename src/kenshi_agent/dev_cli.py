@@ -63,18 +63,6 @@ def _add_agent_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--steps", type=int, help="Override the configured step ceiling.")
     parser.add_argument("--run-id", help="Exact run identifier; generated when omitted.")
-    narration = parser.add_mutually_exclusive_group()
-    narration.add_argument(
-        "--tts",
-        action="store_true",
-        help="Narrate planning and action updates.",
-    )
-    narration.add_argument(
-        "--no-tts",
-        dest="tts",
-        action="store_false",
-        help="Disable spoken planning and action updates.",
-    )
     parser.set_defaults(tts=True)
     _add_control_option(parser)
 

@@ -2159,18 +2159,16 @@ def test_run_parser_combines_start_agent_and_control_options() -> None:
     assert "--tts" in argv
 
 
-def test_run_parser_can_explicitly_disable_default_narration() -> None:
-    args = live_dev.build_parser().parse_args(
-        [
-            "run",
-            "--config",
-            "config/live.yaml",
-            "--no-tts",
-        ]
-    )
-
-    assert args.tts is False
-    assert "--tts" not in _agent_argv(args, "quiet-run")
+def test_run_parser_has_no_silent_live_run_mode() -> None:
+    with pytest.raises(SystemExit):
+        live_dev.build_parser().parse_args(
+            [
+                "run",
+                "--config",
+                "config/live.yaml",
+                "--no-tts",
+            ]
+        )
 
 
 def test_launch_and_run_starts_agent_only_after_launch_succeeds(
@@ -2809,8 +2807,8 @@ def test_run_does_not_offer_a_second_planning_mode_authority() -> None:
         _run_args("--continuous")
 
 
-def test_run_tts_mode_passes_to_the_core_run() -> None:
-    argv = _agent_argv(_run_args("--tts"), "spoken-run")
+def test_every_run_passes_tts_to_the_core_run() -> None:
+    argv = _agent_argv(_run_args(), "spoken-run")
 
     assert "--tts" in argv
 

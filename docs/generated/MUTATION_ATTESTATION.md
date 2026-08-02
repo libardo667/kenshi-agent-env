@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-88 shards: 17 attested, 15 unverified, 6 source-changed, 50 never; 1091 open mutants where the numbers still apply.
+88 shards: 16 attested, 15 unverified, 7 source-changed, 50 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -49,7 +49,7 @@ promises only that the module under test has not moved.
 | `control.noop` | — | — | — | — | — | never |
 | `control.win32` | — | — | — | — | — | never |
 | `control_ownership` | — | — | — | — | — | never |
-| `dev_cli` | 718 | 718 | 0 | 2026-08-02T02:12:30Z | 1c0380099c4add5e | attested |
+| `dev_cli` | 718 | 718 | 0 | 2026-08-02T02:12:30Z | 1c0380099c4add5e | source-changed |
 | `display_lease` | — | — | — | — | — | never |
 | `doc_export` | — | — | — | — | — | never |
 | `env.base` | — | — | — | — | — | never |

@@ -14,9 +14,9 @@ total. Rows are never dropped, so a blocker that stops recurring stays
 visible with the run that last exhibited it.
 
 ```text
-newest run  live-creative-strategy-soak-20260802-r2
+newest run  live-creative-strategy-soak-oem6737-20260802-r1
 signatures  44
-open        4
+open        1
 ```
 
 | signature | example | runs | seen | last run | last seen |
@@ -48,7 +48,7 @@ open        4
 | `Plan rejected before execution: step '*' failure condition is not observable before dispatch: Condition value for <Field` | Plan rejected before execution: step 'buy-bread-1' failure condition is not observable before dispatch: Condition value for <FieldConditionPath.TELEMETRY_UI_TOO | 1 | 1 | live-hub-survival-pair-20260729-r3 | 2026-07-30T18:11:34Z |
 | `Plan rejected before execution: step '*' has no causal success condition; success must be observable in a later world re` | Plan rejected before execution: step 'step-1' has no causal success condition; success must be observable in a later world revision rather than assumed from dis | 3 | 7 | live-creative-strategy-soak-20260802-r2 | 2026-08-02T16:58:11Z |
 | `Plan rejected before execution: step '*' repeats definitive no-op ao-#; relevant purchase state is unchanged or cannot b` | Plan rejected before execution: step 'purchase-water-1' repeats definitive no-op ao-3; relevant purchase state is unchanged or cannot be proved changed; step 'p | 1 | 5 | live-purchase-fit-barrier-20260730-r6 | 2026-07-31T00:57:56Z |
-| `Plan rejected before execution: step '*' requests direct live unpause, which the action guard cannot authorize. Do not a` | Plan rejected before execution: step 'step-1' requests direct live unpause, which the action guard cannot authorize. Do not add an unpause step before movement: | 6 | 8 | live-creative-strategy-soak-20260802-r2 | 2026-08-02T16:58:11Z |
+| `Plan rejected before execution: step '*' requests direct live unpause, which the action guard cannot authorize. Do not a` | Plan rejected before execution: step 'step-1' requests direct live unpause, which the action guard cannot authorize. Do not add an unpause step before movement: | 7 | 10 | live-creative-strategy-soak-oem6737-20260802-r1 | 2026-08-02T17:38:39Z |
 | `Plan rejected before execution: the world moved on while the plan was being written, so what it points at is no longer t` | Plan rejected before execution: the world moved on while the plan was being written, so what it points at is no longer there: step 'step-1' pointed at something | 4 | 11 | live-creative-strategy-soak-20260802-r1 | 2026-08-02T15:30:53Z |
 | `The action completed but did not have its intended effect within #s: telemetry.game.money: Observed #; expected less_tha` | The action completed but did not have its intended effect within 10.0s: telemetry.game.money: Observed 13742; expected less_than 13742. | 1 | 1 | live-nutrition-semantics-regression-20260802-r4 | 2026-08-02T14:14:05Z |
 | `The action completed but did not have its intended effect within #s: telemetry.game.speed_multiplier: Observed #; expect` | The action completed but did not have its intended effect within 10.0s: telemetry.game.speed_multiplier: Observed 0.0; expected greater_than 0. | 1 | 1 | live-nutrition-semantics-regression-20260802-r1 | 2026-08-02T07:57:36Z |
