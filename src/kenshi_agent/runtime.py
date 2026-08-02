@@ -2031,6 +2031,31 @@ class AgentRuntime:
                 latency_seconds=0.0,
             )
 
+        if (
+            preemption.cause is SafetyCause.HUMAN_INPUT
+            and isinstance(preemption.decision.action, PauseAction)
+            and self._is_usable_paused_observation(observation)
+        ):
+            if state_store.active_command is not None:
+                state_store.fail_active_command(
+                    "Human input preempted work after a safe pause was confirmed."
+                )
+            reason = (
+                "Human input yielded agent work while Kenshi was already confirmed "
+                "paused on fresh telemetry; no redundant cleanup input was emitted."
+            )
+            self.logger.write(
+                "safety_pause_already_confirmed",
+                step_index=observation.step_index,
+                payload={
+                    "cause": preemption.cause.value,
+                    "reason": reason,
+                    "world_revision": observation.world_revision.model_dump(mode="json"),
+                    "control_mode": observation.control_mode.value,
+                },
+            )
+            return observation, 0, False, None, reason, True
+
         if not isinstance(preemption.decision.action, PauseAction):
             paused = (
                 observation.telemetry.game.paused if observation.telemetry is not None else None

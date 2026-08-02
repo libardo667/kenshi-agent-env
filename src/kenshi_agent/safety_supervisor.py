@@ -245,10 +245,9 @@ class SafetySupervisor:
                 cause=SafetyCause.HUMAN_INPUT,
                 reason="The authoritative state stream reported resumed human input.",
                 observation=observation,
-                decision=self._pause_or_stop(
+                decision=self._human_handoff_decision(
                     observation,
                     capabilities,
-                    stop_reason="Human input resumed and safe pause cannot be verified.",
                 ),
             )
 
@@ -326,6 +325,34 @@ class SafetySupervisor:
                 ),
             )
         return None
+
+    @classmethod
+    def _human_handoff_decision(
+        cls,
+        observation: Observation,
+        capabilities: set[str],
+    ) -> PlannerDecision:
+        telemetry = observation.telemetry
+        if (
+            not observation.telemetry_stale
+            and telemetry is not None
+            and telemetry.game.loaded
+            and telemetry.game.paused is True
+            and "game.pause" in capabilities
+        ):
+            return PlannerDecision(
+                intent="Yield control without disturbing the safe world state.",
+                rationale=(
+                    "Human input arrived while Kenshi was already confirmed paused."
+                ),
+                action=PauseAction(paused=True),
+                confidence=1.0,
+            )
+        return cls._pause_or_stop(
+            observation,
+            capabilities,
+            stop_reason="Human input resumed and safe pause cannot be verified.",
+        )
 
     @classmethod
     def _pause_or_stop(

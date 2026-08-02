@@ -299,6 +299,38 @@ def test_human_input_event_preempts_an_authorized_active_plan() -> None:
     asyncio.run(scenario())
 
 
+def test_human_input_in_a_confirmed_pause_preserves_the_handoff_boundary() -> None:
+    async def scenario() -> None:
+        store = WorldStateStore()
+        current = store.publish(observation(1)).observation
+        store.activate_plan("plan", 1, current.world_revision)
+        store.activate_step("move")
+        supervisor = SafetySupervisor(
+            store=store,
+            reflexes=ReflexEngine(),
+            max_sequence_stalls=2,
+        )
+        await supervisor.start()
+
+        store.publish(
+            observation(2, paused=True).model_copy(
+                update={"events": ["human_input_detected"]}
+            )
+        )
+
+        preemption = await asyncio.wait_for(
+            supervisor.wait_for_preemption(),
+            timeout=1.0,
+        )
+        assert preemption.cause is SafetyCause.HUMAN_INPUT
+        assert isinstance(preemption.decision.action, PauseAction)
+        assert preemption.decision.action.paused is True
+        assert "already confirmed paused" in preemption.decision.rationale
+        await supervisor.stop()
+
+    asyncio.run(scenario())
+
+
 def test_emergency_stop_event_preempts_an_authorized_active_plan() -> None:
     async def scenario() -> None:
         store = WorldStateStore()

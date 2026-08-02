@@ -124,7 +124,7 @@ class RevisionEnvironment(AgentEnvironment):
     def __init__(
         self,
         *,
-        clock: FakeClock,
+        clock: PlanningClock,
         change_money_after_first_action: bool = False,
         advance_revision: bool = True,
         threat_after_first_action: bool = False,
@@ -1945,6 +1945,178 @@ def test_human_handoff_countdown_replans_instead_of_resuming_cancelled_plan(
             event["event_type"] == "safety_supervisor_finished"
             for event in events
         ) == 2
+
+    asyncio.run(scenario())
+
+
+def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
+    tmp_path: Path,
+) -> None:
+    class PausedHandoffEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: PlanningClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.movement_cancelled = asyncio.Event()
+            self.emit_threat = False
+            self.emit_human_input = False
+            self.unsafe = False
+
+        def observation(self) -> Observation:
+            current = super().observation()
+            if not self.unsafe or current.telemetry is None:
+                return current
+            return current.model_copy(
+                update={
+                    "telemetry": current.telemetry.model_copy(
+                        update={
+                            "nearby_entities": [
+                                NearbyEntity(
+                                    id="threat",
+                                    name="Hungry Bandit",
+                                    disposition=Disposition.HOSTILE,
+                                    distance=10.0,
+                                    visible=True,
+                                )
+                            ]
+                        }
+                    )
+                }
+            )
+
+        async def observe_without_capture(self) -> Observation:
+            self.sequence += 1
+            events: list[str] = []
+            if self.emit_threat:
+                self.emit_threat = False
+                self.unsafe = True
+            if self.emit_human_input:
+                self.emit_human_input = False
+                events.append("human_input_detected")
+            return self.observation().model_copy(update={"events": events})
+
+        async def step(self, action: Action) -> Transition:
+            if not isinstance(action, SkillAction):
+                return await super().step(action)
+            self.actions.append(action)
+            self.paused = False
+            self.sequence += 1
+            self.movement_started.set()
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                self.movement_cancelled.set()
+                raise
+            raise AssertionError("Cancelled movement unexpectedly resumed.")
+
+    class PausedHandoffPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+            self.safety_replan_started = asyncio.Event()
+            self.safety_replan_cancelled = asyncio.Event()
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                plan = patchable_movement_plan(current)
+                movement = plan.steps[0].model_copy(update={"on_success": None})
+                return plan.model_copy(
+                    update={"steps": [movement], "max_actions": 1},
+                    deep=True,
+                )
+            if self.calls == 2:
+                self.safety_replan_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    self.safety_replan_cancelled.set()
+                    raise
+                raise AssertionError("Safety replan unexpectedly resumed.")
+            return PlannerDecision(
+                intent="Stop after proving the paused human handoff.",
+                rationale="Fresh planning resumed only after control returned.",
+                action=StopAction(reason="Paused handoff proof complete."),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        plan_clock = ManualPumpClock()
+        pump_clock = ManualPumpClock()
+        environment = PausedHandoffEnvironment(clock=plan_clock)
+        planner = PausedHandoffPlanner()
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            planner,
+            plan_clock,
+            observation_pump_enabled=True,
+            observation_clock=pump_clock,
+            automatic_takeover_enabled=True,
+        )
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=4))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            environment.emit_threat = True
+            pump_clock.advance(0.1)
+            await asyncio.wait_for(planner.safety_replan_started.wait(), timeout=1.0)
+
+            environment.emit_human_input = True
+            pump_clock.advance(0.1)
+            await asyncio.wait_for(planner.safety_replan_cancelled.wait(), timeout=1.0)
+            for _ in range(5):
+                await asyncio.sleep(0)
+
+            # Give handback revalidation a causally later paused observation,
+            # then complete the visible quiet interval and countdown.
+            pump_clock.advance(0.1)
+            for _ in range(5):
+                await asyncio.sleep(0)
+            plan_clock.advance(0.1)
+            for _ in range(5):
+                await asyncio.sleep(0)
+            plan_clock.advance(0.3)
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert environment.movement_cancelled.is_set()
+        assert summary.terminated
+        assert summary.stop_reason == "Paused handoff proof complete."
+        assert planner.calls == 3
+        assert [
+            action.paused
+            for action in environment.actions
+            if isinstance(action, PauseAction)
+        ] == [True]
+        events = read_events(tmp_path / "events.jsonl")
+        human_preemption = next(
+            event
+            for event in events
+            if event["event_type"] == "safety_supervisor_preempted"
+            and event["payload"]["cause"] == "human_input"
+        )
+        assert human_preemption["payload"]["decision"]["action"] == {
+            "kind": "pause",
+            "paused": True,
+        }
+        assert sum(
+            event["event_type"] == "safety_pause_already_confirmed"
+            for event in events
+        ) == 1
+        assert not any(
+            event["event_type"] == "safety_supervisor_terminal"
+            and event["payload"]["cause"] == "human_input"
+            for event in events
+        )
+        ownership_states = [
+            event["payload"]["state"]
+            for event in events
+            if event["event_type"] == "control_ownership_changed"
+        ]
+        assert ownership_states[-3:] == [
+            "human_control",
+            "takeover_pending",
+            "agent_active",
+        ]
 
     asyncio.run(scenario())
 
