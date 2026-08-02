@@ -16,7 +16,9 @@ from kenshi_agent.models import (
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
+    ControlMode,
     Disposition,
+    GameState,
     MemoryKind,
     MemoryRecord,
     MemoryStatus,
@@ -1352,6 +1354,31 @@ def test_projected_schema_matches_the_exact_authorable_action_surface() -> None:
     assert "activate_visible_control" in allowed
     assert "move_in_direction" not in allowed
     assert "skill" not in allowed
+
+
+def test_paused_live_surface_leaves_resuming_time_to_semantic_movement() -> None:
+    """A paused world must not ask the model to sequence transport plumbing."""
+
+    current = observation().model_copy(
+        update={
+            "control_mode": ControlMode.NATIVE_ASSISTED,
+            "telemetry": TelemetrySnapshot(
+                game=GameState(paused=True),
+                ui=UIState(active_screen="world"),
+                capabilities=["control.move_in_direction", "squad.health"],
+            ),
+        }
+    )
+    allowed = planner_action_kinds(current)
+    schema = projected_response_format(
+        PlanProposal,
+        allowed_action_kinds=allowed,
+    )["json_schema"]["schema"]
+
+    assert "move_in_direction" in allowed
+    assert "pause" not in allowed
+    assert "set_speed" not in allowed
+    assert _schema_action_kinds(schema, PlanProposal) == allowed
 
 
 def test_plan_proposal_schema_contains_choices_without_envelope_mechanics() -> None:
