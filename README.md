@@ -37,7 +37,7 @@ py -3.11 -m venv .venv
 python -m pip install -e ".[dev]"
 kenshi-agent doctor --config config/default.yaml
 pytest
-kenshi-agent run --config config/default.yaml --mode mock --planner heuristic --steps 40
+kenshi-agent run --config config/default.yaml --mode mock --steps 40
 ```
 
 The command prints a run directory whose `events.jsonl` records observations,
@@ -46,9 +46,8 @@ Summarize it with `kenshi-agent summarize runs\<RUN_ID>\events.jsonl`.
 What recent runs actually failed on is derived into
 `docs/generated/OBSERVED_BLOCKERS.md` by `scripts/export_blocker_ledger.py`.
 
-Planners available: heuristic, scripted, external subprocess (see
-[`GUIDE_EXTERNAL_PLANNER_PROTOCOL.md`](docs/GUIDE_EXTERNAL_PLANNER_PROTOCOL.md)),
-OpenAI Responses, and OpenRouter. Note that the default compact observation
+Planners available: heuristic, scripted replay, OpenAI Responses, and
+OpenRouter. Note that the default compact observation
 digests are not accepted by `ReplayEnvironment`; set
 `runtime.log_full_observations: true` when full replay is needed.
 

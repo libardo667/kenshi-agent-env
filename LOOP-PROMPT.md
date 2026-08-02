@@ -201,7 +201,7 @@ Use fixed starts and rerun the same scenario first. The default supervised soak
 ladder is 30, 75, 150, then 300 steps; skip only rungs already proven by current
 relevant evidence. A step ceiling is never a success criterion.
 
-Use `./dev launch --preflight-only` before live work and supported `./dev`
+Use `./dev doctor` before live work and supported `./dev`
 commands rather than raw input snippets or direct request files. Give every run
 a unique descriptive ID and never edit an old bundle.
 

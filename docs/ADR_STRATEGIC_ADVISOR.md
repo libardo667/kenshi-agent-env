@@ -50,7 +50,7 @@ Add `consult_advisor` as a planner-layer cognitive action with these boundaries:
    checked-in corpus. The final `AdvisorBrief` expands valid IDs back into
    attributions, so the player and the run log can inspect what supported the
    recommendation.
-8. `config/live.longform.yaml` enables the advisor through OpenRouter with the
+8. `config/live.yaml` enables the advisor through OpenRouter with the
    independently overridable `KENSHI_AGENT_ADVISOR_MODEL`, currently defaulting
    to `openai/gpt-5.4`. The fast playing model remains independently configured.
 

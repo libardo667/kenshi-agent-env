@@ -55,4 +55,4 @@ Python runtime; it does not claim that the plugin emits native events.
 - `single_step` remains available and unchanged by this decision. At the time
   of this ADR, continuous live execution remained blocked pending independent
   supervision and cancellable option cleanup. Those prerequisites were added
-  later; the current generic live profiles now run through this same stream.
+  later; the canonical live configuration now runs through this same stream.

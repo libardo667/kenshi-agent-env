@@ -20,17 +20,12 @@ def profile(**settings: str) -> GraphicsProfile:
     )
 
 
-def test_live_profiles_share_a_strictly_lower_workload_than_v2() -> None:
+def test_canonical_live_config_uses_a_strictly_lower_workload_than_v2() -> None:
     root = Path(__file__).resolve().parents[1]
     baseline = load_graphics_profile(
         root / "config" / "graphics" / "iris-xe-stability-v2.yaml"
     )
-    live_configs = (
-        root / "config" / "live.burnin.yaml",
-        root / "config" / "live.dialogue.yaml",
-        root / "config" / "live.longform.yaml",
-    )
-    loaded_configs = tuple(load_config(config_path) for config_path in live_configs)
+    loaded_configs = (load_config(root / "config" / "live.yaml"),)
     active_paths = {
         config.launch.graphics_profile_file
         for config in loaded_configs

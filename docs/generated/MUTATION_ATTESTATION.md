@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-83 shards: 14 attested, 16 unverified, 2 source-changed, 51 never; 2194 open mutants where the numbers still apply.
+83 shards: 15 attested, 16 unverified, 2 source-changed, 50 never; 2194 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -48,7 +48,7 @@ promises only that the module under test has not moved.
 | `control.noop` | — | — | — | — | — | never |
 | `control.win32` | — | — | — | — | — | never |
 | `control_ownership` | — | — | — | — | — | never |
-| `dialogue_interaction` | — | — | — | — | — | never |
+| `dev_cli` | 718 | 718 | 0 | 2026-08-02T02:12:30Z | 1c0380099c4add5e | attested |
 | `display_lease` | — | — | — | — | — | never |
 | `doc_export` | — | — | — | — | — | never |
 | `env.base` | — | — | — | — | — | never |
@@ -67,6 +67,7 @@ promises only that the module under test has not moved.
 | `input_boundary` | 140 | 140 | 0 | 2026-07-27T22:51:35Z | — | unverified |
 | `live_dev` | — | — | — | — | — | never |
 | `live_native_smoke_planner` | — | — | — | — | — | never |
+| `live_plan_policy` | — | — | — | — | — | never |
 | `live_smoke_planner` | — | — | — | — | — | never |
 | `memory` | 1476 | 1476 | 0 | 2026-07-28T16:03:50Z | — | unverified |
 | `memory_compaction` | 114 | 114 | 0 | 2026-07-28T15:50:29Z | — | unverified |
@@ -88,7 +89,6 @@ promises only that the module under test has not moved.
 | `planners.plan_proposal` | 386 | 386 | 0 | 2026-07-31T13:37:53Z | b04125bc791be2cd | attested |
 | `planners.schema_dialect` | — | — | — | — | — | never |
 | `planners.scripted` | — | — | — | — | — | never |
-| `planners.subprocess_planner` | — | — | — | — | — | never |
 | `planning` | 598 | 598 | 0 | 2026-07-27T23:26:46Z | — | unverified |
 | `reflexes` | — | — | — | — | — | never |
 | `reporting` | — | — | — | — | — | never |

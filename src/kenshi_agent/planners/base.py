@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,7 +10,6 @@ from ..config import PlannerConfig
 from ..models import (
     PLANNER_CONTROL_ACTION_KINDS,
     AuthoredPlannerContext,
-    LiveContinuousPolicy,
     Observation,
     PlanEnvelope,
     PlannerContextManifest,
@@ -28,32 +26,8 @@ HostedPlannerFailureCategory = Literal[
     "malformed_structured_output",
     "disallowed_action_surface",
 ]
-PLANNER_SYSTEM_CHARACTER_BUDGET: dict[LiveContinuousPolicy, int] = {
-    LiveContinuousPolicy.DISABLED: 8_000,
-    LiveContinuousPolicy.DIALOGUE_INTERACTION_V1: 12_000,
-}
+PLANNER_SYSTEM_CHARACTER_BUDGET = 12_000
 PLANNER_STATIC_PREFIX_CHARACTER_BUDGET = 50_000
-
-_POLICY_SECTION = re.compile(
-    r"<!-- policy:(?P<policy>[a-z0-9_,]+) -->\n(?P<body>.*?)<!-- /policy -->\n",
-    re.DOTALL,
-)
-
-
-def instructions_for_policy(instructions: str, policy: LiveContinuousPolicy) -> str:
-    """Keep only the prompt sections that apply to the active live policy.
-
-    Every policy's rules used to be sent on every call, so a generic run also
-    received the Barman recipe - wasted tokens, and a standing invitation to
-    anchor on a scenario the run is not in. Sections are marked in the prompt
-    file rather than split across files so the whole document stays readable.
-    """
-
-    def keep(match: re.Match[str]) -> str:
-        wanted = {name.strip() for name in match.group("policy").split(",")}
-        return match.group("body") if policy.value in wanted else ""
-
-    return _POLICY_SECTION.sub(keep, instructions).replace("\n\n\n", "\n\n")
 
 
 def structured_output_model(observation: Observation) -> PlannerOutputModel:
@@ -78,12 +52,11 @@ def planner_action_kinds(observation: Observation) -> frozenset[str]:
         str(entry["kind"])
         for entry in observation.semantic_action_digest()
     )
-    generic_live_policy = (
+    semantic_live_planning = (
         observation.mode == "live"
-        and observation.live_execution_policy
-        is LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
+        and observation.planning_mode is PlanningMode.CONTINUOUS
     )
-    if observation.available_skills and not generic_live_policy:
+    if observation.available_skills and not semantic_live_planning:
         kinds.add("skill")
     return frozenset(kinds)
 
@@ -115,17 +88,15 @@ def validate_planner_output_surface(
 
 def validate_planner_prompt_budget(
     *,
-    policy: LiveContinuousPolicy,
     system_characters: int,
     schema_characters: int,
 ) -> None:
     """Keep static planner context on a reviewed, ratcheted budget."""
 
-    system_budget = PLANNER_SYSTEM_CHARACTER_BUDGET[policy]
-    if system_characters > system_budget:
+    if system_characters > PLANNER_SYSTEM_CHARACTER_BUDGET:
         raise ValueError(
-            f"{policy.value} planner instructions use {system_characters} "
-            f"characters; budget is {system_budget}"
+            f"planner instructions use {system_characters} characters; "
+            f"budget is {PLANNER_SYSTEM_CHARACTER_BUDGET}"
         )
     static_characters = system_characters + schema_characters
     if static_characters > PLANNER_STATIC_PREFIX_CHARACTER_BUDGET:

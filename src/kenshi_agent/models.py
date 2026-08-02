@@ -51,13 +51,6 @@ class PlanningMode(StrEnum):
     CONTINUOUS = "continuous"
 
 
-class LiveContinuousPolicy(StrEnum):
-    DISABLED = "disabled"
-    # Generic: validates contracts, references, and budgets rather than an exact
-    # scenario recipe. It does not prescribe a step sequence.
-    DIALOGUE_INTERACTION_V1 = "dialogue_interaction_v1"
-
-
 class ScenarioIdentity(StrictModel):
     """One declared game situation, tied to the exact save used to reproduce it."""
 
@@ -4094,7 +4087,6 @@ class Observation(StrictModel):
     mode: Literal["mock", "live", "replay"]
     control_mode: ControlMode = ControlMode.INTERFACE_ONLY
     planning_mode: PlanningMode = PlanningMode.SINGLE_STEP
-    live_execution_policy: LiveContinuousPolicy = LiveContinuousPolicy.DISABLED
     world_revision: WorldStateRevision = Field(default_factory=WorldStateRevision)
     telemetry: TelemetrySnapshot | None = None
     telemetry_stale: bool = False
@@ -4532,7 +4524,6 @@ class Observation(StrictModel):
             "mode": self.mode,
             "control_mode": self.control_mode.value,
             "planning_mode": self.planning_mode.value,
-            "live_execution_policy": self.live_execution_policy.value,
             "world_revision": _json_model(self.world_revision),
             "telemetry_stale": self.telemetry_stale,
             "telemetry_age_seconds": self.telemetry_age_seconds,

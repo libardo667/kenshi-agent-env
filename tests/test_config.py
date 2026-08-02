@@ -11,7 +11,6 @@ from kenshi_agent.config import (
 from kenshi_agent.models import (
     ClickAction,
     ControlMode,
-    LiveContinuousPolicy,
     MemoryRetrievalPolicy,
     PlanningMode,
     SkillAction,
@@ -27,7 +26,6 @@ def test_default_config_loads_and_resolves_paths(monkeypatch: pytest.MonkeyPatch
     assert config.control.mode == ControlMode.INTERFACE_ONLY
     assert not config.control.native_assisted_actions_enabled
     assert config.planning.mode == PlanningMode.SINGLE_STEP
-    assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
     assert config.planning.max_plan_steps == 4
     assert config.planning.max_actions_per_plan == 8
     assert config.planning.max_native_assisted_actions_per_plan == 0
@@ -55,84 +53,75 @@ def test_calibrated_client_dimensions_must_be_configured_together() -> None:
         ControlsConfig(calibrated_client_width=1920)
 
 
-def test_live_example_uses_windows_local_app_data(
+def test_canonical_live_config_uses_windows_local_app_data(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
     monkeypatch.delenv("KENSHI_AGENT_TELEMETRY_DIR", raising=False)
 
-    config = load_config(root / "config" / "live.example.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     assert config.telemetry.file == (tmp_path / "KenshiAgent" / "telemetry.latest.json")
     assert config.paths.memory_db == (tmp_path / "KenshiAgent" / "state" / "live-memory.sqlite3")
     assert config.capture.window_title_contains == "Kenshi 1.0."
-    assert config.control.mode == ControlMode.INTERFACE_ONLY
-    assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
+    assert config.control.mode == ControlMode.NATIVE_ASSISTED
 
 
-def test_live_example_accepts_telemetry_directory_override(
+def test_canonical_live_config_accepts_telemetry_directory_override(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     override = tmp_path / "custom-telemetry"
     monkeypatch.setenv("KENSHI_AGENT_TELEMETRY_DIR", str(override))
 
-    config = load_config(root / "config" / "live.example.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     assert config.telemetry.file == override / "telemetry.latest.json"
 
 
-def test_live_burnin_profile_allows_only_audited_actions(
+def test_canonical_live_config_has_no_selectable_execution_policy(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
+
+    config = load_config(root / "config" / "live.yaml")
+
+    assert config.planning.mode is PlanningMode.CONTINUOUS
+    assert config.planner.kind == "openrouter"
+    assert not hasattr(config.planning, "live_execution_policy")
+
+
+def test_canonical_live_config_keeps_calibrated_host_and_input_invariants(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     assert config.safety.live_actions_enabled
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
-    # burnin is single_step, which never consulted a continuous policy; the
-    # calibrated food recipe it used to name has been retired.
-    assert config.planning.live_execution_policy is LiveContinuousPolicy.DISABLED
+    assert config.planning.mode is PlanningMode.CONTINUOUS
     assert config.control.native_assisted_actions_enabled
     assert config.safety.require_cli_execute_flag
-    assert set(config.safety.allow_action_kinds) == {
-        "noop",
-        "stop",
-        "pause",
-        "wait",
-        "skill",
-        "recall_memory",
-        "read_fieldbook",
+    assert not set(config.safety.allow_action_kinds) & {
+        "click",
+        "key",
+        "hotkey",
+        "move_cursor",
+        "scroll",
     }
     assert set(config.safety.allow_skills) == {
-        "open_map",
-        "zoom_map_in",
-        "zoom_map_out",
-        "open_inventory",
         "pause_game",
         "recenter_camera",
         "close_overlay",
-        "clear_item_highlights",
-        "pan_camera_forward",
-        "pan_camera_backward",
-        "pan_camera_left",
-        "pan_camera_right",
-        "orbit_camera_left",
-        "orbit_camera_right",
-        "move_visible_terrain",
-        "move_on_map",
-        "interact_visible_person",
         "approach_confirmed_vendor",
-        "continue_confirmed_vendor_approach",
-        "choose_show_goods",
-        "inspect_shop_item",
-        "buy_inspected_shop_item",
     }
     assert config.runtime.max_steps == 30
-    assert config.planner.reasoning_effort == "medium"
+    assert config.planner.reasoning_effort == "low"
     assert config.planner.max_output_tokens_base == 4096
     assert config.planner.max_output_tokens_per_plan_step == 2048
     assert config.planner.max_output_tokens_ceiling == 12288
@@ -162,10 +151,7 @@ def test_live_burnin_profile_allows_only_audited_actions(
     assert config.launch.post_load_health_seconds == 45
     assert config.runtime.objective is not None
     assert config.safety.max_primitive_actions_per_step == 4
-    assert not config.safety.allow_live_unpause_actions
-    assert config.safety.max_purchase_price == 750
-    assert config.safety.min_money_after_purchase == 250
-    assert config.safety.max_purchases_per_run == 1
+    assert config.safety.allow_live_unpause_actions
     assert config.safety.supervisor_enabled
     assert config.safety.supervisor_max_sequence_stalls == 3
     assert config.safety.supervisor_sequence_stall_min_age_seconds == 1.0
@@ -266,22 +252,18 @@ def test_real_env_file_is_ignored_but_template_is_trackable() -> None:
     assert (root / ".env.example").is_file()
 
 
-def test_live_dialogue_profile_authorizes_semantic_actions_not_raw_input(
+def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The generic profile grants composition, not a wider input surface."""
+    """The canonical config grants composition, not a wider input surface."""
 
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
-    config = load_config(root / "config" / "live.dialogue.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     assert config.control.mode == ControlMode.NATIVE_ASSISTED
     assert config.planning.mode is PlanningMode.CONTINUOUS
-    assert (
-        config.planning.live_execution_policy
-        is LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
-    )
     # Both live gates are still required before any input is emitted.
     assert config.safety.live_actions_enabled
     assert config.safety.require_cli_execute_flag
@@ -289,7 +271,7 @@ def test_live_dialogue_profile_authorizes_semantic_actions_not_raw_input(
 
     kinds = set(config.safety.allow_action_kinds)
     assert {"approach_dialogue_target", "activate_visible_control"} <= kinds
-    # Raw controller primitives are never live-allowlisted on this profile.
+    # Raw controller primitives are never live-allowlisted.
     assert not kinds & {"click", "key", "hotkey", "move_cursor", "scroll"}
 
     # The approach macro survives only to supply the audited native primitives.
@@ -303,7 +285,7 @@ def test_live_dialogue_profile_authorizes_semantic_actions_not_raw_input(
     } & set(config.safety.allow_skills)
 
 
-def test_live_profiles_allowlist_every_planner_visible_action(
+def test_canonical_live_config_allowlists_every_planner_visible_action(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Adding a reusable action must not silently leave it unusable.
@@ -311,7 +293,7 @@ def test_live_profiles_allowlist_every_planner_visible_action(
     `dismiss_screen` shipped as a contract, a live handler, a policy rule and a
     prompt rule — but its kind was never added to `allow_action_kinds`, so the
     guard rejected every attempt and the planner spun retrying it. The catalog
-    and the profiles that claim to expose it have to agree.
+    and the canonical configuration have to agree.
     """
 
     from kenshi_agent.action_contracts import ACTION_CONTRACTS
@@ -324,47 +306,37 @@ def test_live_profiles_allowlist_every_planner_visible_action(
     }
     assert planner_visible, "expected at least one planner-visible contract"
 
-    for profile in ("live.dialogue.yaml", "live.longform.yaml"):
-        config = load_config(root / "config" / profile)
-        policy = config.planning.live_execution_policy
-        if policy is not LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
-            continue
-        allowed = set(config.safety.allow_action_kinds)
-        missing = sorted(planner_visible - allowed)
-        assert not missing, (
-            f"{profile} runs the generic policy but does not allowlist: {missing}"
-        )
-        controller_verified_max = max(
-            contract.max_primitive_actions
-            for contract in ACTION_CONTRACTS.values()
-            if contract.kind in allowed and contract.controller_verified
-        )
-        assert (
-            config.safety.max_controller_verified_primitive_actions_per_step
-            >= controller_verified_max
-        ), (
-            f"{profile} caps controller-verified actions below an allowlisted "
-            f"contract's {controller_verified_max}-primitive bound"
-        )
-        # And it still must not allowlist raw controller primitives.
-        assert not allowed & {"click", "key", "hotkey", "move_cursor", "scroll"}
+    config = load_config(root / "config" / "live.yaml")
+    allowed = set(config.safety.allow_action_kinds)
+    missing = sorted(planner_visible - allowed)
+    assert not missing, f"canonical live config does not allowlist: {missing}"
+    controller_verified_max = max(
+        contract.max_primitive_actions
+        for contract in ACTION_CONTRACTS.values()
+        if contract.kind in allowed and contract.controller_verified
+    )
+    assert (
+        config.safety.max_controller_verified_primitive_actions_per_step
+        >= controller_verified_max
+    )
+    assert not allowed & {"click", "key", "hotkey", "move_cursor", "scroll"}
 
 
-def test_generic_longform_profile_does_not_claim_a_specific_save_campaign(
+def test_canonical_live_config_does_not_claim_a_specific_save_campaign(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
-    config = load_config(root / "config" / "live.longform.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     assert config.memory.enabled
     assert config.memory.campaign_id is None
     assert not config.memory.ephemeral
 
 
-def test_longform_profile_uses_an_explicit_reasoning_route(
+def test_canonical_live_config_uses_an_explicit_reasoning_route(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -373,7 +345,7 @@ def test_longform_profile_uses_an_explicit_reasoning_route(
     monkeypatch.delenv("KENSHI_AGENT_OPENROUTER_MODEL", raising=False)
     monkeypatch.delenv("KENSHI_AGENT_REASONING_EFFORT", raising=False)
 
-    config = load_config(root / "config" / "live.longform.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     assert config.planner.openrouter_model == "google/gemini-3.1-flash-lite"
     assert config.planner.reasoning_effort == "low"
@@ -382,24 +354,21 @@ def test_longform_profile_uses_an_explicit_reasoning_route(
 
 
 @pytest.mark.parametrize(
-    "profile",
+    "config_name",
     [
         "default.yaml",
-        "live.burnin.yaml",
-        "live.dialogue.yaml",
-        "live.example.yaml",
-        "live.longform.yaml",
+        "live.yaml",
     ],
 )
-def test_every_memory_enabled_profile_allows_the_cognitive_read(
-    profile: str,
+def test_every_memory_enabled_config_allows_the_cognitive_read(
+    config_name: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
-    config = load_config(root / "config" / profile)
+    config = load_config(root / "config" / config_name)
 
     assert config.memory.enabled
     assert "recall_memory" in config.safety.allow_action_kinds

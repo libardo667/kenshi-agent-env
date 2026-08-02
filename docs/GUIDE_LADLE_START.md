@@ -222,7 +222,6 @@ With Kenshi and FCS closed:
 
 ```bash
 ./dev scenario install-starts
-./dev scenario verify-starts
 ./dev launch --game-start kae-05-ladle-long-haul
 ```
 

@@ -2,11 +2,18 @@
 
 ## Unreleased
 
+- Replaced the historical `burnin`, `dialogue`, and `longform` live profiles
+  with one canonical `config/live.yaml`. Ordinary `./dev run` no longer exposes
+  configuration or planner-backend switches, and the generic subprocess
+  planner plus its one-off smoke scripts have been removed rather than hidden
+  behind another planner route. Continuous live plan validation is now a
+  mandatory invariant instead of the selectable `dialogue_interaction_v1`
+  policy, and the generated command reference comes from the shared parser.
 - Compacted time control into truthful playback states. `set_speed` now means
   “running at this ordinal gear”: from pause, its controller starts at 1x and
   then selects 3x or 5x inside one causally verified action. Raw pause/speed
   bindings are no longer planner affordances, and resource harvesting uses the
-  same transaction. Added `./dev play` to launch, load, and begin a journey in
+  same transaction. The current `./dev run` launches, loads, and begins agent play in
   one supported command. Launcher input now yields to human activity, restarts
   the quiet interval and takeover countdown, excludes that handoff from startup
   timeouts, and keeps F12 as a permanent brake.
@@ -20,7 +27,7 @@
   request schema 1.1 and telemetry protocol 1.2 retain the requested yield in
   acknowledgement identity, preventing a smaller in-flight production order
   from satisfying a later larger request.
-- Added an idempotent interrupted-journey recovery path. A nonzero WSL journey
+- Added an idempotent interrupted-run recovery path. A nonzero `./dev run`
   exit now invokes supported Windows cleanup that causally pauses a loaded
   world, waits for an in-flight native command to acknowledge cancellation,
   dismisses only exact owned inventory windows, leaves Kenshi open, and restores

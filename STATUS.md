@@ -9,7 +9,7 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 
 - A deterministic Kenshi-like mock environment with strict Pydantic models, JSONL lifecycle logs,
   optional full-observation replay, SQLite memory, and
-  heuristic/scripted/subprocess/OpenAI/OpenRouter planners.
+  heuristic/scripted/OpenAI/OpenRouter planners.
 - `single_step` is default; feature-flagged `continuous` accepts bounded plans, future patches,
   and guarded interruption. Both transactionally reserve global rate/purchase authority;
   continuous also owns plan risk budgets. See [bounded continuous
@@ -25,7 +25,7 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 - A final in-lease authorization fence revalidates action/reference safety, plan conditions,
   control mode, calibration, input ownership, and freshness just before input, in both schedulers.
   Unfresh authority emits zero primitives.
-- Human input cancels the active plan and hands control over visibly. The long-form profile may
+- Human input cancels the active plan and hands control over visibly. The canonical live configuration may
   restore a running world after a quiet resettable countdown; F12 disarms automatic takeover for
   the run.
 - A read-only guide-grounded strategic advisor. `consult_advisor` spends a strategic turn, creates
@@ -49,18 +49,17 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 - Hash-locked FCS starts install and launch with money/party proof. Mutation campaigns record source
   digests, so the generated ledger derives which committed results still apply; edits fail a gate.
 
-## Live profiles
+## Live configuration
 
-- `config/live.longform.yaml` — open-ended supervised `native_assisted`, continuous, unpaused
-  profile with dialogue, memory, advisor, and acknowledgements. It is campaign-neutral;
-  `./dev journey` requires an explicit `--campaign` or attested scenario for durable memory.
-- `config/live.dialogue.yaml` — shorter stop-motion proof profile.
-- `config/live.burnin.yaml` — legacy single-step calibrated profile; its continuous and
-  food-procurement policies are retired.
+`config/live.yaml` is the single supervised `native_assisted`, continuous,
+unpaused configuration for ordinary play. It is campaign-neutral; `./dev run`
+requires an explicit `--campaign` or attested scenario for durable memory.
+There is no alternate planner backend or diagnostic-planner workflow on the
+live command surface.
 
-From WSL, `./dev journey` preserves exact planner argv; `./dev recover` causally pauses an
+From WSL, `./dev recover` causally pauses an
 interrupted native command, waits for its terminal acknowledgement, cleans exact owned windows,
-and restores a stranded display; `./dev close` guards `WM_CLOSE`; `./dev crash` archives evidence.
+and restores a stranded display; `./dev stop` guards `WM_CLOSE`; recovery archives crash evidence.
 
 Supervised runs have live-proven approach and dialogue activation, semantic startup, inventory and
 trade navigation, one-step purchases with confirmed debits, readable world deltas, persistent

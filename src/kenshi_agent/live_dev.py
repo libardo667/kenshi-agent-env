@@ -44,6 +44,8 @@ from .control_ownership import (
     ControlOwnershipMachine,
     ControlOwnershipState,
 )
+from .dev_cli import LIVE_CONFIG
+from .dev_cli import build_parser as build_dev_parser
 from .display_lease import (
     DisplayLeaseError,
     DisplayTopologyController,
@@ -104,9 +106,19 @@ class LowPhysicalMemory(LaunchFailed):
         self.available_mib = available_mib
         self.threshold_mib = threshold_mib
         super().__init__(
-            f"Only {available_mib} MiB physical memory is available; this profile "
+            f"Only {available_mib} MiB physical memory is available; this configuration "
             f"requires at least {threshold_mib} MiB before launch."
         )
+
+
+def _config_path(args: argparse.Namespace) -> str | Path:
+    if getattr(args, "config", None) is not None:
+        return str(args.config)
+    return Path(__file__).resolve().parents[2] / LIVE_CONFIG
+
+
+def _windows_runtime() -> bool:
+    return os.name == "nt"
 
 
 class _StartupInputGate:
@@ -894,7 +906,7 @@ def _recover_low_launch_memory(
     if after < threshold_mib:
         raise LaunchFailed(
             "WSL cache reclaim completed, but Windows available physical memory "
-            f"only changed from {before} MiB to {after} MiB; this profile still "
+            f"only changed from {before} MiB to {after} MiB; the live configuration still "
             f"requires {threshold_mib} MiB before launch. No launch input was sent."
         )
     return before, after
@@ -934,9 +946,9 @@ def _validate_launch_preconditions(
 ) -> None:
     if terminal_window_title is not None:
         raise LaunchFailed(
-            f"Kenshi is in terminal state {terminal_window_title!r}. Run './dev crash' "
-            "to archive evidence, or './dev crash --dismiss' to archive it before "
-            "closing the unsent report."
+            f"Kenshi is in terminal state {terminal_window_title!r}. Run './dev recover' "
+            "to archive evidence, or './dev recover --dismiss-crash' to archive it "
+            "before closing the unsent report."
         )
     names = process_names if process_names is not None else _running_process_names()
     if (
@@ -984,7 +996,7 @@ def _validate_launch_preconditions(
             details = _format_graphics_mismatches(verification.mismatches)
             raise LaunchFailed(
                 f"Graphics profile {profile.profile_id!r} is not installed exactly: "
-                f"{details}. Run './dev graphics apply' while Kenshi is stopped."
+                f"{details}. Run './dev setup graphics' while Kenshi is stopped."
             )
 
 
@@ -1792,7 +1804,7 @@ async def _launch(
 ) -> int:
     if os.name != "nt":
         raise SystemExit("The live developer launcher must run with Windows Python.")
-    config = load_config(args.config)
+    config = load_config(_config_path(args))
     display_controller = (
         DisplayTopologyController()
         if manage_display_lease and config.launch.external_display_only
@@ -1894,8 +1906,8 @@ async def _launch(
             else ""
         )
         print(
-            "Launch preflight passed: all configured Steam, memory, graphics, "
-            "display, and Windows GPU-event checks are ready."
+            "Doctor passed: Steam, memory, graphics, display, and Windows "
+            "GPU-event checks are ready."
             + scenario_suffix
             + start_suffix
         )
@@ -2130,8 +2142,8 @@ async def _wait_for_paused_native_command_terminal(
 
 async def _close(args: argparse.Namespace) -> int:
     if os.name != "nt":
-        raise SystemExit("The live developer close command must run with Windows Python.")
-    config = load_config(args.config)
+        raise SystemExit("The live developer stop command must run with Windows Python.")
+    config = load_config(_config_path(args))
     try:
         safe_state = await _close_kenshi_safely(
             config,
@@ -2158,9 +2170,26 @@ async def _close(args: argparse.Namespace) -> int:
 
 
 async def _recover(args: argparse.Namespace) -> int:
-    if os.name != "nt":
+    if not _windows_runtime():
         raise SystemExit("The live developer recovery command must run with Windows Python.")
-    config = load_config(args.config)
+    config = load_config(_config_path(args))
+    terminal_window_title = _terminal_window_title(_controller(config))
+    if terminal_window_title is not None:
+        crash_args = argparse.Namespace(
+            config=_config_path(args),
+            dismiss=args.dismiss_crash,
+            timeout=args.timeout,
+        )
+        crash_result = await _crash(crash_args)
+        if crash_result != 0:
+            return crash_result
+        if not args.dismiss_crash:
+            print(
+                "Terminal crash evidence was archived. Re-run './dev recover "
+                "--dismiss-crash' to explicitly close the unsent reporter.",
+                file=sys.stderr,
+            )
+            return 3
     failures: list[str] = []
     game_state: Literal["loaded_paused", "title", "not_running"] | None = None
     display_changed: bool | None = None
@@ -2203,8 +2232,34 @@ async def _recover(args: argparse.Namespace) -> int:
         if display_changed
         else "The display lease was already released."
     )
-    print(f"Interrupted journey recovery complete: {game_message} {display_message}")
+    print(f"Recovery complete: {game_message} {display_message}")
     return 0
+
+
+async def _doctor(args: argparse.Namespace) -> int:
+    """Run read-only launch checks, archiving terminal crash evidence on sight."""
+
+    if not _windows_runtime():
+        raise SystemExit("The live developer doctor must run with Windows Python.")
+    config = load_config(_config_path(args))
+    if _terminal_window_title(_controller(config)) is None:
+        return await _launch(args)
+
+    crash_result = await _crash(
+        argparse.Namespace(
+            config=_config_path(args),
+            dismiss=False,
+            timeout=args.timeout,
+        )
+    )
+    if crash_result == 0:
+        print(
+            "Doctor found a terminal crash. Evidence was archived; the unsent "
+            "reporter was not dismissed.",
+            file=sys.stderr,
+        )
+        return 4
+    return crash_result
 
 
 _CRASH_LOG_NAMES = (
@@ -2378,7 +2433,7 @@ async def _dismiss_crash_session(
 async def _crash(args: argparse.Namespace) -> int:
     if os.name != "nt":
         raise SystemExit("The crash recovery command must run with Windows Python.")
-    config = load_config(args.config)
+    config = load_config(_config_path(args))
     probe = _controller(config)
     try:
         title = _terminal_window_title(probe)
@@ -2427,7 +2482,7 @@ async def _crash(args: argparse.Namespace) -> int:
 def _graphics(args: argparse.Namespace) -> int:
     if os.name != "nt":
         raise SystemExit("The live graphics command must run with Windows Python.")
-    config = load_config(args.config)
+    config = load_config(_config_path(args))
     try:
         names = _running_process_names()
         if "kenshi_x64.exe" in names:
@@ -2473,28 +2528,64 @@ def _graphics(args: argparse.Namespace) -> int:
         return 5
 
 
-def _shot(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
+def _write_json_atomic(path: Path, payload: object) -> None:
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+
+
+def _snapshot(args: argparse.Namespace) -> int:
+    config = load_config(_config_path(args))
     controller = _controller(config)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     label = "".join(
         character for character in args.label if character.isalnum() or character in "-_"
     )
-    run_dir = config.paths.runs_dir / "dev-shots" / f"{stamp}-{label or 'shot'}"
+    evidence_dir = (
+        config.paths.runs_dir
+        / "dev-snapshots"
+        / f"{stamp}-{label or 'snapshot'}"
+    )
     frame = WindowCapture(
         controller,
-        run_dir,
+        evidence_dir,
         image_format=config.capture.image_format,
         jpeg_quality=config.capture.jpeg_quality,
     ).capture(1)
-    print(frame.path)
+    telemetry = _telemetry_read(config).read()
+    _write_json_atomic(
+        evidence_dir / "telemetry.json",
+        {
+            "source": str(telemetry.path),
+            "age_seconds": telemetry.age_seconds,
+            "stale": telemetry.stale,
+            "snapshot": telemetry.snapshot.model_dump(mode="json"),
+        },
+    )
+    _write_json_atomic(
+        evidence_dir / "manifest.json",
+        {
+            "captured_at": datetime.now(UTC).isoformat(),
+            "label": label or "snapshot",
+            "frame": str(frame.path),
+            "telemetry": "telemetry.json",
+            "telemetry_sequence": telemetry.snapshot.sequence,
+        },
+    )
+    print(evidence_dir)
     return 0
 
 
 def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
     snapshot = result.snapshot
     selected = next((character for character in snapshot.squad if character.selected), None)
-    barman = next((entity for entity in snapshot.nearby_entities if entity.name == "Barman"), None)
+    nearest_entities = sorted(
+        snapshot.nearby_entities,
+        key=lambda entity: (
+            entity.distance is None,
+            entity.distance if entity.distance is not None else 0.0,
+        ),
+    )[:12]
     context_targets = [
         target
         for target in snapshot.world_targets
@@ -2515,7 +2606,11 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
         "active_shop_trader_count": snapshot.active_shop_trader_count,
         "native_control": snapshot.native_control.model_dump(mode="json"),
         "selected": selected.model_dump(mode="json") if selected else None,
-        "barman": barman.model_dump(mode="json") if barman else None,
+        "nearby_entity_count": len(snapshot.nearby_entities),
+        "nearest_nearby_entities": [
+            entity.model_dump(mode="json", exclude_none=True)
+            for entity in nearest_entities
+        ],
         "known_map_destinations": [
             destination.model_dump(mode="json", exclude_none=True)
             for destination in snapshot.known_map_destinations
@@ -2534,11 +2629,27 @@ def _telemetry_payload(result: TelemetryRead) -> dict[str, object]:
 
 
 def _telemetry(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    result = _telemetry_read(config).read()
-    payload = _telemetry_payload(result)
-    print(json.dumps(payload, indent=2))
-    return 1 if result.stale else 0
+    config = load_config(_config_path(args))
+    reader = _telemetry_read(config)
+    if not args.watch:
+        result = reader.read()
+        print(json.dumps(_telemetry_payload(result), indent=2))
+        return 1 if result.stale else 0
+    if args.interval <= 0:
+        raise SystemExit("--interval must be greater than zero.")
+
+    status = 0
+    try:
+        while True:
+            result = reader.read()
+            status = 1 if result.stale else 0
+            print(
+                json.dumps(_telemetry_payload(result), separators=(",", ":")),
+                flush=True,
+            )
+            time.sleep(args.interval)
+    except KeyboardInterrupt:
+        return status
 
 
 def _scenario_identity_from_args(args: argparse.Namespace) -> ScenarioIdentity:
@@ -2582,14 +2693,6 @@ def _scenario_command(args: argparse.Namespace) -> int:
                 )
             )
             return 0
-        if args.scenario_action == "verify-starts":
-            bundle = load_authored_starts_bundle()
-            path = verify_installed_authored_starts(bundle, _kenshi_root())
-            print(
-                f"Authored Game Starts are installed and enabled exactly at {path}."
-            )
-            return 0
-
         running = _running_process_names()
         if {
             "kenshi_x64.exe",
@@ -2600,10 +2703,12 @@ def _scenario_command(args: argparse.Namespace) -> int:
                 "or saves."
             )
         if args.scenario_action == "install-starts":
+            bundle = load_authored_starts_bundle()
             install_result = install_authored_starts(
-                load_authored_starts_bundle(),
+                bundle,
                 _kenshi_root(),
             )
+            verified_path = verify_installed_authored_starts(bundle, _kenshi_root())
             changes: list[str] = []
             if install_result.mod_changed:
                 changes.append("installed exact mod bytes")
@@ -2615,7 +2720,10 @@ def _scenario_command(args: argparse.Namespace) -> int:
                 if install_result.backup_path is not None
                 else ""
             )
-            print(f"Authored Game Starts: {summary}.{recovery}")
+            print(
+                f"Authored Game Starts: {summary}; verified exact at "
+                f"{verified_path}.{recovery}"
+            )
             return 0
         if args.scenario_action == "capture":
             store = _scenario_store()
@@ -2662,31 +2770,27 @@ def _scenario_command(args: argparse.Namespace) -> int:
         return 4
 
 
-def _journey_argv(
+def _agent_argv(
     args: argparse.Namespace,
     run_id: str,
     *,
     scenario_attestation: Path | None = None,
 ) -> list[str]:
-    """Build the `run` argv from journey options.
+    """Translate one explicit dev control mode into the core run contract.
 
-    Every gate is a faithful passthrough of an existing `run` flag; the `run`
-    command still enforces that live, native-assisted, and continuous-live
-    execution each require their own acknowledgement. Journey never invents or
-    relaxes a gate.
+    The lower-level runner retains separate authority gates.  The dev surface
+    makes them one comprehensible choice and expands that choice exactly here.
     """
 
     argv = [
         "run",
         "--config",
-        args.config,
+        str(_config_path(args)),
         "--mode",
         "live",
         "--run-id",
         run_id,
     ]
-    if args.planner is not None:
-        argv.extend(["--planner", args.planner])
     if args.steps is not None:
         argv.extend(["--steps", str(args.steps)])
     if args.objective:
@@ -2695,79 +2799,31 @@ def _journey_argv(
         argv.extend(["--campaign", args.campaign])
     if scenario_attestation is not None:
         argv.extend(["--scenario-attestation", str(scenario_attestation)])
-    else:
-        for option, destination in (
-            ("--scenario-id", "scenario_id"),
-            ("--save-id", "save_id"),
-            ("--scenario-environment", "scenario_environment"),
-            ("--scenario-danger", "scenario_danger"),
-            ("--scenario-economy", "scenario_economy"),
-            ("--scenario-party", "scenario_party"),
-            ("--scenario-time-of-day", "scenario_time_of_day"),
-        ):
-            value = getattr(args, destination)
-            if value is not None:
-                argv.extend([option, value])
-    if args.planner == "subprocess":
-        if not args.planner_script:
-            raise SystemExit(
-                "--planner subprocess requires --planner-script."
-            )
-        script = Path(args.planner_script).expanduser().resolve()
-        if not script.is_file():
-            raise SystemExit(f"Subprocess planner script does not exist: {script}")
-        command_args = [
-            sys.executable,
-            str(script),
-            *args.planner_arg,
-        ]
-        argv.extend(f"--command-arg={value}" for value in command_args)
-    elif args.planner_script or args.planner_arg:
-        raise SystemExit(
-            "--planner-script and --planner-arg require --planner subprocess."
-        )
-    if getattr(args, "continuous", False):
-        argv.extend(["--planning-mode", "continuous"])
-    if args.execute:
-        argv.append("--execute-live-actions")
-    if args.native_assisted:
-        argv.append("--acknowledge-native-assisted-control")
-    if getattr(args, "acknowledge_continuous_live", False):
-        argv.append("--acknowledge-continuous-live")
     if args.tts:
         argv.append("--tts")
-    if args.exclusive:
+    if args.control != "plan-only":
+        argv.extend(
+            [
+                "--execute-live-actions",
+                "--acknowledge-native-assisted-control",
+                "--acknowledge-continuous-live",
+            ]
+        )
+    if args.control == "exclusive-live":
         argv.append("--exclusive-input-session")
     return argv
 
 
-def _journey(
+def _run_agent(
     args: argparse.Namespace,
     *,
     manage_display_lease: bool = True,
 ) -> int:
-    config = load_config(args.config)
+    config = load_config(_config_path(args))
     run_id = args.run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
     scenario_attestation_path: Path | None = None
-    manual_scenario_values = [
-        getattr(args, destination)
-        for destination in (
-            "scenario_id",
-            "save_id",
-            "scenario_environment",
-            "scenario_danger",
-            "scenario_economy",
-            "scenario_party",
-            "scenario_time_of_day",
-        )
-        if getattr(args, destination) is not None
-    ]
     try:
         if args.scenario is not None:
-            if manual_scenario_values:
-                raise ScenarioFixtureError(
-                    "--scenario cannot be combined with manual scenario labels."
-                )
             store = _scenario_store()
             manifest = load_scenario_fixture(store, args.scenario)
             scenario_attestation_path = current_attestation_path(store)
@@ -2782,7 +2838,7 @@ def _journey(
                 manifest,
                 telemetry_result.snapshot,
             )
-        argv = _journey_argv(
+        argv = _agent_argv(
             args,
             run_id,
             scenario_attestation=scenario_attestation_path,
@@ -2794,7 +2850,7 @@ def _journey(
     display_controller: DisplayTopologyController | None = None
     monitor: GpuTdrMonitor | None = None
     try:
-        if manage_display_lease and args.execute and os.name == "nt":
+        if manage_display_lease and args.control != "plan-only" and os.name == "nt":
             if config.launch.external_display_only:
                 display_controller = DisplayTopologyController()
                 display_controller.validate_ready()
@@ -2815,9 +2871,8 @@ def _journey(
         with display_context:
             overlay: subprocess.Popen[bytes] | None = None
             if (
-                args.execute
+                args.control == "exclusive-live"
                 and config.safety.automatic_takeover_enabled
-                and args.ownership_overlay
             ):
                 overlay = subprocess.Popen(
                     [
@@ -2860,11 +2915,11 @@ def _journey(
     return result
 
 
-def _play(args: argparse.Namespace) -> int:
-    """Launch and load Kenshi, then hand the same intent to journey."""
+def _launch_and_run(args: argparse.Namespace) -> int:
+    """Launch and run under one display lease."""
 
     try:
-        config = load_config(args.config)
+        config = load_config(_config_path(args))
         display_controller = (
             DisplayTopologyController()
             if config.launch.external_display_only
@@ -2883,7 +2938,7 @@ def _play(args: argparse.Namespace) -> int:
             )
             if launch_result != 0:
                 return launch_result
-            return _journey(args, manage_display_lease=False)
+            return _run_agent(args, manage_display_lease=False)
     except (
         DisplayLeaseError,
         FileNotFoundError,
@@ -2895,329 +2950,109 @@ def _play(args: argparse.Namespace) -> int:
         return 4
 
 
-def _add_launch_arguments(
-    parser: argparse.ArgumentParser,
+def _choose_run_path(
     *,
-    allow_no_continue: bool,
-    allow_preflight: bool,
-) -> None:
-    parser.add_argument("--config", required=True)
-    parser.add_argument("--timeout", type=float, default=60.0)
-    startup_source = parser.add_mutually_exclusive_group()
-    if allow_no_continue:
-        startup_source.add_argument(
-            "--no-continue",
-            dest="continue_game",
-            action="store_false",
+    process_names: set[str],
+    telemetry: TelemetryRead | None,
+    terminal_window_title: str | None,
+) -> Literal["launch", "loaded"]:
+    """Choose only between two proven run starts; ambiguity always fails closed."""
+
+    if terminal_window_title is not None:
+        raise LaunchFailed(
+            f"Kenshi is in terminal state {terminal_window_title!r}; run "
+            "'./dev recover' before starting an agent."
         )
-    startup_source.add_argument(
-        "--scenario",
-        help=(
-            "Load the exact project-owned save slot already restored for this "
-            "fixture ID, then attest all matrix axes."
-        ),
-    )
-    startup_source.add_argument(
-        "--game-start",
-        help=(
-            "Start one exact bundled FCS scenario by catalog ID and prove its "
-            "money and party size after loading."
-        ),
-    )
-    parser.add_argument(
-        "--resume-launcher",
-        action="store_true",
-        help=(
-            "Resume one already-running small RE_Kenshi pre-game launcher "
-            "without starting a second process."
-        ),
-    )
-    if allow_preflight:
-        parser.add_argument(
-            "--preflight-only",
-            action="store_true",
-            help="Check Steam, memory, and graphics state without launching Kenshi.",
+    if "kenshi_x64.exe" not in process_names:
+        return "launch"
+    if telemetry is None:
+        raise LaunchFailed(
+            "Kenshi is running but no telemetry state was read; run './dev recover'."
         )
-    parser.set_defaults(continue_game=True, preflight_only=False)
+    if telemetry.stale:
+        raise LaunchFailed(
+            "Kenshi is running but telemetry is stale; run './dev recover'."
+        )
+    snapshot = telemetry.snapshot
+    if not snapshot.game.loaded:
+        raise LaunchFailed(
+            "Kenshi is running without a loaded world; run './dev recover'."
+        )
+    if snapshot.native_control.active_command_id is not None:
+        raise LaunchFailed(
+            "Kenshi has an unresolved native command; run './dev recover'."
+        )
+    return "loaded"
 
 
-def _add_journey_arguments(
-    parser: argparse.ArgumentParser,
-    *,
-    include_config: bool,
-    include_scenario: bool,
-) -> None:
-    if include_config:
-        parser.add_argument("--config", required=True)
-    parser.add_argument("--objective")
-    parser.add_argument(
-        "--campaign",
-        help=(
-            "Explicit save-lineage identity for durable continuity. Required "
-            "when the generic profile has memory enabled without an attested scenario."
-        ),
-    )
-    if include_scenario:
-        parser.add_argument(
-            "--scenario",
-            help=(
-                "Require the current loaded fixture attestation for this scenario ID. "
-                "This is the only form that counts as recurrence evidence."
-            ),
+def _run(args: argparse.Namespace) -> int:
+    """Use one safe loaded world or perform a fresh launch before agent play."""
+
+    try:
+        config = load_config(_config_path(args))
+        process_names = _running_process_names()
+        controller = _controller(config)
+        terminal_window_title = _terminal_window_title(controller)
+        telemetry = (
+            _telemetry_read(config).read()
+            if "kenshi_x64.exe" in process_names
+            else None
         )
-    parser.add_argument("--scenario-id")
-    parser.add_argument(
-        "--save-id",
-        help="Stable operator label for the exact save snapshot under test.",
-    )
-    parser.add_argument(
-        "--scenario-environment",
-        choices=["indoor", "outdoor"],
-    )
-    parser.add_argument(
-        "--scenario-danger",
-        choices=["hostile", "safe"],
-    )
-    parser.add_argument(
-        "--scenario-economy",
-        choices=["broke", "funded"],
-    )
-    parser.add_argument(
-        "--scenario-party",
-        choices=["solo", "squad"],
-    )
-    parser.add_argument(
-        "--scenario-time-of-day",
-        choices=["day", "night"],
-    )
-    parser.add_argument(
-        "--planner",
-        choices=["openai", "openrouter", "subprocess"],
-        help="Override the profile planner; omit to preserve planner.kind.",
-    )
-    parser.add_argument(
-        "--planner-script",
-        help=(
-            "Repository-relative Python planner script used with "
-            "--planner subprocess."
-        ),
-    )
-    parser.add_argument(
-        "--planner-arg",
-        action="append",
-        default=[],
-        help=(
-            "Exact argument for --planner-script. Repeat it; values beginning "
-            "with '-' use --planner-arg=VALUE."
-        ),
-    )
-    parser.add_argument(
-        "--steps",
-        type=int,
-        help="Override the profile step ceiling; omit to preserve runtime.max_steps.",
-    )
-    parser.add_argument("--run-id")
-    narration = parser.add_mutually_exclusive_group()
-    narration.add_argument(
-        "--tts",
-        dest="tts",
-        action="store_true",
-        help="Narrate human-readable planning and action updates aloud (default).",
-    )
-    narration.add_argument(
-        "--no-tts",
-        dest="tts",
-        action="store_false",
-        help="Disable spoken planning and action updates for this journey.",
-    )
-    parser.set_defaults(tts=True)
-    parser.add_argument(
-        "--continuous",
-        action="store_true",
-        help="Run the continuous scheduler instead of single-step.",
-    )
-    parser.add_argument("--execute", action="store_true")
-    parser.add_argument(
-        "--native-assisted",
-        action="store_true",
-        help="Acknowledge execution through configured native-assisted command bridges.",
-    )
-    parser.add_argument(
-        "--acknowledge-continuous-live",
-        action="store_true",
-        help=(
-            "Required in addition to --continuous and the normal live gates before "
-            "an enabled continuous-live policy may execute."
-        ),
-    )
-    parser.add_argument("--exclusive", action="store_true")
-    parser.add_argument(
-        "--ownership-overlay",
-        action="store_true",
-        help="Open the visible human/agent ownership and countdown window.",
-    )
+        path = _choose_run_path(
+            process_names=process_names,
+            telemetry=telemetry,
+            terminal_window_title=terminal_window_title,
+        )
+        if path == "loaded":
+            if args.game_start is not None:
+                raise LaunchFailed(
+                    "--game-start requires a fresh client, but a world is already loaded; "
+                    "run './dev stop' first."
+                )
+            return _run_agent(args)
+        return _launch_and_run(args)
+    except (
+        FileNotFoundError,
+        LaunchFailed,
+        OSError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
+        print(str(exc), file=sys.stderr)
+        return 4
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="./dev", description="Live Kenshi development console.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
+    return build_dev_parser(include_transport=True)
 
-    launch = subparsers.add_parser("launch", help="Launch RE_Kenshi through the launcher.")
-    _add_launch_arguments(
-        launch,
-        allow_no_continue=True,
-        allow_preflight=True,
-    )
 
-    close = subparsers.add_parser(
-        "close",
-        help="Close Kenshi only from a verified title or paused idle state.",
-    )
-    close.add_argument("--config", required=True)
-    close.add_argument("--timeout", type=float, default=15.0)
-
-    recover = subparsers.add_parser(
-        "recover",
-        help=(
-            "Recover an interrupted journey to a paused idle game and an "
-            "extended display."
-        ),
-    )
-    recover.add_argument("--config", required=True)
-    recover.add_argument("--timeout", type=float, default=15.0)
-
-    graphics = subparsers.add_parser(
-        "graphics",
-        help="Verify or reversibly install the configured Kenshi graphics profile.",
-    )
-    graphics.add_argument("--config", required=True)
-    graphics.add_argument("graphics_action", choices=["verify", "apply"])
-
-    shot = subparsers.add_parser("shot", help="Capture the current Kenshi client.")
-    shot.add_argument("--config", required=True)
-    shot.add_argument("--label", default="shot")
-
-    telemetry = subparsers.add_parser("telemetry", help="Print a concise live-state snapshot.")
-    telemetry.add_argument("--config", required=True)
-
-    crash = subparsers.add_parser(
-        "crash",
-        help="Archive a visible terminal crash before optional reporter dismissal.",
-    )
-    crash.add_argument("--config", required=True)
-    crash.add_argument(
-        "--dismiss",
-        action="store_true",
-        help="After archival, explicitly close the unsent crash report with Alt+F4.",
-    )
-    crash.add_argument("--timeout", type=float, default=10.0)
-
-    scenario = subparsers.add_parser(
-        "scenario",
-        help="Capture, inspect, or restore reproducible Kenshi save fixtures.",
-    )
-    scenario.add_argument("--config", required=True)
-    scenario_actions = scenario.add_subparsers(
-        dest="scenario_action",
-        required=True,
-    )
-    scenario_actions.add_parser("list", help="List and verify captured fixtures.")
-    scenario_actions.add_parser(
-        "verify-starts",
-        help="Verify the exact bundled FCS Game Starts are installed and enabled.",
-    )
-    scenario_actions.add_parser(
-        "install-starts",
-        help=(
-            "Install and enable the exact bundled FCS Game Starts without "
-            "overwriting a different artifact."
-        ),
-    )
-    capture_scenario = scenario_actions.add_parser(
-        "capture",
-        help="Copy one closed save into the immutable fixture store.",
-    )
-    capture_scenario.add_argument("--source-save", required=True)
-    capture_scenario.add_argument("--scenario-id", required=True)
-    capture_scenario.add_argument("--save-id", required=True)
-    capture_scenario.add_argument(
-        "--environment",
-        choices=["indoor", "outdoor"],
-        required=True,
-    )
-    capture_scenario.add_argument(
-        "--danger",
-        choices=["hostile", "safe"],
-        required=True,
-    )
-    capture_scenario.add_argument(
-        "--economy",
-        choices=["broke", "funded"],
-        required=True,
-    )
-    capture_scenario.add_argument(
-        "--party",
-        choices=["solo", "squad"],
-        required=True,
-    )
-    capture_scenario.add_argument(
-        "--time-of-day",
-        choices=["day", "night"],
-        required=True,
-    )
-    restore_scenario = scenario_actions.add_parser(
-        "restore",
-        help="Restore a fixture into the reserved project-owned save slot.",
-    )
-    restore_scenario.add_argument("scenario_id")
-
-    journey = subparsers.add_parser("journey", help="Run an ad-hoc agent objective.")
-    _add_journey_arguments(
-        journey,
-        include_config=True,
-        include_scenario=True,
-    )
-
-    play = subparsers.add_parser(
-        "play",
-        help="Launch, load, and immediately begin one agent journey.",
-    )
-    _add_launch_arguments(
-        play,
-        allow_no_continue=False,
-        allow_preflight=False,
-    )
-    _add_journey_arguments(
-        play,
-        include_config=False,
-        include_scenario=False,
-    )
-
-    return parser
+def _setup(args: argparse.Namespace) -> int:
+    if args.setup_action != "graphics":
+        raise AssertionError(args.setup_action)
+    args.graphics_action = "apply"
+    return _graphics(args)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.command == "doctor":
+        return asyncio.run(_doctor(args))
     if args.command == "launch":
         return asyncio.run(_launch(args))
-    if args.command == "close":
-        return asyncio.run(_close(args))
-    if args.command == "recover":
-        return asyncio.run(_recover(args))
-    if args.command == "graphics":
-        return _graphics(args)
-    if args.command == "shot":
-        return _shot(args)
+    if args.command == "run":
+        return _run(args)
     if args.command == "telemetry":
         return _telemetry(args)
-    if args.command == "crash":
-        return asyncio.run(_crash(args))
+    if args.command == "snapshot":
+        return _snapshot(args)
+    if args.command == "recover":
+        return asyncio.run(_recover(args))
+    if args.command == "stop":
+        return asyncio.run(_close(args))
     if args.command == "scenario":
         return _scenario_command(args)
-    if args.command == "journey":
-        return _journey(args)
-    if args.command == "play":
-        return _play(args)
+    if args.command == "setup":
+        return _setup(args)
     raise AssertionError(args.command)
 
 

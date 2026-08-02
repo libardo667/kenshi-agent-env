@@ -19,7 +19,6 @@ from ..models import (
 from .base import (
     Planner,
     PreparedPlannerInput,
-    instructions_for_policy,
     output_token_budget,
     planner_action_kinds,
     prepared_budgeted_input,
@@ -82,10 +81,7 @@ class OpenAIPlanner(Planner):
     ) -> PreparedPlannerInput:
         output_model = structured_output_model(observation)
         response_model = PlanProposal if output_model is PlanEnvelope else output_model
-        system_text = instructions_for_policy(
-            self.instructions,
-            observation.live_execution_policy,
-        )
+        system_text = self.instructions
         capacity = HostedModelCapacity(
             requested_model=self.config.model,
             context_window_tokens=self.config.context_window_tokens,
@@ -177,10 +173,7 @@ class OpenAIPlanner(Planner):
         async with asyncio.timeout(self.config.timeout_seconds):
             response = await self.client.responses.parse(
                 model=self.config.model,
-                instructions=instructions_for_policy(
-                    self.instructions,
-                    observation.live_execution_policy,
-                ),
+                instructions=self.instructions,
                 input=[{"role": "user", "content": content}],
                 text_format=response_model,
                 reasoning={"effort": self.config.reasoning_effort},

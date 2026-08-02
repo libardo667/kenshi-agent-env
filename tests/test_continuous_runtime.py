@@ -3148,29 +3148,6 @@ def test_reflex_preempts_a_future_plan_step_before_execution(tmp_path: Path) -> 
     asyncio.run(scenario())
 
 
-def test_continuous_mode_refuses_live_labeled_environment(tmp_path: Path) -> None:
-    class LiveLabelEnvironment(RevisionEnvironment):
-        def observation(self) -> Observation:
-            return super().observation().model_copy(update={"mode": "live"})
-
-    async def scenario() -> None:
-        clock = FakeClock()
-        environment = LiveLabelEnvironment(clock=clock)
-        planner = PlanThenStopPlanner()
-        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
-        try:
-            summary = await runtime.run(max_steps=2)
-        finally:
-            logger.close()
-
-        assert summary.terminated
-        assert planner.calls == 0
-        assert environment.actions == []
-        assert "policy is disabled" in summary.stop_reason
-
-    asyncio.run(scenario())
-
-
 def test_planner_output_that_becomes_stale_during_call_is_rejected(
     tmp_path: Path,
 ) -> None:

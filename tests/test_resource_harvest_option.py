@@ -6,9 +6,9 @@ from pathlib import Path
 
 from kenshi_agent.config import PlanningConfig, SafetyConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
-from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -459,7 +459,7 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
                 max_native_assisted_actions=2,
             ),
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             plan,
             observation,
             max_steps=1,

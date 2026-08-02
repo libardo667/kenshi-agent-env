@@ -363,7 +363,7 @@ class ActionGuard:
             # all independent of whether the world is moving.
             raise SafetyViolation(  # mutation: reason
                 "Purchase requires a confirmed paused game "  # mutation: reason
-                "because this profile sets "  # mutation: reason
+                "because the live configuration sets "  # mutation: reason
                 "require_paused_between_actions."  # mutation: reason
             )
         if not observation.trade_screen_open():
@@ -570,7 +570,7 @@ class ActionGuard:
             # all independent of whether the world is moving.
             raise SafetyViolation(  # mutation: reason
                 "Purchase requires a confirmed paused game "  # mutation: reason
-                "because this profile sets "  # mutation: reason
+                "because the live configuration sets "  # mutation: reason
                 "require_paused_between_actions."  # mutation: reason
             )
         selected_ids = telemetry.ui.selected_character_ids

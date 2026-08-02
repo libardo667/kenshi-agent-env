@@ -2,7 +2,7 @@
 
 A config profile name is not a campaign identity and neither is a character's
 display name. Both were the scope before this module existed, which meant two
-unrelated saves opened under `live.longform.yaml` shared one memory, and a
+unrelated saves opened under the canonical live configuration shared one memory, and a
 fixture run could inherit a real playthrough's beliefs.
 
 Scope is therefore explicit or explicitly ephemeral, never implicitly global.

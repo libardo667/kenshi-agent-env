@@ -11,7 +11,6 @@ from kenshi_agent.models import (
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
-    LiveContinuousPolicy,
     MemoryKind,
     MemoryRecord,
     MemoryStatus,
@@ -21,11 +20,7 @@ from kenshi_agent.models import (
     TelemetrySnapshot,
     WorldStateRevision,
 )
-from kenshi_agent.planners.base import (
-    instructions_for_policy,
-    planner_context_manifest,
-    prepared_budgeted_input,
-)
+from kenshi_agent.planners.base import planner_context_manifest, prepared_budgeted_input
 
 _NOW = datetime(2026, 7, 28, 8, 0, tzinfo=UTC)
 _TARGET_IDS = [f"entity-{index}" for index in range(1, 11)]
@@ -378,33 +373,6 @@ def test_payload_identity_extractors_reject_malformed_and_historical_shapes() ->
         },
         current,
     ) == set()
-
-
-def test_policy_sections_are_parsed_and_compacted_exactly() -> None:
-    instructions = (
-        "Shared.\n\n"
-        "<!-- policy:disabled,dialogue_interaction_v1 -->\n"
-        "Both.\n"
-        "<!-- /policy -->\n"
-        "\n"
-        "<!-- policy:disabled -->\n"
-        "Disabled.\n"
-        "<!-- /policy -->\n"
-        "\n"
-        "<!-- policy:dialogue_interaction_v1 -->\n"
-        "Dialogue.\n"
-        "<!-- /policy -->\n"
-        "\nTail.\n"
-    )
-
-    assert instructions_for_policy(
-        instructions,
-        LiveContinuousPolicy.DISABLED,
-    ) == "Shared.\n\nBoth.\n\nDisabled.\n\nTail.\n"
-    assert instructions_for_policy(
-        instructions,
-        LiveContinuousPolicy.DIALOGUE_INTERACTION_V1,
-    ) == "Shared.\n\nBoth.\n\nDialogue.\n\nTail.\n"
 
 
 def test_budgeted_input_rejects_every_non_object_with_exact_diagnostic() -> None:

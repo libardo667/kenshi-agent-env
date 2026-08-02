@@ -17,7 +17,6 @@ from kenshi_agent.final_safe_state import (
 )
 from kenshi_agent.models import (
     ControlMode,
-    LiveContinuousPolicy,
     PlanningMode,
     TelemetrySnapshot,
 )
@@ -80,44 +79,16 @@ def test_run_parser_accepts_optional_tts_mode() -> None:
     assert args.tts is True
 
 
-def test_subprocess_planner_preserves_explicit_argv_without_shell_reparsing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-    sentinel = object()
+def test_core_run_has_no_planner_implementation_surface() -> None:
+    parser = cli.build_parser()
 
-    def fake_subprocess_planner(
-        command: str | list[str],
-        *,
-        timeout_seconds: float,
-    ) -> object:
-        captured["command"] = command
-        captured["timeout_seconds"] = timeout_seconds
-        return sentinel
-
-    monkeypatch.setattr(cli, "SubprocessPlanner", fake_subprocess_planner)
-    config = load_config(Path(__file__).resolve().parents[1] / "config" / "default.yaml")
-    command = [
-        r"C:\Users\levib\AppData\Local\KenshiAgent\python.exe",
-        r"\\wsl.localhost\Ubuntu-22.04\home\levib\planner.py",
-        "--bearing",
-        "99.828",
-    ]
-
-    planner = cli._build_planner(
-        config,
-        SimpleNamespace(
-            planner="subprocess",
-            command=None,
-            command_args=command,
-        ),
-    )
-
-    assert planner is sentinel
-    assert captured == {
-        "command": command,
-        "timeout_seconds": config.planner.timeout_seconds,
-    }
+    for arguments in (
+        ["run", "--planner", "openrouter"],
+        ["run", "--command", "python planner.py"],
+        ["run", "--command-arg=python"],
+    ):
+        with pytest.raises(SystemExit):
+            parser.parse_args(arguments)
 
 
 @pytest.mark.skipif(os.name == "nt", reason="exercises the WSL/Linux rejection path")
@@ -170,7 +141,7 @@ def test_unverified_final_pause_dominates_episode_exit_code(
 
 def test_run_objective_override_is_ephemeral() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     original = config.runtime.objective
 
     overridden = cli._apply_run_overrides(
@@ -191,7 +162,7 @@ def test_run_without_any_override_returns_the_original_config() -> None:
 
 def test_run_campaign_override_is_explicit_and_ephemeral() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.longform.yaml")
+    config = load_config(root / "config" / "live.yaml")
     assert config.memory.campaign_id is None
 
     overridden = cli._apply_run_overrides(
@@ -342,7 +313,7 @@ def test_run_scenario_override_refuses_partial_declarations() -> None:
 
 def test_exclusive_input_session_keeps_kenshi_foreground() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     args = SimpleNamespace(exclusive_input_session=True, execute_live_actions=True)
 
     options = cli._controller_kwargs(config, args)
@@ -356,7 +327,7 @@ def test_exclusive_input_session_keeps_kenshi_foreground() -> None:
 
 def test_exclusive_input_session_requires_live_execution_gate() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     args = SimpleNamespace(exclusive_input_session=True, execute_live_actions=False)
 
     with pytest.raises(SystemExit, match="requires --execute-live-actions"):
@@ -365,7 +336,7 @@ def test_exclusive_input_session_requires_live_execution_gate() -> None:
 
 def test_shared_input_session_preserves_configured_polite_controls() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     config = config.model_copy(
         update={"controls": config.controls.model_copy(update={"pointer_mode": "absolute"})}
     )
@@ -381,7 +352,7 @@ def test_shared_input_session_preserves_configured_polite_controls() -> None:
 
 def test_relative_pointer_requires_exclusive_live_session() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     args = SimpleNamespace(exclusive_input_session=False, execute_live_actions=True)
 
     with pytest.raises(SystemExit, match="relative requires --exclusive-input-session"):
@@ -390,7 +361,7 @@ def test_relative_pointer_requires_exclusive_live_session() -> None:
 
 def test_native_assisted_execution_requires_dedicated_cli_acknowledgement() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     args = SimpleNamespace(
         execute_live_actions=True,
         acknowledge_native_assisted_control=False,
@@ -406,7 +377,7 @@ def test_native_assisted_execution_requires_dedicated_cli_acknowledgement() -> N
 
 def test_interface_only_execution_never_requires_native_acknowledgement() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.example.yaml")
+    config = load_config(root / "config" / "default.yaml")
     config = config.model_copy(
         update={"safety": config.safety.model_copy(update={"live_actions_enabled": True})}
     )
@@ -422,16 +393,11 @@ def test_interface_only_execution_never_requires_native_acknowledgement() -> Non
 
 def test_continuous_live_policy_requires_its_own_cli_acknowledgement() -> None:
     root = Path(__file__).resolve().parents[1]
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     config = config.model_copy(
         update={
             "planning": config.planning.model_copy(
-                update={
-                    "mode": PlanningMode.CONTINUOUS,
-                    "live_execution_policy": (
-                        LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
-                    ),
-                }
+                update={"mode": PlanningMode.CONTINUOUS}
             )
         }
     )

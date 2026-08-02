@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -27,7 +26,6 @@ from kenshi_agent.models import (
     GameState,
     IdempotencyPolicy,
     InterruptPolicy,
-    LiveContinuousPolicy,
     NativeControlState,
     NearbyEntity,
     Observation,
@@ -47,7 +45,7 @@ from kenshi_agent.models import (
     Vec3,
     WorldStateRevision,
 )
-from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner, SubprocessPlanner
+from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner
 from kenshi_agent.planning import (
     PlanBudgetLedger,
     PlanValidationError,
@@ -1139,10 +1137,10 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
             validate_plan(plan, current, config, macros)
 
 
-def test_live_dialogue_policy_receives_the_exact_plan_snapshot_and_bound(
+def test_live_plan_policy_receives_the_exact_plan_snapshot_and_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kenshi_agent import dialogue_interaction
+    from kenshi_agent import live_plan_policy
 
     current = observation().model_copy(update={"mode": "live"})
     plan = plan_for(current.world_revision)
@@ -1158,16 +1156,14 @@ def test_live_dialogue_policy_receives_the_exact_plan_snapshot_and_bound(
         return []
 
     monkeypatch.setattr(
-        dialogue_interaction,
-        "dialogue_interaction_policy_errors",
+        live_plan_policy,
+        "live_plan_policy_errors",
         policy_errors,
     )
     results = validate_plan(
         plan,
         current,
-        PlanningConfig(
-            live_execution_policy=LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
-        ),
+        PlanningConfig(),
         MacroRegistry({}),
     )
 
@@ -2059,7 +2055,7 @@ def test_builtin_heuristic_emits_a_two_step_continuous_plan() -> None:
     assert output.based_on_revision.same_snapshot_as(current.world_revision)
 
 
-def test_scripted_and_subprocess_adapters_parse_continuous_plan(
+def test_scripted_adapter_parses_continuous_plan(
     tmp_path: Path,
 ) -> None:
     current = observation().model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
@@ -2068,19 +2064,7 @@ def test_scripted_and_subprocess_adapters_parse_continuous_plan(
     script_path.write_text(plan.model_dump_json() + "\n", encoding="utf-8")
 
     scripted_output = asyncio.run(ScriptedPlanner(script_path).decide(current))
-    subprocess_output = asyncio.run(
-        SubprocessPlanner(
-            [
-                sys.executable,
-                "-c",
-                "import sys; print(sys.argv[1])",
-                plan.model_dump_json(),
-            ]
-        ).decide(current)
-    )
-
     assert isinstance(scripted_output, PlanEnvelope)
-    assert isinstance(subprocess_output, PlanEnvelope)
 
 
 def test_planner_adapters_declare_the_representation_they_consume(
@@ -2100,19 +2084,13 @@ def test_planner_adapters_declare_the_representation_they_consume(
     )
 
     heuristic = HeuristicPlanner().prepare_input(current, context_id="pc-1")
-    subprocess = SubprocessPlanner(["unused"]).prepare_input(
-        current,
-        context_id="pc-2",
-    )
     scripted = ScriptedPlanner(script_path).prepare_input(
         current,
         context_id="pc-3",
     )
 
     assert heuristic.context.manifest.input_kind == "full_observation"
-    assert subprocess.context.manifest.input_kind == "full_observation"
     assert heuristic.context.manifest.current_observation_delivered is True
-    assert subprocess.context.manifest.current_observation_delivered is True
     assert scripted.context.manifest.input_kind == "scripted"
     assert scripted.context.manifest.current_observation_delivered is False
     assert scripted.context.manifest.current_target_ids == []
@@ -2120,39 +2098,3 @@ def test_planner_adapters_declare_the_representation_they_consume(
     assert scripted.context.manifest.plan_outcome_ids == []
     assert scripted.context.manifest.memory_ids == []
     assert scripted.context.manifest.advisor_brief_ids == []
-
-
-def test_subprocess_adapter_parses_a_patch_for_the_exact_active_plan() -> None:
-    current = observation().model_copy(
-        update={
-            "planning_mode": PlanningMode.CONTINUOUS,
-            "active_plan": ActivePlanContext(
-                plan_id="survival-setup",
-                plan_version=1,
-                objective="Keep the current movement responsive.",
-                active_step_id="resume",
-                remaining_actions=1,
-            ),
-        }
-    )
-    patch = PlanPatch(
-        schema_version="1.0",
-        plan_id="survival-setup",
-        based_on_plan_version=1,
-        based_on_revision=current.world_revision,
-        replace_future_steps=[speed_step()],
-        rationale="Keep the active step and revise only what follows it.",
-    )
-
-    output = asyncio.run(
-        SubprocessPlanner(
-            [
-                sys.executable,
-                "-c",
-                "import sys; print(sys.argv[1])",
-                patch.model_dump_json(),
-            ]
-        ).decide(current)
-    )
-
-    assert output == patch

@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-import asyncio
-import sys
-from pathlib import Path
-
 import pytest
 
 from kenshi_agent.live_native_smoke_planner import (
@@ -17,26 +13,21 @@ from kenshi_agent.models import (
     ContextActionKind,
     ControlMode,
     ExitCurrentBuildingAction,
-    GameBinding,
     GameState,
     HarvestResourceAction,
-    InterruptPolicy,
     MoveToCharacterAction,
     NearbyEntity,
     Observation,
     PauseAction,
-    PlanEnvelope,
     PlanningMode,
     PlanPatch,
     StopAction,
     TelemetrySnapshot,
     UIState,
-    UseGameBindingAction,
     Vec3,
     WorldStateRevision,
     WorldTarget,
 )
-from kenshi_agent.planners import SubprocessPlanner
 
 TARGET_ID = "entity-copper"
 CHARACTER_TARGET_ID = "entity-max"
@@ -212,143 +203,6 @@ def test_active_native_smoke_preserves_only_its_future_pause_handoff() -> None:
     assert output.plan_id == state.active_plan.plan_id
     assert output.based_on_plan_version == state.active_plan.plan_version
     assert output.interrupt_active_step_id is None
-    assert [type(step.action) for step in output.replace_future_steps] == [
-        PauseAction,
-        StopAction,
-    ]
-
-
-def test_harvest_smoke_runs_through_the_subprocess_entrypoint() -> None:
-    state = observation(indoors=False).model_copy(
-        update={"planning_mode": PlanningMode.CONTINUOUS}
-    )
-    script = (
-        Path(__file__).parents[1]
-        / "src"
-        / "kenshi_agent"
-        / "live_native_smoke_planner.py"
-    )
-
-    output = asyncio.run(
-        SubprocessPlanner(
-            [
-                sys.executable,
-                str(script),
-                "--action",
-                "harvest_resource",
-                "--target-id",
-                TARGET_ID,
-            ]
-        ).decide(state)
-    )
-
-    assert isinstance(output, PlanEnvelope)
-    assert output.steps[0].action == HarvestResourceAction(
-        actor_id="entity-hep",
-        target_id=TARGET_ID,
-        quantity=1,
-    )
-
-
-def test_quicksave_smoke_runs_through_the_subprocess_entrypoint() -> None:
-    state = observation(indoors=False).model_copy(
-        update={
-            "planning_mode": PlanningMode.CONTINUOUS,
-            "telemetry": observation(indoors=False).telemetry.model_copy(
-                update={
-                    "capabilities": [
-                        *observation(indoors=False).telemetry.capabilities,
-                        "host.quicksave_completion",
-                    ]
-                }
-            ),
-        }
-    )
-    script = Path(__file__).parents[1] / "scripts" / "live_quicksave_smoke_planner.py"
-
-    output = asyncio.run(
-        SubprocessPlanner([sys.executable, str(script)]).decide(state)
-    )
-
-    assert isinstance(output, PlanEnvelope)
-    assert output.max_actions == 1
-    assert output.steps[0].action == UseGameBindingAction(
-        binding=GameBinding.QUICKSAVE,
-        expected_effect="write the current game to the exact quicksave slot",
-    )
-
-
-def test_direction_subprocess_returns_a_patch_instead_of_a_second_move() -> None:
-    state = observation(indoors=False).model_copy(
-        update={
-            "planning_mode": PlanningMode.CONTINUOUS,
-            "active_plan": ActivePlanContext(
-                plan_id="live-direction-smoke",
-                plan_version=1,
-                objective="Continue the exact bounded directional move.",
-                active_step_id="direction-smoke",
-                remaining_actions=2,
-            ),
-        }
-    )
-    script = Path(__file__).parents[1] / "scripts" / "live_direction_smoke_planner.py"
-
-    output = asyncio.run(
-        SubprocessPlanner(
-            [
-                sys.executable,
-                str(script),
-                "--bearing",
-                "223",
-                "--distance",
-                "800",
-            ]
-        ).decide(state)
-    )
-
-    assert isinstance(output, PlanPatch)
-    assert output.plan_id == "live-direction-smoke"
-    assert not [
-        step
-        for step in output.replace_future_steps
-        if step.action.kind == "move_in_direction"
-    ]
-
-
-def test_direction_subprocess_can_explicitly_interrupt_the_active_move() -> None:
-    state = observation(indoors=False).model_copy(
-        update={
-            "planning_mode": PlanningMode.CONTINUOUS,
-            "active_plan": ActivePlanContext(
-                plan_id="live-direction-smoke",
-                plan_version=1,
-                objective="Interrupt the exact bounded directional move.",
-                active_step_id="direction-smoke",
-                active_step_interrupt_policy=(
-                    InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
-                ),
-                remaining_actions=2,
-            ),
-        }
-    )
-    script = Path(__file__).parents[1] / "scripts" / "live_direction_smoke_planner.py"
-
-    output = asyncio.run(
-        SubprocessPlanner(
-            [
-                sys.executable,
-                str(script),
-                "--bearing",
-                "43",
-                "--distance",
-                "800",
-                "--interrupt-on-advisory",
-            ]
-        ).decide(state)
-    )
-
-    assert isinstance(output, PlanPatch)
-    assert output.interrupt_active_step_id == "direction-smoke"
     assert [type(step.action) for step in output.replace_future_steps] == [
         PauseAction,
         StopAction,

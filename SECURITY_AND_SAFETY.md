@@ -4,18 +4,18 @@ This controls a foreground desktop application with keyboard and mouse access.
 
 ## Gates
 
-Live actions require `safety.live_actions_enabled: true` and
-`--execute-live-actions`; dry-run is default and F12 is checked before every primitive.
+The supported `./dev run` defaults to `--control plan-only`; `polite-live` and
+`exclusive-live` expand into the canonical configuration's lower-level
+authority gates. F12 is checked before every primitive.
 
-`interface_only` is the default control mode: it strips `control.*` capabilities
-and native acknowledgement state from planner observations, omits native-assisted
-skills, and rejects them again in both `ActionGuard` and `LiveEnvironment`.
+`interface_only` strips `control.*` capabilities and native acknowledgement state from planner
+observations, omits native-assisted skills, and rejects them in `ActionGuard` and `LiveEnvironment`.
 
 `native_assisted` permits only skills marked `requires_native_assisted`, and
 additionally requires `control.native_assisted_actions_enabled: true` and
 `--acknowledge-native-assisted-control`. Live continuous mode additionally
-requires an implemented `planning.live_execution_policy` and
-`--acknowledge-continuous-live`. Logs, receipts, overlays, and summaries carry
+requires `--acknowledge-continuous-live`; semantic plan validation is mandatory
+rather than configuration-selectable. Logs, receipts, overlays, and summaries carry
 the mode so evidence cannot be conflated.
 
 Run Kenshi and the controller at the same Windows integrity level — never one as
@@ -55,7 +55,7 @@ Global rate and purchase authority follows the same delivery verdict as plan
 risk: a command-matched zero-input rejection releases both reservations;
 accepted or ambiguous delivery commits both.
 
-The supported `./dev close` path owns pause-before-close: an unpaused loaded
+The supported `./dev stop` path owns pause-before-close: an unpaused loaded
 world must advance to a causally confirmed pause before `WM_CLOSE`. It then
 re-reads telemetry and refuses an active native command, dialogue, shop, or
 unexplained modal. It may close at most the fully observed exact resource source

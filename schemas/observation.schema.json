@@ -3459,14 +3459,6 @@
       "title": "KnownMapDestination",
       "type": "object"
     },
-    "LiveContinuousPolicy": {
-      "enum": [
-        "disabled",
-        "dialogue_interaction_v1"
-      ],
-      "title": "LiveContinuousPolicy",
-      "type": "string"
-    },
     "MemoryAuthorship": {
       "description": "Who stands behind a record, and how much that is worth.\n\n`legacy_unverified` marks rows written before continuity had grounding at\nall. They are kept because they are real user data, not because anything\nchecked them.",
       "enum": [
@@ -6976,10 +6968,6 @@
     "planning_mode": {
       "$ref": "#/$defs/PlanningMode",
       "default": "single_step"
-    },
-    "live_execution_policy": {
-      "$ref": "#/$defs/LiveContinuousPolicy",
-      "default": "disabled"
     },
     "world_revision": {
       "$ref": "#/$defs/WorldStateRevision"

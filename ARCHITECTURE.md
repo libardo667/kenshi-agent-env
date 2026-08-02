@@ -26,7 +26,7 @@ Python runtime
   │                                             └─ monitored movement options
   │                                                   ↕ future/change-course patch
   ├─ reflex layer (shared deterministic pause/stop rules)
-  ├─ planner (heuristic, scripted, subprocess, or vision LLM)
+  ├─ planner (heuristic, scripted replay, or hosted vision LLM)
   │     └─ hosted intent proposal ──> deterministic plan compiler
   ├─ strategic advisor (read-only hosted model + attributed guide corpus)
   │     └─ planner context only; no environment or controller authority

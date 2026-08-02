@@ -9,5 +9,5 @@ $python = if (Test-Path ".venv\Scripts\python.exe") {
 }
 
 & $python -m pytest
-& $python -m ruff check src tests scripts\external_planner_example.py
+& $python -m ruff check src tests scripts
 & $python -m mypy src

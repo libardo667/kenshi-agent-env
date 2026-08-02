@@ -1,154 +1,181 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/usr/bin/env python3
+"""WSL bootstrap for the supported Windows live-development runtime."""
 
-repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+from __future__ import annotations
 
-if [[ $# -eq 0 ]]; then
-  echo "usage: ./dev {launch|play|close|recover|crash|graphics|shot|telemetry|scenario|journey} [options]" >&2
-  exit 2
-fi
+import os
+import re
+import signal
+import subprocess
+import sys
+from io import BufferedReader
+from pathlib import Path
+from typing import NoReturn
 
-command_name="$1"
-shift
-case "$command_name" in
-  launch|close|recover|crash|graphics|shot|telemetry|scenario)
-    config_path="$repo_dir/config/live.burnin.yaml"
-    ;;
-  journey|play)
-    config_path="$repo_dir/config/live.longform.yaml"
-    ;;
-  *)
-    echo "unknown ./dev command: $command_name" >&2
-    exit 2
-    ;;
-esac
+REPO_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(REPO_DIR / "src"))
 
-to_windows_path() {
-  local candidate="$1"
-  case "$candidate" in
-    [A-Za-z]:[\\/]*|\\\\*)
-      printf '%s\n' "$candidate"
-      ;;
-    /*)
-      wslpath -w "$candidate"
-      ;;
-    *)
-      wslpath -w "$repo_dir/$candidate"
-      ;;
-  esac
-}
+from kenshi_agent.dev_cli import LIVE_CONFIG, build_parser  # noqa: E402
 
-forward_args=()
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --config)
-      if [[ $# -lt 2 ]]; then
-        echo "--config requires a path" >&2
-        exit 2
-      fi
-      config_path="$2"
-      shift 2
-      ;;
-    --config=*)
-      config_path="${1#--config=}"
-      shift
-      ;;
-    --planner-script)
-      if [[ $# -lt 2 ]]; then
-        echo "--planner-script requires a path" >&2
-        exit 2
-      fi
-      forward_args+=("--planner-script" "$(to_windows_path "$2")")
-      shift 2
-      ;;
-    --planner-script=*)
-      forward_args+=(
-        "--planner-script"
-        "$(to_windows_path "${1#--planner-script=}")"
-      )
-      shift
-      ;;
-    *)
-      forward_args+=("$1")
-      shift
-      ;;
-  esac
-done
-
-windows_config="$(to_windows_path "$config_path")"
-windows_local_app_data="$(powershell.exe -NoProfile -Command '[Environment]::GetFolderPath("LocalApplicationData")' | tr -d '\r')"
-windows_python="$(wslpath "$windows_local_app_data")/KenshiAgent/venvs/kenshi-agent-env/Scripts/python.exe"
-
-if [[ ! -x "$windows_python" ]]; then
-  echo "Windows live Python was not found at $windows_python" >&2
-  exit 1
-fi
-
-# WSL does not forward arbitrary per-command variables to Windows executables.
-# Keep the live override surface explicit, and pass only variables the checked-in
-# profiles intentionally consume. Values stay out of command lines and logs.
-runtime_overrides=(
-  KENSHI_AGENT_OPENROUTER_MODEL
-  KENSHI_AGENT_REASONING_EFFORT
-  KENSHI_AGENT_ADVISOR_MODEL
-  KENSHI_AGENT_ADVISOR_REASONING_EFFORT
-  KENSHI_AGENT_ADVISOR_CADENCE_STEPS
-  WSL_DISTRO_NAME
-)
-for variable_name in "${runtime_overrides[@]}"; do
-  if [[ -n "${!variable_name+x}" ]]; then
-    export WSLENV="${WSLENV:+${WSLENV}:}${variable_name}/w"
-  fi
-done
-
-cd "$repo_dir"
-windows_command=(
-  "$windows_python"
-  -u
-  -m
-  kenshi_agent.live_dev
-  "$command_name"
-  --config
-  "$windows_config"
-  "${forward_args[@]}"
+RUNTIME_OVERRIDES = (
+    "KENSHI_AGENT_OPENROUTER_MODEL",
+    "KENSHI_AGENT_REASONING_EFFORT",
+    "KENSHI_AGENT_ADVISOR_MODEL",
+    "KENSHI_AGENT_ADVISOR_REASONING_EFFORT",
+    "KENSHI_AGENT_ADVISOR_CADENCE_STEPS",
+    "WSL_DISTRO_NAME",
 )
 
-windows_stdio_is_terminal() {
-  [[ -t 0 || -t 1 || -t 2 ]]
-}
 
-run_windows_command() {
-  if windows_stdio_is_terminal; then
-    # WSL's Windows interop can ask a terminal for its cursor position
-    # (ESC[6n) and wait forever for a response. Live tooling has no interactive
-    # stdin contract, so make that impossible while retaining streamed output.
-    "$@" </dev/null 2>&1 | cat
-  else
-    "$@"
-  fi
-}
+class _SignalExit(Exception):
+    def __init__(self, status: int) -> None:
+        self.status = status
+        super().__init__(status)
 
-if [[ "$command_name" != "journey" && "$command_name" != "play" ]]; then
-  if windows_stdio_is_terminal; then
-    run_windows_command "${windows_command[@]}"
-    exit "$?"
-  fi
-  exec "${windows_command[@]}"
-fi
 
-recover_interrupted_journey() {
-  local journey_status="$?"
-  trap - EXIT INT TERM
-  if [[ "$journey_status" -ne 0 ]]; then
-    echo "Journey exited before clean completion; running supported recovery." >&2
-    run_windows_command "$windows_python" -u -m kenshi_agent.live_dev \
-      recover \
-      --config "$windows_config" >&2 || true
-  fi
-  exit "$journey_status"
-}
+def _fail(message: str, status: int = 1) -> NoReturn:
+    print(message, file=sys.stderr)
+    raise SystemExit(status)
 
-trap recover_interrupted_journey EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
-run_windows_command "${windows_command[@]}"
+
+def _run_text(*command: str) -> str:
+    try:
+        result = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError) as exc:
+        _fail(f"Could not prepare the Windows live runtime: {exc}")
+    return result.stdout.strip().replace("\r", "")
+
+
+def _to_windows_path(value: str) -> str:
+    if re.match(r"^[A-Za-z]:[\\/]", value) or value.startswith("\\\\"):
+        return value
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = REPO_DIR / candidate
+    return _run_text("wslpath", "-w", str(candidate))
+
+
+def _windows_python() -> Path:
+    local_app_data = _run_text(
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        '[Environment]::GetFolderPath("LocalApplicationData")',
+    )
+    local_app_data_wsl = _run_text("wslpath", local_app_data)
+    executable = (
+        Path(local_app_data_wsl)
+        / "KenshiAgent"
+        / "venvs"
+        / "kenshi-agent-env"
+        / "Scripts"
+        / "python.exe"
+    )
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        _fail(f"Windows live Python was not found at {executable}")
+    return executable
+
+
+def _forwarded_environment() -> dict[str, str]:
+    environment = os.environ.copy()
+    entries = [item for item in environment.get("WSLENV", "").split(":") if item]
+    for name in RUNTIME_OVERRIDES:
+        if name not in environment:
+            continue
+        entry = f"{name}/w"
+        if entry not in entries:
+            entries.append(entry)
+    if entries:
+        environment["WSLENV"] = ":".join(entries)
+    return environment
+
+
+def _windows_argv(raw_argv: list[str]) -> list[str]:
+    return [
+        "-u",
+        "-m",
+        "kenshi_agent.live_dev",
+        raw_argv[0],
+        "--config",
+        _to_windows_path(LIVE_CONFIG),
+        *raw_argv[1:],
+    ]
+
+
+def _stdio_is_terminal() -> bool:
+    return any(stream.isatty() for stream in (sys.stdin, sys.stdout, sys.stderr))
+
+
+def raise_signal_exit(status: int) -> NoReturn:
+    raise _SignalExit(status)
+
+
+def _run_windows(
+    executable: Path,
+    argv: list[str],
+    *,
+    environment: dict[str, str],
+) -> int:
+    if not _stdio_is_terminal():
+        return subprocess.run(
+            [str(executable), *argv],
+            cwd=REPO_DIR,
+            env=environment,
+            check=False,
+        ).returncode
+
+    process = subprocess.Popen(
+        [str(executable), *argv],
+        cwd=REPO_DIR,
+        env=environment,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    assert isinstance(process.stdout, BufferedReader)
+    while chunk := process.stdout.read1(4096):
+        sys.stdout.buffer.write(chunk)
+        sys.stdout.buffer.flush()
+    return process.wait()
+
+
+def main(argv: list[str] | None = None) -> int:
+    raw_argv = list(sys.argv[1:] if argv is None else argv)
+    args = build_parser().parse_args(raw_argv)
+    executable = _windows_python()
+    environment = _forwarded_environment()
+    windows_argv = _windows_argv(raw_argv)
+
+    try:
+        status = _run_windows(executable, windows_argv, environment=environment)
+    except KeyboardInterrupt:
+        status = 130
+    except _SignalExit as exc:
+        status = exc.status
+    if args.command != "run" or status == 0:
+        return status
+
+    print(
+        "Agent run exited before clean completion; running supported recovery.",
+        file=sys.stderr,
+    )
+    recovery_argv = [
+        "-u",
+        "-m",
+        "kenshi_agent.live_dev",
+        "recover",
+        "--config",
+        windows_argv[windows_argv.index("--config") + 1],
+    ]
+    _run_windows(executable, recovery_argv, environment=environment)
+    return status
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, lambda _signum, _frame: raise_signal_exit(143))
+    raise SystemExit(main())

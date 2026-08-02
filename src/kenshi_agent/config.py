@@ -12,7 +12,6 @@ from .models import (
     Action,
     CalibrationIdentity,
     ControlMode,
-    LiveContinuousPolicy,
     MemoryRetrievalPolicy,
     PlanningMode,
     ScenarioIdentity,
@@ -60,7 +59,6 @@ class ControlConfig(ConfigModel):
 
 class PlanningConfig(ConfigModel):
     mode: PlanningMode = PlanningMode.SINGLE_STEP
-    live_execution_policy: LiveContinuousPolicy = LiveContinuousPolicy.DISABLED
     observation_pump_enabled: bool = True
     stateful_movement_options_enabled: bool = True
     stateful_approach_options_enabled: bool = False
@@ -91,7 +89,7 @@ class PlanningConfig(ConfigModel):
 
 
 class PlannerConfig(ConfigModel):
-    kind: Literal["heuristic", "scripted", "subprocess", "openai", "openrouter"] = "heuristic"
+    kind: Literal["heuristic", "scripted", "openai", "openrouter"] = "heuristic"
     model: str = "gpt-5.6-luna"
     reasoning_effort: Literal["none", "minimal", "low", "medium", "high", "xhigh", "max"] = "low"
     # The OpenRouter adapter sends this. The OpenAI Responses adapter omits it

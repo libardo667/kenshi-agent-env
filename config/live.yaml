@@ -1,20 +1,5 @@
-# Long-form live profile: the generic composable-action surface with budgets
-# sized for an extended supervised run rather than a single proof.
-#
-# The short budgets in the dialogue profile were sized to demonstrate one chain.
-# Nothing about them is a safety boundary — every real brake (F12, human-input
-# yield, confirmed re-pause, input-boundary revalidation, at-most-once native
-# commands) is independent of them. Longer runs are where the interesting
-# failures actually surface.
-#
-# Generic semantic live profile.
-#
-# It differs from live.burnin.yaml in what it *authorizes*, not in how it is
-# calibrated: the planner composes the current contract catalog under
-# `dialogue_interaction_v1` instead of replaying the retired Barman recipe. The
-# policy name is historical; it now covers dialogue, local travel, UI, trade,
-# equipment, game bindings and scrolling. The approach macro remains only as
-# the proven native hotkey transport.
+# Canonical live configuration for ordinary play.
+# The planner, action catalog, and safety gates all belong to this one path.
 version: 1
 mode: live
 
@@ -24,7 +9,6 @@ control:
 
 planning:
   mode: continuous
-  live_execution_policy: dialogue_interaction_v1
   observation_pump_enabled: true
   stateful_movement_options_enabled: true
   # The contracted semantic approach always runs as a monitored option; these
@@ -84,7 +68,7 @@ runtime:
     or gather information with no decision it could affect.
 
 planner:
-  kind: ${KENSHI_AGENT_PLANNER:-openrouter}
+  kind: openrouter
   model: ${KENSHI_AGENT_MODEL:-gpt-5.6-luna}
   reasoning_effort: ${KENSHI_AGENT_REASONING_EFFORT:-low}
   openrouter_model: ${KENSHI_AGENT_OPENROUTER_MODEL:-google/gemini-3.1-flash-lite}
@@ -142,7 +126,7 @@ launch:
   # Steam being open is insufficient: fail before launch unless its own
   # connection log says this local client is actually logged on.
   require_steam_logged_on: true
-  # Launch never silently mutates graphics settings. `./dev graphics apply`
+  # Launch never silently mutates graphics settings. `./dev setup graphics`
   # installs this reversible profile; launch only verifies an exact match.
   require_graphics_profile: true
   graphics_profile_file: graphics/iris-xe-stability-v3.yaml
@@ -222,7 +206,7 @@ controls:
     max_lower_floors: 2
 
 safety:
-  # This profile permits only the audited surface below. The CLI must still
+  # The canonical live policy permits only the audited surface below. The CLI must still
   # receive --execute-live-actions plus the native-assisted and continuous-live
   # acknowledgements before any input is sent.
   live_actions_enabled: true
@@ -250,10 +234,10 @@ safety:
   max_actions_per_minute: 120
   max_wait_seconds: 8.0
   block_clicks_when_telemetry_stale: true
-  # This continuous profile explicitly authorizes a running world. set_speed
+  # Continuous live play explicitly authorizes a running world. set_speed
   # owns any required 1x start before selecting a faster ordinal gear.
   allow_live_unpause_actions: true
-  # Unset: the agent trades freely on this profile. Exact current cell, item,
+  # Unset: the agent trades freely under this policy. Exact current cell, item,
   # owner-window and seller binding prevents the wrong-item click. The exported
   # item_value is base worth, not an authoritative shop charge, so no preventive
   # price guarantee is claimed; later money telemetry reveals the actual debit.
@@ -301,8 +285,8 @@ safety:
 memory:
   enabled: true
   retrieval_policy: deterministic
-  # This profile is generic and cannot choose a save lineage. Pass
-  # `./dev journey --campaign <save-lineage>` or use an attested scenario.
+  # This configuration is generic and cannot choose a save lineage. Pass
+  # `./dev run --campaign <save-lineage>` or use an attested scenario.
   campaign_id: null
   max_recalled_memories: 16
   max_entity_recalled_memories: 8

@@ -49,7 +49,6 @@ from .planners import (
     OpenAIPlanner,
     OpenRouterPlanner,
     ScriptedPlanner,
-    SubprocessPlanner,
 )
 from .planners.base import Planner
 from .reflexes import ReflexEngine
@@ -86,35 +85,13 @@ def _console_safe(value: str) -> str:
 
 
 def _build_planner(config: AppConfig, args: argparse.Namespace) -> Planner:
-    kind = args.planner or config.planner.kind
+    kind = config.planner.kind
     if kind == "heuristic":
         return HeuristicPlanner()
     if kind == "scripted":
         if not args.script:
             raise SystemExit("--script is required for the scripted planner.")
         return ScriptedPlanner(Path(args.script).expanduser().resolve())
-    if kind == "subprocess":
-        command = getattr(args, "command", None)
-        command_args = getattr(args, "command_args", None)
-        if command and command_args:
-            raise SystemExit(
-                "Use either --command or repeated --command-arg, not both."
-            )
-        if not command and not command_args:
-            raise SystemExit(
-                "--command or repeated --command-arg is required for the "
-                "subprocess planner."
-            )
-        selected_command: str | list[str]
-        if command_args:
-            selected_command = list(command_args)
-        else:
-            assert isinstance(command, str)
-            selected_command = command
-        return SubprocessPlanner(
-            selected_command,
-            timeout_seconds=config.planner.timeout_seconds,
-        )
     if kind == "openai":
         return OpenAIPlanner(
             config.planner,
@@ -297,7 +274,6 @@ def _live_actions_enabled(config: AppConfig, args: argparse.Namespace) -> bool:
             )
     if (
         config.planning.mode == PlanningMode.CONTINUOUS
-        and config.planning.live_execution_policy.value != "disabled"
         and not args.acknowledge_continuous_live
     ):
         raise SystemExit(
@@ -314,7 +290,7 @@ def _validate_run_platform(config: AppConfig, args: argparse.Namespace) -> None:
         )
     if mode == "live" and os.name != "nt":
         raise SystemExit(
-            "Live mode requires Windows. From WSL, use the supported ./dev journey "
+            "Live mode requires Windows. From WSL, use the supported ./dev run "
             "launcher."
         )
 
@@ -663,7 +639,7 @@ async def _run_command(args: argparse.Namespace) -> int:
             },
         )
     try:
-        planner_kind = args.planner or config.planner.kind
+        planner_kind = config.planner.kind
         planner = _build_planner(config, args)
         advisor = _build_advisor(config)
         environment = _build_environment(
@@ -833,7 +809,7 @@ def _doctor(args: argparse.Namespace) -> int:
                 checks.append(("kenshi_window", True, f"{rect.width}x{rect.height}"))
             except Exception as exc:
                 checks.append(("kenshi_window", False, f"{type(exc).__name__}: {exc}"))
-    planner_kind = args.planner or config.planner.kind
+    planner_kind = config.planner.kind
     if planner_kind in {"openai", "openrouter"}:
         key_name = "OPENAI_API_KEY" if planner_kind == "openai" else "OPENROUTER_API_KEY"
         checks.append((key_name.lower(), bool(os.environ.get(key_name)), "environment"))
@@ -902,8 +878,6 @@ def build_parser() -> argparse.ArgumentParser:
     run = subparsers.add_parser("run", help="Run an agent episode.")
     run.add_argument("--config", default="config/default.yaml")
     run.add_argument("--mode", choices=["mock", "live", "replay"])
-    planner_choices = ["heuristic", "scripted", "subprocess", "openai", "openrouter"]
-    run.add_argument("--planner", choices=planner_choices)
     run.add_argument(
         "--planning-mode",
         choices=[mode.value for mode in PlanningMode],
@@ -928,7 +902,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--campaign",
         help=(
             "Explicit save-lineage identity for durable continuity in this run. "
-            "Generic live profiles intentionally do not choose one."
+            "The canonical live configuration intentionally does not choose one."
         ),
     )
     run.add_argument("--scenario-id")
@@ -964,16 +938,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["day", "night"],
     )
     run.add_argument("--script", help="JSONL decisions for scripted planner.")
-    run.add_argument("--command", help="External planner command for subprocess planner.")
-    run.add_argument(
-        "--command-arg",
-        dest="command_args",
-        action="append",
-        help=(
-            "One exact subprocess argv item. Repeat to avoid shell or UNC path "
-            "reparsing; values beginning with '-' use --command-arg=VALUE."
-        ),
-    )
     run.add_argument("--log", help="Session JSONL for replay mode.")
     run.add_argument(
         "--execute-live-actions",
@@ -1008,7 +972,6 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subparsers.add_parser("doctor", help="Check configuration and live prerequisites.")
     doctor.add_argument("--config", default="config/default.yaml")
     doctor.add_argument("--mode", choices=["mock", "live", "replay"])
-    doctor.add_argument("--planner", choices=planner_choices)
 
     memory = subparsers.add_parser(
         "memory",

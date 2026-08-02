@@ -28,7 +28,6 @@ from .base import (
     HostedPlannerResponseError,
     Planner,
     PreparedPlannerInput,
-    instructions_for_policy,
     output_token_budget,
     planner_action_kinds,
     prepared_budgeted_input,
@@ -244,10 +243,7 @@ class OpenRouterPlanner(Planner):
                 allowed_action_kinds=allowed_action_kinds,
             )["json_schema"]["schema"]
         )
-        system_text = instructions_for_policy(
-            self.instructions,
-            observation.live_execution_policy,
-        )
+        system_text = self.instructions
         output_tokens = output_token_budget(
             self.config,
             observation,
@@ -367,10 +363,7 @@ class OpenRouterPlanner(Planner):
         )
         extra["temperature"] = self.config.temperature
 
-        system_instructions = instructions_for_policy(
-            self.instructions,
-            observation.live_execution_policy,
-        )
+        system_instructions = self.instructions
         schema_characters = len(
             json.dumps(
                 projected_response_format(
@@ -380,7 +373,6 @@ class OpenRouterPlanner(Planner):
             )
         )
         validate_planner_prompt_budget(
-            policy=observation.live_execution_policy,
             system_characters=len(system_instructions),
             schema_characters=schema_characters,
         )

@@ -66,7 +66,6 @@ from .models import (
     FieldbookReceiptDigest,
     HarvestResourceAction,
     InputBoundaryDecision,
-    LiveContinuousPolicy,
     MemoryReadReceipt,
     MemoryReadStatus,
     MemoryRetrievalPolicy,
@@ -825,7 +824,6 @@ class AgentRuntime:
                     "seed": seed,
                     "control_mode": self.control_mode.value,
                     "planning_mode": self.planning_config.mode.value,
-                    "live_execution_policy": (self.planning_config.live_execution_policy.value),
                     "memory_retrieval_policy": (
                         self.memory_retrieval_policy.value
                     ),
@@ -843,20 +841,6 @@ class AgentRuntime:
             )
             if self.reporter is not None:
                 self.reporter.run_started(max_steps)
-            if (
-                observation.mode == "live"
-                and self.planning_config.live_execution_policy == LiveContinuousPolicy.DISABLED
-            ):
-                self._log_observation(observation)
-                return self._finish_continuous_summary(
-                    started=started,
-                    steps_completed=0,
-                    terminated=True,
-                    success=None,
-                    stop_reason=("Continuous live execution policy is disabled."),
-                    observation=observation,
-                )
-
             state_store = WorldStateStore(
                 history_limit=self.planning_config.state_history_limit,
                 delta_limit=self.planning_config.state_delta_limit,
@@ -1165,13 +1149,11 @@ class AgentRuntime:
                 )
                 if (
                     observation.mode == "live"
-                    and self.planning_config.live_execution_policy
-                    == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
                     and not plan.based_on_revision.same_snapshot_as(observation.world_revision)
                 ):
-                    from .dialogue_interaction import dialogue_interaction_rebase_errors
+                    from .live_plan_policy import live_plan_rebase_errors
 
-                    rebase_errors = dialogue_interaction_rebase_errors(
+                    rebase_errors = live_plan_rebase_errors(
                         plan,
                         planner_observation,
                         observation,
@@ -1240,10 +1222,7 @@ class AgentRuntime:
                             "new_basis": plan.based_on_revision.model_dump(mode="json"),
                         },
                     )
-                if (
-                    self.planning_config.live_execution_policy
-                    == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
-                ):
+                if observation.mode == "live":
                     plan, translated = translate_legacy_plan_actions(plan)
                     if translated:
                         self._plan_event(
@@ -1261,7 +1240,7 @@ class AgentRuntime:
                 # derive the budget from them rather than rejecting a plan for
                 # failing to also state a number we compute anyway. Raised only,
                 # so a planner asking for more headroom keeps it.
-                from .dialogue_interaction import (
+                from .live_plan_policy import (
                     with_covering_risk_budget,
                 )
 
@@ -2597,7 +2576,6 @@ class AgentRuntime:
             )
         updates: dict[str, object] = {
             "planning_mode": self.planning_config.mode,
-            "live_execution_policy": self.planning_config.live_execution_policy,
             "recent_action_outcomes": self._ledger.recent_action_outcomes,
             "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
             "recent_continuity_receipts": list(self._continuity_receipts),

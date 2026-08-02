@@ -7,7 +7,6 @@ control:
 
 planning:
   mode: single_step
-  live_execution_policy: disabled
   observation_pump_enabled: true
   stateful_movement_options_enabled: true
   concurrent_option_planning_enabled: true

@@ -1,3 +1,4 @@
+import argparse
 import os
 import pty
 import select
@@ -8,6 +9,8 @@ import time
 from pathlib import Path
 
 import pytest
+
+from kenshi_agent.dev_cli import build_parser
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INVOCATION_END = "__END_WINDOWS_INVOCATION__"
@@ -65,13 +68,19 @@ for argument in "$@"; do
   if [[ "${FAKE_FAIL_COMMAND:-}" == "$argument" ]]; then
     exit 23
   fi
+  if [[ "${FAKE_PAUSE_COMMAND:-}" == "$argument" ]]; then
+    sleep 5
+  fi
 done
 """,
     )
 
     env = {
         **os.environ,
-        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "PATH": (
+            f"{fake_bin}{os.pathsep}{Path(sys.executable).parent}"
+            f"{os.pathsep}{os.environ['PATH']}"
+        ),
         "FAKE_LOCAL_APP_DATA": str(fake_local_app_data),
         "FAKE_WINDOWS_PYTHON_LOG": str(invocation_log),
     }
@@ -120,6 +129,158 @@ def _read_invocations(path: Path) -> list[list[str]]:
     return invocations
 
 
+def test_shared_dev_parser_preserves_the_launch_start_contract() -> None:
+    parser = build_parser(include_transport=True)
+
+    launch_default = parser.parse_args(["launch"])
+    launch_title = parser.parse_args(["launch", "--title"])
+
+    assert launch_default.continue_game is True
+    assert launch_title.continue_game is False
+
+
+def test_windows_transport_is_hidden_and_available_on_every_command() -> None:
+    parser = build_parser(include_transport=True)
+    workflows = (
+        ["doctor"],
+        ["launch"],
+        ["run"],
+        ["telemetry"],
+        ["snapshot"],
+        ["recover"],
+        ["stop"],
+        ["scenario", "list"],
+        ["setup", "graphics"],
+    )
+
+    for workflow in workflows:
+        args = parser.parse_args(
+            [workflow[0], "--config", "config/transport-test.yaml", *workflow[1:]]
+        )
+        assert args.config == "config/transport-test.yaml", workflow
+
+    subparsers = next(
+        action
+        for action in parser._actions  # noqa: SLF001
+        if isinstance(action, argparse._SubParsersAction)  # noqa: SLF001
+    )
+    for command in subparsers.choices.values():
+        assert "--config" not in command.format_help()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_dev_help_is_local_and_describes_the_complete_supported_surface(
+    tmp_path: Path,
+) -> None:
+    env = {
+        **os.environ,
+        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{tmp_path}",
+    }
+
+    result = subprocess.run(
+        [str(REPO_ROOT / "dev"), "--help"],
+        cwd=REPO_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "{doctor,launch,run,telemetry,snapshot,recover,stop,scenario,setup}" in (
+        result.stdout
+    )
+    assert "Windows live Python" not in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_every_help_page_is_local(tmp_path: Path) -> None:
+    env = {
+        **os.environ,
+        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{tmp_path}",
+    }
+
+    for command in (
+        "doctor",
+        "launch",
+        "run",
+        "telemetry",
+        "snapshot",
+        "recover",
+        "stop",
+        "scenario",
+        "setup",
+    ):
+        result = subprocess.run(
+            [str(REPO_ROOT / "dev"), command, "--help"],
+            cwd=REPO_ROOT,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, (command, result.stderr)
+        assert f"usage: ./dev {command}" in result.stdout
+        assert "Windows live Python" not in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_removed_commands_fail_before_windows_runtime_discovery(tmp_path: Path) -> None:
+    env = {
+        **os.environ,
+        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{tmp_path}",
+    }
+
+    for removed in (
+        "play",
+        "journey",
+        "probe",
+        "close",
+        "crash",
+        "shot",
+        "graphics",
+    ):
+        result = subprocess.run(
+            [str(REPO_ROOT / "dev"), removed],
+            cwd=REPO_ROOT,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2
+        assert "invalid choice" in result.stderr
+        assert "Windows live Python" not in result.stderr
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_run_rejects_profile_config_and_planner_implementation_flags_locally(
+    tmp_path: Path,
+) -> None:
+    env = {
+        **os.environ,
+        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{tmp_path}",
+    }
+
+    for arguments in (
+        ("--profile", "dialogue"),
+        ("--config", "config/live.yaml"),
+        ("--planner", "subprocess"),
+        ("--planner-script", "scripts/live_direction_smoke_planner.py"),
+    ):
+        result = subprocess.run(
+            [str(REPO_ROOT / "dev"), "run", *arguments],
+            cwd=REPO_ROOT,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 2
+        assert "unrecognized arguments" in result.stderr
+        assert "Windows live Python" not in result.stderr
+
+
 @pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
 def test_dev_detaches_windows_processes_from_an_inherited_pty(
     tmp_path: Path,
@@ -134,27 +295,27 @@ def test_dev_detaches_windows_processes_from_an_inherited_pty(
             "kenshi_agent.live_dev",
             "telemetry",
             "--config",
-            str(REPO_ROOT / "config" / "live.burnin.yaml"),
+            str(REPO_ROOT / "config" / "live.yaml"),
         ]
     ]
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
-def test_dev_recovery_also_detaches_from_an_inherited_pty(
+def test_dev_run_failure_recovers_with_the_same_canonical_config(
     tmp_path: Path,
 ) -> None:
     env, invocation_log = _fake_dev_environment(tmp_path)
-    env["FAKE_FAIL_COMMAND"] = "journey"
+    env["FAKE_FAIL_COMMAND"] = "run"
 
-    assert _run_dev_in_pty(env, "journey") == 23
+    assert _run_dev_in_pty(env, "run") == 23
     assert _read_invocations(invocation_log) == [
         [
             "-u",
             "-m",
             "kenshi_agent.live_dev",
-            "journey",
+            "run",
             "--config",
-            str(REPO_ROOT / "config" / "live.longform.yaml"),
+            str(REPO_ROOT / "config" / "live.yaml"),
         ],
         [
             "-u",
@@ -162,8 +323,32 @@ def test_dev_recovery_also_detaches_from_an_inherited_pty(
             "kenshi_agent.live_dev",
             "recover",
             "--config",
-            str(REPO_ROOT / "config" / "live.longform.yaml"),
+            str(REPO_ROOT / "config" / "live.yaml"),
         ],
+    ]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
+def test_interrupted_dev_run_still_invokes_supported_recovery(tmp_path: Path) -> None:
+    env, invocation_log = _fake_dev_environment(tmp_path)
+    env["FAKE_PAUSE_COMMAND"] = "run"
+    process = subprocess.Popen(
+        [str(REPO_ROOT / "dev"), "run"],
+        cwd=REPO_ROOT,
+        env=env,
+        start_new_session=True,
+    )
+    deadline = time.monotonic() + 2.0
+    while (not invocation_log.exists() or "run" not in invocation_log.read_text()) and (
+        time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+
+    os.killpg(process.pid, signal.SIGTERM)
+    assert process.wait(timeout=2) == 143
+    assert [invocation[3] for invocation in _read_invocations(invocation_log)] == [
+        "run",
+        "recover",
     ]
 
 
@@ -243,7 +428,10 @@ exec "$FAKE_REAL_PYTHON" "${python_flags[@]}" "$FAKE_STREAM_PROBE"
     )
     env = {
         **os.environ,
-        "PATH": f"{fake_bin}{os.pathsep}{os.environ['PATH']}",
+        "PATH": (
+            f"{fake_bin}{os.pathsep}{Path(sys.executable).parent}"
+            f"{os.pathsep}{os.environ['PATH']}"
+        ),
         "FAKE_LOCAL_APP_DATA": str(fake_local_app_data),
         "FAKE_REAL_PYTHON": sys.executable,
         "FAKE_STREAM_PROBE": str(stream_probe),

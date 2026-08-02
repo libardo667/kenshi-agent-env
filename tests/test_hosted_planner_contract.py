@@ -17,7 +17,6 @@ from kenshi_agent.models import (
     ContinuityOrigin,
     ContinuityReceiptDigest,
     Disposition,
-    LiveContinuousPolicy,
     MemoryKind,
     MemoryRecord,
     MemoryStatus,
@@ -65,7 +64,6 @@ def observation(
     *,
     planning_mode: PlanningMode = PlanningMode.CONTINUOUS,
     screen: str = "world",
-    policy: LiveContinuousPolicy = LiveContinuousPolicy.DIALOGUE_INTERACTION_V1,
     active_plan: ActivePlanContext | None = None,
 ) -> Observation:
     return Observation(
@@ -73,7 +71,6 @@ def observation(
         step_index=0,
         mode="live",
         planning_mode=planning_mode,
-        live_execution_policy=policy,
         telemetry=TelemetrySnapshot(ui=UIState(active_screen=screen)),
         active_plan=active_plan,
     )
@@ -1209,50 +1206,19 @@ def test_manifest_names_only_continuity_receipts_in_the_final_payload() -> None:
     assert receipts[0].receipt_id not in manifest.continuity_receipt_ids
 
 
-def test_only_the_active_policy_section_reaches_the_model() -> None:
-    """A generic run must not be shipped the Barman recipe.
-
-    Every policy's rules used to go out on every call: wasted tokens, and an
-    invitation to anchor on a scenario the run is not in.
-    """
+def test_planner_prompt_contains_one_semantic_surface_without_legacy_recipe() -> None:
 
     from pathlib import Path
-
-    from kenshi_agent.models import LiveContinuousPolicy
-    from kenshi_agent.planners.base import instructions_for_policy
 
     root = Path(__file__).resolve().parents[1]
     instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
 
-    generic = instructions_for_policy(
-        instructions, LiveContinuousPolicy.DIALOGUE_INTERACTION_V1
-    )
-    disabled = instructions_for_policy(instructions, LiveContinuousPolicy.DISABLED)
-
-    # The generic run sees its own rules and none of the recipe.
-    assert "approach_dialogue_target" in generic
-    assert "Show me your goods." not in generic
-
-    # The generic run is also spared the legacy macro guidance, since that
-    # policy rejects SkillAction outright.
-    assert "move_visible_terrain" not in generic
-
-    # `disabled` means no *continuous* live policy, but single-step live runs
-    # still author macros, so legacy skill guidance belongs there.
-    assert "move_visible_terrain" in disabled
-    assert "approach_dialogue_target" not in disabled
-
-    # Shared guidance survives in all three, and no markers leak to the model.
-    for rendered in (generic, disabled):
-        assert "Your priorities, in order:" in rendered
-        assert "<!-- policy:" not in rendered
-        assert "<!-- /policy -->" not in rendered
-
-    # Each rendering is a strict subset of the document: it carries its own
-    # policy's section and drops the others. Their relative sizes are not a
-    # property worth pinning — the generic section grows as actions are added.
-    assert len(generic) < len(instructions)
-    assert len(disabled) < len(instructions)
+    assert "approach_dialogue_target" in instructions
+    assert "Show me your goods." not in instructions
+    assert "move_visible_terrain" not in instructions
+    assert "Your priorities, in order:" in instructions
+    assert "<!-- policy:" not in instructions
+    assert "<!-- /policy -->" not in instructions
 
 
 def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> None:
@@ -1262,8 +1228,6 @@ def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> N
 
     from kenshi_agent.action_contracts import ACTION_CONTRACTS
     from kenshi_agent.models import PLANNER_CONTROL_ACTION_KINDS
-    from kenshi_agent.planners.base import instructions_for_policy
-
     root = Path(__file__).resolve().parents[1]
     instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
     generic_actions = frozenset(
@@ -1274,23 +1238,15 @@ def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> N
             if contract.planner_visible
         }
     )
-    policy_actions = {
-        LiveContinuousPolicy.DIALOGUE_INTERACTION_V1: generic_actions,
-        LiveContinuousPolicy.DISABLED: generic_actions | {"skill"},
-    }
-
-    for policy, allowed_action_kinds in policy_actions.items():
-        system_characters = len(instructions_for_policy(instructions, policy))
-        for model in (PlannerDecision, PlanEnvelope, PlanPatch):
-            schema = projected_response_format(
-                model,
-                allowed_action_kinds=allowed_action_kinds,
-            )["json_schema"]["schema"]
-            validate_planner_prompt_budget(
-                policy=policy,
-                system_characters=system_characters,
-                schema_characters=len(json.dumps(schema)),
-            )
+    for model in (PlannerDecision, PlanEnvelope, PlanPatch):
+        schema = projected_response_format(
+            model,
+            allowed_action_kinds=generic_actions,
+        )["json_schema"]["schema"]
+        validate_planner_prompt_budget(
+            system_characters=len(instructions),
+            schema_characters=len(json.dumps(schema)),
+        )
 
 
 def test_the_planner_schema_avoids_keywords_providers_reject() -> None:

@@ -518,13 +518,14 @@ def _cli_subcommands() -> set[str]:
 
 
 def _dev_subcommands() -> set[str]:
-    """The `./dev` wrapper's own usage line is its list of commands."""
+    """Ask the shared dev parser, which is also what the wrapper asks."""
 
-    for line in (ROOT / "dev").read_text(encoding="utf-8").splitlines():
-        match = re.search(r"usage: \./dev \{([^}]+)\}", line)
-        if match:
-            return set(match.group(1).split("|"))
-    raise AssertionError("./dev no longer prints a usage line to derive from")
+    from kenshi_agent.dev_cli import build_parser
+
+    names: set[str] = set()
+    for action in build_parser()._subparsers._group_actions:  # noqa: SLF001
+        names.update(action.choices)
+    return names
 
 
 def test_authored_docs_only_name_commands_that_exist() -> None:
@@ -553,6 +554,16 @@ def test_authored_docs_only_name_commands_that_exist() -> None:
         "authored documents name things that do not exist: "
         + ", ".join(missing)
         + ". Update the document, or restore what it describes."
+    )
+
+
+def test_generated_dev_reference_is_not_stale() -> None:
+    from kenshi_agent.dev_cli import render_reference
+
+    checked_in = ROOT / "docs" / "generated" / "DEV_CLI.md"
+    assert checked_in.read_text(encoding="utf-8") == render_reference(), (
+        "docs/generated/DEV_CLI.md is stale; run "
+        "`python scripts/export_dev_cli.py`"
     )
 
 

@@ -44,7 +44,7 @@ from .planning import evaluate_conditions
 
 # Default only. The caller passes the configured `max_plan_steps` so a
 # long-form run can be given a longer leash without editing this module.
-DIALOGUE_INTERACTION_MAX_STEPS = 4
+LIVE_PLAN_MAX_STEPS = 4
 
 # Conditions that can only be settled by a later world revision. A plan whose
 # success is judged solely by, say, control_mode would "succeed" without the
@@ -236,7 +236,7 @@ def _step_action_errors(
     return errors
 
 
-def dialogue_interaction_rebase_errors(
+def live_plan_rebase_errors(
     plan: PlanEnvelope,
     planner_observation: Observation,
     current_observation: Observation,
@@ -364,11 +364,11 @@ def with_covering_risk_budget(plan: PlanEnvelope) -> PlanEnvelope:
     return plan.model_copy(update={"risk_budget": covering})
 
 
-def dialogue_interaction_policy_errors(
+def live_plan_policy_errors(
     plan: PlanEnvelope,
     observation: Observation,
     *,
-    max_steps: int = DIALOGUE_INTERACTION_MAX_STEPS,
+    max_steps: int = LIVE_PLAN_MAX_STEPS,
 ) -> list[str]:
     """Every reason this plan may not run under the generic interaction policy.
 

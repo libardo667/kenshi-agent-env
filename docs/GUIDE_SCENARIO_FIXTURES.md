@@ -17,7 +17,6 @@ are closed:
 
 ```bash
 ./dev scenario install-starts
-./dev scenario verify-starts
 ```
 
 Installation refuses to replace different mod bytes, appends one exact enabled
@@ -88,16 +87,15 @@ without claiming scenario evidence.
 Use the catalog ID rather than repeating its labels:
 
 ```bash
-./dev journey \
+./dev run \
   --scenario hub-outdoor-safe-broke-solo-day \
   --objective "Survive and establish a repeatable source of income." \
-  --continuous --execute --native-assisted \
-  --acknowledge-continuous-live --exclusive
+  --control exclusive-live
 ```
 
-Journey requires the same fresh native session and matching observable
-conditions. Manual `--scenario-*` fields are retained for unverified historical
-or diagnostic labels, but their runs cannot increase scenario/save recurrence.
+Run requires the same fresh native session and matching observable conditions.
+The dev surface accepts only fixture-backed scenario identity; it does not mint
+manual diagnostic labels that could be mistaken for recurrence evidence.
 
 After runs, fold the new evidence into the observed-blocker ledger:
 

@@ -25,9 +25,9 @@ from kenshi_agent.config import (
     PlanningConfig,
     SafetyConfig,
 )
-from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env import MockEnvironment
 from kenshi_agent.evals import evaluate_log
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.models import (
     Action,
     AdvisorFocus,
@@ -276,7 +276,7 @@ def consult_while_playing_plan(current: Observation) -> PlanEnvelope:
 def test_advisor_request_can_share_a_plan_with_independent_world_work() -> None:
     current = observation()
 
-    assert dialogue_interaction_policy_errors(
+    assert live_plan_policy_errors(
         consult_while_playing_plan(current),
         current,
     ) == []

@@ -1,4 +1,4 @@
-"""The generic interaction policy: properties, not a recipe.
+"""The mandatory live plan policy: properties, not a recipe.
 
 These tests deliberately assert that several *different* plans are acceptable.
 A policy that only admits one blessed sequence would pass a "does the Barman
@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from kenshi_agent.dialogue_interaction import (
-    dialogue_interaction_policy_errors,
-    dialogue_interaction_rebase_errors,
+from kenshi_agent.live_plan_policy import (
+    live_plan_policy_errors,
+    live_plan_rebase_errors,
 )
 from kenshi_agent.models import (
     Action,
@@ -223,7 +223,7 @@ class TestGenericComposition:
             }
         )
 
-        assert not dialogue_interaction_policy_errors(composed, state)
+        assert not live_plan_policy_errors(composed, state)
 
     def test_ambiguous_completion_still_fails_closed_without_a_condition(self) -> None:
         composed = plan(
@@ -243,7 +243,7 @@ class TestGenericComposition:
             native=0,
         )
 
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed,
             observation(controls=TRADE_CONTROLS),
         )
@@ -268,7 +268,7 @@ class TestGenericComposition:
             ],
             pointer=2,
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
 
@@ -287,7 +287,7 @@ class TestGenericComposition:
             ],
             pointer=2,
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
 
@@ -296,7 +296,7 @@ class TestGenericComposition:
             [step("approach", ApproachDialogueTargetAction(target_id=CIVILIAN_ID))],
             pointer=1,
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
 
@@ -311,7 +311,7 @@ class TestGenericComposition:
             ],
             pointer=1,
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
 
@@ -336,7 +336,7 @@ class TestGenericPolicyRejections:
             native=0,
         )
 
-        errors = dialogue_interaction_policy_errors(composed, observation())
+        errors = live_plan_policy_errors(composed, observation())
 
         assert any(
             "failure condition is already true before dispatch" in error
@@ -373,7 +373,7 @@ class TestGenericPolicyRejections:
             retry_budget=0,
         )
         composed = plan([smuggled], native=0)
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("raw controller primitive" in error for error in errors)
@@ -384,7 +384,7 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("no authoritative action contract" in error for error in errors)
@@ -400,7 +400,7 @@ class TestGenericPolicyRejections:
             ],
             native=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("does not bind to current state" in error for error in errors)
@@ -420,7 +420,7 @@ class TestGenericPolicyRejections:
             ],
             native=0,
         )
-        errors = dialogue_interaction_policy_errors(composed, observation(controls=duplicated))
+        errors = live_plan_policy_errors(composed, observation(controls=duplicated))
         assert any("ambiguous" in error for error in errors)
 
     def test_unknown_target_is_rejected(self) -> None:
@@ -428,7 +428,7 @@ class TestGenericPolicyRejections:
             [step("approach", ApproachDialogueTargetAction(target_id="entity-ghost"))],
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("does not bind to current state" in error for error in errors)
@@ -439,7 +439,7 @@ class TestGenericPolicyRejections:
             pointer=0,
             control_mode=ControlMode.INTERFACE_ONLY,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed,
             observation(controls=TRADE_CONTROLS, control_mode=ControlMode.INTERFACE_ONLY),
         )
@@ -458,7 +458,7 @@ class TestGenericPolicyRejections:
             ],
             native=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed,
             observation(controls=TRADE_CONTROLS, capabilities=["game.time", "ui.dialogue"]),
         )
@@ -470,7 +470,7 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("native-assisted cost" in error for error in errors)
@@ -489,7 +489,7 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("pointer cost" in error for error in errors)
@@ -510,7 +510,7 @@ class TestGenericPolicyRejections:
             native=0,
             pointer=2,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("retries an at-most-once action" in error for error in errors)
@@ -536,7 +536,7 @@ class TestGenericPolicyRejections:
             ],
             pointer=1,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("no causal success condition" in error for error in errors)
@@ -548,7 +548,7 @@ class TestGenericPolicyRejections:
             [step("approach", ApproachDialogueTargetAction(target_id=VENDOR_ID))],
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(composed, stale)
+        errors = live_plan_policy_errors(composed, stale)
         assert any("fresh telemetry" in error for error in errors)
 
 
@@ -600,11 +600,11 @@ class TestRebaseAcrossPlannerLatency:
     def test_a_purely_older_sequence_rebases(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
         current = later(planner_view)
-        assert dialogue_interaction_rebase_errors(chain_plan(), planner_view, current) == []
+        assert live_plan_rebase_errors(chain_plan(), planner_view, current) == []
 
     def test_an_unchanged_revision_is_not_a_rebase(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, planner_view)
+        errors = live_plan_rebase_errors(chain_plan(), planner_view, planner_view)
         assert any("causally later" in error for error in errors)
 
     def test_a_target_that_left_the_valid_set_refuses(self) -> None:
@@ -623,7 +623,7 @@ class TestRebaseAcrossPlannerLatency:
             update={"telemetry": telemetry.model_copy(update={"nearby_entities": entities})},
             deep=True,
         )
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
         assert any("changed while the planner was thinking" in error for error in errors)
 
     def test_a_control_that_became_ambiguous_refuses(self) -> None:
@@ -654,7 +654,7 @@ class TestRebaseAcrossPlannerLatency:
             ],
             native=0,
         )
-        errors = dialogue_interaction_rebase_errors(control_first, planner_view, current)
+        errors = live_plan_rebase_errors(control_first, planner_view, current)
         assert any("ambiguous" in error for error in errors)
 
     def test_a_control_that_disappeared_refuses(self) -> None:
@@ -682,7 +682,7 @@ class TestRebaseAcrossPlannerLatency:
             ],
             native=0,
         )
-        errors = dialogue_interaction_rebase_errors(control_first, planner_view, current)
+        errors = live_plan_rebase_errors(control_first, planner_view, current)
         assert any("changed while the planner was thinking" in error for error in errors)
 
     def test_withdrawn_capability_refuses(self) -> None:
@@ -695,7 +695,7 @@ class TestRebaseAcrossPlannerLatency:
             update={"telemetry": telemetry.model_copy(update={"capabilities": reduced})},
             deep=True,
         )
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
         assert any("withdrawn" in error for error in errors)
 
     def test_human_input_during_planning_refuses(self) -> None:
@@ -703,7 +703,7 @@ class TestRebaseAcrossPlannerLatency:
         current = later(planner_view).model_copy(
             update={"events": ["human_input_detected"]}, deep=True
         )
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
         assert any("input authority was withdrawn" in error for error in errors)
 
     def test_control_mode_change_refuses(self) -> None:
@@ -711,13 +711,13 @@ class TestRebaseAcrossPlannerLatency:
         current = later(planner_view).model_copy(
             update={"control_mode": ControlMode.INTERFACE_ONLY}, deep=True
         )
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
         assert any("control mode changed" in error for error in errors)
 
     def test_stale_current_telemetry_refuses(self) -> None:
         planner_view = observation(controls=TRADE_CONTROLS)
         current = later(planner_view).model_copy(update={"telemetry_stale": True}, deep=True)
-        errors = dialogue_interaction_rebase_errors(chain_plan(), planner_view, current)
+        errors = live_plan_rebase_errors(chain_plan(), planner_view, current)
         assert any("stale" in error for error in errors)
 
     def test_a_plan_whose_basis_is_not_its_planner_snapshot_refuses(self) -> None:
@@ -731,7 +731,7 @@ class TestRebaseAcrossPlannerLatency:
             },
             deep=True,
         )
-        errors = dialogue_interaction_rebase_errors(forged, planner_view, current)
+        errors = live_plan_rebase_errors(forged, planner_view, current)
         assert any("immutable planner snapshot" in error for error in errors)
 
 
@@ -756,7 +756,7 @@ class TestRunControlActions:
             ],
             pointer=1,
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
 
@@ -782,7 +782,7 @@ class TestRunControlActions:
             pointer=0,
         )
 
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed,
             observation(
                 controls=TRADE_CONTROLS,
@@ -829,7 +829,7 @@ class TestRunControlActions:
             pointer=0,
         )
 
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed,
             observation(
                 controls=TRADE_CONTROLS,
@@ -855,7 +855,7 @@ class TestRunControlActions:
             pointer=0,
             native=0,
         )
-        assert dialogue_interaction_policy_errors(
+        assert live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         ) == []
 
@@ -878,7 +878,7 @@ class TestRunControlActions:
             pointer=0,
         )
         planner_view = observation(controls=TRADE_CONTROLS)
-        assert dialogue_interaction_rebase_errors(
+        assert live_plan_rebase_errors(
             composed, planner_view, later(planner_view)
         ) == []
 
@@ -914,7 +914,7 @@ class TestDismissScreen:
             deep=True,
         )
         composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
-        assert dialogue_interaction_policy_errors(composed, trading) == []
+        assert live_plan_policy_errors(composed, trading) == []
 
     def test_dismissing_a_screen_that_is_not_open_fails_closed(self) -> None:
         from kenshi_agent.models import DismissScreenAction
@@ -931,7 +931,7 @@ class TestDismissScreen:
             deep=True,
         )
         composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
-        errors = dialogue_interaction_policy_errors(composed, in_world)
+        errors = live_plan_policy_errors(composed, in_world)
         assert any("does not bind to current state" in error for error in errors)
 
     def test_dismiss_costs_one_pointer_and_no_native_budget(self) -> None:
@@ -1024,7 +1024,7 @@ class TestFutureStepsMayReferenceFutureState:
             },
             deep=True,
         )
-        assert dialogue_interaction_policy_errors(self._approach_then_reply(), in_world) == []
+        assert live_plan_policy_errors(self._approach_then_reply(), in_world) == []
 
     def test_the_same_plan_rebases_across_planner_latency(self) -> None:
         state = observation(controls=TRADE_CONTROLS)
@@ -1038,7 +1038,7 @@ class TestFutureStepsMayReferenceFutureState:
             },
             deep=True,
         )
-        assert dialogue_interaction_rebase_errors(
+        assert live_plan_rebase_errors(
             self._approach_then_reply(), in_world, later(in_world)
         ) == []
 
@@ -1049,7 +1049,7 @@ class TestFutureStepsMayReferenceFutureState:
             [step("approach", ApproachDialogueTargetAction(target_id="entity-ghost"))],
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
         assert any("does not bind to current state" in error for error in errors)
@@ -1098,13 +1098,13 @@ class TestIdempotencyClaims:
     def test_declaring_at_most_once_for_a_retryable_action_is_accepted(self) -> None:
         """The exact loop that stalled an open-ended live run."""
 
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             self._plan_with(IdempotencyPolicy.AT_MOST_ONCE), self._trade_state()
         )
         assert errors == [], errors
 
     def test_the_contract_idempotency_is_also_accepted(self) -> None:
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             self._plan_with(IdempotencyPolicy.SAFE_TO_RETRY), self._trade_state()
         )
         assert errors == [], errors
@@ -1120,7 +1120,7 @@ class TestIdempotencyClaims:
             ],
             pointer=0,
         )
-        errors = dialogue_interaction_policy_errors(composed, observation(controls=TRADE_CONTROLS))
+        errors = live_plan_policy_errors(composed, observation(controls=TRADE_CONTROLS))
         assert any("may not be retried" in error for error in errors)
 
 
@@ -1159,24 +1159,24 @@ class TestDerivedRiskBudget:
 
     def test_a_plan_that_buys_no_longer_has_to_also_say_it_buys(self) -> None:
         """Four plans in one live run died for exactly this omission."""
-        from kenshi_agent.dialogue_interaction import with_covering_risk_budget
+        from kenshi_agent.live_plan_policy import with_covering_risk_budget
 
         covered = with_covering_risk_budget(self._buying_plan(declared=0))
         assert covered.risk_budget.max_purchase_actions == 1
 
     def test_headroom_the_planner_asked_for_is_left_alone(self) -> None:
         """A higher budget states intent across the patches that may follow."""
-        from kenshi_agent.dialogue_interaction import with_covering_risk_budget
+        from kenshi_agent.live_plan_policy import with_covering_risk_budget
 
         covered = with_covering_risk_budget(self._buying_plan(declared=5))
         assert covered.risk_budget.max_purchase_actions == 5
 
     def test_deriving_the_budget_does_not_excuse_an_unbindable_purchase(self) -> None:
         """Only the bookkeeping goes away, not any check that was protecting something."""
-        from kenshi_agent.dialogue_interaction import with_covering_risk_budget
+        from kenshi_agent.live_plan_policy import with_covering_risk_budget
 
         covered = with_covering_risk_budget(self._buying_plan(declared=0))
-        errors = dialogue_interaction_policy_errors(
+        errors = live_plan_policy_errors(
             covered, observation(controls=TRADE_CONTROLS)
         )
         assert not any("purchase budget" in error for error in errors)
@@ -1185,7 +1185,7 @@ class TestDerivedRiskBudget:
 
 def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     """A capability says a fact is observable, not that the intended effect occurred."""
-    from kenshi_agent.dialogue_interaction import _is_causal_condition
+    from kenshi_agent.live_plan_policy import _is_causal_condition
     from kenshi_agent.models import (
         Condition,
         ConditionKind,
@@ -1231,7 +1231,7 @@ def test_raw_time_binding_is_rejected_in_favor_of_playback_state() -> None:
         native=0,
     )
 
-    errors = dialogue_interaction_policy_errors(
+    errors = live_plan_policy_errors(
         composed,
         observation(capabilities=[*CAPABILITIES, "game.speed"]),
     )

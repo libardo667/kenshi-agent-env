@@ -16,8 +16,8 @@ from kenshi_agent.config import (
 )
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
-from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env.live import LiveEnvironment
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.models import (
     ActionReceipt,
     CharacterState,
@@ -440,7 +440,7 @@ def test_continuous_executor_completes_only_the_full_sale_terminal(
             environment._SALE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         observation = await environment.reset()
         plan = _sale_plan(observation, action)
-        assert dialogue_interaction_policy_errors(plan, observation) == []
+        assert live_plan_policy_errors(plan, observation) == []
 
         store = WorldStateStore(clock=clock)
         store.publish(observation)

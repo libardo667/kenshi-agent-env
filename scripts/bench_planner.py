@@ -13,19 +13,18 @@ import sys
 import time
 from pathlib import Path
 
-from kenshi_agent.config import load_config
+from kenshi_agent.config import AppConfig, load_config
 from kenshi_agent.live_dev import _telemetry_read
 from kenshi_agent.models import ControlMode, Observation, PlanningMode, WorldStateRevision
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 
 
-def live_observation(config):
+def live_observation(config: AppConfig) -> Observation:
     snapshot = _telemetry_read(config).read().snapshot
     return Observation(
         run_id="bench", step_index=0, mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
         planning_mode=PlanningMode.CONTINUOUS,
-        live_execution_policy=config.planning.live_execution_policy,
         world_revision=WorldStateRevision(telemetry_sequence=snapshot.sequence),
         telemetry=snapshot, telemetry_stale=False,
         objective="You're playing Kenshi. Decide a goal for yourself and work toward it.",
@@ -33,9 +32,10 @@ def live_observation(config):
 
 
 async def main() -> int:
-    config = load_config("config/live.longform.yaml")
+    config = load_config("config/live.yaml")
     obs = live_observation(config)
-    payload = obs.planner_payload(max_chars=config.planner.max_observation_chars)
+    payload = obs.planner_payload()
+    assert obs.telemetry is not None
     print(
         f"observation: screen={obs.telemetry.ui.active_screen} "
         f"actions_offered={len(obs.semantic_action_digest())} "
@@ -45,7 +45,7 @@ async def main() -> int:
     trials = int(os.environ.get("TRIALS", "1"))
     models = sys.argv[1:] or ["openai/gpt-4.1-mini"]
     print(f"{'model':44s} {'secs':>6s}  verdict")
-    tally: dict[str, list] = {}
+    tally: dict[str, list[tuple[bool, float]]] = {}
     for model in [m for m in models for _ in range(trials)]:
         cfg = config.planner.model_copy(update={
             "openrouter_model": model,

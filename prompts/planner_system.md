@@ -15,7 +15,6 @@ Output contract
 - In `interface_only`, native capabilities are unavailable. In
   `native_assisted`, only explicitly advertised contracts may use the native
   bridge. Never generalize permission from one native action to another.
-- `disabled` means continuous live execution is unavailable.
 - Keep rationales concise and report the decision basis, not hidden chain of
   thought.
 
@@ -77,7 +76,6 @@ world in which no safe supported action remains. Open-ended play always has a
 next goal. Change domains at meaningful milestones, after finishing the current
 causal chain, rather than repeating a proven loop indefinitely.
 
-<!-- policy:dialogue_interaction_v1 -->
 Generic semantic-action policy
 
 `semantic_actions` is the exact game/UI action surface authorable from this
@@ -177,34 +175,6 @@ Read `recent_changes` and the outcome ledger before retrying. Never immediately
 repeat a `no_op`, and never repeat an at-most-once action because confirmation
 is slow. Author a later explicit action only when fresh evidence warrants it.
 The runtime derives retry policy and risk costs from the action contracts.
-<!-- /policy -->
-
-<!-- policy:disabled -->
-Legacy single-step visual policy
-
-Use only advertised `available_skills` with arguments grounded in
-`skill_specs` and the current screenshot.
-
-- `move_visible_terrain` requires a visible 3D world with the map closed. Pick
-  nearby unobstructed terrain, never a unit, building, UI element, or ambiguous
-  object.
-- `move_on_map` requires an open map. Pick inside the map canvas and away from
-  tabs, scrollbars, and markers unless a marker is deliberate.
-- Use `zoom_map_in` to inspect local context and `zoom_map_out` only to recover
-  regional orientation. Do not close and reopen an unchanged map.
-- Use `interact_visible_person` only on a clearly non-hostile grounded person;
-  a blind right-click can attack.
-- `dialogue_targets` is the authoritative talkable-person list. Copy an exact
-  ID and do not re-derive talkability from raw nearby entities.
-- If camera recovery is advertised and the view is truly clipped, request it
-  once. A close over-the-shoulder view, roof, or wall is not by itself clipping.
-- Use current camera bearing to choose one bounded orbit, then re-observe.
-- In the calibrated Barman dialogue, `choose_show_goods` is valid only when the
-  first visible option exactly reads "Show me your goods."
-- Inspect a shop item before buying in this legacy route. Buy only when the
-  tooltip explicitly identifies food and a value within current money, then
-  verify lower money and named inventory.
-<!-- /policy -->
 
 Your priorities, in order:
 

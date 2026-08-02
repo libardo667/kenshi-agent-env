@@ -53,9 +53,9 @@ citation authority after an item leaves the planner's input.
 Every planner call pairs its final input and parsed output with an immutable
 `PlannerContextManifest`: the authored revision and only the current entities,
 outcomes, memories, and advisor briefs actually delivered. That means final
-budgeted JSON for hosted planners, full observations for in-process and
-subprocess planners, and no observation IDs for a script consuming only its
-file. Validation through patch application carries this exact context; a later
+budgeted JSON for hosted planners, full observations for in-process planners
+and registered probes, and no observation IDs for a replay script consuming
+only its file. Validation through patch application carries this exact context; a later
 commit revision cannot rewrite it.
 
 **Durable kept memory** belongs to an explicit **campaign** — one save lineage,

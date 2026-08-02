@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
-import sys
 from typing import Literal
 
 from kenshi_agent.live_smoke_planner import (
@@ -196,7 +194,7 @@ def build_decision(
     action_kind: SmokeActionKind,
     target_id: str | None = None,
 ) -> PlannerDecision:
-    """Build the guarded action for the live profile's single-step runtime."""
+    """Build the guarded action for this deterministic single-step probe."""
 
     if observation.telemetry_stale:
         raise ValueError("live native smoke requires fresh telemetry")
@@ -249,42 +247,3 @@ def build_output(
         action_kind=action_kind,
         target_id=target_id,
     )
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--action",
-        choices=[
-            "exit_current_building",
-            "harvest_resource",
-            "move_to_character",
-        ],
-        required=True,
-    )
-    parser.add_argument("--target-id")
-    return parser.parse_args()
-
-
-def main() -> int:
-    args = parse_args()
-    line = sys.stdin.readline()
-    if not line:
-        print("No observation received.", file=sys.stderr)
-        return 2
-    observation = Observation.model_validate_json(line)
-    try:
-        output = build_output(
-            observation,
-            action_kind=args.action,
-            target_id=args.target_id,
-        )
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
-    print(output.model_dump_json())
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

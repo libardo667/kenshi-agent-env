@@ -9,15 +9,16 @@ import pytest
 from kenshi_agent import live_dev
 from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
+from kenshi_agent.dev_cli import export_reference, parse_args, render_reference
 from kenshi_agent.live_dev import (
     MYGUI_CLICK_HOLD_SECONDS,
     LaunchFailed,
     LaunchInterrupted,
+    _agent_argv,
     _click,
     _click_semantic_control,
     _disable_re_kenshi_startup_panel,
     _ensure_interrupted_safe_state,
-    _journey_argv,
     _observe_loaded_paused_health,
     _open_exact_authored_game_start,
     _open_exact_scenario_save,
@@ -125,6 +126,258 @@ class LaunchController(InputController):
         self.close_requested = True
 
 
+def test_live_dev_exposes_only_the_approved_top_level_commands() -> None:
+    parser = live_dev.build_parser()
+    commands: set[str] = set()
+    for action in parser._subparsers._group_actions:  # noqa: SLF001
+        commands.update(action.choices)
+
+    assert commands == {
+        "doctor",
+        "launch",
+        "run",
+        "telemetry",
+        "snapshot",
+        "recover",
+        "stop",
+        "scenario",
+        "setup",
+    }
+
+
+def test_normal_dev_surface_has_no_profile_config_or_planner_switches() -> None:
+    reference = render_reference()
+
+    assert "--profile" not in reference
+    assert "--config" not in reference
+    assert "--planner" not in reference
+    for obsolete in (
+        ["run", "--profile", "dialogue"],
+        ["run", "--config", "config/live.yaml"],
+        ["run", "--planner", "subprocess"],
+    ):
+        with pytest.raises(SystemExit):
+            parse_args(obsolete)
+
+
+@pytest.mark.parametrize("argv", [[], ["scenario"], ["setup"]])
+def test_parser_rejects_incomplete_workflows(argv: list[str]) -> None:
+    with pytest.raises(SystemExit):
+        live_dev.build_parser().parse_args(argv)
+
+
+def test_parser_preserves_typed_runtime_and_safety_defaults() -> None:
+    parser = live_dev.build_parser()
+
+    doctor = parser.parse_args(["doctor", "--timeout", "1.5"])
+    launch = parser.parse_args(["launch", "--timeout", "2.5"])
+    run = parser.parse_args(["run", "--timeout", "3.5", "--steps", "7"])
+    telemetry = parser.parse_args(["telemetry", "--interval", "0.25"])
+    recover = parser.parse_args(["recover", "--timeout", "4.5"])
+    stop = parser.parse_args(["stop", "--timeout", "5.5"])
+
+    assert doctor.timeout == 1.5
+    assert doctor.resume_launcher is False
+    assert doctor.preflight_only is True
+    assert launch.timeout == 2.5
+    assert launch.preflight_only is False
+    assert run.timeout == 3.5
+    assert run.steps == 7
+    assert run.resume_launcher is False
+    assert run.preflight_only is False
+    assert telemetry.interval == 0.25
+    assert recover.timeout == 4.5
+    assert stop.timeout == 5.5
+
+
+def test_shared_parser_entrypoint_and_reference_export(tmp_path: Path) -> None:
+    assert parse_args(["telemetry"]).command == "telemetry"
+
+    destination = tmp_path / "nested" / "reference" / "DEV_CLI.md"
+    assert export_reference(destination) == destination
+    assert destination.read_text(encoding="utf-8") == render_reference()
+    assert export_reference(destination) == destination
+
+
+def test_run_control_mode_is_one_explicit_authority_choice() -> None:
+    parser = live_dev.build_parser()
+
+    assert parser.parse_args(["run"]).control == "plan-only"
+    assert parser.parse_args(["run", "--control", "polite-live"]).control == (
+        "polite-live"
+    )
+    assert parser.parse_args(["run", "--control", "exclusive-live"]).control == (
+        "exclusive-live"
+    )
+
+
+def test_telemetry_watch_and_snapshot_are_first_class_commands() -> None:
+    parser = live_dev.build_parser()
+
+    telemetry = parser.parse_args(["telemetry", "--watch"])
+    snapshot = parser.parse_args(["snapshot", "--label", "trade-check"])
+
+    assert telemetry.watch is True
+    assert snapshot.label == "trade-check"
+
+
+def test_telemetry_watch_emits_fresh_ndjson_until_interrupted(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    reads = iter(
+        [
+            TelemetryRead(
+                snapshot=launch_snapshot(sequence, paused=True),
+                age_seconds=0.1,
+                stale=False,
+                path=Path("telemetry.latest.json"),
+            )
+            for sequence in (10, 11)
+        ]
+    )
+    sleeps = 0
+
+    class Reader:
+        def read(self) -> TelemetryRead:
+            return next(reads)
+
+    def sleep(_: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(live_dev, "load_config", lambda _: object())
+    monkeypatch.setattr(live_dev, "_telemetry_read", lambda _: Reader())
+    monkeypatch.setattr(live_dev.time, "sleep", sleep)
+    args = live_dev.build_parser().parse_args(
+        ["telemetry", "--watch", "--interval", "0.01"]
+    )
+
+    assert live_dev._telemetry(args) == 0
+    payloads = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
+    assert [payload["sequence"] for payload in payloads] == [10, 11]
+
+
+def test_snapshot_pairs_the_frame_with_full_telemetry_evidence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = Path(__file__).resolve().parents[1]
+    base = load_config(root / "config" / "live.yaml")
+    config = base.model_copy(
+        update={
+            "paths": base.paths.model_copy(update={"runs_dir": tmp_path}),
+        }
+    )
+    result = TelemetryRead(
+        snapshot=launch_snapshot(42, paused=True),
+        age_seconds=0.1,
+        stale=False,
+        path=Path("telemetry.latest.json"),
+    )
+
+    class Reader:
+        def read(self) -> TelemetryRead:
+            return result
+
+    class Capture:
+        def __init__(self, _controller: object, run_dir: Path, **_: object) -> None:
+            self.run_dir = run_dir
+
+        def capture(self, _sequence: int) -> object:
+            self.run_dir.mkdir(parents=True)
+            path = self.run_dir / "frame.png"
+            path.write_bytes(b"png")
+            return type("Frame", (), {"path": path})()
+
+    monkeypatch.setattr(live_dev, "load_config", lambda _: config)
+    monkeypatch.setattr(live_dev, "_controller", lambda _: object())
+    monkeypatch.setattr(live_dev, "_telemetry_read", lambda _: Reader())
+    monkeypatch.setattr(live_dev, "WindowCapture", Capture)
+    args = live_dev.build_parser().parse_args(
+        ["snapshot", "--label", "paired-proof"]
+    )
+
+    assert live_dev._snapshot(args) == 0
+    evidence_dir = Path(capsys.readouterr().out.strip())
+    telemetry = json.loads((evidence_dir / "telemetry.json").read_text())
+    manifest = json.loads((evidence_dir / "manifest.json").read_text())
+    assert telemetry["snapshot"]["sequence"] == 42
+    assert Path(manifest["frame"]).name == "frame.png"
+    assert manifest["telemetry"] == "telemetry.json"
+
+
+def test_setup_has_only_the_explicit_graphics_repair() -> None:
+    args = live_dev.build_parser().parse_args(["setup", "graphics"])
+
+    assert args.command == "setup"
+    assert args.setup_action == "graphics"
+
+
+def test_run_start_is_state_aware_and_fails_closed_on_ambiguous_state() -> None:
+    choose = live_dev._choose_run_path
+    loaded = launch_snapshot(7, paused=True)
+    fresh = TelemetryRead(
+        snapshot=loaded,
+        age_seconds=0.1,
+        stale=False,
+        path=Path("telemetry.latest.json"),
+    )
+
+    assert choose(process_names=set(), telemetry=None, terminal_window_title=None) == (
+        "launch"
+    )
+    assert choose(
+        process_names={"kenshi_x64.exe"},
+        telemetry=fresh,
+        terminal_window_title=None,
+    ) == "loaded"
+
+    stale = TelemetryRead(
+        snapshot=loaded,
+        age_seconds=30.0,
+        stale=True,
+        path=Path("telemetry.latest.json"),
+    )
+    with pytest.raises(LaunchFailed, match=r"stale.*\./dev recover"):
+        choose(
+            process_names={"kenshi_x64.exe"},
+            telemetry=stale,
+            terminal_window_title=None,
+        )
+    with pytest.raises(LaunchFailed, match=r"terminal.*\./dev recover"):
+        choose(
+            process_names={"kenshi_x64.exe"},
+            telemetry=fresh,
+            terminal_window_title="RE_Kenshi Crash Reporter",
+        )
+
+
+def test_run_control_mode_translates_to_the_core_authority_gates() -> None:
+    build_agent_argv = live_dev._agent_argv
+    parser = live_dev.build_parser()
+
+    plan_only = build_agent_argv(parser.parse_args(["run"]), "plan")
+    polite = build_agent_argv(
+        parser.parse_args(["run", "--control", "polite-live"]),
+        "polite",
+    )
+    exclusive = build_agent_argv(
+        parser.parse_args(["run", "--control", "exclusive-live"]),
+        "exclusive",
+    )
+
+    assert "--execute-live-actions" not in plan_only
+    assert "--execute-live-actions" in polite
+    assert "--acknowledge-native-assisted-control" in polite
+    assert "--acknowledge-continuous-live" in polite
+    assert "--exclusive-input-session" not in polite
+    assert "--exclusive-input-session" in exclusive
+
+
 def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
     observed_at = datetime(2026, 7, 27, tzinfo=UTC)
     payload = {
@@ -214,7 +467,7 @@ def test_safe_close_requires_fresh_paused_idle_telemetry() -> None:
 def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
 
         def idle_snapshot(sequence: int, *, paused: bool) -> TelemetrySnapshot:
@@ -256,7 +509,7 @@ def test_supported_close_pauses_and_confirms_before_requesting_wm_close() -> Non
 def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_closing() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
         inventory_capabilities = [
             *resource_inventory_snapshot(40).capabilities,
@@ -321,7 +574,7 @@ def test_interrupted_recovery_pauses_and_dismisses_owned_inventories_without_clo
 def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
         command_id = "cmd-" + "a" * 32
         acknowledgement = NativeCommandAcknowledgement(
@@ -387,7 +640,7 @@ def test_interrupted_recovery_waits_for_paused_native_command_to_cancel() -> Non
 def test_supported_close_never_closes_an_unresolved_modal() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
         modal = launch_snapshot(51, paused=True).model_copy(
             update={
@@ -419,7 +672,7 @@ def test_supported_close_never_closes_an_unresolved_modal() -> None:
 def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
         resource_inventory = resource_inventory_snapshot(
             60,
@@ -472,7 +725,7 @@ def test_supported_close_dismisses_exact_resource_inventory_before_wm_close() ->
 def test_supported_close_never_dismisses_an_incomplete_inventory_layout() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
         incomplete = resource_inventory_snapshot(70).model_copy(
             update={
@@ -610,7 +863,7 @@ def test_supported_close_resolves_an_exact_shop_inventory_layout() -> None:
 def test_supported_close_dismisses_source_and_destination_before_wm_close() -> None:
     async def scenario() -> None:
         root = Path(__file__).resolve().parents[1]
-        config = load_config(root / "config" / "live.longform.yaml")
+        config = load_config(root / "config" / "live.yaml")
         controller = LaunchController()
         both = resource_inventory_snapshot(
             80,
@@ -1130,7 +1383,7 @@ def test_launcher_controller_forces_polite_restoring_input_session(
         return sentinel
 
     monkeypatch.setattr(live_dev, "Win32InputController", fake_controller)
-    config = load_config(Path(__file__).resolve().parents[1] / "config" / "live.burnin.yaml")
+    config = load_config(Path(__file__).resolve().parents[1] / "config" / "live.yaml")
 
     assert live_dev._controller(config) is sentinel
     assert captured["polite_input_enabled"] is True
@@ -1225,7 +1478,7 @@ def test_launch_preflight_accepts_logged_on_exact_profile_and_memory(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     assert config.launch.graphics_profile_file is not None
     loaded_profile = live_dev.load_graphics_profile(
         config.launch.graphics_profile_file
@@ -1267,7 +1520,7 @@ def test_launch_preflight_rejects_steam_process_that_is_not_logged_on(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     steam_log = tmp_path / "connection_log.txt"
     steam_log.write_text(
         "[2026-07-23 16:45:00] [Logged Off, 4, 0] Logged In Elsewhere\n",
@@ -1289,7 +1542,7 @@ def test_launch_preflight_rejects_second_kenshi_client(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     with pytest.raises(LaunchFailed, match="already running"):
         _validate_launch_preconditions(
@@ -1305,7 +1558,7 @@ def test_non_launching_preflight_can_validate_an_existing_kenshi_client(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     config = config.model_copy(
         update={
             "launch": config.launch.model_copy(
@@ -1341,11 +1594,11 @@ def test_launch_preflight_prioritizes_terminal_crash_over_duplicate_process(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
 
     with pytest.raises(
         LaunchFailed,
-        match=r"RE_Kenshi Crash Reporter.*\./dev crash",
+        match=r"RE_Kenshi Crash Reporter.*\./dev recover",
     ):
         _validate_launch_preconditions(
             config,
@@ -1361,7 +1614,7 @@ def test_crash_evidence_archives_latest_dump_logs_telemetry_and_frame(
     root = Path(__file__).resolve().parents[1]
     local_app_data = tmp_path / "local"
     monkeypatch.setenv("LOCALAPPDATA", str(local_app_data))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     telemetry_dir = tmp_path / "telemetry"
     telemetry_dir.mkdir()
     telemetry_file = telemetry_dir / "telemetry.latest.json"
@@ -1558,16 +1811,84 @@ def test_crash_session_never_force_terminates_a_lingering_process() -> None:
     asyncio.run(scenario())
 
 
-def test_crash_parser_requires_explicit_dismissal_flag() -> None:
+def test_recovery_requires_explicit_crash_dismissal_flag() -> None:
     inspect_args = live_dev.build_parser().parse_args(
-        ["crash", "--config", "config/live.burnin.yaml"]
+        ["recover", "--config", "config/live.yaml"]
     )
     dismiss_args = live_dev.build_parser().parse_args(
-        ["crash", "--config", "config/live.burnin.yaml", "--dismiss"]
+        ["recover", "--config", "config/live.yaml", "--dismiss-crash"]
     )
 
-    assert inspect_args.dismiss is False
-    assert dismiss_args.dismiss is True
+    assert inspect_args.dismiss_crash is False
+    assert dismiss_args.dismiss_crash is True
+
+
+def test_doctor_archives_a_terminal_crash_without_dismissing_it(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[bool] = []
+
+    async def archive(args: object) -> int:
+        calls.append(args.dismiss)  # type: ignore[attr-defined]
+        return 0
+
+    monkeypatch.setattr(live_dev, "load_config", lambda _: object())
+    monkeypatch.setattr(live_dev, "_windows_runtime", lambda: True)
+    monkeypatch.setattr(live_dev, "_controller", lambda _: object())
+    monkeypatch.setattr(
+        live_dev,
+        "_terminal_window_title",
+        lambda _: "RE_Kenshi Crash Reporter",
+    )
+    monkeypatch.setattr(live_dev, "_crash", archive)
+    monkeypatch.setattr(
+        live_dev,
+        "_launch",
+        lambda _: (_ for _ in ()).throw(AssertionError("doctor must not continue")),
+    )
+    args = live_dev.build_parser().parse_args(["doctor"])
+
+    import asyncio
+
+    assert asyncio.run(live_dev._doctor(args)) == 4
+    assert calls == [False]
+    assert "archived" in capsys.readouterr().err
+
+
+def test_recover_archives_a_crash_and_requires_explicit_dismissal(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[bool] = []
+
+    async def archive(args: object) -> int:
+        calls.append(args.dismiss)  # type: ignore[attr-defined]
+        return 0
+
+    monkeypatch.setattr(live_dev, "load_config", lambda _: object())
+    monkeypatch.setattr(live_dev, "_windows_runtime", lambda: True)
+    monkeypatch.setattr(live_dev, "_controller", lambda _: object())
+    monkeypatch.setattr(
+        live_dev,
+        "_terminal_window_title",
+        lambda _: "RE_Kenshi Crash Reporter",
+    )
+    monkeypatch.setattr(live_dev, "_crash", archive)
+    monkeypatch.setattr(
+        live_dev,
+        "_recover_kenshi_safe_state",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("the crash must remain untouched")
+        ),
+    )
+    args = live_dev.build_parser().parse_args(["recover"])
+
+    import asyncio
+
+    assert asyncio.run(live_dev._recover(args)) == 3
+    assert calls == [False]
+    assert "--dismiss-crash" in capsys.readouterr().err
 
 
 def test_launch_preflight_rejects_low_memory_before_profile_read(
@@ -1576,7 +1897,7 @@ def test_launch_preflight_rejects_low_memory_before_profile_read(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     steam_log = tmp_path / "connection_log.txt"
     steam_log.write_text(
         "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
@@ -1724,7 +2045,7 @@ def test_launch_preflight_rejects_profile_drift_with_recovery_command(
 ) -> None:
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
-    config = load_config(root / "config" / "live.burnin.yaml")
+    config = load_config(root / "config" / "live.yaml")
     steam_log = tmp_path / "connection_log.txt"
     steam_log.write_text(
         "[2026-07-23 16:53:46] [Logged On, 4, 7] ready\n",
@@ -1744,7 +2065,7 @@ def test_launch_preflight_rejects_profile_drift_with_recovery_command(
         encoding="utf-8",
     )
 
-    with pytest.raises(LaunchFailed, match=r"view distance.*graphics apply"):
+    with pytest.raises(LaunchFailed, match=r"view distance.*setup graphics"):
         _validate_launch_preconditions(
             config,
             process_names={"steam.exe"},
@@ -1755,13 +2076,12 @@ def test_launch_preflight_rejects_profile_drift_with_recovery_command(
         )
 
 
-def test_launch_parser_accepts_non_launching_preflight() -> None:
+def test_doctor_is_the_only_non_launching_preflight_surface() -> None:
     args = live_dev.build_parser().parse_args(
         [
-            "launch",
+            "doctor",
             "--config",
-            "config/live.burnin.yaml",
-            "--preflight-only",
+            "config/live.yaml",
         ]
     )
 
@@ -1773,7 +2093,7 @@ def test_launch_parser_accepts_explicit_existing_launcher_resume() -> None:
         [
             "launch",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "--resume-launcher",
         ]
     )
@@ -1786,7 +2106,7 @@ def test_launch_parser_accepts_only_one_exact_startup_source() -> None:
         [
             "launch",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "--game-start",
             "kae-03-broke-pair",
         ]
@@ -1799,7 +2119,7 @@ def test_launch_parser_accepts_only_one_exact_startup_source() -> None:
             [
                 "launch",
                 "--config",
-                "config/live.burnin.yaml",
+                "config/live.yaml",
                 "--scenario",
                 "fixture-a",
                 "--game-start",
@@ -1808,23 +2128,20 @@ def test_launch_parser_accepts_only_one_exact_startup_source() -> None:
         )
 
 
-def test_play_parser_combines_launch_and_continuous_journey_options() -> None:
+def test_run_parser_combines_start_agent_and_control_options() -> None:
     args = live_dev.build_parser().parse_args(
         [
-            "play",
+            "run",
             "--config",
-            "config/live.longform.yaml",
+            "config/live.yaml",
             "--game-start",
             "kae-02-funded-solo",
             "--campaign",
             "fresh-funded-solo",
             "--steps",
             "80",
-            "--continuous",
-            "--execute",
-            "--native-assisted",
-            "--acknowledge-continuous-live",
-            "--exclusive",
+            "--control",
+            "exclusive-live",
         ]
     )
 
@@ -1833,30 +2150,30 @@ def test_play_parser_combines_launch_and_continuous_journey_options() -> None:
     assert args.continue_game is True
     assert args.preflight_only is False
     assert args.tts is True
-    argv = _journey_argv(args, "combined-run")
+    argv = _agent_argv(args, "combined-run")
     assert argv[argv.index("--steps") + 1] == "80"
-    assert argv[argv.index("--planning-mode") + 1] == "continuous"
+    assert "--planning-mode" not in argv
     assert "--execute-live-actions" in argv
     assert "--acknowledge-native-assisted-control" in argv
     assert "--acknowledge-continuous-live" in argv
     assert "--tts" in argv
 
 
-def test_play_parser_can_explicitly_disable_default_narration() -> None:
+def test_run_parser_can_explicitly_disable_default_narration() -> None:
     args = live_dev.build_parser().parse_args(
         [
-            "play",
+            "run",
             "--config",
-            "config/live.longform.yaml",
+            "config/live.yaml",
             "--no-tts",
         ]
     )
 
     assert args.tts is False
-    assert "--tts" not in _journey_argv(args, "quiet-run")
+    assert "--tts" not in _agent_argv(args, "quiet-run")
 
 
-def test_play_starts_journey_only_after_launch_succeeds(
+def test_launch_and_run_starts_agent_only_after_launch_succeeds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -1866,13 +2183,13 @@ def test_play_starts_journey_only_after_launch_succeeds(
         calls.append("launch")
         return 0
 
-    def journey(_: object, *, manage_display_lease: bool = True) -> int:
+    def run_agent(_: object, *, manage_display_lease: bool = True) -> int:
         assert manage_display_lease is False
-        calls.append("journey")
+        calls.append("agent")
         return 7
 
     monkeypatch.setattr(live_dev, "_launch", launch)
-    monkeypatch.setattr(live_dev, "_journey", journey)
+    monkeypatch.setattr(live_dev, "_run_agent", run_agent)
     monkeypatch.setattr(
         live_dev,
         "load_config",
@@ -1882,10 +2199,10 @@ def test_play_starts_journey_only_after_launch_succeeds(
             {"launch": type("Launch", (), {"external_display_only": False})()},
         )(),
     )
-    args = type("Args", (), {"config": "config/live.longform.yaml"})()
+    args = type("Args", (), {"config": "config/live.yaml"})()
 
-    assert live_dev._play(args) == 7
-    assert calls == ["launch", "journey"]
+    assert live_dev._launch_and_run(args) == 7
+    assert calls == ["launch", "agent"]
 
     calls.clear()
 
@@ -1899,11 +2216,11 @@ def test_play_starts_journey_only_after_launch_succeeds(
         return 4
 
     monkeypatch.setattr(live_dev, "_launch", failed_launch)
-    assert live_dev._play(args) == 4
+    assert live_dev._launch_and_run(args) == 4
     assert calls == ["launch"]
 
 
-def test_play_owns_one_display_lease_across_launch_and_journey(
+def test_launch_and_run_owns_one_display_lease(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -1927,8 +2244,8 @@ def test_play_owns_one_display_lease_across_launch_and_journey(
         calls.append(f"launch:{manage_display_lease}")
         return 0
 
-    def journey(_: object, *, manage_display_lease: bool = True) -> int:
-        calls.append(f"journey:{manage_display_lease}")
+    def run_agent(_: object, *, manage_display_lease: bool = True) -> int:
+        calls.append(f"agent:{manage_display_lease}")
         return 0
 
     monkeypatch.setattr(live_dev, "load_config", lambda _: Config())
@@ -1943,15 +2260,15 @@ def test_play_owns_one_display_lease_across_launch_and_journey(
         lambda _: DisplayLease(),
     )
     monkeypatch.setattr(live_dev, "_launch", launch)
-    monkeypatch.setattr(live_dev, "_journey", journey)
+    monkeypatch.setattr(live_dev, "_run_agent", run_agent)
 
-    args = type("Args", (), {"config": "config/live.longform.yaml"})()
-    assert live_dev._play(args) == 0
+    args = type("Args", (), {"config": "config/live.yaml"})()
+    assert live_dev._launch_and_run(args) == 0
     assert calls == [
         "display-ready",
         "lease-enter",
         "launch:False",
-        "journey:False",
+        "agent:False",
         "lease-exit",
     ]
 
@@ -1980,6 +2297,14 @@ def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sampl
     )
     snapshot = launch_snapshot(70, paused=True).model_copy(
         update={
+            "nearby_entities": [
+                NearbyEntity(
+                    id=f"entity-{index}",
+                    name="Barman" if index == 12 else f"Character {index}",
+                    distance=float(index),
+                )
+                for index in range(13)
+            ],
             "known_map_destinations": [
                 KnownMapDestination(
                     id="town-squin",
@@ -2001,6 +2326,13 @@ def test_supported_telemetry_keeps_every_actionable_target_outside_nearest_sampl
         )
     )
 
+    assert "barman" not in payload
+    assert payload["nearby_entity_count"] == 13
+    assert len(payload["nearest_nearby_entities"]) == 12  # type: ignore[arg-type]
+    assert "entity-12" not in {
+        entity["id"]  # type: ignore[index]
+        for entity in payload["nearest_nearby_entities"]  # type: ignore[union-attr]
+    }
     assert payload["world_target_count"] == 15
     assert [
         target["id"]  # type: ignore[index]
@@ -2452,105 +2784,70 @@ def test_duplicate_semantic_label_is_ambiguous_and_emits_no_match() -> None:
     assert _unique_visible_control(snapshot, ["Continue"]) is None
 
 
-def _journey_args(*extra: str) -> object:
+def _run_args(*extra: str) -> object:
     return live_dev.build_parser().parse_args(
-        ["journey", "--config", "config/live.burnin.yaml", *extra]
+        ["run", "--config", "config/live.yaml", *extra]
     )
 
 
-def test_journey_defaults_to_single_step_without_continuous_flags() -> None:
-    argv = _journey_argv(_journey_args(), "run-1")
+def test_run_defaults_to_plan_only_and_leaves_planning_mode_to_the_config() -> None:
+    argv = _agent_argv(_run_args(), "run-1")
     assert "--planning-mode" not in argv
     assert "--acknowledge-continuous-live" not in argv
     assert "--execute-live-actions" not in argv
 
 
-def test_journey_omits_unspecified_profile_overrides() -> None:
-    argv = _journey_argv(_journey_args(), "profile-owned-run")
+def test_run_omits_unspecified_config_overrides() -> None:
+    argv = _agent_argv(_run_args(), "config-owned-run")
 
     assert "--planner" not in argv
     assert "--steps" not in argv
 
 
-def test_journey_continuous_flag_passes_planning_mode() -> None:
-    argv = _journey_argv(_journey_args("--continuous"), "run-2")
-    assert argv[argv.index("--planning-mode") + 1] == "continuous"
+def test_run_does_not_offer_a_second_planning_mode_authority() -> None:
+    with pytest.raises(SystemExit):
+        _run_args("--continuous")
 
 
-def test_journey_tts_mode_passes_to_the_core_run() -> None:
-    argv = _journey_argv(_journey_args("--tts"), "spoken-run")
+def test_run_tts_mode_passes_to_the_core_run() -> None:
+    argv = _agent_argv(_run_args("--tts"), "spoken-run")
 
     assert "--tts" in argv
 
 
-def test_journey_passes_an_explicit_campaign_to_the_core_run() -> None:
-    argv = _journey_argv(
-        _journey_args("--campaign", "ladle-css-01"),
+def test_run_passes_an_explicit_campaign_to_the_core_run() -> None:
+    argv = _agent_argv(
+        _run_args("--campaign", "ladle-css-01"),
         "campaign-run",
     )
 
     assert argv[argv.index("--campaign") + 1] == "ladle-css-01"
 
 
-def test_journey_continuous_does_not_imply_the_acknowledgement() -> None:
-    # --continuous alone must never silently grant the continuous-live ack; the
-    # run command then refuses live-continuous execution, preserving the gate.
-    argv = _journey_argv(_journey_args("--continuous"), "run-3")
-    assert "--acknowledge-continuous-live" not in argv
-
-
-def test_journey_full_continuous_live_invocation_passes_every_gate() -> None:
-    argv = _journey_argv(
-        _journey_args(
-            "--continuous",
-            "--execute",
-            "--native-assisted",
-            "--acknowledge-continuous-live",
+def test_run_live_control_passes_every_core_authority_gate() -> None:
+    argv = _agent_argv(
+        _run_args(
+            "--control",
+            "polite-live",
         ),
         "run-4",
     )
-    assert argv[argv.index("--planning-mode") + 1] == "continuous"
     assert "--execute-live-actions" in argv
     assert "--acknowledge-native-assisted-control" in argv
     assert "--acknowledge-continuous-live" in argv
 
 
-def test_journey_passes_complete_scenario_declaration_to_core_run() -> None:
-    argv = _journey_argv(
-        _journey_args(
-            "--scenario-id",
-            "hub-outdoor-safe-day",
-            "--save-id",
-            "hub-start-v1",
-            "--scenario-environment",
-            "outdoor",
-            "--scenario-danger",
-            "safe",
-            "--scenario-economy",
-            "broke",
-            "--scenario-party",
-            "solo",
-            "--scenario-time-of-day",
-            "day",
-        ),
-        "scenario-run",
-    )
-
-    assert argv[argv.index("--scenario-id") + 1] == "hub-outdoor-safe-day"
-    assert argv[argv.index("--save-id") + 1] == "hub-start-v1"
-    assert argv[argv.index("--scenario-environment") + 1] == "outdoor"
-    assert argv[argv.index("--scenario-danger") + 1] == "safe"
-    assert argv[argv.index("--scenario-economy") + 1] == "broke"
-    assert argv[argv.index("--scenario-party") + 1] == "solo"
-    assert argv[argv.index("--scenario-time-of-day") + 1] == "day"
+def test_run_rejects_unattested_manual_scenario_labels() -> None:
+    with pytest.raises(SystemExit):
+        _run_args("--scenario-id", "unattested-label")
 
 
-def test_attested_journey_forwards_only_the_attestation(
+def test_attested_run_forwards_only_the_attestation(
     tmp_path: Path,
 ) -> None:
     attestation = tmp_path / "current_attestation.json"
-    argv = _journey_argv(
-        _journey_args("--scenario", "hub-outdoor-safe-day"),
+    argv = _agent_argv(
+        _run_args("--scenario", "hub-outdoor-safe-day"),
         "scenario-run",
         scenario_attestation=attestation,
     )
@@ -2587,7 +2884,7 @@ def test_scenario_capture_refuses_to_read_a_live_save(
         [
             "scenario",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "capture",
             "--source-save",
             "autosave1",
@@ -2643,7 +2940,7 @@ def test_supported_scenario_command_captures_and_restores_reserved_slot(
         [
             "scenario",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "capture",
             "--source-save",
             "autosave1",
@@ -2667,7 +2964,7 @@ def test_supported_scenario_command_captures_and_restores_reserved_slot(
         [
             "scenario",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "restore",
             "hub-outdoor-safe-day",
         ]
@@ -2698,24 +2995,14 @@ def test_supported_scenario_command_installs_and_verifies_authored_starts(
         [
             "scenario",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "install-starts",
         ]
     )
-    verify = live_dev.build_parser().parse_args(
-        [
-            "scenario",
-            "--config",
-            "config/live.burnin.yaml",
-            "verify-starts",
-        ]
-    )
-
     assert live_dev._scenario_command(install) == 0
-    assert live_dev._scenario_command(verify) == 0
     output = capsys.readouterr().out
     assert "installed exact mod bytes" in output
-    assert "installed and enabled exactly" in output
+    assert "verified exact" in output
 
 
 def test_scenario_install_refuses_while_fcs_is_open(
@@ -2731,7 +3018,7 @@ def test_scenario_install_refuses_while_fcs_is_open(
         [
             "scenario",
             "--config",
-            "config/live.burnin.yaml",
+            "config/live.yaml",
             "install-starts",
         ]
     )
@@ -2740,45 +3027,7 @@ def test_scenario_install_refuses_while_fcs_is_open(
     assert "Kenshi and FCS must be closed" in capsys.readouterr().err
 
 
-def test_journey_subprocess_planner_uses_lossless_windows_argv() -> None:
-    args = _journey_args(
-        "--planner",
-        "subprocess",
-        "--planner-script",
-        "scripts/live_direction_smoke_planner.py",
-        "--planner-arg=--bearing",
-        "--planner-arg=99.828",
-        "--planner-arg=--distance",
-        "--planner-arg=350",
-    )
-
-    argv = _journey_argv(args, "subprocess-run")
-
-    command_args = [
-        value.removeprefix("--command-arg=")
-        for value in argv
-        if value.startswith("--command-arg=")
-    ]
-    assert command_args[0] == live_dev.sys.executable
-    assert Path(command_args[1]).name == "live_direction_smoke_planner.py"
-    assert command_args[2:] == [
-        "--bearing",
-        "99.828",
-        "--distance",
-        "350",
-    ]
-    assert "--command" not in argv
-
-
-def test_journey_acknowledgement_without_continuous_is_harmless_passthrough() -> None:
-    # The ack can be present without --continuous; run stays single-step, so the
-    # continuous-live gate is simply not reached.
-    argv = _journey_argv(_journey_args("--acknowledge-continuous-live"), "run-5")
-    assert "--planning-mode" not in argv
-    assert "--acknowledge-continuous-live" in argv
-
-
-def test_journey_delegates_final_safety_to_the_core_run(
+def test_run_delegates_final_safety_to_the_core_run(
     monkeypatch: object,
 ) -> None:
     captured: list[list[str]] = []
@@ -2791,12 +3040,12 @@ def test_journey_delegates_final_safety_to_the_core_run(
         live_dev,
         "_controller",
         lambda _: (_ for _ in ()).throw(
-            AssertionError("journey must not create a second cleanup owner")
+            AssertionError("run must not create a second cleanup owner")
         ),
     )
 
-    result = live_dev._journey(
-        _journey_args("--execute")
+    result = live_dev._run_agent(
+        _run_args("--control", "polite-live")
     )
 
     assert result == 6
@@ -2804,7 +3053,7 @@ def test_journey_delegates_final_safety_to_the_core_run(
     assert "--execute-live-actions" in captured[0]
 
 
-def test_journey_ownership_overlay_is_opt_in(
+def test_run_ownership_overlay_follows_exclusive_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     opened: list[list[str]] = []
@@ -2814,7 +3063,7 @@ def test_journey_ownership_overlay_is_opt_in(
             return None
 
         def terminate(self) -> None:
-            raise AssertionError("a successful journey leaves an opted-in overlay to auto-close")
+            raise AssertionError("a successful run leaves its ownership overlay to auto-close")
 
     monkeypatch.setattr(live_dev, "agent_main", lambda _: 0)
     monkeypatch.setattr(
@@ -2823,12 +3072,12 @@ def test_journey_ownership_overlay_is_opt_in(
         lambda argv, **_: opened.append(argv) or OverlayProcess(),
     )
 
-    assert live_dev._journey(_journey_args("--execute")) == 0
+    assert live_dev._run_agent(_run_args("--control", "polite-live")) == 0
     assert opened == []
 
     assert (
-        live_dev._journey(
-            _journey_args("--execute", "--ownership-overlay")
+        live_dev._run_agent(
+            _run_args("--control", "exclusive-live")
         )
         == 0
     )

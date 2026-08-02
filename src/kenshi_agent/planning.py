@@ -18,7 +18,6 @@ from .models import (
     ConditionResult,
     ControlMode,
     InterruptPolicy,
-    LiveContinuousPolicy,
     MoveCursorAction,
     NoopAction,
     Observation,
@@ -532,20 +531,15 @@ def validate_plan(
 ) -> list[ConditionEvaluation]:
     errors: list[str] = []
     if observation.mode == "live":
-        if config.live_execution_policy == LiveContinuousPolicy.DISABLED:
-            errors.append(
-                "continuous live execution policy is disabled"  # mutation: diagnostic-only
-            )
-        elif config.live_execution_policy == LiveContinuousPolicy.DIALOGUE_INTERACTION_V1:
-            from .dialogue_interaction import dialogue_interaction_policy_errors
+        from .live_plan_policy import live_plan_policy_errors
 
-            errors.extend(
-                dialogue_interaction_policy_errors(
-                    plan,
-                    observation,
-                    max_steps=config.max_plan_steps,
-                )
+        errors.extend(
+            live_plan_policy_errors(
+                plan,
+                observation,
+                max_steps=config.max_plan_steps,
             )
+        )
     if plan.control_mode != observation.control_mode:
         errors.append(
             f"control mode {plan.control_mode.value!r} does not match "  # mutation: diagnostic-only

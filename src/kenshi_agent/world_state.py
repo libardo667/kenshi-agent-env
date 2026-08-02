@@ -386,7 +386,6 @@ class WorldStateStore:
             )
         contextual_fields = (
             "planning_mode",
-            "live_execution_policy",
             "objective",
             "recent_action_outcomes",
             "available_skills",
@@ -424,7 +423,6 @@ class WorldStateStore:
                     field_name: getattr(previous, field_name)
                     for field_name in (
                         "planning_mode",
-                        "live_execution_policy",
                         "objective",
                         "recent_action_outcomes",
                         "available_skills",

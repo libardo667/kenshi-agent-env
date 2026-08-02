@@ -2,63 +2,65 @@
 
 Per-run evidence lives in its commit and `runs/<run-id>/`; this is procedure only.
 
-## Acknowledgements are separate on purpose
+## Choose one control mode
 
-None of these implies another. Pass only what the run actually needs:
+`./dev run` exposes one explicit authority choice:
 
-| Flag | Authorizes |
+| Mode | Authorizes |
 | --- | --- |
-| `--execute-live-actions` | sending real input at all |
-| `--acknowledge-native-assisted-control` | native-assisted profiles; never use it for an interface-only evidence run |
-| `--acknowledge-continuous-live` | a live continuous profile |
-| `--exclusive-input-session` | the human hands over the whole desktop |
+| `plan-only` | planning and observation without gameplay actions |
+| `polite-live` | configured gameplay actions with foreground and cursor restoration |
+| `exclusive-live` | configured gameplay actions while the agent retains desktop ownership |
 
-`--exclusive-input-session` keeps Kenshi foreground and the guest cursor in place.
-Omit it to have each polite lease restore the prior foreground and cursor.
+The canonical configuration owns planning mode and the available action surface. The dev command
+expands a live choice into the lower-level gates; there is no second acknowledgement set to synchronize.
 
 F12 disarms automatic takeover for the remainder of the run.
 
 ## One supported entrypoint
 
-From WSL, use `./dev`; it selects the prepared Windows Python, translates
-configuration and planner-script paths once, and invokes the checked-in live
-launcher without a pseudo-terminal:
+From WSL, use `./dev`; it selects the prepared Windows Python, translates the canonical
+configuration path once, and invokes the checked-in live launcher without a pseudo-terminal:
 
 ```bash
-./dev launch --preflight-only
+./dev doctor
 ./dev launch
-./dev play --game-start kae-02-funded-solo \
+./dev run --game-start kae-02-funded-solo \
   --campaign fresh-funded-solo --steps 80 \
-  --continuous --execute --native-assisted \
-  --acknowledge-continuous-live --exclusive
+  --control exclusive-live
+./dev telemetry --watch
+./dev snapshot --label funded-solo
 ./dev recover
-./dev crash
-./dev crash --dismiss
+./dev recover --dismiss-crash
+./dev stop
 ```
 
-`play` launches, loads, then invokes `journey` under one display lease; it implies
-no acknowledgement. Both use `config/live.longform.yaml`; other commands use
-`config/live.burnin.yaml`. Narration is default; `--no-tts` disables it and
-`--tts` remains explicit. Standalone `launch` and `journey` own separate leases.
+`run` reuses a fresh, loaded, command-idle world or launches and loads one under
+a single display lease. A stale, terminal, unloaded, or otherwise ambiguous
+existing client fails closed with an exact recovery instruction. Every command
+uses the one canonical `config/live.yaml`; it is not selectable from the normal
+surface. Narration is default and `--no-tts` disables it. Deterministic planner
+scripts are not a second live workflow; action-level checks belong in portable
+or native conformance tests, while live acceptance uses the ordinary `run` path.
 Never substitute direct Windows-Python, native-file, input-snippet, or PTY workarounds.
+The parser-owned reference is [`generated/DEV_CLI.md`](generated/DEV_CLI.md).
 
-The live profiles require the checked-in 30 fps renderer profile and an active
-1920x1080 external display. Actual `launch` and executing `journey` commands
+The canonical live configuration requires the checked-in 30 fps renderer profile and an active
+1920x1080 external display. Actual `launch` and live-control `run` commands
 switch to external-only mode, verify the laptop panel is off, and restore
-extended mode on every handled exit. Any nonzero or interrupted journey invokes
+extended mode on every handled exit. Any nonzero or interrupted run invokes
 `./dev recover`: it causally pauses a loaded world, dismisses only exact owned
 inventories after any active native command terminates, leaves Kenshi open, and
-restores a stranded display lease. Run it directly after interrupted cleanup. A power loss may still require `Win+P`,
-then **Extend**. The ownership overlay remains opt-in.
+restores a stranded display lease. A power loss may still require `Win+P`, then **Extend**.
+Exclusive control opens the visible ownership companion when the canonical configuration enables it.
 
-If preflight reports a terminal crash, `./dev crash` first archives the newest
-dump plus current logs, telemetry, settings, and frame under `runs/crashes/`.
-`--dismiss` is explicit because it closes an unsent report; it archives first,
-dismisses each exact terminal layer with bounded ordinary input, aborts on human
-input, and never force-terminates a process that fails to exit.
+`doctor`, `run`, and `recover` archive a visible terminal crash before doing anything else,
+including the newest dump, logs, telemetry, settings, and frame under `runs/crashes/`.
+`recover --dismiss-crash` explicitly closes an unsent report after archival; it uses bounded
+ordinary input, aborts on human input, and never force-terminates a lingering process.
 Human keyboard or mouse input during startup cancels the pending primitive and
 yields control. After three quiet seconds, the same visible five-second
-takeover countdown used by a journey begins; new input resets it and F12
+takeover countdown used by a run begins; new input resets it and F12
 permanently disarms startup automation. Startup timeouts do not elapse while
 the human owns input. `./dev launch --resume-launcher` remains available for an
 exact small pre-game window left by an older guarded interruption.
@@ -107,14 +109,11 @@ Record evidence for each. **Do not mark one complete from code inspection.**
 A live run is only as stable as the GPU driver. This host has produced Windows
 `LiveKernelEvent 141` display-driver timeouts on both tested Intel Iris Xe
 drivers, including recovered hangs that fresh telemetry alone would miss.
-Launch health and journeys therefore reject any new Event 141 after their
+Launch health and runs therefore reject any new Event 141 after their
 baseline; crash archives include the matching WER metadata and watchdog-dump
 identity when Windows exposes them. A clean soak proves only its scene; a quiet
 paused town does not clear water- or effects-heavy locations.
 
 ## What live evidence does and does not cover
 
-Live proofs here are single supervised runs on one host and save; they show a path can work, not that it generalizes. A completed
-`move_in_direction` smoke does not clear every local route; one Storm House exit
-does not clear every building. Treat each as one data point and say so when
-citing it.
+Live proofs here are single supervised runs on one host and save; they show a path can work, not that it generalizes. A completed `move_in_direction` smoke does not clear every local route; one Storm House exit does not clear every building. Treat each as one data point and say so when citing it.

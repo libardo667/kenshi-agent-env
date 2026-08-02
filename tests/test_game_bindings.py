@@ -868,7 +868,7 @@ def test_raw_time_key_cannot_bind_as_a_planner_affordance(
 
 
 def test_inventory_binding_owns_its_inventory_signal() -> None:
-    from kenshi_agent.dialogue_interaction import _step_action_errors
+    from kenshi_agent.live_plan_policy import _step_action_errors
     from kenshi_agent.models import (
         Condition,
         ConditionKind,
@@ -1639,7 +1639,7 @@ def test_a_purchase_contract_owns_transfer_conservation() -> None:
     neither restates that motor effect nor gets to call an unverified click done.
     """
 
-    from kenshi_agent.dialogue_interaction import _step_action_errors
+    from kenshi_agent.live_plan_policy import _step_action_errors
     from kenshi_agent.models import (
         Condition,
         ConditionKind,

@@ -8,9 +8,9 @@ import pytest
 
 from kenshi_agent.config import PlanningConfig, SafetyConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
-from kenshi_agent.dialogue_interaction import dialogue_interaction_policy_errors
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.models import (
     Action,
     ActionReceipt,
@@ -524,7 +524,7 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
         environment = CameraVerdictEnvironment(status, tmp_path)
         observation = await environment.reset()
         plan = camera_plan(observation)
-        assert dialogue_interaction_policy_errors(plan, observation) == []
+        assert live_plan_policy_errors(plan, observation) == []
 
         store = WorldStateStore(clock=clock)
         store.publish(observation)
