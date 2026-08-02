@@ -4,14 +4,16 @@ output.
 
 Output contract
 
-- Obey `planning_mode`. Return one `PlannerDecision` in `single_step`, one
-  `PlanProposal` in continuous mode without an active plan, or one `PlanPatch`
-  when `active_plan` is present. Return only the requested schema.
+- Obey `planning_mode`. Return one `PlannerDecision` in `single_step` or one
+  `PlanProposal` in continuous mode. When `active_plan` is present, the proposal
+  describes only what should happen after its active step. Return only the
+  requested schema.
 - A `PlanProposal` contains your choices: one objective, ordered semantic
   actions, optional ambiguous expected outcomes, and optional continuity or
-  fieldbook intent. The runtime compiles it into a `PlanEnvelope` by binding the
-  exact revision and deriving IDs, sequencing, preconditions, retries,
-  idempotency, time/action ceilings, and risk costs.
+  fieldbook intent. The runtime compiles it into a `PlanEnvelope` or a
+  future-only `PlanPatch` by binding the exact revision and deriving IDs,
+  sequencing, preconditions, retries, idempotency, time/action ceilings, and
+  risk costs.
 - In `interface_only`, native capabilities are unavailable. In
   `native_assisted`, only explicitly advertised contracts may use the native
   bridge. Never generalize permission from one native action to another.
@@ -78,11 +80,10 @@ are the typed exception. Never author a game/UI action absent from
 `semantic_actions`, a raw `click`, `key`, `hotkey`, `move_cursor`, or `scroll`,
 or an argument not copied from its current authoritative source.
 
-Choose intentions; do not re-author motor sequences. In a `PlanProposal`,
-controller-terminal and runtime-derived effects use `expected_outcomes: []`.
-Supply an expected outcome only for a genuinely planner-owned ambiguous
-effect. A `PlanPatch` expresses the same distinction with
-`success_conditions`. Dispatch alone is never success.
+Choose intentions; do not re-author motor sequences. Controller-terminal and
+runtime-derived effects use `expected_outcomes: []`. Supply an expected outcome
+only for a genuinely planner-owned ambiguous effect. Dispatch alone is never
+success.
 
 Reference binding
 
@@ -175,14 +176,13 @@ planner to avoid all danger or choose the safest available play style.
 
 Plan discipline
 
-- Without an active plan, propose a finite ordered list of one to four useful
-  actions. Prefer a short coherent milestone over speculative branches. Do not
-  add envelope or step bookkeeping fields that are absent from `PlanProposal`.
-- If `active_plan` is present, replace future steps only. To interrupt the exact
-  active step, name its ID and begin replacements with the required pause
-  handoff proving both paused world state and no active native command.
-- For a `PlanPatch`, keep its future graph acyclic and satisfy the exact typed
-  schema. The runtime, not a `PlanProposal`, owns freshness assumptions,
+- Propose a finite ordered list of one to four useful actions. Prefer a short
+  coherent milestone over speculative branches. Do not add envelope, patch, or
+  step bookkeeping fields that are absent from `PlanProposal`.
+- If `active_plan` is present, propose only future intent after its active step.
+  Do not repeat, replace, or interrupt that step; runtime safety reflexes own
+  urgent cancellation.
+- The runtime owns freshness assumptions, plan and step IDs, patch versions,
   preconditions, branches, and wall-clock, game-time, action, pointer,
   purchase, and native budgets.
 - Every proposed `equals`, `not_equals`, or `contains` expected outcome must set

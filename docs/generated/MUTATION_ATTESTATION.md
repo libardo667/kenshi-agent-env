@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-88 shards: 16 attested, 15 unverified, 7 source-changed, 50 never; 1091 open mutants where the numbers still apply.
+88 shards: 15 attested, 15 unverified, 8 source-changed, 50 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -88,7 +88,7 @@ promises only that the module under test has not moved.
 | `planners.heuristic` | — | — | — | — | — | never |
 | `planners.openai_planner` | — | — | — | — | — | never |
 | `planners.openrouter_planner` | — | — | — | — | — | never |
-| `planners.plan_proposal` | 386 | 386 | 0 | 2026-07-31T13:37:53Z | b04125bc791be2cd | attested |
+| `planners.plan_proposal` | 386 | 386 | 0 | 2026-07-31T13:37:53Z | b04125bc791be2cd | source-changed |
 | `planners.schema_dialect` | — | — | — | — | — | never |
 | `planners.scripted` | — | — | — | — | — | never |
 | `planning` | 598 | 598 | 0 | 2026-07-27T23:26:46Z | — | unverified |

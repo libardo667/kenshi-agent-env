@@ -41,7 +41,7 @@ from .context_capacity import (
     hosted_context_envelope,
     resolve_openrouter_model_capacity,
 )
-from .plan_proposal import PlanProposal, compile_plan_proposal
+from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
 from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -122,16 +122,11 @@ def _contains_screenshot(value: object) -> bool:
 
 
 def _planner_request_text(output_model: type[BaseModel]) -> str:
-    if output_model is PlanPatch:
-        request = (
-            "Return one PlanPatch grounded in active_plan and the exact "
-            "world_revision; preserve the active step unless an exact guarded "
-            "interrupt is warranted. "
-        )
-    elif output_model is PlanProposal:
+    if output_model is PlanProposal:
         request = (
             "Propose one short objective and ordered list of semantic actions. "
-            "The runtime derives all PlanEnvelope bookkeeping. "
+            "If active_plan is present, describe only future intent after its "
+            "active step. The runtime derives all plan and patch bookkeeping. "
         )
     else:
         request = "Choose exactly one next action from this observation. "
@@ -235,7 +230,11 @@ class OpenRouterPlanner(Planner):
         context_id: str,
     ) -> PreparedPlannerInput:
         output_model = structured_output_model(observation)
-        response_model = PlanProposal if output_model is PlanEnvelope else output_model
+        response_model = (
+            PlanProposal
+            if output_model in (PlanEnvelope, PlanPatch)
+            else output_model
+        )
         allowed_action_kinds = planner_action_kinds(observation)
         schema_text = json.dumps(
             projected_response_format(
@@ -317,7 +316,11 @@ class OpenRouterPlanner(Planner):
         if prepared.payload is None:
             raise RuntimeError("OpenRouter planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
-        response_model = PlanProposal if output_model is PlanEnvelope else output_model
+        response_model = (
+            PlanProposal
+            if output_model in (PlanEnvelope, PlanPatch)
+            else output_model
+        )
         allowed_action_kinds = planner_action_kinds(observation)
         schema_surface = (response_model.__name__, allowed_action_kinds)
         schema_prompt_fallbacks = getattr(
@@ -492,14 +495,14 @@ class OpenRouterPlanner(Planner):
         )
         try:
             document = json.loads(_json_body(combined_response))
-            if output_model is PlanEnvelope:
-                compiled = compile_plan_proposal(
+            if response_model is PlanProposal:
+                compiled = compile_hosted_plan_proposal(
                     document,
                     observation=observation,
                     context_id=prepared.context.manifest.context_id,
                     planning=planning,
                 )
-                output = compiled.plan
+                output = compiled.output
                 if compiled.rejected_sidecars:
                     self._last_call_diagnostics = replace(
                         diagnostics,
@@ -511,14 +514,14 @@ class OpenRouterPlanner(Planner):
             else:
                 output = output_model.model_validate(document)
         except ValueError as exc:
-            if output_model is not PlanEnvelope:
+            if response_model is not PlanProposal:
                 raise HostedPlannerResponseError(
                     "malformed_structured_output",
                     diagnostics,
                     detail=str(exc),
                     response_excerpt=combined_response,
                 ) from exc
-            output = compile_plan_proposal(
+            output = compile_hosted_plan_proposal(
                 {
                     "objective": "Regain a fresh planning turn after an unusable proposal.",
                     "steps": [
@@ -536,7 +539,7 @@ class OpenRouterPlanner(Planner):
                 observation=observation,
                 context_id=prepared.context.manifest.context_id,
                 planning=planning,
-            ).plan
+            ).output
             self._last_call_diagnostics = replace(
                 diagnostics,
                 proposal_fallback_reason=str(exc)[:1000],
@@ -547,14 +550,14 @@ class OpenRouterPlanner(Planner):
                 allowed_action_kinds=allowed_action_kinds,
             )
         except ValueError as exc:
-            if output_model is not PlanEnvelope:
+            if response_model is not PlanProposal:
                 raise HostedPlannerResponseError(
                     "disallowed_action_surface",
                     diagnostics,
                     detail=str(exc),
                     response_excerpt=combined_response,
                 ) from exc
-            output = compile_plan_proposal(
+            output = compile_hosted_plan_proposal(
                 {
                     "objective": "Regain a fresh planning turn after an unavailable action.",
                     "steps": [
@@ -572,7 +575,7 @@ class OpenRouterPlanner(Planner):
                 observation=observation,
                 context_id=prepared.context.manifest.context_id,
                 planning=planning,
-            ).plan
+            ).output
             self._last_call_diagnostics = replace(
                 diagnostics,
                 proposal_fallback_reason=str(exc)[:1000],

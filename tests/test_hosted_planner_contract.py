@@ -23,6 +23,7 @@ from kenshi_agent.models import (
     MemoryRecord,
     MemoryStatus,
     NearbyEntity,
+    NoopAction,
     Observation,
     PlanEnvelope,
     PlannerDecision,
@@ -571,6 +572,52 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
     assert "observation_budget" not in parsed_payload
 
 
+def test_openai_active_plan_also_authors_a_simple_future_proposal() -> None:
+    proposal = PlanProposal(
+        objective="Stop after the active option finishes.",
+        steps=[
+            ProposedPlanStep(
+                action=StopAction(reason="Concurrent planning proof complete."),
+            )
+        ],
+    )
+
+    class Responses:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, Any] = {}
+
+        async def parse(self, **kwargs: Any) -> SimpleNamespace:
+            self.kwargs = kwargs
+            return SimpleNamespace(output_parsed=proposal, output_text="")
+
+    responses = Responses()
+    planner = object.__new__(OpenAIPlanner)
+    planner.config = PlannerConfig(
+        include_screenshot=False,
+        context_window_tokens=80_000,
+    )
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(responses=responses)
+    planner.max_plan_steps = 4
+    current = observation(
+        active_plan=ActivePlanContext(
+            plan_id="active-plan",
+            plan_version=2,
+            objective="Finish the active option.",
+            active_step_id="move",
+            remaining_actions=1,
+        )
+    )
+
+    result = asyncio.run(planner.decide(current))
+
+    assert responses.kwargs["text_format"] is PlanProposal
+    assert isinstance(result, PlanPatch)
+    assert result.plan_id == "active-plan"
+    assert result.based_on_plan_version == 2
+    assert result.interrupt_active_step_id is None
+
+
 def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
     class FakeCompletions:
         def __init__(self) -> None:
@@ -687,6 +734,68 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert diagnostics is not None
     assert diagnostics.cached_tokens == 900
     assert diagnostics.cache_write_tokens == 0
+
+
+def test_active_plan_model_authors_future_intent_not_patch_graph_mechanics() -> None:
+    current = observation(
+        active_plan=ActivePlanContext(
+            plan_id="active-plan",
+            plan_version=3,
+            objective="Finish the active movement, then continue.",
+            active_step_id="future-pc-1-1",
+            completed_step_ids=["future-pc-1-2"],
+            remaining_actions=2,
+        )
+    )
+
+    class Completion:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, Any] = {}
+
+        async def create(self, **kwargs: Any) -> SimpleNamespace:
+            self.kwargs = kwargs
+            proposal = PlanProposal(
+                objective="Take a fresh look, then stop safely.",
+                steps=[
+                    ProposedPlanStep(
+                        action=NoopAction(reason="Observe after movement completes."),
+                    ),
+                    ProposedPlanStep(
+                        action=StopAction(reason="Concurrent planning proof complete."),
+                    ),
+                ],
+            )
+            return SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content=proposal.model_dump_json())
+                    )
+                ]
+            )
+
+    completion = Completion()
+    planner = object.__new__(OpenRouterPlanner)
+    planner.config = PlannerConfig(include_screenshot=False)
+    planner.instructions = "Return the requested schema."
+    planner.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completion),
+    )
+
+    result = asyncio.run(planner.decide(current))
+
+    assert isinstance(result, PlanPatch)
+    assert completion.kwargs["response_format"]["json_schema"]["name"] == "PlanProposal"
+    assert result.plan_id == "active-plan"
+    assert result.based_on_plan_version == 3
+    assert result.based_on_revision == current.world_revision
+    assert result.interrupt_active_step_id is None
+    replacement_ids = [step.step_id for step in result.replace_future_steps]
+    assert set(replacement_ids).isdisjoint(
+        {"future-pc-1-1", "future-pc-1-2"}
+    )
+    assert result.replace_future_steps[0].on_success == replacement_ids[1]
+    assert result.replace_future_steps[1].on_success is None
+    assert result.rationale == "Take a fresh look, then stop safely."
 
 
 def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None:

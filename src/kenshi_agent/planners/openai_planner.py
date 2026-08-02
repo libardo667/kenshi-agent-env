@@ -30,20 +30,15 @@ from .context_capacity import (
     conservative_text_token_estimate,
     hosted_context_envelope,
 )
-from .plan_proposal import PlanProposal, compile_plan_proposal
+from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
 
 
 def _planner_request_text(output_model: type[BaseModel]) -> str:
-    if output_model is PlanPatch:
-        request = (
-            "Return one PlanPatch grounded in active_plan and the exact "
-            "world_revision; preserve the active step unless an exact guarded "
-            "interrupt is warranted. "
-        )
-    elif output_model is PlanProposal:
+    if output_model is PlanProposal:
         request = (
             "Propose one short objective and ordered list of semantic actions. "
-            "The runtime derives all PlanEnvelope bookkeeping. "
+            "If active_plan is present, describe only future intent after its "
+            "active step. The runtime derives all plan and patch bookkeeping. "
         )
     else:
         request = "Choose exactly one next action from this observation. "
@@ -80,7 +75,11 @@ class OpenAIPlanner(Planner):
         context_id: str,
     ) -> PreparedPlannerInput:
         output_model = structured_output_model(observation)
-        response_model = PlanProposal if output_model is PlanEnvelope else output_model
+        response_model = (
+            PlanProposal
+            if output_model in (PlanEnvelope, PlanPatch)
+            else output_model
+        )
         system_text = self.instructions
         capacity = HostedModelCapacity(
             requested_model=self.config.model,
@@ -148,7 +147,11 @@ class OpenAIPlanner(Planner):
         if prepared.payload is None:
             raise RuntimeError("OpenAI planner input has no budgeted payload.")
         output_model = structured_output_model(observation)
-        response_model = PlanProposal if output_model is PlanEnvelope else output_model
+        response_model = (
+            PlanProposal
+            if output_model in (PlanEnvelope, PlanPatch)
+            else output_model
+        )
         content: list[dict[str, Any]] = [
             {
                 "type": "input_text",
@@ -189,12 +192,12 @@ class OpenAIPlanner(Planner):
                 raise RuntimeError("OpenAI response contained neither parsed output nor text.")
             parsed = response_model.model_validate_json(response.output_text)
         output: PlannerOutput
-        if output_model is PlanEnvelope:
+        if response_model is PlanProposal:
             if isinstance(parsed, BaseModel):
                 document = parsed.model_dump(mode="json")
             else:
                 document = parsed
-            output = compile_plan_proposal(
+            output = compile_hosted_plan_proposal(
                 document,
                 observation=observation,
                 context_id=prepared.context.manifest.context_id,
@@ -203,7 +206,7 @@ class OpenAIPlanner(Planner):
                     "planning",
                     PlanningConfig(max_plan_steps=self.max_plan_steps),
                 ),
-            ).plan
+            ).output
         else:
             output = output_model.model_validate(parsed)
         validate_planner_output_surface(

@@ -1,6 +1,7 @@
 # ADR: Hosted models propose intent; the runtime compiles plans
 
-Status: accepted
+Status: superseded in part by
+[concurrent plan proposals](ADR_CONCURRENT_PLAN_PROPOSALS.md)
 
 ## Context
 
