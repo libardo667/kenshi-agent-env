@@ -160,7 +160,7 @@ class DisplayTopologyController:
             or not self._has_1080p_screen(state)
         ):
             raise DisplayLeaseError(
-                "Low-load live mode requires an active internal panel and an "
+                "Calibrated live mode requires an active internal panel and an "
                 "external 1920x1080 display before it can switch safely."
             )
         return state

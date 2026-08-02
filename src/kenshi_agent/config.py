@@ -193,7 +193,7 @@ class LaunchConfig(ConfigModel):
     require_steam_logged_on: bool = False
     require_graphics_profile: bool = False
     graphics_profile_file: Path | None = None
-    external_display_only: bool = False
+    require_dual_display_topology: bool = False
     monitor_gpu_tdr: bool = False
     min_free_physical_memory_mib: int = Field(default=0, ge=0, le=1048576)
     reclaim_wsl_cache_on_low_memory: bool = False

@@ -211,21 +211,15 @@ def test_run_control_mode_is_one_explicit_authority_choice() -> None:
     )
 
 
-def test_live_commands_expose_an_explicit_keep_current_display_mode() -> None:
+def test_launch_commands_keep_current_display_by_default_and_expose_focus() -> None:
     parser = live_dev.build_parser()
 
-    assert parser.parse_args(["doctor"]).display == "configured"
-    assert parser.parse_args(["launch"]).display == "configured"
-    assert parser.parse_args(["run"]).display == "configured"
-    assert parser.parse_args(["doctor", "--display", "keep-current"]).display == (
-        "keep-current"
-    )
-    assert parser.parse_args(["launch", "--display", "keep-current"]).display == (
-        "keep-current"
-    )
-    assert parser.parse_args(["run", "--display", "keep-current"]).display == (
-        "keep-current"
-    )
+    assert parser.parse_args(["launch"]).focus_display is False
+    assert parser.parse_args(["run"]).focus_display is False
+    assert parser.parse_args(["launch", "--focus-display"]).focus_display is True
+    assert parser.parse_args(["run", "--focus-display"]).focus_display is True
+    with pytest.raises(SystemExit):
+        parser.parse_args(["doctor", "--focus-display"])
 
 
 def test_telemetry_watch_and_snapshot_are_first_class_commands() -> None:
@@ -2211,7 +2205,13 @@ def test_launch_and_run_starts_agent_only_after_launch_succeeds(
         lambda _: type(
             "Config",
             (),
-            {"launch": type("Launch", (), {"external_display_only": False})()},
+            {
+                "launch": type(
+                    "Launch",
+                    (),
+                    {"require_dual_display_topology": False},
+                )()
+            },
         )(),
     )
     args = type("Args", (), {"config": "config/live.yaml"})()
@@ -2235,7 +2235,7 @@ def test_launch_and_run_starts_agent_only_after_launch_succeeds(
     assert calls == ["launch"]
 
 
-def test_launch_and_run_owns_one_display_lease(
+def test_launch_and_run_focus_display_owns_one_display_lease(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -2253,7 +2253,7 @@ def test_launch_and_run_owns_one_display_lease(
 
     class Config:
         class launch:
-            external_display_only = True
+            require_dual_display_topology = True
 
     async def launch(_: object, *, manage_display_lease: bool = True) -> int:
         calls.append(f"launch:{manage_display_lease}")
@@ -2277,7 +2277,11 @@ def test_launch_and_run_owns_one_display_lease(
     monkeypatch.setattr(live_dev, "_launch", launch)
     monkeypatch.setattr(live_dev, "_run_agent", run_agent)
 
-    args = type("Args", (), {"config": "config/live.yaml"})()
+    args = type(
+        "Args",
+        (),
+        {"config": "config/live.yaml", "focus_display": True},
+    )()
     assert live_dev._launch_and_run(args) == 0
     assert calls == [
         "display-ready",
@@ -2288,7 +2292,7 @@ def test_launch_and_run_owns_one_display_lease(
     ]
 
 
-def test_launch_and_run_keep_current_display_validates_without_switching(
+def test_launch_and_run_keeps_current_display_without_switching_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[str] = []
@@ -2299,7 +2303,7 @@ def test_launch_and_run_keep_current_display_validates_without_switching(
 
     class Config:
         class launch:
-            external_display_only = True
+            require_dual_display_topology = True
 
     async def launch(_: object, *, manage_display_lease: bool = True) -> int:
         calls.append(f"launch:{manage_display_lease}")
@@ -2315,20 +2319,14 @@ def test_launch_and_run_keep_current_display_validates_without_switching(
         live_dev,
         "external_display_lease",
         lambda _: (_ for _ in ()).throw(
-            AssertionError("keep-current must not switch display topology")
+            AssertionError("the default must not switch display topology")
         ),
     )
     monkeypatch.setattr(live_dev, "_launch", launch)
     monkeypatch.setattr(live_dev, "_run_agent", run_agent)
 
     args = live_dev.build_parser().parse_args(
-        [
-            "run",
-            "--config",
-            "config/live.yaml",
-            "--display",
-            "keep-current",
-        ]
+        ["run", "--config", "config/live.yaml"]
     )
     assert live_dev._launch_and_run(args) == 0
     assert calls == [

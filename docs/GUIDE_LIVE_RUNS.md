@@ -36,7 +36,7 @@ configuration path once, and invokes the checked-in live launcher without a pseu
 ```
 
 `run` reuses a fresh, loaded, command-idle world or launches and loads one under
-a single display lease. A stale, terminal, unloaded, or otherwise ambiguous
+one validated display context. A stale, terminal, unloaded, or otherwise ambiguous
 existing client fails closed with an exact recovery instruction. Every command
 uses the one canonical `config/live.yaml`; it is not selectable from the normal
 surface. Every live run narrates through TTS; if narration is unavailable, stop
@@ -46,10 +46,10 @@ or native conformance tests, while live acceptance uses the ordinary `run` path.
 Never substitute direct Windows-Python, native-file, input-snippet, or PTY workarounds.
 The parser-owned reference is [`generated/DEV_CLI.md`](generated/DEV_CLI.md).
 
-The canonical live configuration requires the checked-in 30 fps renderer profile and an active
-1920x1080 external display. Actual `launch` and live-control `run` commands
-switch to external-only mode, verify the laptop panel is off, and restore
-extended mode on every handled exit. Any nonzero or interrupted run invokes
+The canonical live configuration requires the checked-in 30 fps renderer profile, the active
+internal panel, and an active 1920x1080 external display. `doctor`, `launch`, and `run`
+retain that extended topology by default. Add `--focus-display` to temporarily switch
+to external-only mode; handled exits restore extended mode. Any nonzero or interrupted run invokes
 `./dev recover`: it causally pauses a loaded world, dismisses only exact owned
 inventories after any active native command terminates, leaves Kenshi open, and
 restores a stranded display lease. A power loss may still require `Win+P`, then **Extend**.

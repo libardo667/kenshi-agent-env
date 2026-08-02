@@ -1805,13 +1805,13 @@ def _prepared_display_context(
 ) -> AbstractContextManager[None]:
     """Validate one display authority and return its bounded context."""
 
-    if not enabled or not config.launch.external_display_only:
+    if not enabled or not config.launch.require_dual_display_topology:
         return nullcontext()
     controller = DisplayTopologyController()
     controller.validate_ready()
-    if getattr(args, "display", "configured") == "keep-current":
-        return _retained_display_context()
-    return external_display_lease(controller)
+    if getattr(args, "focus_display", False):
+        return external_display_lease(controller)
+    return _retained_display_context()
 
 
 async def _launch(

@@ -143,7 +143,7 @@ def test_canonical_live_config_keeps_calibrated_host_and_input_invariants(
     assert config.launch.graphics_profile_file == (
         root / "config" / "graphics" / "iris-xe-stability-v3.yaml"
     ).resolve()
-    assert config.launch.external_display_only
+    assert config.launch.require_dual_display_topology
     assert config.launch.monitor_gpu_tdr
     assert config.launch.min_free_physical_memory_mib == 4096
     assert config.launch.reclaim_wsl_cache_on_low_memory
