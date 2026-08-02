@@ -1,0 +1,98 @@
+{
+  "generated_by": "scripts/export_context_action_witnesses.py",
+  "schema_version": 1,
+  "witnesses": [
+    {
+      "run_id": "live-context-action-evidence-20260801-r10-held-spiral-cancel",
+      "identity_session_id": "session-5648d1e3e5eaa013-0000000000000002",
+      "target_id": "entity-5648d1e3e5eaa013-0000000000000002-00000000-00000816-00002b67-00000020-a84cd800",
+      "target_name": "Iron Resource",
+      "target_kind": "natural_resource",
+      "task_type_values": [
+        87,
+        26
+      ],
+      "task_type_values_complete": true,
+      "selected_character_ids": [
+        "entity-5648d1e3e5eaa013-0000000000000002-00000001-00000001-8cac6200-00000001-a5855100"
+      ],
+      "reviewed_context_actions": [
+        "operate"
+      ],
+      "reviewed_default_task": "operate_machinery"
+    },
+    {
+      "run_id": "live-context-action-evidence-20260801-r11-fresh-stationary-holds",
+      "identity_session_id": "session-e65137527d01fdde-0000000000000002",
+      "target_id": "entity-e65137527d01fdde-0000000000000002-00000000-00000816-00002b67-00000020-2f25f0c0",
+      "target_name": "Iron Resource",
+      "target_kind": "natural_resource",
+      "task_type_values": [
+        87,
+        26
+      ],
+      "task_type_values_complete": true,
+      "selected_character_ids": [
+        "entity-e65137527d01fdde-0000000000000002-00000001-00000001-cf30af00-00000001-846a4700"
+      ],
+      "reviewed_context_actions": [
+        "operate"
+      ],
+      "reviewed_default_task": "operate_machinery"
+    },
+    {
+      "run_id": "live-context-action-evidence-20260801-r8-fresh-aabb-combat",
+      "identity_session_id": "session-5648d1e3e5eaa013-0000000000000002",
+      "target_id": "entity-5648d1e3e5eaa013-0000000000000002-00000001-00000001-8cac6200-00000001-a5855100",
+      "target_name": "Flick",
+      "target_kind": "squad_character",
+      "task_type_values": [
+        25
+      ],
+      "task_type_values_complete": true,
+      "selected_character_ids": [
+        "entity-5648d1e3e5eaa013-0000000000000002-00000001-00000001-8cac6200-00000001-a5855100"
+      ],
+      "reviewed_context_actions": [],
+      "reviewed_default_task": null
+    },
+    {
+      "run_id": "live-context-action-evidence-20260801-r9-held-spiral-diagnostic",
+      "identity_session_id": "session-5648d1e3e5eaa013-0000000000000002",
+      "target_id": "entity-5648d1e3e5eaa013-0000000000000002-00000000-00000816-00002b67-00000020-a84cd800",
+      "target_name": "Iron Resource",
+      "target_kind": "natural_resource",
+      "task_type_values": [
+        87,
+        26
+      ],
+      "task_type_values_complete": true,
+      "selected_character_ids": [
+        "entity-5648d1e3e5eaa013-0000000000000002-00000001-00000001-8cac6200-00000001-a5855100"
+      ],
+      "reviewed_context_actions": [
+        "operate"
+      ],
+      "reviewed_default_task": "operate_machinery"
+    },
+    {
+      "run_id": "live-runtime-context-menu-20260801-r1",
+      "identity_session_id": "session-960eecb8029b04c9-0000000000000002",
+      "target_id": "entity-960eecb8029b04c9-0000000000000002-00000000-00000816-00002b67-00000030-07a780b0",
+      "target_name": "Iron Resource",
+      "target_kind": "natural_resource",
+      "task_type_values": [
+        87,
+        26
+      ],
+      "task_type_values_complete": true,
+      "selected_character_ids": [
+        "entity-960eecb8029b04c9-0000000000000002-00000001-00000001-54257d80-00000002-3937d780"
+      ],
+      "reviewed_context_actions": [
+        "operate"
+      ],
+      "reviewed_default_task": "operate_machinery"
+    }
+  ]
+}

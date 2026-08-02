@@ -108,8 +108,9 @@ SURFACES: tuple[AffordanceSurface, ...] = (
             "list in `ContextMenu::orders`."
         ),
         note=(
-            "Today's export is typed around one kind: "
-            "`NaturalResourceTargetSnapshot`, hard-coded to natural_resource."
+            "Concrete runtime menu captures now enter an empirical parity report "
+            "automatically. The current world-target export remains typed around "
+            "one kind: `NaturalResourceTargetSnapshot`."
         ),
         candidate_vocabulary=CandidateVocabulary(
             path=TASK_TYPES_SNAPSHOT,
@@ -117,8 +118,8 @@ SURFACES: tuple[AffordanceSurface, ...] = (
             enumerated=len(load_task_types().entries),
             limitation=(
                 "Upper bound only: most TaskType values are internal AI tasks. "
-                "The runtime-filtered per-target ContextMenu::orders denominator "
-                "is still uncaptured."
+                "The report contains witnessed per-target ContextMenu::orders, "
+                "not a global denominator of every target and selection."
             ),
         ),
     ),

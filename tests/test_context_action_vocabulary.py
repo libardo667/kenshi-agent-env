@@ -90,7 +90,8 @@ def test_world_context_vocabulary_is_not_reported_as_the_denominator() -> None:
         f"candidate vocabulary: {len(source.entries)} from "
         "game_sources/kenshi/TaskType.h"
     ) in rendered
-    assert "runtime-filtered per-target ContextMenu::orders denominator" in rendered
+    assert "witnessed per-target ContextMenu::orders" in rendered
+    assert "not a global denominator" in rendered
 
 
 @pytest.mark.skipif(

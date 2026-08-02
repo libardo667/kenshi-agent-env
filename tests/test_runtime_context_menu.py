@@ -1,15 +1,20 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
 from kenshi_agent.models import (
     CharacterState,
     ContextMenuProbe,
+    GameState,
+    Observation,
     RuntimeContextMenu,
     TelemetrySnapshot,
     UIState,
     Vec3,
+    WorldStateRevision,
     WorldTarget,
 )
 from kenshi_agent.runtime_context_menu import (
@@ -18,6 +23,71 @@ from kenshi_agent.runtime_context_menu import (
     require_consistent_context_menu_state,
     require_truthful_context_menu_capability,
 )
+from kenshi_agent.runtime_context_menu_evidence import ContextMenuEvidenceTracker
+from kenshi_agent.world_state import WorldStateStore
+
+
+def runtime_menu_observation(
+    sequence: int,
+    *,
+    task_type_values: list[int] | None = None,
+    menu_open: bool = True,
+    selected_character_ids: list[str] | None = None,
+) -> Observation:
+    target_id = "entity-runtime-menu-target"
+    captured = menu_open
+    return Observation(
+        run_id="runtime-context-menu-evidence",
+        step_index=sequence,
+        mode="live",
+        world_revision=WorldStateRevision(
+            telemetry_sequence=sequence,
+            frame_sequence=sequence,
+            capability_epoch=1,
+            observed_at_monotonic=float(sequence),
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=sequence,
+            captured_at=datetime.now(UTC),
+            identity_session_id="session-runtime-menu",
+            capabilities=["identity.stable_handles", "ui.context_menu.orders"],
+            game=GameState(loaded=True, paused=True),
+            ui=UIState(
+                context_menu_open=menu_open,
+                context_menu_probe=(
+                    ContextMenuProbe.CAPTURED if captured else ContextMenuProbe.CLOSED
+                ),
+                context_menu=(
+                    RuntimeContextMenu(
+                        target_id=target_id,
+                        target_name="Iron Resource",
+                        task_type_values=task_type_values or [87, 26],
+                        task_type_values_complete=True,
+                    )
+                    if captured
+                    else None
+                ),
+                selected_character_ids=(
+                    selected_character_ids
+                    if selected_character_ids is not None
+                    else ["entity-selected"]
+                ),
+            ),
+            squad=[CharacterState(id="entity-selected", name="Tassilo", selected=True)],
+            world_targets=[
+                WorldTarget(
+                    id=target_id,
+                    name="Iron Resource",
+                    kind="natural_resource",
+                    position=Vec3(x=1.0, y=2.0, z=3.0),
+                    distance=4.0,
+                    context_actions=["operate"],
+                    default_task="operate_machinery",
+                )
+            ],
+        ),
+        telemetry_age_seconds=0.0,
+    )
 
 
 def test_runtime_menu_orders_remain_observation_not_execution_authority() -> None:
@@ -55,6 +125,95 @@ def test_runtime_menu_orders_remain_observation_not_execution_authority() -> Non
     assert snapshot.ui.context_menu is not None
     assert snapshot.ui.context_menu.task_type_values == [87, 9999]
     assert snapshot.world_targets[0].context_actions == []
+
+
+def test_runtime_menu_capture_becomes_compact_deduplicated_evidence() -> None:
+    tracker = ContextMenuEvidenceTracker()
+    first = runtime_menu_observation(10)
+
+    assert tracker.observe(first) == {
+        "identity_session_id": "session-runtime-menu",
+        "target_id": "entity-runtime-menu-target",
+        "target_name": "Iron Resource",
+        "target_kind": "natural_resource",
+        "task_type_values": [87, 26],
+        "task_type_values_complete": True,
+        "selected_character_ids": ["entity-selected"],
+        "reviewed_context_actions": ["operate"],
+        "reviewed_default_task": "operate_machinery",
+    }
+    assert tracker.observe(runtime_menu_observation(11)) is None
+
+    changed = tracker.observe(runtime_menu_observation(12, task_type_values=[87]))
+    assert changed is not None
+    assert changed["task_type_values"] == [87]
+
+    assert tracker.observe(runtime_menu_observation(13, menu_open=False)) is None
+    assert tracker.observe(runtime_menu_observation(14)) is not None
+
+
+def test_world_state_publishes_runtime_menu_evidence_without_granting_authority() -> None:
+    store = WorldStateStore()
+
+    first = store.publish(runtime_menu_observation(20))
+    evidence = [
+        event
+        for event in first.events
+        if event.event_type == "runtime_context_menu_observed"
+    ]
+
+    assert len(evidence) == 1
+    assert evidence[0].payload["task_type_values"] == [87, 26]
+    assert evidence[0].payload["reviewed_context_actions"] == ["operate"]
+    assert first.observation.telemetry.world_targets[0].context_actions == ["operate"]
+    assert len(
+        store.publish(runtime_menu_observation(21)).events
+    ) == 0
+
+
+def test_runtime_menu_evidence_retains_an_unresolved_exact_target() -> None:
+    observation = runtime_menu_observation(30)
+    assert observation.telemetry is not None
+    observation = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={"world_targets": []}
+            )
+        }
+    )
+
+    evidence = ContextMenuEvidenceTracker().observe(observation)
+
+    assert evidence is not None
+    assert evidence["target_id"] == "entity-runtime-menu-target"
+    assert evidence["target_kind"] is None
+    assert evidence["reviewed_context_actions"] == []
+    assert evidence["reviewed_default_task"] is None
+
+
+def test_runtime_menu_evidence_classifies_an_exact_selected_character() -> None:
+    observation = runtime_menu_observation(31)
+    assert observation.telemetry is not None
+    target_id = "entity-runtime-menu-target"
+    selected_ui = observation.telemetry.ui.model_copy(
+        update={"selected_character_ids": [target_id]}
+    )
+    selected_telemetry = TelemetrySnapshot.model_validate(
+        observation.telemetry.model_copy(
+            update={
+                "ui": selected_ui,
+                "squad": [CharacterState(id=target_id, name="Fish", selected=True)],
+                "world_targets": [],
+            }
+        ).model_dump()
+    )
+    observation = observation.model_copy(update={"telemetry": selected_telemetry})
+
+    evidence = ContextMenuEvidenceTracker().observe(observation)
+
+    assert evidence is not None
+    assert evidence["target_id"] == target_id
+    assert evidence["target_kind"] == "squad_character"
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,7 @@ from typing import TypeAlias
 from .env import AgentEnvironment
 from .models import NearbyEntity, Observation, StateChange, WorldStateRevision, new_command_id
 from .planning import PlanningClock, SystemPlanningClock
+from .runtime_context_menu_evidence import ContextMenuEvidenceTracker
 
 
 class WorldStateError(RuntimeError):
@@ -319,6 +320,7 @@ class WorldStateStore:
         self._active_plan: ActivePlanState | None = None
         self._active_command: CommandState | None = None
         self._command_history: deque[CommandState] = deque(maxlen=event_limit)
+        self._context_menu_evidence = ContextMenuEvidenceTracker()
         self._closed = False
 
     @property
@@ -464,6 +466,15 @@ class WorldStateStore:
                     "observation_event",
                     revision=canonical.world_revision,
                     payload={"message": message},
+                )
+            )
+        context_menu_evidence = self._context_menu_evidence.observe(canonical)
+        if context_menu_evidence is not None:
+            emitted.append(
+                self.record_event(
+                    "runtime_context_menu_observed",
+                    revision=canonical.world_revision,
+                    payload=context_menu_evidence,
                 )
             )
         canonical, entity_events = self._update_entity_registry(canonical)
