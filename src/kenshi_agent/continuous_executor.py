@@ -346,6 +346,15 @@ class ContinuousPlanExecutor:
             return str(exc)
         return None
 
+    @staticmethod
+    def _has_concurrent_future_authority(
+        budget: PlanBudgetLedger,
+        remaining_run_actions: int,
+    ) -> bool:
+        """Return whether a concurrent proposal could still add future work."""
+
+        return budget.remaining_actions > 0 and remaining_run_actions > 1
+
     async def execute(
         self,
         plan: PlanEnvelope,
@@ -2291,6 +2300,10 @@ class ContinuousPlanExecutor:
         if (
             self.planning_config.concurrent_option_planning_enabled
             and self.concurrent_planner is not None
+            and self._has_concurrent_future_authority(
+                budget,
+                remaining_run_actions,
+            )
         ):
             planner_observation = observation.model_copy(
                 update={
@@ -3288,6 +3301,10 @@ class ContinuousPlanExecutor:
         if (
             self.planning_config.concurrent_option_planning_enabled
             and self.concurrent_planner is not None
+            and self._has_concurrent_future_authority(
+                budget,
+                remaining_run_actions,
+            )
         ):
             planner_observation = observation.model_copy(
                 update={

@@ -1746,10 +1746,9 @@ def test_supervisor_cancels_blocked_plan_then_replans_from_automated_pause(
         assert environment.movement_cancelled.is_set()
         assert summary.terminated
         assert summary.stop_reason == "Cancelled-plan replan proof complete."
-        # The middle call is the executor's concurrent option planner. The last
-        # call is a new strategic decision after safety cancelled both the
-        # active plan and that option.
-        assert len(planner.observations) == 3
+        # The one-action plan has no future authority to revise. Safety cancels
+        # it, then exactly one fresh strategic call replans from the pause.
+        assert len(planner.observations) == 2
         replanning_observation = planner.observations[-1]
         assert replanning_observation.planner_feedback is not None
         assert "do not resume the cancelled plan" in replanning_observation.planner_feedback
@@ -2190,6 +2189,77 @@ def test_short_option_finishes_before_concurrent_planner_holdoff(
     asyncio.run(scenario())
 
 
+def test_single_action_plan_never_starts_a_concurrent_planner_call(
+    tmp_path: Path,
+) -> None:
+    class BlockingMovementEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock)
+            self.movement_started = asyncio.Event()
+            self.release_movement = asyncio.Event()
+
+        async def step(self, action: Action) -> Transition:
+            if not isinstance(action, SkillAction):
+                return await super().step(action)
+            self.actions.append(action)
+            self.movement_started.set()
+            await self.release_movement.wait()
+            self.step_index += 1
+            self.sequence += 1
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.INTERFACE_ONLY,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=2,
+                ),
+                observation=self.observation(),
+            )
+
+    class CountingPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls != 1:
+                raise AssertionError("a spent plan has no future authority to revise")
+            plan = patchable_movement_plan(current)
+            movement = plan.steps[0].model_copy(update={"on_success": None})
+            return plan.model_copy(
+                update={"steps": [movement], "max_actions": 1},
+                deep=True,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = BlockingMovementEnvironment(clock=clock)
+        planner = CountingPlanner()
+        runtime, logger = runtime_for(tmp_path, environment, planner, clock)
+        try:
+            run = asyncio.create_task(runtime.run(max_steps=1))
+            await asyncio.wait_for(environment.movement_started.wait(), timeout=1.0)
+            for _ in range(5):
+                await asyncio.sleep(0)
+            environment.release_movement.set()
+            summary = await asyncio.wait_for(run, timeout=1.0)
+        finally:
+            logger.close()
+
+        assert summary.steps_completed == 1
+        assert planner.calls == 1
+        events = read_events(tmp_path / "events.jsonl")
+        assert not any(
+            event["event_type"] == "strategic_planner_call"
+            and event["payload"].get("source") == "concurrent_option"
+            for event in events
+        )
+
+    asyncio.run(scenario())
+
+
 def approach_plan(observation: Observation) -> PlanEnvelope:
     return PlanEnvelope(
         schema_version="1.0",
@@ -2620,7 +2690,6 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
             clock,
             observation_pump_enabled=True,
             observation_clock=pump_clock,
-            concurrent_option_planning_enabled=False,
             control_mode=ControlMode.NATIVE_ASSISTED,
             max_native_assisted_actions_per_plan=1,
         )
@@ -2642,6 +2711,12 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
         assert "native-movement-" in started[0]["payload"]["evidence"]["option_id"]
         assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
         assert sum(event["event_type"] == "plan_step_succeeded" for event in events) == 1
+        assert planner.calls == 2
+        assert not any(
+            event["event_type"] == "strategic_planner_call"
+            and event["payload"].get("source") == "concurrent_option"
+            for event in events
+        )
         directions = [
             action
             for action in environment.actions
