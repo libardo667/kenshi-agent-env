@@ -69,9 +69,20 @@ for argument in "$@"; do
     exit 23
   fi
   if [[ "${FAKE_PAUSE_COMMAND:-}" == "$argument" ]]; then
+    if [[ -n "${FAKE_WINDOWS_RUN_PID_FILE:-}" ]]; then
+      printf '%s\n' "$$" > "$FAKE_WINDOWS_RUN_PID_FILE"
+    fi
+    trap 'exit 143' TERM
     sleep 5
   fi
 done
+if [[ "${4:-}" == "recover" \
+  && -n "${FAKE_WINDOWS_RUN_PID_FILE:-}" \
+  && -f "$FAKE_WINDOWS_RUN_PID_FILE" ]]; then
+  if kill -0 "$(cat "$FAKE_WINDOWS_RUN_PID_FILE")" 2>/dev/null; then
+    printf '%s\n' "run child still alive" > "$FAKE_WINDOWS_LIFECYCLE_ERROR"
+  fi
+fi
 """,
     )
 
@@ -331,25 +342,45 @@ def test_dev_run_failure_recovers_with_the_same_canonical_config(
 @pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")
 def test_interrupted_dev_run_still_invokes_supported_recovery(tmp_path: Path) -> None:
     env, invocation_log = _fake_dev_environment(tmp_path)
+    run_pid = tmp_path / "run.pid"
+    lifecycle_error = tmp_path / "lifecycle-error.txt"
     env["FAKE_PAUSE_COMMAND"] = "run"
+    env["FAKE_WINDOWS_RUN_PID_FILE"] = str(run_pid)
+    env["FAKE_WINDOWS_LIFECYCLE_ERROR"] = str(lifecycle_error)
+    master_fd, slave_fd = pty.openpty()
     process = subprocess.Popen(
         [str(REPO_ROOT / "dev"), "run"],
         cwd=REPO_ROOT,
         env=env,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
         start_new_session=True,
     )
+    os.close(slave_fd)
     deadline = time.monotonic() + 2.0
-    while (not invocation_log.exists() or "run" not in invocation_log.read_text()) and (
-        time.monotonic() < deadline
-    ):
+    while not run_pid.exists() and time.monotonic() < deadline:
         time.sleep(0.01)
+    assert run_pid.exists()
 
-    os.killpg(process.pid, signal.SIGTERM)
-    assert process.wait(timeout=2) == 143
+    # A detached tmux pane delivers the signal to the wrapper process, not to
+    # the Windows interop child as a shared Unix process group. The wrapper
+    # must revoke that child before starting recovery.
+    try:
+        os.kill(process.pid, signal.SIGTERM)
+        assert process.wait(timeout=5) == 143
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=2)
+        os.close(master_fd)
     assert [invocation[3] for invocation in _read_invocations(invocation_log)] == [
         "run",
         "recover",
     ]
+    assert not lifecycle_error.exists(), (
+        "supported recovery started while the interrupted run still held authority"
+    )
 
 
 @pytest.mark.skipif(os.name == "nt", reason="the ./dev wrapper is WSL-only")

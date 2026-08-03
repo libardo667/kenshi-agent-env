@@ -121,27 +121,44 @@ def _run_windows(
     *,
     environment: dict[str, str],
 ) -> int:
-    if not _stdio_is_terminal():
-        return subprocess.run(
-            [str(executable), *argv],
-            cwd=REPO_DIR,
-            env=environment,
-            check=False,
-        ).returncode
-
+    terminal = _stdio_is_terminal()
     process = subprocess.Popen(
         [str(executable), *argv],
         cwd=REPO_DIR,
         env=environment,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stdin=subprocess.DEVNULL if terminal else None,
+        stdout=subprocess.PIPE if terminal else None,
+        stderr=subprocess.STDOUT if terminal else None,
     )
-    assert isinstance(process.stdout, BufferedReader)
-    while chunk := process.stdout.read1(4096):
-        sys.stdout.buffer.write(chunk)
-        sys.stdout.buffer.flush()
-    return process.wait()
+    try:
+        if terminal:
+            assert isinstance(process.stdout, BufferedReader)
+            while chunk := process.stdout.read1(4096):
+                sys.stdout.buffer.write(chunk)
+                sys.stdout.buffer.flush()
+        return process.wait()
+    finally:
+        _terminate_transport_process(process)
+
+
+def _terminate_transport_process(
+    process: subprocess.Popen[bytes],
+    *,
+    timeout_seconds: float = 2.0,
+) -> None:
+    """Revoke one Windows transport child before recovery can touch Kenshi."""
+
+    if process.poll() is not None:
+        return
+    try:
+        process.terminate()
+        process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=timeout_seconds)
+    except OSError:
+        if process.poll() is None:
+            raise
 
 
 def main(argv: list[str] | None = None) -> int:
