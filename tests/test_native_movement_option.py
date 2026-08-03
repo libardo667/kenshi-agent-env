@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from typing import Any
 
-from kenshi_agent.config import PlanningConfig
-from kenshi_agent.continuous_executor import ContinuousPlanExecutor
+from operation_test_support import operation_for
+
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
@@ -45,6 +46,15 @@ COMMAND_ID = "cmd-0123456789abcdef0123456789abcdef"
 SELECTED_ID = "entity-selected"
 TARGET_ID = "entity-moving-target"
 SQUADMATE_ID = "entity-squadmate"
+
+
+def native_option(**kwargs: Any) -> StatefulNativeMovementOption:
+    environment = kwargs.pop("environment")
+    action = kwargs["action"]
+    return StatefulNativeMovementOption(
+        **kwargs,
+        operation=operation_for(environment, action),
+    )
 
 
 def test_native_movement_terminal_ownership_is_complete_and_exclusive() -> None:
@@ -210,8 +220,7 @@ def map_travel_observation(
             native_control=NativeControlState(
                 active_command_id=(
                     ack.command_id
-                    if ack is not None
-                    and ack.status is NativeCommandStatus.ACCEPTED
+                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
                 acknowledgements=[ack] if ack is not None else [],
@@ -408,8 +417,7 @@ def character_observation(
             native_control=NativeControlState(
                 active_command_id=(
                     ack.command_id
-                    if ack is not None
-                    and ack.status is NativeCommandStatus.ACCEPTED
+                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
                 acknowledgements=[ack] if ack is not None else [],
@@ -496,8 +504,7 @@ def exit_observation(
             native_control=NativeControlState(
                 active_command_id=(
                     ack.command_id
-                    if ack is not None
-                    and ack.status is NativeCommandStatus.ACCEPTED
+                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
                 acknowledgements=[ack] if ack is not None else [],
@@ -576,8 +583,7 @@ def context_observation(
             native_control=NativeControlState(
                 active_command_id=(
                     ack.command_id
-                    if ack is not None
-                    and ack.status is NativeCommandStatus.ACCEPTED
+                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
                 acknowledgements=[ack] if ack is not None else [],
@@ -637,8 +643,7 @@ def production_observation(
                     "native_control": NativeControlState(
                         active_command_id=(
                             ack.command_id
-                            if ack is not None
-                            and ack.status is NativeCommandStatus.ACCEPTED
+                            if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                             else None
                         ),
                         acknowledgements=[ack] if ack is not None else [],
@@ -666,13 +671,9 @@ class InstantNativeMovementEnvironment(AgentEnvironment):
                 executed=True,
                 dry_run=False,
                 message="direction order issued",
-                native_acknowledgement=acknowledgement(
-                    2, NativeCommandStatus.ACCEPTED
-                ),
+                native_acknowledgement=acknowledgement(2, NativeCommandStatus.ACCEPTED),
             ),
-            observation=observation(
-                2, ack=acknowledgement(2, NativeCommandStatus.ACCEPTED)
-            ),
+            observation=observation(2, ack=acknowledgement(2, NativeCommandStatus.ACCEPTED)),
         )
 
     async def close(self) -> None:
@@ -890,7 +891,7 @@ class InstantSquadRegroupEnvironment(AgentEnvironment):
 
 
 def option() -> StatefulNativeMovementOption:
-    return StatefulNativeMovementOption(
+    return native_option(
         option_id="native-direction-1",
         action=MoveInDirectionAction(
             bearing_degrees=90.0,
@@ -933,7 +934,7 @@ def test_character_walk_uses_the_exact_native_terminal_not_a_second_radius() -> 
     async def scenario() -> None:
         action = MoveToCharacterAction(target_id=TARGET_ID)
         assert StatefulNativeMovementOption.supports(action)
-        movement = StatefulNativeMovementOption(
+        movement = native_option(
             option_id="native-character-1",
             action=action,
             environment=InstantCharacterMovementEnvironment(),
@@ -979,7 +980,7 @@ def test_character_walk_matches_a_group_basis_independent_of_set_order() -> None
     async def scenario() -> None:
         selection = [SELECTED_ID, SQUADMATE_ID]
         action = MoveToCharacterAction(target_id=TARGET_ID)
-        movement = StatefulNativeMovementOption(
+        movement = native_option(
             option_id="native-character-group",
             action=action,
             environment=InstantCharacterMovementEnvironment(selection),
@@ -1016,7 +1017,7 @@ def test_character_walk_matches_a_group_basis_independent_of_set_order() -> None
 
 def test_character_walk_does_not_infer_arrival_from_target_loss() -> None:
     async def scenario() -> None:
-        movement = StatefulNativeMovementOption(
+        movement = native_option(
             option_id="native-character-departed",
             action=MoveToCharacterAction(target_id=TARGET_ID),
             environment=InstantCharacterMovementEnvironment(),
@@ -1065,7 +1066,7 @@ def test_character_walk_rejects_terminal_for_inexact_command_identity() -> None:
         async def assert_rejected(
             acknowledgement: NativeCommandAcknowledgement,
         ) -> None:
-            movement = StatefulNativeMovementOption(
+            movement = native_option(
                 option_id="native-character-identity",
                 action=MoveToCharacterAction(target_id=TARGET_ID),
                 environment=InstantCharacterMovementEnvironment(),
@@ -1096,34 +1097,20 @@ def test_character_walk_rejects_terminal_for_inexact_command_identity() -> None:
                 target_id="entity-someone-else",
             )
         )
+
     asyncio.run(scenario())
-
-
-def test_character_walk_has_no_competing_proximity_approach_owner() -> None:
-    executor = object.__new__(ContinuousPlanExecutor)
-    executor.planning_config = PlanningConfig()
-
-    assert (
-        executor._resolve_approach_params(  # noqa: SLF001 - ownership invariant
-            MoveToCharacterAction(target_id=TARGET_ID)
-        )
-        is None
-    )
 
 
 def test_map_travel_option_owns_one_exact_destination_until_native_arrival() -> None:
     async def scenario() -> None:
-        travel = StatefulNativeMovementOption(
+        travel = native_option(
             option_id="native-map-travel-1",
             action=TravelToMapDestinationAction(
                 destination_id="entity-known-town",
             ),
             environment=InstantMapTravelEnvironment(),
         )
-        assert (
-            travel.prepare(map_travel_observation(1)).status
-            is OptionStatus.PREPARED
-        )
+        assert travel.prepare(map_travel_observation(1)).status is OptionStatus.PREPARED
         await travel.start(
             CommandDispatchContext(
                 command_id=COMMAND_ID,
@@ -1183,7 +1170,7 @@ def test_map_travel_option_matches_a_group_basis_independent_of_set_order() -> N
             },
             deep=True,
         )
-        travel = StatefulNativeMovementOption(
+        travel = native_option(
             option_id="native-group-map-travel",
             action=TravelToMapDestinationAction(
                 destination_id="entity-known-town",
@@ -1201,22 +1188,19 @@ def test_map_travel_option_matches_a_group_basis_independent_of_set_order() -> N
         acknowledgement = map_travel_acknowledgement(
             3,
             NativeCommandStatus.COMPLETED,
-        ).model_copy(
-            update={
-                "selected_character_ids": [SQUADMATE_ID, SELECTED_ID]
-            }
-        )
+        ).model_copy(update={"selected_character_ids": [SQUADMATE_ID, SELECTED_ID]})
 
-        assert travel.poll(
-            update(map_travel_observation(3, ack=acknowledgement))
-        ).status is OptionStatus.SUCCEEDED
+        assert (
+            travel.poll(update(map_travel_observation(3, ack=acknowledgement))).status
+            is OptionStatus.SUCCEEDED
+        )
 
     asyncio.run(scenario())
 
 
 def test_squad_regroup_option_owns_exact_actor_and_target_until_arrival() -> None:
     async def scenario() -> None:
-        regroup = StatefulNativeMovementOption(
+        regroup = native_option(
             option_id="native-squad-regroup-1",
             action=RegroupWithSquadMemberAction(
                 actor_id=SELECTED_ID,
@@ -1244,13 +1228,11 @@ def test_squad_regroup_option_owns_exact_actor_and_target_until_arrival() -> Non
             NativeCommandStatus.COMPLETED,
             reason="walk_destination_reached",
         )
-        rejected = regroup.poll(
-            update(squad_regroup_observation(3, ack=wrong_terminal))
-        )
+        rejected = regroup.poll(update(squad_regroup_observation(3, ack=wrong_terminal)))
         assert rejected.status is OptionStatus.FAILED
         assert "without exact arrival proof" in rejected.reason
 
-        successful = StatefulNativeMovementOption(
+        successful = native_option(
             option_id="native-squad-regroup-2",
             action=RegroupWithSquadMemberAction(
                 actor_id=SELECTED_ID,
@@ -1271,9 +1253,7 @@ def test_squad_regroup_option_owns_exact_actor_and_target_until_arrival() -> Non
             NativeCommandStatus.COMPLETED,
         )
         assert (
-            successful.poll(
-                update(squad_regroup_observation(3, ack=completed))
-            ).status
+            successful.poll(update(squad_regroup_observation(3, ack=completed))).status
             is OptionStatus.SUCCEEDED
         )
 
@@ -1290,7 +1270,7 @@ def test_map_travel_is_routed_through_the_native_movement_option() -> None:
 
 def test_building_exit_option_accepts_native_terminal_when_indoor_handle_lingers() -> None:
     async def scenario() -> None:
-        movement = StatefulNativeMovementOption(
+        movement = native_option(
             option_id="native-exit-1",
             action=ExitCurrentBuildingAction(),
             environment=InstantExitBuildingEnvironment(),
@@ -1306,13 +1286,10 @@ def test_building_exit_option_accepts_native_terminal_when_indoor_handle_lingers
 
         accepted = exit_acknowledgement(2, NativeCommandStatus.ACCEPTED)
         assert (
-            movement.poll(update(exit_observation(2, ack=accepted))).status
-            is OptionStatus.RUNNING
+            movement.poll(update(exit_observation(2, ack=accepted))).status is OptionStatus.RUNNING
         )
         completed = exit_acknowledgement(3, NativeCommandStatus.COMPLETED)
-        outcome = movement.poll(
-            update(exit_observation(3, ack=completed, indoors=True))
-        )
+        outcome = movement.poll(update(exit_observation(3, ack=completed, indoors=True)))
 
         assert outcome.status is OptionStatus.SUCCEEDED
         assert movement.result().receipt.native_acknowledgement == accepted
@@ -1322,7 +1299,7 @@ def test_building_exit_option_accepts_native_terminal_when_indoor_handle_lingers
 
 def test_context_action_option_waits_for_exact_native_task_proof() -> None:
     async def scenario() -> None:
-        context = StatefulNativeMovementOption(
+        context = native_option(
             option_id="native-context-1",
             action=PerformContextAction(
                 target_id="entity-copper",
@@ -1346,9 +1323,7 @@ def test_context_action_option_waits_for_exact_native_task_proof() -> None:
             is OptionStatus.RUNNING
         )
         completed = context_acknowledgement(3, NativeCommandStatus.COMPLETED)
-        outcome = context.poll(
-            update(context_observation(3, ack=completed))
-        )
+        outcome = context.poll(update(context_observation(3, ack=completed)))
 
         assert outcome.status is OptionStatus.SUCCEEDED
         assert "context_task_started" in outcome.reason
@@ -1358,7 +1333,7 @@ def test_context_action_option_waits_for_exact_native_task_proof() -> None:
 
 def test_resource_production_retains_work_until_output_is_ready() -> None:
     async def scenario() -> None:
-        production = StatefulNativeMovementOption(
+        production = native_option(
             option_id="native-production-1",
             action=ProduceResourceOutputAction(
                 target_id="entity-copper",
@@ -1406,9 +1381,7 @@ def test_resource_production_retains_work_until_output_is_ready() -> None:
             reason="resource_output_ready",
             minimum_output_quantity=5,
         )
-        outcome = production.poll(
-            update(production_observation(4, ack=ready))
-        )
+        outcome = production.poll(update(production_observation(4, ack=ready)))
         assert outcome.status is OptionStatus.SUCCEEDED
         assert "resource_output_ready" in outcome.reason
 
@@ -1417,7 +1390,7 @@ def test_resource_production_retains_work_until_output_is_ready() -> None:
 
 def test_resource_production_never_accepts_task_start_as_terminal_output() -> None:
     async def scenario() -> None:
-        production = StatefulNativeMovementOption(
+        production = native_option(
             option_id="native-production-bad-terminal",
             action=ProduceResourceOutputAction(target_id="entity-copper"),
             environment=InstantResourceProductionEnvironment(),
@@ -1437,16 +1410,16 @@ def test_resource_production_never_accepts_task_start_as_terminal_output() -> No
             NativeCommandStatus.COMPLETED,
             reason="context_task_started",
         )
-        outcome = production.poll(
-            update(production_observation(3, ack=false_terminal))
-        )
+        outcome = production.poll(update(production_observation(3, ack=false_terminal)))
 
         assert outcome.status is OptionStatus.FAILED
         assert "output" in outcome.reason
 
     asyncio.run(scenario())
+
+
 def test_building_exit_option_rejects_an_outdoor_start() -> None:
-    movement = StatefulNativeMovementOption(
+    movement = native_option(
         option_id="native-exit-outdoors",
         action=ExitCurrentBuildingAction(),
         environment=InstantExitBuildingEnvironment(),
@@ -1509,7 +1482,7 @@ def test_direction_option_monitors_the_original_id_when_order_is_adopted() -> No
             NativeCommandStatus.ACCEPTED,
             command_id=adopted_id,
         )
-        movement = StatefulNativeMovementOption(
+        movement = native_option(
             option_id="native-direction-adopted",
             action=MoveInDirectionAction(
                 bearing_degrees=90.0,

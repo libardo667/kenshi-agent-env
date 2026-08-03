@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+from operation_test_support import operation_family, operation_for
+
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
@@ -12,6 +14,7 @@ from kenshi_agent.models import (
     GameState,
     NearbyEntity,
     Observation,
+    PauseAction,
     RespondToImmediateThreatAction,
     SkillAction,
     TelemetrySnapshot,
@@ -94,10 +97,11 @@ class FailingCancellationEnvironment(BlockingEnvironment):
 def test_movement_option_has_explicit_success_lifecycle() -> None:
     async def scenario() -> None:
         environment = BlockingEnvironment()
+        action = SkillAction(name="move")
         option = StatefulMovementOption(
             option_id="option-success",
-            action=SkillAction(name="move"),
-            environment=environment,
+            action=action,
+            operation=operation_for(environment, action),
         )
 
         assert option.prepare(observation(1)).status is OptionStatus.PREPARED
@@ -115,10 +119,11 @@ def test_movement_option_has_explicit_success_lifecycle() -> None:
 def test_movement_option_cancellation_is_idempotent_and_leak_free() -> None:
     async def scenario() -> None:
         environment = BlockingEnvironment()
+        action = SkillAction(name="move")
         option = StatefulMovementOption(
             option_id="option-cancel",
-            action=SkillAction(name="move"),
-            environment=environment,
+            action=action,
+            operation=operation_for(environment, action),
         )
         option.prepare(observation(1))
         task = option.start()
@@ -139,10 +144,11 @@ def test_movement_option_cancellation_is_idempotent_and_leak_free() -> None:
 def test_movement_option_surfaces_cancellation_cleanup_failure() -> None:
     async def scenario() -> None:
         environment = FailingCancellationEnvironment()
+        action = SkillAction(name="move")
         option = StatefulMovementOption(
             option_id="option-cleanup-failure",
-            action=SkillAction(name="move"),
-            environment=environment,
+            action=action,
+            operation=operation_for(environment, action),
         )
         option.prepare(observation(1))
         task = option.start()
@@ -185,10 +191,12 @@ def test_approach_can_start_from_a_running_world() -> None:
         deep=True,
     )
 
+    strict_environment = BlockingEnvironment()
+    strict_action = SkillAction(name="mock_approach")
     strict = StatefulApproachOption(
         option_id="strict",
-        action=SkillAction(name="mock_approach"),
-        environment=BlockingEnvironment(),
+        action=strict_action,
+        operation=operation_for(strict_environment, strict_action),
         target_id="entity-target",
     )
     try:
@@ -197,10 +205,12 @@ def test_approach_can_start_from_a_running_world() -> None:
     except OptionLifecycleError as exc:
         assert "paused" in str(exc)
 
+    relaxed_environment = BlockingEnvironment()
+    relaxed_action = SkillAction(name="mock_approach")
     relaxed = StatefulApproachOption(
         option_id="relaxed",
-        action=SkillAction(name="mock_approach"),
-        environment=BlockingEnvironment(),
+        action=relaxed_action,
+        operation=operation_for(relaxed_environment, relaxed_action),
         target_id="entity-target",
         require_paused_start=False,
     )
@@ -269,15 +279,24 @@ def _threat_observation(
     )
 
 
-def test_withdrawal_derives_the_escape_vector_instead_of_asking_the_model() -> None:
-    option = StatefulThreatResponseOption(
-        option_id="threat-withdrawal",
-        action=RespondToImmediateThreatAction(
-            actor_id="entity-bark",
-            strategy=ThreatResponseStrategy.WITHDRAW,
-        ),
-        environment=BlockingEnvironment(),
+def _withdrawal_option(option_id: str) -> StatefulThreatResponseOption:
+    environment = BlockingEnvironment()
+    action = RespondToImmediateThreatAction(
+        actor_id="entity-bark",
+        strategy=ThreatResponseStrategy.WITHDRAW,
     )
+    pause = PauseAction(paused=True)
+    return StatefulThreatResponseOption(
+        option_id=option_id,
+        action=action,
+        operation=operation_for(environment, action),
+        withdrawal_operation=operation_family(environment),
+        pause_operation=operation_for(environment, pause),
+    )
+
+
+def test_withdrawal_derives_the_escape_vector_instead_of_asking_the_model() -> None:
+    option = _withdrawal_option("threat-withdrawal")
 
     option.prepare(
         _threat_observation(
@@ -322,14 +341,7 @@ def test_withdrawal_prefers_a_squadmate_when_reunion_also_increases_safety() -> 
         },
         deep=True,
     )
-    option = StatefulThreatResponseOption(
-        option_id="threat-withdrawal-reunion",
-        action=RespondToImmediateThreatAction(
-            actor_id="entity-bark",
-            strategy=ThreatResponseStrategy.WITHDRAW,
-        ),
-        environment=BlockingEnvironment(),
-    )
+    option = _withdrawal_option("threat-withdrawal-reunion")
 
     option.prepare(current)
 
@@ -368,14 +380,7 @@ def test_withdrawal_does_not_cross_a_hostile_to_reach_a_distant_squadmate() -> N
         },
         deep=True,
     )
-    option = StatefulThreatResponseOption(
-        option_id="threat-withdrawal-no-crossing",
-        action=RespondToImmediateThreatAction(
-            actor_id="entity-bark",
-            strategy=ThreatResponseStrategy.WITHDRAW,
-        ),
-        environment=BlockingEnvironment(),
-    )
+    option = _withdrawal_option("threat-withdrawal-no-crossing")
 
     option.prepare(current)
 

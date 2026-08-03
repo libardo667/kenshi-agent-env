@@ -8,12 +8,15 @@ from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from math import dist
-from typing import TypeAlias
+from typing import TYPE_CHECKING, TypeAlias
 
-from .env import AgentEnvironment
 from .models import NearbyEntity, Observation, StateChange, WorldStateRevision, new_command_id
 from .planning import PlanningClock, SystemPlanningClock
 from .runtime_context_menu_evidence import ContextMenuEvidenceTracker
+
+if TYPE_CHECKING:
+    # Only a parameter annotation: state is read by an adapter, it does not own one.
+    from .env import AgentEnvironment
 
 
 class WorldStateError(RuntimeError):
@@ -390,9 +393,20 @@ class WorldStateStore:
             "planning_mode",
             "objective",
             "recent_action_outcomes",
+            "recent_plan_outcomes",
+            "recent_continuity_receipts",
+            "continuity_writes_degraded_reason",
+            "continuity_reads_degraded_reason",
+            "planner_feedback",
             "available_skills",
             "skill_specs",
             "memories",
+            "memory_recall",
+            "memory_search",
+            "fieldbook_projects",
+            "active_fieldbook_project",
+            "recent_fieldbook_receipts",
+            "fieldbook_read",
             "advisor",
         )
         decorated = self._latest.model_copy(

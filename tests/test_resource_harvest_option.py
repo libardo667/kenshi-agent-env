@@ -4,6 +4,8 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
+from operation_test_support import operation_port
+
 from kenshi_agent.config import PlanningConfig, SafetyConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.env import AgentEnvironment
@@ -487,6 +489,7 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
 
         executor = ContinuousPlanExecutor(
             environment=environment,
+            operation_port=operation_port(environment),
             guard=ActionGuard(
                 SafetyConfig(
                     allow_action_kinds=[

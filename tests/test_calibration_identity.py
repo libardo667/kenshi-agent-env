@@ -13,6 +13,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from operation_test_support import execute_operation
 from test_input_boundary import observation, paused_condition, selection_condition
 from test_live_env import PulseController, PulseTelemetry, movement_action, movement_registry
 
@@ -261,7 +262,7 @@ def test_ui_scale_mismatch_blocks_pointer_input_before_dispatch(tmp_path: Path) 
 
         raised = False
         try:
-            await env.step(movement_action())
+            await execute_operation(env, movement_action())
         except RuntimeError as exc:
             raised = "ui_scale" in str(exc)
 
@@ -278,7 +279,7 @@ def test_matching_ui_scale_executes_the_pointer_action(tmp_path: Path) -> None:
         env = scaled_environment(tmp_path, telemetry, controller, expected_ui_scale=1.0)
         await env.reset()
 
-        transition = await env.step(movement_action())
+        transition = await execute_operation(env, movement_action())
 
         assert controller.actions  # the click plus its bounded pause keys
         report = transition.receipt.calibration
@@ -302,7 +303,7 @@ def test_semantic_skill_ignores_calibration_mismatch(tmp_path: Path) -> None:
         )
         await env.reset()
 
-        transition = await env.step(movement_action())
+        transition = await execute_operation(env, movement_action())
 
         assert controller.actions
         report = transition.receipt.calibration
@@ -322,16 +323,16 @@ def test_classify_pointer_action_buckets(tmp_path: Path) -> None:
         tmp_path, telemetry, controller, semantic_skills=["move_visible_terrain"]
     )
     assert (
-        env.classify_pointer_action(movement_action())
+        env.control_surface.classify_pointer_action(movement_action())
         is PointerActionClass.SEMANTIC_CURRENT
     )
     plain = scaled_environment(tmp_path, telemetry, controller)
     assert (
-        plain.classify_pointer_action(movement_action())
+        plain.control_surface.classify_pointer_action(movement_action())
         is PointerActionClass.PROFILE_CALIBRATED
     )
     assert (
-        plain.classify_pointer_action(KeyAction(key="space"))
+        plain.control_surface.classify_pointer_action(KeyAction(key="space"))
         is PointerActionClass.COORDINATE_INDEPENDENT
     )
 
@@ -362,7 +363,8 @@ def test_calibration_drift_inside_lease_is_caught_by_the_boundary(tmp_path: Path
             preconditions=(selection_condition(),),
         )
 
-        transition = await env.dispatch(
+        transition = await execute_operation(
+            env,
             movement_action(),
             command=CommandDispatchContext(
                 command_id=token.command_id,

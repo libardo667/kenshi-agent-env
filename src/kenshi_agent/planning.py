@@ -507,9 +507,6 @@ def _action_risk(
 ) -> tuple[int, int, int]:
     # A contracted action declares its own cost, so risk accounting no longer
     # depends on expanding a macro or recognizing an exact skill name.
-    contract = definition_for(action)
-    if contract is not None:
-        return contract.risk_for(action).as_tuple()
     actions = [action]
     native = 0
     if isinstance(action, SkillAction):
@@ -518,6 +515,10 @@ def _action_risk(
             actions = macros.expand(action)
         except UnknownSkillError:
             actions = [action]
+    else:
+        contract = definition_for(action)
+        if contract is not None:
+            return contract.risk_for(action).as_tuple()
     pointer = sum(
         isinstance(item, (ClickAction, MoveCursorAction, ScrollAction)) for item in actions
     )

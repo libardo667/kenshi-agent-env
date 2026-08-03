@@ -1,13 +1,9 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
 
 from ..final_safe_state import FinalSafeStateOutcome
-from ..models import Action, CommandDispatchContext, Observation, Transition
-
-if TYPE_CHECKING:
-    from ..input_boundary import ExecutionToken
+from ..models import Observation
 
 
 class AgentEnvironment(ABC):
@@ -33,42 +29,6 @@ class AgentEnvironment(ABC):
         """Return the freshness ceiling enforced by a real input lease, if any."""
 
         return None
-
-    @abstractmethod
-    async def step(self, action: Action) -> Transition:
-        raise NotImplementedError
-
-    async def dispatch(
-        self,
-        action: Action,
-        *,
-        command: CommandDispatchContext,
-        token: ExecutionToken | None = None,
-    ) -> Transition:
-        """Dispatch through the legacy step seam while preserving caller causality.
-
-        Environments without a real input lease have no window between
-        validation and the first primitive, so they carry the token without
-        re-checking it.
-        """
-
-        del token
-        transition = await self.step(action)
-        if transition.receipt.command_id not in {None, command.command_id}:
-            raise RuntimeError(
-                "Environment receipt command ID does not match the dispatched command."
-            )
-        receipt = transition.receipt.model_copy(
-            update={
-                "command_id": command.command_id,
-                "started_after_revision": command.based_on_revision,
-                "completed_at_revision": transition.observation.world_revision,
-                "causal_revision_advanced": (
-                    transition.observation.world_revision.is_later_than(command.based_on_revision)
-                ),
-            }
-        )
-        return transition.model_copy(update={"receipt": receipt})
 
     @abstractmethod
     async def close(self) -> FinalSafeStateOutcome | None:

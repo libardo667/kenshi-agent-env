@@ -3,9 +3,89 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from ..models import Action, ActionReceipt, Observation, StopAction, Transition
+from ..models import (
+    Action,
+    ActionReceipt,
+    CommandDispatchContext,
+    Observation,
+    Transition,
+)
 from .base import AgentEnvironment
+
+if TYPE_CHECKING:
+    from ..input_boundary import ExecutionToken
+
+
+class ReplayOperationPort:
+    """Exact dry-run operation surface for replayed evidence."""
+
+    def __init__(self, environment: ReplayEnvironment) -> None:
+        self._environment = environment
+
+    async def _execute(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        started = datetime.now(UTC)
+        observation = await self._environment.advance()
+        receipt = ActionReceipt(
+            action=action,
+            control_mode=observation.control_mode,
+            accepted=True,
+            executed=False,
+            dry_run=True,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=0,
+            message="Replay operation does not emit input.",
+            command_id=command.command_id,
+            started_after_revision=command.based_on_revision,
+            completed_at_revision=observation.world_revision,
+            causal_revision_advanced=observation.world_revision.is_later_than(
+                command.based_on_revision
+            ),
+        )
+        return Transition(
+            receipt=receipt,
+            observation=observation,
+            terminated=self._environment.at_end,
+            success=None,
+        )
+
+    activate_visible_control = _execute
+    approach_dialogue_target = _execute
+    collect_resource_output = _execute
+    command_world_target = _execute
+    dismiss_screen = _execute
+    equip_item = _execute
+    exit_current_building = _execute
+    move_in_direction = _execute
+    move_to_character = _execute
+    open_context_inventory = _execute
+    open_screen = _execute
+    pause = _execute
+    perform_context_action = _execute
+    produce_resource_output = _execute
+    purchase_item = _execute
+    recover_camera_view = _execute
+    regroup_with_squad_member = _execute
+    respond_to_immediate_threat = _execute
+    rotate_camera = _execute
+    scroll_screen = _execute
+    select_squad_member = _execute
+    select_squad_member_exact = _execute
+    sell_item = _execute
+    set_speed = _execute
+    skill = _execute
+    travel_to_map_destination = _execute
+    use_game_binding = _execute
+    wait = _execute
 
 
 class ReplayEnvironment(AgentEnvironment):
@@ -14,6 +94,11 @@ class ReplayEnvironment(AgentEnvironment):
         self._observations = self._load_observations(log_path)
         self.control_mode = self._observations[0].control_mode
         self._index = 0
+        self._mechanics = ReplayOperationPort(self)
+
+    @property
+    def operation_mechanics(self) -> ReplayOperationPort:
+        return self._mechanics
 
     @staticmethod
     def _load_observations(path: Path) -> list[Observation]:
@@ -42,28 +127,16 @@ class ReplayEnvironment(AgentEnvironment):
     async def observe(self) -> Observation:
         return self._observations[self._index].model_copy(update={"mode": "replay"})
 
-    async def step(self, action: Action) -> Transition:
-        started = datetime.now(UTC)
+    async def advance(self) -> Observation:
+        """Advance the deterministic replay observation stream without an action."""
+
         if self._index + 1 < len(self._observations):
             self._index += 1
-        terminated = self._index + 1 >= len(self._observations) or isinstance(action, StopAction)
-        observation = await self.observe()
-        return Transition(
-            receipt=ActionReceipt(
-                action=action,
-                control_mode=observation.control_mode,
-                accepted=True,
-                executed=False,
-                dry_run=True,
-                started_at=started,
-                finished_at=datetime.now(UTC),
-                primitive_actions=0,
-                message="Replay environment does not execute actions.",
-            ),
-            observation=observation,
-            terminated=terminated,
-            success=None,
-        )
+        return await self.observe()
+
+    @property
+    def at_end(self) -> bool:
+        return self._index + 1 >= len(self._observations)
 
     async def close(self) -> None:
         return None

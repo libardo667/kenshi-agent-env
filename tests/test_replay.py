@@ -2,8 +2,10 @@ import asyncio
 import json
 from pathlib import Path
 
+from operation_test_support import execute_operation
+
 from kenshi_agent.env import ReplayEnvironment
-from kenshi_agent.models import ControlMode, NoopAction, Observation
+from kenshi_agent.models import ControlMode, Observation, WaitAction
 
 
 def test_replay_environment_returns_recorded_observations(tmp_path: Path) -> None:
@@ -40,7 +42,7 @@ def test_replay_environment_returns_recorded_observations(tmp_path: Path) -> Non
         first = await environment.reset()
         assert first.mode == "replay"
         assert first.control_mode == ControlMode.NATIVE_ASSISTED
-        transition = await environment.step(NoopAction())
+        transition = await execute_operation(environment, WaitAction(seconds=0.1))
         assert transition.receipt.control_mode == ControlMode.NATIVE_ASSISTED
         assert transition.observation.step_index == 1
         assert transition.terminated

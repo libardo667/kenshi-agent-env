@@ -1,8 +1,8 @@
 """Final revalidation at the real input boundary.
 
 The continuous executor validates plan assumptions and step preconditions
-immediately before `environment.dispatch()`. A live dispatch may then wait an
-unbounded polite interval for a quiet input turn, so the evidence that
+immediately before invoking an operation handler. A live input lease may then
+wait an unbounded polite interval for a quiet input turn, so the evidence that
 authorized the action can be obsolete by the time the first primitive would be
 emitted. `ExecutionToken` carries that authorization into the environment and
 re-checks it after the lease is acquired, using the same typed condition

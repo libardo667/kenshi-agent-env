@@ -17,6 +17,9 @@ from kenshi_agent.models import (
     ConditionOperator,
     ConditionResult,
     Disposition,
+    FieldbookProjectIndex,
+    FieldbookProjectKind,
+    FieldbookProjectStatus,
     GameState,
     NearbyEntity,
     Observation,
@@ -167,6 +170,29 @@ def test_planner_context_can_decorate_only_the_latest_revision() -> None:
     assert advanced.recent_action_outcomes == [outcome]
     with pytest.raises(RevisionConflictError, match="current world-state revision"):
         store.decorate_latest(observation(1))
+
+
+def test_planner_context_decoration_preserves_fieldbook_authority() -> None:
+    store = WorldStateStore()
+    first = store.publish(observation(1)).observation
+    project = FieldbookProjectIndex(
+        project_id="fbp-00000000000000000000000000000001",
+        kind=FieldbookProjectKind.DELIVERY_DOCKET,
+        title="Current delivery",
+        short_summary="The bounded planner-visible index.",
+        status=FieldbookProjectStatus.ACTIVE,
+        entry_count=1,
+        updated_at=datetime.now(UTC),
+        selected=True,
+    )
+
+    decorated = store.decorate_latest(
+        first.model_copy(update={"fieldbook_projects": [project]})
+    )
+
+    assert decorated.fieldbook_projects == [project]
+    assert store.latest is not None
+    assert store.latest.fieldbook_projects == [project]
 
 
 def test_causal_wait_cannot_succeed_from_starting_revision_and_uses_fake_clock() -> None:

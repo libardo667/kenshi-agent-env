@@ -373,7 +373,7 @@ class TestGenericPolicyRejections:
         )
         assert any("raw controller primitive" in error for error in errors)
 
-    def test_legacy_skill_action_has_no_contract(self) -> None:
+    def test_configured_skill_uses_the_operation_definition_path(self) -> None:
         composed = plan(
             [step("legacy", SkillAction(name="choose_show_goods"), success=[screen_is("trade")])],
             native=0,
@@ -382,7 +382,7 @@ class TestGenericPolicyRejections:
         errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
-        assert any("has no operation definition" in error for error in errors)
+        assert errors == []
 
     def test_unbound_control_label_is_rejected(self) -> None:
         composed = plan(

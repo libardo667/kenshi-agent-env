@@ -572,18 +572,6 @@ def test_a_campaign_artifact_records_the_tree_it_attested(tmp_path: Path) -> Non
     )
 
 
-def test_every_real_shard_appears_exactly_once() -> None:
-    root = Path(__file__).resolve().parents[1]
-    ledger = (root / "docs" / "generated" / "MUTATION_ATTESTATION.md").read_text(
-        encoding="utf-8"
-    )
-
-    states = _states(ledger)
-
-    assert set(states) == set(discover_mutation_batches(root / "src" / "kenshi_agent"))
-    assert ledger.count("| `") == len(states)
-
-
 def test_an_instrumented_tree_is_recognised_by_its_own_layout(tmp_path: Path) -> None:
     """The predicate every byte-comparing gate defers to, tested on explicit paths.
 

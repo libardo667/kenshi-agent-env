@@ -7,10 +7,9 @@ from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
-from functools import partial
 from math import dist
 from time import monotonic
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from PIL import Image, ImageChops
 
@@ -32,13 +31,13 @@ from .control_ownership import (
     ControlOwnershipState,
 )
 from .env import AgentEnvironment
+from .execution.ports import OperationMechanicsPort
 from .fieldbook import FieldbookTransitionError
 from .fieldbook_authority import FieldbookAuthority
 from .final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
 )
-from .input_boundary import ExecutionToken
 from .memory import MemoryStore, RecallBudget
 from .models import (
     Action,
@@ -54,6 +53,9 @@ from .models import (
     CameraRecoveryStatus,
     CharacterState,
     CommandDispatchContext,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
     ConsultAdvisorAction,
     ContinuityOperation,
     ContinuityOperationReceipt,
@@ -67,7 +69,7 @@ from .models import (
     FieldbookReadStatus,
     FieldbookReceiptDigest,
     HarvestResourceAction,
-    InputBoundaryDecision,
+    IdempotencyPolicy,
     MemoryReadReceipt,
     MemoryReadStatus,
     MemoryRetrievalPolicy,
@@ -87,6 +89,7 @@ from .models import (
     RecallMemoryAction,
     RecoverCameraViewAction,
     ResourceHarvestStatus,
+    RiskBudget,
     SaleStatus,
     ScenarioIdentity,
     SellItemAction,
@@ -95,7 +98,6 @@ from .models import (
     TelemetrySnapshot,
     Transition,
     WorldStateRevision,
-    new_command_id,
 )
 from .non_progress import retry_state_fingerprint
 from .nutrition import nutrition_reserve_change
@@ -158,6 +160,7 @@ class TelemetryChange:
     label: str
     decision_relevant: bool = True
 
+
 # How many continuity receipts a planner sees. Enough to stop repeating one
 # deterministic mistake; not enough to become a second, rival history.
 MAX_SURFACED_CONTINUITY_RECEIPTS = 4
@@ -188,6 +191,7 @@ class AgentRuntime:
         *,
         run_id: str,
         environment: AgentEnvironment,
+        operation_port: OperationMechanicsPort | None = None,
         planner: Planner,
         advisor: AdvisorSession | None = None,
         guard: ActionGuard,
@@ -200,9 +204,7 @@ class AgentRuntime:
         commitment_memory_limit: int = 4,
         hypothesis_memory_limit: int = 2,
         fieldbook_project_limit: int = 8,
-        memory_retrieval_policy: MemoryRetrievalPolicy = (
-            MemoryRetrievalPolicy.DETERMINISTIC
-        ),
+        memory_retrieval_policy: MemoryRetrievalPolicy = (MemoryRetrievalPolicy.DETERMINISTIC),
         action_outcome_limit: int = 12,
         control_mode: ControlMode = ControlMode.INTERFACE_ONLY,
         reporter: ConsoleDecisionReporter | None = None,
@@ -215,6 +217,14 @@ class AgentRuntime:
     ) -> None:
         self.run_id = run_id
         self.environment = environment
+        resolved_operation_port = operation_port or getattr(
+            environment,
+            "operation_mechanics",
+            None,
+        )
+        if resolved_operation_port is None:
+            raise TypeError("Runtime requires an exact operation mechanics port.")
+        self.operation_port = cast(OperationMechanicsPort, resolved_operation_port)
         self.planner = planner
         self.advisor = advisor
         self.guard = guard
@@ -267,13 +277,8 @@ class AgentRuntime:
         self.observation_clock = observation_clock or SystemPlanningClock()
         self.log_full_observations = log_full_observations
         self.scenario = scenario
-        if (
-            scenario_attestation is not None
-            and scenario_attestation.scenario != scenario
-        ):
-            raise ValueError(
-                "Scenario attestation must match the runtime scenario identity."
-            )
+        if scenario_attestation is not None and scenario_attestation.scenario != scenario:
+            raise ValueError("Scenario attestation must match the runtime scenario identity.")
         self.scenario_attestation = scenario_attestation
         self._state_store: WorldStateStore | None = None
         # Numbering only. Membership is answered by the record list itself, so a
@@ -386,6 +391,7 @@ class AgentRuntime:
         success: bool | None = None
         stop_reason = "Maximum step count reached."
         observation: Observation | None = None
+        state_store: WorldStateStore | None = None
         try:
             self._ledger.reset()
             self._advisor_brief_ids.clear()
@@ -396,19 +402,20 @@ class AgentRuntime:
             self._pending_fieldbook_read = None
             observation = await self.environment.reset(seed=seed)
             observation = self._with_memories(observation)
+            state_store = self._new_world_state_store()
+            self._state_store = state_store
+            initial_update = state_store.publish(observation)
+            observation = initial_update.observation
+            self._log_world_state_update(initial_update)
             self.logger.write(
                 "run_started",
                 payload={
                     "max_steps": max_steps,
                     "seed": seed,
                     "control_mode": self.control_mode.value,
-                    "memory_retrieval_policy": (
-                        self.memory_retrieval_policy.value
-                    ),
+                    "memory_retrieval_policy": (self.memory_retrieval_policy.value),
                     "scenario": (
-                        self.scenario.model_dump(mode="json")
-                        if self.scenario is not None
-                        else None
+                        self.scenario.model_dump(mode="json") if self.scenario is not None else None
                     ),
                     "scenario_attestation": (
                         self.scenario_attestation.model_dump(mode="json")
@@ -423,7 +430,6 @@ class AgentRuntime:
 
             for _ in range(max_steps):
                 planning_started = monotonic()
-                step_id = f"step-{observation.step_index}"
                 authored_context: AuthoredPlannerContext | None = None
                 if self.reporter is not None:
                     self.reporter.planning_started(observation.step_index)
@@ -461,273 +467,23 @@ class AgentRuntime:
 
                 planner_latency_seconds = monotonic() - planning_started
 
-                self.logger.write(
-                    "decision",
-                    step_index=observation.step_index,
-                    payload={
-                        "source": decision_source,
-                        "planner_latency_seconds": planner_latency_seconds,
-                        "decision": decision.model_dump(mode="json"),
-                    },
-                )
-                if self.reporter is not None:
-                    self.reporter.decision(
-                        step_index=observation.step_index,
-                        source=decision_source,
-                        decision=decision,
-                        latency_seconds=planner_latency_seconds,
-                    )
-
-                try:
-                    guard_reservation = self.guard.reserve(
-                        decision.action,
-                        observation,
-                    )
-                    action = guard_reservation.action
-                except SafetyViolation as exc:
-                    now = datetime.now(UTC)
-                    rejected = ActionReceipt(
-                        action=decision.action,
-                        control_mode=self.control_mode,
-                        accepted=False,
-                        executed=False,
-                        dry_run=True,
-                        started_at=now,
-                        finished_at=now,
-                        primitive_actions=0,
-                        message=str(exc),
-                        error_type=type(exc).__name__,
-                    )
-                    self.logger.write(
-                        "action_rejected",
-                        step_index=observation.step_index,
-                        payload=rejected,
-                    )
-                    if self.reporter is not None:
-                        self.reporter.error(
-                            step_index=observation.step_index,
-                            label="REJECT",
-                            message=str(exc),
-                        )
-                    stop_reason = f"Safety policy rejected action: {exc}"
-                    terminated = True
-                    break
-
-                if isinstance(action, ConsultAdvisorAction):
-                    self.guard.commit(guard_reservation)
-                    advisor_result = await self._execute_advisor_action(
-                        action,
-                        observation,
-                        plan_id="single-step",
-                        plan_version=1,
-                        step_id=step_id,
-                    )
-                    steps_completed += 1
-                    observation = advisor_result.observation
-                    observation = self._apply_decision_sidecars(
-                        decision,
-                        observation,
-                        authored_context=authored_context,
-                        plan_id="single-step",
-                        step_id=step_id,
-                    )
-                    self._log_observation(observation)
-                    stop_reason = advisor_result.receipt.message
-                    continue
-
-                if isinstance(action, RecallMemoryAction):
-                    self.guard.commit(guard_reservation)
-                    read_receipt = self._execute_memory_read(
-                        action,
-                        observation,
-                        plan_id="single-step",
-                        plan_version=1,
-                        step_id=step_id,
-                    )
-                    steps_completed += 1
-                    observation = self._with_memories(observation)
-                    observation = self._apply_decision_sidecars(
-                        decision,
-                        observation,
-                        authored_context=authored_context,
-                        plan_id="single-step",
-                        step_id=step_id,
-                    )
-                    self._log_observation(observation)
-                    stop_reason = read_receipt.message
-                    continue
-
-                if isinstance(action, ReadFieldbookAction):
-                    self.guard.commit(guard_reservation)
-                    read_receipt = self._execute_fieldbook_read(
-                        action,
-                        observation,
-                        plan_id="single-step",
-                        plan_version=1,
-                        step_id=step_id,
-                    )
-                    steps_completed += 1
-                    observation = self._with_memories(observation)
-                    observation = self._apply_decision_sidecars(
-                        decision,
-                        observation,
-                        authored_context=authored_context,
-                        plan_id="single-step",
-                        step_id=step_id,
-                    )
-                    self._log_observation(observation)
-                    stop_reason = read_receipt.message
-                    continue
-
-                guard_reservation_finalized = False
-                dispatch_attempted = False
-                try:
-                    dispatch_context = CommandDispatchContext(
-                        command_id=new_command_id(),
-                        based_on_revision=observation.world_revision,
-                    )
-                    token = ExecutionToken(
-                        plan_id="single-step",
-                        plan_version=1,
-                        step_id=step_id,
-                        command_id=dispatch_context.command_id,
-                        control_mode=self.control_mode,
-                        validated_revision=observation.world_revision,
-                        latest_observation=self.environment.input_boundary_observation,
-                        max_telemetry_age_seconds=(
-                            self.environment.input_boundary_max_telemetry_age_seconds()
-                        ),
-                        authority_validator=partial(
-                            self._action_authority_error,
-                            action,
-                        ),
-                    )
-                    dispatch_attempted = True
-                    transition = await self.environment.dispatch(
-                        action,
-                        command=dispatch_context,
-                        token=token,
-                    )
-                    receipt_command_id = transition.receipt.command_id
-                    if receipt_command_id not in {
-                        None,
-                        dispatch_context.command_id,
-                    }:
-                        guard_reservation_finalized = True
-                        self.guard.commit(guard_reservation)
-                        raise CommandCausalityError(
-                            "Environment acknowledgement command ID does not match "
-                            f"dispatched command {dispatch_context.command_id!r}."
-                        )
-                    transition = transition.model_copy(
-                        update={
-                            "receipt": transition.receipt.model_copy(
-                                update={
-                                    "command_id": dispatch_context.command_id,
-                                    "started_after_revision": (dispatch_context.based_on_revision),
-                                    "completed_at_revision": (
-                                        transition.observation.world_revision
-                                    ),
-                                    "causal_revision_advanced": (
-                                        transition.observation.world_revision.is_later_than(
-                                            dispatch_context.based_on_revision
-                                        )
-                                    ),
-                                }
-                            )
-                        }
-                    )
-                    definitely_rejected = (
-                        receipt_command_id == dispatch_context.command_id
-                        and not transition.receipt.accepted
-                        and not transition.receipt.executed
-                    )
-                    guard_reservation_finalized = True
-                    if definitely_rejected:
-                        self.guard.release(guard_reservation)
-                    else:
-                        self.guard.commit(guard_reservation)
-                    boundary = transition.receipt.input_boundary
-                    if boundary is not None:
-                        self.logger.write(
-                            (
-                                "input_boundary_rejected"
-                                if boundary.decision is InputBoundaryDecision.REJECTED
-                                else "input_boundary_revalidated"
-                            ),
-                            step_index=observation.step_index,
-                            payload=boundary,
-                        )
-                except Exception as exc:
-                    if not guard_reservation_finalized:
-                        guard_reservation_finalized = True
-                        if dispatch_attempted:
-                            # Once dispatch has begun, an exception cannot prove
-                            # that input was absent. Keep the authority spent.
-                            self.guard.commit(guard_reservation)
-                        else:
-                            self.guard.release(guard_reservation)
-                    self.logger.write(
-                        "environment_error",
-                        step_index=observation.step_index,
-                        payload={"type": type(exc).__name__, "message": str(exc)},
-                    )
-                    if self.reporter is not None:
-                        self.reporter.error(
-                            step_index=observation.step_index,
-                            label="ERROR",
-                            message=f"{type(exc).__name__}: {exc}",
-                        )
-                    stop_reason = f"Environment error: {type(exc).__name__}: {exc}"
-                    terminated = True
-                    break
-
-                steps_completed += 1
-                self.logger.write(
-                    "action_receipt",
-                    step_index=observation.step_index,
-                    payload=transition.receipt,
-                )
-                if self.reporter is not None:
-                    self.reporter.action_receipt(
-                        step_index=observation.step_index,
-                        receipt=transition.receipt,
-                    )
-                self._record_action_outcome(
-                    decision,
-                    transition.receipt,
+                (
                     observation,
-                    transition.observation,
-                    plan_id="single-step",
-                    plan_version=1,
-                    step_id=step_id,
-                    command_id=dispatch_context.command_id,
-                )
-                observation = self._with_memories(transition.observation)
-                # After the receipt, not before it: a single-step write used to
-                # be able to claim an outcome the receipt did not prove.
-                observation = self._apply_decision_sidecars(
+                    completed,
+                    terminated,
+                    success,
+                    stop_reason,
+                ) = await self._execute_continuous_decision(
                     decision,
                     observation,
+                    source=decision_source,
+                    planner_latency_seconds=planner_latency_seconds,
                     authored_context=authored_context,
-                    plan_id="single-step",
-                    step_id=step_id,
                 )
+                steps_completed += completed
+                observation = self._with_memories(observation)
                 self._log_observation(observation)
-
-                if transition.terminated:
-                    terminated = True
-                    success = transition.success
-                    if transition.events:
-                        stop_reason = transition.events[-1]
-                    else:
-                        stop_reason = (
-                            transition.receipt.message or "Environment terminated the episode."
-                        )
-                    break
-                if isinstance(action, StopAction):
-                    terminated = True
-                    stop_reason = action.reason
+                if terminated:
                     break
 
             finished = datetime.now(UTC)
@@ -763,6 +519,13 @@ class AgentRuntime:
             return summary
         finally:
             await self._finish_advisor_task()
+            if state_store is not None:
+                state_store.shutdown()
+                self.logger.write(
+                    "world_state_finished",
+                    payload=asdict(state_store.metrics),
+                )
+            self._state_store = None
             await self._close_environment()
 
     async def _run_continuous(
@@ -828,13 +591,9 @@ class AgentRuntime:
                     "seed": seed,
                     "control_mode": self.control_mode.value,
                     "planning_mode": self.planning_config.mode.value,
-                    "memory_retrieval_policy": (
-                        self.memory_retrieval_policy.value
-                    ),
+                    "memory_retrieval_policy": (self.memory_retrieval_policy.value),
                     "scenario": (
-                        self.scenario.model_dump(mode="json")
-                        if self.scenario is not None
-                        else None
+                        self.scenario.model_dump(mode="json") if self.scenario is not None else None
                     ),
                     "scenario_attestation": (
                         self.scenario_attestation.model_dump(mode="json")
@@ -1098,8 +857,7 @@ class AgentRuntime:
 
                 if isinstance(output, PlanPatch):
                     rejection_reason = (
-                        "Plan patch rejected: no matching active plan was available "
-                        "to revise."
+                        "Plan patch rejected: no matching active plan was available to revise."
                     )
                     planner_feedback = (
                         "Your previous PlanPatch could not be applied because there is "
@@ -1120,18 +878,13 @@ class AgentRuntime:
                     # answer: reject it, explain the correct output shape, and
                     # let the common replan limits bound recurrence.
                     consecutive_replans += 1
-                    if identical_failure_limit_reached(
-                        "plan_patch_without_active_plan"
-                    ):
+                    if identical_failure_limit_reached("plan_patch_without_active_plan"):
                         stop_reason = (
                             "Stopped after the same orphaned plan patch repeated "
                             f"{identical_replan_failures} times."
                         )
                         terminated = True
-                    elif (
-                        consecutive_replans
-                        > self.planning_config.max_consecutive_replans
-                    ):
+                    elif consecutive_replans > self.planning_config.max_consecutive_replans:
                         stop_reason = (
                             "Stopped: the planner produced "
                             f"{consecutive_replans} unusable plan patches in a row."
@@ -1151,9 +904,8 @@ class AgentRuntime:
                         "planner_latency_seconds": planner_latency_seconds,
                     },
                 )
-                if (
-                    observation.mode == "live"
-                    and not plan.based_on_revision.same_snapshot_as(observation.world_revision)
+                if observation.mode == "live" and not plan.based_on_revision.same_snapshot_as(
+                    observation.world_revision
                 ):
                     from .live_plan_policy import live_plan_rebase_errors
 
@@ -1284,9 +1036,7 @@ class AgentRuntime:
                     observation,
                     authored_context=authored_context,
                 )
-                observation = state_store.decorate_latest(
-                    self._with_memories(observation)
-                )
+                observation = state_store.decorate_latest(self._with_memories(observation))
                 plan_started_at = datetime.now(UTC)
                 self._plan_event(
                     "plan_accepted",
@@ -1311,6 +1061,7 @@ class AgentRuntime:
                     )
                 executor = ContinuousPlanExecutor(
                     environment=self.environment,
+                    operation_port=self.operation_port,
                     guard=self.guard,
                     reflexes=self.reflexes,
                     logger=self.logger,
@@ -1324,14 +1075,10 @@ class AgentRuntime:
                     read_memory=self._execute_memory_read,
                     read_fieldbook=self._execute_fieldbook_read,
                     report_action_started=(
-                        self.reporter.action_started
-                        if self.reporter is not None
-                        else None
+                        self.reporter.action_started if self.reporter is not None else None
                     ),
                     report_plan_failure=(
-                        self.reporter.plan_failure
-                        if self.reporter is not None
-                        else None
+                        self.reporter.plan_failure if self.reporter is not None else None
                     ),
                 )
                 result, preemption = await self._race_with_safety_supervisor(
@@ -1474,10 +1221,7 @@ class AgentRuntime:
         except Exception as exc:
             outcome = FinalSafeStateOutcome(
                 status=FinalSafeStateStatus.PAUSE_UNVERIFIED,
-                reason=(
-                    "Environment final-state cleanup failed "
-                    f"({type(exc).__name__}: {exc})."
-                ),
+                reason=(f"Environment final-state cleanup failed ({type(exc).__name__}: {exc})."),
             )
         self.final_safe_state = outcome
         if outcome is not None:
@@ -1661,8 +1405,7 @@ class AgentRuntime:
 
         if remaining_run_actions <= completed:
             stop_reason = (
-                "The automated safety pause was confirmed, but the run action "
-                "budget is exhausted."
+                "The automated safety pause was confirmed, but the run action budget is exhausted."
             )
             self._log_safety_terminal(
                 preemption,
@@ -1904,12 +1647,13 @@ class AgentRuntime:
             start_revision=observation.world_revision,
         )
         try:
-            transition = await self.environment.dispatch(
+            transition = await self.operation_port.pause(
                 PauseAction(paused=False),
                 command=CommandDispatchContext(
                     command_id=command.command_id,
                     based_on_revision=observation.world_revision,
                 ),
+                token=None,
             )
         except Exception as exc:
             state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
@@ -2110,12 +1854,13 @@ class AgentRuntime:
             },
         )
         try:
-            transition = await self.environment.dispatch(
+            transition = await self.operation_port.pause(
                 guarded_action,
                 command=CommandDispatchContext(
                     command_id=command.command_id,
                     based_on_revision=start_revision,
                 ),
+                token=None,
             )
         except Exception as exc:
             state_store.fail_active_command(f"{type(exc).__name__}: {exc}")
@@ -2290,103 +2035,128 @@ class AgentRuntime:
                 decision=decision,
                 latency_seconds=planner_latency_seconds,
             )
-        try:
-            guard_reservation = self.guard.reserve(
-                decision.action,
-                observation,
-            )
-            action = guard_reservation.action
-        except SafetyViolation as exc:
-            now = datetime.now(UTC)
-            rejected = ActionReceipt(
-                action=decision.action,
-                control_mode=self.control_mode,
-                accepted=False,
-                executed=False,
-                dry_run=True,
-                started_at=now,
-                finished_at=now,
-                primitive_actions=0,
-                message=str(exc),
-                error_type=type(exc).__name__,
-            )
-            self.logger.write(
-                "action_rejected",
-                step_index=observation.step_index,
-                payload=rejected,
-            )
-            self._record_decision_affordance_receipt(
-                decision,
-                observation,
-                status=AffordanceLifecycleStatus.REJECTED,
-                reason=str(exc),
-            )
-            return (
-                observation,
-                0,
-                True,
-                None,
-                f"Safety policy rejected action: {exc}",
-            )
-        try:
-            transition = await self.environment.step(action)
-        except Exception as exc:
-            # Delivery is ambiguous once the environment call has begun.
-            self.guard.commit(guard_reservation)
-            self.logger.write(
-                "environment_error",
-                step_index=observation.step_index,
-                payload={"type": type(exc).__name__, "message": str(exc)},
-            )
-            self._record_decision_affordance_receipt(
-                decision,
-                observation,
-                status=AffordanceLifecycleStatus.FAILED,
-                reason=f"Environment error: {type(exc).__name__}: {exc}",
-                execution_started=True,
-            )
-            return (
-                observation,
-                0,
-                True,
-                None,
-                f"Environment error: {type(exc).__name__}: {exc}",
-            )
-
-        if not transition.receipt.accepted and not transition.receipt.executed:
-            self.guard.release(guard_reservation)
-        else:
-            self.guard.commit(guard_reservation)
-        latest = self._record_transition(decision, observation, transition)
+        state_store = self._state_store
+        if state_store is None:
+            raise RuntimeError("Deterministic execution has no world-state owner.")
+        step_id = f"step-{observation.step_index}"
+        plan = PlanEnvelope(
+            schema_version="1.0",
+            plan_id=f"runtime-{observation.step_index}",
+            plan_version=1,
+            objective=decision.intent,
+            control_mode=observation.control_mode,
+            based_on_revision=observation.world_revision,
+            assumptions=[self._current_condition(observation)],
+            steps=[
+                PlanStep(
+                    step_id=step_id,
+                    action=decision.action,
+                    affordance=decision.affordance,
+                    preconditions=[self._current_condition(observation)],
+                    success_conditions=[],
+                    failure_conditions=[],
+                    timeout_seconds=30.0,
+                    retry_budget=0,
+                    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                )
+            ],
+            entry_step_id=step_id,
+            max_actions=1,
+            max_wall_seconds=60.0,
+            max_game_seconds=300.0,
+            risk_budget=RiskBudget(
+                max_pointer_actions=1,
+                max_purchase_actions=1,
+                max_native_assisted_actions=1,
+                max_spend=1_000_000,
+            ),
+        )
+        executor = self._new_plan_executor(
+            state_store,
+            planning_config=(
+                self.planning_config
+                if observation.telemetry is not None
+                and self.planning_config.mode is not PlanningMode.SINGLE_STEP
+                else self.planning_config.model_copy(
+                    update={"require_paused_between_actions": False}
+                )
+            ),
+        )
+        result = await executor.execute(
+            plan,
+            observation,
+            remaining_run_actions=1,
+        )
+        latest = result.observation
         latest = self._apply_decision_sidecars(
             decision,
             latest,
             authored_context=authored_context,
             plan_id="single-step",
-            step_id=f"step-{observation.step_index}",
+            step_id=step_id,
         )
-        if not transition.receipt.accepted and not transition.receipt.executed:
-            affordance_status = AffordanceLifecycleStatus.REJECTED
-        elif transition.success is False:
-            affordance_status = AffordanceLifecycleStatus.FAILED
-        else:
-            affordance_status = AffordanceLifecycleStatus.SUCCEEDED
-        self._record_decision_affordance_receipt(
-            decision,
+        latest = state_store.decorate_latest(latest)
+        return (
             latest,
-            status=affordance_status,
-            reason=transition.receipt.message or "Deterministic decision completed.",
-            execution_started=True,
+            result.actions_completed,
+            result.terminated or isinstance(decision.action, StopAction),
+            result.success,
+            result.reason,
         )
-        is_terminated = transition.terminated or isinstance(action, StopAction)
-        reason = (
-            transition.events[-1]
-            if transition.events
-            else action.reason
-            if isinstance(action, StopAction)
-            else transition.receipt.message or "Deterministic decision completed."
+
+    @staticmethod
+    def _current_condition(observation: Observation) -> Condition:
+        if observation.telemetry is None or observation.telemetry_age_seconds is None:
+            return Condition(
+                kind=ConditionKind.FIELD,
+                path="telemetry_stale",
+                operator=ConditionOperator.EQUALS,
+                expected=observation.telemetry_stale,
+                max_age_seconds=300.0,
+            )
+        return Condition(
+            kind=ConditionKind.TELEMETRY_FRESH,
+            operator=ConditionOperator.EQUALS,
+            expected=True,
+            max_age_seconds=300.0,
         )
-        return latest, 1, is_terminated, transition.success, reason
+
+    def _new_plan_executor(
+        self,
+        state_store: WorldStateStore,
+        *,
+        planning_config: PlanningConfig | None = None,
+    ) -> ContinuousPlanExecutor:
+        return ContinuousPlanExecutor(
+            environment=self.environment,
+            operation_port=self.operation_port,
+            guard=self.guard,
+            reflexes=self.reflexes,
+            logger=self.logger,
+            clock=self.planning_clock,
+            state_store=state_store,
+            observe_transition=self._observe_plan_transition,
+            planning_config=planning_config or self.planning_config,
+            consult_advisor=self._execute_advisor_action,
+            apply_patch_continuity=self._apply_patch_continuity,
+            read_memory=self._execute_memory_read,
+            read_fieldbook=self._execute_fieldbook_read,
+            report_action_started=(
+                self.reporter.action_started if self.reporter is not None else None
+            ),
+            report_plan_failure=(self.reporter.plan_failure if self.reporter is not None else None),
+        )
+
+    def _new_world_state_store(self) -> WorldStateStore:
+        return WorldStateStore(
+            history_limit=self.planning_config.state_history_limit,
+            delta_limit=self.planning_config.state_delta_limit,
+            event_limit=self.planning_config.event_journal_limit,
+            subscriber_queue_limit=self.planning_config.subscriber_queue_limit,
+            max_delta_paths=self.planning_config.max_delta_paths,
+            clock=self.planning_clock,
+            event_sink=self._log_world_event,
+        )
 
     def _record_decision_affordance_receipt(
         self,
@@ -2400,9 +2170,7 @@ class AgentRuntime:
         if decision.affordance is None:
             return
         telemetry_sequence = (
-            observation.telemetry.sequence
-            if observation.telemetry is not None
-            else None
+            observation.telemetry.sequence if observation.telemetry is not None else None
         )
         receipt = terminal_affordance_receipt(
             decision.affordance,
@@ -2412,8 +2180,7 @@ class AgentRuntime:
             execution_started=execution_started,
             monitoring_started=(
                 execution_started
-                and decision.affordance.execution
-                is not AffordanceExecution.IMMEDIATE
+                and decision.affordance.execution is not AffordanceExecution.IMMEDIATE
             ),
         )
         self.logger.write(
@@ -2433,8 +2200,8 @@ class AgentRuntime:
         step: PlanStep,
         before: Observation,
         transition: Transition,
-        command_id: str,
-        action_start_revision: WorldStateRevision,
+        command_id: str | None,
+        action_start_revision: WorldStateRevision | None,
     ) -> Observation:
         decision = _OutcomeIntent(
             intent=f"Execute plan {plan.plan_id} step {step.step_id}.",
@@ -2466,6 +2233,11 @@ class AgentRuntime:
         update: StoreUpdate | None = None
         if self._state_store is None:
             latest = candidate
+        elif (
+            self._state_store.latest is not None
+            and candidate.world_revision == self._state_store.latest.world_revision
+        ):
+            latest = self._state_store.latest
         else:
             try:
                 update = self._state_store.publish(candidate)
@@ -2685,15 +2457,9 @@ class AgentRuntime:
             "recent_action_outcomes": self._ledger.recent_action_outcomes,
             "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
             "recent_continuity_receipts": list(self._continuity_receipts),
-            "recent_fieldbook_receipts": list(
-                getattr(self, "_fieldbook_receipts", ())
-            ),
-            "continuity_writes_degraded_reason": (
-                self._continuity.writes_degraded_reason
-            ),
-            "continuity_reads_degraded_reason": (
-                self._continuity.reads_degraded_reason
-            ),
+            "recent_fieldbook_receipts": list(getattr(self, "_fieldbook_receipts", ())),
+            "continuity_writes_degraded_reason": (self._continuity.writes_degraded_reason),
+            "continuity_reads_degraded_reason": (self._continuity.reads_degraded_reason),
             "advisor": advisor_availability,
             "memory_search": self._pending_memory_search,
             "fieldbook_read": getattr(self, "_pending_fieldbook_read", None),
@@ -2709,12 +2475,8 @@ class AgentRuntime:
             )
             updates["memories"] = recalled.records
             updates["memory_recall"] = recalled.summary
-            updates["continuity_reads_degraded_reason"] = (
-                recalled.reads_degraded_reason
-            )
-            updates["continuity_writes_degraded_reason"] = (
-                recalled.writes_degraded_reason
-            )
+            updates["continuity_reads_degraded_reason"] = recalled.reads_degraded_reason
+            updates["continuity_writes_degraded_reason"] = recalled.writes_degraded_reason
             if recalled.failure is not None:
                 self.logger.write(
                     "continuity_store_failed",
@@ -2726,18 +2488,14 @@ class AgentRuntime:
                 )
             if self._continuity.reads_degraded_reason is None:
                 try:
-                    updates["fieldbook_projects"] = (
-                        self.memory.fieldbook.list_projects(
-                            limit=getattr(self, "fieldbook_project_limit", 8)
-                        )
+                    updates["fieldbook_projects"] = self.memory.fieldbook.list_projects(
+                        limit=getattr(self, "fieldbook_project_limit", 8)
                     )
                     updates["active_fieldbook_project"] = (
                         self.memory.fieldbook.active_project_summary()
                     )
                 except sqlite3.Error as exc:
-                    reason = self._continuity.quarantine_reads_after_store_failure(
-                        exc
-                    )
+                    reason = self._continuity.quarantine_reads_after_store_failure(exc)
                     updates["continuity_reads_degraded_reason"] = reason
                     updates["continuity_writes_degraded_reason"] = (
                         self._continuity.writes_degraded_reason
@@ -2784,8 +2542,7 @@ class AgentRuntime:
             evidence = AdvisorConsultEvidence(
                 status=AdvisorConsultStatus.PENDING,
                 reason=(
-                    "An advisor request is already pending; the duplicate request "
-                    "was not launched."
+                    "An advisor request is already pending; the duplicate request was not launched."
                 ),
                 calls_used=self.advisor.calls_used,
                 max_calls=self.advisor.config.max_calls_per_run,
@@ -3121,9 +2878,7 @@ class AgentRuntime:
         if not decision.continuity_operations:
             return
         if authored_context is None:
-            raise RuntimeError(
-                "Planner-authored continuity has no authored planner context."
-            )
+            raise RuntimeError("Planner-authored continuity has no authored planner context.")
         self._surface(
             self._continuity.apply(
                 decision.continuity_operations,
@@ -3148,12 +2903,10 @@ class AgentRuntime:
         """Commit planner sidecars after the action and expose them immediately."""
 
         if (
-            decision.continuity_operations
-            or decision.fieldbook_operations
+            decision.continuity_operations or decision.fieldbook_operations
         ) and authored_context is None:
             raise RuntimeError(
-                "Planner-authored durable operations have no authored "
-                "planner context."
+                "Planner-authored durable operations have no authored planner context."
             )
         self._apply_decision_continuity(
             decision,
@@ -3231,9 +2984,7 @@ class AgentRuntime:
         self,
         receipts: Sequence[FieldbookOperationReceipt],
     ) -> None:
-        self._fieldbook_receipts.extend(
-            receipt.digest() for receipt in receipts
-        )
+        self._fieldbook_receipts.extend(receipt.digest() for receipt in receipts)
 
     def _record_plan_outcome(
         self,
@@ -3478,9 +3229,7 @@ class AgentRuntime:
                 )
             except sqlite3.Error as exc:
                 status = FieldbookReadStatus.FAILED
-                reason = self._continuity.quarantine_reads_after_store_failure(
-                    exc
-                )
+                reason = self._continuity.quarantine_reads_after_store_failure(exc)
                 result = FieldbookReadResult(
                     project_id=action.project_id,
                     query=action.query,
@@ -3615,9 +3364,7 @@ class AgentRuntime:
             position_before=(selected_before.position if selected_before is not None else None),
             position_after=(selected_after.position if selected_after is not None else None),
             identity_session_id=(
-                after.telemetry.identity_session_id
-                if after.telemetry is not None
-                else None
+                after.telemetry.identity_session_id if after.telemetry is not None else None
             ),
             retry_state_fingerprint=retry_state_fingerprint(
                 receipt.action,
@@ -3658,11 +3405,7 @@ class AgentRuntime:
             )
 
         if isinstance(receipt.action, PurchaseItemAction):
-            purchase = (
-                receipt.semantic.purchase
-                if receipt.semantic is not None
-                else None
-            )
+            purchase = receipt.semantic.purchase if receipt.semantic is not None else None
             if purchase is None:
                 return (
                     ActionOutcomeAssessment.UNKNOWN,
@@ -3721,16 +3464,11 @@ class AgentRuntime:
                 )
             return (
                 ActionOutcomeAssessment.UNKNOWN,
-                "Sale delivery is ambiguous and must not be retried as a whole: "
-                f"{sale.reason}",
+                f"Sale delivery is ambiguous and must not be retried as a whole: {sale.reason}",
             )
 
         if isinstance(receipt.action, HarvestResourceAction):
-            harvest = (
-                receipt.semantic.resource_harvest
-                if receipt.semantic is not None
-                else None
-            )
+            harvest = receipt.semantic.resource_harvest if receipt.semantic is not None else None
             if harvest is None:
                 return (
                     ActionOutcomeAssessment.UNKNOWN,
@@ -3745,8 +3483,7 @@ class AgentRuntime:
                 )
             return (
                 ActionOutcomeAssessment.NO_OP,
-                f"Resource harvest ended as {harvest.status.value!r}: "
-                f"{harvest.reason}",
+                f"Resource harvest ended as {harvest.status.value!r}: {harvest.reason}",
             )
 
         if isinstance(receipt.action, RecoverCameraViewAction):

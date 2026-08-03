@@ -12,43 +12,47 @@ Internal-only definitions are controller phases or runtime operations;
 they still bind through this registry but are not planner-visible offers.
 
 ```text
-definitions             30
+definitions             34
 adapter operation kinds  27
 adapter routes           28
 adapters                 10
 ownership proof         PASS
 
 DEFINITIONS
-  activate_visible_control            legacy_mechanics.activate_visible_control               ActivateVisibleControlAction [visible_controls]
-  approach_dialogue_target            legacy_mechanics.approach_dialogue_target               ApproachDialogueTargetAction [dialogue_targets]
-  collect_resource_output             legacy_mechanics.collect_resource_output                CollectResourceOutputAction [internal-only]
-  command_world_target                legacy_mechanics.command_world_target                   CommandWorldTargetAction [context_orders]
+  activate_visible_control            screens.activate_visible_control                        ActivateVisibleControlAction [visible_controls]
+  approach_dialogue_target            dialogue.approach_dialogue_target                       ApproachDialogueTargetAction [dialogue_targets]
+  collect_resource_output             resources.collect_resource_output                       CollectResourceOutputAction [internal-only]
+  command_world_target                dialogue.command_world_target                           CommandWorldTargetAction [context_orders]
   consult_advisor                     cognition.advisor                                       ConsultAdvisorAction [runtime]
-  dismiss_screen                      legacy_mechanics.dismiss_screen                         DismissScreenAction [screens]
-  equip_item                          legacy_mechanics.equip_item                             EquipItemAction [inventory]
-  exit_current_building               legacy_mechanics.exit_current_building                  ExitCurrentBuildingAction [native_and_composite]
-  harvest_resource                    legacy_mechanics.harvest_resource                       HarvestResourceAction [native_and_composite]
-  move_in_direction                   legacy_mechanics.move_in_direction                      MoveInDirectionAction [native_and_composite]
-  move_to_character                   legacy_mechanics.move_to_character                      MoveToCharacterAction [characters]
+  dismiss_screen                      screens.dismiss_screen                                  DismissScreenAction [screens]
+  equip_item                          inventory.equip_item                                    EquipItemAction [inventory]
+  exit_current_building               movement.exit_current_building                          ExitCurrentBuildingAction [native_and_composite]
+  harvest_resource                    resources.harvest_resource                              HarvestResourceAction [native_and_composite]
+  move_in_direction                   movement.move_in_direction                              MoveInDirectionAction [native_and_composite]
+  move_to_character                   movement.move_to_character                              MoveToCharacterAction [characters]
   noop                                runtime.noop                                            NoopAction [runtime]
-  open_context_inventory              legacy_mechanics.open_context_inventory                 OpenContextInventoryAction [internal-only]
-  open_screen                         legacy_mechanics.open_screen                            OpenScreenAction [screens]
-  perform_context_action              legacy_mechanics.perform_context_action                 PerformContextAction [context_orders]
-  produce_resource_output             legacy_mechanics.produce_resource_output                ProduceResourceOutputAction [internal-only]
-  purchase_item                       legacy_mechanics.purchase_item                          PurchaseItemAction [inventory]
+  open_context_inventory              resources.open_context_inventory                        OpenContextInventoryAction [internal-only]
+  open_screen                         screens.open_screen                                     OpenScreenAction [screens]
+  pause                               runtime.pause                                           PauseAction [internal-only]
+  perform_context_action              resources.perform_context_action                        PerformContextAction [context_orders]
+  produce_resource_output             resources.produce_resource_output                       ProduceResourceOutputAction [internal-only]
+  purchase_item                       trade.purchase_item                                     PurchaseItemAction [inventory]
   read_fieldbook                      cognition.fieldbook                                     ReadFieldbookAction [runtime]
   recall_memory                       cognition.memory                                        RecallMemoryAction [runtime]
-  recover_camera_view                 legacy_mechanics.recover_camera_view                    RecoverCameraViewAction [native_and_composite]
-  regroup_with_squad_member           legacy_mechanics.regroup_with_squad_member              RegroupWithSquadMemberAction [characters]
-  respond_to_immediate_threat         legacy_mechanics.respond_to_immediate_threat            RespondToImmediateThreatAction [characters]
-  rotate_camera                       legacy_mechanics.rotate_camera                          RotateCameraAction [native_and_composite]
-  scroll_screen                       legacy_mechanics.scroll_screen                          ScrollScreenAction [native_and_composite]
-  select_squad_member                 legacy_mechanics.select_squad_member                    SelectSquadMemberAction [characters]
-  select_squad_member_exact           legacy_mechanics.select_squad_member_exact              SelectSquadMemberExactAction [characters]
-  sell_item                           legacy_mechanics.sell_item                              SellItemAction [inventory]
+  recover_camera_view                 camera.recover_camera_view                              RecoverCameraViewAction [native_and_composite]
+  regroup_with_squad_member           movement.regroup_with_squad_member                      RegroupWithSquadMemberAction [characters]
+  respond_to_immediate_threat         movement.respond_to_immediate_threat                    RespondToImmediateThreatAction [characters]
+  rotate_camera                       camera.rotate_camera                                    RotateCameraAction [native_and_composite]
+  scroll_screen                       screens.scroll_screen                                   ScrollScreenAction [native_and_composite]
+  select_squad_member                 movement.select_squad_member                            SelectSquadMemberAction [characters]
+  select_squad_member_exact           movement.select_squad_member_exact                      SelectSquadMemberExactAction [characters]
+  sell_item                           trade.sell_item                                         SellItemAction [inventory]
+  set_speed                           runtime.set_speed                                       SetSpeedAction [internal-only]
+  skill                               movement.skill                                          SkillAction [internal-only]
   stop                                runtime.stop                                            StopAction [runtime]
-  travel_to_map_destination           legacy_mechanics.travel_to_map_destination              TravelToMapDestinationAction [map]
-  use_game_binding                    legacy_mechanics.use_game_binding                       UseGameBindingAction [characters, game_bindings]
+  travel_to_map_destination           movement.travel_to_map_destination                      TravelToMapDestinationAction [map]
+  use_game_binding                    screens.use_game_binding                                UseGameBindingAction [characters, game_bindings]
+  wait                                runtime.wait                                            WaitAction [internal-only]
 
 SOURCE-SPECIFIC COMPLETENESS BOUNDARIES
   runtime: Only choices applicable to the current run state.

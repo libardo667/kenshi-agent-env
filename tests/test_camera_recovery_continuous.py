@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from operation_test_support import operation_port
 
 from kenshi_agent.config import PlanningConfig, SafetyConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
@@ -544,6 +545,7 @@ def test_continuous_executor_uses_controller_verdict_without_postconditions(
 
         executor = ContinuousPlanExecutor(
             environment=environment,
+            operation_port=operation_port(environment),
             guard=ActionGuard(
                 SafetyConfig(
                     allow_action_kinds=["recover_camera_view"],

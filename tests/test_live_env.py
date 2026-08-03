@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from operation_test_support import execute_operation
 
 from kenshi_agent.config import CaptureConfig, ControlsConfig, MacroConfig, RuntimeConfig
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.env.live import LiveEnvironment
+from kenshi_agent.execution.handlers import kenshi_surface
 from kenshi_agent.models import (
     ActionReceipt,
     ActivateVisibleControlAction,
@@ -338,7 +340,7 @@ def test_semantic_hotkey_binding_dispatches_one_hotkey(tmp_path: Path) -> None:
             expected_effect="toggle the in-game editor",
         )
 
-        receipt = await environment._execute_game_binding(  # noqa: SLF001
+        receipt = await environment.operation_mechanics._execute_game_binding(  # noqa: SLF001
             action,
             datetime.now(UTC),
         )
@@ -367,14 +369,12 @@ def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> No
             expected_effect="highlight world items while the binding is held",
         )
 
-        receipt = await environment._execute_game_binding(  # noqa: SLF001
+        receipt = await environment.operation_mechanics._execute_game_binding(  # noqa: SLF001
             action,
             datetime.now(UTC),
         )
 
-        assert controller.actions == [
-            MouseButtonAction(button=MouseButton.X2, hold_seconds=0.25)
-        ]
+        assert controller.actions == [MouseButtonAction(button=MouseButton.X2, hold_seconds=0.25)]
         assert receipt.action == action
         assert receipt.semantic is not None
         assert receipt.semantic.resolved_label == "highlight"
@@ -416,7 +416,7 @@ def test_quicksave_waits_for_an_exact_quiescent_save_tree(tmp_path: Path) -> Non
             expected_effect="write the current game to the quicksave slot",
         )
 
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert controller.actions == [KeyAction(key="f5")]
         assert transition.receipt.semantic is not None
@@ -453,7 +453,7 @@ def test_quicksave_does_not_promote_an_input_receipt_to_completion(
             expected_effect="write the current game to the quicksave slot",
         )
 
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.executed
         assert transition.receipt.semantic is not None
@@ -473,7 +473,7 @@ def test_semantic_camera_rotation_dispatches_one_bounded_middle_drag(
         environment, _, controller = native_vendor_environment(tmp_path)
         action = RotateCameraAction(direction=CameraRotationDirection.RIGHT)
 
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert controller.actions == [
             MouseDragAction(
@@ -635,7 +635,7 @@ def test_movement_pulse_unpauses_and_guarantees_repause(tmp_path: Path) -> None:
         environment = live_environment(tmp_path, telemetry, controller, movement_registry())
 
         initial = await environment.reset()
-        transition = await environment.step(movement_action())
+        transition = await execute_operation(environment, movement_action())
 
         assert initial.objective == "Explore nearby."
         assert initial.available_skills == ["move_visible_terrain"]
@@ -673,7 +673,7 @@ def test_pointer_skill_rejects_mismatched_calibrated_client_before_input(
 
         await environment.reset()
         with pytest.raises(RuntimeError, match=r"1280x720.*1920x1080"):
-            await environment.step(movement_action())
+            await execute_operation(environment, movement_action())
 
         assert controller.actions == []
         assert telemetry.paused is True
@@ -701,7 +701,7 @@ def test_pointer_skill_rechecks_calibrated_client_inside_input_lease(
 
         await environment.reset()
         with pytest.raises(RuntimeError, match=r"1280x720.*1920x1080"):
-            await environment.step(movement_action())
+            await execute_operation(environment, movement_action())
 
         assert controller.actions == []
         assert telemetry.paused is True
@@ -748,7 +748,7 @@ def test_movement_pulse_can_use_click_based_pause_skill(tmp_path: Path) -> None:
         )
 
         await environment.reset()
-        transition = await environment.step(movement_action())
+        transition = await execute_operation(environment, movement_action())
 
         assert telemetry.paused is True
         assert [action.kind for action in controller.actions] == ["click", "click", "click"]
@@ -772,10 +772,10 @@ def test_separate_transport_controls_are_state_specific(tmp_path: Path) -> None:
         )
 
         await environment.reset()
-        await environment.step(PauseAction(paused=False))
-        await environment.step(PauseAction(paused=False))
-        await environment.step(PauseAction(paused=True))
-        await environment.step(PauseAction(paused=True))
+        await execute_operation(environment, PauseAction(paused=False))
+        await execute_operation(environment, PauseAction(paused=False))
+        await execute_operation(environment, PauseAction(paused=True))
+        await execute_operation(environment, PauseAction(paused=True))
 
         clicks = [action for action in controller.actions if isinstance(action, ClickAction)]
         assert [(action.x, action.y) for action in clicks] == [(0.792, 0.723), (0.765, 0.723)]
@@ -806,13 +806,11 @@ def test_set_speed_owns_starting_a_paused_world(
         )
 
         await environment.reset()
-        transition = await environment.step(SetSpeedAction(speed=speed))
+        transition = await execute_operation(environment, SetSpeedAction(speed=speed))
 
         expected_keys = ["f2"] if speed == 1 else ["f2", target_key]
         assert [
-            action.key
-            for action in controller.actions
-            if isinstance(action, KeyAction)
+            action.key for action in controller.actions if isinstance(action, KeyAction)
         ] == expected_keys
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == multiplier
@@ -839,13 +837,12 @@ def test_set_speed_reissues_an_idempotent_gear_after_a_dropped_key(
         )
 
         await environment.reset()
-        transition = await environment.step(SetSpeedAction(speed=1))
+        transition = await execute_operation(environment, SetSpeedAction(speed=1))
 
-        assert [
-            action.key
-            for action in controller.actions
-            if isinstance(action, KeyAction)
-        ] == ["f2", "f2"]
+        assert [action.key for action in controller.actions if isinstance(action, KeyAction)] == [
+            "f2",
+            "f2",
+        ]
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 1.0
         assert transition.receipt.primitive_actions == 2
@@ -871,12 +868,10 @@ def test_engage_threat_intent_owns_normal_speed_playback(tmp_path: Path) -> None
             actor_id="entity-bark",
             strategy=ThreatResponseStrategy.ENGAGE,
         )
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert [
-            primitive.key
-            for primitive in controller.actions
-            if isinstance(primitive, KeyAction)
+            primitive.key for primitive in controller.actions if isinstance(primitive, KeyAction)
         ] == ["f2"]
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 1.0
@@ -899,7 +894,7 @@ def test_model_can_choose_bounded_movement_duration(tmp_path: Path) -> None:
         )
         await environment.reset()
 
-        transition = await environment.step(movement_action(duration_seconds=0.02))
+        transition = await execute_operation(environment, movement_action(duration_seconds=0.02))
 
         assert telemetry.paused is True
         assert "Advanced Kenshi for 0.02s" in transition.receipt.message
@@ -919,7 +914,7 @@ def test_movement_pulse_preserves_unexpected_game_auto_pause(tmp_path: Path) -> 
         )
         await environment.reset()
 
-        transition = await environment.step(movement_action())
+        transition = await execute_operation(environment, movement_action())
 
         assert telemetry.paused is True
         assert [action.kind for action in controller.actions] == ["click", "key"]
@@ -941,7 +936,7 @@ def test_emergency_stop_ends_pulse_after_repausing(tmp_path: Path) -> None:
         await environment.reset()
 
         with pytest.raises(RuntimeError, match="after re-pausing"):
-            await environment.step(movement_action())
+            await execute_operation(environment, movement_action())
 
         assert telemetry.paused is True
         assert [action.kind for action in controller.actions][-2:] == ["key", "key"]
@@ -961,7 +956,7 @@ def test_user_input_ends_pulse_after_repausing(tmp_path: Path) -> None:
         )
         await environment.reset()
 
-        transition = await environment.step(movement_action())
+        transition = await execute_operation(environment, movement_action())
 
         assert telemetry.paused is True
         assert [action.kind for action in controller.actions][-2:] == ["key", "key"]
@@ -1019,7 +1014,7 @@ def test_interface_only_environment_hides_and_rejects_native_assisted_skill(
         assert not observation.telemetry.native_control.available
         assert observation.telemetry.native_control.last_command is None
         with pytest.raises(RuntimeError, match="requires native_assisted"):
-            await environment.step(SkillAction(name="approach_confirmed_vendor"))
+            await execute_operation(environment, SkillAction(name="approach_confirmed_vendor"))
 
         native_environment = LiveEnvironment(
             run_id="native-control-mode-test",
@@ -1043,8 +1038,8 @@ def test_interface_only_environment_hides_and_rejects_native_assisted_skill(
         assert native_observation.telemetry is not None
         assert "control.approach_vendor" in native_observation.telemetry.capabilities
         assert native_observation.telemetry.native_control.available
-        native_transition = await native_environment.step(
-            SkillAction(name="approach_confirmed_vendor")
+        native_transition = await execute_operation(
+            native_environment, SkillAction(name="approach_confirmed_vendor")
         )
         assert native_transition.receipt.control_mode == ControlMode.NATIVE_ASSISTED
         assert native_transition.receipt.dry_run
@@ -1098,9 +1093,7 @@ class NativePulseTelemetry(PulseTelemetry):
                 ui=UIState(
                     selected_character_id=self.selected_character_id,
                     selected_character_ids=self.selected_character_ids,
-                    active_screen=(
-                        "dialogue" if self.dialogue_target_id is not None else "world"
-                    ),
+                    active_screen=("dialogue" if self.dialogue_target_id is not None else "world"),
                     modal_open=self.dialogue_target_id is not None,
                     dialogue_open=self.dialogue_target_id is not None,
                     dialogue_target_id=self.dialogue_target_id,
@@ -1231,14 +1224,10 @@ class ResourceTransferPulseTelemetry(PulseTelemetry):
                 game=GameState(loaded=True, paused=True),
                 active_shop_trader_count=self.loaded_shop_trader_count,
                 ui=UIState(
-                    active_screen=(
-                        "trade" if self.player_inventory_open else "inventory"
-                    ),
+                    active_screen=("trade" if self.player_inventory_open else "inventory"),
                     modal_open=True,
                     dialogue_open=False,
-                    open_inventory_windows=(
-                        2 if self.player_inventory_open else 1
-                    ),
+                    open_inventory_windows=(2 if self.player_inventory_open else 1),
                     context_inventory_target_id="entity-copper",
                     visible_controls_complete=True,
                     selected_character_id="entity-selected",
@@ -1515,7 +1504,8 @@ def test_world_target_command_rebinds_geometry_inside_input_lease(
             context_action=ContextActionKind.OPERATE,
         )
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             action,
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
@@ -1562,7 +1552,8 @@ def test_squad_member_selection_rebinds_geometry_inside_input_lease(
             max_y=0.94,
         )
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             SelectSquadMemberAction(target_id="entity-ruka"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "e" * 32,
@@ -1609,7 +1600,8 @@ def test_squad_member_selection_uses_exact_native_identity_without_pointer_input
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             SelectSquadMemberExactAction(target_id="entity-ruka"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
@@ -1652,7 +1644,8 @@ def test_exact_native_selection_collapses_a_current_squad_group(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             SelectSquadMemberExactAction(target_id="entity-ruka"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "a" * 32,
@@ -1684,7 +1677,8 @@ def test_native_character_movement_carries_the_complete_selected_group(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             MoveToCharacterAction(target_id="entity-vendor"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "b" * 32,
@@ -1714,7 +1708,8 @@ def test_world_target_command_emits_nothing_when_geometry_disappears(
         telemetry.world_target_screen_position = None
 
         with pytest.raises(RuntimeError, match="no current on-screen command geometry"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 CommandWorldTargetAction(
                     target_id="entity-copper",
                     context_action=ContextActionKind.OPERATE,
@@ -1741,7 +1736,8 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
             based_on_revision=initial.world_revision,
         )
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             native_vendor_action(),
             command=command,
         )
@@ -1750,9 +1746,8 @@ def test_native_vendor_request_precedes_hotkey_and_matching_later_ack(
         assert controller.request is not None
         assert controller.request.command_id == command.command_id
         assert controller.request.based_on_revision.telemetry_sequence is not None
-        assert (
-            controller.request.based_on_revision.telemetry_sequence
-            >= (initial.world_revision.telemetry_sequence or 0)
+        assert controller.request.based_on_revision.telemetry_sequence >= (
+            initial.world_revision.telemetry_sequence or 0
         )
         assert controller.request.selected_character_ids == ["entity-selected"]
         assert controller.request.target_id == "entity-vendor"
@@ -1784,14 +1779,13 @@ def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
             based_on_revision=initial.world_revision.model_copy(
                 update={
                     "frame_sequence": 7,
-                    "observed_at_monotonic": (
-                        initial.world_revision.observed_at_monotonic + 1.0
-                    ),
+                    "observed_at_monotonic": (initial.world_revision.observed_at_monotonic + 1.0),
                 }
             ),
         )
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             native_vendor_action(),
             command=command,
         )
@@ -1799,9 +1793,8 @@ def test_native_vendor_dispatch_accepts_same_telemetry_without_capture_basis(
         assert transition.receipt.executed
         assert controller.request is not None
         assert controller.request.based_on_revision.telemetry_sequence is not None
-        assert (
-            controller.request.based_on_revision.telemetry_sequence
-            >= (command.based_on_revision.telemetry_sequence or 0)
+        assert controller.request.based_on_revision.telemetry_sequence >= (
+            command.based_on_revision.telemetry_sequence or 0
         )
 
     asyncio.run(scenario())
@@ -1822,7 +1815,8 @@ def test_native_vendor_dispatch_rebases_an_older_authorized_revision(
         sequence = initial.world_revision.telemetry_sequence
         assert sequence is not None
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             native_vendor_action(),
             command=CommandDispatchContext(
                 command_id="cmd-0123456789abcdef0123456789abcdef",
@@ -1853,7 +1847,8 @@ def test_native_vendor_dispatch_rejects_a_basis_ahead_of_telemetry(
         assert sequence is not None
 
         with pytest.raises(RuntimeError, match="regressed behind the authorized revision"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 native_vendor_action(),
                 command=CommandDispatchContext(
                     command_id="cmd-0123456789abcdef0123456789abcdef",
@@ -1878,15 +1873,14 @@ def test_old_native_ack_cannot_satisfy_new_command(
             acknowledgement_command_id=("cmd-ffffffffffffffffffffffffffffffff"),
         )
         monkeypatch.setattr(
-            environment,
-            "_NATIVE_COMMAND_ACK_TIMEOUT_SECONDS",
-            0.03,
+            kenshi_surface, "NATIVE_COMMAND_ACK_TIMEOUT_SECONDS", 0.03
         )
-        monkeypatch.setattr(environment, "_NATIVE_COMMAND_POLL_SECONDS", 0.005)
+        monkeypatch.setattr(kenshi_surface, "NATIVE_COMMAND_POLL_SECONDS", 0.005)
         initial = await environment.reset()
 
         with pytest.raises(RuntimeError, match="never confirmed"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 native_vendor_action(),
                 command=CommandDispatchContext(
                     command_id="cmd-0123456789abcdef0123456789abcdef",
@@ -1914,7 +1908,8 @@ def test_definitive_native_rejection_does_not_start_movement(
             based_on_revision=initial.world_revision,
         )
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             native_vendor_action(),
             command=command,
         )
@@ -1941,7 +1936,8 @@ def test_native_target_must_still_match_current_stable_observation(
         initial = await environment.reset()
 
         with pytest.raises(RuntimeError, match="absent from current nearby"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 native_vendor_action("entity-replaced"),
                 command=CommandDispatchContext(
                     command_id="cmd-0123456789abcdef0123456789abcdef",
@@ -2001,9 +1997,9 @@ def control(label: str, y: float, role: str = "button") -> VisibleUIControl:
     )
 
 
-def control_environment(tmp_path: Path, telemetry: ControlTelemetry) -> tuple[
-    LiveEnvironment, PulseController
-]:
+def control_environment(
+    tmp_path: Path, telemetry: ControlTelemetry
+) -> tuple[LiveEnvironment, PulseController]:
     controller = PulseController(telemetry)  # type: ignore[arg-type]
     environment = live_environment(
         tmp_path,
@@ -2020,8 +2016,9 @@ def test_visible_control_clicks_the_observed_bounds_center(tmp_path: Path) -> No
         environment, controller = control_environment(tmp_path, telemetry)
         await environment.observe()
 
-        transition = await environment.step(
-            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
+        transition = await execute_operation(
+            environment,
+            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
         )
 
         clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
@@ -2049,14 +2046,15 @@ def test_two_different_labels_use_the_same_action(tmp_path: Path) -> None:
         environment, controller = control_environment(tmp_path, telemetry)
         await environment.observe()
 
-        await environment.step(
-            ActivateVisibleControlAction(exact_label="Goodbye.", role="button")
+        await execute_operation(
+            environment, ActivateVisibleControlAction(exact_label="Goodbye.", role="button")
         )
         clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
         assert clicks[-1].y == pytest.approx(0.72)
 
-        await environment.step(
-            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
+        await execute_operation(
+            environment,
+            ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
         )
         clicks = [a for a in controller.actions if isinstance(a, ClickAction)]
         assert clicks[-1].y == pytest.approx(0.52)
@@ -2074,10 +2072,9 @@ def test_control_that_disappears_inside_the_lease_emits_zero_input(
         await environment.observe()
 
         with pytest.raises(RuntimeError, match="No input was sent"):
-            await environment.step(
-                ActivateVisibleControlAction(
-                    exact_label="Show me your goods.", role="button"
-                )
+            await execute_operation(
+                environment,
+                ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
             )
 
         assert not [a for a in controller.actions if isinstance(a, ClickAction)]
@@ -2095,8 +2092,8 @@ def test_control_that_becomes_ambiguous_inside_the_lease_emits_zero_input(
         await environment.observe()
 
         with pytest.raises(RuntimeError, match="ambiguous"):
-            await environment.step(
-                ActivateVisibleControlAction(exact_label="Trade", role="button")
+            await execute_operation(
+                environment, ActivateVisibleControlAction(exact_label="Trade", role="button")
             )
 
         assert not [a for a in controller.actions if isinstance(a, ClickAction)]
@@ -2120,15 +2117,13 @@ def test_visible_control_is_semantic_current_not_profile_calibrated(
         )
         await environment.observe()
 
-        action = ActivateVisibleControlAction(
-            exact_label="Show me your goods.", role="button"
-        )
+        action = ActivateVisibleControlAction(exact_label="Show me your goods.", role="button")
         assert (
-            environment.classify_pointer_action(action)
+            environment.control_surface.classify_pointer_action(action)
             is PointerActionClass.SEMANTIC_CURRENT
         )
 
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
         assert transition.receipt.executed
         assert transition.receipt.calibration is not None
         assert transition.receipt.calibration.status is CalibrationStatus.NOT_REQUIRED
@@ -2178,7 +2173,8 @@ def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ApproachDialogueTargetAction(target_id="entity-vendor"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "c" * 32,
@@ -2214,7 +2210,8 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ApproachDialogueTargetAction(target_id="entity-vendor"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "d" * 32,
@@ -2252,7 +2249,8 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             PerformContextAction(
                 target_id="entity-copper",
                 context_action=ContextActionKind.OPERATE,
@@ -2263,16 +2261,10 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
             ),
         )
 
-        assert not [
-            action for action in controller.actions if isinstance(action, ClickAction)
-        ]
-        assert len(
-            [
-                action
-                for action in controller.actions
-                if isinstance(action, HotkeyAction)
-            ]
-        ) == 1
+        assert not [action for action in controller.actions if isinstance(action, ClickAction)]
+        assert (
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+        )
         assert controller.request is not None
         assert controller.request.command == "perform_context_action"
         assert controller.request.context_action == "operate"
@@ -2300,7 +2292,8 @@ def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> 
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             PerformContextAction(
                 target_id="entity-ruka",
                 context_action=ContextActionKind("first_aid"),
@@ -2311,12 +2304,10 @@ def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> 
             ),
         )
 
-        assert not [
-            action for action in controller.actions if isinstance(action, ClickAction)
-        ]
-        assert len(
-            [action for action in controller.actions if isinstance(action, HotkeyAction)]
-        ) == 1
+        assert not [action for action in controller.actions if isinstance(action, ClickAction)]
+        assert (
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+        )
         assert controller.request is not None
         assert controller.request.command == "perform_context_action"
         assert controller.request.context_action == "first_aid"
@@ -2342,7 +2333,8 @@ def test_resource_production_issues_exact_monitored_native_command(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ProduceResourceOutputAction(target_id="entity-copper"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "3" * 32,
@@ -2350,12 +2342,10 @@ def test_resource_production_issues_exact_monitored_native_command(
             ),
         )
 
-        assert not [
-            action for action in controller.actions if isinstance(action, ClickAction)
-        ]
-        assert len(
-            [action for action in controller.actions if isinstance(action, HotkeyAction)]
-        ) == 1
+        assert not [action for action in controller.actions if isinstance(action, ClickAction)]
+        assert (
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+        )
         assert controller.request is not None
         assert controller.request.command == "produce_resource_output"
         assert controller.request.target_id == "entity-copper"
@@ -2381,7 +2371,8 @@ def test_context_inventory_requires_exact_native_terminal(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             OpenContextInventoryAction(target_id="entity-copper"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "4" * 32,
@@ -2389,9 +2380,9 @@ def test_context_inventory_requires_exact_native_terminal(
             ),
         )
 
-        assert len(
-            [action for action in controller.actions if isinstance(action, HotkeyAction)]
-        ) == 1
+        assert (
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+        )
         assert controller.request is not None
         assert controller.request.command == "open_context_inventory"
         assert controller.request.target_id == "entity-copper"
@@ -2431,7 +2422,8 @@ def test_collect_resource_output_requires_conserved_transfer(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             CollectResourceOutputAction(
                 target_id="entity-copper",
                 cell_label="Raw Iron 0",
@@ -2445,16 +2437,11 @@ def test_collect_resource_output_requires_conserved_transfer(
             ),
         )
 
-        assert [
-            action.kind for action in controller.actions
-        ] == ["move_cursor", "click"]
+        assert [action.kind for action in controller.actions] == ["move_cursor", "click"]
         evidence = transition.receipt.semantic
         assert evidence is not None
         assert evidence.resource_transfer is not None
-        assert (
-            evidence.resource_transfer.status
-            is ResourceTransferStatus.TRANSFERRED
-        )
+        assert evidence.resource_transfer.status is ResourceTransferStatus.TRANSFERRED
         assert evidence.resource_transfer.source_quantity_before == 2
         assert evidence.resource_transfer.source_quantity_after == 0
         assert evidence.resource_transfer.destination_quantity_before == 0
@@ -2493,7 +2480,8 @@ def test_collect_resource_output_emits_zero_input_without_destination_window(
         initial = await environment.reset()
 
         with pytest.raises(RuntimeError, match="selected character.*inventory"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 CollectResourceOutputAction(
                     target_id="entity-copper",
                     cell_label="Raw Iron 0",
@@ -2541,7 +2529,8 @@ def test_collect_resource_output_emits_zero_input_when_destination_rejects_item(
         initial = await environment.reset()
 
         with pytest.raises(RuntimeError, match="does not explicitly accept"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 CollectResourceOutputAction(
                     target_id="entity-copper",
                     cell_label="Raw Iron 0",
@@ -2578,7 +2567,8 @@ def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
         telemetry.target_visible = True
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ApproachDialogueTargetAction(target_id="entity-vendor"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "e" * 32,
@@ -2586,12 +2576,8 @@ def test_visible_nearby_dialogue_target_still_uses_native_talk_order(
             ),
         )
 
-        assert not [
-            action for action in controller.actions if isinstance(action, ClickAction)
-        ]
-        hotkeys = [
-            action for action in controller.actions if isinstance(action, HotkeyAction)
-        ]
+        assert not [action for action in controller.actions if isinstance(action, ClickAction)]
+        hotkeys = [action for action in controller.actions if isinstance(action, HotkeyAction)]
         assert len(hotkeys) == 1
         assert controller.request is not None
         assert controller.request.command == "approach_confirmed_vendor"
@@ -2620,7 +2606,8 @@ def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ApproachDialogueTargetAction(target_id="entity-vendor"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "f" * 32,
@@ -2630,11 +2617,7 @@ def test_paused_native_talk_stops_before_movement_pulse_when_dialogue_opens(
 
         assert telemetry.paused is True
         assert telemetry.dialogue_target_id == "entity-vendor"
-        assert not [
-            action
-            for action in controller.actions
-            if isinstance(action, PauseAction)
-        ]
+        assert not [action for action in controller.actions if isinstance(action, PauseAction)]
         assert "no movement pulse or pause toggle" in transition.receipt.message
 
     asyncio.run(scenario())
@@ -2658,7 +2641,8 @@ def test_direction_request_is_targetless_and_revalidates_its_own_capabilities(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             MoveInDirectionAction(
                 bearing_degrees=90.0,
                 distance_units=250.0,
@@ -2713,7 +2697,8 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             TravelToMapDestinationAction(
                 destination_id="entity-known-town",
             ),
@@ -2729,9 +2714,7 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert controller.request.target_id == "entity-known-town"
         assert telemetry.paused is False
         assert telemetry.speed_multiplier == 5.0
-        assert [
-            action.kind for action in controller.actions
-        ] == ["hotkey", "key", "key"]
+        assert [action.kind for action in controller.actions] == ["hotkey", "key", "key"]
 
     asyncio.run(scenario())
 
@@ -2765,7 +2748,8 @@ def test_map_travel_carries_the_complete_selected_squad_basis(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             TravelToMapDestinationAction(destination_id="entity-known-town"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "c" * 32,
@@ -2805,7 +2789,8 @@ def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             RegroupWithSquadMemberAction(
                 actor_id="entity-selected",
                 target_id="entity-ruka",
@@ -2874,13 +2859,14 @@ def test_map_arrival_terminal_wins_race_with_running_confirmation(
             return telemetry.paused is expected
 
         monkeypatch.setattr(
-            environment,
-            "_wait_for_pause_state",
+            environment.control_surface,
+            "wait_for_pause_state",
             immediate_pause_check,
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             TravelToMapDestinationAction(destination_id="entity-known-town"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "a" * 32,
@@ -2920,7 +2906,8 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ExitCurrentBuildingAction(),
             command=CommandDispatchContext(
                 command_id="cmd-" + "d" * 32,
@@ -2938,7 +2925,8 @@ def test_building_exit_request_is_parameterless_and_requires_current_indoor_stat
         telemetry.indoors = False
         later = await environment.observe_without_capture()
         with pytest.raises(RuntimeError, match="confirmed indoors"):
-            await environment.dispatch(
+            await execute_operation(
+                environment,
                 ExitCurrentBuildingAction(),
                 command=CommandDispatchContext(
                     command_id="cmd-" + "c" * 32,
@@ -2969,7 +2957,8 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
         )
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ExitCurrentBuildingAction(),
             command=CommandDispatchContext(
                 command_id="cmd-" + "b" * 32,
@@ -2986,6 +2975,7 @@ def test_continuous_native_movement_starts_a_paused_world_without_repausing(
 
 def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(tmp_path)
@@ -3027,10 +3017,11 @@ def test_continuous_native_handoff_uses_idempotent_speed_key_not_pointer_unpause
                 "unpause_skill": "unpause_game",
             }
         )
-        environment._NATIVE_DIALOGUE_SETTLE_SECONDS = 0.0
+        monkeypatch.setattr(kenshi_surface, "NATIVE_DIALOGUE_SETTLE_SECONDS", 0.0)
         initial = await environment.reset()
 
-        transition = await environment.dispatch(
+        transition = await execute_operation(
+            environment,
             ApproachDialogueTargetAction(target_id="entity-vendor"),
             command=CommandDispatchContext(
                 command_id="cmd-" + "9" * 32,
@@ -3085,7 +3076,8 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
         )
         initial = await environment.reset()
 
-        await environment.dispatch(
+        await execute_operation(
+            environment,
             MoveInDirectionAction(
                 bearing_degrees=90.0,
                 distance_units=250.0,
@@ -3099,8 +3091,8 @@ def test_direction_does_not_adopt_an_active_order_for_another_vector(
 
         assert controller.request is not None
         assert controller.request.command_id == "cmd-" + "f" * 32
-        assert len(
-            [action for action in controller.actions if isinstance(action, HotkeyAction)]
-        ) == 1
+        assert (
+            len([action for action in controller.actions if isinstance(action, HotkeyAction)]) == 1
+        )
 
     asyncio.run(scenario())

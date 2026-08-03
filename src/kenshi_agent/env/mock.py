@@ -6,6 +6,7 @@ import random
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -21,6 +22,7 @@ from ..models import (
     CameraRecoveryStatus,
     CameraState,
     CharacterState,
+    CommandDispatchContext,
     ControlMode,
     Disposition,
     GameState,
@@ -33,7 +35,6 @@ from ..models import (
     SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
-    StopAction,
     TelemetrySnapshot,
     Transition,
     UIState,
@@ -50,6 +51,9 @@ from ..operation_definitions import (
     definition_for,
 )
 from .base import AgentEnvironment
+
+if TYPE_CHECKING:
+    from ..input_boundary import ExecutionToken
 
 
 @dataclass(slots=True)
@@ -70,6 +74,218 @@ class MockWorld:
     distance_to_hostile: float | None = None
     treated_injuries: int = 0
     travel_progress: float = 0.0
+
+
+class MockOperationPort:
+    """Exact operation surface for the deterministic mock adapter."""
+
+    def __init__(self, environment: MockEnvironment) -> None:
+        self._environment = environment
+
+    async def pause(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        typed = cast(PauseAction, action)
+        self._environment.world.paused = typed.paused
+        return await self._finish(
+            typed,
+            command,
+            message=f"Mock game paused={typed.paused}.",
+        )
+
+    async def set_speed(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        typed = cast(SetSpeedAction, action)
+        self._environment.world.paused = False
+        self._environment.world.speed = GAME_SPEED_MULTIPLIER_BY_GEAR[typed.speed]
+        return await self._finish(
+            typed,
+            command,
+            message=(
+                f"Mock playback started at speed gear {typed.speed} "
+                f"({self._environment.world.speed:g}x)."
+            ),
+        )
+
+    async def wait(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        typed = cast(WaitAction, action)
+        await asyncio.sleep(0)
+        self._environment._advance_time(
+            typed.seconds * self._environment.config.minutes_per_wait_second
+        )
+        return await self._finish(
+            typed,
+            command,
+            message=f"Advanced mock time by {typed.seconds:.2f} minutes.",
+        )
+
+    async def skill(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        typed = cast(SkillAction, action)
+        return await self._finish(
+            typed,
+            command,
+            message=self._environment._apply_skill(typed),
+        )
+
+    async def approach_dialogue_target(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        return await self._semantic(action, command=command, token=token)
+
+    async def activate_visible_control(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        return await self._semantic(action, command=command, token=token)
+
+    async def recover_camera_view(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        return await self._semantic(action, command=command, token=token)
+
+    async def _semantic(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        typed = cast(
+            ApproachDialogueTargetAction
+            | ActivateVisibleControlAction
+            | RecoverCameraViewAction,
+            action,
+        )
+        message, semantic = self._environment._apply_semantic_action(typed)
+        return await self._finish(
+            typed,
+            command,
+            message=message,
+            primitive_actions=0 if isinstance(typed, RecoverCameraViewAction) else 1,
+            semantic=semantic,
+        )
+
+    async def _record(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: ExecutionToken | None,
+    ) -> Transition:
+        del token
+        return await self._finish(
+            action,
+            command,
+            message=f"Recorded UI primitive {action.kind}; mock world state did not change.",
+        )
+
+    async def _finish(
+        self,
+        action: Action,
+        command: CommandDispatchContext,
+        *,
+        message: str,
+        primitive_actions: int = 1,
+        semantic: SemanticActionReceipt | None = None,
+    ) -> Transition:
+        started = datetime.now(UTC)
+        environment = self._environment
+        environment._step_index += 1
+        terminated = False
+        success: bool | None = None
+        if not environment.world.alive:
+            terminated = True
+            success = False
+            environment._events.append("The mock character died.")
+        elif environment.world.elapsed_minutes >= 1440:
+            terminated = True
+            success = True
+            environment._events.append("The mock character survived one in-game day.")
+        observation = await environment.observe()
+        receipt = ActionReceipt(
+            action=action,
+            control_mode=environment.control_mode,
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            primitive_actions=primitive_actions,
+            message=message,
+            semantic=semantic,
+            command_id=command.command_id,
+            started_after_revision=command.based_on_revision,
+            completed_at_revision=observation.world_revision,
+            causal_revision_advanced=observation.world_revision.is_later_than(
+                command.based_on_revision
+            ),
+        )
+        return Transition(
+            receipt=receipt,
+            observation=observation,
+            terminated=terminated,
+            success=success,
+            events=observation.events,
+        )
+
+    collect_resource_output = _record
+    command_world_target = _record
+    dismiss_screen = _record
+    equip_item = _record
+    exit_current_building = _record
+    move_in_direction = _record
+    move_to_character = _record
+    open_context_inventory = _record
+    open_screen = _record
+    perform_context_action = _record
+    produce_resource_output = _record
+    purchase_item = _record
+    regroup_with_squad_member = _record
+    respond_to_immediate_threat = _record
+    rotate_camera = _record
+    scroll_screen = _record
+    select_squad_member = _record
+    select_squad_member_exact = _record
+    sell_item = _record
+    travel_to_map_destination = _record
+    use_game_binding = _record
 
 
 class MockEnvironment(AgentEnvironment):
@@ -94,6 +310,11 @@ class MockEnvironment(AgentEnvironment):
         self._events: list[str] = []
         self._last_observation: Observation | None = None
         self.world = self._new_world()
+        self._mechanics = MockOperationPort(self)
+
+    @property
+    def operation_mechanics(self) -> MockOperationPort:
+        return self._mechanics
 
     def _new_world(self) -> MockWorld:
         return MockWorld(
@@ -293,86 +514,10 @@ class MockEnvironment(AgentEnvironment):
         self._last_observation = observation
         return observation
 
-    async def step(self, action: Action) -> Transition:
-        started = datetime.now(UTC)
-        terminated = False
-        success: bool | None = None
-        message = ""
-        primitive_actions = 1
-        semantic: SemanticActionReceipt | None = None
-
-        if isinstance(action, StopAction):
-            terminated = True
-            success = self.world.alive and self.world.elapsed_minutes >= 1440
-            message = action.reason
-        elif isinstance(action, PauseAction):
-            self.world.paused = action.paused
-            message = f"Mock game paused={action.paused}."
-        elif isinstance(action, SetSpeedAction):
-            self.world.paused = False
-            self.world.speed = GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed]
-            message = (
-                f"Mock playback started at speed gear {action.speed} "
-                f"({self.world.speed:g}x)."
-            )
-        elif isinstance(action, WaitAction):
-            await asyncio.sleep(0)
-            self._advance_time(action.seconds * self.config.minutes_per_wait_second)
-            message = f"Advanced mock time by {action.seconds:.2f} minutes."
-        elif isinstance(action, SkillAction):
-            message = self._apply_skill(action)
-        elif isinstance(
-            action,
-            (
-                ApproachDialogueTargetAction,
-                ActivateVisibleControlAction,
-                RecoverCameraViewAction,
-            ),
-        ):
-            message, semantic = self._apply_semantic_action(action)
-            if isinstance(action, RecoverCameraViewAction):
-                primitive_actions = 0
-        else:
-            message = f"Recorded UI primitive {action.kind}; mock world state did not change."
-
-        self._step_index += 1
-        if not self.world.alive:
-            terminated = True
-            success = False
-            self._events.append("The mock character died.")
-        elif self.world.elapsed_minutes >= 1440:
-            terminated = True
-            success = True
-            self._events.append("The mock character survived one in-game day.")
-
-        observation = await self.observe()
-        finished = datetime.now(UTC)
-        receipt = ActionReceipt(
-            action=action,
-            control_mode=self.control_mode,
-            accepted=True,
-            executed=True,
-            dry_run=False,
-            started_at=started,
-            finished_at=finished,
-            primitive_actions=primitive_actions,
-            message=message,
-            semantic=semantic,
-        )
-        return Transition(
-            receipt=receipt,
-            observation=observation,
-            terminated=terminated,
-            success=success,
-            events=observation.events,
-        )
-
     def _apply_semantic_action(
         self,
         action: (
-            ApproachDialogueTargetAction
-            | ActivateVisibleControlAction
-            | RecoverCameraViewAction
+            ApproachDialogueTargetAction | ActivateVisibleControlAction | RecoverCameraViewAction
         ),
     ) -> tuple[str, SemanticActionReceipt | None]:
         """Bind a semantic action against mock state and record what it resolved to.

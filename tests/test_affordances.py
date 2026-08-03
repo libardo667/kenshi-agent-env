@@ -15,6 +15,7 @@ from kenshi_agent.affordances import (
     bind_affordance,
     bound_affordance,
     offered_affordances,
+    rebind_affordance_operation,
     selection_for,
     terminal_affordance_receipt,
 )
@@ -988,6 +989,35 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
     assert bound.based_on_revision == observation.world_revision
     assert bound.operation.kind == "approach_dialogue_target"
     assert bound.operation.target_id == target.id
+    assert (
+        rebind_affordance_operation(
+            bound.operation,
+            bound.affordance,
+            observation,
+        )
+        == bound
+    )
+
+    assert observation.telemetry is not None
+    later_revision = observation.world_revision.model_copy(
+        update={"telemetry_sequence": observation.telemetry.sequence + 1}
+    )
+    later_current = observation.model_copy(
+        update={
+            "world_revision": later_revision,
+            "telemetry": observation.telemetry.model_copy(
+                update={"sequence": observation.telemetry.sequence + 1}
+            ),
+        }
+    )
+    rebound = rebind_affordance_operation(
+        bound.operation,
+        bound.affordance,
+        later_current,
+    )
+    assert rebound.affordance == bound.affordance
+    assert rebound.based_on_revision == later_revision
+    assert rebound.binding.source_revision == later_revision
 
     with pytest.raises(ValueError, match="target does not match"):
         bind_affordance(

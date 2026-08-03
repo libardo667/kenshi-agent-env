@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from operation_test_support import execute_operation, operation_port
 
 from kenshi_agent.config import (
     CaptureConfig,
@@ -114,9 +115,9 @@ class SaleTelemetry:
         ]
 
     def _own_cells(self) -> list[VisibleUIControl]:
-        quantities = [self.carried] if self.stacked and self.carried else [
-            1 for _ in range(self.carried)
-        ]
+        quantities = (
+            [self.carried] if self.stacked and self.carried else [1 for _ in range(self.carried)]
+        )
         return [
             VisibleUIControl(
                 label="Dried Meat",
@@ -362,22 +363,13 @@ def test_sale_terminal_status_matches_every_bounded_quantity_pair() -> None:
         for sold_quantity in range(0, 6):
             for status in SaleStatus:
                 valid = sold_quantity <= requested_quantity and (
-                    (
-                        status is SaleStatus.OUTCOME_UNKNOWN
-                        and sold_quantity < requested_quantity
-                    )
-                    or (
-                        status is SaleStatus.SOLD
-                        and sold_quantity == requested_quantity
-                    )
+                    (status is SaleStatus.OUTCOME_UNKNOWN and sold_quantity < requested_quantity)
+                    or (status is SaleStatus.SOLD and sold_quantity == requested_quantity)
                     or (
                         status is SaleStatus.PARTIALLY_SOLD
                         and 0 < sold_quantity < requested_quantity
                     )
-                    or (
-                        status is SaleStatus.NOT_SOLD
-                        and sold_quantity == 0
-                    )
+                    or (status is SaleStatus.NOT_SOLD and sold_quantity == 0)
                 )
                 arguments = {
                     "status": status,
@@ -418,7 +410,7 @@ def test_one_sale_intent_transfers_its_bounded_quantity(
             stacked=stacked,
         )
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.sale
@@ -432,14 +424,16 @@ def test_one_sale_intent_transfers_its_bounded_quantity(
         assert evidence.inventory_quantity_after == 0
         assert transition.receipt.primitive_actions == 6
         assert telemetry.carried == 0
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 3
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 3
+        )
 
     asyncio.run(scenario())
 
@@ -455,7 +449,7 @@ def test_sale_conservation_follows_the_open_inventory_owner_in_a_group(
         )
         await environment.reset()
 
-        transition = await environment.step(_sale(quantity=1))
+        transition = await execute_operation(environment, _sale(quantity=1))
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.sale
@@ -519,6 +513,7 @@ def test_continuous_executor_completes_only_the_full_sale_terminal(
 
         executor = ContinuousPlanExecutor(
             environment=environment,
+            operation_port=operation_port(environment),
             guard=ActionGuard(
                 SafetyConfig(
                     allow_action_kinds=["sell_item"],
@@ -548,9 +543,9 @@ def test_continuous_executor_completes_only_the_full_sale_terminal(
 
         assert result.actions_completed == 1
         assert result.completed is expected_completed
-        assert expected_status in (
-            tmp_path / f"{expected_status}.jsonl"
-        ).read_text(encoding="utf-8")
+        assert expected_status in (tmp_path / f"{expected_status}.jsonl").read_text(
+            encoding="utf-8"
+        )
         if expected_completed:
             assert result.reason == "Plan completed."
         else:
@@ -569,7 +564,7 @@ def test_inventory_exhaustion_returns_partial_without_an_unbound_click(
             carried=2,
         )
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.sale
@@ -579,14 +574,16 @@ def test_inventory_exhaustion_returns_partial_without_an_unbound_click(
         assert evidence.sold_quantity == 2
         assert evidence.inventory_quantity_after == 0
         assert telemetry.carried == 0
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 2
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 2
+        )
 
     asyncio.run(scenario())
 
@@ -603,7 +600,7 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
         )
         environment._SALE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.sale
@@ -614,14 +611,16 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
         assert evidence.money_after == 1050
         assert evidence.inventory_quantity_before == 3
         assert evidence.inventory_quantity_after == 3
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 1
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 1
+        )
 
     asyncio.run(scenario())
 
@@ -638,7 +637,7 @@ def test_reverse_money_and_inventory_changes_are_unknown_not_a_noop(
         )
         environment._SALE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.sale
@@ -647,13 +646,15 @@ def test_reverse_money_and_inventory_changes_are_unknown_not_a_noop(
         assert evidence.sold_quantity == 0
         assert evidence.money_after == 950
         assert evidence.inventory_quantity_after == 4
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 1
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 1
+        )
 
     asyncio.run(scenario())

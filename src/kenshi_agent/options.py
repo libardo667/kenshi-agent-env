@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import TypeAlias, TypeGuard
+from functools import partial
+from typing import Any, TypeAlias, TypeGuard
 
 from .approach import ApproachMonitor, ApproachStatus
-from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
 from .models import (
     Action,
@@ -18,7 +19,6 @@ from .models import (
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     Observation,
-    PauseAction,
     PerformContextAction,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
@@ -48,6 +48,7 @@ NativeMovementAction: TypeAlias = (
     | PerformContextAction
     | ProduceResourceOutputAction
 )
+TransitionOperation: TypeAlias = Callable[..., Coroutine[Any, Any, Transition]]
 
 
 class OptionLifecycleError(RuntimeError):
@@ -79,12 +80,12 @@ class StatefulMovementOption:
         *,
         option_id: str,
         action: SkillAction,
-        environment: AgentEnvironment,
+        operation: TransitionOperation,
         require_paused_start: bool = True,
     ) -> None:
         self.option_id = option_id
         self.action = action.model_copy(deep=True)
-        self.environment = environment
+        self.operation = operation
         # Same reason the approach option carries this: an agent playing
         # continuously moves from a running world, and an unconditional demand
         # for a paused start means the move can never begin.
@@ -122,11 +123,7 @@ class StatefulMovementOption:
             raise OptionLifecycleError("Movement option must be prepared before start.")
         self.status = OptionStatus.RUNNING
         self.reason = "Movement action is running through the environment."
-        work = (
-            self.environment.dispatch(self.action, command=command, token=token)
-            if command is not None
-            else self.environment.step(self.action)
-        )
+        work = self.operation(command=command, token=token)
         self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
         return self.task
 
@@ -208,11 +205,17 @@ class StatefulThreatResponseOption:
         *,
         option_id: str,
         action: RespondToImmediateThreatAction,
-        environment: AgentEnvironment,
+        operation: TransitionOperation,
+        pause_operation: TransitionOperation,
+        withdrawal_operation: TransitionOperation | None = None,
     ) -> None:
         self.option_id = option_id
         self.action = action.model_copy(deep=True)
-        self.environment = environment
+        self.operation = operation
+        self.withdrawal_operation = withdrawal_operation
+        self.pause_operation = pause_operation
+        self.command: CommandDispatchContext | None = None
+        self.token: ExecutionToken | None = None
         self.status = OptionStatus.CREATED
         self.start_observation: Observation | None = None
         self.latest_observation: Observation | None = None
@@ -224,9 +227,7 @@ class StatefulThreatResponseOption:
 
     def prepare(self, observation: Observation) -> OptionPoll:
         if self.status is not OptionStatus.CREATED:
-            raise OptionLifecycleError(
-                "Threat-response option can only be prepared once."
-            )
+            raise OptionLifecycleError("Threat-response option can only be prepared once.")
         if reason := threat_response_authority_error(self.action, observation):
             raise OptionLifecycleError(reason)
         self.start_observation = observation.model_copy(deep=True)
@@ -237,17 +238,19 @@ class StatefulThreatResponseOption:
                 raise OptionLifecycleError(
                     "Withdrawal geometry could not be derived from current positions."
                 )
+            if self.withdrawal_operation is None:
+                raise OptionLifecycleError(
+                    "Withdrawal has no exact native movement operation."
+                )
             self.movement_option = StatefulNativeMovementOption(
                 option_id=f"{self.option_id}-withdrawal",
                 action=movement,
-                environment=self.environment,
+                operation=partial(self.withdrawal_operation, movement),
                 require_paused_start=True,
             )
             self.movement_option.prepare(observation)
         self.status = OptionStatus.PREPARED
-        self.reason = (
-            f"Paused immediate threat is grounded for {self.action.strategy.value}."
-        )
+        self.reason = f"Paused immediate threat is grounded for {self.action.strategy.value}."
         return self._poll_result()
 
     def start(
@@ -257,25 +260,19 @@ class StatefulThreatResponseOption:
         token: ExecutionToken | None = None,
     ) -> asyncio.Task[Transition]:
         if self.status is not OptionStatus.PREPARED:
-            raise OptionLifecycleError(
-                "Threat-response option must be prepared before start."
-            )
+            raise OptionLifecycleError("Threat-response option must be prepared before start.")
         if command is None:
-            raise OptionLifecycleError(
-                "Threat-response option requires a keyed command context."
-            )
+            raise OptionLifecycleError("Threat-response option requires a keyed command context.")
         self.status = OptionStatus.RUNNING
+        self.command = command.model_copy(deep=True)
+        self.token = token
         if self.movement_option is not None:
-            self.reason = (
-                "Runtime issued a grounded withdrawal away from the nearest hostile."
-            )
+            self.reason = "Runtime issued a grounded withdrawal away from the nearest hostile."
             self.task = self.movement_option.start(command, token=token)
         else:
-            self.reason = (
-                "Runtime is establishing normal-speed playback for the chosen engagement."
-            )
+            self.reason = "Runtime is establishing normal-speed playback for the chosen engagement."
             self.task = asyncio.create_task(
-                self.environment.dispatch(self.action, command=command, token=token),
+                self.operation(command=command, token=token),
                 name=f"kenshi-agent-{self.option_id}",
             )
         return self.task
@@ -311,13 +308,8 @@ class StatefulThreatResponseOption:
                 if self.transition is None:
                     self.transition = task.result()
                     if update is None:
-                        self.latest_observation = self.transition.observation.model_copy(
-                            deep=True
-                        )
-                    if (
-                        not self.transition.receipt.accepted
-                        or not self.transition.receipt.executed
-                    ):
+                        self.latest_observation = self.transition.observation.model_copy(deep=True)
+                    if not self.transition.receipt.accepted or not self.transition.receipt.executed:
                         self.status = OptionStatus.FAILED
                         self.reason = (
                             "Threat-response playback was not executed: "
@@ -333,23 +325,16 @@ class StatefulThreatResponseOption:
         if reason := threat_response_health_error(latest):
             self.status = OptionStatus.FAILED
             self.reason = (
-                "Threat response reached its deterministic disengagement boundary: "
-                f"{reason}"
+                f"Threat response reached its deterministic disengagement boundary: {reason}"
             )
         elif threat_response_terminal_reached(self.action, latest):
             self.status = OptionStatus.SUCCEEDED
-            self.reason = (
-                "The immediate hostile and selected actor's combat state are clear."
-            )
+            self.reason = "The immediate hostile and selected actor's combat state are clear."
         elif movement_status is OptionStatus.SUCCEEDED:
             self.status = OptionStatus.FAILED
-            self.reason = (
-                "The bounded withdrawal finished, but the immediate threat remains."
-            )
+            self.reason = "The bounded withdrawal finished, but the immediate threat remains."
         else:
-            self.reason = (
-                f"The chosen {self.action.strategy.value} response remains in progress."
-            )
+            self.reason = f"The chosen {self.action.strategy.value} response remains in progress."
         return self._poll_result()
 
     async def finish(self) -> OptionPoll:
@@ -359,13 +344,18 @@ class StatefulThreatResponseOption:
             return self._poll_result()
         self._finished = True
         try:
-            pause_transition = await self.environment.step(PauseAction(paused=True))
+            if self.pause_operation is not None:
+                pause_transition = await self.pause_operation(
+                    command=self.command,
+                    token=self.token,
+                )
+            elif self.start_observation is not None:
+                raise RuntimeError("Threat response has no terminal pause operation.")
+            else:
+                raise RuntimeError("Threat response has no start observation.")
         except Exception as exc:
             self.status = OptionStatus.FAILED
-            self.reason = (
-                "Threat-response terminal pause failed: "
-                f"{type(exc).__name__}: {exc}"
-            )
+            self.reason = f"Threat-response terminal pause failed: {type(exc).__name__}: {exc}"
             return self._poll_result()
 
         paused = pause_transition.observation.telemetry
@@ -377,9 +367,7 @@ class StatefulThreatResponseOption:
             or paused.game.paused is not True
         ):
             self.status = OptionStatus.FAILED
-            self.reason = (
-                "Threat-response cleanup did not confirm a fresh terminal pause."
-            )
+            self.reason = "Threat-response cleanup did not confirm a fresh terminal pause."
             return self._poll_result()
 
         primary = self.transition
@@ -428,11 +416,15 @@ class StatefulThreatResponseOption:
         return self._poll_result()
 
     async def cancel(self, reason: str) -> OptionPoll:
-        if self.status in {
-            OptionStatus.SUCCEEDED,
-            OptionStatus.FAILED,
-            OptionStatus.CANCELLED,
-        } and self._finished:
+        if (
+            self.status
+            in {
+                OptionStatus.SUCCEEDED,
+                OptionStatus.FAILED,
+                OptionStatus.CANCELLED,
+            }
+            and self._finished
+        ):
             return self._poll_result()
         if self.movement_option is not None:
             await self.movement_option.cancel(reason)
@@ -448,8 +440,7 @@ class StatefulThreatResponseOption:
                 except Exception as exc:
                     self.status = OptionStatus.FAILED
                     self.reason = (
-                        "Threat-response cancellation failed: "
-                        f"{type(exc).__name__}: {exc}"
+                        f"Threat-response cancellation failed: {type(exc).__name__}: {exc}"
                     )
                     return await self.finish()
         self.status = OptionStatus.CANCELLED
@@ -504,12 +495,12 @@ class StatefulNativeMovementOption:
         *,
         option_id: str,
         action: NativeMovementAction,
-        environment: AgentEnvironment,
+        operation: TransitionOperation,
         require_paused_start: bool = True,
     ) -> None:
         self.option_id = option_id
         self.action = action.model_copy(deep=True)
-        self.environment = environment
+        self.operation = operation
         self.require_paused_start = require_paused_start
         self.status = OptionStatus.CREATED
         self.start_observation: Observation | None = None
@@ -566,9 +557,7 @@ class StatefulNativeMovementOption:
             or "game.pause" not in telemetry.capabilities
             or self._required_capability not in telemetry.capabilities
         ):
-            raise OptionLifecycleError(
-                "Native movement option requires a capable start state."
-            )
+            raise OptionLifecycleError("Native movement option requires a capable start state.")
         if self.require_paused_start and telemetry.game.paused is not True:
             raise OptionLifecycleError(
                 "Native movement option requires a capable, confirmed paused start state."
@@ -594,14 +583,11 @@ class StatefulNativeMovementOption:
         self.selected_character_ids = list(selected_ids)
         if isinstance(self.action, MoveToCharacterAction):
             character_targets = [
-                entity
-                for entity in telemetry.nearby_entities
-                if entity.id == self.action.target_id
+                entity for entity in telemetry.nearby_entities if entity.id == self.action.target_id
             ]
             if len(character_targets) != 1:
                 raise OptionLifecycleError(
-                    "Character-movement option requires one exact currently "
-                    "nearby target."
+                    "Character-movement option requires one exact currently nearby target."
                 )
         if isinstance(self.action, RegroupWithSquadMemberAction):
             actors = [
@@ -610,9 +596,7 @@ class StatefulNativeMovementOption:
                 if member.id == self.action.actor_id and member.selected
             ]
             squad_targets = [
-                member
-                for member in telemetry.squad
-                if member.id == self.action.target_id
+                member for member in telemetry.squad if member.id == self.action.target_id
             ]
             if (
                 len(actors) != 1
@@ -632,17 +616,13 @@ class StatefulNativeMovementOption:
             ]
             if len(destinations) != 1:
                 raise OptionLifecycleError(
-                    "Map-travel option requires one exact currently known "
-                    "destination."
+                    "Map-travel option requires one exact currently known destination."
                 )
         if isinstance(self.action, ExitCurrentBuildingAction):
-            selected = [
-                character for character in telemetry.squad if character.selected
-            ]
+            selected = [character for character in telemetry.squad if character.selected]
             if len(selected) != 1 or selected[0].indoors is not True:
                 raise OptionLifecycleError(
-                    "Building-exit option requires one selected character "
-                    "confirmed indoors."
+                    "Building-exit option requires one selected character confirmed indoors."
                 )
         if isinstance(
             self.action,
@@ -665,8 +645,7 @@ class StatefulNativeMovementOption:
             ]
             if len(context_targets) != 1:
                 raise OptionLifecycleError(
-                    "Context-action option requires one exact currently actionable "
-                    "world target."
+                    "Context-action option requires one exact currently actionable world target."
                 )
         active_id = telemetry.native_control.active_command_id
         active = (
@@ -681,9 +660,7 @@ class StatefulNativeMovementOption:
         ):
             self.native_command_id = active.command_id
         self.status = OptionStatus.PREPARED
-        self.reason = (
-            "Native movement start state is capable and the selection is exact."
-        )
+        self.reason = "Native movement start state is capable and the selection is exact."
         return self._poll_result()
 
     def start(
@@ -693,13 +670,9 @@ class StatefulNativeMovementOption:
         token: ExecutionToken | None = None,
     ) -> asyncio.Task[Transition]:
         if self.status is not OptionStatus.PREPARED:
-            raise OptionLifecycleError(
-                "Native movement option must be prepared before start."
-            )
+            raise OptionLifecycleError("Native movement option must be prepared before start.")
         if command is None:
-            raise OptionLifecycleError(
-                "Native movement option requires a keyed command context."
-            )
+            raise OptionLifecycleError("Native movement option requires a keyed command context.")
         self.command = command.model_copy(deep=True)
         if self.native_command_id is None:
             self.native_command_id = command.command_id
@@ -711,35 +684,30 @@ class StatefulNativeMovementOption:
             )
         elif isinstance(self.action, PerformContextAction):
             self.reason = (
-                "Contextual task dispatched; awaiting native proof of the exact "
-                "task and target."
+                "Contextual task dispatched; awaiting native proof of the exact task and target."
             )
         elif isinstance(self.action, ExitCurrentBuildingAction):
             self.reason = (
-                "Building-exit order dispatched; awaiting its terminal native "
-                "acknowledgement."
+                "Building-exit order dispatched; awaiting its terminal native acknowledgement."
             )
         elif isinstance(self.action, TravelToMapDestinationAction):
             self.reason = (
-                "Map-travel order dispatched; awaiting arrival at the exact "
-                "known destination."
+                "Map-travel order dispatched; awaiting arrival at the exact known destination."
             )
         elif isinstance(self.action, MoveToCharacterAction):
             self.reason = (
-                "Exact-character walk dispatched; awaiting its keyed native "
-                "arrival terminal."
+                "Exact-character walk dispatched; awaiting its keyed native arrival terminal."
             )
         elif isinstance(self.action, RegroupWithSquadMemberAction):
             self.reason = (
-                "Squad-regroup order dispatched; awaiting the exact squadmate "
-                "arrival terminal."
+                "Squad-regroup order dispatched; awaiting the exact squadmate arrival terminal."
             )
         else:
             self.reason = (
                 "Directional movement order dispatched; awaiting its terminal "
                 "native acknowledgement."
             )
-        work = self.environment.dispatch(self.action, command=command, token=token)
+        work = self.operation(command=command, token=token)
         self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
         return self.task
 
@@ -758,9 +726,7 @@ class StatefulNativeMovementOption:
             error = task.exception()
             if error is not None:
                 self.status = OptionStatus.FAILED
-                self.reason = (
-                    f"Native movement dispatch failed: {type(error).__name__}: {error}"
-                )
+                self.reason = f"Native movement dispatch failed: {type(error).__name__}: {error}"
                 return self._poll_result()
             if self.transition is None:
                 self.transition = task.result()
@@ -768,22 +734,15 @@ class StatefulNativeMovementOption:
                 # the observation bundled with the quick dispatch receipt. Do
                 # not roll the monitor backward to that older acceptance.
                 if update is None:
-                    self.latest_observation = self.transition.observation.model_copy(
-                        deep=True
-                    )
-                if (
-                    not self.transition.receipt.accepted
-                    and not self.transition.receipt.executed
-                ):
+                    self.latest_observation = self.transition.observation.model_copy(deep=True)
+                if not self.transition.receipt.accepted and not self.transition.receipt.executed:
                     self.status = OptionStatus.FAILED
                     self.reason = (
                         "Native movement order was rejected without execution: "
                         f"{self.transition.receipt.message}"
                     )
                     return self._poll_result()
-                receipt_acknowledgement = (
-                    self.transition.receipt.native_acknowledgement
-                )
+                receipt_acknowledgement = self.transition.receipt.native_acknowledgement
                 if (
                     receipt_acknowledgement is not None
                     and receipt_acknowledgement.status
@@ -800,10 +759,7 @@ class StatefulNativeMovementOption:
 
         acknowledgement = self._current_acknowledgement()
         if acknowledgement is None:
-            self.reason = (
-                "Native movement was dispatched; awaiting a matching "
-                "acknowledgement."
-            )
+            self.reason = "Native movement was dispatched; awaiting a matching acknowledgement."
             return self._poll_result()
         if not self._matches(acknowledgement):
             self.status = OptionStatus.FAILED
@@ -850,8 +806,7 @@ class StatefulNativeMovementOption:
             else:
                 self.status = OptionStatus.SUCCEEDED
                 self.reason = (
-                    "Kenshi completed the exact native movement order: "
-                    f"{acknowledgement.reason}."
+                    f"Kenshi completed the exact native movement order: {acknowledgement.reason}."
                 )
         else:
             self.status = OptionStatus.FAILED
@@ -878,8 +833,7 @@ class StatefulNativeMovementOption:
             except Exception as exc:
                 self.status = OptionStatus.FAILED
                 self.reason = (
-                    "Native movement cancellation cleanup failed: "
-                    f"{type(exc).__name__}: {exc}"
+                    f"Native movement cancellation cleanup failed: {type(exc).__name__}: {exc}"
                 )
                 return self._poll_result()
         self.status = OptionStatus.CANCELLED
@@ -906,10 +860,8 @@ class StatefulNativeMovementOption:
             return None
         observation = self.latest_observation
         if observation is not None and observation.telemetry is not None:
-            acknowledgement = (
-                observation.telemetry.native_control.acknowledgement_for(
-                    self.native_command_id
-                )
+            acknowledgement = observation.telemetry.native_control.acknowledgement_for(
+                self.native_command_id
             )
             if acknowledgement is not None:
                 return acknowledgement
@@ -931,12 +883,9 @@ class StatefulNativeMovementOption:
     ) -> bool:
         if acknowledgement.command != self._wire_command:
             return False
-        if (
-            len(acknowledgement.selected_character_ids)
-            != len(self.selected_character_ids)
-            or set(acknowledgement.selected_character_ids)
-            != set(self.selected_character_ids)
-        ):
+        if len(acknowledgement.selected_character_ids) != len(self.selected_character_ids) or set(
+            acknowledgement.selected_character_ids
+        ) != set(self.selected_character_ids):
             return False
         if isinstance(
             self.action,
@@ -944,8 +893,7 @@ class StatefulNativeMovementOption:
         ):
             minimum_matches = (
                 not isinstance(self.action, ProduceResourceOutputAction)
-                or acknowledgement.minimum_output_quantity
-                == self.action.minimum_output_quantity
+                or acknowledgement.minimum_output_quantity == self.action.minimum_output_quantity
             )
             return bool(
                 acknowledgement.target_id == self.action.target_id
@@ -975,8 +923,7 @@ class StatefulNativeMovementOption:
             return False
         if isinstance(self.action, ExitCurrentBuildingAction):
             return bool(
-                acknowledgement.bearing_degrees == 0.0
-                and acknowledgement.distance_units == 0.0
+                acknowledgement.bearing_degrees == 0.0 and acknowledgement.distance_units == 0.0
             )
         return bool(
             acknowledgement.bearing_degrees == self.action.bearing_degrees
@@ -1016,7 +963,7 @@ class StatefulApproachOption:
         *,
         option_id: str,
         action: Action,
-        environment: AgentEnvironment,
+        operation: TransitionOperation,
         target_id: str,
         arrival_distance: float = 5.0,
         threat_distance: float = 15.0,
@@ -1024,7 +971,7 @@ class StatefulApproachOption:
     ) -> None:
         self.option_id = option_id
         self.action = action.model_copy(deep=True)
-        self.environment = environment
+        self.operation = operation
         # An agent playing continuously starts its walk from a running world;
         # demanding a paused start there means the approach can never begin.
         self.require_paused_start = require_paused_start
@@ -1046,9 +993,7 @@ class StatefulApproachOption:
             raise OptionLifecycleError("Approach option can only be prepared once.")
         telemetry = observation.telemetry
         if telemetry is None or "game.pause" not in telemetry.capabilities:
-            raise OptionLifecycleError(
-                "Approach option requires a capable start state."
-            )
+            raise OptionLifecycleError("Approach option requires a capable start state.")
         if self.require_paused_start and telemetry.game.paused is not True:
             raise OptionLifecycleError(
                 "Approach option requires a capable, confirmed paused start state."
@@ -1061,13 +1006,10 @@ class StatefulApproachOption:
         native_talk = isinstance(self.action, ApproachDialogueTargetAction)
         if begin.arrived and not native_talk:
             raise OptionLifecycleError(
-                "Approach option must not dispatch after the target has already "
-                "been reached."
+                "Approach option must not dispatch after the target has already been reached."
             )
         if begin.should_abort:
-            raise OptionLifecycleError(
-                f"Approach option start state is blocked: {begin.reason}"
-            )
+            raise OptionLifecycleError(f"Approach option start state is blocked: {begin.reason}")
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
         self.latest_status = begin
@@ -1094,11 +1036,7 @@ class StatefulApproachOption:
             if isinstance(self.action, ApproachDialogueTargetAction)
             else "Approach order dispatched; walking toward the target."
         )
-        work = (
-            self.environment.dispatch(self.action, command=command, token=token)
-            if command is not None
-            else self.environment.step(self.action)
-        )
+        work = self.operation(command=command, token=token)
         self.task = asyncio.create_task(work, name=f"kenshi-agent-{self.option_id}")
         return self.task
 
@@ -1123,10 +1061,7 @@ class StatefulApproachOption:
                 return self._poll_result()
             if self.transition is None:
                 self.transition = task.result()
-                if (
-                    not self.transition.receipt.accepted
-                    and not self.transition.receipt.executed
-                ):
+                if not self.transition.receipt.accepted and not self.transition.receipt.executed:
                     self.status = OptionStatus.FAILED
                     self.reason = (
                         "Approach order was rejected without execution: "
@@ -1138,12 +1073,8 @@ class StatefulApproachOption:
         if update is not None:
             status = self.monitor.assess(update.observation)
             self.latest_status = status
-            exact_dialogue_required = isinstance(
-                self.action, ApproachDialogueTargetAction
-            )
-            if status.arrived and (
-                not exact_dialogue_required or status.dialogue_open_with_target
-            ):
+            exact_dialogue_required = isinstance(self.action, ApproachDialogueTargetAction)
+            if status.arrived and (not exact_dialogue_required or status.dialogue_open_with_target):
                 # Success requires the order to have been accepted, so we do not
                 # claim arrival from a dispatch that never issued.
                 if self.transition is not None:
@@ -1151,8 +1082,7 @@ class StatefulApproachOption:
                     self.reason = status.reason
                 else:
                     self.reason = (
-                        "Target reached; awaiting dispatch acknowledgement. "
-                        f"{status.reason}"
+                        f"Target reached; awaiting dispatch acknowledgement. {status.reason}"
                     )
             elif status.should_abort:
                 self.status = OptionStatus.FAILED

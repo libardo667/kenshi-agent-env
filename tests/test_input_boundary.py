@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from operation_test_support import execute_operation
 from test_live_env import (
     PulseController,
     PulseTelemetry,
@@ -187,16 +188,8 @@ def token_for(
         validated_revision=validated or revision(10),
         latest_observation=lambda: latest[0],
         max_telemetry_age_seconds=max_telemetry_age_seconds,
-        assumptions=(
-            assumptions
-            if assumptions is not None
-            else (paused_condition(),)
-        ),
-        preconditions=(
-            preconditions
-            if preconditions is not None
-            else (selection_condition(),)
-        ),
+        assumptions=(assumptions if assumptions is not None else (paused_condition(),)),
+        preconditions=(preconditions if preconditions is not None else (selection_condition(),)),
         failure_conditions=failure_conditions or (),
     )
 
@@ -246,9 +239,7 @@ def test_every_observation_bound_decision_preserves_authority_evidence() -> None
             InputBoundaryDecision.REJECTED,
         ),
         (
-            token_for(
-                [observation(sequence=11, control_mode=ControlMode.NATIVE_ASSISTED)]
-            ),
+            token_for([observation(sequence=11, control_mode=ControlMode.NATIVE_ASSISTED)]),
             InputBoundaryDecision.REJECTED,
         ),
         (
@@ -360,7 +351,8 @@ async def dispatch_with_blocking_lease(
     )
 
     task = asyncio.create_task(
-        live.dispatch(
+        execute_operation(
+            live,
             action if action is not None else movement_action(),  # type: ignore[arg-type]
             command=CommandDispatchContext(
                 command_id=token.command_id,
@@ -559,7 +551,8 @@ def test_stale_canonical_observation_at_boundary_blocks_input(
         latest: list[Observation | None] = [observation()]
         token = token_for(latest, assumptions=(), preconditions=())
         task = asyncio.create_task(
-            live.dispatch(
+            execute_operation(
+                live,
                 movement_action(),
                 command=CommandDispatchContext(
                     command_id=token.command_id,
@@ -655,6 +648,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
 
     async def scenario() -> None:
         telemetry = OverageOnceTelemetry()
+        telemetry.capabilities = ["game.pause"]
         controller = BlockingLeaseController(telemetry)
         live = environment(tmp_path, telemetry, controller)
         macros = movement_registry()
@@ -695,7 +689,7 @@ def test_single_step_live_dispatch_carries_boundary_authority(
         boundary = next(
             event for event in events if event["event_type"] == "input_boundary_rejected"
         )
-        assert boundary["payload"]["decision"] == "rejected"
+        assert boundary["payload"]["evidence"]["decision"] == "rejected"
         receipt = next(event for event in events if event["event_type"] == "action_receipt")
         assert receipt["payload"]["accepted"] is False
         assert receipt["payload"]["primitive_actions"] == 0
@@ -728,7 +722,8 @@ def test_dispatch_without_a_token_keeps_legacy_behaviour(tmp_path: Path) -> None
         live = environment(tmp_path, telemetry, controller)
         await live.reset()
 
-        transition = await live.dispatch(
+        transition = await execute_operation(
+            live,
             movement_action(),
             command=CommandDispatchContext(
                 command_id="cmd-" + "0" * 32,
@@ -785,7 +780,7 @@ def test_tokenless_calibration_mismatch_fails_closed_by_raising(tmp_path: Path) 
 
         raised = False
         try:
-            await live.step(movement_action())
+            await execute_operation(live, movement_action())
         except RuntimeError as exc:
             raised = "1280x720" in str(exc)
 
@@ -811,7 +806,8 @@ def test_calibration_mismatch_with_a_token_rejects_gracefully(tmp_path: Path) ->
 
         latest: list[Observation | None] = [observation()]
         token = token_for(latest)
-        transition = await live.dispatch(
+        transition = await execute_operation(
+            live,
             movement_action(),
             command=CommandDispatchContext(
                 command_id=token.command_id,
@@ -843,7 +839,7 @@ def test_movement_action_is_the_pointer_bearing_case(tmp_path: Path) -> None:
         controller = PulseController(telemetry)
         live = environment(tmp_path, telemetry, controller)
         await live.reset()
-        await live.step(SkillAction.model_validate(movement_action().model_dump()))
+        await execute_operation(live, SkillAction.model_validate(movement_action().model_dump()))
         assert controller.actions
 
     asyncio.run(scenario())
@@ -861,9 +857,7 @@ def test_semantic_control_action_is_rejected_at_the_boundary(tmp_path: Path) -> 
         controller, transition = await dispatch_with_blocking_lease(
             tmp_path,
             conflict=observation(sequence=11, selected_id="char-2"),
-            action=ActivateVisibleControlAction(
-                exact_label="Show me your goods.", role="button"
-            ),
+            action=ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
         )
 
         assert controller.actions == []

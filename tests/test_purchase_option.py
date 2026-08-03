@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from operation_test_support import execute_operation, operation_port
 
 from kenshi_agent.config import (
     CaptureConfig,
@@ -474,7 +475,7 @@ def test_one_purchase_intent_transfers_its_bounded_quantity(
             stock=3,
         )
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.purchase
@@ -489,14 +490,16 @@ def test_one_purchase_intent_transfers_its_bounded_quantity(
         assert transition.receipt.primitive_actions == 6
         assert telemetry.stock == 0
         assert telemetry.carried == 3
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 3
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 3
+        )
 
     asyncio.run(scenario())
 
@@ -512,7 +515,7 @@ def test_purchase_conservation_follows_the_open_inventory_owner_in_a_group(
         )
         await environment.reset()
 
-        transition = await environment.step(_purchase(quantity=1))
+        transition = await execute_operation(environment, _purchase(quantity=1))
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.purchase
@@ -551,7 +554,7 @@ def test_vendor_acquisition_conserves_the_exact_quoted_charge(
         )
         environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.purchase
@@ -624,6 +627,7 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
 
         executor = ContinuousPlanExecutor(
             environment=environment,
+            operation_port=operation_port(environment),
             guard=ActionGuard(
                 SafetyConfig(
                     allow_action_kinds=["purchase_item"],
@@ -653,9 +657,9 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
 
         assert result.actions_completed == 1
         assert result.completed is expected_completed
-        assert expected_status in (
-            tmp_path / f"{expected_status}.jsonl"
-        ).read_text(encoding="utf-8")
+        assert expected_status in (tmp_path / f"{expected_status}.jsonl").read_text(
+            encoding="utf-8"
+        )
         if expected_completed:
             assert result.reason == "Plan completed."
         else:
@@ -679,12 +683,10 @@ def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
         )
         environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         observation = await environment.reset()
-        first = _purchase_plan(observation, action).steps[0].model_copy(
-            update={"on_failure": "retry"}
+        first = (
+            _purchase_plan(observation, action).steps[0].model_copy(update={"on_failure": "retry"})
         )
-        second = first.model_copy(
-            update={"step_id": "retry", "on_failure": None}
-        )
+        second = first.model_copy(update={"step_id": "retry", "on_failure": None})
         plan = _purchase_plan(observation, action).model_copy(
             update={
                 "steps": [first, second],
@@ -738,14 +740,13 @@ def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
                 identity_session_id="session-purchase",
                 retry_state_fingerprint=fingerprint,
             )
-            decorated = candidate.model_copy(
-                update={"recent_action_outcomes": [outcome]}
-            )
+            decorated = candidate.model_copy(update={"recent_action_outcomes": [outcome]})
             store.publish(candidate)
             return store.decorate_latest(decorated)
 
         executor = ContinuousPlanExecutor(
             environment=environment,
+            operation_port=operation_port(environment),
             guard=ActionGuard(
                 SafetyConfig(
                     allow_action_kinds=["purchase_item"],
@@ -776,8 +777,7 @@ def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
         right_clicks = [
             primitive
             for primitive in controller.actions
-            if isinstance(primitive, ClickAction)
-            and primitive.button is MouseButton.RIGHT
+            if isinstance(primitive, ClickAction) and primitive.button is MouseButton.RIGHT
         ]
         assert len(right_clicks) == 1
         assert result.actions_completed == 1
@@ -796,7 +796,7 @@ def test_stock_exhaustion_returns_partial_without_an_unbound_click(
             stock=2,
         )
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.purchase
@@ -806,14 +806,16 @@ def test_stock_exhaustion_returns_partial_without_an_unbound_click(
         assert evidence.purchased_quantity == 2
         assert evidence.inventory_quantity_after == 2
         assert telemetry.stock == 0
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 2
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 2
+        )
 
     asyncio.run(scenario())
 
@@ -830,7 +832,7 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
         )
         environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.purchase
@@ -841,14 +843,16 @@ def test_mismatched_money_and_inventory_evidence_stops_without_retry(
         assert evidence.money_after == 957
         assert evidence.inventory_quantity_before == 0
         assert evidence.inventory_quantity_after == 0
-        assert len(
-            [
-                item
-                for item in controller.actions
-                if isinstance(item, ClickAction)
-                and item.button is MouseButton.RIGHT
-            ]
-        ) == 1
+        assert (
+            len(
+                [
+                    item
+                    for item in controller.actions
+                    if isinstance(item, ClickAction) and item.button is MouseButton.RIGHT
+                ]
+            )
+            == 1
+        )
 
     asyncio.run(scenario())
 
@@ -873,7 +877,7 @@ def test_an_unaffordable_purchase_names_the_shortfall_and_sends_no_input(
             money=10,
         )
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         message = transition.receipt.message or ""
         assert "costs 43" in message
@@ -912,7 +916,7 @@ def test_a_purchase_that_clicks_and_moves_nothing_says_so_explicitly(
         )
         environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         message = transition.receipt.message or ""
         assert "When the click was sent the purse held 1000" in message
@@ -943,7 +947,7 @@ def test_a_purchase_preserves_the_causally_new_game_refusal(
         )
         environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
         await environment.reset()
-        transition = await environment.step(action)
+        transition = await execute_operation(environment, action)
 
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.purchase

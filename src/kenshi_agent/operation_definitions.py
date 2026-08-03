@@ -68,6 +68,7 @@ from .models import (
     SelectSquadMemberExactAction,
     SellItemAction,
     SetSpeedAction,
+    SkillAction,
     StopAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
@@ -2411,6 +2412,7 @@ class OperationDefinition:
     receipt_kind: str
     bind: Callable[[Action, Observation], OperationBinding]
     handler_key: str = ""
+    emits_world_command: bool = True
     requires_fresh_telemetry: bool = True
     # Selection cardinality is action-specific. Most character operations own
     # one exact actor, while selection collapse and ordinary group travel bind
@@ -2458,7 +2460,7 @@ class OperationDefinition:
 
     def __post_init__(self) -> None:
         if not self.handler_key:
-            object.__setattr__(self, "handler_key", f"legacy_mechanics.{self.kind}")
+            raise ValueError(f"Operation {self.kind!r} must declare one handler key.")
 
     def risk_for(self, action: Action) -> OperationRisk:
         """Resolve risk from this exact action without weakening the ceiling."""
@@ -2553,7 +2555,9 @@ class BoundOperation:
     definition: OperationDefinition
     operation: Action
     binding: OperationBinding
-    affordance: BoundAffordance
+    # Deterministic runtime/reflex operations have no planner offer to retain.
+    # Keeping that absence explicit is more honest than forging provenance.
+    affordance: BoundAffordance | None
     based_on_revision: WorldStateRevision
 
 
@@ -2666,6 +2670,13 @@ _RUNTIME_COGNITIVE_ACTION_TYPES = (
     ReadFieldbookAction,
 )
 
+_RUNTIME_CONTROL_ACTION_TYPES = (
+    PauseAction,
+    SetSpeedAction,
+    WaitAction,
+    SkillAction,
+)
+
 
 def bind_runtime_cognitive(
     action: Action,
@@ -2675,6 +2686,20 @@ def bind_runtime_cognitive(
 
     if not isinstance(action, _RUNTIME_COGNITIVE_ACTION_TYPES):
         return _unbound("Action is not a runtime or cognitive operation.")
+    return EmptyBinding(
+        reason=f"Bound {action.kind!r} to the current runtime revision.",
+        source_revision=observation.world_revision,
+    )
+
+
+def bind_runtime_control(
+    action: Action,
+    observation: Observation,
+) -> EmptyBinding | BindingFailure:
+    """Bind runtime playback, waiting, or a configured compatibility skill."""
+
+    if not isinstance(action, _RUNTIME_CONTROL_ACTION_TYPES):
+        return _unbound("Action is not a runtime-control operation.")
     return EmptyBinding(
         reason=f"Bound {action.kind!r} to the current runtime revision.",
         source_revision=observation.world_revision,
@@ -2710,6 +2735,7 @@ def _runtime_cognitive_definition(
         receipt_kind="runtime_control",
         bind=bind_runtime_cognitive,
         handler_key=handler_key,
+        emits_world_command=False,
         requires_fresh_telemetry=False,
         controller_verified=True,
     )
@@ -2755,6 +2781,69 @@ READ_FIELDBOOK_DEFINITION = _runtime_cognitive_definition(
 )
 
 
+def _runtime_control_definition(
+    *,
+    kind: str,
+    operation_type: type[BaseModel],
+    summary: str,
+    handler_key: str,
+    execution: OperationExecution = OperationExecution.ATOMIC_HANDLER,
+    pointer_class: PointerActionClass = PointerActionClass.COORDINATE_INDEPENDENT,
+) -> OperationDefinition:
+    return OperationDefinition(
+        kind=kind,
+        version="1.0",
+        operation_type=operation_type,
+        summary=summary,
+        argument_source="Runtime-internal control authority.",
+        allowed_control_modes=frozenset(ControlMode),
+        required_capabilities=frozenset(),
+        capability_aliases=frozenset(),
+        pointer_class=pointer_class,
+        native_assisted=False,
+        risk=OperationRisk(),
+        max_primitive_actions=1,
+        reference_fields=(),
+        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+        execution=execution,
+        receipt_kind="runtime_control",
+        bind=bind_runtime_control,
+        handler_key=handler_key,
+        derive_terminal=lambda action, observation, selected: runtime_control_terminal(
+            action
+        ),
+        requires_fresh_telemetry=False,
+    )
+
+
+PAUSE_DEFINITION = _runtime_control_definition(
+    kind="pause",
+    operation_type=PauseAction,
+    summary="Request one exact paused or running playback state.",
+    handler_key="runtime.pause",
+)
+SET_SPEED_DEFINITION = _runtime_control_definition(
+    kind="set_speed",
+    operation_type=SetSpeedAction,
+    summary="Request one exact Kenshi playback gear.",
+    handler_key="runtime.set_speed",
+)
+WAIT_DEFINITION = _runtime_control_definition(
+    kind="wait",
+    operation_type=WaitAction,
+    summary="Observe for one bounded interval without sending input.",
+    handler_key="runtime.wait",
+)
+SKILL_DEFINITION = _runtime_control_definition(
+    kind="skill",
+    operation_type=SkillAction,
+    summary="Execute one configured compatibility macro through its bounded handler.",
+    handler_key="movement.skill",
+    execution=OperationExecution.MONITORED_OPTION,
+    pointer_class=PointerActionClass.PROFILE_CALIBRATED,
+)
+
+
 APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     kind="approach_dialogue_target",
     version="1.0",
@@ -2787,6 +2876,7 @@ APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_approach",
     bind=bind_approach_dialogue_target,
+    handler_key="dialogue.approach_dialogue_target",
     controller_verified=True,
 )
 
@@ -2821,6 +2911,7 @@ COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_world_command",
     bind=bind_command_world_target,
+    handler_key="dialogue.command_world_target",
     authorable_when=world_target_command_is_currently_authorable,
 )
 
@@ -2857,6 +2948,7 @@ SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_squad_selection",
     bind=bind_select_squad_member,
+    handler_key="movement.select_squad_member",
     derive_completion_conditions=_selected_squad_member,
     authorable_when=squad_member_selection_is_currently_authorable,
 )
@@ -2890,6 +2982,7 @@ SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_squad_selection",
     bind=bind_select_squad_member_exact,
+    handler_key="movement.select_squad_member_exact",
     derive_completion_conditions=_selected_squad_member,
     controller_verified=True,
     native_terminal_success_reasons=frozenset(
@@ -2922,6 +3015,7 @@ ROTATE_CAMERA_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_camera_rotation",
     bind=bind_rotate_camera,
+    handler_key="camera.rotate_camera",
     authorable_when=camera_rotation_is_currently_authorable,
 )
 
@@ -2963,6 +3057,7 @@ PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_context_action",
     bind=bind_perform_context_action,
+    handler_key="resources.perform_context_action",
     controller_verified=True,
     authorable_when=context_action_is_currently_authorable,
 )
@@ -3000,6 +3095,7 @@ PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_resource_production",
     bind=bind_produce_resource_output,
+    handler_key="resources.produce_resource_output",
     controller_verified=True,
     authorable_when=resource_production_is_currently_authorable,
 )
@@ -3047,6 +3143,7 @@ HARVEST_RESOURCE_DEFINITION = OperationDefinition(
     execution=OperationExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_resource_harvest",
     bind=bind_harvest_resource,
+    handler_key="resources.harvest_resource",
     controller_verified=True,
     authorable_when=harvest_resource_is_currently_authorable,
 )
@@ -3090,6 +3187,7 @@ RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_threat_response",
     bind=bind_respond_to_immediate_threat,
+    handler_key="movement.respond_to_immediate_threat",
     controller_verified=True,
     authorable_when=threat_response_is_currently_authorable,
 )
@@ -3128,6 +3226,7 @@ OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_context_inventory",
     bind=bind_open_context_inventory,
+    handler_key="resources.open_context_inventory",
     controller_verified=True,
     native_terminal_success_reasons=frozenset(
         {"exact_context_inventory_open"}
@@ -3172,6 +3271,7 @@ REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_squad_regroup",
     bind=bind_regroup_with_squad_member,
+    handler_key="movement.regroup_with_squad_member",
     controller_verified=True,
     authorable_when=squad_regroup_is_currently_authorable,
 )
@@ -3205,6 +3305,7 @@ MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_move_in_direction,
+    handler_key="movement.move_in_direction",
     controller_verified=True,
 )
 
@@ -3247,6 +3348,7 @@ TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_map_travel",
     bind=bind_travel_to_map_destination,
+    handler_key="movement.travel_to_map_destination",
     controller_verified=True,
     authorable_when=map_travel_is_currently_authorable,
 )
@@ -3287,6 +3389,7 @@ EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_exit_current_building,
+    handler_key="movement.exit_current_building",
     controller_verified=True,
 )
 
@@ -3324,6 +3427,7 @@ MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_move_to_character,
+    handler_key="movement.move_to_character",
     controller_verified=True,
 )
 
@@ -3353,6 +3457,7 @@ ACTIVATE_VISIBLE_CONTROL_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_control",
     bind=bind_visible_control,
+    handler_key="screens.activate_visible_control",
 )
 
 DISMISS_SCREEN_DEFINITION = OperationDefinition(
@@ -3383,6 +3488,7 @@ DISMISS_SCREEN_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_dismiss",
     bind=bind_dismiss_screen,
+    handler_key="screens.dismiss_screen",
     derive_completion_conditions=_dismissed_screen_closed,
 )
 
@@ -3435,6 +3541,7 @@ PURCHASE_ITEM_DEFINITION = OperationDefinition(
     execution=OperationExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_purchase",
     bind=bind_purchase_item,
+    handler_key="trade.purchase_item",
     derive_risk=_bounded_trade_risk,
     derive_primitive_action_bound=_bounded_trade_primitive_action_bound,
     controller_verified=True,
@@ -3518,6 +3625,7 @@ OPEN_SCREEN_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_screen",
     bind=bind_open_screen,
+    handler_key="screens.open_screen",
     derive_completion_conditions=_open_screen_terminal,
 )
 
@@ -3555,6 +3663,7 @@ USE_GAME_BINDING_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_binding",
     bind=bind_use_game_binding,
+    handler_key="screens.use_game_binding",
     derive_completion_conditions=_binding_transition,
     derive_terminal=_game_binding_terminal,
 )
@@ -3596,6 +3705,7 @@ RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_camera_recovery",
     bind=bind_recover_camera_view,
+    handler_key="camera.recover_camera_view",
     controller_verified=True,
 )
 
@@ -3629,6 +3739,7 @@ SCROLL_SCREEN_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_scroll",
     bind=bind_scroll_screen,
+    handler_key="screens.scroll_screen",
 )
 
 
@@ -3671,6 +3782,7 @@ SELL_ITEM_DEFINITION = OperationDefinition(
     execution=OperationExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_sell",
     bind=bind_sell_item,
+    handler_key="trade.sell_item",
     derive_risk=_bounded_trade_risk,
     derive_primitive_action_bound=_bounded_trade_primitive_action_bound,
     controller_verified=True,
@@ -3705,6 +3817,7 @@ EQUIP_ITEM_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_equip",
     bind=bind_equip_item,
+    handler_key="inventory.equip_item",
 )
 
 COLLECT_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
@@ -3753,6 +3866,7 @@ COLLECT_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_resource_transfer",
     bind=bind_collect_resource_output,
+    handler_key="resources.collect_resource_output",
     controller_verified=True,
     authorable_when=resource_output_is_currently_authorable,
 )
@@ -3763,6 +3877,10 @@ OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
     CONSULT_ADVISOR_DEFINITION,
     RECALL_MEMORY_DEFINITION,
     READ_FIELDBOOK_DEFINITION,
+    PAUSE_DEFINITION,
+    SET_SPEED_DEFINITION,
+    WAIT_DEFINITION,
+    SKILL_DEFINITION,
     APPROACH_DIALOGUE_TARGET_DEFINITION,
     OPEN_SCREEN_DEFINITION,
     COMMAND_WORLD_TARGET_DEFINITION,

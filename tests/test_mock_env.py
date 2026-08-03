@@ -1,6 +1,8 @@
 import asyncio
 from pathlib import Path
 
+from operation_test_support import execute_operation
+
 from kenshi_agent.config import MockConfig
 from kenshi_agent.env import MockEnvironment
 from kenshi_agent.models import (
@@ -19,9 +21,9 @@ def test_mock_environment_state_transitions(tmp_path: Path) -> None:
         assert observation.telemetry is not None
         assert observation.telemetry.game.paused is True
 
-        await environment.step(PauseAction(paused=False))
-        await environment.step(SetSpeedAction(speed=3))
-        transition = await environment.step(SkillAction(name="work_for_cats"))
+        await execute_operation(environment, PauseAction(paused=False))
+        await execute_operation(environment, SetSpeedAction(speed=3))
+        transition = await execute_operation(environment, SkillAction(name="work_for_cats"))
         assert transition.observation.telemetry is not None
         assert transition.observation.telemetry.game.money == 300
         assert transition.observation.telemetry.game.elapsed_minutes == 300
@@ -38,7 +40,7 @@ def test_mock_set_speed_represents_a_running_playback_state(tmp_path: Path) -> N
         assert observation.telemetry is not None
         assert observation.telemetry.game.paused is True
 
-        transition = await environment.step(SetSpeedAction(speed=3))
+        transition = await execute_operation(environment, SetSpeedAction(speed=3))
 
         assert transition.observation.telemetry is not None
         assert transition.observation.telemetry.game.paused is False
@@ -56,7 +58,7 @@ def test_mock_camera_recovery_returns_the_typed_controller_receipt(
         assert observation.telemetry is not None
         assert "camera.recovery" in observation.telemetry.capabilities
 
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
         assert transition.receipt.primitive_actions == 0
         assert transition.receipt.semantic is not None
         evidence = transition.receipt.semantic.camera_recovery

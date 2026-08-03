@@ -153,7 +153,10 @@ class ActionGuard:
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
         definition = definition_for(action)
-        if definition is not None:
+        # Configured compatibility skills retain their macro-expanded guard
+        # until the macro surface is retired in its own reconstruction stage.
+        # They still bind and execute through the operation kernel.
+        if definition is not None and not isinstance(action, SkillAction):
             primitive_actions = definition.primitive_action_bound_for(action)
             risk = definition.risk_for(action)
             self._validate_operation_definition(

@@ -960,9 +960,9 @@ async def _replay_evidence(
         "advance to delivery",
     ):
         # pragma: no mutate end
-        transition = await environment.step(NoopAction(reason=reason))
-        observations.append(transition.observation)
-        actions_executed.append(transition.receipt.executed)
+        del reason
+        observations.append(await environment.advance())
+        actions_executed.append(False)
     await environment.close()
     restart_manifest = planner_context_manifest(
         observations[0],

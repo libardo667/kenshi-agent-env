@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from operation_test_support import execute_operation
 from PIL import Image, ImageDraw
 
 from kenshi_agent.camera_recovery import score_camera_observation
@@ -192,10 +193,7 @@ class CameraController(InputController):
 
     def user_input_detected(self) -> bool:
         self.user_input_checks += 1
-        return (
-            self.user_input_after is not None
-            and self.user_input_checks >= self.user_input_after
-        )
+        return self.user_input_after is not None and self.user_input_checks >= self.user_input_after
 
     def client_rect(self) -> WindowRect:
         return WindowRect(left=0, top=0, right=640, bottom=360)
@@ -213,11 +211,7 @@ class CameraCapture:
         if self.mode == "follow":
             clear = self.telemetry.followed
         elif self.mode == "orbit":
-            clear = (
-                self.telemetry.followed
-                and self.telemetry.zoomed
-                and self.telemetry.angle == 1
-            )
+            clear = self.telemetry.followed and self.telemetry.zoomed and self.telemetry.angle == 1
         elif self.mode == "failure":
             clear = False
         elif self.mode == "tilt":
@@ -334,9 +328,7 @@ def test_contract_is_controller_verified_and_binds_current_hud(tmp_path: Path) -
     async def scenario() -> None:
         environment, _, _ = camera_environment(tmp_path, mode="clear")
         observation = await environment.reset()
-        binding = RECOVER_CAMERA_VIEW_DEFINITION.bind(
-            RecoverCameraViewAction(), observation
-        )
+        binding = RECOVER_CAMERA_VIEW_DEFINITION.bind(RecoverCameraViewAction(), observation)
         assert binding.bound
         assert binding.target_id == "char-hep"
         assert binding.floor == 0
@@ -404,9 +396,7 @@ def test_contract_fails_closed_on_missing_capture_ambiguous_portrait_or_modal(
             },
             deep=True,
         )
-        missing = RECOVER_CAMERA_VIEW_DEFINITION.bind(
-            RecoverCameraViewAction(), without_capture
-        )
+        missing = RECOVER_CAMERA_VIEW_DEFINITION.bind(RecoverCameraViewAction(), without_capture)
         assert not missing.bound
         assert "capture/scoring" in missing.reason
 
@@ -430,20 +420,14 @@ def test_contract_fails_closed_on_missing_capture_ambiguous_portrait_or_modal(
             },
             deep=True,
         )
-        duplicate = RECOVER_CAMERA_VIEW_DEFINITION.bind(
-            RecoverCameraViewAction(), ambiguous
-        )
+        duplicate = RECOVER_CAMERA_VIEW_DEFINITION.bind(RecoverCameraViewAction(), ambiguous)
         assert not duplicate.bound
         assert "2 unambiguous lower-HUD portrait" in duplicate.reason
 
         modal = observation.model_copy(
             update={
                 "telemetry": observation.telemetry.model_copy(
-                    update={
-                        "ui": observation.telemetry.ui.model_copy(
-                            update={"modal_open": True}
-                        )
-                    }
+                    update={"ui": observation.telemetry.ui.model_copy(update={"modal_open": True})}
                 )
             },
             deep=True,
@@ -492,7 +476,7 @@ def test_already_clear_emits_zero_input_and_returns_scored_evidence(
     async def scenario() -> None:
         environment, _, controller = camera_environment(tmp_path, mode="clear")
         await environment.reset()
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
 
         assert controller.actions == []
         evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
@@ -514,7 +498,7 @@ def test_anchored_structured_view_below_cosmetic_threshold_emits_zero_input(
             mode="usable_follow",
         )
         await environment.reset()
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
 
         evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
         assert evidence is not None
@@ -536,7 +520,7 @@ def test_recovery_pauses_once_and_never_unpauses(tmp_path: Path) -> None:
             tmp_path, mode="follow", paused=False
         )
         await environment.reset()
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
 
         assert telemetry.paused is True
         assert isinstance(controller.actions[0], KeyAction)
@@ -560,7 +544,7 @@ def test_fixed_floor_zoom_orbit_sequence_selects_best_scored_angle(
     async def scenario() -> None:
         environment, _, controller = camera_environment(tmp_path, mode="orbit")
         await environment.reset()
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
 
         evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
         assert evidence is not None
@@ -589,7 +573,7 @@ def test_fixed_tilt_sequence_recovers_when_zoom_and_orbit_cannot(
     async def scenario() -> None:
         environment, _, controller = camera_environment(tmp_path, mode="tilt")
         await environment.reset()
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
 
         evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
         assert evidence is not None
@@ -616,7 +600,7 @@ def test_failure_is_terminal_after_bounded_attempts(tmp_path: Path) -> None:
     async def scenario() -> None:
         environment, _, controller = camera_environment(tmp_path, mode="failure")
         await environment.reset()
-        transition = await environment.step(RecoverCameraViewAction())
+        transition = await execute_operation(environment, RecoverCameraViewAction())
 
         evidence = transition.receipt.semantic.camera_recovery  # type: ignore[union-attr]
         assert evidence is not None
@@ -635,7 +619,7 @@ def test_human_input_aborts_before_the_next_primitive(tmp_path: Path) -> None:
         )
         await environment.reset()
         with pytest.raises(RuntimeError, match="Human input interrupted camera recovery"):
-            await environment.step(RecoverCameraViewAction())
+            await execute_operation(environment, RecoverCameraViewAction())
         assert controller.actions == []
 
     asyncio.run(scenario())

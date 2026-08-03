@@ -1409,7 +1409,90 @@ def bind_affordance(
 def bound_affordance(bound: BoundOperation) -> BoundAffordance:
     """Return the planner record retained by an already-bound operation."""
 
+    if bound.affordance is None:
+        raise ValueError("Runtime-internal operation has no planner affordance.")
     return bound.affordance
+
+
+def bind_runtime_operation(
+    operation: Action,
+    observation: Observation,
+    *,
+    affordance: BoundAffordance | None,
+) -> BoundOperation:
+    """Bind planner provenance or explicit runtime authority to current state."""
+
+    if affordance is not None:
+        return rebind_affordance_operation(operation, affordance, observation)
+    definition = definition_for(operation)
+    if definition is None:
+        raise ValueError(f"Operation {operation.kind!r} has no definition.")
+    binding = definition.bind(operation, observation)
+    if isinstance(binding, BindingFailure):
+        raise ValueError(f"Runtime operation no longer binds: {binding.reason}")
+    return BoundOperation(
+        definition=definition,
+        operation=operation,
+        binding=binding,
+        affordance=None,
+        based_on_revision=observation.world_revision,
+    )
+
+
+def rebind_affordance_operation(
+    operation: Action,
+    affordance: BoundAffordance,
+    observation: Observation,
+) -> BoundOperation:
+    """Re-enumerate the issuing adapter and bind the exact planned operation.
+
+    The retained affordance is provenance, not durable authority. Rebuilding
+    its original selection forces execution back through the source adapter's
+    current denominator and rejects any operation drift before a handler runs.
+    """
+
+    adapters = [
+        adapter
+        for adapter in AFFORDANCE_ADAPTERS
+        if affordance.source in adapter.sources
+        and affordance.operation_kind in adapter.operation_kinds
+    ]
+    if len(adapters) != 1:
+        raise RuntimeError("affordance provenance does not identify one source adapter")
+    adapter = adapters[0]
+    target_id = affordance.target.target_id if affordance.target else None
+    rebounds: list[BoundOperation] = []
+    for offer in adapter.enumerate(observation):
+        current_target_id = offer.target.target_id if offer.target else None
+        if (
+            offer.source is not affordance.source
+            or offer.semantic != affordance.semantic
+            or offer.operation_kind != affordance.operation_kind
+            or current_target_id != target_id
+            or not _offer_binds_now(offer, observation)
+        ):
+            continue
+        selection = AffordanceSelection(
+            affordance_id=offer.affordance_id,
+            target_id=current_target_id,
+            parameters=affordance.parameters,
+        )
+        try:
+            candidate = adapter.bind(selection, observation)
+        except ValueError:
+            continue
+        if candidate.operation == operation:
+            rebounds.append(candidate)
+    if len(rebounds) != 1:
+        raise ValueError("affordance is absent or ambiguous in the current observation")
+    rebound = rebounds[0]
+    return BoundOperation(
+        definition=rebound.definition,
+        operation=rebound.operation,
+        binding=rebound.binding,
+        affordance=affordance,
+        based_on_revision=rebound.based_on_revision,
+    )
 
 
 def terminal_affordance_receipt(

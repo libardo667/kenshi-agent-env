@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
+from operation_test_support import operation_for
+
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.models import (
     Action,
@@ -52,8 +54,12 @@ def observation(
         )
     if hostile_distance is not None:
         entities.append(
-            NearbyEntity(id="entity-bandit", name="Bandit",
-                         disposition=Disposition.HOSTILE, distance=hostile_distance)
+            NearbyEntity(
+                id="entity-bandit",
+                name="Bandit",
+                disposition=Disposition.HOSTILE,
+                distance=hostile_distance,
+            )
         )
     return Observation(
         run_id="approach-option-test",
@@ -122,10 +128,11 @@ class InstantApproachEnvironment(AgentEnvironment):
 
 
 def approach_option(environment: AgentEnvironment) -> StatefulApproachOption:
+    action = SkillAction(name="approach_confirmed_vendor")
     return StatefulApproachOption(
         option_id="approach-1",
-        action=SkillAction(name="approach_confirmed_vendor"),
-        environment=environment,
+        action=action,
+        operation=operation_for(environment, action),
         target_id=TARGET_ID,
         arrival_distance=5.0,
         threat_distance=15.0,
@@ -172,10 +179,12 @@ def test_approach_succeeds_by_arrival_radius() -> None:
 
 def test_close_semantic_target_dispatches_native_talk_from_arrival_radius() -> None:
     async def scenario() -> None:
+        environment = InstantApproachEnvironment()
+        action = ApproachDialogueTargetAction(target_id=TARGET_ID)
         option = StatefulApproachOption(
             option_id="native-dialogue",
-            action=ApproachDialogueTargetAction(target_id=TARGET_ID),
-            environment=InstantApproachEnvironment(),
+            action=action,
+            operation=operation_for(environment, action),
             target_id=TARGET_ID,
             arrival_distance=5.0,
             threat_distance=15.0,
@@ -277,13 +286,9 @@ def test_prepare_requires_present_target_and_paused_state() -> None:
     from kenshi_agent.options import OptionLifecycleError
 
     with pytest.raises(OptionLifecycleError, match="target"):
-        approach_option(InstantApproachEnvironment()).prepare(
-            observation(1, target_present=False)
-        )
+        approach_option(InstantApproachEnvironment()).prepare(observation(1, target_present=False))
     with pytest.raises(OptionLifecycleError, match="paused"):
-        approach_option(InstantApproachEnvironment()).prepare(
-            observation(1, paused=False)
-        )
+        approach_option(InstantApproachEnvironment()).prepare(observation(1, paused=False))
 
 
 def test_cancellation_during_approach_is_idempotent() -> None:

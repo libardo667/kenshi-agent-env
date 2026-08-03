@@ -7,6 +7,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from operation_test_support import operation_port
+
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MockConfig, SafetyConfig
 from kenshi_agent.env import MockEnvironment
@@ -46,6 +48,7 @@ def runtime_for(
     runtime = AgentRuntime(
         run_id="fieldbook-run",
         environment=environment,
+        operation_port=operation_port(environment),
         planner=planner,
         guard=ActionGuard(
             SafetyConfig(
@@ -153,15 +156,8 @@ def test_fieldbook_write_and_read_reach_exactly_the_next_planner_without_game_in
         ]
         assert seen[4].fieldbook_read is None
 
-        events = [
-            json.loads(line)
-            for line in (tmp_path / "events.jsonl").read_text().splitlines()
-        ]
-        reads = [
-            event["payload"]
-            for event in events
-            if event["event_type"] == "fieldbook_read"
-        ]
+        events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+        reads = [event["payload"] for event in events if event["event_type"] == "fieldbook_read"]
         assert len(reads) == 1
         assert reads[0]["controller_primitives"] == 0
         assert reads[0]["world_command_created"] is False
@@ -227,9 +223,7 @@ def test_fieldbook_prose_cannot_change_current_telemetry_inventory(
         assert decorated.telemetry is not None
         assert decorated.telemetry.squad[0].inventory_complete is None
         assert decorated.fieldbook_projects[0].project_id == project.project_id
-        assert "999 canisters" not in decorated.model_dump_json(
-            include={"telemetry"}
-        )
+        assert "999 canisters" not in decorated.model_dump_json(include={"telemetry"})
 
     asyncio.run(scenario())
 
@@ -251,9 +245,9 @@ def test_continuous_stop_decision_commits_its_fieldbook_sidecar(
         )
         runtime, logger = runtime_for(tmp_path, UnusedPlanner(), store)
         try:
-            current = runtime._with_memories(
-                await runtime.environment.reset(seed=1)
-            )
+            current = runtime._with_memories(await runtime.environment.reset(seed=1))
+            runtime._state_store = runtime._new_world_state_store()
+            current = runtime._state_store.publish(current).observation
             context = AuthoredPlannerContext(
                 manifest=PlannerContextManifest(
                     context_id="pc-1",
@@ -265,25 +259,23 @@ def test_continuous_stop_decision_commits_its_fieldbook_sidecar(
                 ),
                 observation=current,
             )
-            latest, _, terminated, _, _ = (
-                await runtime._execute_continuous_decision(
-                    PlannerDecision(
-                        intent="Stop and retain the continuing docket.",
-                        rationale="Stopping the run must not discard its sidecar.",
-                        action=StopAction(reason="done"),
-                        fieldbook_operations=[
-                            CreateFieldbookProjectOperation(
-                                kind=FieldbookProjectKind.DELIVERY_DOCKET,
-                                title="Continuing delivery",
-                                summary="Resume this delivery after restart.",
-                            )
-                        ],
-                    ),
-                    current,
-                    source="planner",
-                    planner_latency_seconds=0.1,
-                    authored_context=context,
-                )
+            latest, _, terminated, _, _ = await runtime._execute_continuous_decision(
+                PlannerDecision(
+                    intent="Stop and retain the continuing docket.",
+                    rationale="Stopping the run must not discard its sidecar.",
+                    action=StopAction(reason="done"),
+                    fieldbook_operations=[
+                        CreateFieldbookProjectOperation(
+                            kind=FieldbookProjectKind.DELIVERY_DOCKET,
+                            title="Continuing delivery",
+                            summary="Resume this delivery after restart.",
+                        )
+                    ],
+                ),
+                current,
+                source="planner",
+                planner_latency_seconds=0.1,
+                authored_context=context,
             )
             projects = store.fieldbook.list_projects()
         finally:

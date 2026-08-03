@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from operation_test_support import operation_port
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.continuity import (
@@ -86,9 +87,7 @@ def observation(
         telemetry_stale=stale,
         telemetry=TelemetrySnapshot(
             sequence=3,
-            nearby_entities=[
-                NearbyEntity(id=target_id, name="Barman") for target_id in target_ids
-            ],
+            nearby_entities=[NearbyEntity(id=target_id, name="Barman") for target_id in target_ids],
         ),
     )
 
@@ -188,24 +187,18 @@ def planner_context(
             run_id=current.run_id,
             authored_revision=current.world_revision,
             current_observation_delivered=True,
-            telemetry_was_fresh=(
-                current.telemetry is not None and not current.telemetry_stale
-            ),
+            telemetry_was_fresh=(current.telemetry is not None and not current.telemetry_stale),
             input_kind="full_observation",
             current_target_ids=sorted(current.current_memory_target_ids()),
             action_outcome_ids=list(
                 action_outcome_ids
                 if action_outcome_ids is not None
-                else tuple(
-                    outcome.outcome_id for outcome in ledger.recent_action_outcomes
-                )
+                else tuple(outcome.outcome_id for outcome in ledger.recent_action_outcomes)
             ),
             plan_outcome_ids=list(
                 plan_outcome_ids
                 if plan_outcome_ids is not None
-                else tuple(
-                    outcome.plan_outcome_id for outcome in ledger.recent_plan_outcomes
-                )
+                else tuple(outcome.plan_outcome_id for outcome in ledger.recent_plan_outcomes)
             ),
             memory_ids=list(
                 memory_ids
@@ -216,9 +209,7 @@ def planner_context(
                 )
             ),
             advisor_brief_ids=list(
-                advisor_brief_ids
-                if advisor_brief_ids is not None
-                else tuple(sorted(brief_ids))
+                advisor_brief_ids if advisor_brief_ids is not None else tuple(sorted(brief_ids))
             ),
         ),
         observation=current,
@@ -448,12 +439,8 @@ def test_a_read_receipt_cannot_advertise_working_ids_it_did_not_return(
     ledger = ledger_with_evidence()
     result = ledger.search_outcomes(query="plan", limit=8)
     values = {
-        "action_outcome_ids": [
-            outcome.outcome_id for outcome in result.action_outcomes
-        ],
-        "plan_outcome_ids": [
-            outcome.plan_outcome_id for outcome in result.plan_outcomes
-        ],
+        "action_outcome_ids": [outcome.outcome_id for outcome in result.action_outcomes],
+        "plan_outcome_ids": [outcome.plan_outcome_id for outcome in result.plan_outcomes],
     }
     values[overridden_field] = [invented_id]
 
@@ -572,7 +559,7 @@ def test_outcome_search_reports_matches_across_both_ledgers_under_one_bound() ->
 
 
 def test_plan_outcomes_carry_the_original_objective_and_terminal_reason() -> None:
-    """"Execute step X" is not a purpose. The next plan needs the real one."""
+    """ "Execute step X" is not a purpose. The next plan needs the real one."""
 
     ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
     started = datetime.now(UTC)
@@ -742,9 +729,7 @@ def test_each_evidence_reference_resolves_to_its_complete_typed_snapshot(
             authored_context_id="pc-1",
             run_id="run-a",
             world_revision=revision,
-            compact_summary=(
-                "current_observation(telemetry_sequence=3, frame_sequence=2)"
-            ),
+            compact_summary=("current_observation(telemetry_sequence=3, frame_sequence=2)"),
         ),
         ResolvedEvidenceSnapshot(
             source="action_outcome",
@@ -789,9 +774,7 @@ def test_each_evidence_reference_resolves_to_its_complete_typed_snapshot(
             authority=EvidenceAuthority.ADVICE,
             authored_context_id="pc-1",
             run_id="run-a",
-            compact_summary=(
-                f"advisor_brief({BRIEF_ID}, advice not world evidence)"
-            ),
+            compact_summary=(f"advisor_brief({BRIEF_ID}, advice not world evidence)"),
         ),
     ]
 
@@ -961,18 +944,10 @@ def test_evidence_that_scrolled_out_of_the_window_renders_as_evicted() -> None:
                 plan_outcome_ids=("po-1", "po-2"),
             )
 
-    assert render(ActionOutcomeEvidence(outcome_id="ao-1")) == (
-        "action_outcome(ao-1: no_op)"
-    )
-    assert render(ActionOutcomeEvidence(outcome_id="ao-2")) == (
-        "action_outcome(ao-2: no_op)"
-    )
-    assert render(PlanOutcomeEvidence(plan_outcome_id="po-1")) == (
-        "plan_outcome(po-1: abandoned)"
-    )
-    assert render(PlanOutcomeEvidence(plan_outcome_id="po-2")) == (
-        "plan_outcome(po-2: abandoned)"
-    )
+    assert render(ActionOutcomeEvidence(outcome_id="ao-1")) == ("action_outcome(ao-1: no_op)")
+    assert render(ActionOutcomeEvidence(outcome_id="ao-2")) == ("action_outcome(ao-2: no_op)")
+    assert render(PlanOutcomeEvidence(plan_outcome_id="po-1")) == ("plan_outcome(po-1: abandoned)")
+    assert render(PlanOutcomeEvidence(plan_outcome_id="po-2")) == ("plan_outcome(po-2: abandoned)")
 
 
 def test_the_ledger_returns_the_record_that_was_asked_for() -> None:
@@ -1165,9 +1140,7 @@ def test_an_ungrounded_fact_or_episode_is_rejected(
             plan_version=1,
         )
 
-        assert [receipt.status for receipt in receipts] == [
-            ContinuityOperationStatus.REJECTED
-        ]
+        assert [receipt.status for receipt in receipts] == [ContinuityOperationStatus.REJECTED]
         assert store.recall(limit=8) == []
 
 
@@ -1226,9 +1199,7 @@ def test_a_memory_only_reference_cannot_bootstrap_a_new_world_fact(
         )
 
         assert receipt.status is ContinuityOperationStatus.REJECTED
-        assert [record.kind for record in store.recall(limit=8)] == [
-            MemoryKind.HYPOTHESIS
-        ]
+        assert [record.kind for record in store.recall(limit=8)] == [MemoryKind.HYPOTHESIS]
 
 
 def test_a_stale_observation_cannot_ground_a_fresh_world_fact(
@@ -1284,9 +1255,7 @@ def test_controller_verified_world_effect_can_ground_a_fact(
         )
 
         assert receipt.status is ContinuityOperationStatus.ACCEPTED
-        assert receipt.resolved_evidence[0].authority.value == (
-            "verified_world_effect"
-        )
+        assert receipt.resolved_evidence[0].authority.value == ("verified_world_effect")
         assert receipt.resolved_evidence[0].semantic_status == "transferred"
         assert receipt.resolved_evidence[0].target_id == "resource-copper"
 
@@ -1317,9 +1286,7 @@ def test_uncausal_observed_change_cannot_ground_a_world_fact(
         )
 
         assert receipt.status is ContinuityOperationStatus.REJECTED
-        assert receipt.resolved_evidence[0].authority is (
-            EvidenceAuthority.OBSERVED_CHANGE
-        )
+        assert receipt.resolved_evidence[0].authority is (EvidenceAuthority.OBSERVED_CHANGE)
         assert store.recall(limit=8) == []
 
 
@@ -1336,9 +1303,7 @@ def test_failed_attempt_can_ground_an_episode_without_becoming_success(
     tmp_path: Path,
 ) -> None:
     ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
-    ledger.record_action_outcome(
-        action_outcome().model_copy(update={"assessment": assessment})
-    )
+    ledger.record_action_outcome(action_outcome().model_copy(update={"assessment": assessment}))
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ledger)
 
@@ -1375,9 +1340,7 @@ def test_an_intention_or_an_uncertainty_may_be_self_authored(
             plan_version=1,
         )
 
-        assert [receipt.status for receipt in receipts] == [
-            ContinuityOperationStatus.ACCEPTED
-        ]
+        assert [receipt.status for receipt in receipts] == [ContinuityOperationStatus.ACCEPTED]
         assert [record.kind for record in store.recall(limit=8)] == [kind]
 
 
@@ -1561,8 +1524,7 @@ def test_every_operation_receives_one_unique_runtime_owned_receipt_id(
     receipt_ids = [receipt.receipt_id for receipt in receipts]
     assert len(receipt_ids) == len(set(receipt_ids)) == 3
     assert all(
-        receipt_id.startswith("cor-") and len(receipt_id) == 36
-        for receipt_id in receipt_ids
+        receipt_id.startswith("cor-") and len(receipt_id) == 36 for receipt_id in receipt_ids
     )
 
 
@@ -1743,9 +1705,7 @@ def test_admissibility_store_failure_retains_already_resolved_evidence(
         assert receipt.reason == expected_reason
         assert receipt.evidence is None
         assert len(receipt.resolved_evidence) == 1
-        assert receipt.resolved_evidence[0].authority is (
-            EvidenceAuthority.FRESH_WORLD_OBSERVATION
-        )
+        assert receipt.resolved_evidence[0].authority is (EvidenceAuthority.FRESH_WORLD_OBSERVATION)
         assert receipt.writes_degraded
         assert engine.reads_degraded_reason == expected_reason
         assert engine.writes_degraded_reason == expected_reason
@@ -1954,7 +1914,8 @@ def test_several_references_are_joined_into_one_readable_grounding(
             plan_version=1,
         )[0]
         stored = next(
-            record for record in store.recall(limit=8)
+            record
+            for record in store.recall(limit=8)
             if record.content == "The route failed twice."
         )
 
@@ -2150,6 +2111,7 @@ def _single_step_runtime(
     runtime = AgentRuntime(
         run_id="single-step",
         environment=environment,
+        operation_port=operation_port(environment),
         planner=planner,
         guard=ActionGuard(
             SafetyConfig(
@@ -2207,23 +2169,16 @@ def test_a_single_step_decision_keeps_only_what_the_receipt_supports(
         assert summary.steps_completed == 1
         assert kept == ["Next: leave the bar."]
 
-        events = [
-            json.loads(line)
-            for line in (tmp_path / "events.jsonl").read_text().splitlines()
-        ]
+        events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
         receipts = [
-            event["payload"]
-            for event in events
-            if event["event_type"] == "continuity_receipt"
+            event["payload"] for event in events if event["event_type"] == "continuity_receipt"
         ]
         assert [receipt["status"] for receipt in receipts] == ["rejected", "accepted"]
         assert all(receipt["origin"] == "decision" for receipt in receipts)
         # The continuity operations are processed after the action receipt, so
         # the outcome that action produced already exists when they are.
         outcome_index = next(
-            index
-            for index, event in enumerate(events)
-            if event["event_type"] == "action_outcome"
+            index for index, event in enumerate(events) if event["event_type"] == "action_outcome"
         )
         receipt_index = next(
             index
@@ -2300,8 +2255,7 @@ def test_runtime_continuity_receipt_feedback_remains_bounded(
                 action=StopAction(reason="done"),
                 confidence=1.0,
                 continuity_operations=[
-                    keep(MemoryKind.FACT, f"Unsupported fact {index}.")
-                    for index in range(6)
+                    keep(MemoryKind.FACT, f"Unsupported fact {index}.") for index in range(6)
                 ],
             )
 
@@ -2322,9 +2276,7 @@ def test_runtime_continuity_receipt_feedback_remains_bounded(
                 receipt.status is ContinuityOperationStatus.REJECTED
                 for receipt in runtime._continuity_receipts
             )
-            assert len(
-                {receipt.receipt_id for receipt in runtime._continuity_receipts}
-            ) == 4
+            assert len({receipt.receipt_id for receipt in runtime._continuity_receipts}) == 4
 
     asyncio.run(scenario())
 
@@ -2348,9 +2300,7 @@ def test_degraded_writer_does_not_record_later_planner_delivery(
                     rationale="Gameplay remains valid even if memory writing fails.",
                     action=NoopAction(reason="continue"),
                     confidence=1.0,
-                    continuity_operations=[
-                        keep(MemoryKind.COMMITMENT, "Deliver the copper.")
-                    ],
+                    continuity_operations=[keep(MemoryKind.COMMITMENT, "Deliver the copper.")],
                 )
             return PlannerDecision(
                 intent="Stop.",
@@ -2403,9 +2353,7 @@ def test_delivery_diagnostic_failure_never_cancels_gameplay_and_reaches_next_pla
         seen_degraded_reasons: list[str | None] = []
 
         async def decide(self, current: Observation) -> Any:
-            self.seen_degraded_reasons.append(
-                current.continuity_writes_degraded_reason
-            )
+            self.seen_degraded_reasons.append(current.continuity_writes_degraded_reason)
             if len(self.seen_degraded_reasons) == 1:
                 return PlannerDecision(
                     intent="Continue despite a diagnostic write failure.",
@@ -2452,9 +2400,7 @@ def test_delivery_diagnostic_failure_never_cancels_gameplay_and_reaches_next_pla
             json.loads(line)
             for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
         ]
-        failures = [
-            event for event in events if event["event_type"] == "continuity_store_failed"
-        ]
+        failures = [event for event in events if event["event_type"] == "continuity_store_failed"]
         assert len(failures) == 1
         assert failures[0]["payload"] == {
             "boundary": "record_delivery",
@@ -2533,9 +2479,7 @@ def test_automatic_recall_failure_quarantines_reads_and_writes_without_stopping_
             json.loads(line)
             for line in (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
         ]
-        failures = [
-            event for event in events if event["event_type"] == "continuity_store_failed"
-        ]
+        failures = [event for event in events if event["event_type"] == "continuity_store_failed"]
         assert len(failures) == 1
         assert failures[0]["payload"] == {
             "boundary": "automatic_recall",
@@ -2645,15 +2589,11 @@ def test_delivery_marks_every_record_it_was_given(tmp_path: Path) -> None:
     """One placeholder per ID: a single-ID test would never notice the join."""
 
     with open_store(tmp_path / "memory.sqlite3") as store:
-        ids = [
-            keep_fact(store, f"Fact {index}.", run_id="run-a").memory_id
-            for index in range(4)
-        ]
+        ids = [keep_fact(store, f"Fact {index}.", run_id="run-a").memory_id for index in range(4)]
 
         store.record_delivery("run-a", ids[:3])
         delivered = {
-            record.content: record.last_delivered_at is not None
-            for record in store.recall(limit=8)
+            record.content: record.last_delivered_at is not None for record in store.recall(limit=8)
         }
 
     assert delivered == {
@@ -2689,12 +2629,8 @@ def test_runtime_records_delivery_from_the_final_prepared_input_only(
             for budget in range(4000, 60001, 1000):
                 payload = current.planner_payload(max_chars=budget)
                 document = json.loads(payload)
-                included = {
-                    record["memory_id"] for record in document["memories"]
-                }
-                if included < {
-                    record.memory_id for record in current.memories
-                }:
+                included = {record["memory_id"] for record in document["memories"]}
+                if included < {record.memory_id for record in current.memories}:
                     self.included_memory_ids = included
                     return prepared_budgeted_input(
                         current,
@@ -2752,19 +2688,14 @@ def test_planner_context_is_logged_before_a_provider_failure(tmp_path: Path) -> 
             finally:
                 logger.close()
 
-        events = [
-            json.loads(line)
-            for line in (tmp_path / "events.jsonl").read_text().splitlines()
-        ]
+        events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
         context_index = next(
             index
             for index, event in enumerate(events)
             if event["event_type"] == "planner_context_prepared"
         )
         failure_index = next(
-            index
-            for index, event in enumerate(events)
-            if event["event_type"] == "planner_error"
+            index for index, event in enumerate(events) if event["event_type"] == "planner_error"
         )
         context = events[context_index]["payload"]
         assert context["context_id"] == "pc-1"
@@ -2864,9 +2795,7 @@ def test_every_lifecycle_transition_reaches_the_store_through_apply(
         assert new.salience == 0.7
         assert new.target_id == "entity-present"
 
-        assert new.grounding == (
-            "current_observation(telemetry_sequence=3, frame_sequence=2)"
-        )
+        assert new.grounding == ("current_observation(telemetry_sequence=3, frame_sequence=2)")
         assert new.latest_provenance is not None
         assert new.latest_provenance.operation.operation == "supersede"
 
@@ -3015,40 +2944,43 @@ def test_evidence_capabilities_form_one_exhaustive_lifecycle_matrix(
             )
             resolved = [snapshot]
 
-            assert (
-                engine._admissibility_error(fact, resolved) is None
-            ) is (evidence_authority in FACT_AUTHORITIES)
-            assert (
-                engine._admissibility_error(episode, resolved) is None
-            ) is (evidence_authority in EPISODE_AUTHORITIES)
-            assert (
-                engine._admissibility_error(close_commitment, resolved) is None
-            ) is (evidence_authority in COMMITMENT_CLOSURE_AUTHORITIES)
-            assert (
-                engine._admissibility_error(confirm_hypothesis, resolved) is None
-            ) is (evidence_authority in FACT_AUTHORITIES)
-            assert (
-                engine._admissibility_error(unknown_hypothesis, resolved) is None
-            ) is (evidence_authority in EPISODE_AUTHORITIES)
+            assert (engine._admissibility_error(fact, resolved) is None) is (
+                evidence_authority in FACT_AUTHORITIES
+            )
+            assert (engine._admissibility_error(episode, resolved) is None) is (
+                evidence_authority in EPISODE_AUTHORITIES
+            )
+            assert (engine._admissibility_error(close_commitment, resolved) is None) is (
+                evidence_authority in COMMITMENT_CLOSURE_AUTHORITIES
+            )
+            assert (engine._admissibility_error(confirm_hypothesis, resolved) is None) is (
+                evidence_authority in FACT_AUTHORITIES
+            )
+            assert (engine._admissibility_error(unknown_hypothesis, resolved) is None) is (
+                evidence_authority in EPISODE_AUTHORITIES
+            )
 
         missing = ResolveMemoryOperation(
             memory_id="mem-missing",
             reason="No such record.",
             references=[CurrentObservationEvidence()],
         )
-        assert engine._admissibility_error(
-            missing,
-            [
-                ResolvedEvidenceSnapshot(
-                    source="current_observation",
-                    source_id="pc-1:current_observation",
-                    authority=EvidenceAuthority.FRESH_WORLD_OBSERVATION,
-                    authored_context_id="pc-1",
-                    run_id="run-a",
-                    compact_summary="current observation",
-                )
-            ],
-        ) is None
+        assert (
+            engine._admissibility_error(
+                missing,
+                [
+                    ResolvedEvidenceSnapshot(
+                        source="current_observation",
+                        source_id="pc-1:current_observation",
+                        authority=EvidenceAuthority.FRESH_WORLD_OBSERVATION,
+                        authored_context_id="pc-1",
+                        run_id="run-a",
+                        compact_summary="current observation",
+                    )
+                ],
+            )
+            is None
+        )
 
 
 @pytest.mark.parametrize(
@@ -3064,9 +2996,7 @@ def test_non_effect_outcomes_cannot_close_a_world_commitment(
     tmp_path: Path,
 ) -> None:
     ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
-    ledger.record_action_outcome(
-        action_outcome().model_copy(update={"assessment": assessment})
-    )
+    ledger.record_action_outcome(action_outcome().model_copy(update={"assessment": assessment}))
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = authority(store, ledger)
         kept = apply_one(
@@ -3119,9 +3049,7 @@ def test_hypothesis_resolution_preserves_confirmed_rejected_or_unknown(
         assert resolved.status is ContinuityOperationStatus.ACCEPTED
         record = store.get(missing_disposition.memory_id)
         assert record is not None
-        assert record.resolution_disposition is (
-            MemoryResolutionDisposition.REJECTED
-        )
+        assert record.resolution_disposition is (MemoryResolutionDisposition.REJECTED)
 
 
 def test_accepted_lifecycle_event_persists_structured_canonical_provenance(
@@ -3161,9 +3089,7 @@ def test_accepted_lifecycle_event_persists_structured_canonical_provenance(
         assert provenance["authored_revision"]["observed_at_monotonic"] > 0.0
         assert provenance["commit_revision"] == provenance["authored_revision"]
         assert provenance["references"] == [{"source": "current_observation"}]
-        assert provenance["resolved_evidence"][0]["authority"] == (
-            "fresh_world_observation"
-        )
+        assert provenance["resolved_evidence"][0]["authority"] == ("fresh_world_observation")
         assert provenance["plan_id"] == "plan-a"
         assert provenance["plan_version"] == 3
         assert provenance["step_id"] == "observe-gate"
@@ -3232,9 +3158,9 @@ def test_a_transition_on_a_closed_or_unknown_record_is_a_receipt_not_a_crash(
         )
         assert grounded_but_closed.status is ContinuityOperationStatus.REJECTED
         assert grounded_but_closed.evidence == "action_outcome(ao-1: no_op)"
-        assert [
-            snapshot.authority for snapshot in grounded_but_closed.resolved_evidence
-        ] == [EvidenceAuthority.ATTEMPT_NO_OP]
+        assert [snapshot.authority for snapshot in grounded_but_closed.resolved_evidence] == [
+            EvidenceAuthority.ATTEMPT_NO_OP
+        ]
 
         assert store.event_count() == 2
 
@@ -3394,20 +3320,13 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
         assert seen[1].source == "durable_memory"
         assert seen[1].status == "completed"
         assert seen[1].campaign_id == "reader"
-        assert seen[1].record_ids == [
-            record.memory_id for record in seen[1].records
-        ]
+        assert seen[1].record_ids == [record.memory_id for record in seen[1].records]
         assert seen[1].truncated is False
         assert seen[2] is None, "the elective read leaked into a later planner call"
         assert len(seen) == 3
 
-        events = [
-            json.loads(line)
-            for line in (tmp_path / "events.jsonl").read_text().splitlines()
-        ]
-        reads = [
-            event["payload"] for event in events if event["event_type"] == "memory_read"
-        ]
+        events = [json.loads(line) for line in (tmp_path / "events.jsonl").read_text().splitlines()]
+        reads = [event["payload"] for event in events if event["event_type"] == "memory_read"]
         assert len(reads) == 1
         assert reads[0]["controller_primitives"] == 0
         assert reads[0]["world_command_created"] is False
@@ -3506,12 +3425,16 @@ def test_a_working_outcome_read_returns_exact_runtime_owned_evidence() -> None:
     assert returned.source == "working_outcomes"
     assert returned.status is MemoryReadStatus.COMPLETED
     assert returned.campaign_id is None
-    assert returned.action_outcome_ids == [
-        outcome.outcome_id for outcome in returned.action_outcomes
-    ] == ["ao-2"]
-    assert returned.plan_outcome_ids == [
-        outcome.plan_outcome_id for outcome in returned.plan_outcomes
-    ] == ["po-1"]
+    assert (
+        returned.action_outcome_ids
+        == [outcome.outcome_id for outcome in returned.action_outcomes]
+        == ["ao-2"]
+    )
+    assert (
+        returned.plan_outcome_ids
+        == [outcome.plan_outcome_id for outcome in returned.plan_outcomes]
+        == ["po-1"]
+    )
     assert returned.plan_id == "plan-reader"
     assert returned.plan_version == 3
     assert returned.step_id == "read-outcomes"
@@ -3582,9 +3505,7 @@ def test_elective_memory_search_failure_is_typed_and_quarantined(
         assert engine.reads_degraded_reason == expected_reason
         assert engine.writes_degraded_reason == expected_reason
         failures = [
-            payload
-            for event_type, payload in events
-            if event_type == "continuity_store_failed"
+            payload for event_type, payload in events if event_type == "continuity_store_failed"
         ]
         assert failures == [
             {
@@ -3757,9 +3678,7 @@ def test_evidence_from_the_same_game_session_stays_admissible() -> None:
             )
         }
     )
-    context = planner_context(
-        same_session, ledger=ledger, store=None, brief_ids=set()
-    )
+    context = planner_context(same_session, ledger=ledger, store=None, brief_ids=set())
 
     snapshot = resolve_evidence_reference(
         ActionOutcomeEvidence(outcome_id="ao-1"),
@@ -3787,9 +3706,7 @@ def test_a_run_without_session_identity_keeps_its_evidence() -> None:
         )
     )
     no_telemetry = observation().model_copy(update={"telemetry": None})
-    context = planner_context(
-        no_telemetry, ledger=ledger, store=None, brief_ids=set()
-    )
+    context = planner_context(no_telemetry, ledger=ledger, store=None, brief_ids=set())
 
     snapshot = resolve_evidence_reference(
         ActionOutcomeEvidence(outcome_id="ao-1"),

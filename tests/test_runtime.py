@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import pytest
+from operation_test_support import operation_port
 from PIL import Image
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
@@ -65,6 +66,10 @@ def test_every_runtime_exit_has_one_durable_final_state_owner(
                 run_id=exit_kind,
                 step_index=0,
                 mode="mock",
+                world_revision=WorldStateRevision(
+                    telemetry_sequence=0,
+                    capability_epoch=1,
+                ),
             )
 
         async def reset(self, *, seed: int | None = None) -> Observation:
@@ -122,6 +127,7 @@ def test_every_runtime_exit_has_one_durable_final_state_owner(
         runtime = AgentRuntime(
             run_id=exit_kind,
             environment=environment,
+            operation_port=operation_port(environment),
             planner=planner,
             guard=ActionGuard(
                 SafetyConfig(
@@ -155,14 +161,9 @@ def test_every_runtime_exit_has_one_durable_final_state_owner(
 
         assert environment.close_calls == 1
         events = [
-            json.loads(line)
-            for line in (tmp_path / f"{exit_kind}.jsonl").read_text().splitlines()
+            json.loads(line) for line in (tmp_path / f"{exit_kind}.jsonl").read_text().splitlines()
         ]
-        final_events = [
-            event
-            for event in events
-            if event["event_type"] == "run_finished_safety"
-        ]
+        final_events = [event for event in events if event["event_type"] == "run_finished_safety"]
         assert len(final_events) == 1
         assert final_events[0]["payload"]["status"] == "pause_confirmed"
 
@@ -205,6 +206,7 @@ def test_full_mock_runtime_survives_one_day(tmp_path: Path) -> None:
             runtime = AgentRuntime(
                 run_id=run_id,
                 environment=environment,
+                operation_port=operation_port(environment),
                 planner=HeuristicPlanner(),
                 guard=ActionGuard(safety, macros),
                 reflexes=ReflexEngine(),
@@ -324,6 +326,7 @@ def test_runtime_carries_bounded_noop_feedback_between_decisions(
             runtime = AgentRuntime(
                 run_id=run_id,
                 environment=environment,
+                operation_port=operation_port(environment),
                 planner=planner,
                 guard=ActionGuard(safety, macros),
                 reflexes=ReflexEngine(),
@@ -490,9 +493,7 @@ def _camera_recovery_receipt(status: CameraRecoveryStatus) -> ActionReceipt:
                 clear_score_threshold=0.72,
                 anchor_max_distance=30.0,
                 paused_for_recovery=False,
-                primitive_actions=(
-                    0 if status is CameraRecoveryStatus.ALREADY_CLEAR else 4
-                ),
+                primitive_actions=(0 if status is CameraRecoveryStatus.ALREADY_CLEAR else 4),
                 follow_method=(
                     "already_anchored"
                     if status is CameraRecoveryStatus.ALREADY_CLEAR
@@ -659,18 +660,10 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
 
 def test_telemetry_changes_name_nutrition_by_its_model_facing_meaning() -> None:
     before = TelemetrySnapshot.model_validate(
-        {
-            "squad": [
-                {"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.8}
-            ]
-        }
+        {"squad": [{"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.8}]}
     )
     after = TelemetrySnapshot.model_validate(
-        {
-            "squad": [
-                {"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.6}
-            ]
-        }
+        {"squad": [{"id": "char-hep", "name": "Hep", "selected": True, "hunger": 2.6}]}
     )
 
     labels = AgentRuntime._telemetry_changes(before, after)
@@ -697,6 +690,10 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
                 run_id="session-run",
                 step_index=0,
                 mode="live",
+                world_revision=WorldStateRevision(
+                    telemetry_sequence=3,
+                    capability_epoch=1,
+                ),
                 telemetry=TelemetrySnapshot(
                     sequence=3,
                     identity_session_id=session,
@@ -743,9 +740,11 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
 
     async def scenario() -> None:
         logger = SessionLogger(tmp_path / "session.jsonl", "session-run")
+        environment = SessionEnvironment()
         runtime = AgentRuntime(
             run_id="session-run",
-            environment=SessionEnvironment(),
+            environment=environment,
+            operation_port=operation_port(environment),
             planner=PausePlanner(),
             guard=ActionGuard(
                 SafetyConfig(allow_action_kinds=["pause"], max_actions_per_minute=500),
@@ -763,8 +762,7 @@ def test_a_recorded_outcome_remembers_the_game_session_it_happened_in(
             logger.close()
 
         events = [
-            json.loads(line)
-            for line in (tmp_path / "session.jsonl").read_text().splitlines()
+            json.loads(line) for line in (tmp_path / "session.jsonl").read_text().splitlines()
         ]
         outcomes = [e for e in events if e["event_type"] == "action_outcome"]
         assert outcomes, "expected one recorded action outcome"

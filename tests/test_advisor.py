@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from operation_test_support import operation_port
 from pydantic import ValidationError
 from pytest import MonkeyPatch
 
@@ -26,6 +27,7 @@ from kenshi_agent.config import (
     SafetyConfig,
 )
 from kenshi_agent.env import MockEnvironment
+from kenshi_agent.env.mock import MockOperationPort
 from kenshi_agent.evals import evaluate_log
 from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.models import (
@@ -33,6 +35,7 @@ from kenshi_agent.models import (
     AdvisorFocus,
     AdvisorRecommendation,
     CharacterState,
+    CommandDispatchContext,
     Condition,
     ConditionKind,
     ConditionOperator,
@@ -160,12 +163,22 @@ class BlockingWaitMockEnvironment(MockEnvironment):
         )
         self.world_action_started = asyncio.Event()
         self.release_world_action = asyncio.Event()
+        self._mechanics = BlockingWaitOperationPort(self)
 
-    async def step(self, action: Action) -> Transition:
-        if isinstance(action, WaitAction):
-            self.world_action_started.set()
-            await self.release_world_action.wait()
-        return await super().step(action)
+
+class BlockingWaitOperationPort(MockOperationPort):
+    async def wait(
+        self,
+        action: Action,
+        *,
+        command: CommandDispatchContext,
+        token: Any,
+    ) -> Transition:
+        environment = self._environment
+        assert isinstance(environment, BlockingWaitMockEnvironment)
+        environment.world_action_started.set()
+        await environment.release_world_action.wait()
+        return await super().wait(action, command=command, token=token)
 
 
 def observation(step_index: int = 0) -> Observation:
@@ -276,10 +289,13 @@ def consult_while_playing_plan(current: Observation) -> PlanEnvelope:
 def test_advisor_request_can_share_a_plan_with_independent_world_work() -> None:
     current = observation()
 
-    assert live_plan_policy_errors(
-        consult_while_playing_plan(current),
-        current,
-    ) == []
+    assert (
+        live_plan_policy_errors(
+            consult_while_playing_plan(current),
+            current,
+        )
+        == []
+    )
 
 
 def test_foreground_world_action_runs_while_advisor_is_still_thinking(
@@ -311,6 +327,7 @@ def test_foreground_world_action_runs_while_advisor_is_still_thinking(
         runtime = AgentRuntime(
             run_id="advisor-background",
             environment=environment,
+            operation_port=operation_port(environment),
             planner=planner,
             advisor=session,
             guard=ActionGuard(
@@ -380,6 +397,7 @@ def test_run_end_cancels_a_pending_advisor_without_leaving_session_state(
         runtime = AgentRuntime(
             run_id="advisor-cancel",
             environment=environment,
+            operation_port=operation_port(environment),
             planner=OnePlanPlanner(),
             advisor=session,
             guard=ActionGuard(
@@ -590,9 +608,7 @@ def test_openrouter_advisor_continues_an_exact_truncated_json_suffix() -> None:
         advisor = object.__new__(OpenRouterStrategyAdvisor)
         advisor.config = advisor_config()
         advisor.model = advisor.config.model
-        advisor.client = SimpleNamespace(
-            chat=SimpleNamespace(completions=completions)
-        )
+        advisor.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
         result = asyncio.run(
             advisor.advise(
@@ -645,9 +661,7 @@ def test_openrouter_advisor_does_not_continue_a_complete_invalid_answer() -> Non
     advisor = object.__new__(OpenRouterStrategyAdvisor)
     advisor.config = advisor_config()
     advisor.model = advisor.config.model
-    advisor.client = SimpleNamespace(
-        chat=SimpleNamespace(completions=completions)
-    )
+    advisor.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
     with pytest.raises(ValidationError):
         asyncio.run(
@@ -657,9 +671,7 @@ def test_openrouter_advisor_does_not_continue_a_complete_invalid_answer() -> Non
                     focus=AdvisorFocus.NEXT_GOAL,
                 ),
                 observation=observation(),
-                corpus=GuideCorpus.load(
-                    ROOT / "knowledge" / "kenshi_strategy_v1.yaml"
-                ),
+                corpus=GuideCorpus.load(ROOT / "knowledge" / "kenshi_strategy_v1.yaml"),
             )
         )
 
@@ -702,6 +714,7 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
         runtime = AgentRuntime(
             run_id="advisor-runtime",
             environment=environment,
+            operation_port=operation_port(environment),
             planner=planner,
             advisor=session,
             guard=ActionGuard(
@@ -746,9 +759,12 @@ def test_continuous_runtime_never_dispatches_consult_to_the_environment(
         )
         assert advisor_receipt["payload"]["primitive_actions"] == 0
         assert advisor_receipt["payload"]["command_id"] is None
-        assert next(
-            event for event in events if event["event_type"] == "advisor_result"
-        )["payload"]["world_command_created"] is False
+        assert (
+            next(event for event in events if event["event_type"] == "advisor_result")["payload"][
+                "world_command_created"
+            ]
+            is False
+        )
         metrics = evaluate_log(tmp_path / "events.jsonl")
         assert metrics.advisor_requests == 1
         assert metrics.advisor_hosted_calls == 1
@@ -836,10 +852,7 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
         assert latest is not None
         assert latest.world_revision == later.world_revision
         assert latest.advisor.latest_brief is not None
-        assert (
-            latest.advisor.latest_brief.based_on_revision
-            == current.world_revision
-        )
+        assert latest.advisor.latest_brief.based_on_revision == current.world_revision
 
     asyncio.run(scenario())
 

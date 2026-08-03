@@ -9,6 +9,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from operation_test_support import operation_port
+
+from kenshi_agent.affordances import (
+    AffordanceSelection,
+    bind_affordance,
+    bound_affordance,
+    offered_affordances,
+)
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
@@ -20,10 +28,7 @@ from kenshi_agent.models import (
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
-    AffordanceExecution,
-    AffordanceSource,
     ApproachDialogueTargetAction,
-    BoundAffordance,
     CharacterState,
     CommandDispatchContext,
     Condition,
@@ -183,6 +188,9 @@ class RevisionEnvironment(AgentEnvironment):
                     elapsed_minutes=0.0,
                 ),
                 ui=UIState(
+                    active_screen="world",
+                    modal_open=False,
+                    dialogue_open=False,
                     open_inventory_windows=self.open_inventory_windows,
                 ),
                 nearby_entities=(
@@ -542,6 +550,7 @@ def runtime_for(
     runtime = AgentRuntime(
         run_id="continuous",
         environment=environment,
+        operation_port=operation_port(environment),
         planner=planner,
         guard=ActionGuard(safety, macros, control_mode=control_mode),
         reflexes=ReflexEngine(),
@@ -557,9 +566,7 @@ def runtime_for(
             max_plan_game_seconds=12.0,
             observation_pump_enabled=observation_pump_enabled,
             concurrent_option_planning_enabled=concurrent_option_planning_enabled,
-            concurrent_option_planning_delay_seconds=(
-                concurrent_option_planning_delay_seconds
-            ),
+            concurrent_option_planning_delay_seconds=(concurrent_option_planning_delay_seconds),
             stateful_approach_options_enabled=stateful_approach_options_enabled,
             max_native_assisted_actions_per_plan=max_native_assisted_actions_per_plan,
         ),
@@ -589,9 +596,7 @@ def test_exact_native_selection_terminal_completes_the_plan(tmp_path: Path) -> N
                                 "identity.stable_handles",
                                 "squad.basic",
                             ],
-                            "game": current.telemetry.game.model_copy(
-                                update={"loaded": True}
-                            ),
+                            "game": current.telemetry.game.model_copy(update={"loaded": True}),
                             "ui": UIState(
                                 active_screen="world",
                                 dialogue_open=False,
@@ -681,9 +686,7 @@ def test_exact_native_selection_terminal_completes_the_plan(tmp_path: Path) -> N
                     steps=[
                         PlanStep(
                             step_id="select-plant",
-                            action=SelectSquadMemberExactAction(
-                                target_id="entity-plant"
-                            ),
+                            action=SelectSquadMemberExactAction(target_id="entity-plant"),
                             preconditions=[fresh()],
                             success_conditions=[],
                             failure_conditions=[],
@@ -923,24 +926,17 @@ def test_threat_response_runs_under_monitoring_without_reflex_loop(
         assert [action.kind for action in environment.actions] == [
             "respond_to_immediate_threat",
             "pause",
-            "stop",
         ]
         events = read_events(tmp_path / "events.jsonl")
         assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
-        assert not any(
-            event["event_type"] == "safety_supervisor_preempted"
-            for event in events
-        )
+        assert not any(event["event_type"] == "safety_supervisor_preempted" for event in events)
         response_receipt = next(
             event["payload"]
             for event in events
             if event["event_type"] == "action_receipt"
-            and event["payload"]["action"]["kind"]
-            == "respond_to_immediate_threat"
+            and event["payload"]["action"]["kind"] == "respond_to_immediate_threat"
         )
-        assert response_receipt["semantic"]["action_kind"] == (
-            "respond_to_immediate_threat"
-        )
+        assert response_receipt["semantic"]["action_kind"] == ("respond_to_immediate_threat")
         assert response_receipt["semantic"]["option_id"] == (
             "threat-response-threat-response-proof-1-respond"
         )
@@ -1023,13 +1019,8 @@ def test_one_strategic_call_executes_two_guarded_actions_and_replays(
         assert metrics.receipts_with_post_command_revision_percentage == 100.0
 
         events = read_events(tmp_path / "events.jsonl")
-        started = next(
-            event for event in events if event["event_type"] == "run_started"
-        )
-        assert (
-            started["payload"]["memory_retrieval_policy"]
-            == "deterministic"
-        )
+        started = next(event for event in events if event["event_type"] == "run_started")
+        assert started["payload"]["memory_retrieval_policy"] == "deterministic"
         receipts = [
             event["payload"]
             for event in events
@@ -1164,8 +1155,7 @@ def test_executor_uses_dispatch_time_completion_without_model_restatement(
             if event["event_type"] == "plan_step_progress"
         ]
         assert any(
-            event["payload"]["evidence"].get("completion_owner")
-            == "runtime_conditions"
+            event["payload"]["evidence"].get("completion_owner") == "runtime_conditions"
             for event in progress
         )
 
@@ -1323,9 +1313,7 @@ def test_later_step_with_active_failure_condition_dispatches_no_input(
             logger.close()
 
         toggles = [
-            action
-            for action in environment.actions
-            if isinstance(action, UseGameBindingAction)
+            action for action in environment.actions if isinstance(action, UseGameBindingAction)
         ]
         assert len(toggles) == 1
         assert environment.open_inventory_windows == 1
@@ -1335,8 +1323,7 @@ def test_later_step_with_active_failure_condition_dispatches_no_input(
             if event["event_type"] == "plan_aborted"
         ]
         assert any(
-            "failure condition is already true before dispatch"
-            in str(event["payload"]["reason"])
+            "failure condition is already true before dispatch" in str(event["payload"]["reason"])
             for event in aborted
         )
 
@@ -1358,17 +1345,13 @@ def test_continuous_actions_reach_the_next_planner_outcome_ledger(
 
         assert planner.calls == 2
         outcome_kinds = [
-            outcome.action.kind
-            for outcome in planner.observations[1].recent_action_outcomes
+            outcome.action.kind for outcome in planner.observations[1].recent_action_outcomes
         ]
         assert outcome_kinds == [
             "pause",
             "set_speed",
         ]
-        assert all(
-            outcome.executed
-            for outcome in planner.observations[1].recent_action_outcomes
-        )
+        assert all(outcome.executed for outcome in planner.observations[1].recent_action_outcomes)
 
     asyncio.run(scenario())
 
@@ -1447,9 +1430,7 @@ class MismatchedRejectingEnvironment(BoundaryRejectingEnvironment):
             return transition
         return transition.model_copy(
             update={
-                "receipt": transition.receipt.model_copy(
-                    update={"command_id": "cmd-" + ("f" * 32)}
-                )
+                "receipt": transition.receipt.model_copy(update={"command_id": "cmd-" + ("f" * 32)})
             }
         )
 
@@ -1481,12 +1462,10 @@ def test_execution_token_carries_plan_authorization_into_dispatch(
         # so the boundary re-uses the plan's authority rather than its own rule.
         assert all(token.assumptions for token in tokens)
         assert all(token.preconditions for token in tokens)
-        assert [
-            token.command_id for token in tokens
-        ] == [context.command_id for context in environment.dispatch_contexts]
-        assert [
-            token.validated_revision.telemetry_sequence for token in tokens
-        ] == [1, 2]
+        assert [token.command_id for token in tokens] == [
+            context.command_id for context in environment.dispatch_contexts
+        ]
+        assert [token.validated_revision.telemetry_sequence for token in tokens] == [1, 2]
 
     asyncio.run(scenario())
 
@@ -1510,9 +1489,9 @@ def test_post_lease_boundary_rejection_releases_budget_and_is_attributable(
         finally:
             logger.close()
 
-        # The rejected dispatch never reached the environment's action path.
-        # Only the planner's later explicit Stop follows.
-        assert [type(action) for action in environment.actions] == [StopAction]
+        # The rejected operation never reached the scripted action path, and
+        # runtime-owned Stop completes without an environment operation.
+        assert environment.actions == []
 
         events = read_events(tmp_path / "events.jsonl")
         event_types = [event["event_type"] for event in events]
@@ -1537,7 +1516,7 @@ def test_post_lease_boundary_rejection_releases_budget_and_is_attributable(
         assert metrics.input_boundary_rejections == 1
         assert metrics.input_boundary_revalidations == 0
         assert metrics.budget_releases == 1
-        assert metrics.plan_steps_succeeded == 0
+        assert metrics.plan_steps_succeeded == 1
 
     asyncio.run(scenario())
 
@@ -1566,9 +1545,7 @@ def test_mismatched_rejection_receipt_keeps_budgets_spent(
         # Stop instead of treating the mismatched rejection as authority.
         assert environment.actions == []
         assert "rate limit" in summary.stop_reason
-        event_types = [
-            event["event_type"] for event in read_events(tmp_path / "events.jsonl")
-        ]
+        event_types = [event["event_type"] for event in read_events(tmp_path / "events.jsonl")]
         assert "plan_budget_committed" in event_types
         assert "plan_budget_released" not in event_types
 
@@ -1607,9 +1584,7 @@ def test_long_planner_validation_error_stops_without_masking_original_failure(
         stalled = [event for event in events if event["event_type"] == "replan_stalled"]
         assert len(stalled) == 1
         assert stalled[0]["payload"]["identical_failures"] == 3
-        planner_error = next(
-            event for event in events if event["event_type"] == "planner_error"
-        )
+        planner_error = next(event for event in events if event["event_type"] == "planner_error")
         payload = planner_error["payload"]
         assert payload["error_type"] == "ValueError"
         assert payload["message_characters"] > 20_000
@@ -1642,9 +1617,7 @@ def test_orphaned_plan_patch_is_rejected_then_fresh_planning_continues(
                     replace_future_steps=[
                         PlanStep(
                             step_id="orphaned-future",
-                            action=StopAction(
-                                reason="This action must never inherit authority."
-                            ),
+                            action=StopAction(reason="This action must never inherit authority."),
                             preconditions=[fresh()],
                             timeout_seconds=1.0,
                         )
@@ -1675,18 +1648,14 @@ def test_orphaned_plan_patch_is_rejected_then_fresh_planning_continues(
         assert feedback is not None
         assert "no active plan" in feedback
         assert "fresh PlanEnvelope or StopAction" in feedback
-        assert [type(action) for action in environment.actions] == [StopAction]
+        assert environment.actions == []
 
         events = read_events(tmp_path / "events.jsonl")
-        rejected = [
-            event for event in events if event["event_type"] == "plan_rejected"
-        ]
+        rejected = [event for event in events if event["event_type"] == "plan_rejected"]
         assert len(rejected) == 1
         assert rejected[0]["payload"]["plan_id"] == "already-finished-plan"
         assert "no matching active plan" in rejected[0]["payload"]["reason"]
-        assert not any(
-            event["event_type"] == "replan_stalled" for event in events
-        )
+        assert not any(event["event_type"] == "replan_stalled" for event in events)
 
     asyncio.run(scenario())
 
@@ -1732,12 +1701,11 @@ def test_semantically_identical_orphaned_patches_share_one_bounded_failure(
         assert "same orphaned plan patch" in summary.stop_reason
 
         events = read_events(tmp_path / "events.jsonl")
-        assert sum(
-            event["event_type"] == "plan_rejected" for event in events
-        ) == AgentRuntime._IDENTICAL_REPLAN_FAILURE_LIMIT
-        stalled = [
-            event for event in events if event["event_type"] == "replan_stalled"
-        ]
+        assert (
+            sum(event["event_type"] == "plan_rejected" for event in events)
+            == AgentRuntime._IDENTICAL_REPLAN_FAILURE_LIMIT
+        )
+        stalled = [event for event in events if event["event_type"] == "replan_stalled"]
         assert len(stalled) == 1
         assert stalled[0]["payload"]["reason"] == "plan_patch_without_active_plan"
 
@@ -1809,17 +1777,13 @@ def test_continuous_retry_preserves_typed_hosted_terminal_and_compact_feedback(
         assert "one step only" not in feedback
 
         events = read_events(tmp_path / "events.jsonl")
-        transport = [
-            event for event in events if event["event_type"] == "planner_transport"
-        ]
+        transport = [event for event in events if event["event_type"] == "planner_transport"]
         assert len(transport) == 1
         assert transport[0]["payload"]["finish_reason"] == "length"
         assert transport[0]["payload"]["reasoning_tokens"] == 11_700
         assert transport[0]["payload"]["structured_output_accepted"] is False
 
-        planner_error = next(
-            event for event in events if event["event_type"] == "planner_error"
-        )
+        planner_error = next(event for event in events if event["event_type"] == "planner_error")
         assert planner_error["payload"]["failure_category"] == "output_truncated"
         assert planner_error["payload"]["failure_signature"] == (
             "openrouter:output_truncated:PlanEnvelope:length"
@@ -1915,15 +1879,17 @@ def test_independent_supervisor_replans_after_confirming_a_catastrophic_pause(
         assert sum(event["event_type"] == "strategic_planner_cancelled" for event in events) == 1
         assert sum(event["event_type"] == "safety_cleanup_completed" for event in events) == 1
         assert (
-            sum(
-                event["event_type"] == "safety_supervisor_replan_requested"
-                for event in events
-            )
+            sum(event["event_type"] == "safety_supervisor_replan_requested" for event in events)
             == 1
         )
         assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 0
-        receipts = [event["payload"] for event in events if event["event_type"] == "action_receipt"]
-        assert len(receipts) == 2
+        receipts = [
+            event["payload"]
+            for event in events
+            if event["event_type"] == "action_receipt"
+            and event["payload"]["action"]["kind"] == "pause"
+        ]
+        assert len(receipts) == 1
         assert isinstance(receipts[0]["command_id"], str)
         assert COMMAND_ID_PATTERN.fullmatch(receipts[0]["command_id"])
         assert receipts[0]["causal_revision_advanced"] is True
@@ -1948,9 +1914,7 @@ def test_emergency_stop_remains_terminal_after_confirmed_pause(
         async def observe_without_capture(self) -> Observation:
             self.sequence += 1
             self.paused = False
-            return self.observation().model_copy(
-                update={"events": ["emergency_stop_detected"]}
-            )
+            return self.observation().model_copy(update={"events": ["emergency_stop_detected"]})
 
     async def scenario() -> None:
         plan_clock = FakeClock()
@@ -1982,10 +1946,10 @@ def test_emergency_stop_remains_terminal_after_confirmed_pause(
             action.paused for action in environment.actions if isinstance(action, PauseAction)
         ] == [True]
         events = read_events(tmp_path / "events.jsonl")
-        assert sum(
-            event["event_type"] == "safety_supervisor_replan_requested"
-            for event in events
-        ) == 0
+        assert (
+            sum(event["event_type"] == "safety_supervisor_replan_requested" for event in events)
+            == 0
+        )
         terminal = [
             event for event in events if event["event_type"] == "safety_supervisor_terminal"
         ]
@@ -2207,10 +2171,7 @@ def test_supervisor_cancels_blocked_plan_then_replans_from_automated_pause(
         )
         assert preemption["payload"]["cause"] == "reflex"
         assert (
-            sum(
-                event["event_type"] == "safety_supervisor_replan_requested"
-                for event in events
-            )
+            sum(event["event_type"] == "safety_supervisor_replan_requested" for event in events)
             == 1
         )
         assert sum(event["event_type"] == "safety_supervisor_terminal" for event in events) == 0
@@ -2363,15 +2324,9 @@ def test_human_handoff_countdown_replans_instead_of_resuming_cancelled_plan(
             for event in ownership
             if event["event_type"] == "control_ownership_changed"
         ] == ["human_control", "takeover_pending", "agent_active"]
-        assert any(
-            event["event_type"] == "agent_takeover_countdown"
-            for event in ownership
-        )
+        assert any(event["event_type"] == "agent_takeover_countdown" for event in ownership)
         assert any(event["event_type"] == "agent_takeover_ready" for event in ownership)
-        assert sum(
-            event["event_type"] == "safety_supervisor_finished"
-            for event in events
-        ) == 2
+        assert sum(event["event_type"] == "safety_supervisor_finished" for event in events) == 2
 
     asyncio.run(scenario())
 
@@ -2510,9 +2465,7 @@ def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
         assert summary.stop_reason == "Paused handoff proof complete."
         assert planner.calls == 3
         assert [
-            action.paused
-            for action in environment.actions
-            if isinstance(action, PauseAction)
+            action.paused for action in environment.actions if isinstance(action, PauseAction)
         ] == [True]
         events = read_events(tmp_path / "events.jsonl")
         human_preemption = next(
@@ -2525,10 +2478,7 @@ def test_human_input_during_a_confirmed_safety_pause_yields_then_replans(
             "kind": "pause",
             "paused": True,
         }
-        assert sum(
-            event["event_type"] == "safety_pause_already_confirmed"
-            for event in events
-        ) == 1
+        assert sum(event["event_type"] == "safety_pause_already_confirmed" for event in events) == 1
         assert not any(
             event["event_type"] == "safety_supervisor_terminal"
             and event["payload"]["cause"] == "human_input"
@@ -2780,10 +2730,7 @@ def test_short_option_finishes_before_concurrent_planner_holdoff(
         assert summary.steps_completed == 2
         assert planner.calls == 1
         events = read_events(tmp_path / "events.jsonl")
-        assert not any(
-            event["event_type"] == "concurrent_planner_discarded"
-            for event in events
-        )
+        assert not any(event["event_type"] == "concurrent_planner_discarded" for event in events)
 
     asyncio.run(scenario())
 
@@ -2876,9 +2823,7 @@ def approach_plan(observation: Observation) -> PlanEnvelope:
                     args=[SkillArgument(name="target_id", value="entity-barman")],
                 ),
                 preconditions=[condition("telemetry.game.paused", True, "game.pause")],
-                success_conditions=[
-                    condition("telemetry.ui.dialogue_open", True, "ui.dialogue")
-                ],
+                success_conditions=[condition("telemetry.ui.dialogue_open", True, "ui.dialogue")],
                 failure_conditions=[],
                 timeout_seconds=5.0,
                 retry_budget=0,
@@ -3071,9 +3016,7 @@ class NativeDirectionEnvironment(RevisionEnvironment):
             bearing_degrees=90.0,
             distance_units=250.0,
             selected_character_ids=["entity-hep"],
-            based_on_telemetry_sequence=(
-                self.command.based_on_revision.telemetry_sequence or 0
-            ),
+            based_on_telemetry_sequence=(self.command.based_on_revision.telemetry_sequence or 0),
             acknowledged_at_telemetry_sequence=2,
             accepted_at_telemetry_sequence=2,
             terminal_at_telemetry_sequence=self.sequence if terminal else None,
@@ -3097,18 +3040,12 @@ class NativeDirectionEnvironment(RevisionEnvironment):
         native_control = NativeControlState(
             active_command_id=(
                 self.command.command_id
-                if self.command is not None
-                and not self.completed
-                and not self.cancelled
+                if self.command is not None and not self.completed and not self.cancelled
                 else None
             ),
-            acknowledgements=(
-                [acknowledgement] if acknowledgement is not None else []
-            ),
+            acknowledgements=([acknowledgement] if acknowledgement is not None else []),
             last_command_sequence=1 if acknowledgement is not None else 0,
-            last_command=(
-                "move_in_direction" if acknowledgement is not None else None
-            ),
+            last_command=("move_in_direction" if acknowledgement is not None else None),
             last_result=(
                 "plan_patch_interrupted"
                 if self.cancelled
@@ -3126,9 +3063,7 @@ class NativeDirectionEnvironment(RevisionEnvironment):
                             "control.move_in_direction",
                             "squad.health",
                         ],
-                        "game": telemetry.game.model_copy(
-                            update={"loaded": True}
-                        ),
+                        "game": telemetry.game.model_copy(update={"loaded": True}),
                         "ui": telemetry.ui.model_copy(
                             update={
                                 "selected_character_id": "entity-hep",
@@ -3309,7 +3244,7 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
         assert len(started) == 1
         assert "native-movement-" in started[0]["payload"]["evidence"]["option_id"]
         assert sum(event["event_type"] == "option_succeeded" for event in events) == 1
-        assert sum(event["event_type"] == "plan_step_succeeded" for event in events) == 1
+        assert sum(event["event_type"] == "plan_step_succeeded" for event in events) == 2
         assert planner.calls == 2
         assert not any(
             event["event_type"] == "strategic_planner_call"
@@ -3317,9 +3252,7 @@ def test_targetless_direction_is_owned_until_its_native_arrival(
             for event in events
         )
         directions = [
-            action
-            for action in environment.actions
-            if isinstance(action, MoveInDirectionAction)
+            action for action in environment.actions if isinstance(action, MoveInDirectionAction)
         ]
         assert len(directions) == 1
         assert directions[0].bearing_degrees == 90.0
@@ -3373,9 +3306,7 @@ def test_interruptible_native_move_applies_a_pause_handoff_before_replanning(
                             timeout_seconds=5.0,
                             retry_budget=0,
                             idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                            interrupt_policy=(
-                                InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
-                            ),
+                            interrupt_policy=(InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH),
                         )
                     ],
                     entry_step_id="walk-east",
@@ -3593,9 +3524,7 @@ def test_native_move_timeout_pauses_before_the_planner_can_run_again(
             PauseAction,
         ]
         events = read_events(tmp_path / "events.jsonl")
-        failed = [
-            event for event in events if event["event_type"] == "option_failed"
-        ]
+        failed = [event for event in events if event["event_type"] == "option_failed"]
         assert len(failed) == 1
         assert "timed out" in str(failed[0]["payload"]).lower()
 
@@ -3934,12 +3863,9 @@ def test_stale_plan_output_is_rejected_without_executing_an_action(
             logger.close()
 
         assert summary.terminated
-        # A rejected plan now yields a replan rather than ending the session, so
-        # the planner's own Stop may run. What must not happen is any action
-        # that touches the game.
-        assert not [
-            action for action in environment.actions if not isinstance(action, StopAction)
-        ]
+        # A rejected plan yields a replan; the runtime-owned Stop does not touch
+        # the environment operation port.
+        assert environment.actions == []
         events = read_events(tmp_path / "events.jsonl")
         rejected = [event for event in events if event["event_type"] == "plan_rejected"]
         assert len(rejected) == 1
@@ -4072,7 +3998,6 @@ def semantic_chain_plan(
     *,
     target_id: str,
     label: str,
-    runtime_owned_activation_completion: bool = False,
 ) -> PlanEnvelope:
     """Approach any valid target, then activate any advertised control."""
 
@@ -4101,28 +4026,10 @@ def semantic_chain_plan(
             PlanStep(
                 step_id="activate",
                 action=ActivateVisibleControlAction(exact_label=label, role="button"),
-                affordance=(
-                    BoundAffordance(
-                        affordance_id="aff-00000000000000000000",
-                        source=AffordanceSource.DIALOGUE,
-                        semantic="choose_dialogue",
-                        execution=AffordanceExecution.IMMEDIATE,
-                        operation_kind="activate_visible_control",
-                        offered_at_telemetry_sequence=(
-                            observation.world_revision.telemetry_sequence
-                        ),
-                    )
-                    if runtime_owned_activation_completion
-                    else None
-                ),
-                preconditions=[
-                    condition("telemetry.ui.dialogue_open", True, "ui.dialogue")
+                preconditions=[condition("telemetry.ui.dialogue_open", True, "ui.dialogue")],
+                success_conditions=[
+                    condition("telemetry.ui.active_screen", "trade", "ui.dialogue")
                 ],
-                success_conditions=(
-                    []
-                    if runtime_owned_activation_completion
-                    else [condition("telemetry.ui.active_screen", "trade", "ui.dialogue")]
-                ),
                 failure_conditions=[],
                 timeout_seconds=5.0,
                 retry_budget=0,
@@ -4201,16 +4108,12 @@ class SemanticChainEnvironment(RevisionEnvironment):
                 VisibleUIControl(
                     label="Show me your goods.",
                     role="button",
-                    bounds=NormalizedPointerBounds(
-                        min_x=0.1, max_x=0.4, min_y=0.5, max_y=0.55
-                    ),
+                    bounds=NormalizedPointerBounds(min_x=0.1, max_x=0.4, min_y=0.5, max_y=0.55),
                 ),
                 VisibleUIControl(
                     label="Goodbye.",
                     role="button",
-                    bounds=NormalizedPointerBounds(
-                        min_x=0.1, max_x=0.4, min_y=0.6, max_y=0.65
-                    ),
+                    bounds=NormalizedPointerBounds(min_x=0.1, max_x=0.4, min_y=0.6, max_y=0.65),
                 ),
             ]
             if dialogue_open
@@ -4298,11 +4201,9 @@ class SemanticChainPlanner(Planner):
         *,
         target_id: str,
         label: str,
-        runtime_owned_activation_completion: bool = False,
     ) -> None:
         self.target_id = target_id
         self.label = label
-        self.runtime_owned_activation_completion = runtime_owned_activation_completion
         self.calls = 0
 
     async def decide(self, current: Observation) -> PlannerOutput:
@@ -4312,9 +4213,6 @@ class SemanticChainPlanner(Planner):
                 current,
                 target_id=self.target_id,
                 label=self.label,
-                runtime_owned_activation_completion=(
-                    self.runtime_owned_activation_completion
-                ),
             )
         return PlannerDecision(
             intent="stop",
@@ -4330,7 +4228,6 @@ def _run_semantic_chain(
     *,
     target_id: str,
     label: str,
-    runtime_owned_activation_completion: bool = False,
 ) -> tuple[list[dict[str, object]], SemanticChainPlanner]:
     async def scenario() -> SemanticChainPlanner:
         clock = FakeClock()
@@ -4338,7 +4235,6 @@ def _run_semantic_chain(
         planner = SemanticChainPlanner(
             target_id=target_id,
             label=label,
-            runtime_owned_activation_completion=runtime_owned_activation_completion,
         )
         runtime, logger = runtime_for(
             tmp_path,
@@ -4393,8 +4289,8 @@ def test_one_plan_composes_approach_and_control_activation(tmp_path: Path) -> No
 
     # One strategic call produced the whole chain; the second call only stopped.
     assert sum(e["event_type"] == "strategic_planner_called" for e in events) <= planner.calls
-    assert sum(e["event_type"] == "plan_step_succeeded" for e in events) == 2
-    assert sum(e["event_type"] == "plan_completed" for e in events) == 1
+    assert sum(e["event_type"] == "plan_step_succeeded" for e in events) == 3
+    assert sum(e["event_type"] == "plan_completed" for e in events) == 2
 
 
 def test_the_same_actions_compose_for_a_vendor_target_and_another_label(
@@ -4416,25 +4312,102 @@ def test_the_same_actions_compose_for_a_vendor_target_and_another_label(
     activations = [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]
     assert [a.target_id for a in approaches] == ["entity-barman"]
     assert [a.exact_label for a in activations] == ["Goodbye."]
-    assert sum(e["event_type"] == "plan_completed" for e in events) == 1
+    assert sum(e["event_type"] == "plan_completed" for e in events) == 2
 
 
 def test_selected_visible_control_uses_runtime_delivery_terminal(tmp_path: Path) -> None:
-    environment = SemanticChainEnvironment(clock=FakeClock(), target_id="entity-wanderer")
-    events, _ = _run_semantic_chain(
-        tmp_path,
-        environment,
-        target_id="entity-wanderer",
-        label="Show me your goods.",
-        runtime_owned_activation_completion=True,
-    )
+    class CurrentControlPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls > 1:
+                return PlannerDecision(
+                    intent="stop",
+                    rationale="The selected current control was delivered.",
+                    action=StopAction(reason="delivery proof complete"),
+                    confidence=1.0,
+                )
+            offer = next(
+                item
+                for item in offered_affordances(current)
+                if item.operation_kind == "activate_visible_control"
+                and item.operation_arguments.get("exact_label") == "Show me your goods."
+            )
+            materialized = bind_affordance(
+                AffordanceSelection(
+                    affordance_id=offer.affordance_id,
+                    target_id=(offer.target.target_id if offer.target is not None else None),
+                ),
+                current,
+            )
+            return PlanEnvelope(
+                schema_version="1.0",
+                plan_id="current-control-delivery",
+                objective="Deliver one exact currently offered dialogue control.",
+                control_mode=current.control_mode,
+                based_on_revision=current.world_revision,
+                assumptions=[fresh()],
+                steps=[
+                    PlanStep(
+                        step_id="activate",
+                        action=materialized.operation,
+                        affordance=bound_affordance(materialized),
+                        preconditions=[
+                            condition(
+                                "telemetry.ui.dialogue_open",
+                                True,
+                                "ui.dialogue",
+                            )
+                        ],
+                        success_conditions=[],
+                        failure_conditions=[],
+                        timeout_seconds=5.0,
+                        retry_budget=0,
+                        idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                    )
+                ],
+                entry_step_id="activate",
+                max_actions=1,
+                max_wall_seconds=10.0,
+                max_game_seconds=10.0,
+                risk_budget=RiskBudget(
+                    max_pointer_actions=1,
+                    max_purchase_actions=0,
+                    max_native_assisted_actions=0,
+                ),
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = SemanticChainEnvironment(
+            clock=clock,
+            target_id="entity-wanderer",
+        )
+        environment.distance = 3.0
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            CurrentControlPlanner(),
+            clock,
+            observation_pump_enabled=False,
+            concurrent_option_planning_enabled=False,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+        )
+        try:
+            await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+    asyncio.run(scenario())
+    events = read_events(tmp_path / "events.jsonl")
 
     delivery = [
         event
         for event in events
         if event["event_type"] == "plan_step_progress"
-        and event["payload"].get("evidence", {}).get("completion_owner")
-        == "affordance_delivery"
+        and event["payload"].get("evidence", {}).get("completion_owner") == "affordance_delivery"
     ]
     assert len(delivery) == 1
     assert delivery[0]["payload"]["evidence"] == {
@@ -4444,11 +4417,7 @@ def test_selected_visible_control_uses_runtime_delivery_terminal(tmp_path: Path)
         "causal_revision_advanced": True,
         "effect_verified": False,
     }
-    receipts = [
-        event["payload"]
-        for event in events
-        if event["event_type"] == "affordance_receipt"
-    ]
+    receipts = [event["payload"] for event in events if event["event_type"] == "affordance_receipt"]
     assert len(receipts) == 1
     assert [event["status"] for event in receipts[0]["receipt"]["lifecycle"]] == [
         "offered",
@@ -4456,7 +4425,7 @@ def test_selected_visible_control_uses_runtime_delivery_terminal(tmp_path: Path)
         "executing",
         "succeeded",
     ]
-    assert sum(e["event_type"] == "plan_completed" for e in events) == 1
+    assert sum(e["event_type"] == "plan_completed" for e in events) == 2
 
 
 def test_target_loss_fails_the_approach_option(tmp_path: Path) -> None:
@@ -4657,9 +4626,7 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     assert outcome.reason == "The exit was never reached."
     assert outcome.disposition is PlanDisposition.FAILED
     # Working history, not durable belief: nothing new reached the store.
-    assert [record.content for record in store.recall(limit=16)] == [
-        "The barman offers no work."
-    ]
+    assert [record.content for record in store.recall(limit=16)] == ["The barman offers no work."]
 
 
 def test_a_handback_sets_a_stopped_world_running_again() -> None:
@@ -4674,17 +4641,16 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
 
     dispatched: list[object] = []
 
-    class FakeEnvironment:
-        async def dispatch(self, action, *, command):  # type: ignore[no-untyped-def]
+    class FakeOperationPort:
+        async def pause(self, action, *, command, token):  # type: ignore[no-untyped-def]
+            del token
             dispatched.append(action)
             resumed = Observation(
                 run_id="handback",
                 step_index=1,
                 mode="mock",
                 world_revision=WorldStateRevision(telemetry_sequence=2),
-                telemetry=TelemetrySnapshot(
-                    sequence=2, game=GameState(loaded=True, paused=False)
-                ),
+                telemetry=TelemetrySnapshot(sequence=2, game=GameState(loaded=True, paused=False)),
             )
             return SimpleNamespace(observation=resumed)
 
@@ -4696,7 +4662,7 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
             self.completed = command_id
 
     runtime = object.__new__(AgentRuntime)
-    runtime.environment = FakeEnvironment()
+    runtime.operation_port = FakeOperationPort()
     runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
     store = FakeStore()
 
@@ -4720,11 +4686,11 @@ def test_a_handback_does_not_disturb_a_world_already_running() -> None:
     from kenshi_agent.runtime import AgentRuntime
 
     class Unused:
-        async def dispatch(self, action, *, command):  # type: ignore[no-untyped-def]
+        async def pause(self, action, *, command, token):  # type: ignore[no-untyped-def]
             raise AssertionError("a running world needs no resume")
 
     runtime = object.__new__(AgentRuntime)
-    runtime.environment = Unused()
+    runtime.operation_port = Unused()
     runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
 
     already = Observation(
@@ -4871,13 +4837,9 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
         events = read_events(tmp_path / "events.jsonl")
         assert sum(event["event_type"] == "plan_patched" for event in events) == 1
         assert kept == ["The speed change had to be revised mid-option."]
-        assert [project.title for project in projects] == [
-            "Revised movement route"
-        ]
+        assert [project.title for project in projects] == ["Revised movement route"]
         receipts = [
-            event["payload"]
-            for event in events
-            if event["event_type"] == "continuity_receipt"
+            event["payload"] for event in events if event["event_type"] == "continuity_receipt"
         ]
         contexts = [
             event["payload"]
@@ -4890,15 +4852,11 @@ def test_an_applied_patch_commits_its_continuity_exactly_once(tmp_path: Path) ->
         assert receipts[0]["authored_revision"] == contexts[1]["authored_revision"]
         assert receipts[0]["commit_revision"] != receipts[0]["authored_revision"]
         fieldbook_receipts = [
-            event["payload"]
-            for event in events
-            if event["event_type"] == "fieldbook_receipt"
+            event["payload"] for event in events if event["event_type"] == "fieldbook_receipt"
         ]
         assert [receipt["origin"] for receipt in fieldbook_receipts] == ["patch"]
         assert fieldbook_receipts[0]["status"] == "accepted"
-        assert fieldbook_receipts[0]["authored_context_id"] == (
-            contexts[1]["context_id"]
-        )
+        assert fieldbook_receipts[0]["authored_context_id"] == (contexts[1]["context_id"])
 
     asyncio.run(scenario())
 
@@ -4972,20 +4930,14 @@ def test_a_rejected_patch_with_mismatched_authored_basis_writes_nothing_durable(
             logger.close()
 
         events = read_events(tmp_path / "events.jsonl")
-        rejected = [
-            event for event in events if event["event_type"] == "plan_patch_rejected"
-        ]
+        rejected = [event for event in events if event["event_type"] == "plan_patch_rejected"]
         assert len(rejected) == 1
         assert "immutable planner snapshot" in str(rejected[0]["payload"])
         assert sum(event["event_type"] == "plan_patched" for event in events) == 0
         assert kept == []
         assert projects == []
-        assert not any(
-            event["event_type"] == "continuity_receipt" for event in events
-        )
-        assert not any(
-            event["event_type"] == "fieldbook_receipt" for event in events
-        )
+        assert not any(event["event_type"] == "continuity_receipt" for event in events)
+        assert not any(event["event_type"] == "fieldbook_receipt" for event in events)
 
     asyncio.run(scenario())
 
@@ -5087,13 +5039,9 @@ def test_a_continuous_fieldbook_read_reaches_the_replacing_planner_without_game_
         received = seen_reads[1]
         assert received is not None
         assert received.entry_ids == [entry.entry_id]  # type: ignore[union-attr]
-        assert [type(action) for action in environment.actions] == [StopAction]
+        assert environment.actions == []
         events = read_events(tmp_path / "events.jsonl")
-        read_event = next(
-            event
-            for event in events
-            if event["event_type"] == "fieldbook_read"
-        )
+        read_event = next(event for event in events if event["event_type"] == "fieldbook_read")
         assert read_event["payload"]["controller_primitives"] == 0
         assert read_event["payload"]["world_command_created"] is False
 
@@ -5112,10 +5060,7 @@ def test_a_finished_plan_hands_its_purpose_to_the_next_planner(tmp_path: Path) -
         async def decide(self, current: Observation) -> PlannerOutput:
             self.calls += 1
             seen.append(
-                [
-                    outcome.model_dump(mode="json")
-                    for outcome in current.recent_plan_outcomes
-                ]
+                [outcome.model_dump(mode="json") for outcome in current.recent_plan_outcomes]
             )
             if self.calls == 1:
                 return two_step_plan(current).model_copy(
@@ -5147,9 +5092,7 @@ def test_a_finished_plan_hands_its_purpose_to_the_next_planner(tmp_path: Path) -
         assert first["reason"]
 
         events = read_events(tmp_path / "events.jsonl")
-        outcomes = [
-            event["payload"] for event in events if event["event_type"] == "plan_outcome"
-        ]
+        outcomes = [event["payload"] for event in events if event["event_type"] == "plan_outcome"]
         assert len(outcomes) == 1
         assert evaluate_log(tmp_path / "events.jsonl").plan_outcomes == 1
 
