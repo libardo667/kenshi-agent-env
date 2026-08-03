@@ -416,10 +416,11 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
     )
     payload = observation.planner_payload()
     assert "secret-frame.png" not in payload
-    assert '"run_id": "run"' in payload
-    assert '"objective": "Explore nearby."' in payload
-    assert '"name": "move_on_map"' in payload
-    assert '"visual_precondition": "The map is open."' in payload
+    document = json.loads(payload)
+    assert document["run_id"] == "run"
+    assert document["objective"] == "Explore nearby."
+    assert document["available_skills"] == []
+    assert document["skill_specs"] == []
 
 
 def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:

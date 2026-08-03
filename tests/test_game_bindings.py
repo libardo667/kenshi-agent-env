@@ -1497,7 +1497,7 @@ def test_the_observation_can_carry_planner_feedback() -> None:
     # envelope can hold decision-critical state.
     tight = with_feedback.planner_payload(
         max_chars=1,
-        max_context_chars=len(full),
+        max_context_chars=len(full) + 1_000,
     )
     assert "capability needs a path" in tight
     assert "observation_budget" in tight

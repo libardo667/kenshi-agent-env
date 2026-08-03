@@ -43,7 +43,6 @@ from kenshi_agent.models import (
     is_semantic_action,
     normalize_control_label,
 )
-from kenshi_agent.nutrition import model_facing_telemetry_payload
 
 NOW = datetime(2026, 7, 28, 1, 2, 3, tzinfo=UTC)
 
@@ -875,14 +874,6 @@ def test_log_digest_marks_absent_telemetry_without_inventing_nested_state() -> N
     }
 
 
-def _planner_payload_base(observation: Observation) -> dict[str, Any]:
-    payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
-    payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
-    payload["affordances"] = observation.affordance_digest()
-    payload["squad_nutrition"] = observation.squad_nutrition_digest()
-    return payload
-
-
 def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> None:
     observation = _rich_observation(item_control_count=1)
     observation.objective = "See café inventory."
@@ -902,7 +893,11 @@ def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> N
     ):
         assert superseded not in payload
     assert "\\u00e9" not in payload_text
-    assert payload_text == json.dumps(payload, indent=2, ensure_ascii=False)
+    assert payload_text == json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> None:

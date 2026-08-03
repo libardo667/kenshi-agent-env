@@ -4309,16 +4309,53 @@ class ActivePlanContext(StrictModel):
 
 
 def _planner_json(value: Any) -> str:
-    """Render the canonical human-readable planner document."""
+    """Render the canonical compact planner document."""
 
     # pragma: no mutate start
     return json.dumps(
         value,
-        indent=2,
+        separators=(",", ":"),
         # `json.dumps` treats None exactly like False for this flag.
         ensure_ascii=False,
     )
     # pragma: no mutate end
+
+
+def _project_planner_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Remove deterministic runtime mechanics from the playing-model view.
+
+    The affordance catalog is the model's complete action surface. Macro
+    definitions, capability routing, widget geometry, and native command
+    receipts are compiler/controller inputs; repeating them beside the
+    affordances asks the model to reason about an implementation it cannot and
+    should not operate. Keep the schema-shaped empty collections so semantic
+    budgeting has one stable document shape, while retaining every gameplay
+    entity, exact ID, UI state, and affordance.
+    """
+
+    payload["available_skills"] = []
+    payload["skill_specs"] = []
+    telemetry = payload.get("telemetry")
+    if not isinstance(telemetry, dict):
+        return payload
+    telemetry["capabilities"] = []
+    ui = telemetry.get("ui")
+    if isinstance(ui, dict) and ui.get("visible_controls") is not None:
+        ui["visible_controls"] = []
+    native = telemetry.get("native_control")
+    if isinstance(native, dict):
+        native.update(
+            {
+                "active_command_id": None,
+                "acknowledgements": [],
+                "last_command_sequence": 0,
+                "last_command": None,
+                "last_result": None,
+                "last_target": None,
+                "last_target_id": None,
+            }
+        )
+    return payload
 
 
 def _json_model(value: BaseModel) -> dict[str, Any]:
@@ -4882,6 +4919,7 @@ class Observation(StrictModel):
         payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
         payload["affordances"] = self.affordance_digest()
         payload["squad_nutrition"] = self.squad_nutrition_digest()
+        payload = _project_planner_payload(payload)
         if max_chars is None and max_context_chars is None:
             return _planner_json(payload)
         if max_chars is None:

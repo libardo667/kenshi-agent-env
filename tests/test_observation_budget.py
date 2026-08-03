@@ -42,6 +42,7 @@ from kenshi_agent.models import (
     WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.nutrition import model_facing_telemetry_payload
 from kenshi_agent.observation_budget import (
     PlannerPayloadContextError,
     budget_observation_payload,
@@ -346,17 +347,15 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     assert _path(document, "active_plan.active_step_id") == "approach"
     assert _path(document, "telemetry.sequence") == 42
     assert _path(document, "telemetry.game.paused") is True
-    assert _path(document, "telemetry.native_control.active_command_id") == (
-        _ACTIVE_COMMAND_ID
-    )
-    assert _path(document, "telemetry.native_control.last_target_id") == _TARGET_ID
+    assert _path(document, "telemetry.native_control.active_command_id") is None
+    assert _path(document, "telemetry.native_control.last_target_id") is None
 
     acknowledgements = _path(
         document,
         "telemetry.native_control.acknowledgements",
     )
     assert isinstance(acknowledgements, list)
-    assert any(item["command_id"] == _ACTIVE_COMMAND_ID for item in acknowledgements)
+    assert acknowledgements == []
 
     squad = _path(document, "telemetry.squad")
     assert isinstance(squad, list)
@@ -648,6 +647,41 @@ def _canonical_counter(values: list[object]) -> Counter[str]:
     )
 
 
+def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_state() -> None:
+    observation = _oversized_observation()
+    legacy = observation.model_dump(mode="json", exclude={"screenshot_path"})
+    legacy["telemetry"] = model_facing_telemetry_payload(legacy.get("telemetry"))
+    legacy["affordances"] = observation.affordance_digest()
+    legacy["squad_nutrition"] = observation.squad_nutrition_digest()
+    legacy_text = json.dumps(legacy, indent=2, ensure_ascii=False)
+
+    text = observation.planner_payload(max_chars=1_000_000)
+    projected = json.loads(text)
+    telemetry = projected["telemetry"]
+
+    assert len(text) <= len(legacy_text) * 0.70
+    assert text == json.dumps(projected, ensure_ascii=False, separators=(",", ":"))
+    assert projected["available_skills"] == []
+    assert projected["skill_specs"] == []
+    assert telemetry["capabilities"] == []
+    assert telemetry["ui"]["visible_controls"] == []
+    assert telemetry["native_control"]["acknowledgements"] == []
+    assert telemetry["native_control"]["active_command_id"] is None
+    assert projected["affordances"] == observation.affordance_digest()
+
+    assert observation.telemetry is not None
+    for collection in (
+        "squad",
+        "nearby_entities",
+        "world_targets",
+        "known_map_destinations",
+    ):
+        expected_ids = [
+            item.id for item in getattr(observation.telemetry, collection)
+        ]
+        assert [item["id"] for item in telemetry[collection]] == expected_ids
+
+
 def _assert_semantic_conservation(original: object, retained: object) -> None:
     """Every value survives when the semantic reducer has room for everything."""
 
@@ -744,6 +778,15 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         ]
     )
     original["telemetry"]["native_control"]["last_target_id"] = "world-ref-z"
+    assert observation.telemetry is not None
+    source_native = observation.telemetry.native_control
+    original["telemetry"]["native_control"]["active_command_id"] = (
+        source_native.active_command_id
+    )
+    original["telemetry"]["native_control"]["acknowledgements"] = [
+        acknowledgement.model_dump(mode="json")
+        for acknowledgement in source_native.acknowledgements
+    ]
     active_acknowledgement = original["telemetry"]["native_control"][
         "acknowledgements"
     ][-1]
