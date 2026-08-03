@@ -8,7 +8,7 @@ from enum import StrEnum
 from math import inf
 from pathlib import Path
 from time import monotonic
-from typing import Any, Literal, TypeAlias
+from typing import Any, ClassVar, Literal, TypeAlias
 from uuid import uuid4
 
 from pydantic import (
@@ -21,6 +21,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from pydantic_core import core_schema
 
 from .nutrition import (
     model_facing_telemetry_payload,
@@ -54,6 +55,88 @@ class ControlMode(StrEnum):
 class PlanningMode(StrEnum):
     SINGLE_STEP = "single_step"
     CONTINUOUS = "continuous"
+
+
+class AffordanceSource(StrEnum):
+    RUNTIME = "runtime"
+    GAME_BINDING = "game_binding"
+    VISIBLE_CONTROL = "visible_control"
+    CONTEXT_ORDER = "context_order"
+    DIALOGUE = "dialogue"
+    INVENTORY = "inventory"
+    SQUAD = "squad"
+    NEARBY_CHARACTER = "nearby_character"
+    MAP = "map"
+    NATIVE_OPERATION = "native_operation"
+    COMPOSITE_OPERATION = "composite_operation"
+
+
+class AffordanceExecution(StrEnum):
+    IMMEDIATE = "immediate"
+    MONITORED = "monitored"
+    COMPOSITE = "composite"
+
+
+class AffordanceLifecycleStatus(StrEnum):
+    OFFERED = "offered"
+    BOUND = "bound"
+    EXECUTING = "executing"
+    MONITORING = "monitoring"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    REJECTED = "rejected"
+    INTERRUPTED = "interrupted"
+
+
+class AffordanceParameter(StrictModel):
+    name: str = Field(min_length=1, max_length=80)
+    value: JsonValue
+
+
+class AffordanceTarget(StrictModel):
+    target_id: str = Field(min_length=1, max_length=500)
+    label: str = Field(min_length=1, max_length=500)
+    kind: str = Field(min_length=1, max_length=80)
+
+
+class BoundAffordance(StrictModel):
+    """Runtime provenance retained after a planner selection is compiled."""
+
+    affordance_id: str = Field(pattern=r"^aff-[0-9a-f]{20}$")
+    source: AffordanceSource
+    semantic: str = Field(min_length=1, max_length=100)
+    target: AffordanceTarget | None = None
+    parameters: list[AffordanceParameter] = Field(default_factory=list, max_length=8)
+    execution: AffordanceExecution
+    operation_kind: str = Field(min_length=1, max_length=80)
+    offered_at_telemetry_sequence: int = Field(ge=0)
+
+
+class AffordanceLifecycleEvent(StrictModel):
+    status: AffordanceLifecycleStatus
+    telemetry_sequence: int | None = Field(default=None, ge=0)
+    detail: str = Field(min_length=1, max_length=1000)
+
+
+class AffordanceReceipt(StrictModel):
+    """Common terminal evidence emitted for every planner-selected affordance."""
+
+    affordance: BoundAffordance
+    status: AffordanceLifecycleStatus
+    lifecycle: list[AffordanceLifecycleEvent] = Field(min_length=4, max_length=8)
+    message: str = Field(min_length=1, max_length=2000)
+
+    def model_post_init(self, __context: Any) -> None:
+        terminal = {
+            AffordanceLifecycleStatus.SUCCEEDED,
+            AffordanceLifecycleStatus.FAILED,
+            AffordanceLifecycleStatus.REJECTED,
+            AffordanceLifecycleStatus.INTERRUPTED,
+        }
+        if self.status not in terminal:
+            raise ValueError("AffordanceReceipt status must be terminal")
+        if self.lifecycle[-1].status is not self.status:
+            raise ValueError("AffordanceReceipt lifecycle must end at its terminal status")
 
 
 class ScenarioIdentity(StrictModel):
@@ -347,10 +430,40 @@ class NearbyEntity(StrictModel):
         )
 
 
-class ContextActionKind(StrEnum):
-    """A reviewed semantic action an exact world object accepts as an attempt."""
+class ContextActionKind(str):
+    """One runtime-advertised semantic context order.
 
-    OPERATE = "operate"
+    The protocol validates a stable semantic identifier but deliberately does
+    not enumerate gameplay orders in Python. Source adapters decide whether a
+    currently advertised order has a native or UI execution path.
+    """
+
+    OPERATE: ClassVar[ContextActionKind]
+
+    def __new__(cls, value: str) -> ContextActionKind:
+        return str.__new__(cls, value)
+
+    @property
+    def value(self) -> str:
+        return str(self)
+
+    @classmethod
+    def __get_pydantic_core_schema__(
+        cls,
+        _source_type: object,
+        _handler: object,
+    ) -> core_schema.CoreSchema:
+        return core_schema.no_info_after_validator_function(
+            cls,
+            core_schema.str_schema(
+                min_length=1,
+                max_length=80,
+                pattern=r"^[a-z][a-z0-9_]*$",
+            ),
+        )
+
+
+ContextActionKind.OPERATE = ContextActionKind("operate")
 
 
 class WorldTarget(StrictModel):
@@ -3980,15 +4093,7 @@ class PlanStep(StrictModel):
     # Runtime-private operation materialized from an exact current affordance.
     # Hosted planner schemas never expose this union.
     action: Action
-    affordance_id: str | None = Field(
-        default=None,
-        pattern=r"^aff-[0-9a-f]{20}$",
-    )
-    affordance_target_id: str | None = Field(default=None, max_length=500)
-    affordance_parameters: list[dict[str, JsonValue]] = Field(
-        default_factory=list,
-        max_length=8,
-    )
+    affordance: BoundAffordance | None = None
     preconditions: list[Condition] = Field(min_length=1, max_length=12)
     # The action-completion catalog decides whether the controller, runtime, or
     # planner owns verification. Keeping that rule out of this generic schema
@@ -4553,51 +4658,6 @@ class Observation(StrictModel):
             digest.append(entry)
         return digest
 
-    def semantic_action_digest(self) -> list[dict[str, Any]]:
-        """Exactly the reusable actions that are authorable right now.
-
-        Availability is computed from contracts against this observation's
-        control mode and capabilities, so the planner is never shown an action
-        the runtime would refuse. Each entry names where its arguments must come
-        from, which is what makes composition possible without a recipe.
-        """
-
-        # Imported here because the contract catalog is defined in terms of
-        # these models; the dependency only exists at call time.
-        from .action_contracts import planner_visible_contracts
-
-        capabilities = set(self.telemetry.capabilities if self.telemetry is not None else [])
-        # Deliberately terse: this rides in the irreducible planner envelope, so
-        # it must not grow without bound as actions are added. What the planner
-        # cannot get anywhere else is *which* actions are authorable now and
-        # where their arguments come from; the prose description of each lives
-        # in the system prompt, and the contract enforces the rest regardless.
-        digest: list[dict[str, Any]] = []
-        for contract in planner_visible_contracts(
-            control_mode=self.control_mode,
-            capabilities=capabilities,
-            observation=self,
-        ):
-            entry: dict[str, Any] = {
-                "kind": contract.kind,
-                "argument_source": contract.argument_source,
-            }
-            if contract.kind == "use_game_binding":
-                entry["runtime_completion_conditions"] = {
-                    binding.value: _json_model(condition)
-                    for binding in GameBinding
-                    if binding not in TIME_GAME_BINDINGS
-                    and (
-                        condition := game_binding_success_condition(
-                            binding,
-                            self.telemetry,
-                        )
-                    )
-                    is not None
-                }
-            digest.append(entry)
-        return digest
-
     def affordance_digest(self) -> list[dict[str, Any]]:
         """One exact runtime-generated action surface for the playing model."""
 
@@ -4779,6 +4839,9 @@ class PlannerDecision(StrictModel):
     intent: str = Field(min_length=1, max_length=1000)
     rationale: str = Field(min_length=1, max_length=1500)
     action: SingleStepPlannerAction
+    # Present for hosted play. Deterministic safety/reflex decisions remain
+    # runtime-internal and therefore do not pretend to have been offered.
+    affordance: BoundAffordance | None = None
     confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     expected_observation: str | None = Field(default=None, max_length=1000)
     # Committed after this action's receipt, never before it.
@@ -5088,7 +5151,6 @@ class SemanticActionReceipt(StrictModel):
     source_revision: WorldStateRevision | None = None
     option_id: str | None = Field(default=None, max_length=128)
     revalidation: str = Field(min_length=1, max_length=1000)
-    legacy_compatibility: bool = False
     camera_recovery: CameraRecoveryEvidence | None = None
     purchase: PurchaseEvidence | None = None
     sale: SaleEvidence | None = None

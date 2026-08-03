@@ -38,7 +38,7 @@ async def main() -> int:
     assert obs.telemetry is not None
     print(
         f"observation: screen={obs.telemetry.ui.active_screen} "
-        f"actions_offered={len(obs.semantic_action_digest())} "
+        f"affordances_offered={len(obs.affordance_digest())} "
         f"payload={len(payload)} chars\n"
     )
 

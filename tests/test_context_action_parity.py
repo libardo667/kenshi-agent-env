@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.action_contracts import ACTION_CONTRACTS
 from kenshi_agent.context_action_parity import (
     CONTEXT_ACTION_DECISIONS,
     WITNESSES_PATH,
@@ -455,11 +454,13 @@ def test_every_empirical_pair_has_one_decision_and_no_decision_is_speculative(
     assert all(row.decision is not None for row in coverage)
     for decision in CONTEXT_ACTION_DECISIONS.values():
         if isinstance(decision, WiredContextAction):
-            assert decision.action_kinds
-            assert all(kind in ACTION_CONTRACTS for kind in decision.action_kinds)
-            assert any(
-                ACTION_CONTRACTS[kind].planner_visible
-                for kind in decision.action_kinds
+            from kenshi_agent.affordances import AFFORDANCE_ADAPTERS
+
+            assert decision.adapter_routes
+            adapter_names = {adapter.name for adapter in AFFORDANCE_ADAPTERS}
+            assert all(
+                route.partition(":")[0] in adapter_names
+                for route in decision.adapter_routes
             )
         elif isinstance(decision, MissingContextAction):
             assert decision.queue_description.strip()

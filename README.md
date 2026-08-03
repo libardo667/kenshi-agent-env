@@ -19,7 +19,7 @@ direction without changing current Kenshi scope.
 | Question | Source |
 | --- | --- |
 | What works right now, and what does not | [STATUS.md](STATUS.md) |
-| What the agent may author | [generated action catalog](docs/generated/ACTION_CATALOG.md) |
+| What the playing model may select | [generated affordance catalog](docs/generated/AFFORDANCE_CATALOG.md) |
 | Which modules are mutation-tested against *this* tree | [generated attestation](docs/generated/MUTATION_ATTESTATION.md), and [why it is derived](docs/ADR_MUTATION_ATTESTATION.md) |
 | Why a boundary exists | `docs/ADR_*.md` |
 | How to do something | `docs/GUIDE_*.md` |

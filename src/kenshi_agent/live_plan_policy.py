@@ -151,10 +151,6 @@ def _step_action_errors(
     if contract is None:
         errors.append(f"{label} action {action.kind!r} has no authoritative action contract")
         return errors
-    if not contract.planner_visible:
-        errors.append(f"{label} action {action.kind!r} is not planner-visible")
-        return errors
-
     if not contract.allows_control_mode(control_mode):
         errors.append(
             f"{label} action {action.kind!r} is not permitted in control mode "

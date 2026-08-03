@@ -924,7 +924,11 @@
           "type": "string"
         },
         "context_action": {
-          "$ref": "#/$defs/ContextActionKind"
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Context Action",
+          "type": "string"
         }
       },
       "required": [
@@ -1044,14 +1048,6 @@
       ],
       "title": "ConsultAdvisorAction",
       "type": "object"
-    },
-    "ContextActionKind": {
-      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
-      "enum": [
-        "operate"
-      ],
-      "title": "ContextActionKind",
-      "type": "string"
     },
     "ControlMode": {
       "enum": [
@@ -2005,7 +2001,11 @@
           "type": "string"
         },
         "context_action": {
-          "$ref": "#/$defs/ContextActionKind"
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Context Action",
+          "type": "string"
         }
       },
       "required": [
@@ -3056,11 +3056,6 @@
           "minLength": 1,
           "title": "Revalidation",
           "type": "string"
-        },
-        "legacy_compatibility": {
-          "default": false,
-          "title": "Legacy Compatibility",
-          "type": "boolean"
         },
         "camera_recovery": {
           "anyOf": [

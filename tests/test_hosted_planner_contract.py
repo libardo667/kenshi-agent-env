@@ -1102,7 +1102,11 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
     assert isinstance(result, PlanEnvelope)
     assert result.objective == proposal.objective
     assert result.steps[0].action.kind == "stop"
-    assert result.steps[0].affordance_id == proposal.steps[0].selection.affordance_id
+    assert result.steps[0].affordance is not None
+    assert (
+        result.steps[0].affordance.affordance_id
+        == proposal.steps[0].selection.affordance_id
+    )
     assert result.plan_id == "plan-pc-1"
     assert result.based_on_revision == current.world_revision
     assert len(completions.calls) == 2
@@ -1358,8 +1362,11 @@ def test_planner_prompt_grants_creative_agency_without_legacy_recipe() -> None:
     instructions = completions.kwargs["messages"][0]["content"][0]["text"]
     normalized = " ".join(instructions.split())
 
-    assert "approach_dialogue_target" in instructions
-    assert "`squad_nutrition`" in instructions
+    assert "`affordances` is the entire game-action language" in instructions
+    assert "The runtime owns:" in instructions
+    assert "approach_dialogue_target" not in instructions
+    assert "semantic_actions" not in instructions
+    assert "expected_outcomes" not in instructions
     assert "Show me your goods." not in instructions
     assert "move_visible_terrain" not in instructions
     assert "The observation is a possibility space, not a task list." in normalized
@@ -1377,10 +1384,7 @@ def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> N
     root = Path(__file__).resolve().parents[1]
     instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
     for model in (DecisionProposal, PlanProposal):
-        schema = projected_response_format(
-            model,
-            allowed_action_kinds=frozenset(),
-        )["json_schema"]["schema"]
+        schema = projected_response_format(model)["json_schema"]["schema"]
         validate_planner_prompt_budget(
             system_characters=len(instructions),
             schema_characters=len(json.dumps(schema)),
@@ -1422,15 +1426,8 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
 
 
 def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() -> None:
-    allowed = frozenset({"this-set-no-longer-shapes-the-schema"})
-    proposal_schema = projected_response_format(
-        PlanProposal,
-        allowed_action_kinds=allowed,
-    )["json_schema"]["schema"]
-    decision_schema = projected_response_format(
-        DecisionProposal,
-        allowed_action_kinds=allowed,
-    )["json_schema"]["schema"]
+    proposal_schema = projected_response_format(PlanProposal)["json_schema"]["schema"]
+    decision_schema = projected_response_format(DecisionProposal)["json_schema"]["schema"]
 
     assert set(proposal_schema["properties"]) == {
         "objective",
@@ -1864,17 +1861,3 @@ def test_a_schema_rejection_tells_the_model_what_to_fix() -> None:
     assert "retry_budget requires idempotency=safe_to_retry" in error.retry_feedback
     assert error.detail
     assert error.response_excerpt
-
-
-def test_a_disallowed_action_is_not_reported_as_broken_json() -> None:
-    diagnostics = _diagnostics(finish_reason="stop")
-    error = HostedPlannerResponseError(
-        "disallowed_action_surface",
-        diagnostics,
-        detail="action 'harvest_resource' is not available in this observation",
-        response_excerpt="{}",
-    )
-
-    assert "does not offer" in error.retry_feedback
-    assert "harvest_resource" in error.retry_feedback
-    assert "malformed" not in error.retry_feedback.lower()

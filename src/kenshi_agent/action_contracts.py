@@ -64,7 +64,6 @@ from .models import (
     OpenScreenAction,
     PauseAction,
     PerformContextAction,
-    PlanEnvelope,
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
@@ -78,7 +77,6 @@ from .models import (
     SelectSquadMemberAction,
     SellItemAction,
     SetSpeedAction,
-    SkillAction,
     StopAction,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
@@ -2062,7 +2060,6 @@ class ActionContract:
     model: type[BaseModel]
     summary: str
     argument_source: str
-    planner_visible: bool
     allowed_control_modes: frozenset[ControlMode]
     required_capabilities: frozenset[str]
     capability_aliases: frozenset[str]
@@ -2252,7 +2249,6 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
         "the monitored pathing lifecycle. Do not add a separate unpause step."
     ),
     argument_source="target_id must be an exact id from the observation's dialogue_targets.",
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2289,7 +2285,6 @@ COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
         "target_id and context_action must be copied as an exact pair from a "
         "context_targets entry that also has screen_position."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2325,7 +2320,6 @@ SELECT_SQUAD_MEMBER_CONTRACT = ActionContract(
         "target_id must be copied from a current squad entry whose unique name "
         "matches exactly one current lower-HUD portrait label."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset(
         {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
     ),
@@ -2359,7 +2353,6 @@ ROTATE_CAMERA_CONTRACT = ActionContract(
         "Kenshi's held-Mouse3 rotation mode."
     ),
     argument_source="direction is left or right.",
-    planner_visible=True,
     allowed_control_modes=frozenset(
         {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
     ),
@@ -2395,7 +2388,6 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     # Kept as a compatibility-level "issue the task" primitive. Planning uses
     # produce_resource_output, whose terminal is actual output rather than the
     # first observed AI goal.
-    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2433,7 +2425,6 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
         "target_id must be copied from one natural_resource entry in "
         "context_targets that advertises operate."
     ),
-    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2473,7 +2464,6 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
         "actor_id is selected.id; target_id is one natural_resource entry in "
         "context_targets advertising operate; quantity is the useful yield, 1-5."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2522,7 +2512,6 @@ RESPOND_TO_IMMEDIATE_THREAT_CONTRACT = ActionContract(
         "'engage' or 'withdraw'. This action appears only from a fresh paused "
         "immediate-threat state with grounded positions and safe squad health."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2565,7 +2554,6 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
         "target_id must be copied from one natural_resource entry in "
         "context_targets."
     ),
-    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2604,7 +2592,6 @@ REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
         "actor_id must be the exact selected squad member and target_id must be "
         "a distinct current squad entry. The target may be down or unconscious."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2647,7 +2634,6 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
         "distance_units is how far to walk. Neither is read from the "
         "observation - they are chosen."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset({NATIVE_DIRECTION_CAPABILITY, "squad.health"}),
     capability_aliases=frozenset({NATIVE_DIRECTION_CAPABILITY}),
@@ -2681,7 +2667,6 @@ TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
         "entry whose travel_available is true. Coordinates are neither exposed "
         "nor accepted."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2724,7 +2709,6 @@ EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
         "No arguments. Availability requires one exact selected character with "
         "selected.indoors=true in current telemetry."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2762,7 +2746,6 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
         "target_id must be an exact id from the observation's "
         "telemetry.nearby_entities."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2797,7 +2780,6 @@ ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
         "exact_label and role must match exactly one non-ambiguous, non-runtime-owned "
         "entry of the observation's visible_controls."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY}),
     capability_aliases=frozenset(),
@@ -2826,7 +2808,6 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
         "expected_screen must equal telemetry.ui.active_screen; inventory/trade "
         "also name the exact current owner window. Do not use for active dialogue."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(),
     capability_aliases=frozenset(),
@@ -2860,7 +2841,6 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
         "expected_price must equal that entry's buy_price exactly; sell_price "
         "is what a trader pays you and is rejected here."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -2961,7 +2941,6 @@ OPEN_SCREEN_CONTRACT = ActionContract(
         "screen must be one of the GameScreen values in the projected action "
         "schema."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset(
         {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
     ),
@@ -2996,7 +2975,6 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
         "expected_effect states in one phrase what the press should change, "
         "and the step's success conditions must check it."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     # A keypress needs the game loaded and nothing else; requiring more would
     # withhold the one action that recovers from a screen we cannot identify.
@@ -3032,7 +3010,6 @@ RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
         "lower-HUD portrait, the current floor, and floor arrows from fresh "
         "telemetry, then scores retained frames."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset(
         {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
     ),
@@ -3075,7 +3052,6 @@ SCROLL_SCREEN_CONTRACT = ActionContract(
         "visible_controls entry; notches is negative to scroll further down "
         "the list and positive to scroll back up."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset({VISIBLE_CONTROLS_CAPABILITY}),
     capability_aliases=frozenset(),
@@ -3107,7 +3083,6 @@ SELL_ITEM_CONTRACT = ActionContract(
         "owner; quantity is the useful bounded amount, 1-5. No price is given: "
         "the shop's offer is not exported."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -3151,7 +3126,6 @@ EQUIP_ITEM_CONTRACT = ActionContract(
         "be the selected character's own name; item_name copied from that "
         "cell's own entry."
     ),
-    planner_visible=True,
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {VISIBLE_CONTROLS_CAPABILITY, "ui.inventory", "squad.inventory"}
@@ -3186,7 +3160,6 @@ COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
         "item_name, item_quantity as source_quantity, window, and section='out' "
         "from one item in that same group."
     ),
-    planner_visible=False,
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
         {
@@ -3333,118 +3306,3 @@ def completion_contract_for(
         owner=CompletionOwner.RUNTIME_CONDITIONS,
         conditions=conditions,
     )
-
-
-def planner_visible_contracts(
-    *,
-    control_mode: ControlMode,
-    capabilities: set[str] | frozenset[str],
-    observation: Observation | None = None,
-) -> list[ActionContract]:
-    """Contracts a planner may currently author, in stable order.
-
-    Availability is truthful: a contract whose capabilities are missing is not
-    advertised, so the planner never authors an action the runtime would have to
-    refuse.
-    """
-
-    return [
-        contract
-        for contract in sorted(ACTION_CONTRACTS.values(), key=lambda item: item.kind)
-        if contract.planner_visible
-        and contract.allows_control_mode(control_mode)
-        and not contract.missing_capabilities(capabilities)
-        and contract.is_currently_authorable(observation)
-    ]
-
-
-@dataclass(slots=True)
-class LegacyCompatibilityLedger:
-    """Counts legacy macro translations so the old path can be retired on evidence.
-
-    The old and new paths coexist deliberately during migration. Counting is how
-    that stays a decision rather than a habit.
-    """
-
-    translations: dict[str, int] = field(default_factory=dict)
-
-    def record(self, skill_name: str) -> None:
-        self.translations[skill_name] = self.translations.get(skill_name, 0) + 1
-
-    @property
-    def total(self) -> int:
-        return sum(self.translations.values())
-
-    def summary(self) -> dict[str, int]:
-        return dict(sorted(self.translations.items()))
-
-
-LEGACY_COMPATIBILITY = LegacyCompatibilityLedger()
-
-# The single explicit compatibility seam. Each entry translates one calibrated
-# scenario macro into the reusable action that supersedes it. The semantic
-# actions themselves know nothing about these names.
-_LEGACY_APPROACH_SKILLS = frozenset(
-    {"approach_confirmed_vendor", "continue_confirmed_vendor_approach"}
-)
-_LEGACY_CONTROL_LABELS: dict[str, tuple[str, Literal["button", "text"]]] = {
-    "choose_show_goods": ("Show me your goods.", "button"),
-}
-
-
-def translate_legacy_plan_actions(
-    plan: PlanEnvelope,
-    *,
-    ledger: LegacyCompatibilityLedger | None = None,
-) -> tuple[PlanEnvelope, dict[str, int]]:
-    """Admit a legacy-macro plan through the one compatibility seam.
-
-    Returns the plan with translatable macro steps replaced by their reusable
-    semantic equivalents, plus a count of what was translated. Untranslatable
-    steps are left exactly as they were, so this widens what the new path
-    accepts without silently reinterpreting anything it does not understand.
-    """
-
-    recorder = ledger if ledger is not None else LEGACY_COMPATIBILITY
-    counts: dict[str, int] = {}
-    steps = []
-    changed = False
-    for step in plan.steps:
-        action = step.action
-        if isinstance(action, SkillAction):
-            replacement = translate_legacy_skill(action, ledger=recorder)
-            if replacement is not None:
-                counts[action.name] = counts.get(action.name, 0) + 1
-                steps.append(step.model_copy(update={"action": replacement}, deep=True))
-                changed = True
-                continue
-        steps.append(step)
-    if not changed:
-        return plan, {}
-    return plan.model_copy(update={"steps": steps}, deep=True), counts
-
-
-def translate_legacy_skill(
-    action: SkillAction,
-    *,
-    ledger: LegacyCompatibilityLedger | None = None,
-) -> Action | None:
-    """Translate one calibrated legacy macro into its reusable semantic action.
-
-    Returns None when no translation exists, leaving the legacy macro path
-    untouched. Translation is recorded so compatibility use stays measurable.
-    """
-
-    recorder = ledger if ledger is not None else LEGACY_COMPATIBILITY
-    if action.name in _LEGACY_APPROACH_SKILLS:
-        target_id = action.argument_map().get("target_id")
-        if not isinstance(target_id, str) or not target_id:
-            return None
-        recorder.record(action.name)
-        return ApproachDialogueTargetAction(target_id=target_id)
-    label_role = _LEGACY_CONTROL_LABELS.get(action.name)
-    if label_role is not None:
-        label, role = label_role
-        recorder.record(action.name)
-        return ActivateVisibleControlAction(exact_label=label, role=role)
-    return None

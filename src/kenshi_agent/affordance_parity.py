@@ -73,8 +73,8 @@ class ExemptionKind(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class AffordanceRoute:
-    action_kind: str
-    argument: str | None = None
+    adapter: str
+    semantic: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,19 +133,11 @@ class BindingParityReport:
     def decision_errors(self) -> tuple[str, ...]:
         """Invalid claims, including a wired route absent from real code."""
 
-        from .action_contracts import ACTION_CONTRACTS
-        from .models import (
-            PLANNER_CONTROL_ACTION_KINDS,
-            TIME_GAME_BINDINGS,
-            GameBinding,
-        )
+        from .affordances import AFFORDANCE_ADAPTERS
+        from .models import GameBinding
 
         errors: list[str] = []
-        planner_routes = {
-            kind
-            for kind, contract in ACTION_CONTRACTS.items()
-            if contract.planner_visible
-        } | set(PLANNER_CONTROL_ACTION_KINDS)
+        adapter_names = {adapter.name for adapter in AFFORDANCE_ADAPTERS}
         for name in sorted(self.source.names & self.decisions.keys()):
             decision = self.decisions[name]
             if decision.status is BindingStatus.WIRED:
@@ -154,24 +146,19 @@ class BindingParityReport:
                     continue
                 if decision.exemption is not None:
                     errors.append(f"{name}: wired with an exemption")
-                if decision.route.action_kind not in planner_routes:
+                if decision.route.adapter not in adapter_names:
                     errors.append(
-                        f"{name}: route {decision.route.action_kind!r} "
-                        "is not planner-visible"
+                        f"{name}: route adapter {decision.route.adapter!r} "
+                        "is not registered"
                     )
-                if decision.route.action_kind == "use_game_binding":
+                if decision.route.adapter == "game_bindings":
                     try:
-                        binding = GameBinding(name)
+                        GameBinding(name)
                     except ValueError:
                         errors.append(f"{name}: no matching GameBinding enum member")
-                    else:
-                        if binding in TIME_GAME_BINDINGS:
-                            errors.append(
-                                f"{name}: raw time binding is not planner-authorable"
-                            )
-                    if decision.route.argument != name:
+                    if decision.route.semantic != name:
                         errors.append(
-                            f"{name}: use_game_binding route does not name itself"
+                            f"{name}: game-binding route does not name itself"
                         )
             elif decision.status is BindingStatus.EXEMPT:
                 if decision.route is not None:
@@ -251,13 +238,13 @@ class BindingParityReport:
             lines.append(
                 f"  {name:24s} [{decision.exemption.value}]  {decision.reason}"
             )
-        lines.extend(["", "WIRED — real planner routes"])
+        lines.extend(["", "WIRED — affordance adapter or runtime-owned routes"])
         for name in wired:
             route = self.decisions[name].route
             assert route is not None
-            detail = route.action_kind
-            if route.argument is not None:
-                detail += f"({route.argument})"
+            detail = route.adapter
+            if route.semantic is not None:
+                detail += f"({route.semantic})"
             lines.append(f"  {name:24s} {detail}")
         return lines
 
@@ -304,7 +291,7 @@ def load_controls_cfg(path: Path = CONTROLS_SNAPSHOT) -> ControlSource:
 def _wired_route(name: str) -> BindingDecision:
     return BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", name),
+        route=AffordanceRoute("game_bindings", name),
     )
 
 
@@ -388,33 +375,67 @@ def _binding_decisions() -> dict[str, BindingDecision]:
     decisions = {name: _wired_route(name) for name in _WIRED_GAME_BINDINGS}
     decisions.update(
         {
+            "toggle_inventory": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute("screens", "open_inventory"),
+            ),
+            "toggle_stats": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute("screens", "open_stats"),
+            ),
+            "toggle_map": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute("screens", "open_map"),
+            ),
+            "toggle_research": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute("screens", "open_research"),
+            ),
+            "toggle_crafting": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute("screens", "open_crafting"),
+            ),
+            "camera_rotate_left": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute(
+                    "native_and_composite",
+                    "rotate_camera_left",
+                ),
+            ),
+            "camera_rotate_right": BindingDecision(
+                status=BindingStatus.WIRED,
+                route=AffordanceRoute(
+                    "native_and_composite",
+                    "rotate_camera_right",
+                ),
+            ),
             "pause": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("pause"),
+                route=AffordanceRoute("runtime", "playback_pause"),
             ),
             "speed_1": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("set_speed", "1"),
+                route=AffordanceRoute("runtime", "playback_speed_1"),
             ),
             "speed_2": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("set_speed", "2"),
+                route=AffordanceRoute("runtime", "playback_speed_2"),
             ),
             "speed_3": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("set_speed", "3"),
+                route=AffordanceRoute("runtime", "playback_speed_3"),
             ),
             "mouse_command": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("command_world_target"),
+                route=AffordanceRoute("context_orders"),
             ),
             "mouse_rotate": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("rotate_camera"),
+                route=AffordanceRoute("native_and_composite", "rotate_camera"),
             ),
             "mouse_select": BindingDecision(
                 status=BindingStatus.WIRED,
-                route=AffordanceRoute("select_squad_member"),
+                route=AffordanceRoute("characters", "select"),
             ),
             "screenshot": BindingDecision(
                 status=BindingStatus.EXEMPT,

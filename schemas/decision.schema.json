@@ -95,6 +95,82 @@
       "title": "AdvisorFocus",
       "type": "string"
     },
+    "AffordanceExecution": {
+      "enum": [
+        "immediate",
+        "monitored",
+        "composite"
+      ],
+      "title": "AffordanceExecution",
+      "type": "string"
+    },
+    "AffordanceParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "AffordanceParameter",
+      "type": "object"
+    },
+    "AffordanceSource": {
+      "enum": [
+        "runtime",
+        "game_binding",
+        "visible_control",
+        "context_order",
+        "dialogue",
+        "inventory",
+        "squad",
+        "nearby_character",
+        "map",
+        "native_operation",
+        "composite_operation"
+      ],
+      "title": "AffordanceSource",
+      "type": "string"
+    },
+    "AffordanceTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "label",
+        "kind"
+      ],
+      "title": "AffordanceTarget",
+      "type": "object"
+    },
     "AppendFieldbookEntryOperation": {
       "additionalProperties": false,
       "properties": {
@@ -174,6 +250,69 @@
       "title": "ApproachDialogueTargetAction",
       "type": "object"
     },
+    "BoundAffordance": {
+      "additionalProperties": false,
+      "description": "Runtime provenance retained after a planner selection is compiled.",
+      "properties": {
+        "affordance_id": {
+          "pattern": "^aff-[0-9a-f]{20}$",
+          "title": "Affordance Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/AffordanceSource"
+        },
+        "semantic": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Semantic",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AffordanceTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/AffordanceParameter"
+          },
+          "maxItems": 8,
+          "title": "Parameters",
+          "type": "array"
+        },
+        "execution": {
+          "$ref": "#/$defs/AffordanceExecution"
+        },
+        "operation_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Operation Kind",
+          "type": "string"
+        },
+        "offered_at_telemetry_sequence": {
+          "minimum": 0,
+          "title": "Offered At Telemetry Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "affordance_id",
+        "source",
+        "semantic",
+        "execution",
+        "operation_kind",
+        "offered_at_telemetry_sequence"
+      ],
+      "title": "BoundAffordance",
+      "type": "object"
+    },
     "CameraRotationDirection": {
       "enum": [
         "left",
@@ -199,7 +338,11 @@
           "type": "string"
         },
         "context_action": {
-          "$ref": "#/$defs/ContextActionKind"
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Context Action",
+          "type": "string"
         }
       },
       "required": [
@@ -235,14 +378,6 @@
       ],
       "title": "ConsultAdvisorAction",
       "type": "object"
-    },
-    "ContextActionKind": {
-      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
-      "enum": [
-        "operate"
-      ],
-      "title": "ContextActionKind",
-      "type": "string"
     },
     "CreateFieldbookProjectOperation": {
       "additionalProperties": false,
@@ -498,6 +633,7 @@
       "title": "GameScreen",
       "type": "string"
     },
+    "JsonValue": {},
     "KeepMemoryOperation": {
       "additionalProperties": false,
       "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
@@ -1625,6 +1761,17 @@
         }
       ],
       "title": "Action"
+    },
+    "affordance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BoundAffordance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "confidence": {
       "default": 0.5,

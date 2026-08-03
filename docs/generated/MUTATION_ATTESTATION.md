@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-90 shards: 14 attested, 15 unverified, 9 source-changed, 52 never; 1091 open mutants where the numbers still apply.
+90 shards: 13 attested, 15 unverified, 10 source-changed, 52 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -40,7 +40,7 @@ promises only that the module under test has not moved.
 | `campaign` | 21 | 21 | 0 | 2026-07-28T04:11:58Z | — | unverified |
 | `cli` | 1569 | 493 | 1076 | 2026-07-28T11:22:05Z | — | unverified |
 | `config` | — | — | — | — | — | never |
-| `context_action_parity` | 409 | 409 | 0 | 2026-08-02T02:33:45Z | dd2db8d5e572bb31 | attested |
+| `context_action_parity` | 409 | 409 | 0 | 2026-08-02T02:33:45Z | dd2db8d5e572bb31 | source-changed |
 | `context_action_vocabulary` | 60 | 60 | 0 | 2026-08-01T14:51:31Z | cd914f092c6e8bb6 | attested |
 | `continuity` | 627 | 627 | 0 | 2026-07-28T07:58:43Z | — | unverified |
 | `continuous_executor` | — | — | — | — | — | never |

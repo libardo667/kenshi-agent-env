@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from hashlib import sha256
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import (
     BaseModel,
@@ -27,10 +27,19 @@ from pydantic import (
 from .models import (
     TIME_GAME_BINDINGS,
     Action,
+    AffordanceExecution,
+    AffordanceLifecycleEvent,
+    AffordanceLifecycleStatus,
+    AffordanceParameter,
+    AffordanceReceipt,
+    AffordanceSource,
+    AffordanceTarget,
+    BoundAffordance,
     CameraRotationDirection,
     ContextActionKind,
     ControlMode,
     GameBinding,
+    GameScreen,
     IdempotencyPolicy,
     Observation,
     PlanningMode,
@@ -40,31 +49,12 @@ from .models import (
     is_runtime_owned_visible_control,
     map_destination_travel_available,
     normalize_control_label,
+    open_screen_success_condition,
 )
 
 
 class _StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
-
-
-class AffordanceSource(StrEnum):
-    RUNTIME = "runtime"
-    GAME_BINDING = "game_binding"
-    VISIBLE_CONTROL = "visible_control"
-    CONTEXT_ORDER = "context_order"
-    DIALOGUE = "dialogue"
-    INVENTORY = "inventory"
-    SQUAD = "squad"
-    NEARBY_CHARACTER = "nearby_character"
-    MAP = "map"
-    NATIVE_OPERATION = "native_operation"
-    COMPOSITE_OPERATION = "composite_operation"
-
-
-class AffordanceExecution(StrEnum):
-    IMMEDIATE = "immediate"
-    MONITORED = "monitored"
-    COMPOSITE = "composite"
 
 
 class AffordanceParameterKind(StrEnum):
@@ -74,15 +64,17 @@ class AffordanceParameterKind(StrEnum):
     CHOICE = "choice"
 
 
-class AffordanceLifecycleStatus(StrEnum):
-    OFFERED = "offered"
-    BOUND = "bound"
-    EXECUTING = "executing"
-    MONITORING = "monitoring"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    REJECTED = "rejected"
-    INTERRUPTED = "interrupted"
+SEMANTICALLY_ADAPTED_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
+    {
+        GameBinding.TOGGLE_INVENTORY,
+        GameBinding.TOGGLE_STATS,
+        GameBinding.TOGGLE_MAP,
+        GameBinding.TOGGLE_RESEARCH,
+        GameBinding.TOGGLE_CRAFTING,
+        GameBinding.CAMERA_ROTATE_LEFT,
+        GameBinding.CAMERA_ROTATE_RIGHT,
+    }
+)
 
 
 class AffordanceParameterSpec(_StrictModel):
@@ -93,17 +85,6 @@ class AffordanceParameterSpec(_StrictModel):
     minimum: float | None = None
     maximum: float | None = None
     choices: tuple[str, ...] = ()
-
-
-class AffordanceParameter(_StrictModel):
-    name: str = Field(min_length=1, max_length=80)
-    value: JsonValue
-
-
-class AffordanceTarget(_StrictModel):
-    target_id: str = Field(min_length=1, max_length=500)
-    label: str = Field(min_length=1, max_length=500)
-    kind: str = Field(min_length=1, max_length=80)
 
 
 class AffordanceSelection(_StrictModel):
@@ -158,31 +139,6 @@ class AffordanceOffer(_StrictModel):
                 for parameter in self.parameters
             ],
         }
-
-
-class AffordanceLifecycleEvent(_StrictModel):
-    status: AffordanceLifecycleStatus
-    telemetry_sequence: int | None = Field(default=None, ge=0)
-    detail: str = Field(min_length=1, max_length=1000)
-
-
-class AffordanceReceipt(_StrictModel):
-    """Common evidence vocabulary for every source adapter."""
-
-    affordance_id: str = Field(pattern=r"^aff-[0-9a-f]{20}$")
-    source: AffordanceSource
-    semantic: str = Field(min_length=1, max_length=100)
-    target: AffordanceTarget | None = None
-    parameters: list[AffordanceParameter] = Field(default_factory=list, max_length=8)
-    status: Literal[
-        AffordanceLifecycleStatus.SUCCEEDED,
-        AffordanceLifecycleStatus.FAILED,
-        AffordanceLifecycleStatus.REJECTED,
-        AffordanceLifecycleStatus.INTERRUPTED,
-    ]
-    lifecycle: list[AffordanceLifecycleEvent] = Field(min_length=1, max_length=16)
-    operation_kind: str = Field(min_length=1, max_length=80)
-    message: str = Field(min_length=1, max_length=2000)
 
 
 def _offer_id(
@@ -380,7 +336,10 @@ def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     if telemetry is None:
         return
     for binding in GameBinding:
-        if binding in TIME_GAME_BINDINGS:
+        if (
+            binding in TIME_GAME_BINDINGS
+            or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS
+        ):
             continue
         if game_binding_success_condition(binding, telemetry) is None:
             continue
@@ -395,6 +354,58 @@ def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 idempotency=IdempotencyPolicy.AT_MOST_ONCE,
                 primitives=1,
             ),
+        )
+
+
+def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return
+    for screen in GameScreen:
+        if open_screen_success_condition(screen, telemetry) is None:
+            continue
+        yield _offer(
+            observation,
+            source=AffordanceSource.GAME_BINDING,
+            semantic=f"open_{screen.value}",
+            description=f"Have the {screen.value!r} screen open.",
+            operation_kind="open_screen",
+            arguments={"screen": screen.value},
+            policy=_policy(
+                execution=AffordanceExecution.MONITORED,
+                primitives=1,
+            ),
+        )
+
+    current = telemetry.ui.active_screen
+    if current not in {"inventory", "trade"} or telemetry.ui.dialogue_open:
+        return
+    captions = observation.open_window_captions()
+    if captions:
+        for window in captions:
+            yield _offer(
+                observation,
+                source=AffordanceSource.VISIBLE_CONTROL,
+                semantic="dismiss",
+                description=f"Close the exact open window {window!r}.",
+                operation_kind="dismiss_screen",
+                target=AffordanceTarget(
+                    target_id=window,
+                    label=window,
+                    kind="window",
+                ),
+                arguments={"expected_screen": current, "window": window},
+                policy=_policy(pointer_actions=1, primitives=3),
+            )
+    else:
+        yield _offer(
+            observation,
+            source=AffordanceSource.VISIBLE_CONTROL,
+            semantic="dismiss",
+            description=f"Close the current {current!r} screen.",
+            operation_kind="dismiss_screen",
+            arguments={"expected_screen": current},
+            policy=_policy(pointer_actions=1, primitives=1),
         )
 
 
@@ -442,7 +453,16 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
     native = "control.perform_context_action" in telemetry.capabilities
     for target in telemetry.world_targets:
         for order in target.context_actions:
-            operation_kind = "perform_context_action" if native else "command_world_target"
+            native_order = bool(
+                native
+                and order == ContextActionKind.OPERATE
+                and target.kind == "natural_resource"
+            )
+            if not native_order and target.screen_position is None:
+                continue
+            operation_kind = (
+                "perform_context_action" if native_order else "command_world_target"
+            )
             yield _offer(
                 observation,
                 source=AffordanceSource.CONTEXT_ORDER,
@@ -458,21 +478,21 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
                 policy=_policy(
                     execution=(
                         AffordanceExecution.MONITORED
-                        if native
+                        if native_order
                         else AffordanceExecution.IMMEDIATE
                     ),
                     modes=(
                         frozenset({ControlMode.NATIVE_ASSISTED})
-                        if native
+                        if native_order
                         else frozenset(
                             {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
                         )
                     ),
-                    native_actions=1 if native else 0,
-                    pointer_actions=0 if native else 1,
+                    native_actions=1 if native_order else 0,
+                    pointer_actions=0 if native_order else 1,
                     primitives=1,
-                    timeout_seconds=300.0 if native else 10.0,
-                    controller_verified=native,
+                    timeout_seconds=300.0 if native_order else 10.0,
+                    controller_verified=native_order,
                 ),
             )
 
@@ -769,7 +789,6 @@ def _native_and_composite_offers(
     telemetry = observation.telemetry
     if telemetry is None:
         return
-    capabilities = set(telemetry.capabilities)
     selected = next((member for member in telemetry.squad if member.selected), None)
 
     for direction in CameraRotationDirection:
@@ -883,7 +902,7 @@ def _native_and_composite_offers(
                 policy=_policy(pointer_actions=1, primitives=2),
             )
 
-    if selected is not None and "control.perform_context_action" in capabilities:
+    if selected is not None:
         for target in telemetry.world_targets:
             if (
                 target.kind != "natural_resource"
@@ -915,19 +934,156 @@ def _native_and_composite_offers(
             )
 
 
-_SOURCE_ENUMERATORS: tuple[
-    Callable[[Observation], Iterable[AffordanceOffer]], ...
-] = (
-    _runtime_offers,
-    _game_binding_offers,
-    _visible_control_offers,
-    _context_order_offers,
-    _dialogue_target_offers,
-    _inventory_offers,
-    _character_offers,
-    _map_offers,
-    _native_and_composite_offers,
+@dataclass(frozen=True, slots=True)
+class AffordanceAdapter:
+    """One source denominator and the operations that can realize its offers."""
+
+    name: str
+    sources: frozenset[AffordanceSource]
+    operation_kinds: frozenset[str]
+    denominator: str
+    completeness_boundary: str
+    enumerate: Callable[[Observation], Iterable[AffordanceOffer]]
+
+
+AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
+    AffordanceAdapter(
+        name="runtime",
+        sources=frozenset({AffordanceSource.RUNTIME}),
+        operation_kinds=frozenset(
+            {"noop", "stop", "consult_advisor", "recall_memory", "read_fieldbook"}
+        ),
+        denominator="Runtime control, advisor, memory, and fieldbook state.",
+        completeness_boundary="Only choices applicable to the current run state.",
+        enumerate=_runtime_offers,
+    ),
+    AffordanceAdapter(
+        name="game_bindings",
+        sources=frozenset({AffordanceSource.GAME_BINDING}),
+        operation_kinds=frozenset({"use_game_binding"}),
+        denominator="Every captured-default-keymap binding not owned by another adapter.",
+        completeness_boundary=(
+            "Raw playback bindings are runtime-owned; stateful screens and camera "
+            "rotation route through semantic adapters."
+        ),
+        enumerate=_game_binding_offers,
+    ),
+    AffordanceAdapter(
+        name="screens",
+        sources=frozenset(
+            {AffordanceSource.GAME_BINDING, AffordanceSource.VISIBLE_CONTROL}
+        ),
+        operation_kinds=frozenset({"open_screen", "dismiss_screen"}),
+        denominator="Observable named-screen states and currently open window captions.",
+        completeness_boundary=(
+            "Opening requires an observable exact terminal; dismissal excludes dialogue."
+        ),
+        enumerate=_screen_offers,
+    ),
+    AffordanceAdapter(
+        name="visible_controls",
+        sources=frozenset(
+            {AffordanceSource.VISIBLE_CONTROL, AffordanceSource.DIALOGUE}
+        ),
+        operation_kinds=frozenset({"activate_visible_control"}),
+        denominator="Every current non-item, non-runtime-owned visible control.",
+        completeness_boundary="Ambiguous or stale controls fail exact rebinding.",
+        enumerate=_visible_control_offers,
+    ),
+    AffordanceAdapter(
+        name="context_orders",
+        sources=frozenset({AffordanceSource.CONTEXT_ORDER}),
+        operation_kinds=frozenset(
+            {"perform_context_action", "command_world_target"}
+        ),
+        denominator="Every exact world-target/order pair advertised by current telemetry.",
+        completeness_boundary=(
+            "Native execution currently proves natural-resource operate; other orders "
+            "require current screen geometry for the generic UI path."
+        ),
+        enumerate=_context_order_offers,
+    ),
+    AffordanceAdapter(
+        name="dialogue_targets",
+        sources=frozenset({AffordanceSource.DIALOGUE}),
+        operation_kinds=frozenset({"approach_dialogue_target"}),
+        denominator="Every exact current non-hostile character confirmed talkable.",
+        completeness_boundary="Native-assisted stable identity and dialogue-role evidence.",
+        enumerate=_dialogue_target_offers,
+    ),
+    AffordanceAdapter(
+        name="inventory",
+        sources=frozenset({AffordanceSource.INVENTORY}),
+        operation_kinds=frozenset({"purchase_item", "sell_item", "equip_item"}),
+        denominator="Every current item cell with exact window ownership and item facts.",
+        completeness_boundary=(
+            "Transactions require unambiguous counterpart identity and conservation evidence."
+        ),
+        enumerate=_inventory_offers,
+    ),
+    AffordanceAdapter(
+        name="characters",
+        sources=frozenset(
+            {
+                AffordanceSource.SQUAD,
+                AffordanceSource.NEARBY_CHARACTER,
+                AffordanceSource.COMPOSITE_OPERATION,
+            }
+        ),
+        operation_kinds=frozenset(
+            {
+                "select_squad_member",
+                "regroup_with_squad_member",
+                "move_to_character",
+                "respond_to_immediate_threat",
+            }
+        ),
+        denominator="Every exact current squad member and eligible nearby character.",
+        completeness_boundary=(
+            "Offers require the source-specific selection, identity, geometry, and safety facts."
+        ),
+        enumerate=_character_offers,
+    ),
+    AffordanceAdapter(
+        name="map",
+        sources=frozenset({AffordanceSource.MAP}),
+        operation_kinds=frozenset({"travel_to_map_destination"}),
+        denominator="Every currently known exact map destination.",
+        completeness_boundary="Only destinations with authoritative current travel applicability.",
+        enumerate=_map_offers,
+    ),
+    AffordanceAdapter(
+        name="native_and_composite",
+        sources=frozenset(
+            {
+                AffordanceSource.NATIVE_OPERATION,
+                AffordanceSource.COMPOSITE_OPERATION,
+                AffordanceSource.VISIBLE_CONTROL,
+            }
+        ),
+        operation_kinds=frozenset(
+            {
+                "rotate_camera",
+                "move_in_direction",
+                "exit_current_building",
+                "recover_camera_view",
+                "scroll_screen",
+                "harvest_resource",
+            }
+        ),
+        denominator="Current state for native movement, camera, scrolling, and harvesting.",
+        completeness_boundary="Only operations with a current binder and terminal policy.",
+        enumerate=_native_and_composite_offers,
+    ),
 )
+
+
+def affordance_operation_kinds() -> frozenset[str]:
+    return frozenset(
+        kind
+        for adapter in AFFORDANCE_ADAPTERS
+        for kind in adapter.operation_kinds
+    )
 
 
 def _sample_parameters(offer: AffordanceOffer) -> dict[str, JsonValue]:
@@ -991,8 +1147,8 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
     capabilities = set(telemetry.capabilities)
     offers = tuple(
         offer
-        for enumerate_source in _SOURCE_ENUMERATORS
-        for offer in enumerate_source(observation)
+        for adapter in AFFORDANCE_ADAPTERS
+        for offer in adapter.enumerate(observation)
         if observation.control_mode in offer.policy.control_modes
         and offer.policy.required_capabilities <= capabilities
         and _offer_binds_now(offer, observation)
@@ -1047,7 +1203,7 @@ def _validated_parameters(
 
 
 @dataclass(frozen=True, slots=True)
-class BoundAffordance:
+class MaterializedAffordance:
     offer: AffordanceOffer
     selection: AffordanceSelection
     operation: Action
@@ -1056,7 +1212,7 @@ class BoundAffordance:
 def bind_affordance(
     selection: AffordanceSelection,
     observation: Observation,
-) -> BoundAffordance:
+) -> MaterializedAffordance:
     """Re-enumerate, bind exactly, then materialize one private operation."""
 
     matches = [
@@ -1079,7 +1235,79 @@ def bind_affordance(
         binding = contract.bind(operation, observation)
         if not binding.bound:
             raise ValueError(f"affordance no longer binds: {binding.reason}")
-    return BoundAffordance(offer=offer, selection=selection, operation=operation)
+    return MaterializedAffordance(
+        offer=offer,
+        selection=selection,
+        operation=operation,
+    )
+
+
+def bound_affordance(materialized: MaterializedAffordance) -> BoundAffordance:
+    """Retain the selected offer after its private operation is materialized."""
+
+    offer = materialized.offer
+    return BoundAffordance(
+        affordance_id=offer.affordance_id,
+        source=offer.source,
+        semantic=offer.semantic,
+        target=offer.target,
+        parameters=materialized.selection.parameters,
+        execution=offer.policy.execution,
+        operation_kind=offer.operation_kind,
+        offered_at_telemetry_sequence=offer.offered_at_telemetry_sequence,
+    )
+
+
+def terminal_affordance_receipt(
+    affordance: BoundAffordance,
+    *,
+    status: AffordanceLifecycleStatus,
+    message: str,
+    telemetry_sequence: int | None,
+) -> AffordanceReceipt:
+    """Close one bound affordance with the same lifecycle vocabulary."""
+
+    lifecycle = [
+        AffordanceLifecycleEvent(
+            status=AffordanceLifecycleStatus.OFFERED,
+            telemetry_sequence=affordance.offered_at_telemetry_sequence,
+            detail="The source adapter offered this exact semantic choice.",
+        ),
+        AffordanceLifecycleEvent(
+            status=AffordanceLifecycleStatus.BOUND,
+            telemetry_sequence=affordance.offered_at_telemetry_sequence,
+            detail="Runtime rebound the selection to its current exact source target.",
+        ),
+        AffordanceLifecycleEvent(
+            status=AffordanceLifecycleStatus.EXECUTING,
+            telemetry_sequence=affordance.offered_at_telemetry_sequence,
+            detail="Runtime took ownership of mechanics and execution policy.",
+        ),
+    ]
+    if affordance.execution in {
+        AffordanceExecution.MONITORED,
+        AffordanceExecution.COMPOSITE,
+    }:
+        lifecycle.append(
+            AffordanceLifecycleEvent(
+                status=AffordanceLifecycleStatus.MONITORING,
+                telemetry_sequence=telemetry_sequence,
+                detail="Runtime monitored source-specific completion and cleanup.",
+            )
+        )
+    lifecycle.append(
+        AffordanceLifecycleEvent(
+            status=status,
+            telemetry_sequence=telemetry_sequence,
+            detail=message,
+        )
+    )
+    return AffordanceReceipt(
+        affordance=affordance,
+        status=status,
+        lifecycle=lifecycle,
+        message=message,
+    )
 
 
 def selection_for(

@@ -23,11 +23,9 @@ from kenshi_agent.action_contracts import (
     REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
     ROTATE_CAMERA_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
-    LegacyCompatibilityLedger,
     contract_for,
-    planner_visible_contracts,
-    translate_legacy_skill,
 )
+from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.models import (
     ACTION_ADAPTER,
     ActivateVisibleControlAction,
@@ -52,14 +50,13 @@ from kenshi_agent.models import (
     Observation,
     OpenContextInventoryAction,
     PerformContextAction,
+    PlanningMode,
     PlanStep,
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
     RegroupWithSquadMemberAction,
     RotateCameraAction,
-    SkillAction,
-    SkillArgument,
     TelemetrySnapshot,
     TravelToMapDestinationAction,
     UIState,
@@ -626,7 +623,7 @@ class TestPerformContextAction:
             ),
             state,
         )
-        digest_kinds = {entry["kind"] for entry in state.semantic_action_digest()}
+        digest_kinds = {offer.operation_kind for offer in offered_affordances(state)}
 
         assert not binding.bound
         assert "not confirmed clear" in binding.reason
@@ -925,7 +922,7 @@ class TestCollectResourceOutput:
 
         assert not contract.bind(self._action(), wrong_target).bound
         assert "collect_resource_output" not in {
-            entry["kind"] for entry in wrong_target.semantic_action_digest()
+            offer.operation_kind for offer in offered_affordances(wrong_target)
         }
         assert not contract.bind(
             self._action(), self._state(section="main")
@@ -1068,20 +1065,22 @@ class TestContractCatalog:
         assert contract_for(ClickAction(x=0.5, y=0.5)) is None
 
     def test_approach_is_withheld_from_interface_only(self) -> None:
-        visible = planner_visible_contracts(
+        state = observation(
             control_mode=ControlMode.INTERFACE_ONLY,
             capabilities=set(APPROACH_CAPABILITIES) | {"ui.visible_controls"},
+            entities=[vendor()],
+            controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
         )
-        kinds = [contract.kind for contract in visible]
+        kinds = [offer.operation_kind for offer in offered_affordances(state)]
         assert "approach_dialogue_target" not in kinds
         assert "activate_visible_control" in kinds
 
     def test_missing_capability_withholds_an_action(self) -> None:
-        visible = planner_visible_contracts(
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            capabilities={"ui.visible_controls"},
+        state = observation(
+            capabilities=["ui.visible_controls"],
+            controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
         )
-        kinds = [contract.kind for contract in visible]
+        kinds = [offer.operation_kind for offer in offered_affordances(state)]
         assert "activate_visible_control" in kinds
         # Purchase needs the tooltip capability, which is absent here.
         assert "purchase_item" not in kinds
@@ -1194,12 +1193,7 @@ def test_map_travel_cannot_bind_a_destination_already_reached() -> None:
     assert not binding.bound
     assert "already local" in binding.reason
     assert "travel_to_map_destination" not in {
-        item.kind
-        for item in planner_visible_contracts(
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            capabilities=set(state.telemetry.capabilities),
-            observation=state,
-        )
+        offer.operation_kind for offer in offered_affordances(state)
     }
 
 
@@ -1250,12 +1244,7 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
     assert not binding.bound
     assert "already inside" in binding.reason
     assert "travel_to_map_destination" not in {
-        item.kind
-        for item in planner_visible_contracts(
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            capabilities=set(state.telemetry.capabilities),
-            observation=state,
-        )
+        offer.operation_kind for offer in offered_affordances(state)
     }
 
     state.telemetry.game = state.telemetry.game.model_copy(
@@ -1287,44 +1276,17 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
     assert not contract.bind(action, state).bound
 
 
-class TestLegacyCompatibilityAdapter:
-    def test_translates_the_vendor_macro_and_counts_it(self) -> None:
-        ledger = LegacyCompatibilityLedger()
-        action = translate_legacy_skill(
-            SkillAction(
-                name="approach_confirmed_vendor",
-                args=[SkillArgument(name="target_id", value=VENDOR_ID)],
-            ),
-            ledger=ledger,
-        )
-        assert isinstance(action, ApproachDialogueTargetAction)
-        assert action.target_id == VENDOR_ID
-        assert ledger.summary() == {"approach_confirmed_vendor": 1}
-
-    def test_translates_the_calibrated_dialogue_macro(self) -> None:
-        ledger = LegacyCompatibilityLedger()
-        action = translate_legacy_skill(SkillAction(name="choose_show_goods"), ledger=ledger)
-        assert isinstance(action, ActivateVisibleControlAction)
-        assert action.exact_label == "Show me your goods."
-        assert ledger.total == 1
-
-    def test_untranslatable_macro_is_left_alone(self) -> None:
-        ledger = LegacyCompatibilityLedger()
-        assert translate_legacy_skill(SkillAction(name="eat_food"), ledger=ledger) is None
-        assert ledger.total == 0
-
-
-class TestSemanticActionsAreAdvertised:
-    def test_digest_reports_available_actions_and_argument_sources(self) -> None:
+class TestAffordancesAreAdvertised:
+    def test_digest_reports_available_semantics_and_exact_targets(self) -> None:
         state = observation(
             entities=[vendor()],
             controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
             capabilities=[*APPROACH_CAPABILITIES, "ui.visible_controls"],
         )
-        digest = state.semantic_action_digest()
-        kinds = {entry["kind"] for entry in digest}
-        assert {"approach_dialogue_target", "activate_visible_control", "dismiss_screen"} <= kinds
-        assert all(entry["argument_source"] for entry in digest)
+        offers = offered_affordances(state)
+        kinds = {offer.operation_kind for offer in offers}
+        assert {"approach_dialogue_target", "activate_visible_control"} <= kinds
+        assert all(offer.affordance_id for offer in offers)
 
     def test_threat_response_is_offered_only_for_a_grounded_safe_paused_threat(
         self,
@@ -1365,10 +1327,10 @@ class TestSemanticActionsAreAdvertised:
                 selected_character_ids=["entity-bark"],
             ),
             game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
-        )
+        ).model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
 
         assert "respond_to_immediate_threat" in {
-            entry["kind"] for entry in threatened.semantic_action_digest()
+            offer.operation_kind for offer in offered_affordances(threatened)
         }
 
         assert threatened.telemetry is not None
@@ -1381,7 +1343,7 @@ class TestSemanticActionsAreAdvertised:
             deep=True,
         )
         assert "respond_to_immediate_threat" not in {
-            entry["kind"] for entry in clear.semantic_action_digest()
+            offer.operation_kind for offer in offered_affordances(clear)
         }
 
     def test_modal_withholds_blocked_world_action_but_keeps_recovery(self) -> None:
@@ -1429,7 +1391,7 @@ class TestSemanticActionsAreAdvertised:
             capabilities=capabilities,
             squad=[selected],
             world_targets=[target],
-        )
+        ).model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
         inventory = observation(
             ui=UIState(
                 active_screen="inventory",
@@ -1441,11 +1403,11 @@ class TestSemanticActionsAreAdvertised:
             capabilities=capabilities,
             squad=[selected],
             world_targets=[target],
-        )
+        ).model_copy(update={"planning_mode": PlanningMode.CONTINUOUS})
 
-        world_kinds = {entry["kind"] for entry in world.semantic_action_digest()}
+        world_kinds = {offer.operation_kind for offer in offered_affordances(world)}
         inventory_kinds = {
-            entry["kind"] for entry in inventory.semantic_action_digest()
+            offer.operation_kind for offer in offered_affordances(inventory)
         }
 
         assert "harvest_resource" in world_kinds
@@ -1477,145 +1439,6 @@ class TestSemanticActionsAreAdvertised:
             capabilities=[],
         )
         assert state.visible_control_digest() == []
-
-
-class TestLegacyPlanTranslation:
-    def test_a_legacy_macro_plan_enters_as_semantic_actions(self) -> None:
-        from kenshi_agent.action_contracts import translate_legacy_plan_actions
-        from kenshi_agent.models import (
-            Condition,
-            ConditionKind,
-            ConditionOperator,
-            ConditionPath,
-            PlanEnvelope,
-            PlanStep,
-            RiskBudget,
-        )
-
-        fresh = Condition(
-            kind=ConditionKind.TELEMETRY_FRESH,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            max_age_seconds=3.0,
-        )
-        dialogue = Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_UI_DIALOGUE_OPEN,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            max_age_seconds=3.0,
-        )
-        legacy = PlanEnvelope(
-            schema_version="1.0",
-            plan_id="legacy-food",
-            objective="Legacy calibrated chain.",
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            based_on_revision=WorldStateRevision(telemetry_sequence=5, capability_epoch=1),
-            assumptions=[fresh],
-            steps=[
-                PlanStep(
-                    step_id="approach",
-                    action=SkillAction(
-                        name="approach_confirmed_vendor",
-                        args=[SkillArgument(name="target_id", value=VENDOR_ID)],
-                    ),
-                    preconditions=[fresh],
-                    success_conditions=[dialogue],
-                    timeout_seconds=30.0,
-                    on_success="goods",
-                ),
-                PlanStep(
-                    step_id="goods",
-                    action=SkillAction(name="choose_show_goods"),
-                    preconditions=[fresh],
-                    success_conditions=[dialogue],
-                    timeout_seconds=30.0,
-                    on_success="unrelated",
-                ),
-                PlanStep(
-                    step_id="unrelated",
-                    action=SkillAction(name="eat_food"),
-                    preconditions=[fresh],
-                    success_conditions=[dialogue],
-                    timeout_seconds=30.0,
-                ),
-            ],
-            entry_step_id="approach",
-            max_actions=4,
-            max_wall_seconds=60.0,
-            max_game_seconds=120.0,
-            risk_budget=RiskBudget(
-                max_pointer_actions=2,
-                max_purchase_actions=0,
-                max_native_assisted_actions=1,
-            ),
-        )
-
-        ledger = LegacyCompatibilityLedger()
-        translated, counts = translate_legacy_plan_actions(legacy, ledger=ledger)
-
-        kinds = [step.action.kind for step in translated.steps]
-        assert kinds == ["approach_dialogue_target", "activate_visible_control", "skill"]
-        assert counts == {"approach_confirmed_vendor": 1, "choose_show_goods": 1}
-        # An untranslatable macro is left exactly as it was.
-        assert translated.steps[2].action == legacy.steps[2].action
-        assert ledger.total == 2
-
-    def test_a_plan_with_no_legacy_macros_is_returned_unchanged(self) -> None:
-        from kenshi_agent.action_contracts import translate_legacy_plan_actions
-        from kenshi_agent.models import (
-            Condition,
-            ConditionKind,
-            ConditionOperator,
-            ConditionPath,
-            PlanEnvelope,
-            PlanStep,
-            RiskBudget,
-        )
-
-        fresh = Condition(
-            kind=ConditionKind.TELEMETRY_FRESH,
-            operator=ConditionOperator.EQUALS,
-            expected=True,
-            max_age_seconds=3.0,
-        )
-        plan = PlanEnvelope(
-            schema_version="1.0",
-            plan_id="already-generic",
-            objective="Already reusable.",
-            control_mode=ControlMode.NATIVE_ASSISTED,
-            based_on_revision=WorldStateRevision(telemetry_sequence=5, capability_epoch=1),
-            assumptions=[fresh],
-            steps=[
-                PlanStep(
-                    step_id="approach",
-                    action=ApproachDialogueTargetAction(target_id=VENDOR_ID),
-                    preconditions=[fresh],
-                    success_conditions=[
-                        Condition(
-                            kind=ConditionKind.FIELD,
-                            path=ConditionPath.TELEMETRY_UI_DIALOGUE_OPEN,
-                            operator=ConditionOperator.EQUALS,
-                            expected=True,
-                            max_age_seconds=3.0,
-                        )
-                    ],
-                    timeout_seconds=30.0,
-                )
-            ],
-            entry_step_id="approach",
-            max_actions=2,
-            max_wall_seconds=60.0,
-            max_game_seconds=120.0,
-            risk_budget=RiskBudget(
-                max_pointer_actions=0,
-                max_purchase_actions=0,
-                max_native_assisted_actions=1,
-            ),
-        )
-        translated, counts = translate_legacy_plan_actions(plan, ledger=LegacyCompatibilityLedger())
-        assert translated is plan
-        assert counts == {}
 
 
 class TestItemCellControls:

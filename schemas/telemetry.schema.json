@@ -392,14 +392,6 @@
       "title": "CharacterState",
       "type": "object"
     },
-    "ContextActionKind": {
-      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
-      "enum": [
-        "operate"
-      ],
-      "title": "ContextActionKind",
-      "type": "string"
-    },
     "ContextMenuProbe": {
       "description": "What the native sampler could prove about Kenshi's context menu.",
       "enum": [
@@ -1746,7 +1738,10 @@
         },
         "context_actions": {
           "items": {
-            "$ref": "#/$defs/ContextActionKind"
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
           },
           "title": "Context Actions",
           "type": "array"

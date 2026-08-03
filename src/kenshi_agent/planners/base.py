@@ -8,7 +8,6 @@ from typing import Any, Literal
 
 from ..config import PlannerConfig
 from ..models import (
-    PLANNER_CONTROL_ACTION_KINDS,
     AuthoredPlannerContext,
     Observation,
     PlanEnvelope,
@@ -24,7 +23,6 @@ HostedPlannerFailureCategory = Literal[
     "output_truncated",
     "empty_response",
     "malformed_structured_output",
-    "disallowed_action_surface",
 ]
 PLANNER_SYSTEM_CHARACTER_BUDGET = 12_000
 PLANNER_STATIC_PREFIX_CHARACTER_BUDGET = 50_000
@@ -36,59 +34,6 @@ def structured_output_model(observation: Observation) -> PlannerOutputModel:
     if observation.active_plan is not None:
         return PlanPatch
     return PlanEnvelope
-
-
-def planner_action_kinds(observation: Observation) -> frozenset[str]:
-    """Actions the current authored context permits the planner to return.
-
-    Game/UI intentions come from the same capability- and state-filtered
-    contract projection placed in the observation. Planner controls are the
-    explicit schema-level exception. Legacy skills remain available only
-    outside the generic live semantic-action policy.
-    """
-
-    kinds = set(PLANNER_CONTROL_ACTION_KINDS)
-    from ..affordances import offered_affordances
-
-    kinds.update(offer.operation_kind for offer in offered_affordances(observation))
-    semantic_live_planning = (
-        observation.mode == "live"
-        and observation.planning_mode is PlanningMode.CONTINUOUS
-    )
-    if semantic_live_planning:
-        # Live semantic options own time transitions. Showing pause/set_speed
-        # asks the model to sequence runtime plumbing rather than state a
-        # gameplay intention, regardless of whether the current frame happens
-        # to be paused or running.
-        kinds.difference_update({"pause", "set_speed"})
-    if observation.available_skills and not semantic_live_planning:
-        kinds.add("skill")
-    return frozenset(kinds)
-
-
-def planner_output_action_kinds(output: PlannerOutput) -> frozenset[str]:
-    """Return every action kind authored by one structured planner output."""
-
-    if isinstance(output, PlannerDecision):
-        return frozenset({output.action.kind})
-    if isinstance(output, PlanEnvelope):
-        return frozenset(step.action.kind for step in output.steps)
-    return frozenset(step.action.kind for step in output.replace_future_steps)
-
-
-def validate_planner_output_surface(
-    output: PlannerOutput,
-    *,
-    allowed_action_kinds: frozenset[str],
-) -> None:
-    """Fail closed if fallback decoding authored an unavailable action."""
-
-    unauthorized = planner_output_action_kinds(output) - allowed_action_kinds
-    if unauthorized:
-        raise ValueError(
-            "planner output contains action kinds not authorable from this "
-            "observation: " + ", ".join(sorted(unauthorized))
-        )
 
 
 def validate_planner_prompt_budget(
@@ -512,17 +457,6 @@ class HostedPlannerResponseError(RuntimeError):
             message = (
                 f"{diagnostics.provider_kind} returned no text for "
                 f"{diagnostics.output_model} (finish_reason={finish_reason!r})."
-            )
-        elif category == "disallowed_action_surface":
-            self.retry_feedback = (
-                f"Your {diagnostics.output_model} parsed, but it named an action "
-                "this observation does not offer. Fix exactly this and return "
-                f"the schema again: {self.detail}"
-            )
-            message = (
-                f"{diagnostics.provider_kind} returned a {diagnostics.output_model} "
-                "naming an unavailable action "
-                f"(finish_reason={finish_reason!r})."
             )
         else:
             # Saying "malformed JSON" when the JSON was well-formed and a field

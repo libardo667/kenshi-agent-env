@@ -251,6 +251,7 @@ safety:
     - set_speed
     - wait
     - skill
+    - perform_context_action
     - approach_dialogue_target
     - command_world_target
     - select_squad_member
@@ -275,7 +276,6 @@ safety:
     - collect_resource_output
     - recover_camera_view
     - consult_advisor
-    - request_affordance
     - recall_memory
     - read_fieldbook
   # The generic chain authors semantic actions, not macros. Only the transport

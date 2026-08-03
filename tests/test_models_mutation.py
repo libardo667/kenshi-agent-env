@@ -703,19 +703,17 @@ def test_visible_control_digest_keeps_unnamed_item_cells_distinct() -> None:
     ] == [True, True]
 
 
-def test_semantic_action_digest_contains_json_primitive_completion_conditions() -> None:
-    observation = _rich_observation(item_control_count=0)
-
-    binding_action = next(
-        entry
-        for entry in observation.semantic_action_digest()
-        if entry["kind"] == "use_game_binding"
+def test_affordance_digest_is_plain_json_without_runtime_mechanics() -> None:
+    observation = _rich_observation(item_control_count=0).model_copy(
+        update={"telemetry_stale": False, "telemetry_age_seconds": 0.1}
     )
-    conditions = binding_action["runtime_completion_conditions"]
-    assert conditions
-    assert json.loads(json.dumps(conditions)) == conditions
 
-    _assert_plain_json_values(conditions)
+    digest = observation.affordance_digest()
+    assert digest
+    assert json.loads(json.dumps(digest)) == digest
+    assert all("operation_kind" not in entry for entry in digest)
+    assert all("policy" not in entry for entry in digest)
+    _assert_plain_json_values(digest)
 
 
 def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:

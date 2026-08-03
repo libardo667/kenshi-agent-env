@@ -18,7 +18,11 @@ from ..action_contracts import (
     ActionExecution,
     contract_for,
 )
-from ..affordances import AffordanceSelection, bind_affordance
+from ..affordances import (
+    AffordanceSelection,
+    bind_affordance,
+    bound_affordance,
+)
 from ..config import PlanningConfig
 from ..models import (
     ActionOutcomeEvidence,
@@ -467,14 +471,7 @@ def compile_plan_proposal(
             PlanStep(
                 step_id=step_id,
                 action=action,
-                affordance_id=bound.offer.affordance_id,
-                affordance_target_id=(
-                    bound.offer.target.target_id if bound.offer.target else None
-                ),
-                affordance_parameters=[
-                    parameter.model_dump(mode="json")
-                    for parameter in proposal.selection.parameters
-                ],
+                affordance=bound_affordance(bound),
                 preconditions=[fresh],
                 success_conditions=success_conditions,
                 timeout_seconds=_step_timeout_seconds(
@@ -544,6 +541,7 @@ def compile_decision_proposal(
             intent=proposal.intent,
             rationale=proposal.rationale,
             action=action,
+            affordance=bound_affordance(bound),
             confidence=proposal.confidence,
             expected_observation=proposal.expected_observation,
             continuity_operations=continuity,

@@ -135,7 +135,11 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
     assert plan.steps[0].on_success == "step-2"
     assert plan.steps[1].on_success is None
     assert all(step.action.kind == "noop" for step in plan.steps)
-    assert all(step.affordance_id == observe["affordance_id"] for step in plan.steps)
+    assert all(
+        step.affordance is not None
+        and step.affordance.affordance_id == observe["affordance_id"]
+        for step in plan.steps
+    )
     assert all(step.success_conditions == [] for step in plan.steps)
     assert all(step.retry_budget == 0 for step in plan.steps)
     assert plan.max_wall_seconds == 90
@@ -174,7 +178,9 @@ def test_context_order_compiles_through_generic_target_adapter() -> None:
     step = plan.steps[0]
     assert step.action.kind == "perform_context_action"
     assert step.action.target_id == target.id
-    assert step.affordance_target_id == target.id
+    assert step.affordance is not None
+    assert step.affordance.target is not None
+    assert step.affordance.target.target_id == target.id
     assert plan.risk_budget.max_native_assisted_actions == 1
     assert step.timeout_seconds == 30
 

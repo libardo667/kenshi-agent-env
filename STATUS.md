@@ -1,7 +1,7 @@
 # Implementation status
 
-Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the action surface in
-generated [catalog](docs/generated/ACTION_CATALOG.md), game-derived [binding parity](docs/generated/GAME_BINDING_PARITY.md),
+Current-state snapshot. Evidence lives in `git log` and `runs/<run-id>/`; the affordance surface in
+generated [catalog](docs/generated/AFFORDANCE_CATALOG.md), game-derived [binding parity](docs/generated/GAME_BINDING_PARITY.md),
 and the narrower [modeled-interface audit](docs/generated/MODELED_INTERFACE_AUDIT.md);
 mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTATION.md).
 
@@ -32,8 +32,10 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
   no world command, emits zero primitives, fails closed on unknown source IDs, and suppresses
   unchanged-state requests pre-call.
 - Hosted calls project schemas and record cache diagnostics; exact-model capacity owns compaction.
-  Idle continuous intent compiles into plan mechanics, and malformed OpenRouter proposals safely
-  reobserve. See the [capacity](docs/ADR_HOSTED_CONTEXT_CAPACITY.md) and [proposal](docs/ADR_HOSTED_PLAN_PROPOSALS.md) decisions.
+  Both hosted modes select exact current runtime-generated affordances; the compiler derives private
+  operations, plan mechanics, and a common lifecycle receipt. Malformed OpenRouter proposals safely
+  reobserve. See the [capacity](docs/ADR_HOSTED_CONTEXT_CAPACITY.md), [proposal](docs/ADR_HOSTED_PLAN_PROPOSALS.md),
+  and [affordance contract](docs/ADR_UNIFIED_AFFORDANCE_CONTRACT.md) decisions.
 - [Continuity](docs/ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md) separates world evidence, run-local
   `ao-`/`po-` history, and durable memory; IDs resolve to immutable typed snapshots and an
   admissibility matrix before rendering; non-effects cannot become world proof or close a
@@ -102,10 +104,8 @@ before planning and rejects native actions again at the guard and environment bo
   exercised the continuity authority.
 - A purchase that binds and clicks but moves nothing reports only "no purse or selected-inventory
   change" — every cause at once. Seen affordable and in stock in `live-price-check-20260730-132702`.
-- A causally later observation stops stale pre-action state from satisfying a postcondition.
-  Mechanical effects are controller-terminal or derived from the immediate dispatch baseline;
-  ambiguous UI effects remain planner-authored and can still confuse a correlated later change
-  with the intended effect.
+- A causally later observation stops stale pre-action state from satisfying a terminal; generic
+  UI evidence can still confuse a correlated later change with the intended effect.
 - Synthetic portable and replay evidence proves campaign-scoped continuity across real process
   restarts, including exact-identity exclusion, bounded fieldbook reopening, current-telemetry
   precedence, rejection correction, and evidence-backed commitment closure. No supervised live

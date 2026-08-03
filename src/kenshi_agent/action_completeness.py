@@ -12,10 +12,8 @@ branch, while an option-backed action gets its terminal from the option instead.
 
 The unfinished list is the queue. It is deliberately not a set of stubs that
 pass: a generated `derive_completion_conditions` returning an empty tuple would
-satisfy every structural check and verify nothing, which is exactly how an
-affordance audit came to read `31 / 31 covered` while the agent could not build,
-craft, or assign a job. An action is either finished or declared unfinished with
-what it is missing, and an unfinished action may not be planner-visible.
+satisfy every structural check and verify nothing. The affordance-adapter gate
+separately forbids an unfinished operation from entering the offered surface.
 """
 
 from __future__ import annotations
@@ -31,20 +29,17 @@ class ActionGap(StrEnum):
     EXECUTOR_DISPATCH = "executor_dispatch"
     BIND = "bind"
     COMPLETION_TERMINAL = "completion_terminal"
-    PLANNER_VISIBILITY = "planner_visibility"
 
 
 # Actions that exist but are not finished, and exactly what each still needs.
-# An entry here forces `planner_visible=False`, so a half-built action cannot
-# reach the model. Removing the entry is how an action graduates, and the gate
-# then requires every derived piece to be real.
+# Removing an entry is how an operation graduates, and the gate then requires
+# every derived piece to be real before an adapter may expose it.
 SCAFFOLDED_ACTIONS: dict[str, str] = {}
 
 
 @dataclass(frozen=True, slots=True)
 class ActionCompleteness:
     kind: str
-    planner_visible: bool
     execution: str
     gaps: tuple[ActionGap, ...]
     scaffold_reason: str | None
@@ -85,12 +80,9 @@ def audit_action_completeness() -> tuple[ActionCompleteness, ...]:
             if f"isinstance(action, {model})" not in source:
                 gaps.append(ActionGap.EXECUTOR_DISPATCH)
         reason = SCAFFOLDED_ACTIONS.get(kind)
-        if reason is not None and contract.planner_visible:
-            gaps.append(ActionGap.PLANNER_VISIBILITY)
         rows.append(
             ActionCompleteness(
                 kind=kind,
-                planner_visible=contract.planner_visible,
                 execution=contract.execution.value,
                 gaps=tuple(gaps),
                 scaffold_reason=reason,

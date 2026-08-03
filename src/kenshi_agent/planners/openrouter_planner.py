@@ -30,10 +30,8 @@ from .base import (
     Planner,
     PreparedPlannerInput,
     output_token_budget,
-    planner_action_kinds,
     prepared_budgeted_input,
     structured_output_model,
-    validate_planner_output_surface,
     validate_planner_prompt_budget,
 )
 from .context_capacity import (
@@ -234,9 +232,7 @@ class OpenRouterPlanner(Planner):
             timeout_seconds=config.model_metadata_timeout_seconds,
             configured_context_window_tokens=config.context_window_tokens,
         )
-        self._schema_prompt_fallbacks: set[
-            tuple[str, frozenset[str]]
-        ] = set()
+        self._schema_prompt_fallbacks: set[str] = set()
 
     def prepare_input(
         self,
@@ -250,12 +246,8 @@ class OpenRouterPlanner(Planner):
             if output_model in (PlanEnvelope, PlanPatch)
             else DecisionProposal
         )
-        allowed_action_kinds = planner_action_kinds(observation)
         schema_text = json.dumps(
-            projected_response_format(
-                response_model,
-                allowed_action_kinds=allowed_action_kinds,
-            )["json_schema"]["schema"]
+            projected_response_format(response_model)["json_schema"]["schema"]
         )
         system_text = self.instructions
         output_tokens = output_token_budget(
@@ -336,8 +328,7 @@ class OpenRouterPlanner(Planner):
             if output_model in (PlanEnvelope, PlanPatch)
             else DecisionProposal
         )
-        allowed_action_kinds = planner_action_kinds(observation)
-        schema_surface = (response_model.__name__, allowed_action_kinds)
+        schema_surface = response_model.__name__
         schema_prompt_fallbacks = getattr(
             self,
             "_schema_prompt_fallbacks",
@@ -384,10 +375,7 @@ class OpenRouterPlanner(Planner):
         system_instructions = self.instructions
         schema_characters = len(
             json.dumps(
-                projected_response_format(
-                    response_model,
-                    allowed_action_kinds=allowed_action_kinds,
-                )["json_schema"]["schema"]
+                projected_response_format(response_model)["json_schema"]["schema"]
             )
         )
         validate_planner_prompt_budget(
@@ -415,7 +403,6 @@ class OpenRouterPlanner(Planner):
                     messages,
                     response_model,
                     extra,
-                    allowed_action_kinds=allowed_action_kinds,
                     session_id=observation.run_id,
                     observation_characters=len(prepared.payload),
                 )
@@ -425,7 +412,6 @@ class OpenRouterPlanner(Planner):
                         messages,
                         response_model,
                         extra,
-                        allowed_action_kinds=allowed_action_kinds,
                         session_id=observation.run_id,
                         constrained=True,
                         observation_characters=len(prepared.payload),
@@ -443,7 +429,6 @@ class OpenRouterPlanner(Planner):
                         messages,
                         response_model,
                         extra,
-                        allowed_action_kinds=allowed_action_kinds,
                         session_id=observation.run_id,
                         observation_characters=len(prepared.payload),
                     )
@@ -488,7 +473,6 @@ class OpenRouterPlanner(Planner):
                     continuation_messages,
                     response_model,
                     extra,
-                    allowed_action_kinds=allowed_action_kinds,
                     session_id=observation.run_id,
                     continuation=True,
                     observation_characters=len(prepared.payload),
@@ -556,36 +540,6 @@ class OpenRouterPlanner(Planner):
                 diagnostics,
                 proposal_fallback_reason=str(exc)[:1000],
             )
-        try:
-            validate_planner_output_surface(
-                output,
-                allowed_action_kinds=allowed_action_kinds,
-            )
-        except ValueError as exc:
-            if response_model is not PlanProposal:
-                raise HostedPlannerResponseError(
-                    "disallowed_action_surface",
-                    diagnostics,
-                    detail=str(exc),
-                    response_excerpt=combined_response,
-                ) from exc
-            output = compile_hosted_plan_proposal(
-                {
-                    "objective": "Regain a fresh planning turn after an unavailable action.",
-                    "steps": [
-                        {
-                            "selection": _observe_selection(observation),
-                        }
-                    ],
-                },
-                observation=observation,
-                context_id=prepared.context.manifest.context_id,
-                planning=planning,
-            ).output
-            self._last_call_diagnostics = replace(
-                diagnostics,
-                proposal_fallback_reason=str(exc)[:1000],
-            )
         return output
 
     async def _request(
@@ -594,17 +548,13 @@ class OpenRouterPlanner(Planner):
         output_model: type[BaseModel],
         extra: dict[str, Any],
         *,
-        allowed_action_kinds: frozenset[str],
         session_id: str,
         constrained: bool = False,
         continuation: bool = False,
         observation_characters: int,
     ) -> Any:
         """Ask for `output_model`, constraining decoding only if asked to."""
-        response_format = projected_response_format(
-            output_model,
-            allowed_action_kinds=allowed_action_kinds,
-        )
+        response_format = projected_response_format(output_model)
         schema = json.dumps(response_format["json_schema"]["schema"])
         kwargs: dict[str, Any] = {}
         if constrained:

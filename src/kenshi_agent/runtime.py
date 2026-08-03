@@ -14,12 +14,13 @@ from typing import Any, TypeVar
 
 from PIL import Image, ImageChops
 
-from .action_contracts import contract_for, translate_legacy_plan_actions
+from .action_contracts import contract_for
 from .advisor import (
     AdvisorSession,
     advisor_state_fingerprint,
     disabled_advisor_availability,
 )
+from .affordances import terminal_affordance_receipt
 from .config import PlanningConfig
 from .continuity import ContinuityAuthority, ContinuityLedger
 from .continuous_executor import (
@@ -47,6 +48,7 @@ from .models import (
     ActionReceipt,
     AdvisorConsultEvidence,
     AdvisorConsultStatus,
+    AffordanceLifecycleStatus,
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
     CameraRecoveryStatus,
@@ -1223,20 +1225,6 @@ class AgentRuntime:
                             "new_basis": plan.based_on_revision.model_dump(mode="json"),
                         },
                     )
-                if observation.mode == "live":
-                    plan, translated = translate_legacy_plan_actions(plan)
-                    if translated:
-                        self._plan_event(
-                            "plan_legacy_actions_translated",
-                            plan_id=plan.plan_id,
-                            plan_version=plan.plan_version,
-                            observation=observation,
-                            reason=(
-                                "Calibrated legacy macros entered through the single "
-                                "compatibility adapter as reusable semantic actions."
-                            ),
-                            evidence={"translations": translated},
-                        )
                 # The steps are the declaration of what the plan will spend, so
                 # derive the budget from them rather than rejecting a plan for
                 # failing to also state a number we compute anyway. Raised only,
@@ -2326,6 +2314,12 @@ class AgentRuntime:
                 step_index=observation.step_index,
                 payload=rejected,
             )
+            self._record_decision_affordance_receipt(
+                decision,
+                observation,
+                status=AffordanceLifecycleStatus.REJECTED,
+                reason=str(exc),
+            )
             return (
                 observation,
                 0,
@@ -2342,6 +2336,12 @@ class AgentRuntime:
                 "environment_error",
                 step_index=observation.step_index,
                 payload={"type": type(exc).__name__, "message": str(exc)},
+            )
+            self._record_decision_affordance_receipt(
+                decision,
+                observation,
+                status=AffordanceLifecycleStatus.FAILED,
+                reason=f"Environment error: {type(exc).__name__}: {exc}",
             )
             return (
                 observation,
@@ -2363,6 +2363,18 @@ class AgentRuntime:
             plan_id="single-step",
             step_id=f"step-{observation.step_index}",
         )
+        if not transition.receipt.accepted and not transition.receipt.executed:
+            affordance_status = AffordanceLifecycleStatus.REJECTED
+        elif transition.success is False:
+            affordance_status = AffordanceLifecycleStatus.FAILED
+        else:
+            affordance_status = AffordanceLifecycleStatus.SUCCEEDED
+        self._record_decision_affordance_receipt(
+            decision,
+            latest,
+            status=affordance_status,
+            reason=transition.receipt.message or "Deterministic decision completed.",
+        )
         is_terminated = transition.terminated or isinstance(action, StopAction)
         reason = (
             transition.events[-1]
@@ -2372,6 +2384,38 @@ class AgentRuntime:
             else transition.receipt.message or "Deterministic decision completed."
         )
         return latest, 1, is_terminated, transition.success, reason
+
+    def _record_decision_affordance_receipt(
+        self,
+        decision: PlannerDecision,
+        observation: Observation,
+        *,
+        status: AffordanceLifecycleStatus,
+        reason: str,
+    ) -> None:
+        if decision.affordance is None:
+            return
+        telemetry_sequence = (
+            observation.telemetry.sequence
+            if observation.telemetry is not None
+            else None
+        )
+        receipt = terminal_affordance_receipt(
+            decision.affordance,
+            status=status,
+            message=reason,
+            telemetry_sequence=telemetry_sequence,
+        )
+        self.logger.write(
+            "affordance_receipt",
+            step_index=observation.step_index,
+            payload={
+                "plan_id": "single-step",
+                "plan_version": 1,
+                "step_id": f"step-{observation.step_index}",
+                "receipt": receipt.model_dump(mode="json"),
+            },
+        )
 
     def _observe_plan_transition(
         self,

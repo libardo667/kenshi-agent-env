@@ -20,10 +20,8 @@ from .base import (
     Planner,
     PreparedPlannerInput,
     output_token_budget,
-    planner_action_kinds,
     prepared_budgeted_input,
     structured_output_model,
-    validate_planner_output_surface,
 )
 from .context_capacity import (
     HostedModelCapacity,
@@ -221,10 +219,6 @@ class OpenAIPlanner(Planner):
                 document,
                 observation=observation,
             ).decision
-        validate_planner_output_surface(
-            output,
-            allowed_action_kinds=planner_action_kinds(observation),
-        )
         return output
 
     @staticmethod

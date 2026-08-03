@@ -50,7 +50,7 @@ class ContextActionExemptionReason(StrEnum):
 class WiredContextAction:
     """A witnessed order with a reviewed semantic execution path."""
 
-    action_kinds: tuple[str, ...]
+    adapter_routes: tuple[str, ...]
     rationale: str
 
 
@@ -86,24 +86,28 @@ class ContextActionCoverage:
 # from TaskType.h.
 CONTEXT_ACTION_DECISIONS: dict[tuple[str, int], ContextActionDecision] = {
     ("natural_resource", 26): WiredContextAction(
-        action_kinds=("harvest_resource", "open_context_inventory"),
+        adapter_routes=("native_and_composite:harvest",),
         rationale=(
-            "harvest_resource opens the exact resource inventory and conserves "
-            "the output transfer; open_context_inventory owns that sub-route"
+            "the composite adapter opens the exact resource inventory and "
+            "conserves the output transfer as runtime-owned phases"
         ),
     ),
     ("natural_resource", 87): WiredContextAction(
-        action_kinds=("harvest_resource", "perform_context_action"),
+        adapter_routes=(
+            "context_orders:operate",
+            "native_and_composite:harvest",
+        ),
         rationale=(
-            "harvest_resource owns production to output; perform_context_action "
-            "owns the exact operate-machinery task acceptance sub-route"
+            "the context adapter owns exact task acceptance and the composite "
+            "adapter owns production through conserved output"
         ),
     ),
     ("squad_character", 25): MissingContextAction(
         queue_description=(
-            "Export exact current first-aid eligibility for character targets, "
-            "then add a stable-ID first-aid action whose terminal proves the "
-            "selected medic accepted FIRST_AID_ORDER for that target."
+            "Export exact current first-aid eligibility as the generic "
+            "context_actions semantic 'first_aid', then give the context-order "
+            "adapter a stable-ID native route whose terminal proves the selected "
+            "actor accepted FIRST_AID_ORDER for that target."
         ),
     ),
 }
@@ -404,7 +408,7 @@ def render_context_action_parity(witnesses: set[ContextMenuWitness]) -> str:
     for row in coverage:
         decision = row.decision
         if isinstance(decision, WiredContextAction):
-            rendered_decision = "wired: " + " -> ".join(decision.action_kinds)
+            rendered_decision = "wired: " + " -> ".join(decision.adapter_routes)
         elif isinstance(decision, ExemptContextAction):
             rendered_decision = (
                 f"exempt[{decision.reason.value}]: {decision.rationale}"

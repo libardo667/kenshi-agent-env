@@ -12,7 +12,6 @@ from datetime import UTC, datetime
 import pytest
 
 from kenshi_agent.action_contracts import (
-    ACTION_CONTRACTS,
     OPEN_SCREEN_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
     CompletionOwner,
@@ -114,7 +113,7 @@ def test_queued_binding_is_reachable_through_the_semantic_binding_action(
     report = audit_binding_parity()
     assert report.decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
 
     action = UseGameBindingAction(
@@ -159,7 +158,7 @@ def test_squad_group_binding_selects_one_exact_group(
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding_name] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding_name),
+        route=AffordanceRoute("game_bindings", binding_name),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -176,7 +175,7 @@ def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -197,7 +196,7 @@ def test_highlight_is_reachable_through_a_held_fifth_mouse_button() -> None:
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -218,7 +217,7 @@ def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -237,7 +236,7 @@ def test_rescue_is_reachable_through_a_semantic_toggle_binding() -> None:
     binding = GameBinding("rescue")
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -268,7 +267,7 @@ def test_preferred_combat_stance_binding_is_reachable(
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -294,7 +293,7 @@ def test_world_data_binding_is_reachable_as_an_exact_hotkey(
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -324,7 +323,7 @@ def test_mode_toggle_binding_is_reachable_without_invented_completion_state(
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -360,7 +359,7 @@ def test_remaining_squad_stance_binding_is_reachable(
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     action = UseGameBindingAction(
         binding=binding,
@@ -409,7 +408,7 @@ def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> Non
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     assert USE_GAME_BINDING_CONTRACT.bind(action, state).bound
     assert game_binding_primitive(binding) == KeyAction(key="f9")
@@ -473,7 +472,7 @@ def test_quicksave_is_reachable_only_with_controller_owned_completion() -> None:
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("use_game_binding", binding.value),
+        route=AffordanceRoute("game_bindings", binding.value),
     )
     assert USE_GAME_BINDING_CONTRACT.bind(action, state).bound
     assert game_binding_primitive(binding) == KeyAction(key="f5")
@@ -565,7 +564,7 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
 
     assert audit_binding_parity().decisions["mouse_command"] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("command_world_target"),
+        route=AffordanceRoute("context_orders"),
     )
     binding = COMMAND_WORLD_TARGET_CONTRACT.bind(action, state)
     assert binding.bound
@@ -613,7 +612,7 @@ def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
 
     assert audit_binding_parity().decisions["mouse_rotate"] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("rotate_camera"),
+        route=AffordanceRoute("native_and_composite", "rotate_camera"),
     )
     assert ROTATE_CAMERA_CONTRACT.bind(action, state).bound
     primitive = camera_rotation_primitive(action)
@@ -692,7 +691,7 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
 
     assert audit_binding_parity().decisions["mouse_select"] == BindingDecision(
         status=BindingStatus.WIRED,
-        route=AffordanceRoute("select_squad_member"),
+        route=AffordanceRoute("characters", "select"),
     )
     binding = SELECT_SQUAD_MEMBER_CONTRACT.bind(action, state)
     assert binding.bound
@@ -766,16 +765,24 @@ def test_binding_catalog_contains_only_wired_decisions() -> None:
     assert not names & set(report.with_status(BindingStatus.EXEMPT))
 
 
-def test_the_binding_action_is_contracted_and_planner_visible() -> None:
+def test_the_binding_operation_is_contracted_and_adapter_owned() -> None:
     action = UseGameBindingAction(
         binding=GameBinding.TOGGLE_INVENTORY,
         expected_effect="the inventory screen opens",
     )
     assert contract_for(action) is USE_GAME_BINDING_CONTRACT
-    assert ACTION_CONTRACTS["use_game_binding"].planner_visible
+    from kenshi_agent.affordances import affordance_operation_kinds
+
+    assert "use_game_binding" in affordance_operation_kinds()
 
 
-def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic() -> None:
+def test_screen_binding_routes_as_stateful_affordance_not_raw_toggle() -> None:
+    from kenshi_agent.affordances import (
+        bind_affordance,
+        offered_affordances,
+        selection_for,
+    )
+
     base = observation()
     assert base.telemetry is not None
     closed = base.model_copy(
@@ -789,17 +796,13 @@ def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic(
             )
         }
     )
-    closed_binding_action = next(
-        action
-        for action in closed.semantic_action_digest()
-        if action["kind"] == "use_game_binding"
+    closed_offer = next(
+        offer
+        for offer in offered_affordances(closed)
+        if offer.semantic == "open_map"
     )
-    assert "available_bindings" not in closed_binding_action
-
-    schema = UseGameBindingAction.model_json_schema()
-    assert set(schema["$defs"]["GameBinding"]["enum"]) == {
-        binding.value for binding in GameBinding
-    }
+    assert closed_offer.operation_kind == "open_screen"
+    assert bind_affordance(selection_for(closed_offer), closed).operation.screen.value == "map"
 
     assert closed.telemetry is not None
     # Map, research and crafting share one management window, so the tab index
@@ -812,37 +815,23 @@ def test_binding_vocabulary_is_schema_side_while_completion_state_stays_dynamic(
         }
     )
     opened = closed.model_copy(update={"telemetry": opened_telemetry})
-    opened_binding_action = next(
-        action
-        for action in opened.semantic_action_digest()
-        if action["kind"] == "use_game_binding"
+    opened_offer = next(
+        offer
+        for offer in offered_affordances(opened)
+        if offer.semantic == "open_map"
     )
-    closed_map = closed_binding_action["runtime_completion_conditions"]["toggle_map"]
-    opened_map = opened_binding_action["runtime_completion_conditions"]["toggle_map"]
-    assert closed_map["expected"] == -1
-    assert opened_map["expected"] == 0
+    assert bind_affordance(selection_for(opened_offer), opened).operation.screen.value == "map"
+    assert not any(
+        offer.semantic == "toggle_map"
+        for offer in (*offered_affordances(closed), *offered_affordances(opened))
+    )
 
 
 def test_binding_runtime_conditions_contain_only_observable_transitions() -> None:
+    from kenshi_agent.affordances import offered_affordances
 
-    binding_action = next(
-        action
-        for action in observation().semantic_action_digest()
-        if action["kind"] == "use_game_binding"
-    )
-
-    inventory_condition = binding_action["runtime_completion_conditions"][
-        "toggle_inventory"
-    ]
-    assert inventory_condition["path"] == "telemetry.ui.open_inventory_windows"
-    assert inventory_condition["operator"] == "not_equals"
-    assert inventory_condition["expected"] == 0
-    assert not {
-        "pause",
-        "speed_1",
-        "speed_2",
-        "speed_3",
-    } & set(binding_action["runtime_completion_conditions"])
+    semantics = {offer.semantic for offer in offered_affordances(observation())}
+    assert not {"pause", "speed_1", "speed_2", "speed_3"} & semantics
 
 
 @pytest.mark.parametrize(

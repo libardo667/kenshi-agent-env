@@ -12,6 +12,7 @@ from .action_contracts import (
     completion_contract_for,
     contract_for,
 )
+from .affordances import terminal_affordance_receipt
 from .config import PlanningConfig
 from .env import AgentEnvironment
 from .input_boundary import ExecutionToken
@@ -20,6 +21,7 @@ from .models import (
     ActionReceipt,
     ActivePlanContext,
     AdvisorConsultStatus,
+    AffordanceLifecycleStatus,
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
     CameraRecoveryStatus,
@@ -305,6 +307,7 @@ class ContinuousPlanExecutor:
         # executor owns one plan, so this is that plan's answer, and every
         # terminal result reports it rather than only why the plan stopped.
         self._completed_step_ids: tuple[str, ...] = ()
+        self._closed_affordance_steps: set[tuple[str, int, str]] = set()
 
     def _commit_patch_continuity(
         self,
@@ -586,6 +589,13 @@ class ContinuousPlanExecutor:
                 actions_completed += step_result.actions_completed
 
                 if step_result.interrupted:
+                    self._close_affordance(
+                        plan,
+                        step,
+                        observation,
+                        status=AffordanceLifecycleStatus.INTERRUPTED,
+                        reason=step_result.reason,
+                    )
                     assert step_result.staged_patch is not None
                     self._event(
                         "plan_step_interrupted",
@@ -675,6 +685,13 @@ class ContinuousPlanExecutor:
                     break
 
                 if step_result.succeeded:
+                    self._close_affordance(
+                        plan,
+                        step,
+                        observation,
+                        status=AffordanceLifecycleStatus.SUCCEEDED,
+                        reason=step_result.reason,
+                    )
                     self._event(
                         "plan_step_succeeded",
                         plan,
@@ -774,6 +791,13 @@ class ContinuousPlanExecutor:
                     break
 
                 if step_result.pause_before_replan:
+                    self._close_affordance(
+                        plan,
+                        step,
+                        observation,
+                        status=AffordanceLifecycleStatus.FAILED,
+                        reason=step_result.reason,
+                    )
                     self._event(
                         "plan_step_failed",
                         plan,
@@ -817,6 +841,13 @@ class ContinuousPlanExecutor:
                             "Retry cancelled because an assumption or precondition "
                             "is no longer true."
                         )
+                        self._close_affordance(
+                            plan,
+                            step,
+                            observation,
+                            status=AffordanceLifecycleStatus.FAILED,
+                            reason=reason,
+                        )
                         return self._abort(
                             plan,
                             step,
@@ -830,6 +861,13 @@ class ContinuousPlanExecutor:
                         )
                     continue
 
+                self._close_affordance(
+                    plan,
+                    step,
+                    observation,
+                    status=AffordanceLifecycleStatus.FAILED,
+                    reason=step_result.reason,
+                )
                 self._event(
                     "plan_step_failed",
                     plan,
@@ -3756,6 +3794,13 @@ class ContinuousPlanExecutor:
         success: bool | None = None,
         emit_step_cancelled: bool = True,
     ) -> PlanExecutionResult:
+        self._close_affordance(
+            plan,
+            step,
+            observation,
+            status=AffordanceLifecycleStatus.REJECTED,
+            reason=reason,
+        )
         if emit_step_cancelled:
             self._event(
                 "plan_step_cancelled",
@@ -3789,6 +3834,43 @@ class ContinuousPlanExecutor:
             success=success,
             reason=reason,
             completed_step_ids=self._completed_step_ids,
+        )
+
+    def _close_affordance(
+        self,
+        plan: PlanEnvelope,
+        step: PlanStep,
+        observation: Observation,
+        *,
+        status: AffordanceLifecycleStatus,
+        reason: str,
+    ) -> None:
+        if step.affordance is None:
+            return
+        key = (plan.plan_id, plan.plan_version, step.step_id)
+        if key in self._closed_affordance_steps:
+            return
+        telemetry_sequence = (
+            observation.telemetry.sequence
+            if observation.telemetry is not None
+            else None
+        )
+        receipt = terminal_affordance_receipt(
+            step.affordance,
+            status=status,
+            message=reason,
+            telemetry_sequence=telemetry_sequence,
+        )
+        self._closed_affordance_steps.add(key)
+        self.logger.write(
+            "affordance_receipt",
+            step_index=observation.step_index,
+            payload={
+                "plan_id": plan.plan_id,
+                "plan_version": plan.plan_version,
+                "step_id": step.step_id,
+                "receipt": receipt.model_dump(mode="json"),
+            },
         )
 
     @staticmethod

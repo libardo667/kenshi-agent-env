@@ -286,30 +286,23 @@ def test_canonical_live_config_authorizes_semantic_actions_not_raw_input(
     } & set(config.safety.allow_skills)
 
 
-def test_canonical_live_config_allowlists_every_planner_visible_action(
+def test_canonical_live_config_allowlists_every_affordance_operation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Adding a reusable action must not silently leave it unusable.
-
-    `dismiss_screen` shipped as a contract, a live handler, a policy rule and a
-    prompt rule — but its kind was never added to `allow_action_kinds`, so the
-    guard rejected every attempt and the planner spun retrying it. The catalog
-    and the canonical configuration have to agree.
-    """
+    """Every operation materialized by an adapter must pass internal safety."""
 
     from kenshi_agent.action_contracts import ACTION_CONTRACTS
+    from kenshi_agent.affordances import affordance_operation_kinds
 
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
 
-    planner_visible = {
-        contract.kind for contract in ACTION_CONTRACTS.values() if contract.planner_visible
-    }
-    assert planner_visible, "expected at least one planner-visible contract"
+    afforded_operations = affordance_operation_kinds()
+    assert afforded_operations, "expected at least one affordance operation"
 
     config = load_config(root / "config" / "live.yaml")
     allowed = set(config.safety.allow_action_kinds)
-    missing = sorted(planner_visible - allowed)
+    missing = sorted(afforded_operations - allowed)
     assert not missing, f"canonical live config does not allowlist: {missing}"
     controller_verified_max = max(
         contract.max_primitive_actions

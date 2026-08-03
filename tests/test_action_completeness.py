@@ -34,19 +34,11 @@ def test_every_contracted_action_is_finished_or_declared_unfinished() -> None:
     )
 
 
-def test_an_unfinished_action_is_never_planner_visible() -> None:
-    """A half-built action the model can author is worse than no action.
+def test_an_unfinished_operation_is_never_exposed_by_an_affordance_adapter() -> None:
+    from kenshi_agent.affordances import affordance_operation_kinds
 
-    An `open_screen` the planner could name while the executor could not perform
-    it would fail at dispatch, mid-run, having already spent the turn.
-    """
-
-    for row in audit_action_completeness():
-        if row.scaffold_reason is not None:
-            assert ActionGap.PLANNER_VISIBILITY not in row.gaps, (
-                f"{row.kind} is scaffolded but planner-visible"
-            )
-            assert not row.planner_visible
+    unfinished = {row.kind for row in audit_action_completeness() if not row.finished}
+    assert not unfinished & affordance_operation_kinds()
 
 
 def test_scaffold_entries_name_an_action_that_exists_and_say_what_is_missing() -> None:

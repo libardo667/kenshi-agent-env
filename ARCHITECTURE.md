@@ -22,12 +22,13 @@ Python runtime
   │                                      ├─> safety supervisor
   │                                      │     └─ cancel + guarded safe pause
   │                                      └─> scheduler/executor
-  │                                             ├─ semantic action contracts
-  │                                             └─ monitored movement options
+  │                                             ├─ runtime affordance adapters
+  │                                             ├─ private operation contracts
+  │                                             └─ monitored/composite options
   │                                                   ↕ future/change-course patch
   ├─ reflex layer (shared deterministic pause/stop rules)
   ├─ planner (heuristic, scripted replay, or hosted vision LLM)
-  │     └─ hosted intent proposal ──> deterministic plan compiler
+  │     └─ exact affordance selections ──> deterministic plan compiler
   ├─ strategic advisor (read-only hosted model + attributed guide corpus)
   │     └─ planner context only; no environment or controller authority
   ├─ schema + policy + rate-limit guard
@@ -51,31 +52,28 @@ binds to the later observation. `step(action)` is the legacy primitive.
 `close()` releases resources without manipulating the game; final-state ownership
 verifies pause across every exit before environment close.
 
-## Action hierarchy
+## Affordance lifecycle
 
-Raw keys, hotkeys, cursor moves, clicks, and scrolls are controller primitives,
-and the generic live planner cannot author them. Run control is separately typed
-as noop, wait, pause/speed, and whole-run stop. Everything else is a reusable
-semantic action binding current telemetry references through one catalog — the
-[generated action catalog](docs/generated/ACTION_CATALOG.md) is the authoritative
-list.
+The playing model has one action language: current `AffordanceOffer` instances.
+It selects an offer ID, its exact offered target, and only declared gameplay
+parameters. Runtime adapters generate those offers from named bindings, visible
+controls, contextual orders, dialogue, inventory, characters, map destinations,
+and native or composite operations. The [generated affordance
+catalog](docs/generated/AFFORDANCE_CATALOG.md) derives directly from that adapter
+registry and records each source-specific completeness boundary.
 
-Each `ActionContract` owns planner visibility, capability and control-mode
-requirements, pointer class, native requirement, risk cost, idempotency,
-reference binding, execution route, receipt kind, and completion authority. The
-planner composes semantic actions; for hosted idle planning the runtime derives
-the bounded envelope, causal fences, graph, retry policy, and budgets from those
-choices. It never asks the model to micromanage primitive timing or coordinates.
-Legacy skills still expand into bounded primitives for compatibility and
-calibrated transport.
+After selection, the runtime re-enumerates the same source and binds the exact
+offer before materializing a private typed operation. `ActionContract` now owns
+only that operation's deterministic mechanics: capability and control-mode
+fences, reference binding, risk, idempotency, execution route, and completion.
+Raw keys, pointer motion, playback transitions, monitoring, retries, and cleanup
+never enter the hosted schema. Calibrated skills remain private transport.
 
-Completion is controller-terminal, runtime-derived at the immediate dispatch
-baseline, or planner-authored only for genuinely ambiguous effects. The
-[completion authority ADR](docs/ADR_ACTION_COMPLETION_AUTHORITY.md) fixes that
-ownership boundary; the generated catalog reports it per contract. An action
-whose terminal is already satisfied does not bind, and declared failure states
-must remain definitively false through the final input lease; see
-[non-progress action boundaries](docs/ADR_NON_PROGRESS_ACTION_BOUNDARIES.md).
+Every hosted selection retains its affordance provenance through execution and
+closes with the common offered, bound, executing, optional monitoring, and
+terminal receipt vocabulary. Source-specific evidence remains nested below
+that lifecycle. See [the unified affordance contract
+decision](docs/ADR_UNIFIED_AFFORDANCE_CONTRACT.md).
 
 ## Partial observability
 
@@ -97,6 +95,7 @@ telemetry.
 | --- | --- |
 | Control modes and what each permits | [ADR_CONTROL_MODES](docs/ADR_CONTROL_MODES.md) |
 | Scheduler contract and plan authority | [ADR_CONTINUOUS_PLANNING](docs/ADR_CONTINUOUS_PLANNING.md) |
+| Unified planner action language and lifecycle | [ADR_UNIFIED_AFFORDANCE_CONTRACT](docs/ADR_UNIFIED_AFFORDANCE_CONTRACT.md) |
 | Action completion ownership | [ADR_ACTION_COMPLETION_AUTHORITY](docs/ADR_ACTION_COMPLETION_AUTHORITY.md) |
 | Already-satisfied actions and failure preflight | [ADR_NON_PROGRESS_ACTION_BOUNDARIES](docs/ADR_NON_PROGRESS_ACTION_BOUNDARIES.md) |
 | Revision ownership and causal confirmation | [ADR_WORLD_STATE_STREAM](docs/ADR_WORLD_STATE_STREAM.md) |

@@ -1964,7 +1964,11 @@
           "type": "string"
         },
         "context_action": {
-          "$ref": "#/$defs/ContextActionKind"
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Context Action",
+          "type": "string"
         }
       },
       "required": [
@@ -2008,14 +2012,6 @@
       ],
       "title": "ConsultAdvisorAction",
       "type": "object"
-    },
-    "ContextActionKind": {
-      "description": "A reviewed semantic action an exact world object accepts as an attempt.",
-      "enum": [
-        "operate"
-      ],
-      "title": "ContextActionKind",
-      "type": "string"
     },
     "ContextMenuProbe": {
       "description": "What the native sampler could prove about Kenshi's context menu.",
@@ -4735,7 +4731,11 @@
           "type": "string"
         },
         "context_action": {
-          "$ref": "#/$defs/ContextActionKind"
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Context Action",
+          "type": "string"
         }
       },
       "required": [
@@ -6963,7 +6963,10 @@
         },
         "context_actions": {
           "items": {
-            "$ref": "#/$defs/ContextActionKind"
+            "maxLength": 80,
+            "minLength": 1,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
           },
           "title": "Context Actions",
           "type": "array"

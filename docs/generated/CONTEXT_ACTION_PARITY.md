@@ -18,6 +18,6 @@ unclassified     0
 
 | target kind | Kenshi task | value | captures | semantic route |
 | --- | --- | ---: | ---: | --- |
-| natural_resource | `LOOT_TARGET` | 26 | 4 | wired: harvest_resource -> open_context_inventory |
-| natural_resource | `OPERATE_MACHINERY` | 87 | 4 | wired: harvest_resource -> perform_context_action |
-| squad_character | `FIRST_AID_ORDER` | 25 | 1 | **MISSING**: Export exact current first-aid eligibility for character targets, then add a stable-ID first-aid action whose terminal proves the selected medic accepted FIRST_AID_ORDER for that target. |
+| natural_resource | `LOOT_TARGET` | 26 | 4 | wired: native_and_composite:harvest |
+| natural_resource | `OPERATE_MACHINERY` | 87 | 4 | wired: context_orders:operate -> native_and_composite:harvest |
+| squad_character | `FIRST_AID_ORDER` | 25 | 1 | **MISSING**: Export exact current first-aid eligibility as the generic context_actions semantic 'first_aid', then give the context-order adapter a stable-ID native route whose terminal proves the selected actor accepted FIRST_AID_ORDER for that target. |

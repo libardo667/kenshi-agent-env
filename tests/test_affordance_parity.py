@@ -125,7 +125,7 @@ def test_withdrawn_preference_exemptions_are_queued_or_wired_not_hidden() -> Non
         assert name not in exempt, f"{name} returned to a preference exemption"
         assert name in missing or name in wired, f"{name} is neither queued nor wired"
     assert report.decisions["quickload"].route is not None
-    assert report.decisions["quickload"].route.action_kind == "use_game_binding"
+    assert report.decisions["quickload"].route.adapter == "game_bindings"
 
 
 @pytest.mark.skipif(

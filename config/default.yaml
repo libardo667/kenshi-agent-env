@@ -142,7 +142,6 @@ safety:
     - move_cursor
     - skill
     - recover_camera_view
-    - request_affordance
     - recall_memory
     - read_fieldbook
   allow_skills:
