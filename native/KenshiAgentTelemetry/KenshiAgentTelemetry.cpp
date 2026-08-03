@@ -128,7 +128,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.6.0";
+    const char* PROTOCOL_VERSION = "1.7.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -156,6 +156,7 @@ namespace
         bool isWalk;
         bool hasFixedDestination;
         bool isMapTravel;
+        bool isSquadRegroup;
         bool mapInteriorOrderIssued;
         // A parameter-free building exit succeeds after the selected character
         // remains outside every building or tightly reaches the native-resolved
@@ -256,6 +257,7 @@ namespace
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
+        g_activeNativeCommand.isSquadRegroup = false;
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
@@ -353,27 +355,29 @@ namespace
     {
         if (!handle.isValid())
             return "";
-
-        // This deliberately encodes Kenshi's validated handle generations, not
-        // an address. Consumers must treat the complete value as opaque.
-        std::ostringstream value;
-        value << "entity-"
-              << std::hex << std::setfill('0')
-              << std::setw(16) << g_processGeneration
-              << "-" << std::setw(16) << g_sessionGeneration
-              << "-" << std::setw(8) << static_cast<unsigned int>(handle.type)
-              << "-" << std::setw(8) << handle.container
-              << "-" << std::setw(8) << handle.containerSerial
-              << "-" << std::setw(8) << handle.index
-              << "-" << std::setw(8) << handle.serial;
-        return value.str();
+        return KenshiAgentTelemetry::FormatStableHandleIdentity(
+            g_processGeneration,
+            g_sessionGeneration,
+            static_cast<unsigned int>(handle.type),
+            handle.container,
+            handle.containerSerial,
+            handle.index,
+            handle.serial);
     }
 
     std::string StableEntityId(Character* character)
     {
         if (character == NULL || !character->isValid())
             return "";
-        return StableEntityId(character->getHandle());
+        const hand& handle = character->getHandle();
+        return KenshiAgentTelemetry::FormatStableCharacterIdentity(
+            g_processGeneration,
+            g_sessionGeneration,
+            static_cast<unsigned int>(handle.type),
+            handle.container,
+            handle.containerSerial,
+            handle.index,
+            handle.serial);
     }
 
     KenshiAgentTelemetry::RuntimeContextMenuObservation
@@ -424,7 +428,10 @@ namespace
         const bool targetValid = target != NULL && target->isValid();
         if (targetValid)
         {
-            targetId = StableEntityId(target->getHandle());
+            Character* character = target->getHandle().getCharacter();
+            targetId = character != NULL && character->isValid()
+                ? StableEntityId(character)
+                : StableEntityId(target->getHandle());
             targetName = target->getName();
         }
         KenshiAgentTelemetry::UpdateRuntimeContextMenuTargetOwnership(
@@ -570,6 +577,7 @@ namespace
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
+        g_activeNativeCommand.isSquadRegroup = false;
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;
@@ -731,7 +739,7 @@ namespace
         {
             return false;
         }
-        selectedId = StableEntityId(*it);
+        selectedId = StableEntityId(selected);
         if (selectedId.empty())
             return false;
         selectedHandle = *it;
@@ -968,6 +976,33 @@ namespace
                 continue;
             exactIdentityFound = true;
             return IsValidDialogueTarget(selected, candidate) ? candidate : NULL;
+        }
+        return NULL;
+    }
+
+    Character* FindExactSquadMember(
+        PlayerInterface* player,
+        const std::string& targetId,
+        bool& exactIdentityFound)
+    {
+        exactIdentityFound = false;
+        if (player == NULL || targetId.empty())
+            return NULL;
+        const lektor<Character*>& characters =
+            player->getAllPlayerCharacters();
+        for (unsigned int index = 0; index < characters.size(); ++index)
+        {
+            Character* candidate = characters[index];
+            if (candidate == NULL ||
+                !candidate->isValid() ||
+                !candidate->isPlayerCharacter())
+            {
+                continue;
+            }
+            if (StableEntityId(candidate) != targetId)
+                continue;
+            exactIdentityFound = true;
+            return candidate;
         }
         return NULL;
     }
@@ -1235,7 +1270,7 @@ namespace
             return true;
 
         const hand conversationTarget = dialogue->getConversationTarget();
-        targetId = StableEntityId(conversationTarget);
+        targetId = StableEntityId(conversationTarget.getCharacter());
         return !targetId.empty();
     }
 
@@ -1896,10 +1931,7 @@ namespace
         std::string selectedId;
         hand selectedHandle;
         if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
-            selectedId != g_activeNativeCommand.selectedCharacterId ||
-            !SameHandleIdentity(
-                selectedHandle,
-                g_activeNativeCommand.selectedHandle))
+            selectedId != g_activeNativeCommand.selectedCharacterId)
         {
             FinishActiveNativeCommand("cancelled", "selection_mismatch");
             return;
@@ -2068,8 +2100,13 @@ namespace
             {
                 // Walking to somebody who is walking themselves: aim at where
                 // they are now, not where they were when the order was given.
-                Character* follow =
-                    g_activeNativeCommand.targetHandle.getCharacter();
+                bool exactSquadIdentityFound = false;
+                Character* follow = g_activeNativeCommand.isSquadRegroup
+                    ? FindExactSquadMember(
+                        player,
+                        g_activeNativeCommand.targetId,
+                        exactSquadIdentityFound)
+                    : g_activeNativeCommand.targetHandle.getCharacter();
                 if (follow == NULL ||
                     !follow->isValid() ||
                     StableEntityId(follow) != g_activeNativeCommand.targetId)
@@ -2077,6 +2114,8 @@ namespace
                     FinishActiveNativeCommand("cancelled", "target_lifetime_changed");
                     return;
                 }
+                if (g_activeNativeCommand.isSquadRegroup)
+                    g_activeNativeCommand.targetHandle = follow->getHandle();
                 const Ogre::Vector3 followPosition = follow->getPosition();
                 destinationX = followPosition.x;
                 destinationZ = followPosition.z;
@@ -2217,11 +2256,19 @@ namespace
             }
             if (arrived)
             {
+                if (g_activeNativeCommand.isSquadRegroup &&
+                    ou != NULL &&
+                    !ou->isPaused())
+                {
+                    ou->togglePause(true);
+                }
                 FinishActiveNativeCommand(
                     "completed",
                     g_activeNativeCommand.isBuildingExit
                         ? "outside_door_destination_reached"
-                        : "walk_destination_reached");
+                        : (g_activeNativeCommand.isSquadRegroup
+                            ? "squad_member_reached"
+                            : "walk_destination_reached"));
                 return;
             }
             if (KenshiAgentTelemetry::ObserveNativeMovementStall(
@@ -2315,6 +2362,7 @@ namespace
             if (IsValidCommandId(request.commandId) &&
                 (request.command == "approach_confirmed_vendor" ||
                  request.command == "move_to_character" ||
+                 request.command == "regroup_with_squad_member" ||
                  request.command == "move_in_direction" ||
                  request.command == "travel_to_map_destination" ||
                  request.command == "exit_current_building" ||
@@ -2346,6 +2394,8 @@ namespace
         }
         const bool isApproach = request.command == "approach_confirmed_vendor";
         const bool isMove = request.command == "move_to_character";
+        const bool isSquadRegroup =
+            request.command == "regroup_with_squad_member";
         const bool isDirection = request.command == "move_in_direction";
         const bool isMapTravel =
             request.command == "travel_to_map_destination";
@@ -2357,12 +2407,13 @@ namespace
             request.command == "produce_resource_output";
         const bool isContextInventory =
             request.command == "open_context_inventory";
-        if (isApproach || isMove || isDirection || isMapTravel ||
+        if (isApproach || isMove || isSquadRegroup || isDirection || isMapTravel ||
             isBuildingExit || isContextAction || isResourceProduction ||
             isContextInventory)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
+            !isSquadRegroup &&
             !isDirection &&
             !isMapTravel &&
             !isBuildingExit &&
@@ -2375,6 +2426,7 @@ namespace
             g_lastNativeCommandResult = "unsupported_command";
             return;
         }
+        g_activeNativeCommand.isSquadRegroup = false;
         if (request.controlMode != "native_assisted")
         {
             RejectNativeCommand(request, "wrong_control_mode");
@@ -2831,9 +2883,17 @@ namespace
         bool exactIdentityFound = false;
         // Moving somewhere does not require the destination be talkable; only
         // that it is exactly the character the caller named, still present.
-        Character* target = isMove
-            ? FindExactNearbyCharacter(player, request.targetId, exactIdentityFound)
-            : FindExactDialogueTarget(player, request.targetId, exactIdentityFound);
+        Character* target = isSquadRegroup
+            ? FindExactSquadMember(player, request.targetId, exactIdentityFound)
+            : (isMove
+                ? FindExactNearbyCharacter(
+                    player,
+                    request.targetId,
+                    exactIdentityFound)
+                : FindExactDialogueTarget(
+                    player,
+                    request.targetId,
+                    exactIdentityFound));
         if (target == NULL)
         {
             RejectNativeCommand(
@@ -2841,6 +2901,11 @@ namespace
                 exactIdentityFound
                     ? "target_role_invalid"
                     : "target_lifetime_changed");
+            return;
+        }
+        if (isSquadRegroup && StableEntityId(target) == selectedId)
+        {
+            RejectNativeCommand(request, "target_role_invalid");
             return;
         }
 
@@ -2851,7 +2916,7 @@ namespace
         // PLAYER_TALK_TO it opens no conversation on arrival, which is what
         // makes it usable for going somewhere rather than talking to someone.
         player->newPlayerTaskSelectedCharacters(
-            isMove ? MOVE_CUS_ORDERED : PLAYER_TALK_TO,
+            (isMove || isSquadRegroup) ? MOVE_CUS_ORDERED : PLAYER_TALK_TO,
             targetHandle,
             destinationIndoors,
             target->getPosition(),
@@ -2870,9 +2935,10 @@ namespace
             request.selectedCharacterId;
         g_activeNativeCommand.targetHandle = targetHandle;
         g_activeNativeCommand.selectedHandle = selectedHandle;
-        g_activeNativeCommand.isWalk = isMove;
+        g_activeNativeCommand.isWalk = isMove || isSquadRegroup;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
+        g_activeNativeCommand.isSquadRegroup = isSquadRegroup;
         g_activeNativeCommand.mapInteriorOrderIssued = false;
         g_activeNativeCommand.isBuildingExit = false;
         g_activeNativeCommand.isContextAction = false;

@@ -1117,6 +1117,9 @@
               "$ref": "#/$defs/RespondToImmediateThreatAction"
             },
             {
+              "$ref": "#/$defs/RegroupWithSquadMemberAction"
+            },
+            {
               "$ref": "#/$defs/SkillAction"
             }
           ],
@@ -1364,6 +1367,36 @@
         }
       },
       "title": "RecoverCameraViewAction",
+      "type": "object"
+    },
+    "RegroupWithSquadMemberAction": {
+      "additionalProperties": false,
+      "description": "Bring the selected actor to one exact current squadmate.",
+      "properties": {
+        "kind": {
+          "const": "regroup_with_squad_member",
+          "default": "regroup_with_squad_member",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id"
+      ],
+      "title": "RegroupWithSquadMemberAction",
       "type": "object"
     },
     "ReinforceMemoryOperation": {

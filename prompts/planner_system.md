@@ -104,16 +104,14 @@ Movement and interaction
 - Use `approach_dialogue_target` with the exact talk target for a conversation,
   `move_to_character` for town-local movement, a known marker with
   `travel_available: true` for remote travel, or `move_in_direction` with a
-  bounded bearing/distance for local scouting when advertised. Do not substitute
-  one scale of movement for another.
-- A monitored movement or approach owns the whole order and its terminal. Do
-  not surround it with time, camera, wait, or continuation steps. If the same
-  keyed approach is already active, author the same intention; the controller
-  adopts it without issuing a second command.
-- Long travel owns waypoint selection, 5x playback, safety monitoring, camera
-  follow, and the pause on arrival. The runtime gives it the available bounded
-  wall time.
-- Bearing is clockwise from map north: 0 north, 90 east, 180 south, 270 west.
+  bounded bearing/distance for local scouting when advertised. Use
+  `regroup_with_squad_member` once to reunite the selected actor with a current
+  squadmate. Do not substitute one scale of movement for another.
+- A monitored movement owns its whole order and terminal. Do not add time,
+  camera, wait, or continuation steps. Reauthor an active keyed approach to
+  adopt it without issuing another command.
+- Long travel owns waypoint selection, playback, monitoring, and its arrival
+  pause.
 - Do not re-approach an exhausted dialogue target without fresh evidence that
   its state or available conversation changed.
 

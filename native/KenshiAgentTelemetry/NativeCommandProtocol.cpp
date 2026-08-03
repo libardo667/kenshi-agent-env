@@ -138,6 +138,54 @@ namespace KenshiAgentTelemetry
         return true;
     }
 
+    std::string FormatStableHandleIdentity(
+        unsigned long long processGeneration,
+        unsigned long long sessionGeneration,
+        unsigned int type,
+        unsigned int container,
+        unsigned int containerSerial,
+        unsigned int index,
+        unsigned int serial)
+    {
+        std::ostringstream value;
+        value << "entity-"
+              << std::hex << std::setfill('0')
+              << std::setw(16) << processGeneration
+              << "-" << std::setw(16) << sessionGeneration
+              << "-" << std::setw(8) << type
+              << "-" << std::setw(8) << container
+              << "-" << std::setw(8) << containerSerial
+              << "-" << std::setw(8) << index
+              << "-" << std::setw(8) << serial;
+        return value.str();
+    }
+
+    std::string FormatStableCharacterIdentity(
+        unsigned long long processGeneration,
+        unsigned long long sessionGeneration,
+        unsigned int type,
+        unsigned int container,
+        unsigned int containerSerial,
+        unsigned int index,
+        unsigned int serial)
+    {
+        // Kenshi shifts a live character between handle containers when zones
+        // load or body state changes. The character's type/index/serial tuple
+        // remains the same; container generations describe residency, not the
+        // squad member. Keep the seven-field opaque shape while zeroing those
+        // two non-identity fields so every consumer sees one stable ID.
+        (void)container;
+        (void)containerSerial;
+        return FormatStableHandleIdentity(
+            processGeneration,
+            sessionGeneration,
+            type,
+            0U,
+            0U,
+            index,
+            serial);
+    }
+
     bool ParseNativeCommandRequest(
         const std::string& payload,
         NativeCommandRequest& request,
@@ -264,6 +312,7 @@ namespace KenshiAgentTelemetry
             const bool isTargeted =
                 request.command == "approach_confirmed_vendor" ||
                 request.command == "move_to_character" ||
+                request.command == "regroup_with_squad_member" ||
                 request.command == "travel_to_map_destination" ||
                 request.command == "operate_natural_resource" ||
                 request.command == "produce_resource_output" ||

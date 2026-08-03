@@ -870,6 +870,7 @@ class NativeCommandAcknowledgement(StrictModel):
     command: Literal[
         "approach_confirmed_vendor",
         "move_to_character",
+        "regroup_with_squad_member",
         "move_in_direction",
         "travel_to_map_destination",
         "exit_current_building",
@@ -993,7 +994,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.6.0"
+    protocol_version: str = "1.7.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1386,6 +1387,14 @@ class RespondToImmediateThreatAction(StrictModel):
     kind: Literal["respond_to_immediate_threat"] = "respond_to_immediate_threat"
     actor_id: str = Field(min_length=1, max_length=200)
     strategy: ThreatResponseStrategy
+
+
+class RegroupWithSquadMemberAction(StrictModel):
+    """Bring the selected actor to one exact current squadmate."""
+
+    kind: Literal["regroup_with_squad_member"] = "regroup_with_squad_member"
+    actor_id: str = Field(min_length=1, max_length=200)
+    target_id: str = Field(min_length=1, max_length=200)
 
 
 class OpenContextInventoryAction(StrictModel):
@@ -1956,7 +1965,9 @@ PlannerAtomicSemanticAction: TypeAlias = (
 """Reusable atomic game/UI intentions either planner mode may author."""
 
 PlannerCompositeSemanticAction: TypeAlias = (
-    HarvestResourceAction | RespondToImmediateThreatAction
+    HarvestResourceAction
+    | RespondToImmediateThreatAction
+    | RegroupWithSquadMemberAction
 )
 """Executor-owned options that require continuous plan supervision."""
 
@@ -2010,6 +2021,7 @@ Action: TypeAlias = (
     | OpenContextInventoryAction
     | HarvestResourceAction
     | RespondToImmediateThreatAction
+    | RegroupWithSquadMemberAction
     | MoveToCharacterAction
     | MoveInDirectionAction
     | TravelToMapDestinationAction
@@ -2038,6 +2050,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "open_context_inventory",
         "harvest_resource",
         "respond_to_immediate_threat",
+        "regroup_with_squad_member",
         "move_to_character",
         "move_in_direction",
         "travel_to_map_destination",
@@ -3360,6 +3373,7 @@ class NativeCommandRequest(StrictModel):
     command: Literal[
         "approach_confirmed_vendor",
         "move_to_character",
+        "regroup_with_squad_member",
         "move_in_direction",
         "travel_to_map_destination",
         "exit_current_building",

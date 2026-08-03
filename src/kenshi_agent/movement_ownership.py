@@ -9,6 +9,7 @@ from .models import (
     MoveToCharacterAction,
     PerformContextAction,
     ProduceResourceOutputAction,
+    RegroupWithSquadMemberAction,
     TravelToMapDestinationAction,
 )
 
@@ -19,6 +20,7 @@ def has_keyed_native_movement_terminal(action: Action) -> bool:
     return (
         isinstance(action, MoveInDirectionAction)
         or isinstance(action, MoveToCharacterAction)
+        or isinstance(action, RegroupWithSquadMemberAction)
         or isinstance(action, TravelToMapDestinationAction)
         or isinstance(action, ExitCurrentBuildingAction)
         or isinstance(action, PerformContextAction)

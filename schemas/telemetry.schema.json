@@ -745,6 +745,7 @@
           "enum": [
             "approach_confirmed_vendor",
             "move_to_character",
+            "regroup_with_squad_member",
             "move_in_direction",
             "travel_to_map_destination",
             "exit_current_building",
@@ -1793,7 +1794,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.6.0",
+      "default": "1.7.0",
       "title": "Protocol Version",
       "type": "string"
     },

@@ -60,6 +60,24 @@ namespace KenshiAgentTelemetry
 
     bool IsValidCommandId(const std::string& value);
 
+    std::string FormatStableHandleIdentity(
+        unsigned long long processGeneration,
+        unsigned long long sessionGeneration,
+        unsigned int type,
+        unsigned int container,
+        unsigned int containerSerial,
+        unsigned int index,
+        unsigned int serial);
+
+    std::string FormatStableCharacterIdentity(
+        unsigned long long processGeneration,
+        unsigned long long sessionGeneration,
+        unsigned int type,
+        unsigned int container,
+        unsigned int containerSerial,
+        unsigned int index,
+        unsigned int serial);
+
     bool ParseNativeCommandRequest(
         const std::string& payload,
         NativeCommandRequest& request,

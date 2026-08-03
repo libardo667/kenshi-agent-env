@@ -992,6 +992,36 @@
       "title": "RecoverCameraViewAction",
       "type": "object"
     },
+    "RegroupWithSquadMemberAction": {
+      "additionalProperties": false,
+      "description": "Bring the selected actor to one exact current squadmate.",
+      "properties": {
+        "kind": {
+          "const": "regroup_with_squad_member",
+          "default": "regroup_with_squad_member",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id"
+      ],
+      "title": "RegroupWithSquadMemberAction",
+      "type": "object"
+    },
     "RespondToImmediateThreatAction": {
       "additionalProperties": false,
       "description": "Choose whether one selected actor engages or withdraws from a threat.\n\nThe runtime owns playback, an observed escape vector for withdrawal,\ncontinuous threat and squad-health observation, timeout, interruption, and\nthe terminal pause. The planner chooses only the actor and gameplay policy.",
@@ -1449,6 +1479,9 @@
     },
     {
       "$ref": "#/$defs/RespondToImmediateThreatAction"
+    },
+    {
+      "$ref": "#/$defs/RegroupWithSquadMemberAction"
     },
     {
       "$ref": "#/$defs/MoveToCharacterAction"

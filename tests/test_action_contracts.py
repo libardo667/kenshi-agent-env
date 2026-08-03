@@ -20,6 +20,7 @@ from kenshi_agent.action_contracts import (
     PERFORM_CONTEXT_ACTION_CONTRACT,
     PRODUCE_RESOURCE_OUTPUT_CONTRACT,
     PURCHASE_ITEM_CONTRACT,
+    REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
     ROTATE_CAMERA_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     LegacyCompatibilityLedger,
@@ -55,6 +56,7 @@ from kenshi_agent.models import (
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
+    RegroupWithSquadMemberAction,
     RotateCameraAction,
     SkillAction,
     SkillArgument,
@@ -144,6 +146,72 @@ def civilian(distance: float = 12.0) -> NearbyEntity:
         disposition=Disposition.FRIENDLY,
         distance=distance,
     )
+
+
+def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -> None:
+    actor = CharacterState(
+        id="entity-bark",
+        name="Bark",
+        selected=True,
+        alive=True,
+        conscious=True,
+        down=False,
+        position=Vec3(x=0.0, y=0.0, z=0.0),
+    )
+    target = CharacterState(
+        id="entity-plant",
+        name="Plant",
+        alive=True,
+        conscious=False,
+        down=True,
+        position=Vec3(x=1000.0, y=0.0, z=500.0),
+    )
+    state = observation(
+        capabilities=[
+            "control.regroup_with_squad_member",
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.basic",
+            "squad.health",
+        ],
+        squad=[actor, target],
+        ui=UIState(
+            active_screen="world",
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+        ),
+    )
+    action = RegroupWithSquadMemberAction(
+        actor_id=actor.id,
+        target_id=target.id,
+    )
+
+    binding = REGROUP_WITH_SQUAD_MEMBER_CONTRACT.bind(action, state)
+
+    assert binding.bound
+    assert binding.target_id == target.id
+    assert REGROUP_WITH_SQUAD_MEMBER_CONTRACT.max_primitive_actions == 5
+    assert REGROUP_WITH_SQUAD_MEMBER_CONTRACT.controller_verified
+
+    already_together = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "squad": [
+                        actor,
+                        target.model_copy(
+                            update={"position": Vec3(x=5.0, y=0.0, z=5.0)}
+                        ),
+                    ]
+                }
+            )
+        }
+    )
+    assert not REGROUP_WITH_SQUAD_MEMBER_CONTRACT.bind(
+        action,
+        already_together,
+    ).bound
 
 
 class TestApproachBindsAnyDialogueTarget:
@@ -958,7 +1026,8 @@ class TestContractCatalog:
             "command_world_target",
             "move_to_character",
             "move_in_direction",
-        "open_screen",
+            "open_screen",
+            "regroup_with_squad_member",
             "travel_to_map_destination",
             "exit_current_building",
             "perform_context_action",

@@ -116,7 +116,7 @@ def _step_action_errors(
             f"{label} requests direct live unpause, which the action guard cannot "
             "authorize. Do not add an unpause step before movement: "
             "approach_dialogue_target, move_to_character, move_in_direction, "
-            "travel_to_map_destination, harvest_resource, and "
+            "travel_to_map_destination, regroup_with_squad_member, harvest_resource, and "
             "respond_to_immediate_threat own any world-time "
             "transition they require."
         )

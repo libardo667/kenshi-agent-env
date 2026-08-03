@@ -45,6 +45,7 @@ from kenshi_agent.models import (
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
+    RegroupWithSquadMemberAction,
     ResourceTransferStatus,
     RespondToImmediateThreatAction,
     RotateCameraAction,
@@ -1118,11 +1119,19 @@ class NativePulseTelemetry(PulseTelemetry):
                         name="Wanderer",
                         selected=True,
                         indoors=self.indoors,
+                        alive=True,
+                        conscious=True,
+                        down=False,
+                        position=Vec3(x=0.0, y=0.0, z=0.0),
                     ),
                     CharacterState(
                         id="entity-ruka",
                         name="Ruka",
                         selected=False,
+                        alive=True,
+                        conscious=False,
+                        down=True,
+                        position=Vec3(x=500.0, y=0.0, z=750.0),
                     ),
                 ],
                 nearby_entities=[
@@ -2536,6 +2545,55 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert [
             action.kind for action in controller.actions
         ] == ["hotkey", "key", "key"]
+
+    asyncio.run(scenario())
+
+
+def test_squad_regroup_issues_one_global_exact_order_and_establishes_five_x(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "game.speed",
+            "control.regroup_with_squad_member",
+            "identity.stable_handles",
+            "squad.basic",
+            "squad.health",
+        ]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+                "require_paused_between_actions": False,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            RegroupWithSquadMemberAction(
+                actor_id="entity-selected",
+                target_id="entity-ruka",
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "b" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "regroup_with_squad_member"
+        assert controller.request.selected_character_ids == ["entity-selected"]
+        assert controller.request.target_id == "entity-ruka"
+        assert telemetry.paused is False
+        assert telemetry.speed_multiplier == 5.0
+        assert [action.kind for action in controller.actions] == [
+            "hotkey",
+            "key",
+            "key",
+        ]
 
     asyncio.run(scenario())
 

@@ -32,12 +32,12 @@ unsupported — never permission to infer the value another way.
 
 ## Identity
 
-With `identity.stable_handles`, `identity_session_id` is non-null and every
-squad, selection, nearby, and native target ID derives from a validated Kenshi
-`hand`, its lifetime serials, and the current process/session generations. **The
-string layout is an internal plug-in detail**: compare the whole string, never
-parse it for game meaning, and never use a raw pointer or display name as the
-sole key.
+With `identity.stable_handles`, `identity_session_id` is non-null. Every ID
+derives from a validated Kenshi `hand` and the process/session generations.
+Character IDs retain their type/index/serial identity across handle containers;
+other entity IDs retain the complete handle identity. **The string layout is an
+internal plug-in detail**: compare the whole string, never parse it for game
+meaning, and never use a raw pointer or display name as the sole key.
 
 The session generation advances when the plug-in starts or `GameWorld::resetGame`
 begins a new/load transition; a process restart changes the process generation.

@@ -71,6 +71,7 @@ from .models import (
     ReadFieldbookAction,
     RecallMemoryAction,
     RecoverCameraViewAction,
+    RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     RotateCameraAction,
     ScrollScreenAction,
@@ -110,6 +111,10 @@ NATIVE_APPROACH_CAPABILITY_ALIASES: frozenset[str] = frozenset(
 NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = "approach_confirmed_vendor"
 
 NATIVE_MOVE_CAPABILITY = "control.move_to_character"
+NATIVE_SQUAD_REGROUP_CAPABILITY = "control.regroup_with_squad_member"
+NATIVE_SQUAD_REGROUP_WIRE_COMMAND: Literal["regroup_with_squad_member"] = (
+    "regroup_with_squad_member"
+)
 NATIVE_DIRECTION_CAPABILITY = "control.move_in_direction"
 NATIVE_DIRECTION_WIRE_COMMAND: Literal["move_in_direction"] = "move_in_direction"
 NATIVE_MOVE_WIRE_COMMAND: Literal["move_to_character"] = "move_to_character"
@@ -143,6 +148,7 @@ CONTEXT_INVENTORY_TARGET_CAPABILITY = "ui.context_inventory_target"
 
 VISIBLE_CONTROLS_CAPABILITY = "ui.visible_controls"
 CAMERA_RECOVERY_CAPABILITY = "camera.recovery"
+SQUAD_REGROUP_ARRIVAL_DISTANCE = 12.0
 
 
 class ActionExecution(StrEnum):
@@ -1005,6 +1011,102 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
             )
             for destination in telemetry.known_map_destinations
         )
+    )
+
+
+def bind_regroup_with_squad_member(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind one selected actor to one distinct, current squadmate."""
+
+    if not isinstance(action, RegroupWithSquadMemberAction):
+        return _unbound("Action is not a regroup_with_squad_member action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind squad regrouping.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so squad regrouping cannot bind.")
+    if telemetry.game.loaded is not True:
+        return _unbound("The game is not loaded, so squad regrouping cannot begin.")
+    if telemetry.game.paused is not True:
+        return _unbound(
+            "Squad regrouping begins from a confirmed pause so its monitored "
+            "option owns the complete playback boundary."
+        )
+    actor_matches = [
+        member
+        for member in telemetry.squad
+        if member.id == action.actor_id and member.selected
+    ]
+    if (
+        len(actor_matches) != 1
+        or telemetry.ui.selected_character_id != action.actor_id
+        or telemetry.ui.selected_character_ids != [action.actor_id]
+    ):
+        return _unbound(
+            "actor_id must be the one exact currently selected squad member."
+        )
+    actor = actor_matches[0]
+    if actor.alive is not True or actor.conscious is not True or actor.down is True:
+        return _unbound(
+            f"Selected actor {actor.name!r} is not confirmed able to travel."
+        )
+    if action.target_id == action.actor_id:
+        return _unbound("A squad member cannot regroup with itself.")
+    target_matches = [
+        member for member in telemetry.squad if member.id == action.target_id
+    ]
+    if len(target_matches) != 1:
+        return _unbound(
+            f"target_id must identify one exact current squad member; found "
+            f"{len(target_matches)} matches."
+        )
+    target = target_matches[0]
+    if target.alive is not True:
+        return _unbound(f"Target squad member {target.name!r} is not confirmed alive.")
+    if actor.position is None or target.position is None:
+        return _unbound(
+            "Both squad members need current world positions for regrouping."
+        )
+    dx = actor.position.x - target.position.x
+    dz = actor.position.z - target.position.z
+    if dx * dx + dz * dz <= SQUAD_REGROUP_ARRIVAL_DISTANCE**2:
+        return _unbound(
+            f"{actor.name!r} is already within the native arrival boundary of "
+            f"{target.name!r}."
+        )
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound selected actor {actor.name!r} ({actor.id}) to regroup with "
+            f"current squadmate {target.name!r} ({target.id}); native code owns "
+            "global lookup, pathing, playback, and arrival."
+        ),
+        target_id=target.id,
+        resolved_label=target.name,
+        source_revision=observation.world_revision,
+    )
+
+
+def squad_regroup_is_currently_authorable(observation: Observation) -> bool:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return False
+    selected = [member for member in telemetry.squad if member.selected]
+    if len(selected) != 1:
+        return False
+    actor = selected[0]
+    return any(
+        bind_regroup_with_squad_member(
+            RegroupWithSquadMemberAction(
+                actor_id=actor.id,
+                target_id=target.id,
+            ),
+            observation,
+        ).bound
+        for target in telemetry.squad
+        if target.id != actor.id
     )
 
 
@@ -2487,6 +2589,49 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     authorable_when=context_inventory_is_currently_authorable,
 )
 
+
+REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
+    kind="regroup_with_squad_member",
+    version="1.0",
+    model=RegroupWithSquadMemberAction,
+    summary=(
+        "Bring one exact selected actor to one distinct current squadmate. The "
+        "model chooses only actor and squadmate; native code owns global squad "
+        "lookup, container-stable identity, pathing, 5x playback, moving-target "
+        "tracking, arrival, and a confirmed terminal pause."
+    ),
+    argument_source=(
+        "actor_id must be the exact selected squad member and target_id must be "
+        "a distinct current squad entry. The target may be down or unconscious."
+    ),
+    planner_visible=True,
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_SQUAD_REGROUP_CAPABILITY,
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.basic",
+            "squad.health",
+        }
+    ),
+    capability_aliases=frozenset({NATIVE_SQUAD_REGROUP_CAPABILITY}),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    requires_exact_selection=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=5,
+    reference_fields=("actor_id", "target_id"),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.MONITORED_OPTION,
+    receipt_kind="semantic_squad_regroup",
+    bind=bind_regroup_with_squad_member,
+    controller_verified=True,
+    authorable_when=squad_regroup_is_currently_authorable,
+)
+
+
 MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     kind="move_in_direction",
     version="1.0",
@@ -3087,6 +3232,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         HARVEST_RESOURCE_CONTRACT,
         RESPOND_TO_IMMEDIATE_THREAT_CONTRACT,
         OPEN_CONTEXT_INVENTORY_CONTRACT,
+        REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
         MOVE_TO_CHARACTER_CONTRACT,
         MOVE_IN_DIRECTION_CONTRACT,
         TRAVEL_TO_MAP_DESTINATION_CONTRACT,

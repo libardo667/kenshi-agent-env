@@ -133,6 +133,9 @@
               "$ref": "#/$defs/RespondToImmediateThreatAction"
             },
             {
+              "$ref": "#/$defs/RegroupWithSquadMemberAction"
+            },
+            {
               "$ref": "#/$defs/MoveToCharacterAction"
             },
             {
@@ -4213,6 +4216,7 @@
           "enum": [
             "approach_confirmed_vendor",
             "move_to_character",
+            "regroup_with_squad_member",
             "move_in_direction",
             "travel_to_map_destination",
             "exit_current_building",
@@ -5183,6 +5187,36 @@
       "title": "RecoverCameraViewAction",
       "type": "object"
     },
+    "RegroupWithSquadMemberAction": {
+      "additionalProperties": false,
+      "description": "Bring the selected actor to one exact current squadmate.",
+      "properties": {
+        "kind": {
+          "const": "regroup_with_squad_member",
+          "default": "regroup_with_squad_member",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id"
+      ],
+      "title": "RegroupWithSquadMemberAction",
+      "type": "object"
+    },
     "ReinforceMemoryOperation": {
       "additionalProperties": false,
       "description": "Say an existing record still matters, without writing a second copy.",
@@ -6139,7 +6173,7 @@
       "additionalProperties": false,
       "properties": {
         "protocol_version": {
-          "default": "1.6.0",
+          "default": "1.7.0",
           "title": "Protocol Version",
           "type": "string"
         },

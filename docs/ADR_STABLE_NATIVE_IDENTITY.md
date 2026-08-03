@@ -2,10 +2,10 @@
 
 ## Status
 
-Accepted for the P5 identity boundary. The later causal command boundary is
-recorded separately in `ADR_CAUSAL_NATIVE_COMMANDS.md`. The current wire
-protocol is `0.6.1`; the `0.2.0` text below records when stable identity first
-entered the contract.
+Superseded for character container identity by
+`ADR_CHARACTER_IDENTITY_CONTINUITY.md`. The later causal command boundary is
+recorded separately in `ADR_CAUSAL_NATIVE_COMMANDS.md`. The `0.2.0` text below
+records when stable identity first entered the contract.
 
 ## Problem
 

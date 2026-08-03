@@ -129,6 +129,58 @@ def test_runtime_compiles_model_intent_and_quarantines_bad_sidecars() -> None:
     assert compiled.rejected_sidecars[0].index == 1
 
 
+def test_runtime_compiles_squad_regrouping_as_one_owned_intent() -> None:
+    observation = Observation(
+        run_id="proposal-regroup",
+        step_index=13,
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        planning_mode=PlanningMode.CONTINUOUS,
+        world_revision=WorldStateRevision(
+            telemetry_sequence=556,
+            frame_sequence=13,
+            capability_epoch=1,
+            observed_at_monotonic=123.5,
+        ),
+        telemetry=TelemetrySnapshot(ui=UIState(active_screen="world")),
+    )
+    proposal = {
+        "objective": "Reunite Bark with the downed Plant.",
+        "steps": [
+            {
+                "action": {
+                    "kind": "regroup_with_squad_member",
+                    "actor_id": "entity-bark",
+                    "target_id": "entity-plant",
+                },
+                # Arrival is a mechanical native terminal, not a condition the
+                # model should have to describe correctly.
+                "expected_outcomes": [],
+            }
+        ],
+    }
+
+    compiled = compile_plan_proposal(
+        proposal,
+        observation=observation,
+        context_id="pc-regroup",
+        planning=PlanningConfig(
+            max_plan_steps=4,
+            max_actions_per_plan=4,
+            max_plan_wall_seconds=360,
+            max_plan_game_seconds=3600,
+        ),
+    )
+
+    step = compiled.plan.steps[0]
+    assert step.action.kind == "regroup_with_squad_member"
+    assert step.success_conditions == []
+    assert step.timeout_seconds == 300
+    assert compiled.plan.max_actions == 1
+    assert compiled.plan.risk_budget.max_native_assisted_actions == 1
+    assert compiled.plan.risk_budget.max_pointer_actions == 0
+
+
 def test_runtime_derives_contract_risk_spend_and_completion_ownership() -> None:
     observation = Observation(
         run_id="proposal-contract",

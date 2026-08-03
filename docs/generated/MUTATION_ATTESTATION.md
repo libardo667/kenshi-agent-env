@@ -23,7 +23,7 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-89 shards: 15 attested, 15 unverified, 8 source-changed, 51 never; 1091 open mutants where the numbers still apply.
+89 shards: 14 attested, 15 unverified, 9 source-changed, 51 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -73,7 +73,7 @@ promises only that the module under test has not moved.
 | `memory` | 1476 | 1476 | 0 | 2026-07-28T16:03:50Z | — | unverified |
 | `memory_compaction` | 114 | 114 | 0 | 2026-07-28T15:50:29Z | — | unverified |
 | `models` | 1044 | 940 | 104 | 2026-08-02T07:48:19Z | f51ece7103359dff | source-changed |
-| `movement_ownership` | 5 | 5 | 0 | 2026-07-31T15:11:17Z | 160084c0bf1037d5 | attested |
+| `movement_ownership` | 5 | 5 | 0 | 2026-07-31T15:11:17Z | 160084c0bf1037d5 | source-changed |
 | `mutation_campaign` | 508 | 508 | 0 | 2026-07-29T21:33:57Z | 7ec6f5cbc6d2452a | attested |
 | `mutation_ledger` | 277 | 277 | 0 | 2026-07-28T18:31:37Z | b3c59cc2c0473cf3 | attested |
 | `native_commands` | — | — | — | — | — | never |

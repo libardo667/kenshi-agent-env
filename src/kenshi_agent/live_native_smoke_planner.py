@@ -27,6 +27,7 @@ from kenshi_agent.models import (
     PlannerOutput,
     PlanningMode,
     PlanStep,
+    RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     RiskBudget,
 )
@@ -212,7 +213,11 @@ def build_decision(
     )
     if isinstance(
         action,
-        (HarvestResourceAction, RespondToImmediateThreatAction),
+        (
+            HarvestResourceAction,
+            RegroupWithSquadMemberAction,
+            RespondToImmediateThreatAction,
+        ),
     ):
         raise ValueError(
             f"{action.kind} requires continuous option ownership"

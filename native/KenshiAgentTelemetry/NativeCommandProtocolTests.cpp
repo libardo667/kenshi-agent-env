@@ -825,6 +825,58 @@ namespace
         }
         return 0;
     }
+
+    int TestStableCharacterIdentityAcrossContainerChanges()
+    {
+        const std::string loaded =
+            KenshiAgentTelemetry::FormatStableCharacterIdentity(
+                0x51ULL,
+                0x02ULL,
+                1U,
+                1U,
+                0x4fed2800U,
+                1U,
+                0x873b1f00U);
+        const std::string active =
+            KenshiAgentTelemetry::FormatStableCharacterIdentity(
+                0x51ULL,
+                0x02ULL,
+                1U,
+                0x14U,
+                0x2a7bfc40U,
+                1U,
+                0x873b1f00U);
+        if (loaded != active)
+        {
+            return Fail(
+                "character identity changed when only its handle container changed");
+        }
+
+        const std::string firstObject =
+            KenshiAgentTelemetry::FormatStableHandleIdentity(
+                0x51ULL,
+                0x02ULL,
+                1U,
+                1U,
+                0x4fed2800U,
+                1U,
+                0x873b1f00U);
+        const std::string secondObject =
+            KenshiAgentTelemetry::FormatStableHandleIdentity(
+                0x51ULL,
+                0x02ULL,
+                1U,
+                0x14U,
+                0x2a7bfc40U,
+                1U,
+                0x873b1f00U);
+        if (firstObject == secondObject)
+        {
+            return Fail(
+                "ordinary handle identity lost its container generation fence");
+        }
+        return 0;
+    }
 }
 
 int main(int argc, char** argv)
@@ -877,6 +929,10 @@ int main(int argc, char** argv)
     const int naturalResourceResult = TestNaturalResourceAssessment();
     if (naturalResourceResult != 0)
         return naturalResourceResult;
+    const int stableCharacterResult =
+        TestStableCharacterIdentityAcrossContainerChanges();
+    if (stableCharacterResult != 0)
+        return stableCharacterResult;
 
     const std::string fixtureDirectory = argv[1];
     const std::string separator =
@@ -948,6 +1004,28 @@ int main(int argc, char** argv)
         mapTravel.distanceUnits != 0.0)
     {
         return Fail("map travel did not retain its exact known destination");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest squadRegroup;
+    const std::string squadRegroupPayload =
+        ReadFile(prefix + "valid_squad_regroup_request.json");
+    if (squadRegroupPayload.empty())
+        return Fail("could not read valid_squad_regroup_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            squadRegroupPayload,
+            squadRegroup,
+            rejectionReason))
+    {
+        return Fail(
+            "valid squad-regroup request was rejected as " + rejectionReason);
+    }
+    if (squadRegroup.command != "regroup_with_squad_member" ||
+        squadRegroup.selectedCharacterId != "entity-bark" ||
+        squadRegroup.targetId != "entity-plant" ||
+        squadRegroup.bearingDegrees != 0.0 ||
+        squadRegroup.distanceUnits != 0.0)
+    {
+        return Fail("squad regroup did not retain its exact actor and target");
     }
 
     KenshiAgentTelemetry::NativeCommandRequest approach;

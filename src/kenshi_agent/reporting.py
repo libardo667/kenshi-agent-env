@@ -158,6 +158,8 @@ def describe_action(action: Action) -> str:
             if strategy == "withdraw"
             else "Engaging the immediate threat."
         )
+    if kind == "regroup_with_squad_member":
+        return "Reuniting the selected squad member with their teammate."
     if kind == "open_context_inventory":
         return "Opening the resource inventory."
     if kind == "move_in_direction":

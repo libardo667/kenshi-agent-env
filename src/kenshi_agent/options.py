@@ -21,6 +21,7 @@ from .models import (
     PauseAction,
     PerformContextAction,
     ProduceResourceOutputAction,
+    RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     SemanticActionReceipt,
     SkillAction,
@@ -41,6 +42,7 @@ from .world_state import StoreUpdate
 NativeMovementAction: TypeAlias = (
     MoveInDirectionAction
     | MoveToCharacterAction
+    | RegroupWithSquadMemberAction
     | TravelToMapDestinationAction
     | ExitCurrentBuildingAction
     | PerformContextAction
@@ -527,6 +529,8 @@ class StatefulNativeMovementOption:
     def _wire_command(self) -> str:
         if isinstance(self.action, MoveToCharacterAction):
             return "move_to_character"
+        if isinstance(self.action, RegroupWithSquadMemberAction):
+            return "regroup_with_squad_member"
         if isinstance(self.action, TravelToMapDestinationAction):
             return "travel_to_map_destination"
         if isinstance(self.action, ProduceResourceOutputAction):
@@ -541,6 +545,8 @@ class StatefulNativeMovementOption:
     def _required_capability(self) -> str:
         if isinstance(self.action, MoveToCharacterAction):
             return "control.move_to_character"
+        if isinstance(self.action, RegroupWithSquadMemberAction):
+            return "control.regroup_with_squad_member"
         if isinstance(self.action, TravelToMapDestinationAction):
             return "control.travel_to_map_destination"
         if isinstance(self.action, ProduceResourceOutputAction):
@@ -589,6 +595,27 @@ class StatefulNativeMovementOption:
                     "Character-movement option requires one exact currently "
                     "nearby target."
                 )
+        if isinstance(self.action, RegroupWithSquadMemberAction):
+            actors = [
+                member
+                for member in telemetry.squad
+                if member.id == self.action.actor_id and member.selected
+            ]
+            squad_targets = [
+                member
+                for member in telemetry.squad
+                if member.id == self.action.target_id
+            ]
+            if (
+                len(actors) != 1
+                or telemetry.ui.selected_character_ids != [self.action.actor_id]
+                or len(squad_targets) != 1
+                or self.action.target_id == self.action.actor_id
+            ):
+                raise OptionLifecycleError(
+                    "Squad-regroup option requires one exact selected actor and "
+                    "one distinct current squadmate."
+                )
         if isinstance(self.action, TravelToMapDestinationAction):
             destinations = [
                 destination
@@ -613,7 +640,7 @@ class StatefulNativeMovementOption:
             self.action,
             (PerformContextAction, ProduceResourceOutputAction),
         ):
-            targets = [
+            context_targets = [
                 target
                 for target in telemetry.world_targets
                 if target.id == self.action.target_id
@@ -628,7 +655,7 @@ class StatefulNativeMovementOption:
                     )
                 )
             ]
-            if len(targets) != 1:
+            if len(context_targets) != 1:
                 raise OptionLifecycleError(
                     "Context-action option requires one exact currently actionable "
                     "world target."
@@ -692,6 +719,11 @@ class StatefulNativeMovementOption:
         elif isinstance(self.action, MoveToCharacterAction):
             self.reason = (
                 "Exact-character walk dispatched; awaiting its keyed native "
+                "arrival terminal."
+            )
+        elif isinstance(self.action, RegroupWithSquadMemberAction):
+            self.reason = (
+                "Squad-regroup order dispatched; awaiting the exact squadmate "
                 "arrival terminal."
             )
         else:
@@ -792,6 +824,15 @@ class StatefulNativeMovementOption:
                 self.reason = (
                     "Native resource production claimed terminal completion "
                     f"without output proof: {acknowledgement.reason}."
+                )
+            elif (
+                isinstance(self.action, RegroupWithSquadMemberAction)
+                and acknowledgement.reason != "squad_member_reached"
+            ):
+                self.status = OptionStatus.FAILED
+                self.reason = (
+                    "Native squad regrouping claimed terminal completion without "
+                    f"exact arrival proof: {acknowledgement.reason}."
                 )
             elif self.transition is None:
                 self.reason = (
@@ -906,6 +947,12 @@ class StatefulNativeMovementOption:
                 and acknowledgement.distance_units == 0.0
             )
         if isinstance(self.action, MoveToCharacterAction):
+            return bool(
+                acknowledgement.target_id == self.action.target_id
+                and acknowledgement.bearing_degrees == 0.0
+                and acknowledgement.distance_units == 0.0
+            )
+        if isinstance(self.action, RegroupWithSquadMemberAction):
             return bool(
                 acknowledgement.target_id == self.action.target_id
                 and acknowledgement.bearing_degrees == 0.0

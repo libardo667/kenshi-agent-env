@@ -28,6 +28,7 @@ from kenshi_agent.models import (
     PauseAction,
     PerformContextAction,
     ProduceResourceOutputAction,
+    RegroupWithSquadMemberAction,
     TelemetrySnapshot,
     Transition,
     TravelToMapDestinationAction,
@@ -43,6 +44,7 @@ from kenshi_agent.world_state import SequenceStatus, StateDelta, StoreUpdate
 COMMAND_ID = "cmd-0123456789abcdef0123456789abcdef"
 SELECTED_ID = "entity-selected"
 TARGET_ID = "entity-moving-target"
+SQUADMATE_ID = "entity-squadmate"
 
 
 def test_native_movement_terminal_ownership_is_complete_and_exclusive() -> None:
@@ -53,6 +55,10 @@ def test_native_movement_terminal_ownership_is_complete_and_exclusive() -> None:
             expected_effect="move east",
         ),
         MoveToCharacterAction(target_id=TARGET_ID),
+        RegroupWithSquadMemberAction(
+            actor_id=SELECTED_ID,
+            target_id=SQUADMATE_ID,
+        ),
         TravelToMapDestinationAction(destination_id="destination-hub"),
         ExitCurrentBuildingAction(),
         PerformContextAction(target_id="entity-copper", context_action="operate"),
@@ -206,6 +212,98 @@ def map_travel_observation(
                     ack.command_id
                     if ack is not None
                     and ack.status is NativeCommandStatus.ACCEPTED
+                    else None
+                ),
+                acknowledgements=[ack] if ack is not None else [],
+            ),
+        ),
+        telemetry_age_seconds=0.0,
+    )
+
+
+def squad_regroup_acknowledgement(
+    sequence: int,
+    status: NativeCommandStatus,
+    *,
+    reason: str | None = None,
+) -> NativeCommandAcknowledgement:
+    terminal = status is not NativeCommandStatus.ACCEPTED
+    return NativeCommandAcknowledgement(
+        command_id=COMMAND_ID,
+        command="regroup_with_squad_member",
+        status=status,
+        reason=reason
+        or (
+            "issued"
+            if status is NativeCommandStatus.ACCEPTED
+            else (
+                "squad_member_reached"
+                if status is NativeCommandStatus.COMPLETED
+                else "target_lifetime_changed"
+            )
+        ),
+        target_id=SQUADMATE_ID,
+        selected_character_ids=[SELECTED_ID],
+        based_on_telemetry_sequence=1,
+        acknowledged_at_telemetry_sequence=2,
+        accepted_at_telemetry_sequence=2,
+        terminal_at_telemetry_sequence=sequence if terminal else None,
+    )
+
+
+def squad_regroup_observation(
+    sequence: int,
+    *,
+    ack: NativeCommandAcknowledgement | None = None,
+) -> Observation:
+    return Observation(
+        run_id="native-squad-regroup-option-test",
+        step_index=sequence,
+        mode="mock",
+        world_revision=WorldStateRevision(
+            telemetry_sequence=sequence,
+            capability_epoch=1,
+            observed_at_monotonic=float(sequence),
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=sequence,
+            captured_at=datetime.now(UTC),
+            identity_session_id="session-native-squad-regroup",
+            capabilities=[
+                "game.pause",
+                "control.regroup_with_squad_member",
+                "identity.stable_handles",
+                "squad.basic",
+                "squad.health",
+            ],
+            game=GameState(paused=True, elapsed_minutes=0.0),
+            ui=UIState(
+                selected_character_id=SELECTED_ID,
+                selected_character_ids=[SELECTED_ID],
+            ),
+            squad=[
+                CharacterState(
+                    id=SELECTED_ID,
+                    name="Bark",
+                    selected=True,
+                    alive=True,
+                    conscious=True,
+                    down=False,
+                    position=Vec3(x=0.0, y=0.0, z=0.0),
+                ),
+                CharacterState(
+                    id=SQUADMATE_ID,
+                    name="Plant",
+                    alive=True,
+                    conscious=False,
+                    down=True,
+                    position=Vec3(x=1000.0, y=0.0, z=500.0),
+                ),
+            ],
+            native_control=NativeControlState(
+                active_command_id=(
+                    ack.command_id
+                    if ack is not None and ack.status is NativeCommandStatus.ACCEPTED
                     else None
                 ),
                 acknowledgements=[ack] if ack is not None else [],
@@ -728,6 +826,37 @@ class InstantMapTravelEnvironment(AgentEnvironment):
         return None
 
 
+class InstantSquadRegroupEnvironment(AgentEnvironment):
+    async def reset(self, *, seed: int | None = None) -> Observation:
+        del seed
+        return squad_regroup_observation(1)
+
+    async def observe(self) -> Observation:
+        return squad_regroup_observation(1)
+
+    async def step(self, action: Action) -> Transition:
+        accepted = squad_regroup_acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+        )
+        return Transition(
+            receipt=ActionReceipt(
+                action=action,
+                command_id=COMMAND_ID,
+                started_after_revision=squad_regroup_observation(1).world_revision,
+                accepted=True,
+                executed=True,
+                dry_run=False,
+                message="squad regroup issued",
+                native_acknowledgement=accepted,
+            ),
+            observation=squad_regroup_observation(2, ack=accepted),
+        )
+
+    async def close(self) -> None:
+        return None
+
+
 def option() -> StatefulNativeMovementOption:
     return StatefulNativeMovementOption(
         option_id="native-direction-1",
@@ -957,6 +1086,72 @@ def test_map_travel_option_owns_one_exact_destination_until_native_arrival() -> 
             )
         )
         assert completed.status is OptionStatus.SUCCEEDED
+
+    asyncio.run(scenario())
+
+
+def test_squad_regroup_option_owns_exact_actor_and_target_until_arrival() -> None:
+    async def scenario() -> None:
+        regroup = StatefulNativeMovementOption(
+            option_id="native-squad-regroup-1",
+            action=RegroupWithSquadMemberAction(
+                actor_id=SELECTED_ID,
+                target_id=SQUADMATE_ID,
+            ),
+            environment=InstantSquadRegroupEnvironment(),
+        )
+        assert regroup.prepare(squad_regroup_observation(1)).status is OptionStatus.PREPARED
+        await regroup.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=squad_regroup_observation(1).world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        accepted = squad_regroup_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        assert (
+            regroup.poll(update(squad_regroup_observation(2, ack=accepted))).status
+            is OptionStatus.RUNNING
+        )
+
+        wrong_terminal = squad_regroup_acknowledgement(
+            3,
+            NativeCommandStatus.COMPLETED,
+            reason="walk_destination_reached",
+        )
+        rejected = regroup.poll(
+            update(squad_regroup_observation(3, ack=wrong_terminal))
+        )
+        assert rejected.status is OptionStatus.FAILED
+        assert "without exact arrival proof" in rejected.reason
+
+        successful = StatefulNativeMovementOption(
+            option_id="native-squad-regroup-2",
+            action=RegroupWithSquadMemberAction(
+                actor_id=SELECTED_ID,
+                target_id=SQUADMATE_ID,
+            ),
+            environment=InstantSquadRegroupEnvironment(),
+        )
+        successful.prepare(squad_regroup_observation(1))
+        await successful.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=squad_regroup_observation(1).world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+        completed = squad_regroup_acknowledgement(
+            3,
+            NativeCommandStatus.COMPLETED,
+        )
+        assert (
+            successful.poll(
+                update(squad_regroup_observation(3, ack=completed))
+            ).status
+            is OptionStatus.SUCCEEDED
+        )
 
     asyncio.run(scenario())
 

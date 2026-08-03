@@ -31,10 +31,11 @@ spatial query does not enumerate these wrappers. A `GameWorld::resetGame` hook
 clears that registry and prior native command acknowledgements before Kenshi
 constructs a new or loaded session, since the plugin DLL remains resident
 across those transitions.
-Protocol `1.1.0` retains the opaque entity IDs derived from validated
-Kenshi handles plus process/session generations. These IDs survive squad/nearby
-and world-target list reordering and distinguish duplicate names without
-serializing addresses.
+Opaque entity IDs derive from validated Kenshi handles plus process/session
+generations. Character IDs also survive handle-container transitions; other IDs
+retain the complete handle identity. They survive squad/nearby and
+world-target list reordering and distinguish duplicate names without serializing
+addresses.
 `identity_session_id` changes across process or game-session lifetimes.
 `selected_character_ids` reports the full player-character selection set, while
 the singular ID identifies its active member.

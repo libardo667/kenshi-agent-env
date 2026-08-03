@@ -261,6 +261,7 @@ safety:
     - exit_current_building
     - harvest_resource
     - respond_to_immediate_threat
+    - regroup_with_squad_member
     - produce_resource_output
     - open_context_inventory
     - activate_visible_control
