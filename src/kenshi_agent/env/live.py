@@ -82,6 +82,7 @@ from ..models import (
     EquipItemAction,
     ExitCurrentBuildingAction,
     GameBinding,
+    GameScreen,
     HotkeyAction,
     InputBoundaryDecision,
     KeyAction,
@@ -3500,6 +3501,10 @@ class LiveEnvironment(AgentEnvironment):
                     hold_seconds=self.controls_config.control_activation_hold_seconds,
                 )
             )
+        elif isinstance(action.expected_screen, GameScreen):
+            primitive_receipt = await self.controller.execute(
+                game_binding_primitive(SCREEN_BINDINGS[action.expected_screen])
+            )
         else:
             primitive_receipt = await self.controller.execute(
                 KeyAction(key=self.controls_config.dismiss_screen_key)
@@ -3523,9 +3528,16 @@ class LiveEnvironment(AgentEnvironment):
                         f"Closed the {action.window!r} window on the "
                         f"{action.expected_screen!r} screen via its own close box."
                         if binding.resolved_bounds is not None
-                        else f"Dismissed the current {action.expected_screen!r} screen "
-                        f"with the configured "
-                        f"{self.controls_config.dismiss_screen_key!r} key."
+                        else (
+                            f"Closed the current {action.expected_screen.value!r} "
+                            "screen through its named toggle binding."
+                            if isinstance(action.expected_screen, GameScreen)
+                            else (
+                                f"Dismissed the current {action.expected_screen!r} "
+                                "screen with the configured "
+                                f"{self.controls_config.dismiss_screen_key!r} key."
+                            )
+                        )
                     )
                     + " A later observation must confirm the transition."
                 ),

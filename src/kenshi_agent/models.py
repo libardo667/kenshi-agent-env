@@ -1673,22 +1673,23 @@ class PurchaseItemAction(StrictModel):
 
 
 class DismissScreenAction(StrictModel):
-    """Close one bound inventory or trade window toward the world view.
+    """Close one exact currently open screen toward the world view.
 
     Exiting is as much a part of using an interface as entering it. Naming the
     screen and, where applicable, the owner window makes the action bind to
-    observed state instead of blindly pressing a key and hoping. It deliberately
-    does not end an active conversation: Kenshi's Escape opens the ESC menu, so
+    observed state instead of blindly pressing a key and hoping. Named game
+    screens close through their own toggle binding; trade windows close through
+    their exact close box. It deliberately does not end an active conversation:
     dialogue must choose an exact visible closing reply.
     """
 
     kind: Literal["dismiss_screen"] = "dismiss_screen"
-    expected_screen: Literal["dialogue", "trade", "inventory"]
+    expected_screen: GameScreen | Literal["dialogue", "trade"]
     # Caption of the window to close. Inventory and trade windows are closed by
     # their own close box, whose position is derived from the window's observed
-    # rect rather than a calibrated screen coordinate. An empty window uses the
-    # configured dismiss key only when the current state can safely bind it; an
-    # active dialogue target makes that route fail closed.
+    # rect rather than a calibrated screen coordinate. An empty named screen
+    # uses its own exact toggle binding; an active dialogue target makes any
+    # generic dismissal route fail closed.
     window: str = Field(default="", max_length=200)
 
 
@@ -4142,6 +4143,45 @@ def open_screen_success_condition(
         kind=ConditionKind.FIELD,
         path=FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
         operator=ConditionOperator.EQUALS,
+        expected=MANAGEMENT_TAB_INDICES[screen],
+        max_age_seconds=3.0,
+    )
+
+
+def close_screen_success_condition(
+    screen: GameScreen,
+    telemetry: TelemetrySnapshot | None,
+) -> Condition | None:
+    """The exact observation proving one named screen is no longer open."""
+
+    if telemetry is None:
+        return None
+    if screen is GameScreen.INVENTORY:
+        if telemetry.ui.open_inventory_windows is None:
+            return None
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=FieldConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
+            operator=ConditionOperator.EQUALS,
+            expected=0,
+            max_age_seconds=3.0,
+        )
+    if screen is GameScreen.STATS:
+        if telemetry.ui.stats_window_open is None:
+            return None
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=FieldConditionPath.TELEMETRY_UI_STATS_WINDOW_OPEN,
+            operator=ConditionOperator.EQUALS,
+            expected=False,
+            max_age_seconds=3.0,
+        )
+    if telemetry.ui.management_tab is None:
+        return None
+    return Condition(
+        kind=ConditionKind.FIELD,
+        path=FieldConditionPath.TELEMETRY_UI_MANAGEMENT_TAB,
+        operator=ConditionOperator.NOT_EQUALS,
         expected=MANAGEMENT_TAB_INDICES[screen],
         max_age_seconds=3.0,
     )

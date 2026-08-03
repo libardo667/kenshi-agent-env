@@ -2255,7 +2255,7 @@
     },
     "DismissScreenAction": {
       "additionalProperties": false,
-      "description": "Close one bound inventory or trade window toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. It deliberately\ndoes not end an active conversation: Kenshi's Escape opens the ESC menu, so\ndialogue must choose an exact visible closing reply.",
+      "description": "Close one exact currently open screen toward the world view.\n\nExiting is as much a part of using an interface as entering it. Naming the\nscreen and, where applicable, the owner window makes the action bind to\nobserved state instead of blindly pressing a key and hoping. Named game\nscreens close through their own toggle binding; trade windows close through\ntheir exact close box. It deliberately does not end an active conversation:\ndialogue must choose an exact visible closing reply.",
       "properties": {
         "kind": {
           "const": "dismiss_screen",
@@ -2264,13 +2264,19 @@
           "type": "string"
         },
         "expected_screen": {
-          "enum": [
-            "dialogue",
-            "trade",
-            "inventory"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GameScreen"
+            },
+            {
+              "enum": [
+                "dialogue",
+                "trade"
+              ],
+              "type": "string"
+            }
           ],
-          "title": "Expected Screen",
-          "type": "string"
+          "title": "Expected Screen"
         },
         "window": {
           "default": "",

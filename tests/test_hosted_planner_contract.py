@@ -1788,6 +1788,8 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
                 ],
                 ui=UIState(
                     active_screen="world",
+                    modal_open=False,
+                    dialogue_open=False,
                     selected_character_id="entity-selected",
                     selected_character_ids=["entity-selected"],
                 ),

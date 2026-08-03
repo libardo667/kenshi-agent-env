@@ -35,6 +35,7 @@ from .models import (
     DismissScreenAction,
     FieldbookOperation,
     GameBinding,
+    GameScreen,
     HarvestResourceAction,
     InputBoundaryDecision,
     NativeCommandStatus,
@@ -2966,7 +2967,7 @@ class ContinuousPlanExecutor:
                 )
             elif active_screen == "inventory":
                 dismiss = DismissScreenAction(
-                    expected_screen="inventory",
+                    expected_screen=GameScreen.INVENTORY,
                     window=window,
                 )
             else:

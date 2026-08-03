@@ -61,6 +61,9 @@ def observation(*, loaded: bool = True, stale: bool = False) -> Observation:
             capabilities=["game.money", "game.pause", "ui.inventory"],
             game=GameState(loaded=loaded, paused=True, money=1000),
             ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
                 open_inventory_windows=0,
                 management_screen_open=False,
                 stats_window_open=False,
@@ -810,7 +813,11 @@ def test_screen_binding_routes_as_stateful_affordance_not_raw_toggle() -> None:
     opened_telemetry = closed.telemetry.model_copy(
         update={
             "ui": closed.telemetry.ui.model_copy(
-                update={"management_screen_open": True, "management_tab": 0}
+                update={
+                    "management_screen_open": True,
+                    "management_tab": 0,
+                    "modal_open": True,
+                }
             )
         }
     )
@@ -818,9 +825,12 @@ def test_screen_binding_routes_as_stateful_affordance_not_raw_toggle() -> None:
     opened_offer = next(
         offer
         for offer in offered_affordances(opened)
-        if offer.semantic == "open_map"
+        if offer.semantic == "close_map"
     )
-    assert bind_affordance(selection_for(opened_offer), opened).operation.screen.value == "map"
+    opened_operation = bind_affordance(selection_for(opened_offer), opened).operation
+    assert opened_operation.kind == "dismiss_screen"
+    assert opened_operation.expected_screen.value == "map"
+    assert not any(offer.semantic == "open_map" for offer in offered_affordances(opened))
     assert not any(
         offer.semantic == "toggle_map"
         for offer in (*offered_affordances(closed), *offered_affordances(opened))

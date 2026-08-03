@@ -53,6 +53,7 @@ from .models import (
     EquipItemAction,
     ExitCurrentBuildingAction,
     GameBinding,
+    GameScreen,
     HarvestResourceAction,
     IdempotencyPolicy,
     MoveInDirectionAction,
@@ -85,6 +86,7 @@ from .models import (
     WaitAction,
     WorldStateRevision,
     WorldTarget,
+    close_screen_success_condition,
     dialogue_targets,
     game_binding_success_condition,
     is_runtime_owned_visible_control,
@@ -242,6 +244,22 @@ def _unbound(reason: str) -> ReferenceBinding:
     return ReferenceBinding(bound=False, reason=reason)
 
 
+def _world_interface_error(observation: Observation) -> str | None:
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return "No telemetry is available to confirm the world interface."
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.modal_open is not False
+        or telemetry.ui.dialogue_open is not False
+    ):
+        return (
+            "The unobstructed world interface is not confirmed current; close "
+            "the active modal or dialogue before issuing a world action."
+        )
+    return None
+
+
 def _capability_condition(path: ConditionPath, *, max_age_seconds: float) -> Condition:
     return Condition(
         kind=ConditionKind.CAPABILITY,
@@ -333,6 +351,8 @@ def bind_move_to_character(
         return _unbound("No telemetry is available to bind the destination.")
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the destination cannot be bound.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
     matches = [
         entity for entity in telemetry.nearby_entities if entity.id == action.target_id
     ]
@@ -982,6 +1002,8 @@ def bind_move_in_direction(
         return _unbound("Telemetry is stale, so the walk cannot be bound.")
     if telemetry.game.loaded is not True:
         return _unbound("The game is not loaded, so no order can be given.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
     selected = [character for character in telemetry.squad if character.selected]
     if len(selected) != 1:
         return _unbound(
@@ -1016,6 +1038,8 @@ def bind_travel_to_map_destination(
         return _unbound("Telemetry is stale, so map travel cannot be bound.")
     if telemetry.game.loaded is not True:
         return _unbound("The game is not loaded, so map travel cannot begin.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
     selected = [character for character in telemetry.squad if character.selected]
     if not selected:
         return _unbound("No squad members are selected to receive the travel order.")
@@ -1112,6 +1136,8 @@ def bind_regroup_with_squad_member(
         return _unbound("Telemetry is stale, so squad regrouping cannot bind.")
     if telemetry.game.loaded is not True:
         return _unbound("The game is not loaded, so squad regrouping cannot begin.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
     if telemetry.game.paused is not True:
         return _unbound(
             "Squad regrouping begins from a confirmed pause so its monitored "
@@ -1208,6 +1234,8 @@ def bind_exit_current_building(
         return _unbound("Telemetry is stale, so the building exit cannot be bound.")
     if telemetry.game.loaded is not True:
         return _unbound("The game is not loaded, so no exit order can be given.")
+    if failure := _world_interface_error(observation):
+        return _unbound(failure)
     selected = [character for character in telemetry.squad if character.selected]
     if len(selected) != 1:
         return _unbound(
@@ -1863,6 +1891,34 @@ def bind_dismiss_screen(
         return _unbound("No telemetry is available to bind the current screen.")
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the current screen cannot be bound.")
+    named_screen = (
+        action.expected_screen
+        if isinstance(action.expected_screen, GameScreen)
+        else None
+    )
+    if named_screen is not None:
+        open_state = screen_is_open(named_screen, telemetry)
+        if open_state is None:
+            return _unbound(
+                f"Nothing observable reports whether {named_screen.value} is open."
+            )
+        if not open_state:
+            return _unbound(
+                f"The {named_screen.value} screen is already closed, so no "
+                "dismissal input may be sent."
+            )
+        if not action.window:
+            binding = SCREEN_BINDINGS[named_screen]
+            return ReferenceBinding(
+                bound=True,
+                reason=(
+                    f"Bound the currently open {named_screen.value!r} screen to "
+                    f"its exact closing toggle {binding.value!r}."
+                ),
+                resolved_label=named_screen.value,
+                source_revision=observation.world_revision,
+            )
+
     current = telemetry.ui.active_screen
     if current is None:
         return _unbound("The current screen is unknown, so nothing may be dismissed.")
@@ -2266,24 +2322,29 @@ def _bounded_trade_primitive_action_bound(action: Action) -> int:
     return quantity * 2
 
 
-def _named_window_closed(
+def _dismissed_screen_closed(
     action: Action,
     observation: Observation,
 ) -> tuple[Condition, ...] | None:
-    if not isinstance(action, DismissScreenAction) or not action.window:
+    if not isinstance(action, DismissScreenAction):
         return None
     telemetry = observation.telemetry
-    if telemetry is None or telemetry.ui.open_inventory_windows is None:
-        return ()
-    return (
-        Condition(
-            kind=ConditionKind.FIELD,
-            path=ConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
-            operator=ConditionOperator.LESS_THAN,
-            expected=telemetry.ui.open_inventory_windows,
-            max_age_seconds=3.0,
-        ),
-    )
+    if action.window:
+        if telemetry is None or telemetry.ui.open_inventory_windows is None:
+            return ()
+        return (
+            Condition(
+                kind=ConditionKind.FIELD,
+                path=ConditionPath.TELEMETRY_UI_OPEN_INVENTORY_WINDOWS,
+                operator=ConditionOperator.LESS_THAN,
+                expected=telemetry.ui.open_inventory_windows,
+                max_age_seconds=3.0,
+            ),
+        )
+    if not isinstance(action.expected_screen, GameScreen):
+        return None
+    condition = close_screen_success_condition(action.expected_screen, telemetry)
+    return (condition,) if condition is not None else ()
 
 
 def _binding_transition(
@@ -2931,12 +2992,13 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     version="1.0",
     model=DismissScreenAction,
     summary=(
-        "Close one currently bound trade or inventory window toward the world "
-        "view. Active dialogue instead ends through an exact visible reply."
+        "Close one currently bound named screen or exact trade/inventory window "
+        "toward the world view. Active dialogue instead ends through an exact "
+        "visible reply."
     ),
     argument_source=(
-        "expected_screen must equal telemetry.ui.active_screen; inventory/trade "
-        "also name the exact current owner window. Do not use for active dialogue."
+        "expected_screen must be observably open; inventory/trade may also name "
+        "the exact current owner window. Do not use for active dialogue."
     ),
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(),
@@ -2953,7 +3015,7 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     execution=ActionExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_dismiss",
     bind=bind_dismiss_screen,
-    derive_completion_conditions=_named_window_closed,
+    derive_completion_conditions=_dismissed_screen_closed,
 )
 
 PURCHASE_ITEM_CONTRACT = ActionContract(

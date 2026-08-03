@@ -48,7 +48,7 @@ from .models import (
     is_runtime_owned_visible_control,
     map_destination_travel_available,
     normalize_control_label,
-    open_screen_success_condition,
+    screen_is_open,
 )
 
 
@@ -86,6 +86,26 @@ OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.CHARACTER_NEXT,
         GameBinding.CHARACTER_PREV,
         *(GameBinding[f"SELECT_GROUP_{index}"] for index in range(10)),
+    }
+)
+
+# When an interface owns input, the playing model should see only choices that
+# operate on that interface or on the run itself. World movement, camera, raw
+# bindings, selection, and opening another screen are contradictory until the
+# current modal reaches an explicit close terminal.
+INTERFACE_SCOPED_OPERATION_KINDS: frozenset[str] = frozenset(
+    {
+        "activate_visible_control",
+        "consult_advisor",
+        "dismiss_screen",
+        "equip_item",
+        "noop",
+        "purchase_item",
+        "read_fieldbook",
+        "recall_memory",
+        "scroll_screen",
+        "sell_item",
+        "stop",
     }
 )
 
@@ -323,8 +343,14 @@ def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None:
         return
+    interface_clear = bool(
+        telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+    )
     for screen in GameScreen:
-        if open_screen_success_condition(screen, telemetry) is None:
+        open_state = screen_is_open(screen, telemetry)
+        if open_state is not False or not interface_clear:
             continue
         yield _offer(
             observation,
@@ -335,34 +361,72 @@ def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             arguments={"screen": screen.value},
         )
 
-    current = telemetry.ui.active_screen
-    if current not in {"inventory", "trade"} or telemetry.ui.dialogue_open:
+    if telemetry.ui.dialogue_open:
         return
-    captions = observation.open_window_captions()
-    if captions:
+
+    owners = observation.window_owners()
+    captions = [
+        window
+        for window in observation.open_window_captions()
+        if normalize_control_label(window) in owners
+    ]
+    inventory_open = screen_is_open(GameScreen.INVENTORY, telemetry)
+    if inventory_open is True:
+        if captions:
+            for window in captions:
+                yield _offer(
+                    observation,
+                    source=AffordanceSource.VISIBLE_CONTROL,
+                    semantic="close_inventory_window",
+                    description=f"Close the exact open inventory window {window!r}.",
+                    operation_kind="dismiss_screen",
+                    target=AffordanceTarget(
+                        target_id=window,
+                        label=window,
+                        kind="window",
+                    ),
+                    arguments={
+                        "expected_screen": GameScreen.INVENTORY.value,
+                        "window": window,
+                    },
+                )
+        else:
+            yield _offer(
+                observation,
+                source=AffordanceSource.GAME_BINDING,
+                semantic="close_inventory",
+                description="Close the currently open inventory screen.",
+                operation_kind="dismiss_screen",
+                arguments={"expected_screen": GameScreen.INVENTORY.value},
+            )
+
+    for screen in (GameScreen.STATS, GameScreen.MAP, GameScreen.RESEARCH, GameScreen.CRAFTING):
+        if screen_is_open(screen, telemetry) is not True:
+            continue
+        yield _offer(
+            observation,
+            source=AffordanceSource.GAME_BINDING,
+            semantic=f"close_{screen.value}",
+            description=f"Close the currently open {screen.value!r} screen.",
+            operation_kind="dismiss_screen",
+            arguments={"expected_screen": screen.value},
+        )
+
+    if telemetry.ui.active_screen == "trade":
         for window in captions:
             yield _offer(
                 observation,
                 source=AffordanceSource.VISIBLE_CONTROL,
-                semantic="dismiss",
-                description=f"Close the exact open window {window!r}.",
+                semantic="close_trade_window",
+                description=f"Close the exact open trade window {window!r}.",
                 operation_kind="dismiss_screen",
                 target=AffordanceTarget(
                     target_id=window,
                     label=window,
                     kind="window",
                 ),
-                arguments={"expected_screen": current, "window": window},
+                arguments={"expected_screen": "trade", "window": window},
             )
-    else:
-        yield _offer(
-            observation,
-            source=AffordanceSource.VISIBLE_CONTROL,
-            semantic="dismiss",
-            description=f"Close the current {current!r} screen.",
-            operation_kind="dismiss_screen",
-            arguments={"expected_screen": current},
-        )
 
 
 def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffer]:
@@ -1140,10 +1204,17 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return ()
+    interface_clear = bool(
+        telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+    )
     enumerated = tuple(
         (adapter, offer)
         for adapter in AFFORDANCE_ADAPTERS
         for offer in adapter.enumerate(observation)
+        if interface_clear
+        or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
     )
     offers_by_id: dict[str, AffordanceOffer] = {}
     for adapter, offer in enumerated:

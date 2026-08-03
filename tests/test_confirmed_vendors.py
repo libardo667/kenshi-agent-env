@@ -12,6 +12,7 @@ from __future__ import annotations
 from kenshi_agent.models import (
     Disposition,
     NearbyEntity,
+    UIState,
     confirmed_vendor_candidates,
     dialogue_targets,
 )
@@ -166,6 +167,11 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
                 "nearby.characters",
                 "nearby.roles",
             ],
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+            ),
             nearby_entities=[
                 barman(distance=26.0),
                 entity("Mercenary Captain", is_animal=False, has_vendor_list=False,

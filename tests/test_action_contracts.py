@@ -46,6 +46,7 @@ from kenshi_agent.models import (
     GameState,
     IdempotencyPolicy,
     KnownMapDestination,
+    MoveInDirectionAction,
     MoveToCharacterAction,
     NearbyEntity,
     NormalizedPointerBounds,
@@ -98,6 +99,22 @@ def observation(
     active_shop_trader_count: int = 0,
     game: GameState | None = None,
 ) -> Observation:
+    effective_ui = ui or UIState(visible_controls=controls)
+    effective_ui = effective_ui.model_copy(
+        update={
+            "active_screen": effective_ui.active_screen or "world",
+            "modal_open": (
+                effective_ui.modal_open
+                if effective_ui.modal_open is not None
+                else False
+            ),
+            "dialogue_open": (
+                effective_ui.dialogue_open
+                if effective_ui.dialogue_open is not None
+                else False
+            ),
+        }
+    )
     return Observation(
         run_id="contract-test",
         step_index=1,
@@ -109,7 +126,7 @@ def observation(
             identity_session_id="session-contract-test",
             capabilities=capabilities if capabilities is not None else APPROACH_CAPABILITIES,
             game=game or GameState(loaded=True, paused=True),
-            ui=ui or UIState(visible_controls=controls),
+            ui=effective_ui,
             active_shop_trader_count=active_shop_trader_count,
             squad=squad or [],
             nearby_entities=entities or [],
@@ -638,7 +655,6 @@ class TestPerformContextAction:
         state = observation(
             ui=UIState(
                 active_screen="world",
-                modal_open=None,
                 dialogue_open=False,
             ),
             capabilities=[
@@ -649,6 +665,8 @@ class TestPerformContextAction:
             ],
             world_targets=[target],
         )
+        assert state.telemetry is not None
+        state.telemetry.ui.modal_open = None
 
         binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
             PerformContextAction(
@@ -1269,6 +1287,40 @@ def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group
     assert movement_offer.semantic == "move_squad_to"
     assert "2 selected squad members" in movement_offer.description
 
+    modal = state.model_copy(
+        update={
+            "telemetry": state.telemetry.model_copy(
+                update={
+                    "ui": state.telemetry.ui.model_copy(
+                        update={
+                            "active_screen": "inventory",
+                            "dialogue_open": False,
+                            "modal_open": True,
+                            "open_inventory_windows": 1,
+                        }
+                    )
+                }
+            )
+        },
+        deep=True,
+    )
+    assert not TRAVEL_TO_MAP_DESTINATION_CONTRACT.bind(
+        TravelToMapDestinationAction(destination_id="entity-known-town"),
+        modal,
+    ).bound
+    assert not MOVE_TO_CHARACTER_CONTRACT.bind(
+        MoveToCharacterAction(target_id="entity-barman"),
+        modal,
+    ).bound
+    assert not MOVE_IN_DIRECTION_CONTRACT.bind(
+        MoveInDirectionAction(
+            bearing_degrees=90,
+            distance_units=100,
+            expected_effect="Move east.",
+        ),
+        modal,
+    ).bound
+
 
 def test_map_travel_cannot_bind_a_destination_already_reached() -> None:
     state = observation(
@@ -1511,6 +1563,7 @@ class TestAffordancesAreAdvertised:
                 active_screen="inventory",
                 modal_open=True,
                 dialogue_open=False,
+                open_inventory_windows=1,
                 selected_character_id=selected.id,
                 selected_character_ids=[selected.id],
             ),

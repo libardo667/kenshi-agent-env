@@ -66,6 +66,22 @@ def _observation(
     active_shop_trader_count: int = 0,
     money: int | None = None,
 ) -> Observation:
+    effective_ui = ui or UIState()
+    effective_ui = effective_ui.model_copy(
+        update={
+            "active_screen": effective_ui.active_screen or "world",
+            "modal_open": (
+                effective_ui.modal_open
+                if effective_ui.modal_open is not None
+                else False
+            ),
+            "dialogue_open": (
+                effective_ui.dialogue_open
+                if effective_ui.dialogue_open is not None
+                else False
+            ),
+        }
+    )
     return Observation(
         run_id="affordance-test",
         step_index=1,
@@ -83,7 +99,7 @@ def _observation(
                 speed_multiplier=1.0,
                 money=money,
             ),
-            ui=ui or UIState(),
+            ui=effective_ui,
             squad=squad or [],
             nearby_entities=nearby or [],
             world_targets=targets or [],
@@ -431,13 +447,23 @@ def test_character_adapter_retains_exact_native_selection_from_a_group() -> None
 
 
 def test_screen_adapter_offers_exact_current_window_dismissal() -> None:
+    bark = CharacterState(id="bark", name="Bark", selected=True)
     observation = _observation(
-        capabilities=["ui.visible_controls", "ui.inventory"],
+        capabilities=[
+            "control.move_to_character",
+            "identity.stable_handles",
+            "nearby.characters",
+            "squad.basic",
+            "ui.inventory",
+            "ui.visible_controls",
+        ],
         ui=UIState(
             active_screen="inventory",
             dialogue_open=False,
-            modal_open=False,
+            modal_open=True,
             open_inventory_windows=1,
+            selected_character_id=bark.id,
+            selected_character_ids=[bark.id],
             visible_controls=[
                 VisibleUIControl(
                     label="Inventory",
@@ -447,10 +473,20 @@ def test_screen_adapter_offers_exact_current_window_dismissal() -> None:
                 )
             ],
         ),
+        squad=[bark],
+        nearby=[
+            NearbyEntity(
+                id="barman",
+                name="Barman",
+                disposition=Disposition.NEUTRAL,
+                distance=20,
+            )
+        ],
     )
+    offers = offered_affordances(observation)
     offer = next(
         offer
-        for offer in offered_affordances(observation)
+        for offer in offers
         if offer.operation_kind == "dismiss_screen"
     )
     assert offer.target is not None
@@ -458,6 +494,80 @@ def test_screen_adapter_offers_exact_current_window_dismissal() -> None:
     bound = bind_affordance(selection_for(offer), observation)
     assert bound.operation.kind == "dismiss_screen"
     assert bound.operation.window == "Bark"
+    assert not any(offer.operation_kind == "open_screen" for offer in offers)
+    assert not {
+        "approach_dialogue_target",
+        "command_world_target",
+        "exit_current_building",
+        "harvest_resource",
+        "move_in_direction",
+        "move_to_character",
+        "perform_context_action",
+        "recover_camera_view",
+        "regroup_with_squad_member",
+        "respond_to_immediate_threat",
+        "rotate_camera",
+        "select_squad_member",
+        "select_squad_member_exact",
+        "travel_to_map_destination",
+        "use_game_binding",
+    } & {offer.operation_kind for offer in offers}
+
+
+@pytest.mark.parametrize(
+    ("screen", "ui"),
+    [
+        (
+            GameScreen.INVENTORY,
+            UIState(
+                active_screen="inventory",
+                modal_open=True,
+                dialogue_open=False,
+                open_inventory_windows=1,
+            ),
+        ),
+        (
+            GameScreen.STATS,
+            UIState(
+                active_screen="world",
+                modal_open=True,
+                dialogue_open=False,
+                stats_window_open=True,
+            ),
+        ),
+        *[
+            (
+                screen,
+                UIState(
+                    active_screen="world",
+                    modal_open=True,
+                    dialogue_open=False,
+                    management_screen_open=True,
+                    management_tab=tab,
+                ),
+            )
+            for screen, tab in [
+                (GameScreen.MAP, 0),
+                (GameScreen.RESEARCH, 2),
+                (GameScreen.CRAFTING, 3),
+            ]
+        ],
+    ],
+)
+def test_every_named_open_screen_exposes_one_exact_close(
+    screen: GameScreen,
+    ui: UIState,
+) -> None:
+    observation = _observation(capabilities=[], ui=ui)
+
+    offers = offered_affordances(observation)
+    close = next(offer for offer in offers if offer.semantic == f"close_{screen.value}")
+
+    assert close.operation_kind == "dismiss_screen"
+    assert f"open_{screen.value}" not in {offer.semantic for offer in offers}
+    bound = bind_affordance(selection_for(close), observation)
+    assert bound.operation.kind == "dismiss_screen"
+    assert bound.operation.expected_screen is screen
 
 
 def test_context_adapter_preserves_every_executable_runtime_order_without_enumeration() -> None:
