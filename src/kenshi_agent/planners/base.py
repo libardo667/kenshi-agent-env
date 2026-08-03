@@ -60,13 +60,13 @@ def output_token_budget(
     *,
     max_plan_steps: int,
 ) -> int:
+    del max_plan_steps
     expected_steps = 0
     if observation.planning_mode == PlanningMode.CONTINUOUS:
-        if observation.active_plan is not None:
-            expected_steps = max(1, observation.active_plan.remaining_actions)
-        else:
-            expected_steps = max_plan_steps
-        expected_steps = min(expected_steps, max_plan_steps)
+        # Hosted play chooses one current affordance, then receives a fresh
+        # observation. Runtime-owned options may run for minutes, but their
+        # duration does not enlarge the model's response contract.
+        expected_steps = 1
     return min(
         config.max_output_tokens_ceiling,
         config.max_output_tokens_base

@@ -354,7 +354,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "The hosted model's choices; deterministic code compiles the envelope.",
+  "description": "One hosted choice; deterministic code observes again before another.",
   "properties": {
     "objective": {
       "maxLength": 1000,
@@ -366,7 +366,7 @@
       "items": {
         "$ref": "#/$defs/ProposedPlanStep"
       },
-      "maxItems": 8,
+      "maxItems": 1,
       "minItems": 1,
       "title": "Steps",
       "type": "array"

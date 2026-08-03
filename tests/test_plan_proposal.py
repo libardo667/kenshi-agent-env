@@ -95,7 +95,7 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
     observation = _observation()
     observe = _selected(observation, "observe")
     proposal = {
-        "objective": "Reconcile current evidence twice.",
+        "objective": "Reconcile current evidence once, then observe again.",
         "steps": [
             {
                 "selection": observe,
@@ -106,7 +106,6 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
                 "retry_budget": 2,
                 "on_success": "invented",
             },
-            {"selection": observe},
         ],
         "schema_version": "invented",
         "plan_id": "model-plan",
@@ -131,9 +130,8 @@ def test_runtime_compiles_only_model_choice_and_owns_envelope_bookkeeping() -> N
     assert plan.plan_id == "plan-pc-7"
     assert plan.control_mode is ControlMode.NATIVE_ASSISTED
     assert plan.based_on_revision == observation.world_revision
-    assert [step.step_id for step in plan.steps] == ["step-1", "step-2"]
-    assert plan.steps[0].on_success == "step-2"
-    assert plan.steps[1].on_success is None
+    assert [step.step_id for step in plan.steps] == ["step-1"]
+    assert plan.steps[0].on_success is None
     assert all(step.action.kind == "noop" for step in plan.steps)
     assert all(
         step.affordance is not None
@@ -325,21 +323,22 @@ def test_compiler_preserves_valid_sidecars_and_quarantines_invalid_siblings() ->
     ]
 
 
-def test_compiler_enforces_runtime_plan_ceilings() -> None:
+def test_compiler_rejects_more_than_one_choice_even_when_runtime_plan_ceiling_is_larger() -> None:
     observation = _observation()
     step = {"selection": _selected(observation, "observe")}
     proposal = {"objective": "Too long.", "steps": [step, step]}
-    with pytest.raises(ValueError, match="runtime permits"):
+    with pytest.raises(ValueError, match="one current affordance"):
         compile_plan_proposal(
             proposal,
             observation=observation,
             context_id="pc-limit",
-            planning=PlanningConfig(max_plan_steps=1, max_actions_per_plan=2),
+            planning=PlanningConfig(max_plan_steps=4, max_actions_per_plan=8),
         )
 
 
 def test_hosted_plan_schema_has_one_selection_contract_and_no_action_union() -> None:
     schema = PlanProposal.model_json_schema()
+    assert schema["properties"]["steps"]["maxItems"] == 1
     step = schema["$defs"]["ProposedPlanStep"]
     assert set(step["properties"]) == {"selection"}
     selection = schema["$defs"]["AffordanceSelection"]

@@ -29,9 +29,8 @@ from .plan_proposal import PlanProposal, compile_decision_proposal, compile_host
 def _planner_request_text(output_model: type[BaseModel]) -> str:
     if output_model is PlanProposal:
         request = (
-            "Propose one short objective and ordered list of exact affordance selections. "
-            "If active_plan is present, describe only future intent after its "
-            "active step. The runtime derives all plan and patch bookkeeping. "
+            "Choose one short objective and exactly one current affordance selection. "
+            "The runtime will observe again after it completes. "
         )
     else:
         request = "Choose exactly one current affordance from this observation. "

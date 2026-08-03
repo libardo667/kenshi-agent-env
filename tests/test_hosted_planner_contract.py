@@ -484,11 +484,10 @@ def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> 
 
 
 def test_output_token_budget_tracks_structured_response_complexity() -> None:
-    """The budget scales with how much plan the model is being asked for.
+    """Continuous hosted play reserves output for exactly one fresh choice.
 
-    It used to vary by Kenshi screen, encoding how many steps the calibrated
-    food recipe needed from each phase. With that recipe retired the only honest
-    inputs are the planning mode and how much plan is actually outstanding.
+    Runtime-owned options may be long, but neither their duration nor an active
+    plan makes the hosted response structurally larger.
     """
 
     config = PlannerConfig()
@@ -503,19 +502,13 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
         == 4096
     )
 
-    # A fresh continuous plan may use every step it is allowed.
-    assert output_token_budget(config, observation(screen="trade"), max_plan_steps=1) == 6144
-    assert output_token_budget(config, observation(screen="world"), max_plan_steps=2) == 8192
-    # ...up to the configured ceiling.
-    assert output_token_budget(config, observation(screen="world"), max_plan_steps=8) == 12288
-
-    # The screen no longer changes the answer; only the step allowance does.
+    # Screen and legacy runtime plan ceilings do not enlarge the hosted schema.
     for screen in ("trade", "dialogue", "world"):
         assert (
-            output_token_budget(config, observation(screen=screen), max_plan_steps=2) == 8192
+            output_token_budget(config, observation(screen=screen), max_plan_steps=8) == 6144
         )
 
-    # A patch only has to replace what remains.
+    # Defensive active-plan calls receive the same one-choice budget.
     assert (
         output_token_budget(
             config,
@@ -530,10 +523,9 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
             ),
             max_plan_steps=4,
         )
-        == 8192
+        == 6144
     )
-    # Even a plan reporting no remaining actions still needs room for one
-    # bounded replacement step.
+    # Even a plan reporting no remaining actions has the same bounded shape.
     assert (
         output_token_budget(
             config,
@@ -727,7 +719,7 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
 
     assert isinstance(result, PlanEnvelope)
     assert "reasoning_effort" not in completions.kwargs
-    assert completions.kwargs["max_tokens"] == 6144
+    assert completions.kwargs["max_tokens"] == 3072
     assert completions.kwargs["temperature"] == 0.1
     assert completions.kwargs["extra_body"]["provider"]["require_parameters"] is True
     assert completions.kwargs["extra_body"]["reasoning"] == {"effort": "high"}
@@ -745,7 +737,7 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert diagnostics.cache_write_tokens == 0
 
 
-def test_active_plan_model_authors_future_intent_not_patch_graph_mechanics() -> None:
+def test_defensive_active_plan_model_can_only_author_one_future_choice() -> None:
     current = observation(
         active_plan=ActivePlanContext(
             plan_id="active-plan",
@@ -764,10 +756,9 @@ def test_active_plan_model_authors_future_intent_not_patch_graph_mechanics() -> 
         async def create(self, **kwargs: Any) -> SimpleNamespace:
             self.kwargs = kwargs
             proposal = PlanProposal(
-                objective="Take a fresh look, then stop safely.",
+                objective="Take a fresh look after the active option.",
                 steps=[
                     _proposal_step("observe"),
-                    _proposal_step(),
                 ],
             )
             return SimpleNamespace(
@@ -798,9 +789,9 @@ def test_active_plan_model_authors_future_intent_not_patch_graph_mechanics() -> 
     assert set(replacement_ids).isdisjoint(
         {"future-pc-1-1", "future-pc-1-2"}
     )
-    assert result.replace_future_steps[0].on_success == replacement_ids[1]
-    assert result.replace_future_steps[1].on_success is None
-    assert result.rationale == "Take a fresh look, then stop safely."
+    assert len(replacement_ids) == 1
+    assert result.replace_future_steps[0].on_success is None
+    assert result.rationale == "Take a fresh look after the active option."
 
 
 def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None:
@@ -1004,7 +995,7 @@ def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> Non
     assert diagnostics.requested_model == "google/gemini-3.1-flash-lite"
     assert diagnostics.response_model == "google/gemini-3.1-flash-lite"
     assert diagnostics.provider_name == "Google"
-    assert diagnostics.max_output_tokens == 12_288
+    assert diagnostics.max_output_tokens == 6_144
     assert diagnostics.prompt_tokens == 19_000
     assert diagnostics.completion_tokens == 12_288
     assert diagnostics.reasoning_tokens == 11_700

@@ -102,10 +102,10 @@ class FieldbookProposal(StrictModel):
 
 
 class PlanProposal(StrictModel):
-    """The hosted model's choices; deterministic code compiles the envelope."""
+    """One hosted choice; deterministic code observes again before another."""
 
     objective: str = Field(min_length=1, max_length=1000)
-    steps: list[ProposedPlanStep] = Field(min_length=1, max_length=8)
+    steps: list[ProposedPlanStep] = Field(min_length=1, max_length=1)
     continuity_operations: list[ContinuityProposal] = Field(
         default_factory=list,
         max_length=6,
@@ -432,6 +432,11 @@ def compile_plan_proposal(
     if not isinstance(raw_steps, list) or not raw_steps:
         raise ValueError(  # mutation: diagnostic-only
             "PlanProposal steps must be a non-empty list"
+        )
+    if len(raw_steps) != 1:
+        raise ValueError(  # mutation: diagnostic-only
+            "PlanProposal must choose one current affordance; the runtime observes "
+            "again before asking for another choice"
         )
     if len(raw_steps) > planning.max_plan_steps:
         raise ValueError(  # mutation: diagnostic-only
