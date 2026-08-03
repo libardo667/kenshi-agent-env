@@ -130,9 +130,10 @@ inventory list.
 
 ## Build
 
-See the [Windows native setup guide](../../docs/GUIDE_WINDOWS_NATIVE_SETUP.md) for exact
-media hashes, Visual C++/SP1 installation, Git LFS dependency setup, and
-diagnostics.
+The active [reconstruction authority](../../docs/ARCHITECTURE_RECONSTRUCTION.md)
+preserves native protocol compatibility. Exact contributor-supplied media identities
+remain recorded in [`docs/native-media.lock.json`](../../docs/native-media.lock.json),
+and the checked-in diagnostic script verifies the installed build prerequisites.
 
 1. Install RE_Kenshi and obtain the matching maintained KenshiLib development
    dependencies.
@@ -248,9 +249,8 @@ run `20260726Tnative-building-exit-live-04` completed the exact keyed exit with
 Protocol `1.0.0` removes undocumented task-probability fields from the wire.
 Structural mining identity determines presence; an advertised context action
 authorizes only a bounded exact-target attempt. The bridge revalidates the
-target and completes only on the exact AI task and subject. See
-[`ADR_CONTEXT_ACTION_AUTHORITY`](../../docs/ADR_CONTEXT_ACTION_AUTHORITY.md) for
-the observability and prospecting boundary.
+target and completes only on the exact AI task and subject. This observability
+boundary is protected by the active reconstruction authority.
 
 Protocol `1.1.0` adds completeness markers for bounded visible controls and
 squad inventory, exact contextual-inventory ownership, retained resource

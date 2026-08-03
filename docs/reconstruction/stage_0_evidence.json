@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "stage": 0,
+  "claim_boundary": [
+    "The live traces are supervised single-run evidence, not general gameplay competence.",
+    "The restart-continuity trace is synthetic portable evidence and does not prove live Kenshi control.",
+    "The distilled records preserve causal revisions, exact identities, conservation claims, and terminal status without copying multi-megabyte screenshots or observation streams into git."
+  ],
+  "sources": {
+    "affordance_and_native_movement": {
+      "path": "runs/live-one-choice-group-movement-soak-20260803-r1/events.jsonl",
+      "sha256": "2f0369faa69468f5ca9539d9d5d0bde4708f071f2154e4899793ab8c4fbdf95a",
+      "evidence_level": "supervised_live"
+    },
+    "economic_loop_and_final_pause": {
+      "path": "runs/live-hub-survival-pair-20260729-r3/events.jsonl",
+      "sha256": "d1eaf706659f7f2ebc3fa045389c05ad16200282436e132706a3d442ab7cf1fa",
+      "evidence_level": "supervised_live"
+    },
+    "human_handoff_and_f12": {
+      "path": "runs/p0-brakes-f12b/events.jsonl",
+      "sha256": "fbf880a38bc27c1eb1e345f751b6b830583d719ece6c32624172e374bb1ba299",
+      "evidence_level": "supervised_live"
+    },
+    "restart_continuity": {
+      "path": "runs/reconstruction-stage-0-restart-continuity/evidence.json",
+      "sha256": "e584fbf212da70c272ba82b24aef986217c0227eaf3dc4ceab085330f638c5a3",
+      "evidence_level": "synthetic_portable"
+    }
+  },
+  "traces": {
+    "exact_offer_rebind_and_native_terminal": {
+      "run_id": "live-one-choice-group-movement-soak-20260803-r1",
+      "affordance": {
+        "affordance_id": "aff-ee90b015a128b841364e",
+        "source": "composite_operation",
+        "operation_kind": "regroup_with_squad_member",
+        "semantic": "reunite_squad",
+        "target_id": "entity-4978f2c8d3b00d52-0000000000000002-00000001-00000000-00000000-00000001-873b1f00",
+        "lifecycle": [
+          {"status": "offered", "telemetry_sequence": 143},
+          {"status": "bound", "telemetry_sequence": 143},
+          {"status": "executing", "telemetry_sequence": 206},
+          {"status": "monitoring", "telemetry_sequence": 206},
+          {"status": "succeeded", "telemetry_sequence": 206}
+        ]
+      },
+      "native_request": {
+        "command_id": "cmd-0dd73d1255d9491e8451fc8080b13a6d",
+        "command": "regroup_with_squad_member",
+        "actor_id": "entity-4978f2c8d3b00d52-0000000000000002-00000001-00000000-00000000-00000002-4614ff80",
+        "target_id": "entity-4978f2c8d3b00d52-0000000000000002-00000001-00000000-00000000-00000001-873b1f00",
+        "based_on_telemetry_sequence": 168,
+        "accepted_at_telemetry_sequence": 169
+      },
+      "terminal": {
+        "event_type": "option_succeeded",
+        "reason": "Kenshi completed the exact native movement order: squad_member_reached.",
+        "telemetry_sequence": 206
+      }
+    },
+    "harvest_sell_buy_and_pause": {
+      "run_id": "live-hub-survival-pair-20260729-r3",
+      "events": [
+        {
+          "operation_kind": "harvest_resource",
+          "quantity": 5,
+          "item": "Raw Iron",
+          "controller_verified": true,
+          "causal_revision_advanced": true,
+          "result": "Conserved 5 'Raw Iron' into 'Steyerfast'; Both controller-owned inventory windows are closed."
+        },
+        {
+          "operation_kind": "sell_item",
+          "quantity": 4,
+          "item": "Raw Iron",
+          "controller_verified": true,
+          "causal_revision_advanced": true,
+          "money_before": 224,
+          "money_after": 632
+        },
+        {
+          "operation_kind": "purchase_item",
+          "quantity": 1,
+          "item": "Bread",
+          "controller_verified": true,
+          "causal_revision_advanced": true,
+          "money_before": 632,
+          "money_after": 83
+        },
+        {
+          "event_type": "run_finished_safety",
+          "status": "pause_confirmed",
+          "initial_sequence": 26947,
+          "confirmed_sequence": 26949,
+          "input_executed": true
+        }
+      ]
+    },
+    "human_handoff_and_emergency_stop": {
+      "run_id": "p0-brakes-f12b",
+      "events": [
+        {
+          "event_type": "safety_supervisor_preempted",
+          "cause": "human_input",
+          "telemetry_sequence": 10607
+        },
+        {
+          "event_type": "safety_supervisor_terminal",
+          "cause": "human_input",
+          "status": "safe_paused",
+          "telemetry_sequence": 10607
+        },
+        {
+          "event_type": "control_ownership_changed",
+          "state": "human_control",
+          "reason": "Human input preempted agent work; the game is confirmed paused and all remaining plan work was cancelled."
+        },
+        {
+          "event_type": "control_ownership_changed",
+          "state": "disarmed",
+          "reason": "Emergency stop pressed; automatic agent takeover is disarmed."
+        }
+      ]
+    },
+    "restart_continuity": {
+      "claims": [
+        "This is synthetic portable evidence.",
+        "It proves continuity authority across a real process restart.",
+        "It does not prove live Kenshi control or general game competence."
+      ],
+      "lifecycle_memory": {
+        "restart_continuity": true,
+        "resumed_commitments": 1,
+        "cross_campaign_leaks": 0,
+        "unsupported_success_claims": 0,
+        "correction_after_rejection": 1
+      },
+      "memory_plus_fieldbook": {
+        "restart_continuity": true,
+        "resumed_commitments": 1,
+        "fieldbook_reads": 1,
+        "stale_memory_corrections": 1,
+        "cross_campaign_leaks": 0,
+        "unsupported_success_claims": 0
+      }
+    }
+  }
+}

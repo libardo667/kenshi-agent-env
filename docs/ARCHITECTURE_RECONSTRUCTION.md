@@ -1,6 +1,6 @@
 # Kenshi Agent Environment: Staged Architectural Reconstruction
 
-**Status:** Proposed reconstruction authority  
+**Status:** Active reconstruction authority
 **Applies to:** `libardo667/kenshi-agent-env` after `56b9e0d8`  
 **Precedent:** `6ba46c9` and `3f7cce6`  
 **Purpose:** Demolish the accumulated internal architecture without losing the proven playing system on the other side.

@@ -62,7 +62,6 @@ pytest_add_cli_args_test_selection = ["tests/"]
 also_copy = [
   "dev",
   ".env.example",
-  ".githooks/",
   ".gitignore",
   "config/",
   "docs/",

@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "authority": "docs/ARCHITECTURE_RECONSTRUCTION.md#7-stage-0--freeze-baseline-and-reconstruction-authority",
+  "metric_definition": {
+    "lines": "Python source lines counted with str.splitlines().",
+    "semantic_dispatch_branches": "If/conditional-expression branches whose condition contains isinstance() or a kind/execution discriminator, plus non-default cases of a match over such a discriminator. The deliberately conservative measure prevents new type/kind dispatch from accumulating in demolition targets."
+  },
+  "targets": {
+    "src/kenshi_agent/action_contracts.py": {
+      "max_lines": 3573,
+      "max_semantic_dispatch_branches": 37
+    },
+    "src/kenshi_agent/continuous_executor.py": {
+      "max_lines": 4035,
+      "max_semantic_dispatch_branches": 13
+    },
+    "src/kenshi_agent/env/live.py": {
+      "max_lines": 4513,
+      "max_semantic_dispatch_branches": 45
+    },
+    "src/kenshi_agent/models.py": {
+      "max_lines": 5420,
+      "max_semantic_dispatch_branches": 17
+    },
+    "src/kenshi_agent/runtime.py": {
+      "max_lines": 4083,
+      "max_semantic_dispatch_branches": 21
+    }
+  }
+}

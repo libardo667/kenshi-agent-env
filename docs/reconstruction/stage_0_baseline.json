@@ -1,0 +1,134 @@
+{
+  "schema_version": 1,
+  "stage": 0,
+  "authority": "docs/ARCHITECTURE_RECONSTRUCTION.md",
+  "captured_at_utc": "2026-08-03T18:21:57Z",
+  "source": {
+    "commit": "633f1b60903a7e2dd1c68ee3d015639d33bbacfa",
+    "branch": "architecture-reconstruction",
+    "rollback_tag": "pre-architecture-reconstruction-2026-08-03",
+    "baseline_authority_sha256": "27167a2dad2f9a004330878cb9d5f2d7d16791dd0706a4cd405e56c502a942c3",
+    "active_authority_sha256": "b38dfdeea9314acd6e144cf30bfb0e8eeb2a6e4acd5dd141c1504f0c6883a6d8"
+  },
+  "authority_transition": {
+    "active_owner": "docs/ARCHITECTURE_RECONSTRUCTION.md",
+    "competing_steering_documents_remaining": [],
+    "note": "Commit 475dbfc deleted the old ADR, guide, report, and project-status document stack before the baseline. Runtime planner and memory-compactor prompts are product inputs, not reconstruction instructions."
+  },
+  "environment": {
+    "python": "3.12.13",
+    "python_build": "Clang 22.1.3",
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "uv": "0.11.28",
+    "dependency_lock": {
+      "path": "uv.lock",
+      "sha256": "419a6d4d052759cab9f7ffe2b6a62bed938d976705484f05f9f948e4827c81f9"
+    },
+    "selected_installed_packages": {
+      "mypy": "1.20.2",
+      "mutmut": "3.6.0",
+      "openai": "2.48.0",
+      "pillow": "12.3.0",
+      "pydantic": "2.13.4",
+      "pytest": "9.1.1",
+      "python-dotenv": "1.2.2",
+      "pyyaml": "6.0.3",
+      "ruff": "0.16.0"
+    }
+  },
+  "native_environment": {
+    "native_doctor": "pass",
+    "windows": "Microsoft Windows NT 10.0.26200.0",
+    "powershell": "5.1.26100.8875",
+    "modern_msvc_toolset": "14.44.35207",
+    "v100_compiler": "16.00.40219.01",
+    "v100_x64_msbuild": "present",
+    "kenshilib": "headers and binary library present",
+    "boost_1_60": "headers and v100 thread library present",
+    "telemetry_protocol_version": "1.12.0",
+    "native_command_schema_version": "1.2",
+    "installed_dll": {
+      "size_bytes": 286720,
+      "sha256": "e93d7278fc81c04f562e607322af7f805027fd2523e276bc4ca463e0f54cde77"
+    },
+    "built_dll": {
+      "size_bytes": 286720,
+      "sha256": "e93d7278fc81c04f562e607322af7f805027fd2523e276bc4ca463e0f54cde77"
+    },
+    "protocol_sources": {
+      "native/KenshiAgentTelemetry/NativeCommandProtocol.cpp": "934437242a1e25ad4d2f882ce65232a53b100b565cc708c6ff6439cda257f2c8",
+      "native/KenshiAgentTelemetry/NativeCommandProtocol.h": "e2a19b27b96ce64256334f1cea5f75175951c91bdf1cf13aef8c73f8475a280d",
+      "native/KenshiAgentTelemetry/GameplayCapabilities.json": "89c9c74f3f6e5e456b32c45a0555dc5fe83ad93c8c545412e67add5c4a4d6a50"
+    }
+  },
+  "public_cli": {
+    "commands": [
+      "doctor",
+      "launch",
+      "recover",
+      "run",
+      "scenario",
+      "setup",
+      "snapshot",
+      "stop",
+      "telemetry"
+    ],
+    "scenario_actions": ["capture", "install-starts", "list", "restore"],
+    "setup_actions": ["graphics"],
+    "protected_operator_path": ["./dev launch", "./dev run", "./dev recover", "./dev stop"]
+  },
+  "canonical_live_config": {
+    "path": "config/live.yaml",
+    "sha256": "5a4fff0180524d871945937a7df4211f0c3908f30714ce693a476ca5eb2d6f3b"
+  },
+  "memory": {
+    "code_schema_version": 4,
+    "canonical_database_schema_version": 4
+  },
+  "reconstruction_artifacts": {
+    "ratchets": "docs/reconstruction/demolition_ratchets.json",
+    "distilled_evidence": "docs/reconstruction/stage_0_evidence.json"
+  },
+  "generated_artifact_hashes": {
+    "schemas": {
+      "schemas/affordance_receipt.schema.json": "1446e7148015722c013dc09bf43b4ca334cac6db353decb9a4452bcd2e321946",
+      "schemas/affordance_selection.schema.json": "833074c538f94dfc363eef48720998553303dae7f773b4122d08c6fef563b8a2",
+      "schemas/decision_proposal.schema.json": "cdc0cc0e03f35da1e6a8b4f0c0274fe4dee5534cd956abb71141166e77c352a5",
+      "schemas/native_command_request.schema.json": "7455d1efab32e787790522b75e56dd4cd309c6bf1a931b9358b6b16c6088f6a7",
+      "schemas/observation.schema.json": "89d5160ea8d8b3169c78e4cbf677243eab7630dd5c9066d2ad878873ffbf8aeb",
+      "schemas/plan_proposal.schema.json": "3d15c92a17e3a999931fe4ec76dfe8e62ad8759e4038b7b8182461bf6f97b4b6",
+      "schemas/runtime_action_receipt.schema.json": "80a79b69c119cbd2e126f38f30e664f4cf7a9ebdb178ce8a7fc0a2d1d26f0929",
+      "schemas/runtime_decision.schema.json": "bfbe8f456f8e5c6bed867ac8abf9b1d47c2e4747142674a7a56fc530c2b63eaf",
+      "schemas/runtime_operation.schema.json": "4eb88b478e91d806748ee323f9d95a0ed2bc8dc4fc137e925b10bab203a9224e",
+      "schemas/runtime_plan.schema.json": "e1ed65a5287195b870f6737846a0525ce3b59ed343be876a9c55a679a6af81cb",
+      "schemas/runtime_plan_patch.schema.json": "68446ea02d6b6ba9b14a56568089a0e2d86cc30233604d411f5aaec409cd6363",
+      "schemas/telemetry.schema.json": "764aa35c3553da7389a8264994c46c13b9f72f64ec7bf32a434be60e5b4cf887"
+    },
+    "docs": {
+      "docs/generated/AFFORDANCE_CATALOG.md": "2769bf7f5d79478b033d51eb38295e44d88ed33ca1e1624c1fd3550c752fa2cb",
+      "docs/generated/AFFORDANCE_SURFACES.md": "75387605e23df2347b2e0fccd24519a263e6c923eafd6563a872a061c997d86a",
+      "docs/generated/CONTEXT_ACTION_PARITY.md": "40832f8ea290fc24b0fb5fc0f3731c1aede807791fa95b6e2dc640022508adf4",
+      "docs/generated/DEV_CLI.md": "6b8189a889f1eb28152bd0e14c1f9a620f376967a97190c53caa8c184b638b6b",
+      "docs/generated/GAME_BINDING_PARITY.md": "fa4c24af5f1e46aaba546ac5092a5bed115c82d0a45cf7f09a2b9ee0cbba3223",
+      "docs/generated/MODELED_INTERFACE_AUDIT.md": "33e51f3a267a52dee3e4d24b6cc40cd990c3eec692c987fb57fd330bd83e8720",
+      "docs/generated/MUTATION_ATTESTATION.md": "3c5364fbaa80c2af027dffe0cbac864f252ecb21eeedbcb04035bea0b743b2e1",
+      "docs/generated/OBSERVED_BLOCKERS.md": "8b228bf49a719c5daf09cded47414698605d1291f349e67671c0723b134acc89",
+      "docs/generated/OPERATION_QUEUE.md": "eec8ddb9e7a65b7454d6dc57ab2386af7d1fa0a42c3fbca31e3354bf029ba9ed"
+    }
+  },
+  "portable_gate": {
+    "status": "pass",
+    "verified_at_utc": "2026-08-03T18:31:56Z",
+    "commands": [
+      "uv run pytest -q",
+      "uv run ruff check .",
+      "uv run mypy src",
+      "uv run python scripts/export_schemas.py",
+      "uv run python scripts/export_docs.py"
+    ]
+  },
+  "live_proof": {
+    "required": false,
+    "reason": "Stage 0 accepts the existing supervised bundles distilled in stage_0_evidence.json."
+  }
+}
