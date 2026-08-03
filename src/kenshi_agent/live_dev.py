@@ -2889,6 +2889,8 @@ def _run_agent(
                         "Kenshi Control Ownership",
                         "--layout",
                         "companion",
+                        "--owner-pid",
+                        str(os.getpid()),
                     ],
                     cwd=Path.cwd(),
                 )

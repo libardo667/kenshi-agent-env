@@ -867,6 +867,7 @@ def _show_overlay(args: argparse.Namespace) -> int:
         opacity=args.opacity,
         auto_close_seconds=args.auto_close_seconds,
         layout=args.layout,
+        owner_pid=args.owner_pid,
     )
     return 0
 
@@ -1048,6 +1049,11 @@ def build_parser() -> argparse.ArgumentParser:
     overlay.add_argument("--title", default="Kenshi Agent")
     overlay.add_argument("--opacity", type=float, default=0.82)
     overlay.add_argument("--auto-close-seconds", type=float, default=0.0)
+    overlay.add_argument(
+        "--owner-pid",
+        type=int,
+        help="Close when this exact owning process exits.",
+    )
     overlay.add_argument(
         "--layout",
         choices=["companion", "overlay"],

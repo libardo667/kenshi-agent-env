@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import os
+
 from kenshi_agent.overlay import (
     OverlayFeedState,
     WindowRect,
     companion_layout,
     format_event,
+    owner_process_is_alive,
     ownership_banner,
 )
+
+
+def test_overlay_owner_liveness_tracks_exact_process_exit() -> None:
+    assert owner_process_is_alive(os.getpid())
+    assert not owner_process_is_alive(2**31 - 1)
 
 
 def test_format_event_renders_decision_for_overlay() -> None:

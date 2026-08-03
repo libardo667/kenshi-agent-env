@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +13,43 @@ from .reporting import format_action
 
 OverlayFeedOperation = Literal["append", "replace", "skip"]
 OverlayLayout = Literal["companion", "overlay"]
+
+
+def owner_process_is_alive(owner_pid: int) -> bool:
+    """Return whether the exact process owning this companion still exists."""
+
+    if owner_pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        synchronize = 0x00100000
+        wait_timeout = 0x00000102
+        kernel32 = getattr(ctypes, "windll").kernel32  # noqa: B009 - Windows-only
+        open_process = kernel32.OpenProcess
+        open_process.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        open_process.restype = wintypes.HANDLE
+        wait_for_single_object = kernel32.WaitForSingleObject
+        wait_for_single_object.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+        wait_for_single_object.restype = wintypes.DWORD
+        close_handle = kernel32.CloseHandle
+        close_handle.argtypes = [wintypes.HANDLE]
+        close_handle.restype = wintypes.BOOL
+        handle = open_process(synchronize, False, owner_pid)
+        if not handle:
+            return False
+        try:
+            return wait_for_single_object(handle, 0) == wait_timeout
+        finally:
+            close_handle(handle)
+    try:
+        os.kill(owner_pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
 @dataclass(slots=True)
@@ -387,6 +425,7 @@ def show_overlay(
     opacity: float = 0.82,
     auto_close_seconds: float = 0.0,
     layout: OverlayLayout = "companion",
+    owner_pid: int | None = None,
 ) -> None:
     if not 0.25 <= opacity <= 1.0:
         raise ValueError("opacity must be between 0.25 and 1.0")
@@ -500,6 +539,9 @@ def show_overlay(
 
     def poll() -> None:
         nonlocal offset, close_scheduled
+        if owner_pid is not None and not owner_process_is_alive(owner_pid):
+            root.destroy()
+            return
         if log_path.exists():
             with log_path.open("r", encoding="utf-8") as handle:
                 handle.seek(offset)

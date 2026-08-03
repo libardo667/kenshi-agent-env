@@ -3158,6 +3158,8 @@ def test_run_ownership_overlay_follows_exclusive_control(
     assert len(opened) == 1
     assert terminated == [True]
     assert "--auto-close-seconds" not in opened[0]
+    owner_pid_index = opened[0].index("--owner-pid")
+    assert opened[0][owner_pid_index + 1] == str(os.getpid())
 
 
 def test_run_owned_overlay_escalates_to_kill_when_terminate_stalls(
