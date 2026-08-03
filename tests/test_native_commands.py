@@ -53,7 +53,13 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
     with pytest.raises(ValidationError):
         NativeCommandRequest.model_validate(
             valid.model_dump(mode="python")
-            | {"selected_character_ids": ["entity-selected", "entity-other"]}
+            | {
+                "command": "move_in_direction",
+                "selected_character_ids": ["entity-selected", "entity-other"],
+                "target_id": "",
+                "bearing_degrees": 90.0,
+                "distance_units": 10.0,
+            }
         )
     with pytest.raises(ValidationError, match="telemetry sequence"):
         NativeCommandRequest.model_validate(
@@ -63,7 +69,7 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
         NativeCommandRequest.model_validate(valid.model_dump(mode="python") | {"unexpected": True})
 
 
-def test_group_selection_is_allowed_only_for_set_aware_native_commands() -> None:
+def test_group_selection_is_allowed_for_set_aware_native_commands() -> None:
     valid = request().model_dump(mode="python")
     group = ["entity-selected", "entity-companion"]
 
@@ -76,9 +82,18 @@ def test_group_selection_is_allowed_only_for_set_aware_native_commands() -> None
     )
     assert move.selected_character_ids == group
 
+    approach = NativeCommandRequest.model_validate(
+        valid | {"selected_character_ids": group}
+    )
+    assert approach.selected_character_ids == group
+
     with pytest.raises(ValidationError, match="exactly one selected character"):
         NativeCommandRequest.model_validate(
-            valid | {"selected_character_ids": group}
+            valid
+            | {
+                "command": "regroup_with_squad_member",
+                "selected_character_ids": group,
+            }
         )
 
 
@@ -170,6 +185,11 @@ def test_native_acknowledgement_requires_causal_sequences_for_each_status() -> N
 
     assert completed.terminal_at_telemetry_sequence == 10
     assert rejected.accepted_at_telemetry_sequence is None
+    group = NativeCommandAcknowledgement.model_validate(
+        accepted.model_dump(mode="python")
+        | {"selected_character_ids": ["entity-selected", "entity-companion"]}
+    )
+    assert group.selected_character_ids == ["entity-selected", "entity-companion"]
     with pytest.raises(ValidationError, match="later than the request basis"):
         NativeCommandAcknowledgement.model_validate(
             accepted.model_dump(mode="python") | {"acknowledged_at_telemetry_sequence": 7}

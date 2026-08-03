@@ -63,12 +63,15 @@ It also recognizes a private `Ctrl+Shift+F10` request bridge. Before the
 hotkey, Python atomically publishes a strict `native_command.request.json`
 carrying its UUID command ID, complete world revision, `native_assisted` mode,
 identity session, the complete nonempty selected stable-ID basis, and
-command-specific arguments. Character-specific commands require exactly one
-selected ID; squad selection and map travel deliberately accept a group:
+command-specific arguments. Actor-specific commands require exactly one selected
+ID; dialogue approach, ordinary movement, squad selection, and map travel
+deliberately accept a group:
 
 - `approach_confirmed_vendor` is the legacy wire name for approaching any exact
-  conscious, non-hostile humanoid dialogue target. It uses `PLAYER_TALK_TO` and
-  completes only when dialogue opens with that exact target.
+  conscious, non-hostile humanoid dialogue target. It gives the complete current
+  selection Kenshi's ordinary `PLAYER_TALK_TO` order, retains the primary
+  selected character as the monitored speaker, and completes only when dialogue
+  opens with that exact target.
 - `move_to_character` walks to one exact current nearby character through
   `MOVE_CUS_ORDERED` without opening dialogue and completes on arrival.
 - `select_squad_member` collapses any exact current squad selection to one exact

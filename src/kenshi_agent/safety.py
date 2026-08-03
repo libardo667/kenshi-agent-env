@@ -468,10 +468,13 @@ class ActionGuard:
                 + ", ".join(sorted(missing))  # mutation: reason
             )
         selected_ids = telemetry.ui.selected_character_ids
-        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+        if (
+            not selected_ids
+            or telemetry.ui.selected_character_id not in selected_ids
+        ):
             raise SafetyViolation(  # mutation: reason
-                "Native vendor approach requires one exact "  # mutation: reason
-                "primary selected character."  # mutation: reason
+                "Native vendor approach requires an exact nonempty selection "  # mutation: reason
+                "with its primary selected character identified."  # mutation: reason
             )
         target_id = require_exact_target_id(action.argument_map().get("target_id"))
         target = next(

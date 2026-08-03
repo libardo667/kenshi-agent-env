@@ -2205,6 +2205,7 @@ def test_semantic_approach_adopts_an_already_active_order_for_the_same_target(
 def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) -> None:
     async def scenario() -> None:
         environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
         environment.controls_config = environment.controls_config.model_copy(
             update={
                 "native_approach_skill": "approach_confirmed_vendor",
@@ -2225,6 +2226,10 @@ def test_semantic_approach_issues_one_order_when_none_is_active(tmp_path: Path) 
         assert len(hotkeys) == 1, "exactly one pathing order per option lifecycle"
         assert controller.request is not None
         assert controller.request.target_id == "entity-vendor"
+        assert controller.request.selected_character_ids == [
+            "entity-selected",
+            "entity-ruka",
+        ]
         assert transition.receipt.executed
         assert telemetry.paused is True
 

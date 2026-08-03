@@ -551,10 +551,18 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         return
     owners = observation.window_owners()
     selected_id = telemetry.ui.selected_character_id
-    seller_ids = [
-        entity.id for entity in telemetry.nearby_entities if entity.has_vendor_list
-    ]
-    seller_id = seller_ids[0] if len(seller_ids) == 1 else None
+    open_vendor_ids = {
+        str(owner["seller_id"])
+        for caption in observation.open_window_captions()
+        if (owner := owners.get(normalize_control_label(caption), {})).get(
+            "belongs_to"
+        )
+        == "vendor"
+        and owner.get("seller_id")
+    }
+    paired_vendor_id = (
+        next(iter(open_vendor_ids)) if len(open_vendor_ids) == 1 else None
+    )
     for control in telemetry.ui.visible_controls:
         if control.role != "item" or not control.item_name:
             continue
@@ -588,10 +596,11 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             )
         if (
             owner.get("belongs_to") == "vendor"
-            and seller_id
+            and owner.get("seller_id")
             and control.item_base_value is not None
             and purchase_quantity_max >= 1
         ):
+            seller_id = str(owner["seller_id"])
             yield _offer(
                 observation,
                 source=AffordanceSource.INVENTORY,
@@ -612,8 +621,7 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             )
         if owner.get("belongs_to") == "you" and selected_id:
             if (
-                telemetry.active_shop_trader_count == 1
-                and seller_id
+                paired_vendor_id
                 and cell_quantity_max >= 1
             ):
                 yield _offer(
@@ -627,9 +635,9 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     operation_kind="sell_item",
                     target=target,
                     parameters=(_quantity_parameter(cell_quantity_max),),
-                    arguments={**base, "buyer_id": seller_id},
+                    arguments={**base, "buyer_id": paired_vendor_id},
                 )
-            elif telemetry.active_shop_trader_count == 0:
+            elif not observation.trade_screen_open():
                 yield _offer(
                     observation,
                     source=AffordanceSource.INVENTORY,

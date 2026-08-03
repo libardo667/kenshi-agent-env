@@ -2394,9 +2394,11 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     version="1.0",
     model=ApproachDialogueTargetAction,
     summary=(
-        "Issue Kenshi's native talk-to order for one exact current target. The "
-        "native order may open nearby dialogue while paused and otherwise owns "
-        "the monitored pathing lifecycle. Do not add a separate unpause step."
+        "Issue Kenshi's native talk-to order for the complete current selection "
+        "and one exact current target. The primary selected character remains "
+        "the exact monitored speaker. The native order may open nearby dialogue "
+        "while paused and otherwise owns the pathing lifecycle. Do not add a "
+        "separate unpause step."
     ),
     argument_source="target_id must be an exact id from the observation's dialogue_targets.",
     allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
@@ -2411,7 +2413,7 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     capability_aliases=NATIVE_APPROACH_CAPABILITY_ALIASES,
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
+    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),

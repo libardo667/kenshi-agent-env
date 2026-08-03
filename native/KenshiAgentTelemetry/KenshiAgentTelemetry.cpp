@@ -128,7 +128,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.11.0";
+    const char* PROTOCOL_VERSION = "1.12.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -947,7 +947,7 @@ namespace
         hand selectedHandle;
         std::vector<hand> selectedHandles;
         const bool exactSelectionResolved =
-            g_activeNativeCommand.isMapTravel
+            g_activeNativeCommand.selectedCharacterIds.size() > 1
                 ? TryGetExactSelectionBasis(
                     player,
                     g_activeNativeCommand.selectedCharacterIds,

@@ -4,6 +4,7 @@ import pytest
 
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
 from kenshi_agent.models import (
+    ApproachDialogueTargetAction,
     CharacterState,
     ClickAction,
     ConsultAdvisorAction,
@@ -181,6 +182,62 @@ def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
                     name="Twitch",
                     selected=True,
                 ),
+            ],
+        ),
+    )
+
+    assert guard.validate(action, observation) == action
+
+
+def test_dialogue_approach_preserves_a_valid_multi_selection() -> None:
+    config = safety_config().model_copy(
+        update={
+            "allow_action_kinds": [
+                *safety_config().allow_action_kinds,
+                "approach_dialogue_target",
+            ]
+        }
+    )
+    guard = ActionGuard(
+        config,
+        MacroRegistry({}),
+        control_mode=ControlMode.NATIVE_ASSISTED,
+    )
+    action = ApproachDialogueTargetAction(target_id="entity-vendor")
+    observation = Observation(
+        run_id="group-dialogue",
+        step_index=0,
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        telemetry=TelemetrySnapshot(
+            identity_session_id="session-group-dialogue",
+            capabilities=[
+                "control.approach_vendor",
+                "identity.stable_handles",
+                "nearby.characters",
+                "nearby.roles",
+            ],
+            game=GameState(loaded=True, paused=True),
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+                selected_character_id="entity-bark",
+                selected_character_ids=["entity-bark", "entity-plant"],
+            ),
+            squad=[
+                CharacterState(id="entity-bark", name="Bark", selected=True),
+                CharacterState(id="entity-plant", name="Plant", selected=True),
+            ],
+            nearby_entities=[
+                NearbyEntity(
+                    id="entity-vendor",
+                    name="Barman",
+                    is_animal=False,
+                    has_dialogue=True,
+                    conscious=True,
+                    disposition=Disposition.NEUTRAL,
+                )
             ],
         ),
     )
@@ -573,14 +630,19 @@ def test_native_assisted_guard_accepts_marked_skill_only_for_matching_observatio
                 game=GameState(paused=True),
                 ui=UIState(
                     selected_character_id="entity-selected",
-                    selected_character_ids=["entity-selected"],
+                    selected_character_ids=["entity-selected", "entity-companion"],
                 ),
                 squad=[
                     CharacterState(
                         id="entity-selected",
                         name="Wanderer",
                         selected=True,
-                    )
+                    ),
+                    CharacterState(
+                        id="entity-companion",
+                        name="Companion",
+                        selected=True,
+                    ),
                 ],
                 nearby_entities=[
                     NearbyEntity(

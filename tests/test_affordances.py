@@ -657,7 +657,7 @@ def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> Non
     assert offer.operation_kind == "perform_context_action"
 
 
-def test_inventory_adapter_bounds_transaction_quantities_from_current_cells() -> None:
+def test_inventory_adapter_binds_exact_open_vendor_when_other_traders_are_loaded() -> None:
     actor = CharacterState(
         id="actor-1",
         name="Bark",
@@ -672,6 +672,16 @@ def test_inventory_adapter_bounds_transaction_quantities_from_current_cells() ->
         has_vendor_list=True,
         shop_inventory_owner=True,
     )
+    other_vendors = [
+        NearbyEntity(
+            id=f"vendor-{index}",
+            name=f"Nearby Trader {index}",
+            disposition=Disposition.FRIENDLY,
+            has_vendor_list=True,
+            shop_inventory_owner=False,
+        )
+        for index in (2, 3)
+    ]
     observation = _observation(
         capabilities=[
             "game.money",
@@ -687,8 +697,10 @@ def test_inventory_adapter_bounds_transaction_quantities_from_current_cells() ->
         ],
         money=95,
         squad=[actor],
-        nearby=[vendor],
-        active_shop_trader_count=1,
+        nearby=[vendor, *other_vendors],
+        # This world-level count includes every loaded shopkeeper, not just the
+        # exact vendor whose paired inventory window is open.
+        active_shop_trader_count=3,
         ui=UIState(
             active_screen="trade",
             open_inventory_windows=2,
@@ -724,6 +736,8 @@ def test_inventory_adapter_bounds_transaction_quantities_from_current_cells() ->
     assert set(inventory) == {"buy", "sell"}
     assert inventory["buy"].parameters[0].maximum == 3
     assert inventory["sell"].parameters[0].maximum == 2
+    assert inventory["buy"].operation_arguments["seller_id"] == vendor.id
+    assert inventory["sell"].operation_arguments["buyer_id"] == vendor.id
 
 
 def test_map_adapter_offers_every_currently_travelable_exact_destination() -> None:
