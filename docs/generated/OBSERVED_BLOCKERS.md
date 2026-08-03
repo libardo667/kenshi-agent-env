@@ -14,9 +14,9 @@ total. Rows are never dropped, so a blocker that stops recurring stays
 visible with the run that last exhibited it.
 
 ```text
-newest run  live-explicit-party-selection-soak-20260803-r1
+newest run  live-interface-ownership-soak-20260803-r1
 signatures  51
-open        2
+open        1
 ```
 
 | signature | example | runs | seen | last run | last seen |
@@ -38,7 +38,7 @@ open        2
 | `Existing action guard rejected the step: Action '*' does not bind to current state: Selected character '*' is not confir` | Existing action guard rejected the step: Action 'exit_current_building' does not bind to current state: Selected character 'Plant' is not confirmed inside a bui | 1 | 2 | live-party-control-set-aware-soak-20260803-r1 | 2026-08-03T08:01:59Z |
 | `Existing action guard rejected the step: Action '*' does not bind to current state: Target '*' is not a current actionab` | Existing action guard rejected the step: Action 'perform_context_action' does not bind to current state: Target 'entity-f62aed9afbbe0857-0000000000000002-000000 | 1 | 1 | live-party-control-set-aware-soak-20260803-r1 | 2026-08-03T08:01:59Z |
 | `Existing action guard rejected the step: Action '*' does not bind to current state: The modal and dialogue state is not` | Existing action guard rejected the step: Action 'select_squad_member_exact' does not bind to current state: The modal and dialogue state is not confirmed clear, | 1 | 2 | live-party-control-set-aware-soak-20260803-r1 | 2026-08-03T08:01:59Z |
-| `Existing action guard rejected the step: Action requires one exact primary selected character.` | Existing action guard rejected the step: Action requires one exact primary selected character. | 3 | 4 | live-explicit-party-selection-soak-20260803-r1 | 2026-08-03T13:15:12Z |
+| `Existing action guard rejected the step: Action requires one exact primary selected character.` | Existing action guard rejected the step: Action requires one exact primary selected character. | 4 | 8 | live-interface-ownership-soak-20260803-r1 | 2026-08-03T13:45:45Z |
 | `Existing action guard rejected the step: Wait #s exceeds maximum #s.` | Existing action guard rejected the step: Wait 10.00s exceeds maximum 8.00s. | 1 | 3 | live-character-terminal-soak-20260731-r3 | 2026-07-31T15:09:38Z |
 | `Plan rejected before execution: plan declares max_purchase_actions #; declare at most #` | Plan rejected before execution: plan declares max_purchase_actions 8; declare at most 5 | 2 | 2 | live-atomic-timeout-soak-20260731-r1 | 2026-07-31T13:59:45Z |
 | `Plan rejected before execution: plan max_wall_seconds # exceeds #` | Plan rejected before execution: plan max_wall_seconds 65.0 exceeds 30.0 | 1 | 3 | live-pointer-target-setup-20260801-r2 | 2026-08-01T22:08:17Z |
