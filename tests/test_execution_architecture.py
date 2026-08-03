@@ -17,6 +17,9 @@ _RETIRED_EXECUTION_OWNERS = {
     "_execute_live",
     "_execute_resource_harvest",
     "_execute_monitored_option",
+    # Stage 3: single_step and continuous are scheduling policies, not runtimes.
+    "_run_single_step",
+    "_run_continuous",
 }
 
 # The composition root exists to name the families, never to hold mechanics.

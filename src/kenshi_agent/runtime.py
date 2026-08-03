@@ -385,9 +385,11 @@ class AgentRuntime:
         return None
 
     async def run(self, *, max_steps: int, seed: int | None = None) -> RunSummary:
-        if self.planning_config.mode == PlanningMode.CONTINUOUS:
-            return await self._run_continuous(max_steps=max_steps, seed=seed)
-        return await self._run_single_step(max_steps=max_steps, seed=seed)
+        return await self._run_scheduled(
+            max_steps=max_steps,
+            seed=seed,
+            accepts_plans=self.planning_config.mode == PlanningMode.CONTINUOUS,
+        )
 
     async def _begin_run(
         self,
@@ -475,100 +477,23 @@ class AgentRuntime:
         self._state_store = None
         await self._close_environment()
 
-    async def _run_single_step(
+    async def _run_scheduled(
         self,
         *,
         max_steps: int,
         seed: int | None = None,
+        accepts_plans: bool,
     ) -> RunSummary:
+        """Observe, plan, execute, record, repeat, under one scheduling policy.
+
+        `accepts_plans` is the whole difference between the continuous and
+        single-step schedules: which planner output shape this run will act on,
+        and therefore whether an independent supervisor and observation pump are
+        worth attaching. Every other responsibility is shared.
+        """
+
         started = datetime.now(UTC)
-        steps_completed = 0
-        terminated = False
-        success: bool | None = None
-        stop_reason = "Maximum step count reached."
-        observation: Observation | None = None
-        session: _RunSession | None = None
-        try:
-            session = await self._begin_run(max_steps=max_steps, seed=seed, supervised=False)
-            observation = session.observation
-            self._log_observation(observation)
-
-            for _ in range(max_steps):
-                planning_started = monotonic()
-                authored_context: AuthoredPlannerContext | None = None
-                if self.reporter is not None:
-                    self.reporter.planning_started(observation.step_index)
-                decision_source = "planner"
-                reflex_decision = self.reflexes.decide(observation)
-                if reflex_decision is not None:
-                    decision = reflex_decision
-                    decision_source = "reflex"
-                else:
-                    try:
-                        authored_output = await self._decide(observation)
-                        planner_output = authored_output.output
-                        authored_context = authored_output.context
-                        if isinstance(planner_output, PlannerDecision):
-                            decision = planner_output
-                        else:
-                            decision = PlannerDecision(
-                                intent="Stop after incompatible planner output.",
-                                rationale=(
-                                    "Single-step mode requires PlannerDecision, but "
-                                    f"received {type(planner_output).__name__}."
-                                ),
-                                action=StopAction(
-                                    reason="Planner output did not match single-step mode."
-                                ),
-                                confidence=1.0,
-                            )
-                            decision_source = "planner_error"
-                    except Exception as exc:
-                        decision = self._planner_failure_decision(
-                            exc,
-                            step_index=observation.step_index,
-                        )
-                        decision_source = "planner_error"
-
-                planner_latency_seconds = monotonic() - planning_started
-
-                (
-                    observation,
-                    completed,
-                    terminated,
-                    success,
-                    stop_reason,
-                ) = await self._execute_continuous_decision(
-                    decision,
-                    observation,
-                    source=decision_source,
-                    planner_latency_seconds=planner_latency_seconds,
-                    authored_context=authored_context,
-                )
-                steps_completed += completed
-                observation = self._with_memories(observation)
-                self._log_observation(observation)
-                if terminated:
-                    break
-
-            return self._finish_run_summary(
-                started=started,
-                steps_completed=steps_completed,
-                terminated=terminated,
-                success=success,
-                stop_reason=stop_reason,
-                observation=observation,
-            )
-        finally:
-            await self._finish_run(session)
-
-    async def _run_continuous(
-        self,
-        *,
-        max_steps: int,
-        seed: int | None = None,
-    ) -> RunSummary:
-        started = datetime.now(UTC)
+        cycles = 0
         steps_completed = 0
         terminated = False
         success: bool | None = None
@@ -610,12 +535,19 @@ class AgentRuntime:
 
         session: _RunSession | None = None
         try:
-            session = await self._begin_run(max_steps=max_steps, seed=seed, supervised=True)
+            session = await self._begin_run(
+                max_steps=max_steps, seed=seed, supervised=accepts_plans
+            )
             state_store = session.state_store
             observation = session.observation
             safety_supervisor = session.safety_supervisor
+            if not accepts_plans:
+                self._log_observation(observation)
 
-            while steps_completed < max_steps and not terminated:
+            while not terminated and (
+                cycles < max_steps if not accepts_plans else steps_completed < max_steps
+            ):
+                cycles += 1
                 observation = state_store.latest or observation
                 if safety_supervisor is not None and safety_supervisor.preempted:
                     pending_preemption = await safety_supervisor.wait_for_preemption()
@@ -788,6 +720,43 @@ class AgentRuntime:
                     },
                 )
                 observation = state_store.latest or observation
+
+                if not accepts_plans:
+                    # This schedule acts on one authored decision per turn; a
+                    # plan is the wrong shape here, so stop rather than run it.
+                    if isinstance(output, PlannerDecision):
+                        decision = output
+                        decision_source = planner_source
+                    else:
+                        decision = PlannerDecision(
+                            intent="Stop after incompatible planner output.",
+                            rationale=(
+                                "Single-step mode requires PlannerDecision, but "
+                                f"received {type(output).__name__}."
+                            ),
+                            action=StopAction(
+                                reason="Planner output did not match single-step mode."
+                            ),
+                            confidence=1.0,
+                        )
+                        decision_source = "planner_error"
+                    (
+                        observation,
+                        completed,
+                        terminated,
+                        success,
+                        stop_reason,
+                    ) = await self._execute_continuous_decision(
+                        decision,
+                        observation,
+                        source=decision_source,
+                        planner_latency_seconds=planner_latency_seconds,
+                        authored_context=authored_context,
+                    )
+                    steps_completed += completed
+                    observation = self._with_memories(observation)
+                    self._log_observation(observation)
+                    continue
 
                 if isinstance(output, PlannerDecision):
                     if not isinstance(output.action, StopAction):
