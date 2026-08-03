@@ -383,8 +383,12 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
         for order in target.context_actions:
             native_order = bool(
                 native
-                and order == ContextActionKind.OPERATE
-                and target.kind == "natural_resource"
+                and (
+                    order == ContextActionKind.OPERATE
+                    and target.kind == "natural_resource"
+                    or order == ContextActionKind("first_aid")
+                    and target.kind == "squad_character"
+                )
             )
             if not native_order and target.screen_position is None:
                 continue
@@ -835,8 +839,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         ),
         denominator="Every exact world-target/order pair advertised by current telemetry.",
         completeness_boundary=(
-            "Native execution currently proves natural-resource operate; other orders "
-            "require current screen geometry and stop at the generic UI delivery boundary."
+            "Native execution proves the reviewed natural-resource operate and "
+            "squad-character first_aid semantics; other orders require current screen "
+            "geometry and stop at the generic UI delivery boundary."
         ),
         enumerate=_context_order_offers,
     ),
@@ -1150,8 +1155,15 @@ def terminal_affordance_receipt(
     status: AffordanceLifecycleStatus,
     message: str,
     telemetry_sequence: int | None,
+    execution_started: bool,
+    monitoring_started: bool,
 ) -> AffordanceReceipt:
-    """Close one bound affordance with the same lifecycle vocabulary."""
+    """Close one bound affordance without inventing lifecycle phases."""
+
+    if monitoring_started and not execution_started:
+        raise ValueError("affordance monitoring cannot start before execution")
+    if monitoring_started and affordance.execution is AffordanceExecution.IMMEDIATE:
+        raise ValueError("an immediate affordance cannot enter monitoring")
 
     lifecycle = [
         AffordanceLifecycleEvent(
@@ -1164,16 +1176,16 @@ def terminal_affordance_receipt(
             telemetry_sequence=affordance.offered_at_telemetry_sequence,
             detail="Runtime rebound the selection to its current exact source target.",
         ),
-        AffordanceLifecycleEvent(
-            status=AffordanceLifecycleStatus.EXECUTING,
-            telemetry_sequence=affordance.offered_at_telemetry_sequence,
-            detail="Runtime took ownership of mechanics and execution policy.",
-        ),
     ]
-    if affordance.execution in {
-        AffordanceExecution.MONITORED,
-        AffordanceExecution.COMPOSITE,
-    }:
+    if execution_started:
+        lifecycle.append(
+            AffordanceLifecycleEvent(
+                status=AffordanceLifecycleStatus.EXECUTING,
+                telemetry_sequence=telemetry_sequence,
+                detail="Runtime began executing the selected affordance.",
+            )
+        )
+    if monitoring_started:
         lifecycle.append(
             AffordanceLifecycleEvent(
                 status=AffordanceLifecycleStatus.MONITORING,

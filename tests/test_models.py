@@ -284,6 +284,25 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
             ],
         )
 
+    squad_context_target = TelemetrySnapshot(
+        protocol_version="1.8.0",
+        identity_session_id="session-process-1",
+        capabilities=["identity.stable_handles"],
+        squad=[CharacterState(id="entity-injured", name="Bark")],
+        world_targets=[
+            WorldTarget(
+                id="entity-injured",
+                name="Bark",
+                kind="squad_character",
+                position=Vec3(x=1.0, y=0.0, z=2.0),
+                distance=10.0,
+                context_actions=[ContextActionKind("first_aid")],
+                default_task="first_aid",
+            )
+        ],
+    )
+    assert squad_context_target.world_targets[0].id == squad_context_target.squad[0].id
+
 
 def test_action_discriminator_parses_click() -> None:
     action = parse_action(

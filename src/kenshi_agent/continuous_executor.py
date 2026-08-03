@@ -21,6 +21,7 @@ from .models import (
     ActionReceipt,
     ActivePlanContext,
     AdvisorConsultStatus,
+    AffordanceExecution,
     AffordanceLifecycleStatus,
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
@@ -574,6 +575,8 @@ class ContinuousPlanExecutor:
             )
 
             retries_remaining = step.retry_budget
+            affordance_execution_started = False
+            affordance_monitoring_started = False
             while True:
                 step_result = await self._execute_step(
                     plan,
@@ -587,6 +590,13 @@ class ContinuousPlanExecutor:
                 )
                 observation = step_result.observation
                 actions_completed += step_result.actions_completed
+                if step_result.actions_completed > 0:
+                    affordance_execution_started = True
+                    affordance_monitoring_started = bool(
+                        step.affordance is not None
+                        and step.affordance.execution
+                        is not AffordanceExecution.IMMEDIATE
+                    )
 
                 if step_result.interrupted:
                     self._close_affordance(
@@ -595,6 +605,8 @@ class ContinuousPlanExecutor:
                         observation,
                         status=AffordanceLifecycleStatus.INTERRUPTED,
                         reason=step_result.reason,
+                        execution_started=affordance_execution_started,
+                        monitoring_started=affordance_monitoring_started,
                     )
                     assert step_result.staged_patch is not None
                     self._event(
@@ -691,6 +703,8 @@ class ContinuousPlanExecutor:
                         observation,
                         status=AffordanceLifecycleStatus.SUCCEEDED,
                         reason=step_result.reason,
+                        execution_started=affordance_execution_started,
+                        monitoring_started=affordance_monitoring_started,
                     )
                     self._event(
                         "plan_step_succeeded",
@@ -797,6 +811,8 @@ class ContinuousPlanExecutor:
                         observation,
                         status=AffordanceLifecycleStatus.FAILED,
                         reason=step_result.reason,
+                        execution_started=affordance_execution_started,
+                        monitoring_started=affordance_monitoring_started,
                     )
                     self._event(
                         "plan_step_failed",
@@ -847,6 +863,8 @@ class ContinuousPlanExecutor:
                             observation,
                             status=AffordanceLifecycleStatus.FAILED,
                             reason=reason,
+                            execution_started=affordance_execution_started,
+                            monitoring_started=affordance_monitoring_started,
                         )
                         return self._abort(
                             plan,
@@ -867,6 +885,8 @@ class ContinuousPlanExecutor:
                     observation,
                     status=AffordanceLifecycleStatus.FAILED,
                     reason=step_result.reason,
+                    execution_started=affordance_execution_started,
+                    monitoring_started=affordance_monitoring_started,
                 )
                 self._event(
                     "plan_step_failed",
@@ -3886,6 +3906,8 @@ class ContinuousPlanExecutor:
         *,
         status: AffordanceLifecycleStatus,
         reason: str,
+        execution_started: bool = False,
+        monitoring_started: bool = False,
     ) -> None:
         if step.affordance is None:
             return
@@ -3902,6 +3924,8 @@ class ContinuousPlanExecutor:
             status=status,
             message=reason,
             telemetry_sequence=telemetry_sequence,
+            execution_started=execution_started,
+            monitoring_started=monitoring_started,
         )
         self._closed_affordance_steps.add(key)
         self.logger.write(

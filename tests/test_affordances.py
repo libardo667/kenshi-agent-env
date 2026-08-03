@@ -300,6 +300,38 @@ def test_context_adapter_preserves_every_executable_runtime_order_without_enumer
     }
 
 
+def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> None:
+    target = WorldTarget(
+        id="squad-injured",
+        name="Bark",
+        kind="squad_character",
+        position=Vec3(x=1, y=0, z=2),
+        distance=3,
+        context_actions=[ContextActionKind("first_aid")],
+        default_task="first_aid",
+    )
+    observation = _observation(
+        capabilities=[
+            "control.perform_context_action",
+            "world.context_targets",
+            "game.pause",
+            "identity.stable_handles",
+        ],
+        ui=UIState(active_screen="world", dialogue_open=False, modal_open=False),
+        squad=[CharacterState(id="squad-injured", name="Bark")],
+        targets=[target],
+    )
+
+    offer = next(
+        offer
+        for offer in offered_affordances(observation)
+        if offer.target is not None and offer.target.target_id == target.id
+    )
+
+    assert offer.semantic == "first_aid"
+    assert offer.operation_kind == "perform_context_action"
+
+
 def test_inventory_adapter_bounds_transaction_quantities_from_current_cells() -> None:
     actor = CharacterState(
         id="actor-1",
@@ -578,6 +610,11 @@ def test_every_adapter_closes_with_the_same_runtime_owned_lifecycle() -> None:
             status=AffordanceLifecycleStatus.SUCCEEDED,
             message="Runtime verified completion and cleanup.",
             telemetry_sequence=42,
+            execution_started=True,
+            monitoring_started=(
+                bound_affordance(materialized).execution.value
+                in {"monitored", "composite"}
+            ),
         )
         statuses = [event.status for event in receipt.lifecycle]
         assert statuses[:3] == [
@@ -595,7 +632,32 @@ def test_every_adapter_closes_with_the_same_runtime_owned_lifecycle() -> None:
             status=AffordanceLifecycleStatus.OFFERED,
             message="An offered affordance is not a terminal receipt.",
             telemetry_sequence=42,
+            execution_started=False,
+            monitoring_started=False,
         )
+
+
+def test_rejected_before_dispatch_receipt_does_not_invent_execution() -> None:
+    observation = _observation(
+        capabilities=["camera.position", "game.pause", "game.speed"]
+    )
+    offer = next(iter(offered_affordances(observation)))
+    materialized = bind_affordance(selection_for(offer), observation)
+
+    receipt = terminal_affordance_receipt(
+        bound_affordance(materialized),
+        status=AffordanceLifecycleStatus.REJECTED,
+        message="A precondition failed before dispatch.",
+        telemetry_sequence=42,
+        execution_started=False,
+        monitoring_started=False,
+    )
+
+    assert [event.status for event in receipt.lifecycle] == [
+        AffordanceLifecycleStatus.OFFERED,
+        AffordanceLifecycleStatus.BOUND,
+        AffordanceLifecycleStatus.REJECTED,
+    ]
 
 
 def test_adapter_declarations_guard_every_emitted_offer(

@@ -85,10 +85,10 @@ arguments:
 - `exit_current_building` requires the selected character's indoor handle to
   resolve to a valid building, then resolves its current unlocked exit and
   outside point without accepting model-authored geometry.
-- `operate_natural_resource` re-resolves one exact current natural resource,
-  rechecks Kenshi's mining role and `OPERATE_MACHINERY` default task, issues
-  Kenshi's own task, and completes only when the selected character's AI
-  reports that exact task and subject.
+- `perform_context_action` carries one reviewed semantic. `operate` re-resolves
+  an exact current natural resource and `first_aid` an exact eligible squad
+  member; both complete only after the selected character's exact AI goal names
+  the corresponding Kenshi task and target.
 - `produce_resource_output` adopts that exact already-running task or issues it
   once, then stays active through `Operating machine` and completes only when
   the resource output section contains a positive quantity.
@@ -199,10 +199,10 @@ folder component.
 - During native movement, verify the camera center follows the exact selected
   character without a separate portrait gesture. Confirm inactive commands and
   selection mismatch do not retain agent camera ownership.
-- Repeat for `operate_natural_resource`: first verify the target is present in
-  `world_targets` with `operate` advertised, then issue that exact ID and
-  confirm keyed `context_task_started`, plausible movement/task behavior in a
-  resulting frame, fresh advancing telemetry, and final pause.
+- Repeat for `perform_context_action`: first verify the exact target/action pair
+  is present in `world_targets`, then issue that pair and confirm keyed
+  `context_task_started`, plausible movement/task behavior in a resulting
+  frame, fresh advancing telemetry, and final pause.
 - Repeat the full resource transaction: prove `produce_resource_output` adopts
   matching work without reissue and reaches `resource_output_ready`; prove the
   exact contextual inventory opens; then prove equal output loss and selected

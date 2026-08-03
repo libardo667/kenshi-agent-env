@@ -4276,6 +4276,18 @@ def test_selected_visible_control_uses_runtime_delivery_terminal(tmp_path: Path)
         "causal_revision_advanced": True,
         "effect_verified": False,
     }
+    receipts = [
+        event["payload"]
+        for event in events
+        if event["event_type"] == "affordance_receipt"
+    ]
+    assert len(receipts) == 1
+    assert [event["status"] for event in receipts[0]["receipt"]["lifecycle"]] == [
+        "offered",
+        "bound",
+        "executing",
+        "succeeded",
+    ]
     assert sum(e["event_type"] == "plan_completed" for e in events) == 1
 
 

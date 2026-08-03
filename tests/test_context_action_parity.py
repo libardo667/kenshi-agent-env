@@ -521,13 +521,13 @@ def test_report_keeps_observation_separate_from_execution_authority() -> None:
     report = render_context_action_parity(load_witnesses(WITNESSES_PATH))
 
     assert "witnessed pairs  3" in report
-    assert "wired            2" in report
-    assert "missing          1" in report
+    assert "wired            3" in report
+    assert "missing          0" in report
     assert "unclassified     0" in report
     assert "OPERATE_MACHINERY" in report
     assert "LOOT_TARGET" in report
     assert "FIRST_AID_ORDER" in report
-    assert "**MISSING**" in report
+    assert "context_orders:first_aid" in report
     assert "Observation never grants execution authority" in report
 
 

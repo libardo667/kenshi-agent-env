@@ -10,9 +10,9 @@ grounded missing affordance. Decisions without a witness fail the suite.
 ```text
 menu witnesses   5
 witnessed pairs  3
-wired            2
+wired            3
 exempt           0
-missing          1
+missing          0
 unclassified     0
 ```
 
@@ -20,4 +20,4 @@ unclassified     0
 | --- | --- | ---: | ---: | --- |
 | natural_resource | `LOOT_TARGET` | 26 | 4 | wired: native_and_composite:harvest |
 | natural_resource | `OPERATE_MACHINERY` | 87 | 4 | wired: context_orders:operate -> native_and_composite:harvest |
-| squad_character | `FIRST_AID_ORDER` | 25 | 1 | **MISSING**: Export exact current first-aid eligibility as the generic context_actions semantic 'first_aid', then give the context-order adapter a stable-ID native route whose terminal proves the selected actor accepted FIRST_AID_ORDER for that target. |
+| squad_character | `FIRST_AID_ORDER` | 25 | 1 | wired: context_orders:first_aid |

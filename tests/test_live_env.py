@@ -1074,6 +1074,7 @@ class NativePulseTelemetry(PulseTelemetry):
         self.target_visible: bool | None = None
         self.dialogue_target_id: str | None = None
         self.indoors = False
+        self.first_aid_target_enabled = False
         self.known_map_destinations: list[KnownMapDestination] = []
 
     def read(self) -> TelemetryRead:
@@ -1160,7 +1161,22 @@ class NativePulseTelemetry(PulseTelemetry):
                         default_task="operate_machinery",
                         mining_resource_level=0.8,
                         screen_position=self.world_target_screen_position,
-                    )
+                    ),
+                    *(
+                        [
+                            WorldTarget(
+                                id="entity-ruka",
+                                name="Ruka",
+                                kind="squad_character",
+                                position=Vec3(x=500.0, y=0.0, z=750.0),
+                                distance=900.0,
+                                context_actions=[ContextActionKind("first_aid")],
+                                default_task="first_aid",
+                            )
+                        ]
+                        if self.first_aid_target_enabled
+                        else []
+                    ),
                 ],
                 known_map_destinations=self.known_map_destinations,
             ),
@@ -1373,8 +1389,10 @@ class NativeAckController(PulseController):
                             )
                         ),
                         target_id=request.target_id,
+                        context_action=request.context_action,
                         bearing_degrees=request.bearing_degrees,
                         distance_units=request.distance_units,
+                        minimum_output_quantity=request.minimum_output_quantity,
                         selected_character_ids=request.selected_character_ids,
                         based_on_telemetry_sequence=basis,
                         acknowledged_at_telemetry_sequence=acknowledgement_sequence,
@@ -2132,11 +2150,56 @@ def test_context_action_issues_exact_native_resource_task_without_world_click(
             ]
         ) == 1
         assert controller.request is not None
-        assert controller.request.command == "operate_natural_resource"
+        assert controller.request.command == "perform_context_action"
+        assert controller.request.context_action == "operate"
         assert controller.request.target_id == "entity-copper"
         assert transition.receipt.executed
         assert transition.receipt.semantic is not None
         assert transition.receipt.semantic.resolved_label == "operate"
+
+    asyncio.run(scenario())
+
+
+def test_first_aid_uses_the_same_exact_semantic_native_route(tmp_path: Path) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="context_task_started",
+        )
+        telemetry.first_aid_target_enabled = True
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "native_approach_max_seconds": 0.02,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            PerformContextAction(
+                target_id="entity-ruka",
+                context_action=ContextActionKind("first_aid"),
+            ),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "a" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert not [
+            action for action in controller.actions if isinstance(action, ClickAction)
+        ]
+        assert len(
+            [action for action in controller.actions if isinstance(action, HotkeyAction)]
+        ) == 1
+        assert controller.request is not None
+        assert controller.request.command == "perform_context_action"
+        assert controller.request.context_action == "first_aid"
+        assert controller.request.target_id == "entity-ruka"
+        assert transition.receipt.executed
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.resolved_label == "first_aid"
 
     asyncio.run(scenario())
 

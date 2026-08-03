@@ -18,12 +18,12 @@ from ..action_contracts import (
     MOVE_IN_DIRECTION_CONTRACT,
     MOVE_TO_CHARACTER_CONTRACT,
     NATIVE_APPROACH_WIRE_COMMAND,
+    NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
     NATIVE_DIRECTION_WIRE_COMMAND,
     NATIVE_EXIT_BUILDING_WIRE_COMMAND,
     NATIVE_MAP_TRAVEL_WIRE_COMMAND,
     NATIVE_MOVE_WIRE_COMMAND,
     NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
-    NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
     NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
     NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
     OPEN_CONTEXT_INVENTORY_CONTRACT,
@@ -74,6 +74,7 @@ from ..models import (
     CollectResourceOutputAction,
     CommandDispatchContext,
     CommandWorldTargetAction,
+    ContextActionKind,
     ControlMode,
     DismissScreenAction,
     EquipItemAction,
@@ -1407,7 +1408,8 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
+            wire_command=NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+            context_action=action.context_action,
             require_dialogue_target=False,
         )
 
@@ -3519,7 +3521,7 @@ class LiveEnvironment(AgentEnvironment):
             "move_in_direction",
             "travel_to_map_destination",
             "exit_current_building",
-            "operate_natural_resource",
+            "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
@@ -3532,6 +3534,7 @@ class LiveEnvironment(AgentEnvironment):
         minimum_output_quantity: int = 1,
         running_speed_gear: int = 1,
         expected_actor_id: str | None = None,
+        context_action: ContextActionKind | None = None,
     ) -> ActionReceipt:
         adopted = (
             self._active_native_order_for(
@@ -3540,6 +3543,7 @@ class LiveEnvironment(AgentEnvironment):
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
                 minimum_output_quantity=minimum_output_quantity,
+                context_action=context_action,
             )
             if continue_until_terminal
             else None
@@ -3573,6 +3577,7 @@ class LiveEnvironment(AgentEnvironment):
                 distance_units=distance_units,
                 minimum_output_quantity=minimum_output_quantity,
                 expected_actor_id=expected_actor_id,
+                context_action=context_action,
             )
             request_path = self.telemetry_reader.path.parent / self._NATIVE_COMMAND_REQUEST_FILE
             write_native_command_request_atomic(request_path, request)
@@ -3837,7 +3842,7 @@ class LiveEnvironment(AgentEnvironment):
             "move_in_direction",
             "travel_to_map_destination",
             "exit_current_building",
-            "operate_natural_resource",
+            "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
         ],
@@ -3845,6 +3850,7 @@ class LiveEnvironment(AgentEnvironment):
         bearing_degrees: float,
         distance_units: float,
         minimum_output_quantity: int,
+        context_action: ContextActionKind | None,
     ) -> NativeCommandAcknowledgement | None:
         """An already accepted, still active order with this exact identity.
 
@@ -3868,6 +3874,7 @@ class LiveEnvironment(AgentEnvironment):
             or acknowledgement.command != wire_command
             or acknowledgement.minimum_output_quantity
             != minimum_output_quantity
+            or acknowledgement.context_action != (context_action or "")
         ):
             return None
         if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
@@ -3915,7 +3922,7 @@ class LiveEnvironment(AgentEnvironment):
             "move_in_direction",
             "travel_to_map_destination",
             "exit_current_building",
-            "operate_natural_resource",
+            "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
         ] = NATIVE_APPROACH_WIRE_COMMAND,
@@ -3924,6 +3931,7 @@ class LiveEnvironment(AgentEnvironment):
         distance_units: float = 0.0,
         minimum_output_quantity: int = 1,
         expected_actor_id: str | None = None,
+        context_action: ContextActionKind | None = None,
     ) -> NativeCommandRequest:
         """Build the native pathing request for one exact stable target.
 
@@ -3972,7 +3980,7 @@ class LiveEnvironment(AgentEnvironment):
             native_contract = PRODUCE_RESOURCE_OUTPUT_CONTRACT
         elif wire_command == NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND:
             native_contract = OPEN_CONTEXT_INVENTORY_CONTRACT
-        elif wire_command == NATIVE_OPERATE_RESOURCE_WIRE_COMMAND:
+        elif wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
             native_contract = PERFORM_CONTEXT_ACTION_CONTRACT
         elif wire_command == NATIVE_MOVE_WIRE_COMMAND:
             native_contract = MOVE_TO_CHARACTER_CONTRACT
@@ -4000,7 +4008,7 @@ class LiveEnvironment(AgentEnvironment):
             # character already stands, which is what makes it available in a
             # place a destination list would be empty.
             return NativeCommandRequest(
-                schema_version="1.1",
+                schema_version="1.2",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -4020,7 +4028,7 @@ class LiveEnvironment(AgentEnvironment):
                     "confirmed indoors at issue time."
                 )
             return NativeCommandRequest(
-                schema_version="1.1",
+                schema_version="1.2",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -4040,7 +4048,7 @@ class LiveEnvironment(AgentEnvironment):
                     "at issue time."
                 )
             return NativeCommandRequest(
-                schema_version="1.1",
+                schema_version="1.2",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -4061,7 +4069,7 @@ class LiveEnvironment(AgentEnvironment):
                     "actor, ambiguous, or not confirmed alive at issue time."
                 )
             return NativeCommandRequest(
-                schema_version="1.1",
+                schema_version="1.2",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -4073,23 +4081,33 @@ class LiveEnvironment(AgentEnvironment):
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
         if wire_command in {
-            NATIVE_OPERATE_RESOURCE_WIRE_COMMAND,
+            NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
             NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
             NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
         }:
+            if wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+                if context_action is None:
+                    raise RuntimeError(
+                        "Native context execution requires an exact semantic."
+                    )
+                expected_context_action = context_action
+                request_context_action: ContextActionKind | Literal[""] = context_action
+            else:
+                expected_context_action = ContextActionKind.OPERATE
+                request_context_action = ""
             matches = [
                 target
                 for target in telemetry.world_targets
                 if target.id == target_id
-                and "operate" in target.context_actions
+                and expected_context_action in target.context_actions
             ]
             if len(matches) != 1:
                 raise RuntimeError(
                     "Native context target is absent or no longer advertises "
-                    "the exact operate action."
+                    f"the exact {expected_context_action.value!r} action."
                 )
             return NativeCommandRequest(
-                schema_version="1.1",
+                schema_version="1.2",
                 command_id=command.command_id,
                 command=wire_command,
                 control_mode=ControlMode.NATIVE_ASSISTED,
@@ -4097,6 +4115,7 @@ class LiveEnvironment(AgentEnvironment):
                 based_on_revision=observation.world_revision,
                 selected_character_ids=list(selected_ids),
                 target_id=target_id,
+                context_action=request_context_action,
                 minimum_output_quantity=minimum_output_quantity,
             )
         target = next(
@@ -4115,7 +4134,7 @@ class LiveEnvironment(AgentEnvironment):
         if require_vendor_role and not target.is_confirmed_vendor():
             raise RuntimeError("Native command target lacks exact safe current vendor evidence.")
         return NativeCommandRequest(
-            schema_version="1.1",
+            schema_version="1.2",
             command_id=command.command_id,
             # The wire name is a legacy alias retained so the proven installed
             # plug-in keeps parsing this request without a rebuild.

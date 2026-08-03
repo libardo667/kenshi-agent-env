@@ -27,7 +27,7 @@ def revision(sequence: int | None = 7) -> WorldStateRevision:
 
 def request() -> NativeCommandRequest:
     return NativeCommandRequest(
-        schema_version="1.1",
+        schema_version="1.2",
         command_id=COMMAND_ID,
         command="approach_confirmed_vendor",
         control_mode=ControlMode.NATIVE_ASSISTED,
@@ -77,6 +77,28 @@ def test_only_resource_production_may_request_a_larger_bounded_yield() -> None:
     with pytest.raises(ValidationError, match="only resource production"):
         NativeCommandRequest.model_validate(
             valid.model_dump(mode="python") | {"minimum_output_quantity": 2}
+        )
+
+
+def test_context_action_request_requires_a_reviewed_semantic() -> None:
+    valid = request().model_dump(mode="python")
+    context = NativeCommandRequest.model_validate(
+        valid
+        | {
+            "command": "perform_context_action",
+            "target_id": "entity-injured-squadmate",
+            "context_action": "first_aid",
+        }
+    )
+
+    assert context.context_action == "first_aid"
+    with pytest.raises(ValidationError, match="requires its reviewed semantic"):
+        NativeCommandRequest.model_validate(
+            valid | {"command": "perform_context_action"}
+        )
+    with pytest.raises(ValidationError, match="only a context-action command"):
+        NativeCommandRequest.model_validate(
+            valid | {"context_action": "first_aid"}
         )
 
 

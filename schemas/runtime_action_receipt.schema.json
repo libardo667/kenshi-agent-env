@@ -1757,7 +1757,7 @@
             "move_in_direction",
             "travel_to_map_destination",
             "exit_current_building",
-            "operate_natural_resource",
+            "perform_context_action",
             "produce_resource_output",
             "open_context_inventory"
           ],
@@ -1778,6 +1778,22 @@
           "maxLength": 200,
           "title": "Target Id",
           "type": "string"
+        },
+        "context_action": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            },
+            {
+              "const": "",
+              "type": "string"
+            }
+          ],
+          "default": "",
+          "title": "Context Action"
         },
         "bearing_degrees": {
           "default": 0.0,

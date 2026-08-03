@@ -131,8 +131,8 @@ NATIVE_CONTEXT_TARGETS_CAPABILITY = "world.context_targets"
 WORLD_CONTEXT_TARGET_SCREEN_POSITIONS_CAPABILITY = (
     "world.context_target_screen_positions"
 )
-NATIVE_OPERATE_RESOURCE_WIRE_COMMAND: Literal["operate_natural_resource"] = (
-    "operate_natural_resource"
+NATIVE_CONTEXT_ACTION_WIRE_COMMAND: Literal["perform_context_action"] = (
+    "perform_context_action"
 )
 NATIVE_PRODUCE_RESOURCE_CAPABILITY = "control.produce_resource_output"
 NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND: Literal["produce_resource_output"] = (
@@ -2378,9 +2378,9 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     model=PerformContextAction,
     summary=(
         "Attempt one exact contextual action advertised by a current world object. "
-        "The native controller rechecks the object and reviewed default task, then "
+        "The native controller rechecks the target and reviewed semantic task, then "
         "owns execution until the selected character's AI reports that exact task "
-        "and subject. Natural-resource operation is the first supported action."
+        "and subject."
     ),
     argument_source=(
         "target_id and context_action must be copied as an exact pair from the "

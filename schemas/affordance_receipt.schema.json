@@ -201,8 +201,8 @@
       "items": {
         "$ref": "#/$defs/AffordanceLifecycleEvent"
       },
-      "maxItems": 8,
-      "minItems": 4,
+      "maxItems": 5,
+      "minItems": 3,
       "title": "Lifecycle",
       "type": "array"
     },

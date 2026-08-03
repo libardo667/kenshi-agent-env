@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "command_id": "cmd-11111111111111111111111111111111",
   "command": "exit_current_building",
   "control_mode": "native_assisted",
@@ -14,6 +14,7 @@
     "entity-selected"
   ],
   "target_id": "",
+  "context_action": "",
   "bearing_degrees": 0.0,
   "distance_units": 0.0,
   "minimum_output_quantity": 1

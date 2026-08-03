@@ -200,6 +200,7 @@ namespace KenshiAgentTelemetry
             "based_on_revision",
             "selected_character_ids",
             "target_id",
+            "context_action",
             "bearing_degrees",
             "distance_units",
             "minimum_output_quantity"
@@ -225,6 +226,8 @@ namespace KenshiAgentTelemetry
             request.identitySessionId =
                 root.get<std::string>("identity_session_id", "");
             request.targetId = root.get<std::string>("target_id", "");
+            request.contextAction =
+                root.get<std::string>("context_action", "");
             request.bearingDegrees =
                 root.get<double>("bearing_degrees", 0.0);
             request.distanceUnits =
@@ -250,7 +253,7 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
-            if (root.get<std::string>("schema_version") != "1.1" ||
+            if (root.get<std::string>("schema_version") != "1.2" ||
                 !IsValidCommandId(request.commandId) ||
                 request.command.empty() ||
                 request.command.size() > 80 ||
@@ -259,6 +262,7 @@ namespace KenshiAgentTelemetry
                 request.identitySessionId.empty() ||
                 request.identitySessionId.size() > 200 ||
                 request.targetId.size() > 200 ||
+                request.contextAction.size() > 80 ||
                 request.minimumOutputQuantity < 1 ||
                 request.minimumOutputQuantity > 5)
             {
@@ -314,7 +318,7 @@ namespace KenshiAgentTelemetry
                 request.command == "move_to_character" ||
                 request.command == "regroup_with_squad_member" ||
                 request.command == "travel_to_map_destination" ||
-                request.command == "operate_natural_resource" ||
+                request.command == "perform_context_action" ||
                 request.command == "produce_resource_output" ||
                 request.command == "open_context_inventory";
             if (isDirection)
@@ -358,6 +362,22 @@ namespace KenshiAgentTelemetry
                 rejectionReason = "malformed_request";
                 return false;
             }
+            const bool isContextAction =
+                request.command == "perform_context_action";
+            if (isContextAction)
+            {
+                if (request.contextAction != "operate" &&
+                    request.contextAction != "first_aid")
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+            }
+            else if (!request.contextAction.empty())
+            {
+                rejectionReason = "malformed_request";
+                return false;
+            }
         }
         catch (const std::exception&)
         {
@@ -384,6 +404,8 @@ namespace KenshiAgentTelemetry
              << JsonEscape(acknowledgement.reason) << "\",";
         json << "\"target_id\":\""
              << JsonEscape(acknowledgement.targetId) << "\",";
+        json << "\"context_action\":\""
+             << JsonEscape(acknowledgement.contextAction) << "\",";
         json << "\"bearing_degrees\":"
              << acknowledgement.bearingDegrees << ",";
         json << "\"distance_units\":"

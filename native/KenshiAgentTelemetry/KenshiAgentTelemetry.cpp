@@ -128,7 +128,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.7.0";
+    const char* PROTOCOL_VERSION = "1.8.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -522,6 +522,7 @@ namespace
         acknowledgement.status = status;
         acknowledgement.reason = reason;
         acknowledgement.targetId = request.targetId;
+        acknowledgement.contextAction = request.contextAction;
         acknowledgement.bearingDegrees = request.bearingDegrees;
         acknowledgement.distanceUnits = request.distanceUnits;
         acknowledgement.minimumOutputQuantity =
@@ -852,6 +853,17 @@ namespace
         }
         if (g_activeNativeCommand.isContextAction)
         {
+            if (g_activeNativeCommand.expectedTask == FIRST_AID_ORDER)
+            {
+                Character* target =
+                    g_activeNativeCommand.targetHandle.getCharacter();
+                if (target == NULL || !target->isValid())
+                    return false;
+                const Ogre::Vector3 position = target->getPosition();
+                destinationX = position.x;
+                destinationZ = position.z;
+                return true;
+            }
             Building* target =
                 g_activeNativeCommand.targetHandle.getBuilding();
             if (target == NULL || !target->isValid())
@@ -1940,78 +1952,113 @@ namespace
         bool resourceTaskActive = false;
         if (g_activeNativeCommand.isContextAction)
         {
-            Building* contextTarget =
-                g_activeNativeCommand.targetHandle.getBuilding();
-            if (contextTarget == NULL ||
-                !contextTarget->isValid() ||
-                StableEntityId(contextTarget->getHandle()) !=
-                    g_activeNativeCommand.targetId)
+            if (g_activeNativeCommand.expectedTask == FIRST_AID_ORDER)
             {
-                FinishActiveNativeCommand(
-                    "cancelled",
-                    "target_lifetime_changed");
-                return;
-            }
-            if (!InspectNaturalResource(contextTarget)
-                    .structurallyRecognized ||
-                contextTarget->getDefaultTask() !=
-                    g_activeNativeCommand.expectedTask)
-            {
-                FinishActiveNativeCommand(
-                    "cancelled",
-                    "target_role_invalid");
-                return;
-            }
-            if (g_activeNativeCommand.isResourceProduction)
-            {
-                int outputQuantity = 0;
-                const bool outputKnown =
-                    TryGetInventorySectionQuantity(
-                        contextTarget,
-                        "out",
-                        outputQuantity);
-                resourceTaskActive = HasExactContextGoal(walker);
-                const KenshiAgentTelemetry::ResourceProductionState state =
-                    KenshiAgentTelemetry::EvaluateResourceProduction(
-                        outputKnown,
-                        outputQuantity,
-                        static_cast<int>(
-                            g_activeNativeCommand.minimumOutputQuantity),
-                        resourceTaskActive,
-                        g_activeNativeCommand.resourceTaskObserved);
-                if (state ==
-                    KenshiAgentTelemetry::RESOURCE_PRODUCTION_OUTPUT_UNKNOWN)
+                Character* target =
+                    g_activeNativeCommand.targetHandle.getCharacter();
+                bool exactIdentityFound = false;
+                Character* current = FindExactSquadMember(
+                    player,
+                    g_activeNativeCommand.targetId,
+                    exactIdentityFound);
+                if (target == NULL ||
+                    !target->isValid() ||
+                    current == NULL ||
+                    !SameHandleIdentity(
+                        target->getHandle(),
+                        current->getHandle()))
                 {
                     FinishActiveNativeCommand(
                         "cancelled",
-                        "resource_output_unknown");
+                        "target_lifetime_changed");
                     return;
                 }
-                if (state ==
-                    KenshiAgentTelemetry::RESOURCE_PRODUCTION_OUTPUT_READY)
+                if (HasExactContextGoal(
+                        walker,
+                        FIRST_AID_ORDER,
+                        current->getHandle()))
                 {
                     FinishActiveNativeCommand(
                         "completed",
-                        "resource_output_ready");
+                        "context_task_started");
                     return;
                 }
-                if (state ==
-                    KenshiAgentTelemetry::RESOURCE_PRODUCTION_TASK_ENDED)
+            }
+            else
+            {
+                Building* contextTarget =
+                    g_activeNativeCommand.targetHandle.getBuilding();
+                if (contextTarget == NULL ||
+                    !contextTarget->isValid() ||
+                    StableEntityId(contextTarget->getHandle()) !=
+                        g_activeNativeCommand.targetId)
                 {
                     FinishActiveNativeCommand(
                         "cancelled",
-                        "resource_task_ended_without_output");
+                        "target_lifetime_changed");
                     return;
                 }
-                if (resourceTaskActive)
-                    g_activeNativeCommand.resourceTaskObserved = true;
-            }
-            else if (HasExactContextGoal(walker))
-            {
-                FinishActiveNativeCommand(
-                    "completed",
-                    "context_task_started");
-                return;
+                if (!InspectNaturalResource(contextTarget)
+                        .structurallyRecognized ||
+                    contextTarget->getDefaultTask() !=
+                        g_activeNativeCommand.expectedTask)
+                {
+                    FinishActiveNativeCommand(
+                        "cancelled",
+                        "target_role_invalid");
+                    return;
+                }
+                if (g_activeNativeCommand.isResourceProduction)
+                {
+                    int outputQuantity = 0;
+                    const bool outputKnown =
+                        TryGetInventorySectionQuantity(
+                            contextTarget,
+                            "out",
+                            outputQuantity);
+                    resourceTaskActive = HasExactContextGoal(walker);
+                    const KenshiAgentTelemetry::ResourceProductionState state =
+                        KenshiAgentTelemetry::EvaluateResourceProduction(
+                            outputKnown,
+                            outputQuantity,
+                            static_cast<int>(
+                                g_activeNativeCommand.minimumOutputQuantity),
+                            resourceTaskActive,
+                            g_activeNativeCommand.resourceTaskObserved);
+                    if (state == KenshiAgentTelemetry::
+                            RESOURCE_PRODUCTION_OUTPUT_UNKNOWN)
+                    {
+                        FinishActiveNativeCommand(
+                            "cancelled",
+                            "resource_output_unknown");
+                        return;
+                    }
+                    if (state == KenshiAgentTelemetry::
+                            RESOURCE_PRODUCTION_OUTPUT_READY)
+                    {
+                        FinishActiveNativeCommand(
+                            "completed",
+                            "resource_output_ready");
+                        return;
+                    }
+                    if (state == KenshiAgentTelemetry::
+                            RESOURCE_PRODUCTION_TASK_ENDED)
+                    {
+                        FinishActiveNativeCommand(
+                            "cancelled",
+                            "resource_task_ended_without_output");
+                        return;
+                    }
+                    if (resourceTaskActive)
+                        g_activeNativeCommand.resourceTaskObserved = true;
+                }
+                else if (HasExactContextGoal(walker))
+                {
+                    FinishActiveNativeCommand(
+                        "completed",
+                        "context_task_started");
+                    return;
+                }
             }
         }
 
@@ -2366,7 +2413,7 @@ namespace
                  request.command == "move_in_direction" ||
                  request.command == "travel_to_map_destination" ||
                  request.command == "exit_current_building" ||
-                 request.command == "operate_natural_resource" ||
+                 request.command == "perform_context_action" ||
                  request.command == "produce_resource_output" ||
                  request.command == "open_context_inventory") &&
                 hasCommandIdentity &&
@@ -2402,7 +2449,7 @@ namespace
         const bool isBuildingExit =
             request.command == "exit_current_building";
         const bool isContextAction =
-            request.command == "operate_natural_resource";
+            request.command == "perform_context_action";
         const bool isResourceProduction =
             request.command == "produce_resource_output";
         const bool isContextInventory =
@@ -2466,8 +2513,98 @@ namespace
             return;
         }
 
+        if (isContextAction && request.contextAction == "first_aid")
+        {
+            bool exactIdentityFound = false;
+            Character* target = FindExactSquadMember(
+                player,
+                request.targetId,
+                exactIdentityFound);
+            if (target == NULL)
+            {
+                RejectNativeCommand(
+                    request,
+                    exactIdentityFound
+                        ? "target_role_invalid"
+                        : "target_lifetime_changed");
+                return;
+            }
+            float taskProbability = 0.0f;
+            if (!player->isOrderValidForSelection(FIRST_AID_ORDER) ||
+                !player->getPlayerTaskProbability(
+                    FIRST_AID_ORDER,
+                    target,
+                    taskProbability) ||
+                !(taskProbability > 0.0f))
+            {
+                RejectNativeCommand(request, "context_action_unavailable");
+                return;
+            }
+            Character* selected = selectedHandle.getCharacter();
+            const hand& targetHandle = target->getHandle();
+            const bool exactTaskAlreadyActive =
+                HasExactContextGoal(
+                    selected,
+                    FIRST_AID_ORDER,
+                    targetHandle);
+            if (!exactTaskAlreadyActive)
+            {
+                player->newPlayerTaskSelectedCharacters(
+                    FIRST_AID_ORDER,
+                    targetHandle,
+                    target->isIndoors().getBuilding(),
+                    target->getPosition(),
+                    false);
+            }
+            AddNativeAcknowledgement(
+                request,
+                "accepted",
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued",
+                true,
+                false);
+            g_activeNativeCommand.active = true;
+            g_activeNativeCommand.commandId = request.commandId;
+            g_activeNativeCommand.targetId = request.targetId;
+            g_activeNativeCommand.selectedCharacterId =
+                request.selectedCharacterId;
+            g_activeNativeCommand.targetHandle = targetHandle;
+            g_activeNativeCommand.selectedHandle = selectedHandle;
+            g_activeNativeCommand.isWalk = false;
+            g_activeNativeCommand.hasFixedDestination = false;
+            g_activeNativeCommand.isMapTravel = false;
+            g_activeNativeCommand.mapInteriorOrderIssued = false;
+            g_activeNativeCommand.isBuildingExit = false;
+            g_activeNativeCommand.isContextAction = true;
+            g_activeNativeCommand.isResourceProduction = false;
+            g_activeNativeCommand.resourceTaskObserved = false;
+            g_activeNativeCommand.minimumOutputQuantity = 1;
+            g_activeNativeCommand.expectedTask = FIRST_AID_ORDER;
+            KenshiAgentTelemetry::ResetNativeMovementPauseWindow(
+                g_activeNativeCommand.pauseWindow);
+            KenshiAgentTelemetry::ResetNativeMovementStallWindow(
+                g_activeNativeCommand.stallWindow);
+            KenshiAgentTelemetry::ResetNativeOutdoorConfirmationWindow(
+                g_activeNativeCommand.outdoorWindow);
+            g_activeNativeCommand.originX = 0.0f;
+            g_activeNativeCommand.originZ = 0.0f;
+            g_lastNativeCommandResult =
+                exactTaskAlreadyActive
+                    ? "adopted_existing_task"
+                    : "issued";
+            g_lastNativeCommandTarget = target->getName();
+            g_lastNativeCommandTargetId = request.targetId;
+            return;
+        }
+
         if (isContextAction || isResourceProduction || isContextInventory)
         {
+            if (isContextAction && request.contextAction != "operate")
+            {
+                RejectNativeCommand(request, "unsupported_context_action");
+                return;
+            }
             Building* target = FindExactNaturalResource(
                 player,
                 request.targetId);
@@ -3637,6 +3774,53 @@ namespace
         json << "],";
         bool worldTargetScanAtCapacity = false;
         json << "\"world_targets\":[";
+        bool firstWorldTarget = true;
+        if (player != NULL &&
+            selected != NULL &&
+            selected->isValid() &&
+            characters != NULL &&
+            player->isOrderValidForSelection(FIRST_AID_ORDER))
+        {
+            const Ogre::Vector3 selectedPosition = selected->getPosition();
+            for (unsigned int index = 0; index < characters->size(); ++index)
+            {
+                Character* target = (*characters)[index];
+                if (target == NULL ||
+                    !target->isValid() ||
+                    !target->isPlayerCharacter())
+                {
+                    continue;
+                }
+                float taskProbability = 0.0f;
+                if (!player->getPlayerTaskProbability(
+                        FIRST_AID_ORDER,
+                        target,
+                        taskProbability) ||
+                    !(taskProbability > 0.0f))
+                {
+                    continue;
+                }
+                const std::string targetId = StableEntityId(target);
+                if (targetId.empty())
+                    continue;
+                if (!firstWorldTarget)
+                    json << ",";
+                firstWorldTarget = false;
+                const Ogre::Vector3 targetPosition = target->getPosition();
+                json << "{";
+                json << "\"id\":\"" << targetId << "\",";
+                json << "\"name\":\""
+                     << JsonEscape(target->getName()) << "\",";
+                json << "\"kind\":\"squad_character\",";
+                json << "\"position\":";
+                AppendVector3(json, targetPosition);
+                json << ",\"distance\":"
+                     << Distance(targetPosition, selectedPosition) << ",";
+                json << "\"context_actions\":[\"first_aid\"],";
+                json << "\"default_task\":\"first_aid\"";
+                json << "}";
+            }
+        }
         if (ou != NULL && selected != NULL && selected->isValid())
         {
             lektor<RootObject*> nearBuildings;
@@ -3685,8 +3869,9 @@ namespace
                  it != targets.end();
                  ++it)
             {
-                if (it != targets.begin())
+                if (!firstWorldTarget)
                     json << ",";
+                firstWorldTarget = false;
                 json << SerializeNaturalResourceTarget(*it);
             }
         }

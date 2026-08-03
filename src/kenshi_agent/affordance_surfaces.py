@@ -109,8 +109,8 @@ SURFACES: tuple[AffordanceSurface, ...] = (
         ),
         note=(
             "Concrete runtime menu captures now enter an empirical parity report "
-            "automatically. The current world-target export remains typed around "
-            "one kind: `NaturalResourceTargetSnapshot`."
+            "automatically. The current world-target export carries reviewed exact "
+            "natural-resource and squad-character context targets."
         ),
         candidate_vocabulary=CandidateVocabulary(
             path=TASK_TYPES_SNAPSHOT,

@@ -4,6 +4,7 @@
   "status": "accepted",
   "reason": "issued",
   "target_id": "",
+  "context_action": "",
   "bearing_degrees": 90.0,
   "distance_units": 250.0,
   "minimum_output_quantity": 1,

@@ -314,7 +314,7 @@ def rich_observation() -> Observation:
             "native_control": NativeControlState(
                 available=True,
                 last_command_sequence=19,
-                last_command="operate_natural_resource",
+                last_command="perform_context_action",
                 last_result="completed",
                 last_target="Copper Resource",
                 last_target_id="mine",
@@ -395,7 +395,7 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE: False,
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND_SEQUENCE: 19,
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND: (
-            "operate_natural_resource"
+            "perform_context_action"
         ),
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_RESULT: "completed",
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_TARGET: "Copper Resource",

@@ -1,20 +1,20 @@
 {
   "schema_version": "1.2",
-  "command_id": "cmd-abcdef0123456789abcdef0123456789",
-  "command": "travel_to_map_destination",
+  "command_id": "cmd-25252525252525252525252525252525",
+  "command": "perform_context_action",
   "control_mode": "native_assisted",
   "identity_session_id": "session-0000000000000001-0000000000000001",
   "based_on_revision": {
-    "telemetry_sequence": 11,
-    "frame_sequence": 3,
+    "telemetry_sequence": 17,
+    "frame_sequence": 5,
     "capability_epoch": 2,
-    "observed_at_monotonic": 12.5
+    "observed_at_monotonic": 18.0
   },
   "selected_character_ids": [
     "entity-selected"
   ],
-  "target_id": "entity-known-town",
-  "context_action": "",
+  "target_id": "entity-injured-squadmate",
+  "context_action": "first_aid",
   "bearing_degrees": 0.0,
   "distance_units": 0.0,
   "minimum_output_quantity": 1

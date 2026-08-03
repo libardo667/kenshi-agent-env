@@ -74,10 +74,21 @@ def test_python_accepts_exact_context_action_request_fixture() -> None:
         (FIXTURES / "valid_context_action_request.json").read_bytes()
     )
 
-    assert request.command == "operate_natural_resource"
+    assert request.command == "perform_context_action"
+    assert request.context_action == "operate"
     assert request.target_id == "entity-natural-resource"
     assert request.bearing_degrees == 0.0
     assert request.distance_units == 0.0
+
+
+def test_python_accepts_exact_first_aid_context_action_request_fixture() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_first_aid_context_action_request.json").read_bytes()
+    )
+
+    assert request.command == "perform_context_action"
+    assert request.context_action == "first_aid"
+    assert request.target_id == "entity-injured-squadmate"
 
 
 @pytest.mark.parametrize(

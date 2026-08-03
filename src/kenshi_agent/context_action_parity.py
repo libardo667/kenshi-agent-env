@@ -102,12 +102,12 @@ CONTEXT_ACTION_DECISIONS: dict[tuple[str, int], ContextActionDecision] = {
             "adapter owns production through conserved output"
         ),
     ),
-    ("squad_character", 25): MissingContextAction(
-        queue_description=(
-            "Export exact current first-aid eligibility as the generic "
-            "context_actions semantic 'first_aid', then give the context-order "
-            "adapter a stable-ID native route whose terminal proves the selected "
-            "actor accepted FIRST_AID_ORDER for that target."
+    ("squad_character", 25): WiredContextAction(
+        adapter_routes=("context_orders:first_aid",),
+        rationale=(
+            "the generic context adapter carries the exact squad target and "
+            "first_aid semantic to a stable-ID native route whose terminal "
+            "proves FIRST_AID_ORDER with that exact subject"
         ),
     ),
 }

@@ -48,6 +48,7 @@ from .models import (
     ActionReceipt,
     AdvisorConsultEvidence,
     AdvisorConsultStatus,
+    AffordanceExecution,
     AffordanceLifecycleStatus,
     AuthoredPlannerContext,
     AuthoredPlannerOutput,
@@ -2342,6 +2343,7 @@ class AgentRuntime:
                 observation,
                 status=AffordanceLifecycleStatus.FAILED,
                 reason=f"Environment error: {type(exc).__name__}: {exc}",
+                execution_started=True,
             )
             return (
                 observation,
@@ -2374,6 +2376,7 @@ class AgentRuntime:
             latest,
             status=affordance_status,
             reason=transition.receipt.message or "Deterministic decision completed.",
+            execution_started=True,
         )
         is_terminated = transition.terminated or isinstance(action, StopAction)
         reason = (
@@ -2392,6 +2395,7 @@ class AgentRuntime:
         *,
         status: AffordanceLifecycleStatus,
         reason: str,
+        execution_started: bool = False,
     ) -> None:
         if decision.affordance is None:
             return
@@ -2405,6 +2409,12 @@ class AgentRuntime:
             status=status,
             message=reason,
             telemetry_sequence=telemetry_sequence,
+            execution_started=execution_started,
+            monitoring_started=(
+                execution_started
+                and decision.affordance.execution
+                is not AffordanceExecution.IMMEDIATE
+            ),
         )
         self.logger.write(
             "affordance_receipt",

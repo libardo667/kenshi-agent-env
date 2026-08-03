@@ -123,7 +123,7 @@ class AffordanceReceipt(StrictModel):
 
     affordance: BoundAffordance
     status: AffordanceLifecycleStatus
-    lifecycle: list[AffordanceLifecycleEvent] = Field(min_length=4, max_length=8)
+    lifecycle: list[AffordanceLifecycleEvent] = Field(min_length=3, max_length=5)
     message: str = Field(min_length=1, max_length=2000)
 
     def model_post_init(self, __context: Any) -> None:
@@ -137,6 +137,27 @@ class AffordanceReceipt(StrictModel):
             raise ValueError("AffordanceReceipt status must be terminal")
         if self.lifecycle[-1].status is not self.status:
             raise ValueError("AffordanceReceipt lifecycle must end at its terminal status")
+        prefixes = {
+            (
+                AffordanceLifecycleStatus.OFFERED,
+                AffordanceLifecycleStatus.BOUND,
+            ),
+            (
+                AffordanceLifecycleStatus.OFFERED,
+                AffordanceLifecycleStatus.BOUND,
+                AffordanceLifecycleStatus.EXECUTING,
+            ),
+            (
+                AffordanceLifecycleStatus.OFFERED,
+                AffordanceLifecycleStatus.BOUND,
+                AffordanceLifecycleStatus.EXECUTING,
+                AffordanceLifecycleStatus.MONITORING,
+            ),
+        }
+        if tuple(event.status for event in self.lifecycle[:-1]) not in prefixes:
+            raise ValueError(
+                "AffordanceReceipt lifecycle contains a phase that did not occur"
+            )
 
 
 class ScenarioIdentity(StrictModel):
@@ -986,7 +1007,7 @@ class NativeCommandAcknowledgement(StrictModel):
         "move_in_direction",
         "travel_to_map_destination",
         "exit_current_building",
-        "operate_natural_resource",
+        "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
     ]
@@ -995,6 +1016,7 @@ class NativeCommandAcknowledgement(StrictModel):
     # Targeted commands bind to one stable entity. Directional movement binds
     # to its bearing and distance instead and deliberately names no target.
     target_id: str = Field(default="", max_length=200)
+    context_action: ContextActionKind | Literal[""] = ""
     bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
     distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
     # Retained in the acknowledgement so an adopted resource-production
@@ -1029,6 +1051,15 @@ class NativeCommandAcknowledgement(StrictModel):
                 raise ValueError("this native acknowledgement requires a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
                 raise ValueError("a targeted acknowledgement must not carry direction fields")
+        if self.command == "perform_context_action":
+            if not self.context_action:
+                raise ValueError(
+                    "a context-action acknowledgement requires its reviewed semantic"
+                )
+        elif self.context_action:
+            raise ValueError(
+                "only a context-action acknowledgement may name a context action"
+            )
 
         if self.status == NativeCommandStatus.REJECTED:
             if self.accepted_at_telemetry_sequence is not None:
@@ -1106,7 +1137,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.7.0"
+    protocol_version: str = "1.8.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1168,8 +1199,23 @@ class TelemetrySnapshot(StrictModel):
         all_ids = squad_ids + nearby_ids + world_target_ids
         if any(not entity_id for entity_id in all_ids):
             raise ValueError("stable entity IDs must be non-empty")
-        if len(all_ids) != len(set(all_ids)):
+        if (
+            len(squad_ids) != len(set(squad_ids))
+            or len(nearby_ids) != len(set(nearby_ids))
+            or len(world_target_ids) != len(set(world_target_ids))
+            or set(squad_ids) & set(nearby_ids)
+        ):
             raise ValueError("stable entity IDs must be unique within a snapshot")
+        squad_id_set = set(squad_ids)
+        nearby_id_set = set(nearby_ids)
+        for target in self.world_targets:
+            if target.kind == "squad_character":
+                if target.id not in squad_id_set:
+                    raise ValueError(
+                        "squad_character world targets must refer to current squad IDs"
+                    )
+            elif target.id in squad_id_set or target.id in nearby_id_set:
+                raise ValueError("stable entity IDs must be unique within a snapshot")
 
         selected_ids = self.ui.selected_character_ids
         if len(selected_ids) != len(set(selected_ids)):
@@ -3479,7 +3525,7 @@ class CommandDispatchContext(StrictModel):
 
 
 class NativeCommandRequest(StrictModel):
-    schema_version: Literal["1.1"]
+    schema_version: Literal["1.2"]
     command_id: str = Field(pattern=r"^cmd-[0-9a-f]{32}$")
     command: Literal[
         "approach_confirmed_vendor",
@@ -3488,7 +3534,7 @@ class NativeCommandRequest(StrictModel):
         "move_in_direction",
         "travel_to_map_destination",
         "exit_current_building",
-        "operate_natural_resource",
+        "perform_context_action",
         "produce_resource_output",
         "open_context_inventory",
     ]
@@ -3498,6 +3544,8 @@ class NativeCommandRequest(StrictModel):
     selected_character_ids: list[str] = Field(min_length=1, max_length=1)
     # Empty for a directional walk, which references nobody.
     target_id: str = Field(default="", max_length=200)
+    # Empty for every command except the generic context-action route.
+    context_action: ContextActionKind | Literal[""] = ""
     bearing_degrees: float = Field(default=0.0, ge=0.0, lt=360.0)
     distance_units: float = Field(default=0.0, ge=0.0, le=2000.0)
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
@@ -3523,6 +3571,13 @@ class NativeCommandRequest(StrictModel):
                 raise ValueError("this native command requires a target")
             if self.bearing_degrees != 0.0 or self.distance_units != 0.0:
                 raise ValueError("a targeted native command must not carry direction fields")
+        if self.command == "perform_context_action":
+            if not self.context_action:
+                raise ValueError(
+                    "a context-action command requires its reviewed semantic"
+                )
+        elif self.context_action:
+            raise ValueError("only a context-action command may name a context action")
         if self.command != "produce_resource_output" and self.minimum_output_quantity != 1:
             raise ValueError(
                 "only resource production may request a larger output quantity"

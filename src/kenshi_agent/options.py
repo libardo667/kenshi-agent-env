@@ -536,7 +536,7 @@ class StatefulNativeMovementOption:
         if isinstance(self.action, ProduceResourceOutputAction):
             return "produce_resource_output"
         if isinstance(self.action, PerformContextAction):
-            return "operate_natural_resource"
+            return "perform_context_action"
         if isinstance(self.action, ExitCurrentBuildingAction):
             return "exit_current_building"
         return "move_in_direction"

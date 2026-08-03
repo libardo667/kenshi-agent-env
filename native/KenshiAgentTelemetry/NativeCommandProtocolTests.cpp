@@ -1082,12 +1082,33 @@ int main(int argc, char** argv)
         return Fail(
             "valid context-action request was rejected as " + rejectionReason);
     }
-    if (contextAction.command != "operate_natural_resource" ||
+    if (contextAction.command != "perform_context_action" ||
+        contextAction.contextAction != "operate" ||
         contextAction.targetId != "entity-natural-resource" ||
         contextAction.bearingDegrees != 0.0 ||
         contextAction.distanceUnits != 0.0)
     {
         return Fail("valid context action did not retain its exact target");
+    }
+
+    KenshiAgentTelemetry::NativeCommandRequest firstAid;
+    const std::string firstAidPayload =
+        ReadFile(prefix + "valid_first_aid_context_action_request.json");
+    if (firstAidPayload.empty())
+        return Fail("could not read valid_first_aid_context_action_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            firstAidPayload,
+            firstAid,
+            rejectionReason))
+    {
+        return Fail(
+            "valid first-aid request was rejected as " + rejectionReason);
+    }
+    if (firstAid.command != "perform_context_action" ||
+        firstAid.contextAction != "first_aid" ||
+        firstAid.targetId != "entity-injured-squadmate")
+    {
+        return Fail("first-aid context action lost its exact semantic target");
     }
 
     KenshiAgentTelemetry::NativeCommandRequest resourceProduction;
@@ -1198,6 +1219,8 @@ int main(int argc, char** argv)
         expected.get<std::string>("reason");
     acknowledgement.targetId =
         expected.get<std::string>("target_id");
+    acknowledgement.contextAction =
+        expected.get<std::string>("context_action");
     acknowledgement.bearingDegrees =
         expected.get<double>("bearing_degrees");
     acknowledgement.distanceUnits =
@@ -1226,6 +1249,7 @@ int main(int argc, char** argv)
         actual.get<std::string>("command") !=
             expected.get<std::string>("command") ||
         actual.get<std::string>("target_id") != "" ||
+        actual.get<std::string>("context_action") != "" ||
         !EqualDouble(actual.get<double>("bearing_degrees"), 90.0) ||
         !EqualDouble(actual.get<double>("distance_units"), 250.0) ||
         actual.get<unsigned int>("minimum_output_quantity") != 1 ||

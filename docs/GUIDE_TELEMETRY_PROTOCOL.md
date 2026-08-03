@@ -62,17 +62,17 @@ from a portrait name.
 
 ## World targets and current authority
 
-`world_targets` reports structurally recognized non-character objects inside the
-bounded native query. Mining targets from town-local and larger outer scans are
-deduplicated by stable identity, sorted nearest-first, then truncated.
-`context_actions` names an attempt, not a prediction of task success.
+`world_targets` reports exact reviewed context-action targets. It includes mining
+objects from bounded native queries and eligible squad members for `first_aid`.
+Targets are deduplicated and sorted; `context_actions` names an attempt, not success.
 
 Targets with a current advertised action enter the planner's `context_targets`
 digest. A native request basis may cross at most four later 500 ms publications
 during atomic-file, hotkey, and UI-hook transit; future or older bases fail,
 after which native dispatch still re-resolves current selection, identity,
-structural role, UI state, and command authority. Legacy operation completes on
-the exact task and subject; retained production completes only when output
+structural role, UI state, and command authority. Reviewed context actions such
+as `operate` and `first_aid` complete on the exact task and subject; production
+completes only when output
 reaches the acknowledged bounded `minimum_output_quantity`. Inventory opening is
 separately keyed; no unchecked authority is granted. If either query reaches its
 maximum result count, `warnings` says

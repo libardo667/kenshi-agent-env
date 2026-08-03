@@ -32,6 +32,7 @@ namespace KenshiAgentTelemetry
         unsigned long long basedOnTelemetrySequence;
         std::string selectedCharacterId;
         std::string targetId;
+        std::string contextAction;
         double bearingDegrees;
         double distanceUnits;
         unsigned int minimumOutputQuantity;
@@ -46,6 +47,7 @@ namespace KenshiAgentTelemetry
         std::string status;
         std::string reason;
         std::string targetId;
+        std::string contextAction;
         double bearingDegrees;
         double distanceUnits;
         unsigned int minimumOutputQuantity;

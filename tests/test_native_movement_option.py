@@ -500,7 +500,8 @@ def context_acknowledgement(
     terminal = status is not NativeCommandStatus.ACCEPTED
     return NativeCommandAcknowledgement(
         command_id=COMMAND_ID,
-        command="operate_natural_resource",
+        command="perform_context_action",
+        context_action="operate",
         status=status,
         reason=(
             "issued"

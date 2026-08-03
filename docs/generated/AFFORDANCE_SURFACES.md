@@ -33,7 +33,7 @@ ui_widget  [captured]  enumerated: 563
 world_context_action  [source_identified]  enumerated: —
     Orders a player can give a world object by right-click.
     source: KenshiLib `enum TaskType`, filtered at runtime by `PlayerInterface::isOrderValidForSelection`, with the exact per-target list in `ContextMenu::orders`.
-    note: Concrete runtime menu captures now enter an empirical parity report automatically. The current world-target export remains typed around one kind: `NaturalResourceTargetSnapshot`.
+    note: Concrete runtime menu captures now enter an empirical parity report automatically. The current world-target export carries reviewed exact natural-resource and squad-character context targets.
     candidate vocabulary: 291 from game_sources/kenshi/TaskType.h
     limitation: Upper bound only: most TaskType values are internal AI tasks. The report contains witnessed per-target ContextMenu::orders, not a global denominator of every target and selection.
 
