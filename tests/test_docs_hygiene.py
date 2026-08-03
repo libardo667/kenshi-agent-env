@@ -66,9 +66,6 @@ ROOT_DOC_CAPS: dict[str, int] = {
     "ARCHITECTURE.md": DOC_LINE_CAP,
     "STATUS.md": DOC_LINE_CAP,
     "SECURITY_AND_SAFETY.md": DOC_LINE_CAP,
-    # Durable method only: volatile blockers stay in generated/run state.
-    # Ratchet downward; growth must remain a deliberate test change.
-    "LOOP-PROMPT.md": 230,
 }
 
 # Not root documents, but the same reasoning: a step-by-step procedure someone
@@ -532,11 +529,10 @@ def _dev_subcommands() -> set[str]:
 def test_authored_docs_only_name_commands_that_exist() -> None:
     """No authored document may send a reader to run something removed.
 
-    `LOOP-PROMPT.md` told every agent to run `kenshi-agent
-    aggregate-affordances` long after that command left the CLI, and once that
-    was found, `README.md` and a guide turned out to name it too. Prose is the
-    one place nobody diffs against the code, because it does not look like an
-    interface - so the drift stays invisible until an agent burns a turn on it.
+    Authored docs have named commands long after those commands left the CLI.
+    Prose is the one place nobody diffs against the code, because it does not
+    look like an interface - so the drift stays invisible until an agent burns
+    a turn on it.
 
     Deliberately checks every authored doc rather than the one that was
     reported: fixing only the instance leaves the same defect in the files
