@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
-from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.env import AgentEnvironment
@@ -38,6 +37,7 @@ from kenshi_agent.models import (
     WorldTarget,
 )
 from kenshi_agent.movement_ownership import has_keyed_native_movement_terminal
+from kenshi_agent.operation_definitions import NATIVE_WALK_DESTINATION_REACHED_RESULT
 from kenshi_agent.options import OptionStatus, StatefulNativeMovementOption
 from kenshi_agent.world_state import SequenceStatus, StateDelta, StoreUpdate
 

@@ -1,4 +1,4 @@
-"""Reusable semantic actions and their authoritative contracts.
+"""Reusable semantic operations and their authoritative definitions.
 
 The point of these tests is reuse, not coverage of one scenario: the same
 approach action must bind a vendor and a non-vendor identically, and the same
@@ -8,32 +8,12 @@ for the calibrated Barman chain is a regression of the whole milestone.
 
 from __future__ import annotations
 
-from kenshi_agent.action_contracts import (
-    ACTION_CONTRACTS,
-    ACTIVATE_VISIBLE_CONTROL_CONTRACT,
-    APPROACH_DIALOGUE_TARGET_CONTRACT,
-    COMMAND_WORLD_TARGET_CONTRACT,
-    EXIT_CURRENT_BUILDING_CONTRACT,
-    MOVE_IN_DIRECTION_CONTRACT,
-    MOVE_TO_CHARACTER_CONTRACT,
-    OPEN_CONTEXT_INVENTORY_CONTRACT,
-    PERFORM_CONTEXT_ACTION_CONTRACT,
-    PRODUCE_RESOURCE_OUTPUT_CONTRACT,
-    PURCHASE_ITEM_CONTRACT,
-    REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
-    ROTATE_CAMERA_CONTRACT,
-    SELECT_SQUAD_MEMBER_EXACT_CONTRACT,
-    TRAVEL_TO_MAP_DESTINATION_CONTRACT,
-    contract_for,
-)
 from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.models import (
     ACTION_ADAPTER,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CameraRotationDirection,
     CharacterState,
-    ClickAction,
     CollectResourceOutputAction,
     CommandWorldTargetAction,
     Condition,
@@ -59,7 +39,6 @@ from kenshi_agent.models import (
     ProduceResourceOutputAction,
     PurchaseItemAction,
     RegroupWithSquadMemberAction,
-    RotateCameraAction,
     SelectSquadMemberExactAction,
     TelemetrySnapshot,
     TravelToMapDestinationAction,
@@ -69,6 +48,23 @@ from kenshi_agent.models import (
     VisibleUIControl,
     WorldStateRevision,
     WorldTarget,
+)
+from kenshi_agent.operation_definitions import (
+    ACTIVATE_VISIBLE_CONTROL_DEFINITION,
+    APPROACH_DIALOGUE_TARGET_DEFINITION,
+    COLLECT_RESOURCE_OUTPUT_DEFINITION,
+    COMMAND_WORLD_TARGET_DEFINITION,
+    EXIT_CURRENT_BUILDING_DEFINITION,
+    MOVE_IN_DIRECTION_DEFINITION,
+    MOVE_TO_CHARACTER_DEFINITION,
+    OPEN_CONTEXT_INVENTORY_DEFINITION,
+    PERFORM_CONTEXT_ACTION_DEFINITION,
+    PRODUCE_RESOURCE_OUTPUT_DEFINITION,
+    PURCHASE_ITEM_DEFINITION,
+    REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
+    SELECT_SQUAD_MEMBER_EXACT_DEFINITION,
+    TRAVEL_TO_MAP_DESTINATION_DEFINITION,
+    BoundNamedTarget,
 )
 
 VENDOR_ID = "entity-barman"
@@ -204,12 +200,12 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
         target_id=target.id,
     )
 
-    binding = REGROUP_WITH_SQUAD_MEMBER_CONTRACT.bind(action, state)
+    binding = REGROUP_WITH_SQUAD_MEMBER_DEFINITION.bind(action, state)
 
     assert binding.bound
     assert binding.target_id == target.id
-    assert REGROUP_WITH_SQUAD_MEMBER_CONTRACT.max_primitive_actions == 5
-    assert REGROUP_WITH_SQUAD_MEMBER_CONTRACT.controller_verified
+    assert REGROUP_WITH_SQUAD_MEMBER_DEFINITION.max_primitive_actions == 5
+    assert REGROUP_WITH_SQUAD_MEMBER_DEFINITION.controller_verified
 
     already_together = state.model_copy(
         update={
@@ -225,7 +221,7 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
             )
         }
     )
-    assert not REGROUP_WITH_SQUAD_MEMBER_CONTRACT.bind(
+    assert not REGROUP_WITH_SQUAD_MEMBER_DEFINITION.bind(
         action,
         already_together,
     ).bound
@@ -251,15 +247,16 @@ def test_squad_selection_prefers_exact_native_identity_without_portrait_geometry
         ),
     )
 
-    binding = SELECT_SQUAD_MEMBER_EXACT_CONTRACT.bind(
+    binding = SELECT_SQUAD_MEMBER_EXACT_DEFINITION.bind(
         SelectSquadMemberExactAction(target_id=target.id),
         state,
     )
 
     assert binding.bound
+    assert isinstance(binding, BoundNamedTarget)
     assert binding.target_id == target.id
     assert binding.resolved_label == target.name
-    assert binding.resolved_bounds is None
+    assert not hasattr(binding, "resolved_bounds")
 
 
 class TestApproachBindsAnyDialogueTarget:
@@ -267,14 +264,14 @@ class TestApproachBindsAnyDialogueTarget:
 
     def test_contract_is_native_only_and_coordinate_independent(self) -> None:
         assert (
-            APPROACH_DIALOGUE_TARGET_CONTRACT.pointer_class
+            APPROACH_DIALOGUE_TARGET_DEFINITION.pointer_class
             is PointerActionClass.COORDINATE_INDEPENDENT
         )
-        assert APPROACH_DIALOGUE_TARGET_CONTRACT.risk.pointer_actions == 0
-        assert APPROACH_DIALOGUE_TARGET_CONTRACT.risk.native_assisted_actions == 1
+        assert APPROACH_DIALOGUE_TARGET_DEFINITION.risk.pointer_actions == 0
+        assert APPROACH_DIALOGUE_TARGET_DEFINITION.risk.native_assisted_actions == 1
 
     def test_binds_a_vendor(self) -> None:
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id=VENDOR_ID),
             observation(entities=[vendor()]),
         )
@@ -282,7 +279,7 @@ class TestApproachBindsAnyDialogueTarget:
         assert binding.target_id == VENDOR_ID
 
     def test_binds_a_non_vendor_identically(self) -> None:
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id=CIVILIAN_ID),
             observation(entities=[civilian()]),
         )
@@ -290,7 +287,7 @@ class TestApproachBindsAnyDialogueTarget:
         assert binding.target_id == CIVILIAN_ID
 
     def test_rejects_a_target_absent_from_current_state(self) -> None:
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id="entity-ghost"),
             observation(entities=[vendor(), civilian()]),
         )
@@ -306,14 +303,14 @@ class TestApproachBindsAnyDialogueTarget:
             disposition=Disposition.HOSTILE,
             distance=8.0,
         )
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id="entity-bandit"),
             observation(entities=[hostile]),
         )
         assert not binding.bound
 
     def test_stale_telemetry_cannot_bind(self) -> None:
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id=VENDOR_ID),
             observation(entities=[vendor()], stale=True),
         )
@@ -321,7 +318,7 @@ class TestApproachBindsAnyDialogueTarget:
         assert "stale" in binding.reason
 
     def test_rejects_approach_while_dialogue_with_another_target_is_open(self) -> None:
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id=CIVILIAN_ID),
             observation(
                 entities=[vendor(), civilian()],
@@ -338,7 +335,7 @@ class TestApproachBindsAnyDialogueTarget:
         assert "close that dialogue" in binding.reason
 
     def test_rejects_redundant_approach_to_active_dialogue_target(self) -> None:
-        binding = APPROACH_DIALOGUE_TARGET_CONTRACT.bind(
+        binding = APPROACH_DIALOGUE_TARGET_DEFINITION.bind(
             ApproachDialogueTargetAction(target_id=VENDOR_ID),
             observation(
                 entities=[vendor()],
@@ -377,11 +374,11 @@ class TestVisibleControlBinding:
             entry["exact_label"] for entry in state.visible_control_digest()
         ] == ["Show me your goods."]
 
-        speed_binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        speed_binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label=speed_name, role="button"),
             state,
         )
-        dialogue_binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        dialogue_binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(
                 exact_label="Show me your goods.",
                 role="button",
@@ -400,11 +397,11 @@ class TestVisibleControlBinding:
         ]
         state = observation(controls=controls, capabilities=["ui.visible_controls"])
 
-        first = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        first = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
             state,
         )
-        second = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        second = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="Goodbye.", role="button"),
             state,
         )
@@ -420,7 +417,7 @@ class TestVisibleControlBinding:
             ],
             capabilities=["ui.visible_controls"],
         )
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="show me your goods.", role="button"),
             state,
         )
@@ -435,7 +432,7 @@ class TestVisibleControlBinding:
             ],
             capabilities=["ui.visible_controls"],
         )
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="Trade", role="button"),
             state,
         )
@@ -447,7 +444,7 @@ class TestVisibleControlBinding:
             controls=[VisibleUIControl(label="Trade", role="text", bounds=_bounds(0.5))],
             capabilities=["ui.visible_controls"],
         )
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="Trade", role="button"),
             state,
         )
@@ -455,7 +452,7 @@ class TestVisibleControlBinding:
 
     def test_missing_capability_is_unknown_not_absent(self) -> None:
         state = observation(controls=None, capabilities=[])
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="Trade", role="button"),
             state,
         )
@@ -485,18 +482,18 @@ class TestExitCurrentBuildingBinding:
             ],
         )
 
-        binding = EXIT_CURRENT_BUILDING_CONTRACT.bind(
+        binding = EXIT_CURRENT_BUILDING_DEFINITION.bind(
             ExitCurrentBuildingAction(),
             state,
         )
 
         assert binding.bound
         assert binding.resolved_label == "Hep"
-        assert EXIT_CURRENT_BUILDING_CONTRACT.pointer_class is (
+        assert EXIT_CURRENT_BUILDING_DEFINITION.pointer_class is (
             PointerActionClass.COORDINATE_INDEPENDENT
         )
-        assert EXIT_CURRENT_BUILDING_CONTRACT.reference_fields == ()
-        assert EXIT_CURRENT_BUILDING_CONTRACT.controller_verified
+        assert EXIT_CURRENT_BUILDING_DEFINITION.reference_fields == ()
+        assert EXIT_CURRENT_BUILDING_DEFINITION.controller_verified
 
     def test_controller_owned_exit_allows_no_redundant_world_postcondition(
         self,
@@ -534,7 +531,7 @@ class TestExitCurrentBuildingBinding:
             ],
         )
 
-        binding = EXIT_CURRENT_BUILDING_CONTRACT.bind(
+        binding = EXIT_CURRENT_BUILDING_DEFINITION.bind(
             ExitCurrentBuildingAction(),
             state,
         )
@@ -570,7 +567,7 @@ class TestPerformContextAction:
             world_targets=[target],
         )
 
-        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+        binding = PERFORM_CONTEXT_ACTION_DEFINITION.bind(
             PerformContextAction(
                 target_id=target.id,
                 context_action=ContextActionKind.OPERATE,
@@ -601,7 +598,7 @@ class TestPerformContextAction:
             world_targets=[target],
         )
 
-        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+        binding = PERFORM_CONTEXT_ACTION_DEFINITION.bind(
             PerformContextAction(
                 target_id=target.id,
                 context_action=ContextActionKind.OPERATE,
@@ -631,7 +628,7 @@ class TestPerformContextAction:
             world_targets=[target],
         )
 
-        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+        binding = PERFORM_CONTEXT_ACTION_DEFINITION.bind(
             PerformContextAction(
                 target_id=target.id,
                 context_action=ContextActionKind.OPERATE,
@@ -668,7 +665,7 @@ class TestPerformContextAction:
         assert state.telemetry is not None
         state.telemetry.ui.modal_open = None
 
-        binding = PERFORM_CONTEXT_ACTION_CONTRACT.bind(
+        binding = PERFORM_CONTEXT_ACTION_DEFINITION.bind(
             PerformContextAction(
                 target_id=target.id,
                 context_action=ContextActionKind.OPERATE,
@@ -734,8 +731,8 @@ class TestWorldTargetCommandContract:
             ],
         )
 
-        absent = COMMAND_WORLD_TARGET_CONTRACT.bind(action, missing_geometry)
-        ambiguous = COMMAND_WORLD_TARGET_CONTRACT.bind(action, duplicate)
+        absent = COMMAND_WORLD_TARGET_DEFINITION.bind(action, missing_geometry)
+        ambiguous = COMMAND_WORLD_TARGET_DEFINITION.bind(action, duplicate)
 
         assert not absent.bound
         assert "no current on-screen command geometry" in absent.reason
@@ -761,7 +758,7 @@ class TestResourceProductionContracts:
             world_targets=[target],
         )
 
-        binding = PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(
+        binding = PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(
             ProduceResourceOutputAction(target_id=target.id),
             state,
         )
@@ -794,9 +791,9 @@ class TestResourceProductionContracts:
             world_targets=[natural_resource(), natural_resource()],
         )
 
-        assert not PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(action, absent).bound
-        assert not PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(action, unadvertised).bound
-        ambiguous_binding = PRODUCE_RESOURCE_OUTPUT_CONTRACT.bind(action, ambiguous)
+        assert not PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(action, absent).bound
+        assert not PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(action, unadvertised).bound
+        ambiguous_binding = PRODUCE_RESOURCE_OUTPUT_DEFINITION.bind(action, ambiguous)
         assert not ambiguous_binding.bound
         assert "ambiguous" in ambiguous_binding.reason
 
@@ -834,8 +831,8 @@ class TestResourceProductionContracts:
         )
         action = OpenContextInventoryAction(target_id=target.id)
 
-        assert OPEN_CONTEXT_INVENTORY_CONTRACT.bind(action, clear).bound
-        assert not OPEN_CONTEXT_INVENTORY_CONTRACT.bind(action, blocked).bound
+        assert OPEN_CONTEXT_INVENTORY_DEFINITION.bind(action, clear).bound
+        assert not OPEN_CONTEXT_INVENTORY_DEFINITION.bind(action, blocked).bound
 
 
 class TestCollectResourceOutput:
@@ -918,7 +915,7 @@ class TestCollectResourceOutput:
         )
 
     def test_binds_exact_output_cell_to_exact_context_target(self) -> None:
-        binding = ACTION_CONTRACTS["collect_resource_output"].bind(
+        binding = COLLECT_RESOURCE_OUTPUT_DEFINITION.bind(
             self._action(),
             self._state(),
         )
@@ -929,7 +926,7 @@ class TestCollectResourceOutput:
         assert binding.resolved_bounds == _bounds(0.5)
 
     def test_requires_the_selected_characters_open_destination_inventory(self) -> None:
-        contract = ACTION_CONTRACTS["collect_resource_output"]
+        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
 
         binding = contract.bind(
             self._action(),
@@ -941,7 +938,7 @@ class TestCollectResourceOutput:
         assert "inventory" in binding.reason
 
     def test_requires_the_game_owned_destination_fit_verdict(self) -> None:
-        contract = ACTION_CONTRACTS["collect_resource_output"]
+        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
 
         for accepts_item in (False, None):
             binding = contract.bind(
@@ -955,7 +952,7 @@ class TestCollectResourceOutput:
     def test_loaded_shop_traders_never_override_exact_resource_window_owners(
         self,
     ) -> None:
-        contract = ACTION_CONTRACTS["collect_resource_output"]
+        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
 
         for loaded_shop_traders in range(257):
             binding = contract.bind(
@@ -969,7 +966,7 @@ class TestCollectResourceOutput:
             assert binding.bound, binding.reason
 
     def test_rejects_wrong_target_section_and_quantity(self) -> None:
-        contract = ACTION_CONTRACTS["collect_resource_output"]
+        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
         wrong_target = self._state(context_target_id="entity-other")
 
         assert not contract.bind(self._action(), wrong_target).bound
@@ -1015,7 +1012,7 @@ class TestCollectResourceOutput:
             deep=True,
         )
 
-        binding = ACTION_CONTRACTS["collect_resource_output"].bind(
+        binding = COLLECT_RESOURCE_OUTPUT_DEFINITION.bind(
             self._action(),
             unexplained_window,
         )
@@ -1053,69 +1050,21 @@ class TestCollectResourceOutput:
             deep=True,
         )
 
-        contract = ACTION_CONTRACTS["collect_resource_output"]
+        contract = COLLECT_RESOURCE_OUTPUT_DEFINITION
         assert not contract.bind(self._action(), incomplete_controls).bound
         assert not contract.bind(self._action(), incomplete_inventory).bound
 
 
-class TestContractCatalog:
+class TestDefinitionPolicy:
     def test_monitored_movement_terminals_own_their_success_verdicts(self) -> None:
         for contract in (
-            APPROACH_DIALOGUE_TARGET_CONTRACT,
-            MOVE_TO_CHARACTER_CONTRACT,
-            MOVE_IN_DIRECTION_CONTRACT,
-            TRAVEL_TO_MAP_DESTINATION_CONTRACT,
-            EXIT_CURRENT_BUILDING_CONTRACT,
+            APPROACH_DIALOGUE_TARGET_DEFINITION,
+            MOVE_TO_CHARACTER_DEFINITION,
+            MOVE_IN_DIRECTION_DEFINITION,
+            TRAVEL_TO_MAP_DESTINATION_DEFINITION,
+            EXIT_CURRENT_BUILDING_DEFINITION,
         ):
             assert contract.controller_verified
-
-    def test_contracts_are_registered_by_kind(self) -> None:
-        assert set(ACTION_CONTRACTS) == {
-            "approach_dialogue_target",
-            "command_world_target",
-            "move_to_character",
-            "move_in_direction",
-            "open_screen",
-            "regroup_with_squad_member",
-            "travel_to_map_destination",
-            "exit_current_building",
-            "perform_context_action",
-            "produce_resource_output",
-            "harvest_resource",
-            "respond_to_immediate_threat",
-            "open_context_inventory",
-            "collect_resource_output",
-            "activate_visible_control",
-            "dismiss_screen",
-            "purchase_item",
-            "rotate_camera",
-            "select_squad_member",
-            "select_squad_member_exact",
-            "use_game_binding",
-            "scroll_screen",
-            "sell_item",
-            "equip_item",
-            "recover_camera_view",
-        }
-        assert contract_for(ApproachDialogueTargetAction(target_id=VENDOR_ID)) is (
-            APPROACH_DIALOGUE_TARGET_CONTRACT
-        )
-        assert contract_for(
-            CommandWorldTargetAction(
-                target_id="entity-copper",
-                context_action=ContextActionKind.OPERATE,
-            )
-        ) is COMMAND_WORLD_TARGET_CONTRACT
-        assert contract_for(
-            RotateCameraAction(direction=CameraRotationDirection.RIGHT)
-        ) is ROTATE_CAMERA_CONTRACT
-        assert contract_for(
-            PerformContextAction(
-                target_id="entity-copper",
-                context_action=ContextActionKind.OPERATE,
-            )
-        ) is PERFORM_CONTEXT_ACTION_CONTRACT
-        assert contract_for(ClickAction(x=0.5, y=0.5)) is None
 
     def test_approach_is_withheld_from_interface_only(self) -> None:
         state = observation(
@@ -1141,7 +1090,7 @@ class TestContractCatalog:
     def test_legacy_capability_alias_still_satisfies_the_contract(self) -> None:
         """The installed plug-in emits the vendor-named capability."""
 
-        assert not APPROACH_DIALOGUE_TARGET_CONTRACT.missing_capabilities(
+        assert not APPROACH_DIALOGUE_TARGET_DEFINITION.missing_capabilities(
             set(APPROACH_CAPABILITIES)
         )
 
@@ -1152,7 +1101,7 @@ class TestContractCatalog:
             "nearby.characters",
             "nearby.roles",
         }
-        assert not APPROACH_DIALOGUE_TARGET_CONTRACT.missing_capabilities(capabilities)
+        assert not APPROACH_DIALOGUE_TARGET_DEFINITION.missing_capabilities(capabilities)
 
 
 def test_exact_known_map_destination_has_one_controller_owned_travel_contract() -> None:
@@ -1202,9 +1151,8 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
         }
     )
 
-    contract = contract_for(action)
+    contract = TRAVEL_TO_MAP_DESTINATION_DEFINITION
 
-    assert contract is not None
     assert contract.controller_verified
     assert contract.bind(action, state).bound
     missing = action.model_copy(update={"destination_id": "entity-undiscovered-town"})
@@ -1256,15 +1204,15 @@ def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group
         )
     ]
 
-    selection = SELECT_SQUAD_MEMBER_EXACT_CONTRACT.bind(
+    selection = SELECT_SQUAD_MEMBER_EXACT_DEFINITION.bind(
         SelectSquadMemberExactAction(target_id="entity-plant"),
         state,
     )
-    travel = TRAVEL_TO_MAP_DESTINATION_CONTRACT.bind(
+    travel = TRAVEL_TO_MAP_DESTINATION_DEFINITION.bind(
         TravelToMapDestinationAction(destination_id="entity-known-town"),
         state,
     )
-    movement = MOVE_TO_CHARACTER_CONTRACT.bind(
+    movement = MOVE_TO_CHARACTER_DEFINITION.bind(
         MoveToCharacterAction(target_id="entity-barman"),
         state,
     )
@@ -1304,15 +1252,15 @@ def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group
         },
         deep=True,
     )
-    assert not TRAVEL_TO_MAP_DESTINATION_CONTRACT.bind(
+    assert not TRAVEL_TO_MAP_DESTINATION_DEFINITION.bind(
         TravelToMapDestinationAction(destination_id="entity-known-town"),
         modal,
     ).bound
-    assert not MOVE_TO_CHARACTER_CONTRACT.bind(
+    assert not MOVE_TO_CHARACTER_DEFINITION.bind(
         MoveToCharacterAction(target_id="entity-barman"),
         modal,
     ).bound
-    assert not MOVE_IN_DIRECTION_CONTRACT.bind(
+    assert not MOVE_IN_DIRECTION_DEFINITION.bind(
         MoveInDirectionAction(
             bearing_degrees=90,
             distance_units=100,
@@ -1352,9 +1300,8 @@ def test_map_travel_cannot_bind_a_destination_already_reached() -> None:
     ]
     action = TravelToMapDestinationAction(destination_id="entity-known-town")
 
-    contract = contract_for(action)
+    contract = TRAVEL_TO_MAP_DESTINATION_DEFINITION
 
-    assert contract is not None
     binding = contract.bind(action, state)
     assert not binding.bound
     assert "already local" in binding.reason
@@ -1403,9 +1350,8 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
     ]
     action = TravelToMapDestinationAction(destination_id="entity-known-town")
 
-    contract = contract_for(action)
+    contract = TRAVEL_TO_MAP_DESTINATION_DEFINITION
 
-    assert contract is not None
     binding = contract.bind(action, state)
     assert not binding.bound
     assert "already inside" in binding.reason
@@ -1632,7 +1578,7 @@ class TestItemCellControls:
             ],
             capabilities=["ui.visible_controls"],
         )
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="item_1", role="item"),
             state,
         )
@@ -1645,7 +1591,7 @@ class TestItemCellControls:
             controls=[VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5))],
             capabilities=["ui.visible_controls"],
         )
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="item_0", role="button"),
             state,
         )
@@ -1656,7 +1602,7 @@ class TestItemCellControls:
             controls=[VisibleUIControl(label="item_0", role="item", bounds=_bounds(0.5))],
             capabilities=["ui.visible_controls"],
         )
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="item_9", role="item"),
             state,
         )
@@ -1783,48 +1729,48 @@ class TestPurchaseSafety:
         return PurchaseItemAction(**fields)  # type: ignore[arg-type]
 
     def test_a_purchase_matching_its_own_tooltip_binds(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state())
+        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state())
         assert binding.bound, binding.reason
         assert binding.target_id == self.SELLER
         assert binding.resolved_bounds == _bounds(0.5)
 
     def test_a_tooltip_describing_another_widget_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(), self._state(tooltip_over_cell=False)
         )
         assert not binding.bound
         assert "does not belong to cell" in binding.reason
 
     def test_a_wrong_item_name_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(item_name="Ancient Katana"), self._state()
         )
         assert not binding.bound
         assert "does not name" in binding.reason
 
     def test_a_wrong_price_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(expected_price=5), self._state())
+        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(expected_price=5), self._state())
         assert not binding.bound
         assert "does not show price" in binding.reason
 
     def test_a_price_that_is_only_a_substring_is_refused(self) -> None:
         """c.52 must not satisfy a claim of c.5."""
 
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(expected_price=5),
             self._state(tooltip="Dried Meat\n[Food]\nValue c.52"),
         )
         assert not binding.bound
 
     def test_no_visible_tooltip_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(), self._state(tooltip_visible=False)
         )
         assert not binding.bound
         assert "hover the cell first" in binding.reason
 
     def test_a_seller_who_is_not_the_active_shop_owner_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state(shop_owner=False))
+        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state(shop_owner=False))
         assert not binding.bound
         assert "verified non-hostile shop owner" in binding.reason
 
@@ -1838,40 +1784,40 @@ class TestPurchaseSafety:
         that the cell sits in the shop's own inventory window.
         """
 
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(cell_label="item_7", window="HEP"), self._state()
         )
         assert not binding.bound
         assert "not the seller's own inventory" in binding.reason
 
     def test_many_traders_in_the_world_do_not_block_a_purchase(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state(traders=5))
+        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state(traders=5))
         assert binding.bound, binding.reason
 
     def test_the_window_caption_matches_the_seller_case_insensitively(self) -> None:
         """Kenshi captions the window "BARMAN" while the character is "Barman"."""
 
-        binding = PURCHASE_ITEM_CONTRACT.bind(self._action(), self._state())
+        binding = PURCHASE_ITEM_DEFINITION.bind(self._action(), self._state())
         assert binding.bound, binding.reason
 
     def test_an_absent_cell_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(cell_label="item_99"), self._state()
         )
         assert not binding.bound
         assert "No current item cell" in binding.reason
 
     def test_purchase_is_at_most_once_and_costs_a_purchase_budget(self) -> None:
-        assert PURCHASE_ITEM_CONTRACT.idempotency is IdempotencyPolicy.AT_MOST_ONCE
-        assert PURCHASE_ITEM_CONTRACT.risk.purchase_actions == 1
+        assert PURCHASE_ITEM_DEFINITION.idempotency is IdempotencyPolicy.AT_MOST_ONCE
+        assert PURCHASE_ITEM_DEFINITION.risk.purchase_actions == 1
         action = self._action(quantity=3)
-        assert PURCHASE_ITEM_CONTRACT.risk_for(action).as_tuple() == (3, 3, 0)
-        assert PURCHASE_ITEM_CONTRACT.primitive_action_bound_for(action) == 6
+        assert PURCHASE_ITEM_DEFINITION.risk_for(action).as_tuple() == (3, 3, 0)
+        assert PURCHASE_ITEM_DEFINITION.primitive_action_bound_for(action) == 6
 
     def test_purchase_says_nothing_about_what_kind_of_item_is_worth_buying(self) -> None:
         """Task intent lives in config, not in the purchase contract."""
 
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             self._action(item_name="Ancient Katana", expected_price=865),
             self._state(tooltip="Ancient Katana\n[Weapon]\nValue c.865"),
         )
@@ -1893,7 +1839,7 @@ class TestWindowAttribution:
         )
 
     def test_a_label_shared_by_two_windows_is_ambiguous(self) -> None:
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(exact_label="ARRANGE", role="button"),
             self._two_windows(),
         )
@@ -1901,7 +1847,7 @@ class TestWindowAttribution:
         assert "Name the window" in binding.reason
 
     def test_naming_the_window_resolves_it(self) -> None:
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(
                 exact_label="ARRANGE", role="button", window="BARMAN"
             ),
@@ -1911,7 +1857,7 @@ class TestWindowAttribution:
         assert binding.resolved_bounds == _bounds(0.7)
 
     def test_naming_a_window_that_does_not_have_it_fails_closed(self) -> None:
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(
+        binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(
             ActivateVisibleControlAction(
                 exact_label="ARRANGE", role="button", window="NOBODY"
             ),
@@ -2013,7 +1959,7 @@ class TestPurchaseUsesExportedCellFacts:
         )
 
     def test_a_named_cell_needs_no_tooltip(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             PurchaseItemAction(
                 cell_label="Bread",
                 item_name="Bread",
@@ -2041,7 +1987,7 @@ class TestPurchaseUsesExportedCellFacts:
         number is wrong can do nothing but guess a second one.
         """
 
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             PurchaseItemAction(
                 cell_label="Bread",
                 item_name="Bread",
@@ -2082,7 +2028,7 @@ class TestPurchaseUsesExportedCellFacts:
             for offset in (0.4, 0.5)
         ]
 
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             PurchaseItemAction(
                 cell_label="Tooth Pick",
                 item_name="Tooth Pick",
@@ -2097,7 +2043,7 @@ class TestPurchaseUsesExportedCellFacts:
         assert "costs 390" in binding.reason
 
     def test_a_name_that_disagrees_with_the_cell_is_refused(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             PurchaseItemAction(
                 cell_label="Bread",
                 item_name="Ancient Katana",
@@ -2139,10 +2085,10 @@ class TestAmbiguityMatchesTheBinder:
         entries = state.visible_control_digest()
         assert entries and not any(entry["ambiguous"] for entry in entries)
 
-        from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
         from kenshi_agent.models import SellItemAction
+        from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
-        binding = SELL_ITEM_CONTRACT.bind(
+        binding = SELL_ITEM_DEFINITION.bind(
             SellItemAction(
                 cell_label="Greenfruit",
                 item_name="Greenfruit",
@@ -2246,7 +2192,7 @@ class TestPurchaseBindingCarriesCellFacts:
         )
 
     def test_every_cell_fact_survives_the_binding(self) -> None:
-        binding = PURCHASE_ITEM_CONTRACT.bind(
+        binding = PURCHASE_ITEM_DEFINITION.bind(
             PurchaseItemAction(
                 cell_label="Bread",
                 item_name="Bread",

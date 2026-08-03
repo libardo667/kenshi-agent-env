@@ -11,13 +11,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kenshi_agent.action_contracts import (
-    OPEN_SCREEN_CONTRACT,
-    USE_GAME_BINDING_CONTRACT,
-    CompletionOwner,
-    completion_contract_for,
-    contract_for,
-)
 from kenshi_agent.affordance_parity import (
     AffordanceRoute,
     BindingDecision,
@@ -46,6 +39,12 @@ from kenshi_agent.models import (
     UseGameBindingAction,
     WorldStateRevision,
     game_binding_success_condition,
+)
+from kenshi_agent.operation_definitions import (
+    OPEN_SCREEN_DEFINITION,
+    PURCHASE_ITEM_DEFINITION,
+    USE_GAME_BINDING_DEFINITION,
+    TerminalOwner,
 )
 
 
@@ -123,7 +122,7 @@ def test_queued_binding_is_reachable_through_the_semantic_binding_action(
         binding=binding,
         expected_effect=f"apply {binding.value}",
     )
-    result = USE_GAME_BINDING_CONTRACT.bind(action, observation())
+    result = USE_GAME_BINDING_DEFINITION.bind(action, observation())
     assert result.bound
     assert result.resolved_label == binding.value
 
@@ -167,7 +166,7 @@ def test_squad_group_binding_selects_one_exact_group(
         binding=binding,
         expected_effect=f"select exact squad group {binding_name.removeprefix('select_')}",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == KeyAction(key=expected_key)
     assert Win32InputController._vk(expected_key) == expected_virtual_key
 
@@ -184,7 +183,7 @@ def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
         binding=binding,
         expected_effect="toggle the in-game editor",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == HotkeyAction(keys=["shift", "f12"])
 
 
@@ -205,7 +204,7 @@ def test_highlight_is_reachable_through_a_held_fifth_mouse_button() -> None:
         binding=binding,
         expected_effect="highlight world items while the binding is held",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == MouseButtonAction(
         button=MouseButton.X2,
         hold_seconds=0.25,
@@ -226,7 +225,7 @@ def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
         binding=binding,
         expected_effect="toggle the medic job for the selected squad members",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == KeyAction(key="numpad7")
     assert Win32InputController._vk("numpad7") == 0x67
     assert binding in TOGGLE_GAME_BINDINGS
@@ -245,7 +244,7 @@ def test_rescue_is_reachable_through_a_semantic_toggle_binding() -> None:
         binding=binding,
         expected_effect="toggle the rescue job for the selected squad members",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == KeyAction(key="numpad8")
     assert Win32InputController._vk("numpad8") == 0x68
     assert binding in TOGGLE_GAME_BINDINGS
@@ -276,7 +275,7 @@ def test_preferred_combat_stance_binding_is_reachable(
         binding=binding,
         expected_effect=f"toggle the selected squad's {binding_name} stance",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == KeyAction(key=expected_key)
     assert Win32InputController._vk(expected_key) == expected_virtual_key
     assert binding in TOGGLE_GAME_BINDINGS
@@ -302,7 +301,7 @@ def test_world_data_binding_is_reachable_as_an_exact_hotkey(
         binding=binding,
         expected_effect=f"apply the exact {binding_name} world-data control",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     from kenshi_agent.models import game_binding_primitive
 
     assert game_binding_primitive(binding) == HotkeyAction(keys=expected_keys)
@@ -332,13 +331,13 @@ def test_mode_toggle_binding_is_reachable_without_invented_completion_state(
         binding=binding,
         expected_effect=f"toggle the exact {binding_name} mode",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == KeyAction(key=expected_key)
     assert Win32InputController._vk(expected_key) == expected_virtual_key
     assert binding in TOGGLE_GAME_BINDINGS
     assert (
-        completion_contract_for(action, observation()).owner
-        is CompletionOwner.STEP_CONDITIONS
+        USE_GAME_BINDING_DEFINITION.resolve_terminal(action, observation()).owner
+        is TerminalOwner.STEP_CONDITIONS
     )
 
 
@@ -368,13 +367,13 @@ def test_remaining_squad_stance_binding_is_reachable(
         binding=binding,
         expected_effect=f"toggle the selected squad's {binding_name} stance",
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, observation()).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
     assert game_binding_primitive(binding) == KeyAction(key=expected_key)
     assert Win32InputController._vk(expected_key) == expected_virtual_key
     assert binding in TOGGLE_GAME_BINDINGS
     assert (
-        completion_contract_for(action, observation()).owner
-        is CompletionOwner.STEP_CONDITIONS
+        USE_GAME_BINDING_DEFINITION.resolve_terminal(action, observation()).owner
+        is TerminalOwner.STEP_CONDITIONS
     )
 
 
@@ -413,12 +412,12 @@ def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> Non
         status=BindingStatus.WIRED,
         route=AffordanceRoute("game_bindings", binding.value),
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, state).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, state).bound
     assert game_binding_primitive(binding) == KeyAction(key="f9")
     assert Win32InputController._vk("f9") == 0x78
 
-    completion = completion_contract_for(action, state)
-    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    completion = USE_GAME_BINDING_DEFINITION.resolve_terminal(action, state)
+    assert completion.owner is TerminalOwner.RUNTIME_CONDITIONS
     assert len(completion.conditions) == 1
     session_changed = completion.conditions[0]
     assert session_changed.path is ConditionPath.TELEMETRY_IDENTITY_SESSION_ID
@@ -477,12 +476,12 @@ def test_quicksave_is_reachable_only_with_controller_owned_completion() -> None:
         status=BindingStatus.WIRED,
         route=AffordanceRoute("game_bindings", binding.value),
     )
-    assert USE_GAME_BINDING_CONTRACT.bind(action, state).bound
+    assert USE_GAME_BINDING_DEFINITION.bind(action, state).bound
     assert game_binding_primitive(binding) == KeyAction(key="f5")
     assert Win32InputController._vk("f5") == 0x74
     assert (
-        completion_contract_for(action, state).owner
-        is CompletionOwner.CONTROLLER_TERMINAL
+        USE_GAME_BINDING_DEFINITION.resolve_terminal(action, state).owner
+        is TerminalOwner.CONTROLLER_TERMINAL
     )
 
     unavailable = state.telemetry.model_copy(
@@ -494,7 +493,7 @@ def test_quicksave_is_reachable_only_with_controller_owned_completion() -> None:
             ]
         }
     )
-    assert not USE_GAME_BINDING_CONTRACT.bind(
+    assert not USE_GAME_BINDING_DEFINITION.bind(
         action,
         state.model_copy(update={"telemetry": unavailable}),
     ).bound
@@ -517,7 +516,6 @@ def test_saved_quicksave_evidence_requires_an_observed_nonempty_file() -> None:
 
 
 def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> None:
-    from kenshi_agent.action_contracts import COMMAND_WORLD_TARGET_CONTRACT
     from kenshi_agent.models import (
         CommandWorldTargetAction,
         ContextActionKind,
@@ -527,6 +525,7 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
         Vec3,
         WorldTarget,
     )
+    from kenshi_agent.operation_definitions import COMMAND_WORLD_TARGET_DEFINITION
 
     target = WorldTarget(
         id="entity-copper",
@@ -569,7 +568,7 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
         status=BindingStatus.WIRED,
         route=AffordanceRoute("context_orders"),
     )
-    binding = COMMAND_WORLD_TARGET_CONTRACT.bind(action, state)
+    binding = COMMAND_WORLD_TARGET_DEFINITION.bind(action, state)
     assert binding.bound
     assert binding.target_id == target.id
     assert binding.resolved_bounds == NormalizedPointerBounds(
@@ -578,7 +577,7 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
         min_y=0.6,
         max_y=0.6,
     )
-    assert COMMAND_WORLD_TARGET_CONTRACT.pointer_class is PointerActionClass.SEMANTIC_CURRENT
+    assert COMMAND_WORLD_TARGET_DEFINITION.pointer_class is PointerActionClass.SEMANTIC_CURRENT
     assert state.context_target_digest()[0]["screen_position"] == {
         "x": 0.4,
         "y": 0.6,
@@ -586,7 +585,6 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
 
 
 def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
-    from kenshi_agent.action_contracts import ROTATE_CAMERA_CONTRACT
     from kenshi_agent.models import (
         CameraRotationDirection,
         MouseButton,
@@ -595,6 +593,7 @@ def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
         RotateCameraAction,
         camera_rotation_primitive,
     )
+    from kenshi_agent.operation_definitions import ROTATE_CAMERA_DEFINITION
 
     state = observation()
     assert state.telemetry is not None
@@ -617,7 +616,7 @@ def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
         status=BindingStatus.WIRED,
         route=AffordanceRoute("native_and_composite", "rotate_camera"),
     )
-    assert ROTATE_CAMERA_CONTRACT.bind(action, state).bound
+    assert ROTATE_CAMERA_DEFINITION.bind(action, state).bound
     primitive = camera_rotation_primitive(action)
     assert primitive == MouseDragAction(
         button=MouseButton.MIDDLE,
@@ -625,13 +624,12 @@ def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
         delta_y=0,
         steps=8,
     )
-    assert ROTATE_CAMERA_CONTRACT.pointer_class is (
+    assert ROTATE_CAMERA_DEFINITION.pointer_class is (
         PointerActionClass.COORDINATE_INDEPENDENT
     )
 
 
 def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> None:
-    from kenshi_agent.action_contracts import SELECT_SQUAD_MEMBER_CONTRACT
     from kenshi_agent.models import (
         CharacterState,
         ConditionOperator,
@@ -641,6 +639,7 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
         SelectSquadMemberAction,
         VisibleUIControl,
     )
+    from kenshi_agent.operation_definitions import SELECT_SQUAD_MEMBER_DEFINITION
 
     target = CharacterState(
         id="entity-ruka",
@@ -696,7 +695,7 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
         status=BindingStatus.WIRED,
         route=AffordanceRoute("characters", "select"),
     )
-    binding = SELECT_SQUAD_MEMBER_CONTRACT.bind(action, state)
+    binding = SELECT_SQUAD_MEMBER_DEFINITION.bind(action, state)
     assert binding.bound
     assert binding.target_id == target.id
     assert binding.resolved_bounds == NormalizedPointerBounds(
@@ -705,12 +704,12 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
         min_y=0.84,
         max_y=0.95,
     )
-    assert SELECT_SQUAD_MEMBER_CONTRACT.pointer_class is (
+    assert SELECT_SQUAD_MEMBER_DEFINITION.pointer_class is (
         PointerActionClass.SEMANTIC_CURRENT
     )
 
-    completion = completion_contract_for(action, state)
-    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    completion = SELECT_SQUAD_MEMBER_DEFINITION.resolve_terminal(action, state)
+    assert completion.owner is TerminalOwner.RUNTIME_CONDITIONS
     assert len(completion.conditions) == 2
     selected_id, selected_count = completion.conditions
     assert selected_id.path is ConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID
@@ -728,7 +727,7 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
             ]
         }
     )
-    assert not SELECT_SQUAD_MEMBER_CONTRACT.bind(
+    assert not SELECT_SQUAD_MEMBER_DEFINITION.bind(
         action,
         state.model_copy(update={"telemetry": duplicate_name}),
     ).bound
@@ -754,7 +753,7 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
             )
         }
     )
-    assert not SELECT_SQUAD_MEMBER_CONTRACT.bind(
+    assert not SELECT_SQUAD_MEMBER_DEFINITION.bind(
         action,
         state.model_copy(update={"telemetry": duplicate_portrait}),
     ).bound
@@ -768,12 +767,8 @@ def test_binding_catalog_contains_only_wired_decisions() -> None:
     assert not names & set(report.with_status(BindingStatus.EXEMPT))
 
 
-def test_the_binding_operation_is_contracted_and_adapter_owned() -> None:
-    action = UseGameBindingAction(
-        binding=GameBinding.TOGGLE_INVENTORY,
-        expected_effect="the inventory screen opens",
-    )
-    assert contract_for(action) is USE_GAME_BINDING_CONTRACT
+def test_the_binding_operation_is_defined_and_adapter_owned() -> None:
+    assert USE_GAME_BINDING_DEFINITION.operation_type is UseGameBindingAction
     from kenshi_agent.affordances import affordance_operation_kinds
 
     assert "use_game_binding" in affordance_operation_kinds()
@@ -861,7 +856,7 @@ def test_raw_time_key_cannot_bind_as_a_planner_affordance(
         expected_effect="change playback",
     )
 
-    result = USE_GAME_BINDING_CONTRACT.bind(action, observation())
+    result = USE_GAME_BINDING_DEFINITION.bind(action, observation())
 
     assert not result.bound
     assert "semantic gameplay intent" in result.reason
@@ -905,8 +900,11 @@ def test_inventory_binding_owns_its_inventory_signal() -> None:
         require_binding=False,
     )
     assert errors == []
-    completion = completion_contract_for(step.action, observation())
-    assert completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+    completion = USE_GAME_BINDING_DEFINITION.resolve_terminal(
+        step.action,
+        observation(),
+    )
+    assert completion.owner is TerminalOwner.RUNTIME_CONDITIONS
     assert [condition.path for condition in completion.conditions] == [
         "telemetry.ui.open_inventory_windows"
     ]
@@ -917,7 +915,7 @@ def test_a_binding_binds_on_a_loaded_game() -> None:
         binding=GameBinding.TOGGLE_MAP,
         expected_effect="the map opens",
     )
-    binding = USE_GAME_BINDING_CONTRACT.bind(action, observation())
+    binding = USE_GAME_BINDING_DEFINITION.bind(action, observation())
     assert binding.bound
     assert binding.resolved_label == "toggle_map"
 
@@ -938,7 +936,7 @@ def test_a_binding_refuses_when_the_key_would_vanish(
         binding=GameBinding.PAUSE,
         expected_effect="the game unpauses",
     )
-    binding = USE_GAME_BINDING_CONTRACT.bind(action, observation(**kwargs))
+    binding = USE_GAME_BINDING_DEFINITION.bind(action, observation(**kwargs))
     assert not binding.bound
     assert expected in binding.reason
 
@@ -1042,8 +1040,8 @@ def _observation_with(controls: list[object]) -> Observation:
 def test_a_scroll_binds_to_the_named_window_bounds() -> None:
     """Shop stock past the first screenful is not exported at all."""
 
-    from kenshi_agent.action_contracts import SCROLL_SCREEN_CONTRACT
     from kenshi_agent.models import ScrollScreenAction
+    from kenshi_agent.operation_definitions import SCROLL_SCREEN_DEFINITION
 
     controls = [
         _windowed("BARMAN", "item", 0, 0.10),
@@ -1051,7 +1049,7 @@ def test_a_scroll_binds_to_the_named_window_bounds() -> None:
         _windowed("HEP", "item", 0, 0.70),
     ]
     action = ScrollScreenAction(window="BARMAN", notches=-3)
-    binding = SCROLL_SCREEN_CONTRACT.bind(action, _observation_with(controls))
+    binding = SCROLL_SCREEN_DEFINITION.bind(action, _observation_with(controls))
 
     assert binding.bound
     assert binding.resolved_bounds is not None
@@ -1063,11 +1061,11 @@ def test_a_scroll_binds_to_the_named_window_bounds() -> None:
 def test_a_scroll_refuses_a_window_that_is_not_open() -> None:
     """Otherwise the notches land on whatever is behind it."""
 
-    from kenshi_agent.action_contracts import SCROLL_SCREEN_CONTRACT
     from kenshi_agent.models import ScrollScreenAction
+    from kenshi_agent.operation_definitions import SCROLL_SCREEN_DEFINITION
 
     action = ScrollScreenAction(window="TRADER", notches=2)
-    binding = SCROLL_SCREEN_CONTRACT.bind(
+    binding = SCROLL_SCREEN_DEFINITION.bind(
         action, _observation_with([_windowed("HEP", "item", 0, 0.5)])
     )
     assert not binding.bound
@@ -1150,8 +1148,8 @@ def _trade_observation(*, selected_name: str = "HEP") -> Observation:
 
 
 def test_selling_binds_to_our_own_inventory_cell() -> None:
-    from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
     from kenshi_agent.models import SellItemAction
+    from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
     action = SellItemAction(
         cell_label="item_0",
@@ -1159,7 +1157,7 @@ def test_selling_binds_to_our_own_inventory_cell() -> None:
         window="HEP",
         buyer_id="e-barman",
     )
-    binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
+    binding = SELL_ITEM_DEFINITION.bind(action, _trade_observation())
     assert binding.bound
     assert binding.target_id == "e-barman"
     assert binding.inventory_owner_id == "c-hep"
@@ -1168,8 +1166,8 @@ def test_selling_binds_to_our_own_inventory_cell() -> None:
 def test_selling_refuses_a_cell_in_the_traders_window() -> None:
     """Cell ordinals run across both inventories; the window is the owner."""
 
-    from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
     from kenshi_agent.models import SellItemAction
+    from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
     action = SellItemAction(
         cell_label="item_1",
@@ -1177,14 +1175,14 @@ def test_selling_refuses_a_cell_in_the_traders_window() -> None:
         window="BARMAN",
         buyer_id="e-barman",
     )
-    binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
+    binding = SELL_ITEM_DEFINITION.bind(action, _trade_observation())
     assert not binding.bound
     assert "does not resolve to one exact squad inventory owner" in binding.reason
 
 
 def test_selling_refuses_when_the_cell_holds_something_else() -> None:
-    from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
     from kenshi_agent.models import SellItemAction
+    from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
     action = SellItemAction(
         cell_label="item_0",
@@ -1192,7 +1190,7 @@ def test_selling_refuses_when_the_cell_holds_something_else() -> None:
         window="HEP",
         buyer_id="e-barman",
     )
-    binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
+    binding = SELL_ITEM_DEFINITION.bind(action, _trade_observation())
     assert not binding.bound
     assert "holds 'Iron Club'" in binding.reason
 
@@ -1200,8 +1198,8 @@ def test_selling_refuses_when_the_cell_holds_something_else() -> None:
 def test_equipping_refuses_while_a_trade_is_open() -> None:
     """The same right-click sells instead, and the item is gone irreversibly."""
 
-    from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
     from kenshi_agent.models import EquipItemAction
+    from kenshi_agent.operation_definitions import EQUIP_ITEM_DEFINITION
 
     base = _trade_observation()
     telemetry = base.telemetry
@@ -1219,14 +1217,14 @@ def test_equipping_refuses_while_a_trade_is_open() -> None:
     )
 
     action = EquipItemAction(cell_label="item_0", item_name="Iron Club", window="HEP")
-    binding = EQUIP_ITEM_CONTRACT.bind(action, trading)
+    binding = EQUIP_ITEM_DEFINITION.bind(action, trading)
     assert not binding.bound
     assert "sells the item instead" in binding.reason
 
 
 def test_equipping_binds_with_no_trade_open() -> None:
-    from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
     from kenshi_agent.models import EquipItemAction
+    from kenshi_agent.operation_definitions import EQUIP_ITEM_DEFINITION
 
     base = _trade_observation()
     telemetry = base.telemetry
@@ -1243,15 +1241,15 @@ def test_equipping_binds_with_no_trade_open() -> None:
     )
 
     action = EquipItemAction(cell_label="item_0", item_name="Iron Club", window="HEP")
-    binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
+    binding = EQUIP_ITEM_DEFINITION.bind(action, no_trade)
     assert binding.bound
     assert binding.inventory_owner_id == "c-hep"
     assert "no trade open" in binding.reason
 
 
 def test_equipping_refuses_another_owners_window() -> None:
-    from kenshi_agent.action_contracts import EQUIP_ITEM_CONTRACT
     from kenshi_agent.models import EquipItemAction
+    from kenshi_agent.operation_definitions import EQUIP_ITEM_DEFINITION
 
     base = _trade_observation()
     telemetry = base.telemetry
@@ -1265,7 +1263,7 @@ def test_equipping_refuses_another_owners_window() -> None:
     )
 
     action = EquipItemAction(cell_label="item_1", item_name="Foodcube", window="BARMAN")
-    binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
+    binding = EQUIP_ITEM_DEFINITION.bind(action, no_trade)
     assert not binding.bound
     assert "one exact squad inventory owner" in binding.reason
 
@@ -1278,7 +1276,6 @@ def test_price_separates_cells_that_share_a_name() -> None:
     the price the planner already states is part of the reference.
     """
 
-    from kenshi_agent.action_contracts import PURCHASE_ITEM_CONTRACT
     from kenshi_agent.models import (
         Disposition,
         NearbyEntity,
@@ -1286,6 +1283,7 @@ def test_price_separates_cells_that_share_a_name() -> None:
         PurchaseItemAction,
         VisibleUIControl,
     )
+    from kenshi_agent.operation_definitions import PURCHASE_ITEM_DEFINITION
 
     def pick(value: int, y: float) -> VisibleUIControl:
         return VisibleUIControl(
@@ -1351,7 +1349,7 @@ def test_price_separates_cells_that_share_a_name() -> None:
     )
 
     def buy(price: int):
-        return PURCHASE_ITEM_CONTRACT.bind(
+        return PURCHASE_ITEM_DEFINITION.bind(
             PurchaseItemAction(
                 cell_label="Tooth Pick",
                 item_name="Tooth Pick",
@@ -1711,8 +1709,8 @@ def test_a_purchase_contract_owns_transfer_conservation() -> None:
         for error in planner_did_not_duplicate
     )
 
-    completion = completion_contract_for(action, observation())
-    assert completion.owner is CompletionOwner.CONTROLLER_TERMINAL
+    completion = PURCHASE_ITEM_DEFINITION.resolve_terminal(action, observation())
+    assert completion.owner is TerminalOwner.CONTROLLER_TERMINAL
     assert completion.conditions == ()
 
 
@@ -1865,7 +1863,7 @@ def test_opening_an_already_open_screen_sends_no_input() -> None:
     """
 
     already = _screen_observation(open_inventory_windows=1)
-    binding = OPEN_SCREEN_CONTRACT.bind(
+    binding = OPEN_SCREEN_DEFINITION.bind(
         OpenScreenAction(screen=GameScreen.INVENTORY), already
     )
 
@@ -1876,7 +1874,7 @@ def test_opening_an_already_open_screen_sends_no_input() -> None:
 
 def test_opening_a_closed_screen_names_the_control_that_opens_it() -> None:
     closed = _screen_observation(open_inventory_windows=0)
-    binding = OPEN_SCREEN_CONTRACT.bind(
+    binding = OPEN_SCREEN_DEFINITION.bind(
         OpenScreenAction(screen=GameScreen.INVENTORY), closed
     )
 
@@ -1888,7 +1886,7 @@ def test_the_terminal_proves_the_exact_screen_not_merely_a_change() -> None:
     """Map, research and crafting share one window; a change is not enough."""
 
     on_map = _screen_observation(management_screen_open=True, management_tab=0)
-    conditions = OPEN_SCREEN_CONTRACT.derive_completion_conditions(
+    conditions = OPEN_SCREEN_DEFINITION.derive_completion_conditions(
         OpenScreenAction(screen=GameScreen.RESEARCH), on_map
     )
 
@@ -1903,7 +1901,7 @@ def test_a_screen_nothing_can_report_refuses_to_bind() -> None:
     """Better to refuse than to press a key and assume it worked."""
 
     unreadable = _screen_observation()
-    binding = OPEN_SCREEN_CONTRACT.bind(
+    binding = OPEN_SCREEN_DEFINITION.bind(
         OpenScreenAction(screen=GameScreen.RESEARCH), unreadable
     )
 

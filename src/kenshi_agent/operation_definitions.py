@@ -1,21 +1,8 @@
-"""Authoritative contracts for reusable semantic actions.
+"""The sole definition and binding authority for private runtime operations.
 
-Before this catalog, an action's meaning was scattered: risk lived in
-`planning`, control-mode rules in `safety`, routing in the executor, pointer
-classification in the live environment, and the actual affordance in a
-scenario-named macro string. Adding one reusable intention therefore meant
-editing every one of those exact-name branches.
-
-A contract states, in one place, everything the rest of the runtime needs to
-route one typed action safely: who may author it, what capabilities it needs,
-what its arguments must bind to in current observation, what it costs against
-risk budgets, how it executes, and what evidence its receipt must carry. The
-registry is deliberately a small typed Python mapping rather than a plugin
-framework — it is meant to be read, and expanded, in one sitting.
-
-The one rule that outranks convenience: an action may bind only to references
-the current observation actually advertises, and a duplicate or ambiguous
-reference fails closed.
+An operation definition owns policy, risk, terminal authority, handler identity,
+and exact current-state binding. Affordance adapters invoke these definitions
+directly; no second contract language reconstructs an operation's meaning.
 """
 
 from __future__ import annotations
@@ -24,7 +11,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 
@@ -39,6 +26,7 @@ from .models import (
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    BoundAffordance,
     CharacterState,
     CollectResourceOutputAction,
     CommandWorldTargetAction,
@@ -157,7 +145,7 @@ CAMERA_RECOVERY_CAPABILITY = "camera.recovery"
 SQUAD_REGROUP_ARRIVAL_DISTANCE = 12.0
 
 
-class ActionExecution(StrEnum):
+class OperationExecution(StrEnum):
     """How the executor must run an action, not what the action means."""
 
     ATOMIC_HANDLER = "atomic_handler"
@@ -173,7 +161,7 @@ class SelectionRequirement(StrEnum):
     ONE_OR_MORE = "one_or_more"
 
 
-class CompletionOwner(StrEnum):
+class TerminalOwner(StrEnum):
     """Who turns one dispatched intention into a terminal result."""
 
     STEP_CONDITIONS = "step_conditions"
@@ -183,10 +171,10 @@ class CompletionOwner(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
-class ActionCompletionContract:
+class OperationTerminal:
     """Completion authority resolved for one action at one observation."""
 
-    owner: CompletionOwner
+    owner: TerminalOwner
     conditions: tuple[Condition, ...] = ()
 
 
@@ -194,10 +182,11 @@ CompletionConditionFactory = Callable[
     [Action, Observation],
     tuple[Condition, ...] | None,
 ]
+TerminalFactory = Callable[[Action, Observation, bool], OperationTerminal | None]
 
 
 @dataclass(frozen=True, slots=True)
-class ActionRiskCost:
+class OperationRisk:
     """What one attempt of this action spends from a plan's risk budgets."""
 
     pointer_actions: int = 0
@@ -212,40 +201,228 @@ class ActionRiskCost:
         )
 
 
-RiskCostFactory = Callable[[Action], ActionRiskCost]
+RiskFactory = Callable[[Action], OperationRisk]
 PrimitiveActionBoundFactory = Callable[[Action], int]
 
 
-@dataclass(frozen=True, slots=True)
-class ReferenceBinding:
-    """The result of resolving an action's arguments against current state."""
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BindingFailure:
+    """A fail-closed attempt to bind one operation to current state."""
 
-    bound: bool
     reason: str
-    target_id: str | None = None
-    # Exact squad member whose open inventory owns the carried side of this
-    # interaction. Derived from the window caption, never selection ordering.
-    inventory_owner_id: str | None = None
-    resolved_label: str | None = None
-    resolved_role: str | None = None
-    resolved_bounds: NormalizedPointerBounds | None = None
-    source_revision: WorldStateRevision | None = None
-    # For item cells: what the game itself says the cell holds, what buying it
-    # costs, and what selling it returns.
-    item_name: str | None = None
+    bound: Literal[False] = field(default=False, init=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class EmptyBinding:
+    """A current revision is sufficient; the operation owns no domain reference."""
+
+    reason: str
+    source_revision: WorldStateRevision
+    bound: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundActor:
+    reason: str
+    target_id: str
+    source_revision: WorldStateRevision
+    bound: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundNamedTarget(BoundActor):
+    resolved_label: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundPointerTarget(BoundNamedTarget):
+    resolved_bounds: NormalizedPointerBounds
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundNamedOperation:
+    reason: str
+    resolved_label: str
+    source_revision: WorldStateRevision
+    bound: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundVisibleControl:
+    reason: str
+    resolved_label: str
+    resolved_role: str
+    resolved_bounds: NormalizedPointerBounds
+    source_revision: WorldStateRevision
+    bound: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundVisibleTarget(BoundVisibleControl):
+    target_id: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundItemCell(BoundVisibleControl):
+    item_name: str | None
     item_base_value: int | None = None
     item_sell_value: int | None = None
-    item_quantity: int | None = None
-    section: str | None = None
-    # Camera-recovery-only facts resolved from the current world HUD.
-    selected_character_name: str | None = None
-    floor: int | None = None
+    item_quantity: int | None
+    section: str | None
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundPurchaseCell(BoundItemCell):
+    target_id: str
+    inventory_owner_id: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundSaleCell(BoundVisibleControl):
+    target_id: str
+    inventory_owner_id: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundEquipmentCell(BoundVisibleControl):
+    inventory_owner_id: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundResourceOutputCell(BoundVisibleControl):
+    target_id: str
+    item_name: str
+    item_quantity: int
+    section: str
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundScreenDismissal:
+    reason: str
+    resolved_label: str
+    resolved_bounds: NormalizedPointerBounds | None
+    source_revision: WorldStateRevision
+    bound: Literal[True] = field(default=True, init=False)
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class BoundCameraRecovery(BoundVisibleControl):
+    target_id: str
+    selected_character_name: str
+    floor: int
     floor_up_bounds: NormalizedPointerBounds | None = None
     floor_down_bounds: NormalizedPointerBounds | None = None
 
 
-def _unbound(reason: str) -> ReferenceBinding:
-    return ReferenceBinding(bound=False, reason=reason)
+OperationBinding: TypeAlias = (
+    BindingFailure
+    | EmptyBinding
+    | BoundActor
+    | BoundNamedTarget
+    | BoundPointerTarget
+    | BoundNamedOperation
+    | BoundVisibleControl
+    | BoundVisibleTarget
+    | BoundItemCell
+    | BoundPurchaseCell
+    | BoundSaleCell
+    | BoundEquipmentCell
+    | BoundResourceOutputCell
+    | BoundScreenDismissal
+    | BoundCameraRecovery
+)
+
+
+def _unbound(reason: str) -> BindingFailure:
+    return BindingFailure(reason=reason)
+
+
+BindingT = TypeVar("BindingT")
+
+
+def require_bound(
+    binding: OperationBinding,
+    binding_type: type[BindingT],
+    *,
+    context: str = "No input was sent",
+) -> BindingT:
+    """Narrow one definition result or fail before mechanics receive it."""
+
+    if isinstance(binding, BindingFailure):
+        raise RuntimeError(f"{context}: {binding.reason}")
+    if not isinstance(binding, binding_type):
+        raise RuntimeError(
+            f"{context}: the operation definition returned the wrong binding type."
+        )
+    return binding
+
+
+def unresolved_terminal(*, selected_affordance: bool = False) -> OperationTerminal:
+    """Return the only valid terminal when no effect witness is defined."""
+
+    return OperationTerminal(
+        owner=(
+            TerminalOwner.AFFORDANCE_DELIVERY
+            if selected_affordance
+            else TerminalOwner.STEP_CONDITIONS
+        )
+    )
+
+
+def runtime_control_terminal(
+    action: Action,
+) -> OperationTerminal | None:
+    """Resolve terminals for unadapted run-control mechanics only."""
+
+    if isinstance(action, PauseAction):
+        return OperationTerminal(
+            owner=TerminalOwner.RUNTIME_CONDITIONS,
+            conditions=(
+                Condition(
+                    kind=ConditionKind.FIELD,
+                    path=ConditionPath.TELEMETRY_GAME_PAUSED,
+                    operator=ConditionOperator.EQUALS,
+                    expected=action.paused,
+                    max_age_seconds=3.0,
+                ),
+            ),
+        )
+    if isinstance(action, SetSpeedAction):
+        return OperationTerminal(
+            owner=TerminalOwner.RUNTIME_CONDITIONS,
+            conditions=(
+                Condition(
+                    kind=ConditionKind.FIELD,
+                    path=ConditionPath.TELEMETRY_GAME_PAUSED,
+                    operator=ConditionOperator.EQUALS,
+                    expected=False,
+                    max_age_seconds=3.0,
+                ),
+                Condition(
+                    kind=ConditionKind.FIELD,
+                    path=ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
+                    operator=ConditionOperator.EQUALS,
+                    expected=GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed],
+                    max_age_seconds=3.0,
+                ),
+            ),
+        )
+    if isinstance(action, WaitAction):
+        return OperationTerminal(owner=TerminalOwner.CONTROLLER_TERMINAL)
+    return None
+
+
+def unadapted_terminal(
+    action: Action,
+    *,
+    selected_affordance: bool = False,
+) -> OperationTerminal:
+    """Resolve only run controls and legacy mechanics outside the registry."""
+
+    return runtime_control_terminal(action) or unresolved_terminal(
+        selected_affordance=selected_affordance
+    )
 
 
 def _selected_player_window_owner(
@@ -329,7 +506,7 @@ def _capability_condition(path: ConditionPath, *, max_age_seconds: float) -> Con
 def bind_approach_dialogue_target(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundActor | BindingFailure:
     """Bind an approach to one exact current dialogue target.
 
     Deliberately target-generic: the only question asked is whether the exact
@@ -375,8 +552,7 @@ def bind_approach_dialogue_target(
             "an ambiguous reference fails closed."
         )
     target = matches[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundActor(
         reason=(
             f"Bound to current dialogue target {target.name!r} ({target.id}) at "
             f"distance {target.distance if target.distance is not None else 'unknown'}."
@@ -389,7 +565,7 @@ def bind_approach_dialogue_target(
 def bind_move_to_character(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundActor | BindingFailure:
     """Bind a walk to one exact currently observed nearby character.
 
     Deliberately looser than the approach binding in one respect and no other:
@@ -423,8 +599,7 @@ def bind_move_to_character(
             "entities; an ambiguous reference fails closed."
         )
     target = matches[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundActor(
         reason=(
             f"Bound to current nearby character {target.name!r} ({target.id}) at "
             f"distance {target.distance if target.distance is not None else 'unknown'}."
@@ -437,7 +612,7 @@ def bind_move_to_character(
 def bind_perform_context_action(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind one exact object/action pair from current world-target telemetry."""
 
     if not isinstance(action, PerformContextAction):
@@ -474,8 +649,7 @@ def bind_perform_context_action(
             f"Target {target.name!r} does not currently advertise context action "
             f"{action.context_action.value!r}."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound {action.context_action.value!r} to current {target.kind} "
             f"{target.name!r} ({target.id}) at distance {target.distance}."
@@ -503,7 +677,7 @@ def context_action_is_currently_authorable(observation: Observation) -> bool:
 def bind_command_world_target(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundPointerTarget | BindingFailure:
     """Bind a right-click to one exact reviewed target and current screen point."""
 
     if not isinstance(action, CommandWorldTargetAction):
@@ -555,8 +729,7 @@ def bind_command_world_target(
         min_y=point.y,
         max_y=point.y,
     )
-    return ReferenceBinding(
-        bound=True,
+    return BoundPointerTarget(
         reason=(
             f"Bound {action.context_action.value!r} to current {target.kind} "
             f"{target.name!r} ({target.id}) at its observed screen position."
@@ -588,7 +761,7 @@ def world_target_command_is_currently_authorable(observation: Observation) -> bo
 def bind_select_squad_member(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundVisibleTarget | BindingFailure:
     """Bind Mouse1 to one exact squad member's current lower-HUD portrait."""
 
     if not isinstance(action, SelectSquadMemberAction):
@@ -645,8 +818,7 @@ def bind_select_squad_member(
             "unambiguous lower-HUD portrait labels; exactly one is required."
         )
     portrait = portrait_matches[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundVisibleTarget(
         reason=(
             f"Bound Mouse1 selection to current squad member {target.name!r} "
             f"({target.id}) through its exact current lower-HUD portrait."
@@ -684,7 +856,7 @@ def squad_member_selection_is_currently_authorable(
 def bind_select_squad_member_exact(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind one native selection request to an exact stable squad identity."""
 
     if not isinstance(action, SelectSquadMemberExactAction):
@@ -721,8 +893,7 @@ def bind_select_squad_member_exact(
             "members; exact native selection fails closed."
         )
     target = matches[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound exact native squad selection to {target.name!r} ({target.id}); "
             f"all {len(selected_ids)} current selected identities are carried "
@@ -757,7 +928,7 @@ def exact_squad_member_selection_is_currently_authorable(
 def bind_rotate_camera(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedOperation | BindingFailure:
     """Bind one bounded camera yaw only while the unobstructed world is current."""
 
     if not isinstance(action, RotateCameraAction):
@@ -778,8 +949,7 @@ def bind_rotate_camera(
             "The unobstructed world screen is not confirmed current, so camera "
             "rotation cannot bind."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedOperation(
         reason=(
             f"Bound one bounded camera rotation {action.direction.value!r} "
             "against the current world screen."
@@ -804,7 +974,7 @@ def camera_rotation_is_currently_authorable(observation: Observation) -> bool:
 def _bind_exact_natural_resource(
     target_id: str,
     observation: Observation,
-) -> tuple[WorldTarget | None, ReferenceBinding | None]:
+) -> tuple[WorldTarget | None, BindingFailure | None]:
     telemetry = observation.telemetry
     if telemetry is None:
         return None, _unbound("No telemetry is available to bind the resource.")
@@ -838,7 +1008,7 @@ def _bind_exact_natural_resource(
 def bind_produce_resource_output(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind retained production to one exact reviewed natural resource."""
 
     if not isinstance(action, ProduceResourceOutputAction):
@@ -857,8 +1027,7 @@ def bind_produce_resource_output(
             "The world interface is not confirmed clear, so resource production "
             "cannot bind."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound retained production to {target.name!r} ({target.id}); task "
             "acceptance is progress and output inventory is terminal proof."
@@ -889,7 +1058,7 @@ def resource_production_is_currently_authorable(observation: Observation) -> boo
 def bind_harvest_resource(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind one bounded production/transfer option to an exact actor and source."""
 
     if not isinstance(action, HarvestResourceAction):
@@ -927,8 +1096,7 @@ def bind_harvest_resource(
             "Harvesting requires the exact selected actor to be alive, conscious, "
             "standing, out of combat, and backed by a complete inventory export."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound a yield of {action.quantity} from {target.name!r} ({target.id}) "
             f"into exact selected actor {selected[0].name!r} ({action.actor_id})."
@@ -972,7 +1140,7 @@ def harvest_resource_is_currently_authorable(observation: Observation) -> bool:
 def bind_open_context_inventory(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind native UI opening to one exact resource handle."""
 
     if not isinstance(action, OpenContextInventoryAction):
@@ -996,8 +1164,7 @@ def bind_open_context_inventory(
             "A different modal, dialogue, or inventory is open; close it before "
             "opening this exact resource inventory."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound the contextual inventory to {target.name!r} ({target.id})"
             + ("; it is already open." if already_open else ".")
@@ -1039,7 +1206,7 @@ def context_inventory_is_currently_authorable(observation: Observation) -> bool:
 def bind_move_in_direction(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedOperation | BindingFailure:
     """Bind a directional walk to the character actually doing the walking.
 
     There is no external reference to resolve - the intended destination is
@@ -1067,8 +1234,7 @@ def bind_move_in_direction(
             "order has an unambiguous walker."
         )
     walker = selected[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedOperation(
         reason=(
             f"Bound to selected character {walker.name!r} walking "
             f"{action.distance_units:.0f} units on bearing "
@@ -1082,7 +1248,7 @@ def bind_move_in_direction(
 def bind_travel_to_map_destination(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind long travel to one exact currently known settlement marker."""
 
     if not isinstance(action, TravelToMapDestinationAction):
@@ -1143,8 +1309,7 @@ def bind_travel_to_map_destination(
             f"at map distance {destination.distance:.0f}; another map-scale order "
             "would repeat a reached destination rather than make progress."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound {len(selected)} selected squad member(s) to long travel to "
             f"known map destination {destination.name!r} ({destination.id}) at "
@@ -1180,7 +1345,7 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
 def bind_regroup_with_squad_member(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedTarget | BindingFailure:
     """Bind one selected actor to one distinct, current squadmate."""
 
     if not isinstance(action, RegroupWithSquadMemberAction):
@@ -1241,8 +1406,7 @@ def bind_regroup_with_squad_member(
             f"{actor.name!r} is already within the native arrival boundary of "
             f"{target.name!r}."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedTarget(
         reason=(
             f"Bound selected actor {actor.name!r} ({actor.id}) to regroup with "
             f"current squadmate {target.name!r} ({target.id}); native code owns "
@@ -1278,7 +1442,7 @@ def squad_regroup_is_currently_authorable(observation: Observation) -> bool:
 def bind_exit_current_building(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedOperation | BindingFailure:
     """Bind a parameter-free exit request to one selected indoor character."""
 
     if not isinstance(action, ExitCurrentBuildingAction):
@@ -1303,8 +1467,7 @@ def bind_exit_current_building(
         return _unbound(
             f"Selected character {character.name!r} is not confirmed inside a building."
         )
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedOperation(
         reason=(
             f"Bound a controller-owned exit from the selected character "
             f"{character.name!r}'s current building."
@@ -1317,7 +1480,7 @@ def bind_exit_current_building(
 def bind_visible_control(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundVisibleControl | BindingFailure:
     """Bind a control activation to exactly one currently advertised control.
 
     Bounds are read from telemetry, never authored. Any duplicate of the same
@@ -1367,8 +1530,7 @@ def bind_visible_control(
             "closed. Name the window to narrow it."
         )
     control = matches[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundVisibleControl(
         reason=(
             f"Bound to exactly one current {control.role} control "
             f"{control.label!r} at its observed bounds."
@@ -1383,13 +1545,12 @@ def bind_visible_control(
 def bind_respond_to_immediate_threat(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundActor | BindingFailure:
     if not isinstance(action, RespondToImmediateThreatAction):
         return _unbound("Action is not a respond_to_immediate_threat action.")
     if reason := threat_response_authority_error(action, observation):
         return _unbound(reason)
-    return ReferenceBinding(
-        bound=True,
+    return BoundActor(
         reason=(
             f"Bound selected actor {action.actor_id!r} and strategy "
             f"{action.strategy.value!r} to one runtime-owned immediate-threat response."
@@ -1440,7 +1601,7 @@ def _bind_item_cell(
     item_quantity: int | None = None,
     section: str | None = None,
     require_selected_inventory_accepts_item: bool = False,
-) -> ReferenceBinding:
+) -> BoundItemCell | BindingFailure:
     """Resolve one exact inventory or shop cell from current telemetry.
 
     `window` narrows the search to one open inventory. A trade screen shows two
@@ -1516,8 +1677,7 @@ def _bind_item_cell(
                 "are not interchangeable; an ambiguous reference fails closed."
             )
     cell = matches[0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundItemCell(
         reason=f"Bound to current item cell {cell.label!r} at its observed bounds.",
         resolved_label=cell.label,
         resolved_role=cell.role,
@@ -1534,7 +1694,7 @@ def _bind_item_cell(
 def bind_purchase_item(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundPurchaseCell | BindingFailure:
     """Bind a purchase to one exact named seller-owned cell.
 
     Current producers export the cell's item facts directly. Older producers
@@ -1553,7 +1713,7 @@ def bind_purchase_item(
         window=action.window,
         item_base_value=action.expected_price,
     )
-    if not cell.bound:
+    if isinstance(cell, BindingFailure):
         return cell
     telemetry = observation.telemetry
     assert telemetry is not None
@@ -1646,8 +1806,7 @@ def bind_purchase_item(
         assert recipient_error is not None
         return _unbound(recipient_error)
 
-    return ReferenceBinding(
-        bound=True,
+    return BoundPurchaseCell(
         reason=(
             f"Bound {action.item_name!r} to seller-owned cell "
             f"{cell.resolved_label!r} for seller {action.seller_id} at a "
@@ -1669,6 +1828,7 @@ def bind_purchase_item(
         item_base_value=cell.item_base_value,
         item_sell_value=cell.item_sell_value,
         item_quantity=cell.item_quantity,
+        section=cell.section,
     )
 
 
@@ -1676,7 +1836,7 @@ def bind_purchase_item(
 def bind_sell_item(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundSaleCell | BindingFailure:
     """Bind a sale to a cell in one exact selected squad-owned inventory.
 
     The one thing that must not be got wrong here is whose item is being sold.
@@ -1699,7 +1859,7 @@ def bind_sell_item(
         return _unbound(owner_error)
 
     cell = _bind_item_cell(action.cell_label, observation, window=action.window)
-    if not cell.bound:
+    if isinstance(cell, BindingFailure):
         return cell
     if cell.item_name is not None and action.item_name != cell.item_name:
         return _unbound(f"The cell holds {cell.item_name!r}, not {action.item_name!r}.")
@@ -1726,8 +1886,7 @@ def bind_sell_item(
             "no trade to sell into."
         )
 
-    return ReferenceBinding(
-        bound=True,
+    return BoundSaleCell(
         reason=(
             f"Bound to cell {cell.resolved_label!r} in {owner.name!r}'s own "
             f"inventory, holding {action.item_name!r}, sold to {action.buyer_id}."
@@ -1745,7 +1904,7 @@ def bind_sell_item(
 def bind_equip_item(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundEquipmentCell | BindingFailure:
     """Bind an equip to our own cell, and only while no trade is open.
 
     Right-click means "equip this" in an inventory and "sell this" in a trade,
@@ -1781,13 +1940,12 @@ def bind_equip_item(
         return _unbound(owner_error)
 
     cell = _bind_item_cell(action.cell_label, observation, window=action.window)
-    if not cell.bound:
+    if isinstance(cell, BindingFailure):
         return cell
     if cell.item_name is not None and action.item_name != cell.item_name:
         return _unbound(f"The cell holds {cell.item_name!r}, not {action.item_name!r}.")
 
-    return ReferenceBinding(
-        bound=True,
+    return BoundEquipmentCell(
         reason=(
             f"Bound to cell {cell.resolved_label!r} holding {action.item_name!r} in "
             f"{owner.name!r}'s own inventory, with no trade open."
@@ -1803,7 +1961,7 @@ def bind_equip_item(
 def bind_collect_resource_output(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundResourceOutputCell | BindingFailure:
     """Bind one exact output cell to the exact open resource inventory."""
 
     if not isinstance(action, CollectResourceOutputAction):
@@ -1850,10 +2008,9 @@ def bind_collect_resource_output(
         section=action.section,
         require_selected_inventory_accepts_item=True,
     )
-    if not cell.bound:
+    if isinstance(cell, BindingFailure):
         return cell
-    return ReferenceBinding(
-        bound=True,
+    return BoundResourceOutputCell(
         reason=(
             f"Bound {action.source_quantity} {action.item_name!r} in exact "
             f"{action.section!r} output cell {cell.resolved_label!r} for "
@@ -1864,9 +2021,9 @@ def bind_collect_resource_output(
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
         source_revision=observation.world_revision,
-        item_name=cell.item_name,
-        item_quantity=cell.item_quantity,
-        section=cell.section,
+        item_name=action.item_name,
+        item_quantity=action.source_quantity,
+        section=action.section,
     )
 
 
@@ -1920,7 +2077,7 @@ def resource_output_is_currently_authorable(observation: Observation) -> bool:
 def bind_dismiss_screen(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundScreenDismissal | BindingFailure:
     """Bind a dismissal to the screen that is actually open right now.
 
     The reference is the current screen. Refusing when the planner's belief
@@ -1953,13 +2110,13 @@ def bind_dismiss_screen(
             )
         if not action.window:
             binding = SCREEN_BINDINGS[named_screen]
-            return ReferenceBinding(
-                bound=True,
+            return BoundScreenDismissal(
                 reason=(
                     f"Bound the currently open {named_screen.value!r} screen to "
                     f"its exact closing toggle {binding.value!r}."
                 ),
                 resolved_label=named_screen.value,
+                resolved_bounds=None,
                 source_revision=observation.world_revision,
             )
 
@@ -1983,10 +2140,10 @@ def bind_dismiss_screen(
                 "closing dialogue option with activate_visible_control."
             )
         # A keyed screen with no window of its own is dismissed with the key.
-        return ReferenceBinding(
-            bound=True,
+        return BoundScreenDismissal(
             reason=f"Bound to the currently open {current!r} screen.",
             resolved_label=current,
+            resolved_bounds=None,
             source_revision=observation.world_revision,
         )
 
@@ -2006,8 +2163,7 @@ def bind_dismiss_screen(
         (control.bounds for control in owned),
         key=lambda b: (b.max_x - b.min_x) * (b.max_y - b.min_y),
     )
-    return ReferenceBinding(
-        bound=True,
+    return BoundScreenDismissal(
         reason=(
             f"Bound to the {action.window!r} window on the {current!r} screen; its "
             "close box follows the window's own observed rect."
@@ -2021,7 +2177,7 @@ def bind_dismiss_screen(
 def bind_use_game_binding(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundNamedOperation | BindingFailure:
     """Bind a keypress to the game actually being in a state to receive it.
 
     There is no widget to resolve here - the reference is the game itself. What
@@ -2066,8 +2222,7 @@ def bind_use_game_binding(
         mapped_input = GAME_BINDING_MOUSE_BUTTONS.get(action.binding)
     if mapped_input is None:
         return _unbound(f"No input is mapped for binding {action.binding.value!r}.")
-    return ReferenceBinding(
-        bound=True,
+    return BoundNamedOperation(
         reason=(
             f"Bound {action.binding.value!r} to the current hard-coded default "
             f"Kenshi input {mapped_input!r} on a loaded game."
@@ -2080,7 +2235,7 @@ def bind_use_game_binding(
 def bind_recover_camera_view(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundCameraRecovery | BindingFailure:
     """Bind recovery to one selected character and the current world HUD.
 
     The model names no coordinates. The controller resolves the selected
@@ -2166,8 +2321,7 @@ def bind_recover_camera_view(
 
     portrait = portrait_matches[0]
     floor = floor_matches[0][0]
-    return ReferenceBinding(
-        bound=True,
+    return BoundCameraRecovery(
         reason=(
             f"Bound camera recovery to selected character {character.name!r} "
             f"({character.id}), portrait {portrait.label!r}, and floor {floor}."
@@ -2187,7 +2341,7 @@ def bind_recover_camera_view(
 def bind_scroll_screen(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> BoundVisibleControl | BindingFailure:
     """Bind a scroll to the observed bounds of one currently open window.
 
     The reference is the window, not a coordinate: the scroll lands at the
@@ -2223,8 +2377,7 @@ def bind_scroll_screen(
         max_x=max(control.bounds.max_x for control in members),
         max_y=max(control.bounds.max_y for control in members),
     )
-    return ReferenceBinding(
-        bound=True,
+    return BoundVisibleControl(
         reason=(
             f"Bound to window {action.window!r}, whose {len(members)} exported "
             "controls span the region to scroll."
@@ -2237,12 +2390,12 @@ def bind_scroll_screen(
 
 
 @dataclass(frozen=True, slots=True)
-class ActionContract:
+class OperationDefinition:
     """Everything the runtime must know to route one typed action safely."""
 
     kind: str
     version: str
-    model: type[BaseModel]
+    operation_type: type[BaseModel]
     summary: str
     argument_source: str
     allowed_control_modes: frozenset[ControlMode]
@@ -2250,18 +2403,20 @@ class ActionContract:
     capability_aliases: frozenset[str]
     pointer_class: PointerActionClass
     native_assisted: bool
-    risk: ActionRiskCost
+    risk: OperationRisk
     max_primitive_actions: int
     reference_fields: tuple[str, ...]
     idempotency: IdempotencyPolicy
-    execution: ActionExecution
+    execution: OperationExecution
     receipt_kind: str
-    bind: Callable[[Action, Observation], ReferenceBinding]
+    bind: Callable[[Action, Observation], OperationBinding]
+    handler_key: str = ""
+    requires_fresh_telemetry: bool = True
     # Selection cardinality is action-specific. Most character operations own
     # one exact actor, while selection collapse and ordinary group travel bind
     # the complete current selected set.
     selection_requirement: SelectionRequirement = SelectionRequirement.NONE
-    derive_risk: RiskCostFactory | None = field(
+    derive_risk: RiskFactory | None = field(
         default=None,
         repr=False,
         compare=False,
@@ -2287,6 +2442,11 @@ class ActionContract:
         repr=False,
         compare=False,
     )
+    derive_terminal: TerminalFactory | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
     # Optional observation-specific visibility. Capabilities answer whether an
     # action kind exists; this answers whether its declared argument source
     # contains at least one currently bindable choice.
@@ -2296,12 +2456,16 @@ class ActionContract:
         compare=False,
     )
 
-    def risk_for(self, action: Action) -> ActionRiskCost:
+    def __post_init__(self) -> None:
+        if not self.handler_key:
+            object.__setattr__(self, "handler_key", f"legacy_mechanics.{self.kind}")
+
+    def risk_for(self, action: Action) -> OperationRisk:
         """Resolve risk from this exact action without weakening the ceiling."""
 
         risk = self.derive_risk(action) if self.derive_risk is not None else self.risk
         if min(risk.as_tuple()) < 0:
-            raise RuntimeError(f"Action contract {self.kind!r} derived negative risk.")
+            raise RuntimeError(f"Operation {self.kind!r} derived negative risk.")
         return risk
 
     def primitive_action_bound_for(self, action: Action) -> int:
@@ -2314,7 +2478,7 @@ class ActionContract:
         )
         if not 0 <= bound <= self.max_primitive_actions:
             raise RuntimeError(
-                f"Action contract {self.kind!r} derived {bound} primitives "
+                f"Operation {self.kind!r} derived {bound} primitives "
                 f"outside its declared 0-{self.max_primitive_actions} bound."
             )
         return bound
@@ -2340,6 +2504,31 @@ class ActionContract:
     def allows_control_mode(self, control_mode: ControlMode) -> bool:
         return control_mode in self.allowed_control_modes
 
+    def resolve_terminal(
+        self,
+        action: Action,
+        observation: Observation,
+        *,
+        selected_affordance: bool = False,
+    ) -> OperationTerminal:
+        """Resolve this definition's sole terminal authority before dispatch."""
+
+        if self.derive_terminal is not None:
+            terminal = self.derive_terminal(action, observation, selected_affordance)
+            if terminal is not None:
+                return terminal
+        if self.controller_verified:
+            return OperationTerminal(owner=TerminalOwner.CONTROLLER_TERMINAL)
+        if self.derive_completion_conditions is None:
+            return unresolved_terminal(selected_affordance=selected_affordance)
+        conditions = self.derive_completion_conditions(action, observation)
+        if conditions is None:
+            return unresolved_terminal(selected_affordance=selected_affordance)
+        return OperationTerminal(
+            owner=TerminalOwner.RUNTIME_CONDITIONS,
+            conditions=conditions,
+        )
+
     def is_currently_authorable(self, observation: Observation | None) -> bool:
         if observation is None:
             return True
@@ -2357,15 +2546,26 @@ class ActionContract:
         return self.authorable_when is None or self.authorable_when(observation)
 
 
+@dataclass(frozen=True, slots=True)
+class BoundOperation:
+    """One current, typed operation ready for its definition's handler."""
+
+    definition: OperationDefinition
+    operation: Action
+    binding: OperationBinding
+    affordance: BoundAffordance
+    based_on_revision: WorldStateRevision
+
+
 def _bounded_trade_quantity(action: Action) -> int:
     if not isinstance(action, (PurchaseItemAction, SellItemAction)):
         raise TypeError("bounded trade cost requires a purchase or sale action")
     return action.quantity
 
 
-def _bounded_trade_risk(action: Action) -> ActionRiskCost:
+def _bounded_trade_risk(action: Action) -> OperationRisk:
     quantity = _bounded_trade_quantity(action)
-    return ActionRiskCost(
+    return OperationRisk(
         pointer_actions=quantity,
         purchase_actions=quantity,
     )
@@ -2418,6 +2618,20 @@ def _binding_transition(
     return (condition,) if condition is not None else ()
 
 
+def _game_binding_terminal(
+    action: Action,
+    observation: Observation,
+    selected_affordance: bool,
+) -> OperationTerminal | None:
+    del observation, selected_affordance
+    if (
+        isinstance(action, UseGameBindingAction)
+        and action.binding is GameBinding.QUICKSAVE
+    ):
+        return OperationTerminal(owner=TerminalOwner.CONTROLLER_TERMINAL)
+    return None
+
+
 def _selected_squad_member(
     action: Action,
     observation: Observation,
@@ -2444,10 +2658,107 @@ def _selected_squad_member(
     )
 
 
-APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
+_RUNTIME_COGNITIVE_ACTION_TYPES = (
+    NoopAction,
+    StopAction,
+    ConsultAdvisorAction,
+    RecallMemoryAction,
+    ReadFieldbookAction,
+)
+
+
+def bind_runtime_cognitive(
+    action: Action,
+    observation: Observation,
+) -> EmptyBinding | BindingFailure:
+    """Bind zero-input runtime work to the exact observation revision."""
+
+    if not isinstance(action, _RUNTIME_COGNITIVE_ACTION_TYPES):
+        return _unbound("Action is not a runtime or cognitive operation.")
+    return EmptyBinding(
+        reason=f"Bound {action.kind!r} to the current runtime revision.",
+        source_revision=observation.world_revision,
+    )
+
+
+def _runtime_cognitive_definition(
+    *,
+    kind: str,
+    operation_type: type[BaseModel],
+    summary: str,
+    argument_source: str,
+    handler_key: str,
+    idempotency: IdempotencyPolicy = IdempotencyPolicy.SAFE_TO_RETRY,
+    max_primitive_actions: int = 0,
+) -> OperationDefinition:
+    return OperationDefinition(
+        kind=kind,
+        version="1.0",
+        operation_type=operation_type,
+        summary=summary,
+        argument_source=argument_source,
+        allowed_control_modes=frozenset(ControlMode),
+        required_capabilities=frozenset(),
+        capability_aliases=frozenset(),
+        pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+        native_assisted=False,
+        risk=OperationRisk(),
+        max_primitive_actions=max_primitive_actions,
+        reference_fields=(),
+        idempotency=idempotency,
+        execution=OperationExecution.ATOMIC_HANDLER,
+        receipt_kind="runtime_control",
+        bind=bind_runtime_cognitive,
+        handler_key=handler_key,
+        requires_fresh_telemetry=False,
+        controller_verified=True,
+    )
+
+
+NOOP_DEFINITION = _runtime_cognitive_definition(
+    kind="noop",
+    operation_type=NoopAction,
+    summary="Acknowledge that the current state requires no game input.",
+    argument_source="The runtime offer supplies the optional reason.",
+    handler_key="runtime.noop",
+    max_primitive_actions=1,
+)
+STOP_DEFINITION = _runtime_cognitive_definition(
+    kind="stop",
+    operation_type=StopAction,
+    summary="End the agent run without sending game input.",
+    argument_source="The runtime offer supplies the stop reason.",
+    handler_key="runtime.stop",
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    max_primitive_actions=1,
+)
+CONSULT_ADVISOR_DEFINITION = _runtime_cognitive_definition(
+    kind="consult_advisor",
+    operation_type=ConsultAdvisorAction,
+    summary="Request bounded read-only strategic advice.",
+    argument_source="The selected offer supplies the question and focus.",
+    handler_key="cognition.advisor",
+)
+RECALL_MEMORY_DEFINITION = _runtime_cognitive_definition(
+    kind="recall_memory",
+    operation_type=RecallMemoryAction,
+    summary="Read bounded continuity records without game input.",
+    argument_source="The selected offer supplies the source and query.",
+    handler_key="cognition.memory",
+)
+READ_FIELDBOOK_DEFINITION = _runtime_cognitive_definition(
+    kind="read_fieldbook",
+    operation_type=ReadFieldbookAction,
+    summary="Read bounded fieldbook context without game input.",
+    argument_source="The selected offer supplies the project or entry reference.",
+    handler_key="cognition.fieldbook",
+)
+
+
+APPROACH_DIALOGUE_TARGET_DEFINITION = OperationDefinition(
     kind="approach_dialogue_target",
     version="1.0",
-    model=ApproachDialogueTargetAction,
+    operation_type=ApproachDialogueTargetAction,
     summary=(
         "Issue Kenshi's native talk-to order for the complete current selection "
         "and one exact current target. The primary selected character remains "
@@ -2469,20 +2780,20 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.ONE_OR_MORE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_approach",
     bind=bind_approach_dialogue_target,
     controller_verified=True,
 )
 
-COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
+COMMAND_WORLD_TARGET_DEFINITION = OperationDefinition(
     kind="command_world_target",
     version="1.0",
-    model=CommandWorldTargetAction,
+    operation_type=CommandWorldTargetAction,
     summary=(
         "Issue Kenshi's Mouse2 command to one exact current world target at a "
         "screen position exported by current telemetry and re-resolved inside "
@@ -2503,21 +2814,21 @@ COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id", "context_action"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_world_command",
     bind=bind_command_world_target,
     authorable_when=world_target_command_is_currently_authorable,
 )
 
 
-SELECT_SQUAD_MEMBER_CONTRACT = ActionContract(
+SELECT_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="select_squad_member",
     version="1.0",
-    model=SelectSquadMemberAction,
+    operation_type=SelectSquadMemberAction,
     summary=(
         "Select one exact current squad member with Kenshi's Mouse1 binding at "
         "that member's unique current lower-HUD portrait, re-resolved inside "
@@ -2539,11 +2850,11 @@ SELECT_SQUAD_MEMBER_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_squad_selection",
     bind=bind_select_squad_member,
     derive_completion_conditions=_selected_squad_member,
@@ -2551,10 +2862,10 @@ SELECT_SQUAD_MEMBER_CONTRACT = ActionContract(
 )
 
 
-SELECT_SQUAD_MEMBER_EXACT_CONTRACT = ActionContract(
+SELECT_SQUAD_MEMBER_EXACT_DEFINITION = OperationDefinition(
     kind="select_squad_member_exact",
     version="1.0",
-    model=SelectSquadMemberExactAction,
+    operation_type=SelectSquadMemberExactAction,
     summary=(
         "Select one exact current squad member by stable native identity and "
         "verify the singular resulting selection before acknowledging completion."
@@ -2572,11 +2883,11 @@ SELECT_SQUAD_MEMBER_EXACT_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.ONE_OR_MORE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_squad_selection",
     bind=bind_select_squad_member_exact,
     derive_completion_conditions=_selected_squad_member,
@@ -2588,10 +2899,10 @@ SELECT_SQUAD_MEMBER_EXACT_CONTRACT = ActionContract(
 )
 
 
-ROTATE_CAMERA_CONTRACT = ActionContract(
+ROTATE_CAMERA_DEFINITION = OperationDefinition(
     kind="rotate_camera",
     version="1.0",
-    model=RotateCameraAction,
+    operation_type=RotateCameraAction,
     summary=(
         "Rotate the current world camera one bounded horizontal increment through "
         "Kenshi's held-Mouse3 rotation mode."
@@ -2604,21 +2915,21 @@ ROTATE_CAMERA_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=(),
     idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_camera_rotation",
     bind=bind_rotate_camera,
     authorable_when=camera_rotation_is_currently_authorable,
 )
 
 
-PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
+PERFORM_CONTEXT_ACTION_DEFINITION = OperationDefinition(
     kind="perform_context_action",
     version="1.0",
-    model=PerformContextAction,
+    operation_type=PerformContextAction,
     summary=(
         "Attempt one exact contextual action advertised by a current world object. "
         "The native controller rechecks the target and reviewed semantic task, then "
@@ -2645,21 +2956,21 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id", "context_action"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_context_action",
     bind=bind_perform_context_action,
     controller_verified=True,
     authorable_when=context_action_is_currently_authorable,
 )
 
-PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
+PRODUCE_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     kind="produce_resource_output",
     version="1.0",
-    model=ProduceResourceOutputAction,
+    operation_type=ProduceResourceOutputAction,
     summary=(
         "Keep one exact natural-resource job under option ownership until the "
         "resource output inventory contains stock. An Operating machine goal is "
@@ -2682,21 +2993,21 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=7,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_resource_production",
     bind=bind_produce_resource_output,
     controller_verified=True,
     authorable_when=resource_production_is_currently_authorable,
 )
 
-HARVEST_RESOURCE_CONTRACT = ActionContract(
+HARVEST_RESOURCE_DEFINITION = OperationDefinition(
     kind="harvest_resource",
     version="1.0",
-    model=HarvestResourceAction,
+    operation_type=HarvestResourceAction,
     summary=(
         "Run one exact natural-resource job at Kenshi's observed 5x speed until "
         "the requested bounded yield exists, restore normal speed, transfer it "
@@ -2729,11 +3040,11 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(pointer_actions=12, native_assisted_actions=2),
+    risk=OperationRisk(pointer_actions=12, native_assisted_actions=2),
     max_primitive_actions=45,
     reference_fields=("actor_id", "target_id"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.COMPOSITE_OPTION,
+    execution=OperationExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_resource_harvest",
     bind=bind_harvest_resource,
     controller_verified=True,
@@ -2741,10 +3052,10 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
 )
 
 
-RESPOND_TO_IMMEDIATE_THREAT_CONTRACT = ActionContract(
+RESPOND_TO_IMMEDIATE_THREAT_DEFINITION = OperationDefinition(
     kind="respond_to_immediate_threat",
     version="1.0",
-    model=RespondToImmediateThreatAction,
+    operation_type=RespondToImmediateThreatAction,
     summary=(
         "Choose whether the exact selected actor engages or withdraws from an "
         "immediate threat. The runtime owns normal-speed playback, withdrawal "
@@ -2770,23 +3081,23 @@ RESPOND_TO_IMMEDIATE_THREAT_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     # Withdrawal may spend the complete four-primitive native movement budget;
     # the wrapper then owns one additional terminal pause.
     max_primitive_actions=5,
     reference_fields=("actor_id", "strategy"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_threat_response",
     bind=bind_respond_to_immediate_threat,
     controller_verified=True,
     authorable_when=threat_response_is_currently_authorable,
 )
 
-OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
+OPEN_CONTEXT_INVENTORY_DEFINITION = OperationDefinition(
     kind="open_context_inventory",
     version="1.0",
-    model=OpenContextInventoryAction,
+    operation_type=OpenContextInventoryAction,
     summary=(
         "Open the ordinary inventory UI for one exact current natural-resource "
         "handle. Native code re-resolves the target and terminally proves that "
@@ -2810,11 +3121,11 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=6,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_context_inventory",
     bind=bind_open_context_inventory,
     controller_verified=True,
@@ -2825,10 +3136,10 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
 )
 
 
-REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
+REGROUP_WITH_SQUAD_MEMBER_DEFINITION = OperationDefinition(
     kind="regroup_with_squad_member",
     version="1.0",
-    model=RegroupWithSquadMemberAction,
+    operation_type=RegroupWithSquadMemberAction,
     summary=(
         "Bring one exact selected actor to one distinct current squadmate. The "
         "character adapter binds the current actor and exact target; native code owns global squad "
@@ -2854,11 +3165,11 @@ REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("actor_id", "target_id"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_squad_regroup",
     bind=bind_regroup_with_squad_member,
     controller_verified=True,
@@ -2866,10 +3177,10 @@ REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
 )
 
 
-MOVE_IN_DIRECTION_CONTRACT = ActionContract(
+MOVE_IN_DIRECTION_DEFINITION = OperationDefinition(
     kind="move_in_direction",
     version="1.0",
-    model=MoveInDirectionAction,
+    operation_type=MoveInDirectionAction,
     summary=(
         "Walk a bearing and distance from where the character stands, ordering "
         "a walk to a bare point rather than toward anyone. One monitored option "
@@ -2887,20 +3198,20 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_move_in_direction,
     controller_verified=True,
 )
 
-TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
+TRAVEL_TO_MAP_DESTINATION_DEFINITION = OperationDefinition(
     kind="travel_to_map_destination",
     version="1.0",
-    model=TravelToMapDestinationAction,
+    operation_type=TravelToMapDestinationAction,
     summary=(
         "Travel to one exact settlement marker the player has already "
         "discovered. Native code re-resolves the marker, selects Kenshi's "
@@ -2929,21 +3240,21 @@ TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.ONE_OR_MORE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("destination_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_map_travel",
     bind=bind_travel_to_map_destination,
     controller_verified=True,
     authorable_when=map_travel_is_currently_authorable,
 )
 
-EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
+EXIT_CURRENT_BUILDING_DEFINITION = OperationDefinition(
     kind="exit_current_building",
     version="1.0",
-    model=ExitCurrentBuildingAction,
+    operation_type=ExitCurrentBuildingAction,
     summary=(
         "Leave the selected character's current building. The planner supplies "
         "no direction or coordinates; native code resolves an unlocked door, "
@@ -2969,20 +3280,20 @@ EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.EXACTLY_ONE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_exit_current_building,
     controller_verified=True,
 )
 
-MOVE_TO_CHARACTER_CONTRACT = ActionContract(
+MOVE_TO_CHARACTER_DEFINITION = OperationDefinition(
     kind="move_to_character",
     version="1.0",
-    model=MoveToCharacterAction,
+    operation_type=MoveToCharacterAction,
     summary=(
         "Walk the complete current selection to one exact currently observed "
         "nearby character without talking to them. This is how the agent goes "
@@ -3006,20 +3317,20 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
     selection_requirement=SelectionRequirement.ONE_OR_MORE,
-    risk=ActionRiskCost(native_assisted_actions=1),
+    risk=OperationRisk(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.MONITORED_OPTION,
+    execution=OperationExecution.MONITORED_OPTION,
     receipt_kind="semantic_move",
     bind=bind_move_to_character,
     controller_verified=True,
 )
 
-ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
+ACTIVATE_VISIBLE_CONTROL_DEFINITION = OperationDefinition(
     kind="activate_visible_control",
     version="1.0",
-    model=ActivateVisibleControlAction,
+    operation_type=ActivateVisibleControlAction,
     summary=(
         "Activate exactly one control the interface currently advertises, using "
         "its observed bounds re-resolved inside the input lease."
@@ -3035,19 +3346,19 @@ ACTIVATE_VISIBLE_CONTROL_CONTRACT = ActionContract(
     # this action survives a resolution change and needs no calibrated profile.
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("exact_label", "role"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_control",
     bind=bind_visible_control,
 )
 
-DISMISS_SCREEN_CONTRACT = ActionContract(
+DISMISS_SCREEN_DEFINITION = OperationDefinition(
     kind="dismiss_screen",
     version="1.0",
-    model=DismissScreenAction,
+    operation_type=DismissScreenAction,
     summary=(
         "Close one currently bound named screen or exact trade/inventory window "
         "toward the world view. Active dialogue instead ends through an exact "
@@ -3065,20 +3376,20 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
     # telemetry inside the input lease.
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=3,
     reference_fields=("expected_screen",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_dismiss",
     bind=bind_dismiss_screen,
     derive_completion_conditions=_dismissed_screen_closed,
 )
 
-PURCHASE_ITEM_CONTRACT = ActionContract(
+PURCHASE_ITEM_DEFINITION = OperationDefinition(
     kind="purchase_item",
     version="2.2",
-    model=PurchaseItemAction,
+    operation_type=PurchaseItemAction,
     summary=(
         "Acquire a bounded quantity of one item from exact seller-owned cells. "
         "The controller binds the exact open player-window owner, rebinds each "
@@ -3111,7 +3422,7 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1, purchase_actions=1),
+    risk=OperationRisk(pointer_actions=1, purchase_actions=1),
     max_primitive_actions=10,
     reference_fields=(
         "cell_label",
@@ -3121,7 +3432,7 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
         "seller_id",
     ),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.COMPOSITE_OPTION,
+    execution=OperationExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_purchase",
     bind=bind_purchase_item,
     derive_risk=_bounded_trade_risk,
@@ -3133,7 +3444,7 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
 def bind_open_screen(
     action: Action,
     observation: Observation,
-) -> ReferenceBinding:
+) -> EmptyBinding | BindingFailure:
     """Resolve the screen to its binding and to whether it is already up.
 
     Already-satisfied aware on purpose. The underlying controls are toggles, so
@@ -3155,19 +3466,19 @@ def bind_open_screen(
         )
     binding = SCREEN_BINDINGS[action.screen]
     if already:
-        return ReferenceBinding(
-            bound=True,
+        return EmptyBinding(
             reason=(
                 f"The {action.screen.value} screen is already open; pressing "
                 f"{binding.value} would close it, so no input is sent."
             ),
+            source_revision=observation.world_revision,
         )
-    return ReferenceBinding(
-        bound=True,
+    return EmptyBinding(
         reason=(
             f"The {action.screen.value} screen is closed and "
             f"{binding.value} opens it."
         ),
+        source_revision=observation.world_revision,
     )
 
 
@@ -3181,10 +3492,10 @@ def _open_screen_terminal(
     return (condition,) if condition is not None else ()
 
 
-OPEN_SCREEN_CONTRACT = ActionContract(
+OPEN_SCREEN_DEFINITION = OperationDefinition(
     kind="open_screen",
     version="1.0",
-    model=OpenScreenAction,
+    operation_type=OpenScreenAction,
     summary=(
         "Have a named screen open. The controller presses whichever binding "
         "opens it and proves the exact screen arrived, so the affordance expresses "
@@ -3200,21 +3511,21 @@ OPEN_SCREEN_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=False,
-    risk=ActionRiskCost(),
+    risk=OperationRisk(),
     max_primitive_actions=1,
     reference_fields=("screen",),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_screen",
     bind=bind_open_screen,
     derive_completion_conditions=_open_screen_terminal,
 )
 
 
-USE_GAME_BINDING_CONTRACT = ActionContract(
+USE_GAME_BINDING_DEFINITION = OperationDefinition(
     kind="use_game_binding",
     version="1.0",
-    model=UseGameBindingAction,
+    operation_type=UseGameBindingAction,
     summary=(
         "Press one named Kenshi control through the hard-coded shipped-default "
         "keymap. The binding catalog is the reviewed semantic vocabulary; it "
@@ -3235,22 +3546,23 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
     # A key carries no screen position at all.
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=False,
-    risk=ActionRiskCost(),
+    risk=OperationRisk(),
     max_primitive_actions=1,
     reference_fields=("binding",),
     # Set at construction below: toggles may not be retried, because a retry
     # undoes the first press instead of repeating it.
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_binding",
     bind=bind_use_game_binding,
     derive_completion_conditions=_binding_transition,
+    derive_terminal=_game_binding_terminal,
 )
 
-RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
+RECOVER_CAMERA_VIEW_DEFINITION = OperationDefinition(
     kind="recover_camera_view",
     version="1.0",
-    model=RecoverCameraViewAction,
+    operation_type=RecoverCameraViewAction,
     summary=(
         "Restore a usable selected-character-following world view through one "
         "bounded controller-owned transaction. The caller supplies no camera "
@@ -3277,11 +3589,11 @@ RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=15,
     reference_fields=(),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_camera_recovery",
     bind=bind_recover_camera_view,
     controller_verified=True,
@@ -3290,10 +3602,10 @@ RECOVER_CAMERA_VIEW_CONTRACT = ActionContract(
 
 
 
-SCROLL_SCREEN_CONTRACT = ActionContract(
+SCROLL_SCREEN_DEFINITION = OperationDefinition(
     kind="scroll_screen",
     version="1.0",
-    model=ScrollScreenAction,
+    operation_type=ScrollScreenAction,
     summary=(
         "Scroll inside one open window to reveal contents past the first "
         "screenful. Shop stock and inventory that are not currently rendered "
@@ -3310,20 +3622,20 @@ SCROLL_SCREEN_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
     # A scroll commits nothing: it changes what is rendered, not the world.
-    risk=ActionRiskCost(),
+    risk=OperationRisk(),
     max_primitive_actions=1,
     reference_fields=("window",),
     idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_scroll",
     bind=bind_scroll_screen,
 )
 
 
-SELL_ITEM_CONTRACT = ActionContract(
+SELL_ITEM_DEFINITION = OperationDefinition(
     kind="sell_item",
     version="2.1",
-    model=SellItemAction,
+    operation_type=SellItemAction,
     summary=(
         "Sell a bounded quantity from the exact observed player-window owner. "
         "The controller rebinds every unit and proves that owner's carried loss "
@@ -3352,11 +3664,11 @@ SELL_ITEM_CONTRACT = ActionContract(
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
     # Counted against the purchase budget: a sale is as irreversible as a buy.
-    risk=ActionRiskCost(pointer_actions=1, purchase_actions=1),
+    risk=OperationRisk(pointer_actions=1, purchase_actions=1),
     max_primitive_actions=10,
     reference_fields=("cell_label", "item_name", "quantity", "window", "buyer_id"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.COMPOSITE_OPTION,
+    execution=OperationExecution.COMPOSITE_OPTION,
     receipt_kind="semantic_sell",
     bind=bind_sell_item,
     derive_risk=_bounded_trade_risk,
@@ -3365,10 +3677,10 @@ SELL_ITEM_CONTRACT = ActionContract(
 )
 
 
-EQUIP_ITEM_CONTRACT = ActionContract(
+EQUIP_ITEM_DEFINITION = OperationDefinition(
     kind="equip_item",
     version="1.1",
-    model=EquipItemAction,
+    operation_type=EquipItemAction,
     summary=(
         "Equip the item in one exact selected squad-owned inventory window. "
         "Refused while any trade is open, because there the same right-click "
@@ -3386,19 +3698,19 @@ EQUIP_ITEM_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=1),
+    risk=OperationRisk(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("cell_label", "window"),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_equip",
     bind=bind_equip_item,
 )
 
-COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
+COLLECT_RESOURCE_OUTPUT_DEFINITION = OperationDefinition(
     kind="collect_resource_output",
     version="1.2",
-    model=CollectResourceOutputAction,
+    operation_type=CollectResourceOutputAction,
     summary=(
         "Right-click one exact observed output cell into the selected character. "
         "The exact resource inventory and selected character's own inventory "
@@ -3427,7 +3739,7 @@ COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=False,
-    risk=ActionRiskCost(pointer_actions=2),
+    risk=OperationRisk(pointer_actions=2),
     max_primitive_actions=4,
     reference_fields=(
         "target_id",
@@ -3438,136 +3750,64 @@ COLLECT_RESOURCE_OUTPUT_CONTRACT = ActionContract(
         "section",
     ),
     idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-    execution=ActionExecution.ATOMIC_HANDLER,
+    execution=OperationExecution.ATOMIC_HANDLER,
     receipt_kind="semantic_resource_transfer",
     bind=bind_collect_resource_output,
     controller_verified=True,
     authorable_when=resource_output_is_currently_authorable,
 )
 
-ACTION_CONTRACTS: dict[str, ActionContract] = {
-    contract.kind: contract
-    for contract in (
-        APPROACH_DIALOGUE_TARGET_CONTRACT,
-        OPEN_SCREEN_CONTRACT,
-        COMMAND_WORLD_TARGET_CONTRACT,
-        SELECT_SQUAD_MEMBER_CONTRACT,
-        SELECT_SQUAD_MEMBER_EXACT_CONTRACT,
-        ROTATE_CAMERA_CONTRACT,
-        PERFORM_CONTEXT_ACTION_CONTRACT,
-        PRODUCE_RESOURCE_OUTPUT_CONTRACT,
-        HARVEST_RESOURCE_CONTRACT,
-        RESPOND_TO_IMMEDIATE_THREAT_CONTRACT,
-        OPEN_CONTEXT_INVENTORY_CONTRACT,
-        REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
-        MOVE_TO_CHARACTER_CONTRACT,
-        MOVE_IN_DIRECTION_CONTRACT,
-        TRAVEL_TO_MAP_DESTINATION_CONTRACT,
-        EXIT_CURRENT_BUILDING_CONTRACT,
-        ACTIVATE_VISIBLE_CONTROL_CONTRACT,
-        DISMISS_SCREEN_CONTRACT,
-        PURCHASE_ITEM_CONTRACT,
-        USE_GAME_BINDING_CONTRACT,
-        RECOVER_CAMERA_VIEW_CONTRACT,
-        SCROLL_SCREEN_CONTRACT,
-        SELL_ITEM_CONTRACT,
-        EQUIP_ITEM_CONTRACT,
-        COLLECT_RESOURCE_OUTPUT_CONTRACT,
-    )
-}
+OPERATION_DEFINITION_LIST: tuple[OperationDefinition, ...] = (
+    NOOP_DEFINITION,
+    STOP_DEFINITION,
+    CONSULT_ADVISOR_DEFINITION,
+    RECALL_MEMORY_DEFINITION,
+    READ_FIELDBOOK_DEFINITION,
+    APPROACH_DIALOGUE_TARGET_DEFINITION,
+    OPEN_SCREEN_DEFINITION,
+    COMMAND_WORLD_TARGET_DEFINITION,
+    SELECT_SQUAD_MEMBER_DEFINITION,
+    SELECT_SQUAD_MEMBER_EXACT_DEFINITION,
+    ROTATE_CAMERA_DEFINITION,
+    PERFORM_CONTEXT_ACTION_DEFINITION,
+    PRODUCE_RESOURCE_OUTPUT_DEFINITION,
+    HARVEST_RESOURCE_DEFINITION,
+    RESPOND_TO_IMMEDIATE_THREAT_DEFINITION,
+    OPEN_CONTEXT_INVENTORY_DEFINITION,
+    REGROUP_WITH_SQUAD_MEMBER_DEFINITION,
+    MOVE_TO_CHARACTER_DEFINITION,
+    MOVE_IN_DIRECTION_DEFINITION,
+    TRAVEL_TO_MAP_DESTINATION_DEFINITION,
+    EXIT_CURRENT_BUILDING_DEFINITION,
+    ACTIVATE_VISIBLE_CONTROL_DEFINITION,
+    DISMISS_SCREEN_DEFINITION,
+    PURCHASE_ITEM_DEFINITION,
+    USE_GAME_BINDING_DEFINITION,
+    RECOVER_CAMERA_VIEW_DEFINITION,
+    SCROLL_SCREEN_DEFINITION,
+    SELL_ITEM_DEFINITION,
+    EQUIP_ITEM_DEFINITION,
+    COLLECT_RESOURCE_OUTPUT_DEFINITION,
+)
 
 
-def contract_for(action: Action) -> ActionContract | None:
-    """The contract governing an action, or None for uncontracted actions."""
+def _build_definition_registry(
+    definitions: tuple[OperationDefinition, ...],
+) -> dict[str, OperationDefinition]:
+    registry: dict[str, OperationDefinition] = {}
+    for definition in definitions:
+        if definition.kind in registry:
+            raise RuntimeError(f"Operation {definition.kind!r} is multiply defined.")
+        if not definition.handler_key:
+            raise RuntimeError(f"Operation {definition.kind!r} has no handler key.")
+        registry[definition.kind] = definition
+    return registry
 
-    return ACTION_CONTRACTS.get(action.kind)
+
+OPERATION_DEFINITIONS = _build_definition_registry(OPERATION_DEFINITION_LIST)
 
 
-def completion_contract_for(
-    action: Action,
-    observation: Observation,
-    *,
-    selected_affordance: bool = False,
-) -> ActionCompletionContract:
-    """Resolve completion once, against the state immediately before dispatch.
+def definition_for(action: Action) -> OperationDefinition | None:
+    """Return the sole definition for an adapted private operation, if any."""
 
-    The playing model never authors completion. Deterministic effect conditions
-    and controller verdicts take precedence. When an adapter cannot observe the
-    gameplay effect, an offered affordance terminates only at the narrower
-    delivery boundary: accepted input plus a causally later observation.
-    """
-
-    def unresolved() -> ActionCompletionContract:
-        return ActionCompletionContract(
-            owner=(
-                CompletionOwner.AFFORDANCE_DELIVERY
-                if selected_affordance
-                else CompletionOwner.STEP_CONDITIONS
-            )
-        )
-
-    if isinstance(action, PauseAction):
-        return ActionCompletionContract(
-            owner=CompletionOwner.RUNTIME_CONDITIONS,
-            conditions=(
-                Condition(
-                    kind=ConditionKind.FIELD,
-                    path=ConditionPath.TELEMETRY_GAME_PAUSED,
-                    operator=ConditionOperator.EQUALS,
-                    expected=action.paused,
-                    max_age_seconds=3.0,
-                ),
-            ),
-        )
-    if isinstance(action, SetSpeedAction):
-        return ActionCompletionContract(
-            owner=CompletionOwner.RUNTIME_CONDITIONS,
-            conditions=(
-                Condition(
-                    kind=ConditionKind.FIELD,
-                    path=ConditionPath.TELEMETRY_GAME_PAUSED,
-                    operator=ConditionOperator.EQUALS,
-                    expected=False,
-                    max_age_seconds=3.0,
-                ),
-                Condition(
-                    kind=ConditionKind.FIELD,
-                    path=ConditionPath.TELEMETRY_GAME_SPEED_MULTIPLIER,
-                    operator=ConditionOperator.EQUALS,
-                    expected=GAME_SPEED_MULTIPLIER_BY_GEAR[action.speed],
-                    max_age_seconds=3.0,
-                ),
-            ),
-        )
-    if (
-        isinstance(action, UseGameBindingAction)
-        and action.binding is GameBinding.QUICKSAVE
-    ):
-        return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
-    if isinstance(
-        action,
-        (
-            NoopAction,
-            StopAction,
-            WaitAction,
-            ConsultAdvisorAction,
-                    RecallMemoryAction,
-            ReadFieldbookAction,
-        ),
-    ):
-        return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
-
-    contract = contract_for(action)
-    if contract is None:
-        return unresolved()
-    if contract.controller_verified:
-        return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
-    if contract.derive_completion_conditions is None:
-        return unresolved()
-    conditions = contract.derive_completion_conditions(action, observation)
-    if conditions is None:
-        return unresolved()
-    return ActionCompletionContract(
-        owner=CompletionOwner.RUNTIME_CONDITIONS,
-        conditions=conditions,
-    )
+    return OPERATION_DEFINITIONS.get(action.kind)

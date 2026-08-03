@@ -7,11 +7,6 @@ from dataclasses import replace
 import pytest
 
 import kenshi_agent.affordances as affordance_module
-from kenshi_agent.action_contracts import (
-    USE_GAME_BINDING_CONTRACT,
-    CompletionOwner,
-    completion_contract_for,
-)
 from kenshi_agent.affordances import (
     AFFORDANCE_ADAPTERS,
     OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS,
@@ -47,6 +42,13 @@ from kenshi_agent.models import (
     WorldStateRevision,
     WorldTarget,
     is_runtime_owned_visible_control,
+)
+from kenshi_agent.operation_definitions import (
+    APPROACH_DIALOGUE_TARGET_DEFINITION,
+    USE_GAME_BINDING_DEFINITION,
+    BoundActor,
+    BoundOperation,
+    TerminalOwner,
 )
 
 
@@ -133,15 +135,15 @@ def test_named_binding_adapter_covers_its_whole_current_denominator() -> None:
             binding=binding,
             expected_effect=binding.value,
         )
-        completion = completion_contract_for(
+        completion = USE_GAME_BINDING_DEFINITION.resolve_terminal(
             action,
             observation,
             selected_affordance=True,
         )
         if (
-            USE_GAME_BINDING_CONTRACT.bind(action, observation).bound
+            USE_GAME_BINDING_DEFINITION.bind(action, observation).bound
             and not (
-                completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+            completion.owner is TerminalOwner.RUNTIME_CONDITIONS
                 and not completion.conditions
             )
         ):
@@ -979,6 +981,11 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
     )
     selection = selection_for(offer)
     bound = bind_affordance(selection, observation)
+    assert isinstance(bound, BoundOperation)
+    assert bound.definition is APPROACH_DIALOGUE_TARGET_DEFINITION
+    assert isinstance(bound.binding, BoundActor)
+    assert bound.binding.source_revision == observation.world_revision
+    assert bound.based_on_revision == observation.world_revision
     assert bound.operation.kind == "approach_dialogue_target"
     assert bound.operation.target_id == target.id
 
@@ -1087,14 +1094,14 @@ def test_every_adapter_closes_with_the_same_runtime_owned_lifecycle() -> None:
             if spec.required
         }
         materialized = bind_affordance(selection_for(offer, **required), observation)
-        completion = completion_contract_for(
+        completion = materialized.definition.resolve_terminal(
             materialized.operation,
             observation,
             selected_affordance=True,
         )
-        assert completion.owner is not CompletionOwner.STEP_CONDITIONS
+        assert completion.owner is not TerminalOwner.STEP_CONDITIONS
         assert (
-            completion.owner is not CompletionOwner.RUNTIME_CONDITIONS
+            completion.owner is not TerminalOwner.RUNTIME_CONDITIONS
             or completion.conditions
         )
         receipt = terminal_affordance_receipt(

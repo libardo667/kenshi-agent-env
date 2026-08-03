@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from PIL import Image, ImageDraw
 
-from kenshi_agent.action_contracts import RECOVER_CAMERA_VIEW_CONTRACT
 from kenshi_agent.camera_recovery import score_camera_observation
 from kenshi_agent.config import (
     CameraRecoveryConfig,
@@ -40,6 +39,7 @@ from kenshi_agent.models import (
     Vec3,
     VisibleUIControl,
 )
+from kenshi_agent.operation_definitions import RECOVER_CAMERA_VIEW_DEFINITION
 from kenshi_agent.safety import ActionGuard, SafetyViolation
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
@@ -334,15 +334,15 @@ def test_contract_is_controller_verified_and_binds_current_hud(tmp_path: Path) -
     async def scenario() -> None:
         environment, _, _ = camera_environment(tmp_path, mode="clear")
         observation = await environment.reset()
-        binding = RECOVER_CAMERA_VIEW_CONTRACT.bind(
+        binding = RECOVER_CAMERA_VIEW_DEFINITION.bind(
             RecoverCameraViewAction(), observation
         )
         assert binding.bound
         assert binding.target_id == "char-hep"
         assert binding.floor == 0
         assert binding.resolved_bounds is not None
-        assert RECOVER_CAMERA_VIEW_CONTRACT.controller_verified
-        assert RECOVER_CAMERA_VIEW_CONTRACT.max_primitive_actions == 15
+        assert RECOVER_CAMERA_VIEW_DEFINITION.controller_verified
+        assert RECOVER_CAMERA_VIEW_DEFINITION.max_primitive_actions == 15
 
     asyncio.run(scenario())
 
@@ -404,7 +404,7 @@ def test_contract_fails_closed_on_missing_capture_ambiguous_portrait_or_modal(
             },
             deep=True,
         )
-        missing = RECOVER_CAMERA_VIEW_CONTRACT.bind(
+        missing = RECOVER_CAMERA_VIEW_DEFINITION.bind(
             RecoverCameraViewAction(), without_capture
         )
         assert not missing.bound
@@ -430,7 +430,7 @@ def test_contract_fails_closed_on_missing_capture_ambiguous_portrait_or_modal(
             },
             deep=True,
         )
-        duplicate = RECOVER_CAMERA_VIEW_CONTRACT.bind(
+        duplicate = RECOVER_CAMERA_VIEW_DEFINITION.bind(
             RecoverCameraViewAction(), ambiguous
         )
         assert not duplicate.bound
@@ -448,7 +448,7 @@ def test_contract_fails_closed_on_missing_capture_ambiguous_portrait_or_modal(
             },
             deep=True,
         )
-        blocked = RECOVER_CAMERA_VIEW_CONTRACT.bind(RecoverCameraViewAction(), modal)
+        blocked = RECOVER_CAMERA_VIEW_DEFINITION.bind(RecoverCameraViewAction(), modal)
         assert not blocked.bound
         assert "closed modal" in blocked.reason
 
@@ -623,7 +623,7 @@ def test_failure_is_terminal_after_bounded_attempts(tmp_path: Path) -> None:
         assert evidence.status is CameraRecoveryStatus.FAILED_AFTER_BOUNDED_ATTEMPTS
         assert not evidence.candidates[-1].clear
         assert evidence.primitive_actions == len(controller.actions)
-        assert evidence.primitive_actions <= RECOVER_CAMERA_VIEW_CONTRACT.max_primitive_actions
+        assert evidence.primitive_actions <= RECOVER_CAMERA_VIEW_DEFINITION.max_primitive_actions
 
     asyncio.run(scenario())
 

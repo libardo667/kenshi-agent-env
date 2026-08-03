@@ -6,12 +6,6 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol
 
-from .action_contracts import (
-    ActionExecution,
-    CompletionOwner,
-    completion_contract_for,
-    contract_for,
-)
 from .affordances import terminal_affordance_receipt
 from .config import PlanningConfig
 from .env import AgentEnvironment
@@ -70,6 +64,12 @@ from .models import (
 )
 from .movement_ownership import has_keyed_native_movement_terminal
 from .non_progress import unchanged_definitive_no_op_reason
+from .operation_definitions import (
+    OperationExecution,
+    TerminalOwner,
+    definition_for,
+    unadapted_terminal,
+)
 from .options import (
     OptionLifecycleError,
     OptionPoll,
@@ -944,9 +944,9 @@ class ContinuousPlanExecutor:
         feature flag.
         """
 
-        contract = contract_for(action)
-        if contract is not None:
-            if contract.execution is not ActionExecution.MONITORED_OPTION:
+        definition = definition_for(action)
+        if definition is not None:
+            if definition.execution is not OperationExecution.MONITORED_OPTION:
                 return None
             if has_keyed_native_movement_terminal(action):
                 return None
@@ -1014,13 +1014,15 @@ class ContinuousPlanExecutor:
                 reason=f"Existing action guard rejected the step: {exc}",
             )
 
-        completion = completion_contract_for(
-            action,
-            observation,
-            selected_affordance=step.affordance is not None,
+        definition = definition_for(action)
+        selected = step.affordance is not None
+        completion = (
+            definition.resolve_terminal(action, observation, selected_affordance=selected)
+            if definition is not None
+            else unadapted_terminal(action, selected_affordance=selected)
         )
         if (
-            completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+            completion.owner is TerminalOwner.RUNTIME_CONDITIONS
             and not completion.conditions
         ):
             self.guard.release(guard_reservation)
@@ -1197,11 +1199,10 @@ class ContinuousPlanExecutor:
             )
 
         native_movement_option: StatefulNativeMovementOption | None = None
-        contract = contract_for(action)
         if (
             StatefulNativeMovementOption.supports(action)
-            and contract is not None
-            and contract.execution is ActionExecution.MONITORED_OPTION
+            and definition is not None
+            and definition.execution is OperationExecution.MONITORED_OPTION
         ):
             native_movement_option = StatefulNativeMovementOption(
                 option_id=(f"native-movement-{plan.plan_id}-{plan.plan_version}-{step.step_id}"),
@@ -1645,8 +1646,7 @@ class ContinuousPlanExecutor:
                 staged_patch=staged_patch,
                 interrupted=True,
             )
-        contract = contract_for(action)
-        if contract is not None and contract.controller_verified:
+        if definition is not None and definition.controller_verified:
             if monitored_outcome is not None:
                 self._event(
                     "plan_step_progress",
@@ -1672,20 +1672,20 @@ class ContinuousPlanExecutor:
                     success=transition.success,
                     staged_patch=staged_patch,
                 )
-            if contract.native_terminal_success_reasons:
+            if definition.native_terminal_success_reasons:
                 acknowledgement = transition.receipt.native_acknowledgement
                 succeeded = bool(
                     acknowledgement is not None
                     and acknowledgement.status is NativeCommandStatus.COMPLETED
                     and acknowledgement.reason
-                    in contract.native_terminal_success_reasons
+                    in definition.native_terminal_success_reasons
                 )
                 self._event(
                     "plan_step_progress",
                     plan,
                     latest,
                     step=step,
-                    reason="Checked the contract-declared exact native terminal.",
+                    reason="Checked the definition's exact native terminal.",
                     evidence={
                         "controller_verified": True,
                         "status": (
@@ -1699,7 +1699,7 @@ class ContinuousPlanExecutor:
                             else "missing"
                         ),
                         "accepted_terminal_reasons": sorted(
-                            contract.native_terminal_success_reasons
+                            definition.native_terminal_success_reasons
                         ),
                     },
                 )
@@ -1708,9 +1708,9 @@ class ContinuousPlanExecutor:
                     succeeded=succeeded,
                     actions_completed=1,
                     reason=(
-                        "Native action reached its contract-declared exact terminal."
+                        "Native action reached its definition-declared exact terminal."
                         if succeeded
-                        else "Native action lacked its contract-declared exact terminal."
+                        else "Native action lacked its definition-declared exact terminal."
                     ),
                     terminated=transition.terminated,
                     success=transition.success,
@@ -1917,7 +1917,7 @@ class ContinuousPlanExecutor:
                 success=transition.success,
                 staged_patch=staged_patch if succeeded else None,
             )
-        if completion.owner is CompletionOwner.CONTROLLER_TERMINAL:
+        if completion.owner is TerminalOwner.CONTROLLER_TERMINAL:
             if (
                 isinstance(action, UseGameBindingAction)
                 and action.binding is GameBinding.QUICKSAVE
@@ -1995,7 +1995,7 @@ class ContinuousPlanExecutor:
                 staged_patch=staged_patch if succeeded else None,
             )
 
-        if completion.owner is CompletionOwner.AFFORDANCE_DELIVERY:
+        if completion.owner is TerminalOwner.AFFORDANCE_DELIVERY:
             causal_revision_advanced = latest.world_revision.is_later_than(
                 action_start_revision
             )
@@ -2033,7 +2033,7 @@ class ContinuousPlanExecutor:
                 staged_patch=staged_patch if succeeded else None,
             )
 
-        if completion.owner is CompletionOwner.RUNTIME_CONDITIONS:
+        if completion.owner is TerminalOwner.RUNTIME_CONDITIONS:
             runtime_paths = {
                 condition.path
                 for condition in completion.conditions
@@ -3373,7 +3373,7 @@ class ContinuousPlanExecutor:
             cleanup_confirmed=cleanup_confirmed,
             reason=reason[:1000],
         )
-        contract = contract_for(action)
+        contract = definition_for(action)
         assert contract is not None
         primitive_actions = sum(receipt.primitive_actions for receipt in receipts)
         boundary = next(

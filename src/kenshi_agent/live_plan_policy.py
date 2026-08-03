@@ -16,12 +16,6 @@ composes activate-alone are both acceptable if their references bind.
 
 from __future__ import annotations
 
-from .action_contracts import (
-    ActionContract,
-    CompletionOwner,
-    completion_contract_for,
-    contract_for,
-)
 from .models import (
     TIME_GAME_BINDINGS,
     TOGGLE_GAME_BINDINGS,
@@ -39,6 +33,13 @@ from .models import (
     UseGameBindingAction,
     is_controller_primitive,
     is_runtime_control_action,
+)
+from .operation_definitions import (
+    BindingFailure,
+    OperationDefinition,
+    TerminalOwner,
+    definition_for,
+    runtime_control_terminal,
 )
 from .planning import evaluate_conditions
 
@@ -132,13 +133,21 @@ def _step_action_errors(
         )
         return errors
 
+    definition: OperationDefinition | None = definition_for(action)
     if is_runtime_control_action(action):
         # Run control (stop, noop, wait, pause, set_speed) touches no game object
         # and binds to no reference. Its completion is runtime-owned rather than
         # a second model-authored description of the same intention.
-        completion = completion_contract_for(action, observation)
+        completion = (
+            definition.resolve_terminal(action, observation)
+            if definition is not None
+            else runtime_control_terminal(action)
+        )
+        if completion is None:
+            errors.append(f"{label} runtime action {action.kind!r} has no terminal")
+            return errors
         if (
-            completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+            completion.owner is TerminalOwner.RUNTIME_CONDITIONS
             and not completion.conditions
         ):
             errors.append(
@@ -147,11 +156,10 @@ def _step_action_errors(
             )
         return errors
 
-    contract: ActionContract | None = contract_for(action)
-    if contract is None:
-        errors.append(f"{label} action {action.kind!r} has no authoritative action contract")
+    if definition is None:
+        errors.append(f"{label} action {action.kind!r} has no operation definition")
         return errors
-    if not contract.allows_control_mode(control_mode):
+    if not definition.allows_control_mode(control_mode):
         errors.append(
             f"{label} action {action.kind!r} is not permitted in control mode "
             f"{control_mode.value!r}"
@@ -160,7 +168,7 @@ def _step_action_errors(
     capabilities = set(
         observation.telemetry.capabilities if observation.telemetry is not None else []
     )
-    missing = contract.missing_capabilities(capabilities)
+    missing = definition.missing_capabilities(capabilities)
     if missing:
         errors.append(
             f"{label} action {action.kind!r} requires unavailable capabilities: "
@@ -173,8 +181,8 @@ def _step_action_errors(
     # would reject every genuinely composed plan. Each step is still bound and
     # revalidated when it is actually reached, and again inside the input lease.
     if require_binding:
-        binding = contract.bind(action, observation)
-        if not binding.bound:
+        binding = definition.bind(action, observation)
+        if isinstance(binding, BindingFailure):
             errors.append(f"{label} reference does not bind to current state: {binding.reason}")
 
     # Only a claim *weaker* than the contract is a problem. Declaring
@@ -182,12 +190,12 @@ def _step_action_errors(
     # more cautious, and rejecting it trapped the planner in a loop it could not
     # escape: everything else in the prompt tells it to prefer at_most_once.
     if (
-        contract.idempotency is IdempotencyPolicy.AT_MOST_ONCE
+        definition.idempotency is IdempotencyPolicy.AT_MOST_ONCE
         and step.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
     ):
         errors.append(
             f"{label} declares idempotency {step.idempotency.value!r}, but "
-            f"{action.kind!r} is {contract.idempotency.value!r} and may not be retried"
+            f"{action.kind!r} is {definition.idempotency.value!r} and may not be retried"
         )
     if step.retry_budget and isinstance(action, UseGameBindingAction):
         # Retryability here is a property of the individual binding, not the
@@ -199,33 +207,33 @@ def _step_action_errors(
                 f"{label} retries {action.binding.value!r}, which toggles: a second "
                 "press undoes the first rather than repeating it"
             )
-    elif step.retry_budget and contract.idempotency is IdempotencyPolicy.AT_MOST_ONCE:
+    elif step.retry_budget and definition.idempotency is IdempotencyPolicy.AT_MOST_ONCE:
         errors.append(
             f"{label} retries an at-most-once action; a delayed confirmation is not "
             "permission to act twice"
         )
 
-    completion = completion_contract_for(
+    completion = definition.resolve_terminal(
         action,
         observation,
         selected_affordance=step.affordance is not None,
     )
     if (
-        completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+        completion.owner is TerminalOwner.RUNTIME_CONDITIONS
         and not completion.conditions
     ):
         errors.append(
             f"{label} runtime completion baseline is unavailable; no input may "
             "be dispatched without a verifiable terminal"
         )
-    elif completion.owner is CompletionOwner.RUNTIME_CONDITIONS and not all(
+    elif completion.owner is TerminalOwner.RUNTIME_CONDITIONS and not all(
         _is_causal_condition(condition.kind, condition.path)
         for condition in completion.conditions
     ):
         errors.append(
             f"{label} runtime completion contract contains a non-causal condition"
         )
-    elif completion.owner is CompletionOwner.STEP_CONDITIONS and not any(
+    elif completion.owner is TerminalOwner.STEP_CONDITIONS and not any(
         _is_causal_condition(condition.kind, condition.path)
         for condition in step.success_conditions
     ):
@@ -297,14 +305,14 @@ def live_plan_rebase_errors(
         None,
     )
     if entry is not None and not is_runtime_control_action(entry.action):
-        contract = contract_for(entry.action)
-        if contract is None:
+        definition = definition_for(entry.action)
+        if definition is None:
             errors.append(
-                f"step {entry.step_id!r} has no contract, so its reference cannot be rebased"
+                f"step {entry.step_id!r} has no definition, so its reference cannot be rebased"
             )
         else:
-            current = contract.bind(entry.action, current_observation)
-            if not current.bound:
+            current = definition.bind(entry.action, current_observation)
+            if isinstance(current, BindingFailure):
                 errors.append(
                     f"step {entry.step_id!r} pointed at something that changed while the "
                     f"planner was thinking: {current.reason}"
@@ -326,11 +334,11 @@ def plan_contract_costs(plan: PlanEnvelope) -> tuple[int, int, int]:
     """What this plan's steps cost in pointer, purchase and native actions."""
     pointer = purchase = native = 0
     for step in plan.steps:
-        contract = contract_for(step.action)
-        if contract is None:
+        definition = definition_for(step.action)
+        if definition is None:
             continue
         attempts = 1 + step.retry_budget
-        risk = contract.risk_for(step.action)
+        risk = definition.risk_for(step.action)
         pointer += risk.pointer_actions * attempts
         purchase += risk.purchase_actions * attempts
         native += risk.native_assisted_actions * attempts

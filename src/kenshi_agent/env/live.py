@@ -5,46 +5,9 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
+from typing import Literal, TypeAlias, TypeVar, cast
 
-from ..action_contracts import (
-    ACTIVATE_VISIBLE_CONTROL_CONTRACT,
-    APPROACH_DIALOGUE_TARGET_CONTRACT,
-    COLLECT_RESOURCE_OUTPUT_CONTRACT,
-    COMMAND_WORLD_TARGET_CONTRACT,
-    DISMISS_SCREEN_CONTRACT,
-    EQUIP_ITEM_CONTRACT,
-    EXIT_CURRENT_BUILDING_CONTRACT,
-    MOVE_IN_DIRECTION_CONTRACT,
-    MOVE_TO_CHARACTER_CONTRACT,
-    NATIVE_APPROACH_WIRE_COMMAND,
-    NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
-    NATIVE_DIRECTION_WIRE_COMMAND,
-    NATIVE_EXIT_BUILDING_WIRE_COMMAND,
-    NATIVE_MAP_TRAVEL_WIRE_COMMAND,
-    NATIVE_MOVE_WIRE_COMMAND,
-    NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
-    NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
-    NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
-    NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
-    OPEN_CONTEXT_INVENTORY_CONTRACT,
-    OPEN_SCREEN_CONTRACT,
-    PERFORM_CONTEXT_ACTION_CONTRACT,
-    PRODUCE_RESOURCE_OUTPUT_CONTRACT,
-    PURCHASE_ITEM_CONTRACT,
-    RECOVER_CAMERA_VIEW_CONTRACT,
-    REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
-    ROTATE_CAMERA_CONTRACT,
-    SCROLL_SCREEN_CONTRACT,
-    SELECT_SQUAD_MEMBER_CONTRACT,
-    SELECT_SQUAD_MEMBER_EXACT_CONTRACT,
-    SELL_ITEM_CONTRACT,
-    TRAVEL_TO_MAP_DESTINATION_CONTRACT,
-    USE_GAME_BINDING_CONTRACT,
-    ActionContract,
-    ReferenceBinding,
-    contract_for,
-)
+from .. import operation_definitions as operations
 from ..camera_recovery import score_camera_observation
 from ..config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ..control.base import InputController, PrimitiveInputAction
@@ -151,6 +114,8 @@ from ..terminal_state import terminal_window_event, terminal_window_title
 from ..ui_messages import causally_new_game_message, game_message_panel_texts
 from .base import AgentEnvironment
 
+TradeBinding: TypeAlias = operations.BoundPurchaseCell | operations.BoundSaleCell
+
 
 @dataclass(frozen=True, slots=True)
 class _BoundedTradeOutcome:
@@ -163,9 +128,12 @@ class _BoundedTradeOutcome:
     inventory_quantity_after: int | None
     observed_after_sequence: int | None
     primitive_actions: int
-    initial_binding: ReferenceBinding
+    initial_binding: TradeBinding
     initial_observation: Observation
     reason: str
+
+
+BindingT = TypeVar("BindingT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -719,7 +687,7 @@ class LiveEnvironment(AgentEnvironment):
         # A contracted action declares its own pointer class, so a semantic
         # action never inherits a calibrated profile requirement from the macro
         # whose primitives it happens to reuse.
-        contract = contract_for(action)
+        contract = operations.definition_for(action)
         if contract is not None:
             return contract.pointer_class
         if isinstance(action, SkillAction):
@@ -1358,7 +1326,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=APPROACH_DIALOGUE_TARGET_CONTRACT.version,
+            contract_version=operations.APPROACH_DIALOGUE_TARGET_DEFINITION.version,
             target_id=action.target_id,
             source_revision=command.based_on_revision,
             revalidation=(
@@ -1402,7 +1370,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=PERFORM_CONTEXT_ACTION_CONTRACT.version,
+            contract_version=operations.PERFORM_CONTEXT_ACTION_DEFINITION.version,
             target_id=action.target_id,
             resolved_label=action.context_action.value,
             source_revision=command.based_on_revision,
@@ -1422,7 +1390,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+            wire_command=operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
             context_action=action.context_action,
             require_dialogue_target=False,
         )
@@ -1440,9 +1408,10 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = COMMAND_WORLD_TARGET_CONTRACT.bind(action, observation)
-        if not binding.bound or binding.resolved_bounds is None:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(
+            operations.COMMAND_WORLD_TARGET_DEFINITION.bind(action, observation),
+            operations.BoundPointerTarget,
+        )
         bounds = binding.resolved_bounds
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
@@ -1455,7 +1424,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=COMMAND_WORLD_TARGET_CONTRACT.version,
+            contract_version=operations.COMMAND_WORLD_TARGET_DEFINITION.version,
             target_id=binding.target_id,
             resolved_label=binding.resolved_label,
             resolved_bounds=bounds,
@@ -1490,14 +1459,15 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = ROTATE_CAMERA_CONTRACT.bind(action, observation)
-        if not binding.bound:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(
+            operations.ROTATE_CAMERA_DEFINITION.bind(action, observation),
+            operations.BoundNamedOperation,
+        )
         primitive = camera_rotation_primitive(action)
         primitive_receipt = await self.controller.execute(primitive)
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=ROTATE_CAMERA_CONTRACT.version,
+            contract_version=operations.ROTATE_CAMERA_DEFINITION.version,
             resolved_label=binding.resolved_label,
             source_revision=observation.world_revision,
             revalidation=(
@@ -1529,9 +1499,10 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = SELECT_SQUAD_MEMBER_CONTRACT.bind(action, observation)
-        if not binding.bound or binding.resolved_bounds is None:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(
+            operations.SELECT_SQUAD_MEMBER_DEFINITION.bind(action, observation),
+            operations.BoundVisibleTarget,
+        )
         bounds = binding.resolved_bounds
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
@@ -1544,7 +1515,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=SELECT_SQUAD_MEMBER_CONTRACT.version,
+            contract_version=operations.SELECT_SQUAD_MEMBER_DEFINITION.version,
             target_id=binding.target_id,
             resolved_label=binding.resolved_label,
             resolved_bounds=bounds,
@@ -1590,7 +1561,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=SELECT_SQUAD_MEMBER_EXACT_CONTRACT.version,
+            contract_version=operations.SELECT_SQUAD_MEMBER_EXACT_DEFINITION.version,
             target_id=action.target_id,
             source_revision=command.based_on_revision,
             revalidation=(
@@ -1607,7 +1578,7 @@ class LiveEnvironment(AgentEnvironment):
             primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
-            wire_command=NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            wire_command=operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
         )
@@ -1649,7 +1620,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=PRODUCE_RESOURCE_OUTPUT_CONTRACT.version,
+            contract_version=operations.PRODUCE_RESOURCE_OUTPUT_DEFINITION.version,
             target_id=action.target_id,
             resolved_label="produce_output",
             source_revision=command.based_on_revision,
@@ -1669,7 +1640,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            wire_command=operations.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
             require_dialogue_target=False,
             minimum_output_quantity=action.minimum_output_quantity,
         )
@@ -1688,7 +1659,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=OPEN_CONTEXT_INVENTORY_CONTRACT.version,
+            contract_version=operations.OPEN_CONTEXT_INVENTORY_DEFINITION.version,
             target_id=action.target_id,
             source_revision=command.based_on_revision,
             revalidation=(
@@ -1705,7 +1676,7 @@ class LiveEnvironment(AgentEnvironment):
             primitive_skill=primitive_skill,
             require_vendor_role=False,
             semantic=semantic,
-            wire_command=NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+            wire_command=operations.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
             require_dialogue_target=False,
             accepted_is_terminal_error=True,
         )
@@ -1740,7 +1711,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=MOVE_IN_DIRECTION_CONTRACT.version,
+            contract_version=operations.MOVE_IN_DIRECTION_DEFINITION.version,
             source_revision=command.based_on_revision,
             revalidation=(
                 f"Ordered a walk of {action.distance_units:.0f} units on bearing "
@@ -1758,7 +1729,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_DIRECTION_WIRE_COMMAND,
+            wire_command=operations.NATIVE_DIRECTION_WIRE_COMMAND,
             require_dialogue_target=False,
             bearing_degrees=action.bearing_degrees,
             distance_units=action.distance_units,
@@ -1796,7 +1767,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=TRAVEL_TO_MAP_DESTINATION_CONTRACT.version,
+            contract_version=operations.TRAVEL_TO_MAP_DESTINATION_DEFINITION.version,
             target_id=action.destination_id,
             source_revision=command.based_on_revision,
             revalidation=(
@@ -1814,7 +1785,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_MAP_TRAVEL_WIRE_COMMAND,
+            wire_command=operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
             require_dialogue_target=False,
             running_speed_gear=3,
         )
@@ -1844,7 +1815,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=REGROUP_WITH_SQUAD_MEMBER_CONTRACT.version,
+            contract_version=operations.REGROUP_WITH_SQUAD_MEMBER_DEFINITION.version,
             target_id=action.target_id,
             source_revision=command.based_on_revision,
             revalidation=(
@@ -1862,7 +1833,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
+            wire_command=operations.NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
             require_dialogue_target=False,
             running_speed_gear=3,
             expected_actor_id=action.actor_id,
@@ -1893,7 +1864,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=EXIT_CURRENT_BUILDING_CONTRACT.version,
+            contract_version=operations.EXIT_CURRENT_BUILDING_DEFINITION.version,
             source_revision=command.based_on_revision,
             revalidation=(
                 "Re-proved one selected character indoors, then delegated door "
@@ -1910,7 +1881,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_EXIT_BUILDING_WIRE_COMMAND,
+            wire_command=operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND,
             require_dialogue_target=False,
         )
 
@@ -1945,7 +1916,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=MOVE_TO_CHARACTER_CONTRACT.version,
+            contract_version=operations.MOVE_TO_CHARACTER_DEFINITION.version,
             target_id=action.target_id,
             source_revision=command.based_on_revision,
             revalidation=(
@@ -1963,7 +1934,7 @@ class LiveEnvironment(AgentEnvironment):
             require_vendor_role=False,
             semantic=semantic,
             continue_until_terminal=True,
-            wire_command=NATIVE_MOVE_WIRE_COMMAND,
+            wire_command=operations.NATIVE_MOVE_WIRE_COMMAND,
             require_dialogue_target=False,
         )
 
@@ -1987,11 +1958,10 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(action, observation)
-        if not binding.bound or binding.resolved_bounds is None:
-            raise RuntimeError(
-                f"No input was sent: {binding.reason}"
-            )
+        binding = operations.require_bound(
+            operations.ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(action, observation),
+            operations.BoundVisibleControl,
+        )
         bounds = binding.resolved_bounds
         x = (bounds.min_x + bounds.max_x) / 2.0
         y = (bounds.min_y + bounds.max_y) / 2.0
@@ -2004,7 +1974,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=ACTIVATE_VISIBLE_CONTROL_CONTRACT.version,
+            contract_version=operations.ACTIVATE_VISIBLE_CONTROL_DEFINITION.version,
             resolved_label=binding.resolved_label,
             resolved_role=binding.resolved_role,
             resolved_bounds=bounds,
@@ -2035,7 +2005,7 @@ class LiveEnvironment(AgentEnvironment):
 
         outcome = await self._execute_bounded_trade(
             action,
-            PURCHASE_ITEM_CONTRACT,
+            operations.PURCHASE_ITEM_DEFINITION,
             direction="purchase",
             observation_timeout_seconds=self._PURCHASE_OBSERVATION_TIMEOUT_SECONDS,
         )
@@ -2062,7 +2032,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=PURCHASE_ITEM_CONTRACT.version,
+            contract_version=operations.PURCHASE_ITEM_DEFINITION.version,
             target_id=action.seller_id,
             resolved_label=outcome.initial_binding.resolved_label,
             resolved_role=outcome.initial_binding.resolved_role,
@@ -2091,7 +2061,7 @@ class LiveEnvironment(AgentEnvironment):
     def _trade_refusal_before_input(
         self,
         action: PurchaseItemAction | SellItemAction,
-        binding: ReferenceBinding,
+        binding: TradeBinding,
         *,
         direction: Literal["purchase", "sale"],
         money: int,
@@ -2112,28 +2082,32 @@ class LiveEnvironment(AgentEnvironment):
 
         if direction != "purchase":
             return None
-        price = binding.item_base_value
+        purchase_binding = cast(operations.BoundPurchaseCell, binding)
+        price = purchase_binding.item_base_value
         if price is not None and money < price:
             return (
                 f"{action.item_name!r} costs {price} and the purse holds "
                 f"{money}; sell something or choose an item at or under {money}."
             )
-        available = binding.item_quantity
+        available = purchase_binding.item_quantity
         if available is not None and available < 1:
             return (
                 f"the bound cell no longer holds any {action.item_name!r}; "
                 "the shelf changed after an earlier transfer."
             )
-        if binding.item_name is not None and binding.item_name != action.item_name:
+        if (
+            purchase_binding.item_name is not None
+            and purchase_binding.item_name != action.item_name
+        ):
             return (
-                f"the bound cell now holds {binding.item_name!r}, not "
+                f"the bound cell now holds {purchase_binding.item_name!r}, not "
                 f"{action.item_name!r}; the shelf re-indexed under this binding."
             )
         return None
 
     def _trade_preconditions_note(
         self,
-        binding: ReferenceBinding,
+        binding: TradeBinding,
         *,
         direction: Literal["purchase", "sale"],
         money: int,
@@ -2154,10 +2128,11 @@ class LiveEnvironment(AgentEnvironment):
 
         if direction != "purchase":
             return ""
-        price = binding.item_base_value
+        purchase_binding = cast(operations.BoundPurchaseCell, binding)
+        price = purchase_binding.item_base_value
         if price is None:
             return ""
-        stock = binding.item_quantity
+        stock = purchase_binding.item_quantity
         stocked = f" and the bound cell held {stock}" if stock is not None else ""
         return (
             f" When the click was sent the purse held {money} against a price "
@@ -2168,21 +2143,24 @@ class LiveEnvironment(AgentEnvironment):
     async def _execute_bounded_trade(
         self,
         action: PurchaseItemAction | SellItemAction,
-        contract: ActionContract,
+        contract: operations.OperationDefinition,
         *,
         direction: Literal["purchase", "sale"],
         observation_timeout_seconds: float,
     ) -> _BoundedTradeOutcome:
-        initial_binding, initial_observation = self._rebind_in_lease(
+        binding_type = (
+            operations.BoundPurchaseCell
+            if direction == "purchase"
+            else operations.BoundSaleCell
+        )
+        initial_rebound, initial_observation = self._rebind_in_lease(
             contract,
             action,
+            binding_type,
         )
+        initial_binding = cast(TradeBinding, initial_rebound)
         telemetry = initial_observation.telemetry
         assert telemetry is not None
-        if initial_binding.inventory_owner_id is None:
-            raise RuntimeError(
-                "Trade contract bound no exact player inventory owner."
-            )
         selected_character_id, money_before, inventory_before = self._trade_state(
             telemetry,
             action.item_name,
@@ -2209,6 +2187,7 @@ class LiveEnvironment(AgentEnvironment):
                 rebound, rebind_reason, rebound_snapshot = self._try_rebind_trade(
                     action,
                     contract,
+                    direction=direction,
                     selected_character_id=selected_character_id,
                     expected_money=current_money,
                     expected_inventory=current_inventory,
@@ -2405,12 +2384,13 @@ class LiveEnvironment(AgentEnvironment):
     def _try_rebind_trade(
         self,
         action: PurchaseItemAction | SellItemAction,
-        contract: ActionContract,
+        contract: operations.OperationDefinition,
         *,
+        direction: Literal["purchase", "sale"],
         selected_character_id: str,
         expected_money: int,
         expected_inventory: int,
-    ) -> tuple[ReferenceBinding | None, str, TelemetrySnapshot | None]:
+    ) -> tuple[TradeBinding | None, str, TelemetrySnapshot | None]:
         try:
             result = self.telemetry_reader.read()
         except TelemetryReadError as exc:
@@ -2418,10 +2398,17 @@ class LiveEnvironment(AgentEnvironment):
         if result.stale:
             return None, "telemetry became stale before the next unit.", None
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = contract.bind(action, observation)
-        if not binding.bound or binding.resolved_bounds is None:
-            return None, binding.reason, None
-        if binding.inventory_owner_id != selected_character_id:
+        binding_type = (
+            operations.BoundPurchaseCell
+            if direction == "purchase"
+            else operations.BoundSaleCell
+        )
+        try:
+            binding = operations.require_bound(contract.bind(action, observation), binding_type)
+        except RuntimeError as exc:
+            return None, str(exc), None
+        trade_binding = cast(TradeBinding, binding)
+        if trade_binding.inventory_owner_id != selected_character_id:
             return (
                 None,
                 "the exact player inventory-window owner changed between units.",
@@ -2445,7 +2432,7 @@ class LiveEnvironment(AgentEnvironment):
                 "purse or exact window-owner inventory changed between bound units.",
                 None,
             )
-        return binding, binding.reason, result.snapshot
+        return trade_binding, trade_binding.reason, result.snapshot
 
     def _ensure_trade_can_continue(self, operation: str) -> None:
         if self.controller.emergency_stop_pressed(self.emergency_stop_key):
@@ -2616,9 +2603,10 @@ class LiveEnvironment(AgentEnvironment):
 
     def _rebind_in_lease(
         self,
-        contract: ActionContract,
+        contract: operations.OperationDefinition,
         action: Action,
-    ) -> tuple[ReferenceBinding, Observation]:
+        binding_type: type[BindingT],
+    ) -> tuple[BindingT, Observation]:
         """Re-resolve an action's reference against telemetry read right now."""
 
         result = self.telemetry_reader.read()
@@ -2627,9 +2615,7 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = contract.bind(action, observation)
-        if not binding.bound or binding.resolved_bounds is None:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(contract.bind(action, observation), binding_type)
         return binding, observation
 
     def _ensure_camera_recovery_can_continue(self) -> None:
@@ -2660,7 +2646,7 @@ class LiveEnvironment(AgentEnvironment):
         action: RecoverCameraViewAction,
         *,
         candidate: str,
-    ) -> tuple[CameraFrameScore, ReferenceBinding, Observation]:
+    ) -> tuple[CameraFrameScore, operations.BoundCameraRecovery, Observation]:
         """Retain and score one causally current frame inside the input lease."""
 
         if self._capture is None:
@@ -2704,12 +2690,11 @@ class LiveEnvironment(AgentEnvironment):
             available_skills=self.available_skills,
             skill_specs=[self.macros.spec(name) for name in self.available_skills],
         )
-        binding = RECOVER_CAMERA_VIEW_CONTRACT.bind(action, observation)
-        if not binding.bound or binding.floor is None:
-            raise RuntimeError(
-                "Camera recovery stopped because its selected-character/HUD binding "
-                f"changed: {binding.reason}"
-            )
+        binding = operations.require_bound(
+            operations.RECOVER_CAMERA_VIEW_DEFINITION.bind(action, observation),
+            operations.BoundCameraRecovery,
+            context="Camera recovery binding changed",
+        )
         recovery = self.controls_config.camera_recovery
         score = score_camera_observation(
             observation,
@@ -2769,7 +2754,7 @@ class LiveEnvironment(AgentEnvironment):
             *,
             follow_method: Literal["already_anchored", "portrait_double_click"],
         ) -> ActionReceipt:
-            if primitive_count > RECOVER_CAMERA_VIEW_CONTRACT.max_primitive_actions:
+            if primitive_count > operations.RECOVER_CAMERA_VIEW_DEFINITION.max_primitive_actions:
                 raise RuntimeError(
                     "Camera recovery exceeded its authoritative primitive bound."
                 )
@@ -2789,7 +2774,7 @@ class LiveEnvironment(AgentEnvironment):
             )
             semantic = SemanticActionReceipt(
                 action_kind=action.kind,
-                contract_version=RECOVER_CAMERA_VIEW_CONTRACT.version,
+                contract_version=operations.RECOVER_CAMERA_VIEW_DEFINITION.version,
                 target_id=selected_character_id,
                 resolved_label=selected_character_name,
                 resolved_role="selected_character",
@@ -3096,16 +3081,17 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = OPEN_SCREEN_CONTRACT.bind(action, observation)
-        if not binding.bound:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(
+            operations.OPEN_SCREEN_DEFINITION.bind(action, observation),
+            operations.EmptyBinding,
+        )
 
         already = screen_is_open(action.screen, result.snapshot)
         control = SCREEN_BINDINGS[action.screen]
         if already:
             semantic = SemanticActionReceipt(
                 action_kind=action.kind,
-                contract_version=OPEN_SCREEN_CONTRACT.version,
+                contract_version=operations.OPEN_SCREEN_DEFINITION.version,
                 resolved_label=action.screen.value,
                 source_revision=observation.world_revision,
                 revalidation=binding.reason,
@@ -3130,7 +3116,7 @@ class LiveEnvironment(AgentEnvironment):
         await self.controller.execute(primitive)
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=OPEN_SCREEN_CONTRACT.version,
+            contract_version=operations.OPEN_SCREEN_DEFINITION.version,
             resolved_label=action.screen.value,
             source_revision=observation.world_revision,
             revalidation=binding.reason,
@@ -3169,9 +3155,10 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = USE_GAME_BINDING_CONTRACT.bind(action, observation)
-        if not binding.bound:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(
+            operations.USE_GAME_BINDING_DEFINITION.bind(action, observation),
+            operations.BoundNamedOperation,
+        )
         quicksave_before = (
             _quicksave_tree_state(self.quicksave_dir)
             if action.binding is GameBinding.QUICKSAVE
@@ -3198,7 +3185,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=USE_GAME_BINDING_CONTRACT.version,
+            contract_version=operations.USE_GAME_BINDING_DEFINITION.version,
             resolved_label=action.binding.value,
             source_revision=observation.world_revision,
             revalidation=(
@@ -3303,7 +3290,11 @@ class LiveEnvironment(AgentEnvironment):
         whatever is behind it.
         """
 
-        binding, observation = self._rebind_in_lease(SCROLL_SCREEN_CONTRACT, action)
+        binding, observation = self._rebind_in_lease(
+            operations.SCROLL_SCREEN_DEFINITION,
+            action,
+            operations.BoundVisibleControl,
+        )
         bounds = binding.resolved_bounds
         assert bounds is not None
         x = (bounds.min_x + bounds.max_x) / 2.0
@@ -3313,7 +3304,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=SCROLL_SCREEN_CONTRACT.version,
+            contract_version=operations.SCROLL_SCREEN_DEFINITION.version,
             resolved_label=binding.resolved_label,
             resolved_role=binding.resolved_role,
             resolved_bounds=bounds,
@@ -3343,7 +3334,7 @@ class LiveEnvironment(AgentEnvironment):
 
         outcome = await self._execute_bounded_trade(
             action,
-            SELL_ITEM_CONTRACT,
+            operations.SELL_ITEM_DEFINITION,
             direction="sale",
             observation_timeout_seconds=self._SALE_OBSERVATION_TIMEOUT_SECONDS,
         )
@@ -3369,7 +3360,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=SELL_ITEM_CONTRACT.version,
+            contract_version=operations.SELL_ITEM_DEFINITION.version,
             target_id=action.buyer_id,
             resolved_label=outcome.initial_binding.resolved_label,
             resolved_role=outcome.initial_binding.resolved_role,
@@ -3408,7 +3399,11 @@ class LiveEnvironment(AgentEnvironment):
         turn this equip into a sale.
         """
 
-        binding, observation = self._rebind_in_lease(EQUIP_ITEM_CONTRACT, action)
+        binding, observation = self._rebind_in_lease(
+            operations.EQUIP_ITEM_DEFINITION,
+            action,
+            operations.BoundEquipmentCell,
+        )
         bounds = binding.resolved_bounds
         assert bounds is not None
         x = (bounds.min_x + bounds.max_x) / 2.0
@@ -3426,7 +3421,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=EQUIP_ITEM_CONTRACT.version,
+            contract_version=operations.EQUIP_ITEM_DEFINITION.version,
             resolved_label=binding.resolved_label,
             resolved_role=binding.resolved_role,
             resolved_bounds=bounds,
@@ -3456,8 +3451,9 @@ class LiveEnvironment(AgentEnvironment):
 
         del started
         binding, observation = self._rebind_in_lease(
-            COLLECT_RESOURCE_OUTPUT_CONTRACT,
+            operations.COLLECT_RESOURCE_OUTPUT_DEFINITION,
             action,
+            operations.BoundResourceOutputCell,
         )
         bounds = binding.resolved_bounds
         assert bounds is not None
@@ -3486,7 +3482,7 @@ class LiveEnvironment(AgentEnvironment):
         )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=COLLECT_RESOURCE_OUTPUT_CONTRACT.version,
+            contract_version=operations.COLLECT_RESOURCE_OUTPUT_DEFINITION.version,
             target_id=action.target_id,
             resolved_label=binding.resolved_label,
             resolved_role=binding.resolved_role,
@@ -3532,9 +3528,10 @@ class LiveEnvironment(AgentEnvironment):
                 "No input was sent: telemetry became stale inside the input lease."
             )
         observation = self._observation_from_snapshot(result.snapshot)
-        binding = DISMISS_SCREEN_CONTRACT.bind(action, observation)
-        if not binding.bound:
-            raise RuntimeError(f"No input was sent: {binding.reason}")
+        binding = operations.require_bound(
+            operations.DISMISS_SCREEN_DEFINITION.bind(action, observation),
+            operations.BoundScreenDismissal,
+        )
         if binding.resolved_bounds is not None:
             # A window closes by its own close box. Escape does not close
             # Kenshi's inventory or trade windows at all - with nothing else
@@ -3557,7 +3554,7 @@ class LiveEnvironment(AgentEnvironment):
             )
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=DISMISS_SCREEN_CONTRACT.version,
+            contract_version=operations.DISMISS_SCREEN_DEFINITION.version,
             resolved_label=binding.resolved_label,
             source_revision=observation.world_revision,
             revalidation=(
@@ -3642,7 +3639,7 @@ class LiveEnvironment(AgentEnvironment):
             "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
-        ] = NATIVE_APPROACH_WIRE_COMMAND,
+        ] = operations.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
         distance_units: float = 0.0,
@@ -3996,14 +3993,14 @@ class LiveEnvironment(AgentEnvironment):
             or acknowledgement.context_action != (context_action or "")
         ):
             return None
-        if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
+        if wire_command == operations.NATIVE_DIRECTION_WIRE_COMMAND:
             if (
                 acknowledgement.target_id
                 or acknowledgement.bearing_degrees != bearing_degrees
                 or acknowledgement.distance_units != distance_units
             ):
                 return None
-        elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+        elif wire_command == operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             if (
                 acknowledgement.target_id
                 or acknowledgement.bearing_degrees != 0.0
@@ -4048,7 +4045,7 @@ class LiveEnvironment(AgentEnvironment):
             "perform_context_action",
             "produce_resource_output",
             "open_context_inventory",
-        ] = NATIVE_APPROACH_WIRE_COMMAND,
+        ] = operations.NATIVE_APPROACH_WIRE_COMMAND,
         require_dialogue_target: bool = True,
         bearing_degrees: float = 0.0,
         distance_units: float = 0.0,
@@ -4091,26 +4088,26 @@ class LiveEnvironment(AgentEnvironment):
                 "Native command basis regressed behind the authorized revision."
             )
         telemetry = observation.telemetry
-        if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
-            native_contract = MOVE_IN_DIRECTION_CONTRACT
-        elif wire_command == NATIVE_MAP_TRAVEL_WIRE_COMMAND:
-            native_contract = TRAVEL_TO_MAP_DESTINATION_CONTRACT
-        elif wire_command == NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
-            native_contract = SELECT_SQUAD_MEMBER_EXACT_CONTRACT
-        elif wire_command == NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
-            native_contract = REGROUP_WITH_SQUAD_MEMBER_CONTRACT
-        elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
-            native_contract = EXIT_CURRENT_BUILDING_CONTRACT
-        elif wire_command == NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND:
-            native_contract = PRODUCE_RESOURCE_OUTPUT_CONTRACT
-        elif wire_command == NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND:
-            native_contract = OPEN_CONTEXT_INVENTORY_CONTRACT
-        elif wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
-            native_contract = PERFORM_CONTEXT_ACTION_CONTRACT
-        elif wire_command == NATIVE_MOVE_WIRE_COMMAND:
-            native_contract = MOVE_TO_CHARACTER_CONTRACT
+        if wire_command == operations.NATIVE_DIRECTION_WIRE_COMMAND:
+            native_contract = operations.MOVE_IN_DIRECTION_DEFINITION
+        elif wire_command == operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND:
+            native_contract = operations.TRAVEL_TO_MAP_DESTINATION_DEFINITION
+        elif wire_command == operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
+            native_contract = operations.SELECT_SQUAD_MEMBER_EXACT_DEFINITION
+        elif wire_command == operations.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
+            native_contract = operations.REGROUP_WITH_SQUAD_MEMBER_DEFINITION
+        elif wire_command == operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+            native_contract = operations.EXIT_CURRENT_BUILDING_DEFINITION
+        elif wire_command == operations.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND:
+            native_contract = operations.PRODUCE_RESOURCE_OUTPUT_DEFINITION
+        elif wire_command == operations.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND:
+            native_contract = operations.OPEN_CONTEXT_INVENTORY_DEFINITION
+        elif wire_command == operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+            native_contract = operations.PERFORM_CONTEXT_ACTION_DEFINITION
+        elif wire_command == operations.NATIVE_MOVE_WIRE_COMMAND:
+            native_contract = operations.MOVE_TO_CHARACTER_DEFINITION
         else:
-            native_contract = APPROACH_DIALOGUE_TARGET_CONTRACT
+            native_contract = operations.APPROACH_DIALOGUE_TARGET_DEFINITION
         missing = native_contract.missing_capabilities(
             set(telemetry.capabilities)
         )
@@ -4122,10 +4119,10 @@ class LiveEnvironment(AgentEnvironment):
             raise RuntimeError("Native command requires a current identity session.")
         selected_ids = telemetry.ui.selected_character_ids
         group_selection_command = wire_command in {
-            NATIVE_APPROACH_WIRE_COMMAND,
-            NATIVE_MOVE_WIRE_COMMAND,
-            NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
-            NATIVE_MAP_TRAVEL_WIRE_COMMAND,
+            operations.NATIVE_APPROACH_WIRE_COMMAND,
+            operations.NATIVE_MOVE_WIRE_COMMAND,
+            operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND,
         }
         if (
             not selected_ids
@@ -4141,7 +4138,7 @@ class LiveEnvironment(AgentEnvironment):
                 "Native squad regrouping requires actor_id to remain the exact "
                 "current selection at issue time."
             )
-        if wire_command == NATIVE_DIRECTION_WIRE_COMMAND:
+        if wire_command == operations.NATIVE_DIRECTION_WIRE_COMMAND:
             # References nobody: the destination is derived from where the
             # character already stands, which is what makes it available in a
             # place a destination list would be empty.
@@ -4156,7 +4153,7 @@ class LiveEnvironment(AgentEnvironment):
                 bearing_degrees=bearing_degrees,
                 distance_units=distance_units,
             )
-        if wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
+        if wire_command == operations.NATIVE_EXIT_BUILDING_WIRE_COMMAND:
             selected = [
                 character for character in telemetry.squad if character.selected
             ]
@@ -4174,7 +4171,7 @@ class LiveEnvironment(AgentEnvironment):
                 based_on_revision=observation.world_revision,
                 selected_character_ids=list(selected_ids),
             )
-        if wire_command == NATIVE_MAP_TRAVEL_WIRE_COMMAND:
+        if wire_command == operations.NATIVE_MAP_TRAVEL_WIRE_COMMAND:
             map_destinations = [
                 destination
                 for destination in telemetry.known_map_destinations
@@ -4195,7 +4192,7 @@ class LiveEnvironment(AgentEnvironment):
                 selected_character_ids=list(selected_ids),
                 target_id=target_id,
             )
-        if wire_command == NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
+        if wire_command == operations.NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
             target_matches = [
                 member for member in telemetry.squad if member.id == target_id
             ]
@@ -4214,7 +4211,7 @@ class LiveEnvironment(AgentEnvironment):
                 selected_character_ids=list(selected_ids),
                 target_id=target_id,
             )
-        if wire_command == NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
+        if wire_command == operations.NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
             target_matches = [
                 member
                 for member in telemetry.squad
@@ -4238,11 +4235,11 @@ class LiveEnvironment(AgentEnvironment):
         if not target_id:
             raise RuntimeError("Native approach requires an exact target_id.")
         if wire_command in {
-            NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
-            NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
-            NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
+            operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND,
+            operations.NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
+            operations.NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
         }:
-            if wire_command == NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
+            if wire_command == operations.NATIVE_CONTEXT_ACTION_WIRE_COMMAND:
                 if context_action is None:
                     raise RuntimeError(
                         "Native context execution requires an exact semantic."

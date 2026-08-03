@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .action_completeness import audit_action_completeness, render_action_queue
 from .affordance_parity import audit_binding_parity
 from .affordance_surfaces import render_surface_registry
 from .affordances import AFFORDANCE_ADAPTERS
@@ -10,6 +9,10 @@ from .context_action_parity import (
     WITNESSES_PATH,
     load_witnesses,
     render_context_action_parity,
+)
+from .operation_registry_audit import (
+    audit_operation_registry,
+    render_operation_registry_report,
 )
 from .ui_affordances import audit
 
@@ -96,27 +99,26 @@ def _game_binding_parity() -> str:
     return "\n".join(lines)
 
 
-def _action_queue() -> str:
-    """Every private operation against what its execution kind requires."""
+def _operation_definitions() -> str:
+    """Prove private operation ownership from the sole registry."""
 
     lines = [
         GENERATED_MARKER,
         "",
-        "# Private operation implementation queue",
+        "# Private operation definitions",
         "",
-        "Derived from each contract's own `ActionExecution`, so the checklist",
-        "cannot drift from what execution requires: an atomic handler needs an",
-        "executor branch, while an option-backed action gets its terminal from",
-        "the option. These are runtime-private operations beneath the affordance",
-        "adapters, not a second planner contract.",
+        "Derived from the sole operation-definition registry and the affordance",
+        "adapters that emit selections. The report proves that every emitted",
+        "operation has one definition and handler identity, definitions are not",
+        "duplicated, and every adapter retains a source-specific completeness",
+        "boundary.",
         "",
-        "An unfinished operation may not appear in an adapter. Stubs that pass are",
-        "worse than gaps that fail: a generated completion returning nothing",
-        "satisfies every structural check and verifies nothing.",
+        "Internal-only definitions are controller phases or runtime operations;",
+        "they still bind through this registry but are not planner-visible offers.",
         "",
         "```text",
     ]
-    lines.extend(render_action_queue(audit_action_completeness()))
+    lines.extend(render_operation_registry_report(audit_operation_registry()))
     lines.extend(["```", ""])
     return "\n".join(lines)
 
@@ -151,7 +153,7 @@ def export_docs(output_dir: Path) -> list[Path]:
             load_witnesses(WITNESSES_PATH)
         ),
         "GAME_BINDING_PARITY.md": _game_binding_parity(),
-        "OPERATION_QUEUE.md": _action_queue(),
+        "OPERATION_DEFINITIONS.md": _operation_definitions(),
         "MODELED_INTERFACE_AUDIT.md": _modeled_interface_audit(),
     }
     paths: list[Path] = []

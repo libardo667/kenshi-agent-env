@@ -9,7 +9,6 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from ..action_contracts import contract_for
 from ..camera_recovery import score_camera_observation
 from ..config import MockConfig
 from ..models import (
@@ -42,6 +41,13 @@ from ..models import (
     VisibleUIControl,
     WaitAction,
     WorldStateRevision,
+)
+from ..operation_definitions import (
+    BindingFailure,
+    BoundActor,
+    BoundCameraRecovery,
+    BoundVisibleControl,
+    definition_for,
 )
 from .base import AgentEnvironment
 
@@ -377,18 +383,29 @@ class MockEnvironment(AgentEnvironment):
         recorded no-op rather than a silent success.
         """
 
-        contract = contract_for(action)
-        if contract is None:
+        definition = definition_for(action)
+        if definition is None:
             return (f"Unknown semantic action {action.kind}.", None)
         observation = self._last_observation
         if observation is None:
             return (f"Mock {action.kind} had no current observation to bind against.", None)
-        binding = contract.bind(action, observation)
-        if isinstance(action, RecoverCameraViewAction) and binding.bound:
+        binding = definition.bind(action, observation)
+        if isinstance(binding, BindingFailure):
+            return (
+                f"Mock {action.kind} bound to nothing and changed no state: {binding.reason}",
+                SemanticActionReceipt(
+                    action_kind=action.kind,
+                    contract_version=definition.version,
+                    source_revision=observation.world_revision,
+                    revalidation=binding.reason,
+                ),
+            )
+        if isinstance(action, RecoverCameraViewAction):
+            assert isinstance(binding, BoundCameraRecovery)
             score = score_camera_observation(
                 observation,
                 candidate="mock_initial",
-                floor=binding.floor or 0,
+                floor=binding.floor,
                 clear_score_threshold=0.72,
                 anchor_max_distance=30.0,
             )
@@ -399,7 +416,7 @@ class MockEnvironment(AgentEnvironment):
             )
             semantic = SemanticActionReceipt(
                 action_kind=action.kind,
-                contract_version=contract.version,
+                contract_version=definition.version,
                 target_id=binding.target_id,
                 resolved_label=binding.resolved_label,
                 resolved_role=binding.resolved_role,
@@ -408,10 +425,10 @@ class MockEnvironment(AgentEnvironment):
                 revalidation=binding.reason,
                 camera_recovery=CameraRecoveryEvidence(
                     status=status,
-                    selected_character_id=binding.target_id or "mock:wanderer",
-                    selected_character_name=binding.selected_character_name or "Wanderer",
-                    initial_floor=binding.floor or 0,
-                    final_floor=binding.floor or 0,
+                    selected_character_id=binding.target_id,
+                    selected_character_name=binding.selected_character_name,
+                    initial_floor=binding.floor,
+                    final_floor=binding.floor,
                     clear_score_threshold=0.72,
                     anchor_max_distance=30.0,
                     paused_for_recovery=False,
@@ -425,21 +442,26 @@ class MockEnvironment(AgentEnvironment):
                 f"Mock camera recovery returned {status.value}: {binding.reason}",
                 semantic,
             )
+        target_id: str | None = None
+        resolved_label: str | None = None
+        resolved_role: str | None = None
+        resolved_bounds: NormalizedPointerBounds | None = None
+        if isinstance(binding, BoundActor):
+            target_id = binding.target_id
+        elif isinstance(binding, BoundVisibleControl):
+            resolved_label = binding.resolved_label
+            resolved_role = binding.resolved_role
+            resolved_bounds = binding.resolved_bounds
         semantic = SemanticActionReceipt(
             action_kind=action.kind,
-            contract_version=contract.version,
-            target_id=binding.target_id,
-            resolved_label=binding.resolved_label,
-            resolved_role=binding.resolved_role,
-            resolved_bounds=binding.resolved_bounds,
+            contract_version=definition.version,
+            target_id=target_id,
+            resolved_label=resolved_label,
+            resolved_role=resolved_role,
+            resolved_bounds=resolved_bounds,
             source_revision=binding.source_revision,
             revalidation=binding.reason,
         )
-        if not binding.bound:
-            return (
-                f"Mock {action.kind} bound to nothing and changed no state: {binding.reason}",
-                semantic,
-            )
         return (
             f"Mock {action.kind} resolved its reference: {binding.reason}",
             semantic,

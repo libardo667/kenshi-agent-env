@@ -50,6 +50,14 @@ from .models import (
     normalize_control_label,
     screen_is_open,
 )
+from .operation_definitions import (
+    BindingFailure,
+    BoundOperation,
+    OperationDefinition,
+    OperationExecution,
+    TerminalOwner,
+    definition_for,
+)
 
 
 class _StrictModel(BaseModel):
@@ -655,7 +663,7 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
 
 
 def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
-    from .action_contracts import SQUAD_REGROUP_ARRIVAL_DISTANCE
+    from .operation_definitions import SQUAD_REGROUP_ARRIVAL_DISTANCE
 
     telemetry = observation.telemetry
     if telemetry is None:
@@ -989,6 +997,15 @@ class AffordanceAdapter:
     completeness_boundary: str
     enumerate: Callable[[Observation], Iterable[AffordanceOffer]]
 
+    def bind(
+        self,
+        selection: AffordanceSelection,
+        observation: Observation,
+    ) -> BoundOperation:
+        """Re-enumerate this adapter and bind one exact current offer."""
+
+        return _bind_adapter_selection(self, selection, observation)
+
 
 AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
     AffordanceAdapter(
@@ -1174,12 +1191,6 @@ def _operation_for(
 
 
 def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
-    from .action_contracts import (
-        CompletionOwner,
-        completion_contract_for,
-        contract_for,
-    )
-
     operation = _operation_for(offer, _sample_parameters(offer))
     from .non_progress import unchanged_definitive_no_op_reason
 
@@ -1190,27 +1201,31 @@ def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
             TypeAdapter(SingleStepRuntimeAction).validate_python(operation)
         except ValidationError:
             return False
-    contract = contract_for(operation)
-    if contract is not None:
-        telemetry = observation.telemetry
-        capabilities = set(telemetry.capabilities if telemetry is not None else [])
-        bound = (
-            contract.allows_control_mode(observation.control_mode)
-            and not contract.missing_capabilities(capabilities)
-            and contract.is_currently_authorable(observation)
-            and contract.bind(operation, observation).bound
+    definition = definition_for(operation)
+    if definition is None:
+        raise RuntimeError(
+            f"adapter emitted {operation.kind!r} without an operation definition"
         )
-        if not bound:
-            return False
-    completion = completion_contract_for(
+    telemetry = observation.telemetry
+    capabilities = set(telemetry.capabilities if telemetry is not None else [])
+    if (
+        not definition.allows_control_mode(observation.control_mode)
+        or definition.missing_capabilities(capabilities)
+        or not definition.is_currently_authorable(observation)
+    ):
+        return False
+    binding = definition.bind(operation, observation)
+    if isinstance(binding, BindingFailure):
+        return False
+    completion = definition.resolve_terminal(
         operation,
         observation,
         selected_affordance=True,
     )
-    if completion.owner is CompletionOwner.STEP_CONDITIONS:
+    if completion.owner is TerminalOwner.STEP_CONDITIONS:
         raise RuntimeError("an offered affordance delegated completion to its caller")
     return not (
-        completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+        completion.owner is TerminalOwner.RUNTIME_CONDITIONS
         and not completion.conditions
     )
 
@@ -1299,76 +1314,102 @@ def _validated_parameters(
     return supplied
 
 
-@dataclass(frozen=True, slots=True)
-class MaterializedAffordance:
-    offer: AffordanceOffer
-    selection: AffordanceSelection
-    operation: Action
-
-
-def _execution_for(operation: Action) -> AffordanceExecution:
-    from .action_contracts import ActionExecution, contract_for
-
-    contract = contract_for(operation)
-    if contract is None:
-        return AffordanceExecution.IMMEDIATE
-    if contract.execution is ActionExecution.COMPOSITE_OPTION:
+def _execution_for(definition: OperationDefinition) -> AffordanceExecution:
+    if definition.execution is OperationExecution.COMPOSITE_OPTION:
         return AffordanceExecution.COMPOSITE
     if (
-        contract.execution is ActionExecution.MONITORED_OPTION
-        or contract.derive_completion_conditions is not None
+        definition.execution is OperationExecution.MONITORED_OPTION
+        or definition.derive_completion_conditions is not None
     ):
         return AffordanceExecution.MONITORED
     return AffordanceExecution.IMMEDIATE
 
 
-def bind_affordance(
+def _bound_affordance(
+    offer: AffordanceOffer,
     selection: AffordanceSelection,
-    observation: Observation,
-) -> MaterializedAffordance:
-    """Re-enumerate, bind exactly, then materialize one private operation."""
-
-    matches = [
-        offer
-        for offer in offered_affordances(observation)
-        if offer.affordance_id == selection.affordance_id
-    ]
-    if len(matches) != 1:
-        raise ValueError("affordance is absent from the current observation")
-    offer = matches[0]
-    expected_target_id = offer.target.target_id if offer.target else None
-    if selection.target_id != expected_target_id:
-        raise ValueError("selection target does not match the exact offered target")
-    parameters = _validated_parameters(selection, offer)
-    operation = _operation_for(offer, parameters)
-    from .action_contracts import contract_for
-
-    contract = contract_for(operation)
-    if contract is not None:
-        binding = contract.bind(operation, observation)
-        if not binding.bound:
-            raise ValueError(f"affordance no longer binds: {binding.reason}")
-    return MaterializedAffordance(
-        offer=offer,
-        selection=selection,
-        operation=operation,
-    )
-
-
-def bound_affordance(materialized: MaterializedAffordance) -> BoundAffordance:
-    """Retain the selected offer after its private operation is materialized."""
-
-    offer = materialized.offer
+    definition: OperationDefinition,
+) -> BoundAffordance:
     return BoundAffordance(
         affordance_id=offer.affordance_id,
         source=offer.source,
         semantic=offer.semantic,
         target=offer.target,
-        parameters=materialized.selection.parameters,
-        execution=_execution_for(materialized.operation),
+        parameters=selection.parameters,
+        execution=_execution_for(definition),
         operation_kind=offer.operation_kind,
         offered_at_telemetry_sequence=offer.offered_at_telemetry_sequence,
     )
+
+
+def _bind_adapter_selection(
+    adapter: AffordanceAdapter,
+    selection: AffordanceSelection,
+    observation: Observation,
+) -> BoundOperation:
+    telemetry = observation.telemetry
+    interface_clear = bool(
+        telemetry is not None
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+    )
+    matches = [
+        offer
+        for offer in adapter.enumerate(observation)
+        if offer.affordance_id == selection.affordance_id
+        and (
+            interface_clear
+            or offer.operation_kind in INTERFACE_SCOPED_OPERATION_KINDS
+        )
+        and _offer_binds_now(offer, observation)
+    ]
+    if len(matches) != 1:
+        raise ValueError("affordance is absent from the adapter's current source")
+    offer = matches[0]
+    if offer.source not in adapter.sources or offer.operation_kind not in adapter.operation_kinds:
+        raise RuntimeError(f"adapter {adapter.name!r} emitted an undeclared offer")
+    expected_target_id = offer.target.target_id if offer.target else None
+    if selection.target_id != expected_target_id:
+        raise ValueError("selection target does not match the exact offered target")
+    parameters = _validated_parameters(selection, offer)
+    operation = _operation_for(offer, parameters)
+    definition = definition_for(operation)
+    if definition is None:
+        raise RuntimeError(f"operation {operation.kind!r} has no definition")
+    binding = definition.bind(operation, observation)
+    if isinstance(binding, BindingFailure):
+        raise ValueError(f"affordance no longer binds: {binding.reason}")
+    return BoundOperation(
+        definition=definition,
+        operation=operation,
+        binding=binding,
+        affordance=_bound_affordance(offer, selection, definition),
+        based_on_revision=observation.world_revision,
+    )
+
+
+def bind_affordance(
+    selection: AffordanceSelection,
+    observation: Observation,
+) -> BoundOperation:
+    """Route a selection back to its issuing adapter for exact current binding."""
+
+    matches = [
+        adapter
+        for adapter in AFFORDANCE_ADAPTERS
+        for offer in adapter.enumerate(observation)
+        if offer.affordance_id == selection.affordance_id
+    ]
+    if len(matches) != 1:
+        raise ValueError("affordance is absent from the current observation")
+    return matches[0].bind(selection, observation)
+
+
+def bound_affordance(bound: BoundOperation) -> BoundAffordance:
+    """Return the planner record retained by an already-bound operation."""
+
+    return bound.affordance
 
 
 def terminal_affordance_receipt(

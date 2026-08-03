@@ -23,12 +23,10 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-90 shards: 12 attested, 15 unverified, 11 source-changed, 52 never; 1091 open mutants where the numbers still apply.
+90 shards: 12 attested, 15 unverified, 10 source-changed, 53 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
-| `action_completeness` | — | — | — | — | — | never |
-| `action_contracts` | 2258 | 1143 | 1115 | 2026-08-01T17:05:35Z | afa18aaf02d09a6e | source-changed |
 | `advisor` | 699 | 284 | 415 | 2026-08-02T07:43:52Z | 59565c7a3338899e | source-changed |
 | `affordance_parity` | — | — | — | — | — | never |
 | `affordance_surfaces` | 19 | 19 | 0 | 2026-08-01T14:52:32Z | cae2692da14339c9 | source-changed |
@@ -82,6 +80,8 @@ promises only that the module under test has not moved.
 | `non_progress` | 96 | 96 | 0 | 2026-07-31T00:36:47Z | daefc5759dbef1a5 | source-changed |
 | `nutrition` | 73 | 73 | 0 | 2026-08-02T15:07:59Z | 711f9a7df7cb8b0e | attested |
 | `observation_budget` | 1010 | 1010 | 0 | 2026-07-31T04:12:17Z | c1d37b06056151ff | attested |
+| `operation_definitions` | — | — | — | — | — | never |
+| `operation_registry_audit` | — | — | — | — | — | never |
 | `options` | 726 | 299 | 427 | 2026-07-31T14:23:45Z | 18ffc603096bc07d | source-changed |
 | `overlay` | — | — | — | — | — | never |
 | `planners.base` | 330 | 330 | 0 | 2026-07-28T11:54:15Z | — | unverified |

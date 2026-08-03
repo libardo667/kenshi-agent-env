@@ -14,10 +14,6 @@ from typing import Literal
 
 from pydantic import Field, TypeAdapter
 
-from ..action_contracts import (
-    ActionExecution,
-    contract_for,
-)
 from ..affordances import (
     AffordanceSelection,
     bind_affordance,
@@ -37,7 +33,6 @@ from ..models import (
     FieldbookOperation,
     FieldbookProjectKind,
     FieldbookProjectStatus,
-    IdempotencyPolicy,
     KeepMemoryOperation,
     MemoryEvidence,
     MemoryKind,
@@ -59,6 +54,9 @@ from ..models import (
     StrictModel,
     SupersedeMemoryOperation,
     UpdateFieldbookSummaryOperation,
+)
+from ..operation_definitions import (
+    OperationExecution,
 )
 
 
@@ -335,14 +333,14 @@ def _compile_fieldbook(proposal: FieldbookProposal) -> FieldbookOperation:
 
 def _step_timeout_seconds(
     *,
-    execution: ActionExecution | None,
+    execution: OperationExecution | None,
     plan_wall_seconds: float,
 ) -> float:
     """Give immediate effects a short terminal without clipping owned options."""
 
     horizon = (
         _OWNED_OPTION_TIMEOUT_SECONDS
-        if execution in {ActionExecution.MONITORED_OPTION, ActionExecution.COMPOSITE_OPTION}
+        if execution in {OperationExecution.MONITORED_OPTION, OperationExecution.COMPOSITE_OPTION}
         else _ATOMIC_EFFECT_TIMEOUT_SECONDS
     )
     return min(horizon, plan_wall_seconds)
@@ -456,17 +454,14 @@ def compile_plan_proposal(
     for index, proposal in enumerate(proposals):
         bound = bind_affordance(proposal.selection, observation)
         action = bound.operation
-        contract = contract_for(action)
+        definition = bound.definition
         success_conditions: list[Condition] = []
 
-        if contract is None:
-            idempotency = IdempotencyPolicy.AT_MOST_ONCE
-        else:
-            idempotency = contract.idempotency
-            risk = contract.risk_for(action)
-            pointer_risk += risk.pointer_actions
-            purchase_risk += risk.purchase_actions
-            native_risk += risk.native_assisted_actions
+        idempotency = definition.idempotency
+        risk = definition.risk_for(action)
+        pointer_risk += risk.pointer_actions
+        purchase_risk += risk.purchase_actions
+        native_risk += risk.native_assisted_actions
         if isinstance(action, PurchaseItemAction):
             max_spend += action.expected_price * action.quantity
 
@@ -480,7 +475,7 @@ def compile_plan_proposal(
                 preconditions=[fresh],
                 success_conditions=success_conditions,
                 timeout_seconds=_step_timeout_seconds(
-                    execution=contract.execution if contract is not None else None,
+                    execution=definition.execution,
                     plan_wall_seconds=planning.max_plan_wall_seconds,
                 ),
                 idempotency=idempotency,

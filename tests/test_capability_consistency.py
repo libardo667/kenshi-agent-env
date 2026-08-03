@@ -37,8 +37,14 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.action_contracts import (
-    ACTION_CONTRACTS,
+from kenshi_agent.config import MockConfig
+from kenshi_agent.env.mock import MockEnvironment
+from kenshi_agent.models import ControlMode
+from kenshi_agent.native_contract_export import (
+    export_gameplay_capabilities_header,
+    load_gameplay_capabilities,
+)
+from kenshi_agent.operation_definitions import (
     NATIVE_APPROACH_CAPABILITY,
     NATIVE_APPROACH_WIRE_COMMAND,
     NATIVE_CONTEXT_ACTION_CAPABILITY,
@@ -59,13 +65,7 @@ from kenshi_agent.action_contracts import (
     NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
     NATIVE_SQUAD_SELECTION_CAPABILITY,
     NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
-)
-from kenshi_agent.config import MockConfig
-from kenshi_agent.env.mock import MockEnvironment
-from kenshi_agent.models import ControlMode
-from kenshi_agent.native_contract_export import (
-    export_gameplay_capabilities_header,
-    load_gameplay_capabilities,
+    OPERATION_DEFINITIONS,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,7 +171,7 @@ def test_every_declared_capability_is_advertised_by_a_producer() -> None:
     advertised = _mock_capabilities() | _native_capabilities()
     unproduced = {
         kind: missing
-        for kind, contract in sorted(ACTION_CONTRACTS.items())
+        for kind, contract in sorted(OPERATION_DEFINITIONS.items())
         if (missing := contract.missing_capabilities(advertised))
     }
     assert not unproduced, (
@@ -184,7 +184,7 @@ def test_every_declared_capability_is_advertised_by_a_producer() -> None:
 def test_every_native_capability_names_its_wire_command() -> None:
     declared = {
         name
-        for contract in ACTION_CONTRACTS.values()
+        for contract in OPERATION_DEFINITIONS.values()
         for name in contract.required_capabilities
         if name.startswith("control.")
     }
@@ -206,7 +206,7 @@ def test_every_native_wire_command_is_pinned_by_a_fixture() -> None:
     pinned = _fixture_commands()
     unpinned = {
         kind: NATIVE_WIRE_COMMANDS[name]
-        for kind, contract in sorted(ACTION_CONTRACTS.items())
+        for kind, contract in sorted(OPERATION_DEFINITIONS.items())
         for name in sorted(contract.required_capabilities)
         if name in NATIVE_WIRE_COMMANDS and NATIVE_WIRE_COMMANDS[name] not in pinned
     }
@@ -220,7 +220,7 @@ def test_every_native_wire_command_is_pinned_by_a_fixture() -> None:
     "kind",
     sorted(
         kind
-        for kind, contract in ACTION_CONTRACTS.items()
+        for kind, contract in OPERATION_DEFINITIONS.items()
         if contract.allows_control_mode(ControlMode.INTERFACE_ONLY)
     ),
 )
@@ -232,7 +232,7 @@ def test_interface_only_contracts_are_exercisable_in_the_mock(kind: str) -> None
     whether the deterministic world can produce what the contract needs.
     """
 
-    missing = ACTION_CONTRACTS[kind].missing_capabilities(_mock_capabilities())
+    missing = OPERATION_DEFINITIONS[kind].missing_capabilities(_mock_capabilities())
     if kind in MOCK_UNEXERCISABLE:
         assert missing, (
             f"{kind} is listed in MOCK_UNEXERCISABLE ({MOCK_UNEXERCISABLE[kind]}) "

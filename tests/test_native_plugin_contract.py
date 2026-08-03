@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from kenshi_agent.action_contracts import NATIVE_WALK_DESTINATION_REACHED_RESULT
+from kenshi_agent.operation_definitions import NATIVE_WALK_DESTINATION_REACHED_RESULT
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_SOURCE = REPO_ROOT / "native" / "KenshiAgentTelemetry" / "KenshiAgentTelemetry.cpp"

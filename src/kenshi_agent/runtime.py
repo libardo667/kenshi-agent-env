@@ -14,7 +14,6 @@ from typing import Any, TypeVar
 
 from PIL import Image, ImageChops
 
-from .action_contracts import contract_for
 from .advisor import (
     AdvisorSession,
     advisor_state_fingerprint,
@@ -100,6 +99,7 @@ from .models import (
 )
 from .non_progress import retry_state_fingerprint
 from .nutrition import nutrition_reserve_change
+from .operation_definitions import definition_for
 from .planners import Planner
 from .planners.base import (
     HostedPlannerCallDiagnostics,
@@ -3557,7 +3557,7 @@ class AgentRuntime:
             telemetry_changes=telemetry_changes,
             movement_distance=movement_distance,
         )
-        contract = contract_for(receipt.action)
+        contract = definition_for(receipt.action)
         controller_verified = bool(
             contract is not None
             and contract.controller_verified

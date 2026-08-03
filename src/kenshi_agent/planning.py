@@ -5,7 +5,6 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from .action_contracts import contract_for
 from .config import PlanningConfig
 from .models import (
     Action,
@@ -32,6 +31,7 @@ from .models import (
     WorldStateRevision,
 )
 from .non_progress import unchanged_definitive_no_op_reason
+from .operation_definitions import definition_for
 from .skills import MacroRegistry, UnknownSkillError
 
 
@@ -507,7 +507,7 @@ def _action_risk(
 ) -> tuple[int, int, int]:
     # A contracted action declares its own cost, so risk accounting no longer
     # depends on expanding a macro or recognizing an exact skill name.
-    contract = contract_for(action)
+    contract = definition_for(action)
     if contract is not None:
         return contract.risk_for(action).as_tuple()
     actions = [action]

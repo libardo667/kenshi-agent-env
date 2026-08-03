@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.action_contracts import SELL_ITEM_CONTRACT
 from kenshi_agent.config import (
     CaptureConfig,
     ControlsConfig,
@@ -47,6 +46,7 @@ from kenshi_agent.models import (
     VisibleUIControl,
     WorldStateRevision,
 )
+from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import ActionGuard
@@ -400,9 +400,9 @@ def test_sale_terminal_status_matches_every_bounded_quantity_pair() -> None:
 def test_sale_contract_reserves_every_requested_unit() -> None:
     action = _sale(quantity=3)
 
-    assert SELL_ITEM_CONTRACT.controller_verified
-    assert SELL_ITEM_CONTRACT.risk_for(action).as_tuple() == (3, 3, 0)
-    assert SELL_ITEM_CONTRACT.primitive_action_bound_for(action) == 6
+    assert SELL_ITEM_DEFINITION.controller_verified
+    assert SELL_ITEM_DEFINITION.risk_for(action).as_tuple() == (3, 3, 0)
+    assert SELL_ITEM_DEFINITION.primitive_action_bound_for(action) == 6
 
 
 @pytest.mark.parametrize("stacked", [False, True])

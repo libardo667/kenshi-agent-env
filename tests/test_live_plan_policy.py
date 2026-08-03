@@ -382,7 +382,7 @@ class TestGenericPolicyRejections:
         errors = live_plan_policy_errors(
             composed, observation(controls=TRADE_CONTROLS)
         )
-        assert any("no authoritative action contract" in error for error in errors)
+        assert any("has no operation definition" in error for error in errors)
 
     def test_unbound_control_label_is_rejected(self) -> None:
         composed = plan(
@@ -930,12 +930,12 @@ class TestDismissScreen:
         assert any("does not bind to current state" in error for error in errors)
 
     def test_dismiss_costs_one_pointer_and_no_native_budget(self) -> None:
-        from kenshi_agent.action_contracts import DISMISS_SCREEN_CONTRACT
+        from kenshi_agent.operation_definitions import DISMISS_SCREEN_DEFINITION
 
-        assert DISMISS_SCREEN_CONTRACT.risk.as_tuple() == (1, 0, 0)
+        assert DISMISS_SCREEN_DEFINITION.risk.as_tuple() == (1, 0, 0)
         # It is available without any capability, in either control mode.
-        assert not DISMISS_SCREEN_CONTRACT.missing_capabilities(set())
-        assert DISMISS_SCREEN_CONTRACT.allows_control_mode(ControlMode.INTERFACE_ONLY)
+        assert not DISMISS_SCREEN_DEFINITION.missing_capabilities(set())
+        assert DISMISS_SCREEN_DEFINITION.allows_control_mode(ControlMode.INTERFACE_ONLY)
 
 
 class TestCapabilityAliases:

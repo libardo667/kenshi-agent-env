@@ -9,10 +9,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
-from kenshi_agent.action_contracts import (
-    ACTIVATE_VISIBLE_CONTROL_CONTRACT,
-    NATIVE_WALK_DESTINATION_REACHED_RESULT,
-)
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
 from kenshi_agent.env import AgentEnvironment
@@ -75,6 +71,10 @@ from kenshi_agent.models import (
     Vec3,
     VisibleUIControl,
     WorldStateRevision,
+)
+from kenshi_agent.operation_definitions import (
+    ACTIVATE_VISIBLE_CONTROL_DEFINITION,
+    NATIVE_WALK_DESTINATION_REACHED_RESULT,
 )
 from kenshi_agent.planners.base import (
     HostedPlannerCallDiagnostics,
@@ -4266,7 +4266,7 @@ class SemanticChainEnvironment(RevisionEnvironment):
             self.actions.append(action)
             self.activated.append(action)
             self.sequence += 1
-            binding = ACTIVATE_VISIBLE_CONTROL_CONTRACT.bind(action, self.observation())
+            binding = ACTIVATE_VISIBLE_CONTROL_DEFINITION.bind(action, self.observation())
             return Transition(
                 receipt=ActionReceipt(
                     action=action,

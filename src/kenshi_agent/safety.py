@@ -5,7 +5,6 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-from .action_contracts import ActionContract, SelectionRequirement, contract_for
 from .config import SafetyConfig
 from .models import (
     Action,
@@ -26,6 +25,12 @@ from .models import (
     SkillAction,
     WaitAction,
     normalize_control_label,
+)
+from .operation_definitions import (
+    BindingFailure,
+    OperationDefinition,
+    SelectionRequirement,
+    definition_for,
 )
 from .skills import MacroRegistry
 
@@ -147,13 +152,13 @@ class ActionGuard:
     ) -> tuple[Action, int, int]:
         self._validate_control_mode(observation)
         self._validate_action_constraints(action, observation)
-        contract = contract_for(action)
-        if contract is not None:
-            primitive_actions = contract.primitive_action_bound_for(action)
-            risk = contract.risk_for(action)
-            self._validate_contracted_action(
+        definition = definition_for(action)
+        if definition is not None:
+            primitive_actions = definition.primitive_action_bound_for(action)
+            risk = definition.risk_for(action)
+            self._validate_operation_definition(
                 action,
-                contract,
+                definition,
                 observation,
                 primitive_actions=primitive_actions,
             )
@@ -276,67 +281,74 @@ class ActionGuard:
         )
         return action, primitive_count, purchase_actions
 
-    def _validate_contracted_action(
+    def _validate_operation_definition(
         self,
         action: Action,
-        contract: ActionContract,
+        definition: OperationDefinition,
         observation: Observation,
         *,
         primitive_actions: int,
     ) -> None:
-        """Enforce one semantic action's contract instead of its exact name.
+        """Enforce one operation definition instead of its exact action name.
 
-        Every check here reads from the contract, so adding a reusable action
+        Every check here reads from the definition, so adding a reusable action
         does not add a branch: the same code gates approach, control activation,
         and whatever lands next.
         """
 
-        if not contract.allows_control_mode(self.control_mode):
+        if not definition.allows_control_mode(self.control_mode):
             raise SafetyViolation(  # mutation: reason
-                f"Action {contract.kind!r} is not permitted in "  # mutation: reason
+                f"Action {definition.kind!r} is not permitted in "  # mutation: reason
                 f"control mode {self.control_mode.value!r}."  # mutation: reason
             )
-        if contract.native_assisted and self.control_mode != ControlMode.NATIVE_ASSISTED:
+        if definition.native_assisted and self.control_mode != ControlMode.NATIVE_ASSISTED:
             raise SafetyViolation(  # mutation: reason
-                f"Action {contract.kind!r} requires native_assisted "  # mutation: reason
+                f"Action {definition.kind!r} requires native_assisted "  # mutation: reason
                 "control mode."  # mutation: reason
             )
         primitive_limit = (
             self.config.max_controller_verified_primitive_actions_per_step
-            if contract.controller_verified
+            if definition.controller_verified
             else self.config.max_primitive_actions_per_step
         )
         if primitive_actions > primitive_limit:
             raise SafetyViolation(  # mutation: reason
-                f"Action {contract.kind!r} may emit "  # mutation: reason
+                f"Action {definition.kind!r} may emit "  # mutation: reason
                 f"{primitive_actions} primitives; "  # mutation: reason
-                f"maximum is {primitive_limit} for this contract class."  # mutation: reason
+                f"maximum is {primitive_limit} for this operation class."  # mutation: reason
             )
         if observation.mode != "live":
             return
 
-        if observation.telemetry_stale or observation.telemetry is None:
+        if definition.requires_fresh_telemetry and (
+            observation.telemetry_stale or observation.telemetry is None
+        ):
             raise SafetyViolation(  # mutation: reason
-                f"Action {contract.kind!r} requires fresh "  # mutation: reason
+                f"Action {definition.kind!r} requires fresh "  # mutation: reason
                 "authoritative telemetry."  # mutation: reason
             )
-        missing = contract.missing_capabilities(set(observation.telemetry.capabilities))
+        capabilities = set(
+            observation.telemetry.capabilities
+            if observation.telemetry is not None
+            else ()
+        )
+        missing = definition.missing_capabilities(capabilities)
         if missing:
             raise SafetyViolation(  # mutation: reason
-                f"Action {contract.kind!r} lacks required capabilities: "  # mutation: reason
+                f"Action {definition.kind!r} lacks required capabilities: "  # mutation: reason
                 + ", ".join(missing)  # mutation: reason
             )
         # The reference must resolve against the state observed right now.
         # Absent, duplicated, or ambiguous references fail closed.
-        binding = contract.bind(action, observation)
-        if not binding.bound:
+        binding = definition.bind(action, observation)
+        if isinstance(binding, BindingFailure):
             raise SafetyViolation(  # mutation: reason
-                f"Action {contract.kind!r} does not bind to "  # mutation: reason
+                f"Action {definition.kind!r} does not bind to "  # mutation: reason
                 f"current state: {binding.reason}"  # mutation: reason
             )
-        if contract.selection_requirement is SelectionRequirement.EXACTLY_ONE:
+        if definition.selection_requirement is SelectionRequirement.EXACTLY_ONE:
             self._validate_exact_selection(observation)
-        elif contract.selection_requirement is SelectionRequirement.ONE_OR_MORE:
+        elif definition.selection_requirement is SelectionRequirement.ONE_OR_MORE:
             self._validate_squad_selection(observation)
 
     def _validate_generic_purchase(

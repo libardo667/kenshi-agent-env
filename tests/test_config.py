@@ -291,8 +291,8 @@ def test_canonical_live_config_allowlists_every_affordance_operation(
 ) -> None:
     """Every operation materialized by an adapter must pass internal safety."""
 
-    from kenshi_agent.action_contracts import ACTION_CONTRACTS
     from kenshi_agent.affordances import affordance_operation_kinds
+    from kenshi_agent.operation_definitions import OPERATION_DEFINITIONS
 
     root = Path(__file__).resolve().parents[1]
     monkeypatch.setenv("LOCALAPPDATA", str(tmp_path))
@@ -306,7 +306,7 @@ def test_canonical_live_config_allowlists_every_affordance_operation(
     assert not missing, f"canonical live config does not allowlist: {missing}"
     controller_verified_max = max(
         contract.max_primitive_actions
-        for contract in ACTION_CONTRACTS.values()
+        for contract in OPERATION_DEFINITIONS.values()
         if contract.kind in allowed and contract.controller_verified
     )
     assert (
