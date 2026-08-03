@@ -21,7 +21,7 @@ unclassified  0
 witnessed    10  (wired AND has an observable completion terminal)
 unwitnessed  58  (wired but no observation proves it landed)
 
-UNWITNESSED — wired, but a plan naming these is rejected
+UNWITNESSED — offered at delivery boundary; gameplay effect unproved
    9  Build mode has no exported state.
       build_apply, build_move_down, build_move_up, build_rotate_left, build_rotate_right, build_tilt_decrease, build_tilt_increase, build_undo, toggle_build
    1  Camera mode is not exported.

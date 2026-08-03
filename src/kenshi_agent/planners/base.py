@@ -10,15 +10,13 @@ from ..config import PlannerConfig
 from ..models import (
     AuthoredPlannerContext,
     Observation,
-    PlanEnvelope,
     PlannerContextManifest,
-    PlannerDecision,
     PlannerOutput,
     PlanningMode,
-    PlanPatch,
 )
+from .plan_proposal import DecisionProposal, PlanProposal
 
-PlannerOutputModel = type[PlannerDecision] | type[PlanEnvelope] | type[PlanPatch]
+HostedProposalModel = type[DecisionProposal] | type[PlanProposal]
 HostedPlannerFailureCategory = Literal[
     "output_truncated",
     "empty_response",
@@ -28,12 +26,12 @@ PLANNER_SYSTEM_CHARACTER_BUDGET = 12_000
 PLANNER_STATIC_PREFIX_CHARACTER_BUDGET = 50_000
 
 
-def structured_output_model(observation: Observation) -> PlannerOutputModel:
+def hosted_proposal_model(observation: Observation) -> HostedProposalModel:
+    """The only schema a hosted playing model can return."""
+
     if observation.planning_mode != PlanningMode.CONTINUOUS:
-        return PlannerDecision
-    if observation.active_plan is not None:
-        return PlanPatch
-    return PlanEnvelope
+        return DecisionProposal
+    return PlanProposal
 
 
 def validate_planner_prompt_budget(

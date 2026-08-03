@@ -38,7 +38,7 @@ from .models import (
     SetSpeedAction,
     UseGameBindingAction,
     is_controller_primitive,
-    is_planner_control_action,
+    is_runtime_control_action,
 )
 from .planning import evaluate_conditions
 
@@ -132,7 +132,7 @@ def _step_action_errors(
         )
         return errors
 
-    if is_planner_control_action(action):
+    if is_runtime_control_action(action):
         # Run control (stop, noop, wait, pause, set_speed) touches no game object
         # and binds to no reference. Its completion is runtime-owned rather than
         # a second model-authored description of the same intention.
@@ -205,7 +205,11 @@ def _step_action_errors(
             "permission to act twice"
         )
 
-    completion = completion_contract_for(action, observation)
+    completion = completion_contract_for(
+        action,
+        observation,
+        selected_affordance=step.affordance is not None,
+    )
     if (
         completion.owner is CompletionOwner.RUNTIME_CONDITIONS
         and not completion.conditions
@@ -221,7 +225,7 @@ def _step_action_errors(
         errors.append(
             f"{label} runtime completion contract contains a non-causal condition"
         )
-    elif completion.owner is CompletionOwner.PLANNER_CONDITIONS and not any(
+    elif completion.owner is CompletionOwner.STEP_CONDITIONS and not any(
         _is_causal_condition(condition.kind, condition.path)
         for condition in step.success_conditions
     ):
@@ -292,7 +296,7 @@ def live_plan_rebase_errors(
         (step for step in plan.steps if step.step_id == plan.entry_step_id),
         None,
     )
-    if entry is not None and not is_planner_control_action(entry.action):
+    if entry is not None and not is_runtime_control_action(entry.action):
         contract = contract_for(entry.action)
         if contract is None:
             errors.append(

@@ -1,0 +1,224 @@
+{
+  "$defs": {
+    "AffordanceExecution": {
+      "enum": [
+        "immediate",
+        "monitored",
+        "composite"
+      ],
+      "title": "AffordanceExecution",
+      "type": "string"
+    },
+    "AffordanceLifecycleEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/AffordanceLifecycleStatus"
+        },
+        "telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry Sequence"
+        },
+        "detail": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "detail"
+      ],
+      "title": "AffordanceLifecycleEvent",
+      "type": "object"
+    },
+    "AffordanceLifecycleStatus": {
+      "enum": [
+        "offered",
+        "bound",
+        "executing",
+        "monitoring",
+        "succeeded",
+        "failed",
+        "rejected",
+        "interrupted"
+      ],
+      "title": "AffordanceLifecycleStatus",
+      "type": "string"
+    },
+    "AffordanceParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "AffordanceParameter",
+      "type": "object"
+    },
+    "AffordanceSource": {
+      "enum": [
+        "runtime",
+        "game_binding",
+        "visible_control",
+        "context_order",
+        "dialogue",
+        "inventory",
+        "squad",
+        "nearby_character",
+        "map",
+        "native_operation",
+        "composite_operation"
+      ],
+      "title": "AffordanceSource",
+      "type": "string"
+    },
+    "AffordanceTarget": {
+      "additionalProperties": false,
+      "properties": {
+        "target_id": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "label": {
+          "maxLength": 500,
+          "minLength": 1,
+          "title": "Label",
+          "type": "string"
+        },
+        "kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Kind",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "label",
+        "kind"
+      ],
+      "title": "AffordanceTarget",
+      "type": "object"
+    },
+    "BoundAffordance": {
+      "additionalProperties": false,
+      "description": "Runtime provenance retained after an exact affordance selection is compiled.",
+      "properties": {
+        "affordance_id": {
+          "pattern": "^aff-[0-9a-f]{20}$",
+          "title": "Affordance Id",
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/AffordanceSource"
+        },
+        "semantic": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Semantic",
+          "type": "string"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AffordanceTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/AffordanceParameter"
+          },
+          "maxItems": 8,
+          "title": "Parameters",
+          "type": "array"
+        },
+        "execution": {
+          "$ref": "#/$defs/AffordanceExecution"
+        },
+        "operation_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Operation Kind",
+          "type": "string"
+        },
+        "offered_at_telemetry_sequence": {
+          "minimum": 0,
+          "title": "Offered At Telemetry Sequence",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "affordance_id",
+        "source",
+        "semantic",
+        "execution",
+        "operation_kind",
+        "offered_at_telemetry_sequence"
+      ],
+      "title": "BoundAffordance",
+      "type": "object"
+    },
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "Common terminal evidence emitted for every selected affordance.",
+  "properties": {
+    "affordance": {
+      "$ref": "#/$defs/BoundAffordance"
+    },
+    "status": {
+      "$ref": "#/$defs/AffordanceLifecycleStatus"
+    },
+    "lifecycle": {
+      "items": {
+        "$ref": "#/$defs/AffordanceLifecycleEvent"
+      },
+      "maxItems": 8,
+      "minItems": 4,
+      "title": "Lifecycle",
+      "type": "array"
+    },
+    "message": {
+      "maxLength": 2000,
+      "minLength": 1,
+      "title": "Message",
+      "type": "string"
+    }
+  },
+  "required": [
+    "affordance",
+    "status",
+    "lifecycle",
+    "message"
+  ],
+  "title": "AffordanceReceipt",
+  "type": "object"
+}

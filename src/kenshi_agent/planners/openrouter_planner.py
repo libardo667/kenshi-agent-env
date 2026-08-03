@@ -18,20 +18,15 @@ from ..hosted_continuation import (
     TRUNCATED_FINISH_REASONS,
     assistant_continuation,
 )
-from ..models import (
-    Observation,
-    PlanEnvelope,
-    PlannerOutput,
-    PlanPatch,
-)
+from ..models import Observation, PlannerOutput
 from .base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
     Planner,
     PreparedPlannerInput,
+    hosted_proposal_model,
     output_token_budget,
     prepared_budgeted_input,
-    structured_output_model,
     validate_planner_prompt_budget,
 )
 from .context_capacity import (
@@ -40,12 +35,7 @@ from .context_capacity import (
     hosted_context_envelope,
     resolve_openrouter_model_capacity,
 )
-from .plan_proposal import (
-    DecisionProposal,
-    PlanProposal,
-    compile_decision_proposal,
-    compile_hosted_plan_proposal,
-)
+from .plan_proposal import PlanProposal, compile_decision_proposal, compile_hosted_plan_proposal
 from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -128,12 +118,12 @@ def _contains_screenshot(value: object) -> bool:
 def _planner_request_text(output_model: type[BaseModel]) -> str:
     if output_model is PlanProposal:
         request = (
-            "Propose one short objective and ordered list of semantic actions. "
+            "Propose one short objective and ordered list of exact affordance selections. "
             "If active_plan is present, describe only future intent after its "
             "active step. The runtime derives all plan and patch bookkeeping. "
         )
     else:
-        request = "Choose exactly one next action from this observation. "
+        request = "Choose exactly one current affordance from this observation. "
     return request + f"Return the {output_model.__name__} schema only.\n\n"
 
 
@@ -240,12 +230,7 @@ class OpenRouterPlanner(Planner):
         *,
         context_id: str,
     ) -> PreparedPlannerInput:
-        output_model = structured_output_model(observation)
-        response_model = (
-            PlanProposal
-            if output_model in (PlanEnvelope, PlanPatch)
-            else DecisionProposal
-        )
+        response_model = hosted_proposal_model(observation)
         schema_text = json.dumps(
             projected_response_format(response_model)["json_schema"]["schema"]
         )
@@ -322,12 +307,7 @@ class OpenRouterPlanner(Planner):
         observation = prepared.context.observation
         if prepared.payload is None:
             raise RuntimeError("OpenRouter planner input has no budgeted payload.")
-        output_model = structured_output_model(observation)
-        response_model = (
-            PlanProposal
-            if output_model in (PlanEnvelope, PlanPatch)
-            else DecisionProposal
-        )
+        response_model = hosted_proposal_model(observation)
         schema_surface = response_model.__name__
         schema_prompt_fallbacks = getattr(
             self,

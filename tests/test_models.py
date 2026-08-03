@@ -454,13 +454,25 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
     }
 
 
-def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> None:
+def test_schema_export_separates_affordance_contract_from_runtime_internals(
+    tmp_path: Path,
+) -> None:
     exported = {path.name for path in export_schemas(tmp_path)}
 
-    assert "plan.schema.json" in exported
-    assert "plan_patch.schema.json" in exported
-    assert "receipt.schema.json" in exported
+    assert "affordance_selection.schema.json" in exported
+    assert "decision_proposal.schema.json" in exported
+    assert "plan_proposal.schema.json" in exported
+    assert "affordance_receipt.schema.json" in exported
+    assert "runtime_operation.schema.json" in exported
+    assert "runtime_decision.schema.json" in exported
+    assert "runtime_plan.schema.json" in exported
+    assert "runtime_plan_patch.schema.json" in exported
+    assert "runtime_action_receipt.schema.json" in exported
     assert "native_command_request.schema.json" in exported
+    assert "action.schema.json" not in exported
+    assert "decision.schema.json" not in exported
+    assert "plan.schema.json" not in exported
+    assert "receipt.schema.json" not in exported
 
 
 def _trade_observation(

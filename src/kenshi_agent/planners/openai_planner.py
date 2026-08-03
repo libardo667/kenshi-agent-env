@@ -10,41 +10,31 @@ from typing import Any
 from pydantic import BaseModel
 
 from ..config import PlannerConfig, PlanningConfig
-from ..models import (
-    Observation,
-    PlanEnvelope,
-    PlannerOutput,
-    PlanPatch,
-)
+from ..models import Observation, PlannerOutput
 from .base import (
     Planner,
     PreparedPlannerInput,
+    hosted_proposal_model,
     output_token_budget,
     prepared_budgeted_input,
-    structured_output_model,
 )
 from .context_capacity import (
     HostedModelCapacity,
     conservative_text_token_estimate,
     hosted_context_envelope,
 )
-from .plan_proposal import (
-    DecisionProposal,
-    PlanProposal,
-    compile_decision_proposal,
-    compile_hosted_plan_proposal,
-)
+from .plan_proposal import PlanProposal, compile_decision_proposal, compile_hosted_plan_proposal
 
 
 def _planner_request_text(output_model: type[BaseModel]) -> str:
     if output_model is PlanProposal:
         request = (
-            "Propose one short objective and ordered list of semantic actions. "
+            "Propose one short objective and ordered list of exact affordance selections. "
             "If active_plan is present, describe only future intent after its "
             "active step. The runtime derives all plan and patch bookkeeping. "
         )
     else:
-        request = "Choose exactly one next action from this observation. "
+        request = "Choose exactly one current affordance from this observation. "
     return request + f"Return the {output_model.__name__} schema only.\n\n"
 
 
@@ -77,12 +67,7 @@ class OpenAIPlanner(Planner):
         *,
         context_id: str,
     ) -> PreparedPlannerInput:
-        output_model = structured_output_model(observation)
-        response_model = (
-            PlanProposal
-            if output_model in (PlanEnvelope, PlanPatch)
-            else DecisionProposal
-        )
+        response_model = hosted_proposal_model(observation)
         system_text = self.instructions
         capacity = HostedModelCapacity(
             requested_model=self.config.model,
@@ -149,12 +134,7 @@ class OpenAIPlanner(Planner):
         observation = prepared.context.observation
         if prepared.payload is None:
             raise RuntimeError("OpenAI planner input has no budgeted payload.")
-        output_model = structured_output_model(observation)
-        response_model = (
-            PlanProposal
-            if output_model in (PlanEnvelope, PlanPatch)
-            else DecisionProposal
-        )
+        response_model = hosted_proposal_model(observation)
         content: list[dict[str, Any]] = [
             {
                 "type": "input_text",

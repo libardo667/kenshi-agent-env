@@ -24,7 +24,10 @@ from kenshi_agent.models import (
     Action,
     ActionReceipt,
     ActivateVisibleControlAction,
+    AffordanceExecution,
+    AffordanceSource,
     ApproachDialogueTargetAction,
+    BoundAffordance,
     CharacterState,
     CommandDispatchContext,
     Condition,
@@ -3901,6 +3904,7 @@ def semantic_chain_plan(
     *,
     target_id: str,
     label: str,
+    runtime_owned_activation_completion: bool = False,
 ) -> PlanEnvelope:
     """Approach any valid target, then activate any advertised control."""
 
@@ -3929,12 +3933,28 @@ def semantic_chain_plan(
             PlanStep(
                 step_id="activate",
                 action=ActivateVisibleControlAction(exact_label=label, role="button"),
+                affordance=(
+                    BoundAffordance(
+                        affordance_id="aff-00000000000000000000",
+                        source=AffordanceSource.DIALOGUE,
+                        semantic="choose_dialogue",
+                        execution=AffordanceExecution.IMMEDIATE,
+                        operation_kind="activate_visible_control",
+                        offered_at_telemetry_sequence=(
+                            observation.world_revision.telemetry_sequence
+                        ),
+                    )
+                    if runtime_owned_activation_completion
+                    else None
+                ),
                 preconditions=[
                     condition("telemetry.ui.dialogue_open", True, "ui.dialogue")
                 ],
-                success_conditions=[
-                    condition("telemetry.ui.active_screen", "trade", "ui.dialogue")
-                ],
+                success_conditions=(
+                    []
+                    if runtime_owned_activation_completion
+                    else [condition("telemetry.ui.active_screen", "trade", "ui.dialogue")]
+                ),
                 failure_conditions=[],
                 timeout_seconds=5.0,
                 retry_budget=0,
@@ -4105,15 +4125,29 @@ class SemanticChainEnvironment(RevisionEnvironment):
 class SemanticChainPlanner(Planner):
     """One strategic call yields the whole composed chain; the rest just stops."""
 
-    def __init__(self, *, target_id: str, label: str) -> None:
+    def __init__(
+        self,
+        *,
+        target_id: str,
+        label: str,
+        runtime_owned_activation_completion: bool = False,
+    ) -> None:
         self.target_id = target_id
         self.label = label
+        self.runtime_owned_activation_completion = runtime_owned_activation_completion
         self.calls = 0
 
     async def decide(self, current: Observation) -> PlannerOutput:
         self.calls += 1
         if self.calls == 1:
-            return semantic_chain_plan(current, target_id=self.target_id, label=self.label)
+            return semantic_chain_plan(
+                current,
+                target_id=self.target_id,
+                label=self.label,
+                runtime_owned_activation_completion=(
+                    self.runtime_owned_activation_completion
+                ),
+            )
         return PlannerDecision(
             intent="stop",
             rationale="The composed chain finished.",
@@ -4128,11 +4162,16 @@ def _run_semantic_chain(
     *,
     target_id: str,
     label: str,
+    runtime_owned_activation_completion: bool = False,
 ) -> tuple[list[dict[str, object]], SemanticChainPlanner]:
     async def scenario() -> SemanticChainPlanner:
         clock = FakeClock()
         pump_clock = ManualPumpClock()
-        planner = SemanticChainPlanner(target_id=target_id, label=label)
+        planner = SemanticChainPlanner(
+            target_id=target_id,
+            label=label,
+            runtime_owned_activation_completion=runtime_owned_activation_completion,
+        )
         runtime, logger = runtime_for(
             tmp_path,
             environment,
@@ -4209,6 +4248,34 @@ def test_the_same_actions_compose_for_a_vendor_target_and_another_label(
     activations = [a for a in environment.actions if isinstance(a, ActivateVisibleControlAction)]
     assert [a.target_id for a in approaches] == ["entity-barman"]
     assert [a.exact_label for a in activations] == ["Goodbye."]
+    assert sum(e["event_type"] == "plan_completed" for e in events) == 1
+
+
+def test_selected_visible_control_uses_runtime_delivery_terminal(tmp_path: Path) -> None:
+    environment = SemanticChainEnvironment(clock=FakeClock(), target_id="entity-wanderer")
+    events, _ = _run_semantic_chain(
+        tmp_path,
+        environment,
+        target_id="entity-wanderer",
+        label="Show me your goods.",
+        runtime_owned_activation_completion=True,
+    )
+
+    delivery = [
+        event
+        for event in events
+        if event["event_type"] == "plan_step_progress"
+        and event["payload"].get("evidence", {}).get("completion_owner")
+        == "affordance_delivery"
+    ]
+    assert len(delivery) == 1
+    assert delivery[0]["payload"]["evidence"] == {
+        "completion_owner": "affordance_delivery",
+        "accepted": True,
+        "executed": True,
+        "causal_revision_advanced": True,
+        "effect_verified": False,
+    }
     assert sum(e["event_type"] == "plan_completed" for e in events) == 1
 
 

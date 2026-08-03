@@ -1,9 +1,9 @@
-"""Compile fallible hosted-model intent into a runtime-owned plan envelope.
+"""Compile exact hosted affordance selections into runtime-owned execution.
 
-The model chooses an objective, ordered semantic actions, and the rare
-ambiguous effect that only deliberation can name. It does not author causal
-revision fences, graph bookkeeping, retries, timeouts, idempotency, or risk
-budgets. Those are mechanical facts already owned by the runtime.
+The model chooses an objective and ordered current affordances. It does not
+author operation kinds, causal revision fences, graph bookkeeping, retries,
+timeouts, idempotency, risk, completion, or cleanup. Those are mechanical facts
+already owned by the runtime.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ from ..models import (
     RiskBudget,
     SelectFieldbookProjectOperation,
     SetFieldbookProjectStatusOperation,
-    SingleStepPlannerAction,
+    SingleStepRuntimeAction,
     StrictModel,
     SupersedeMemoryOperation,
     UpdateFieldbookSummaryOperation,
@@ -527,8 +527,8 @@ def compile_decision_proposal(
         raise ValueError("DecisionProposal must be one JSON object")
     proposal = DecisionProposal.model_validate(document)
     bound = bind_affordance(proposal.selection, observation)
-    action: SingleStepPlannerAction = TypeAdapter(
-        SingleStepPlannerAction
+    action: SingleStepRuntimeAction = TypeAdapter(
+        SingleStepRuntimeAction
     ).validate_python(bound.operation)
     continuity, continuity_rejected = _compile_continuity_sidecars(
         document.get("continuity_operations")

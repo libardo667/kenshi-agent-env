@@ -1,7 +1,7 @@
 # ADR: Hosted models propose intent; the runtime compiles plans
 
-Status: superseded in part by
-[concurrent plan proposals](ADR_CONCURRENT_PLAN_PROPOSALS.md)
+Status: Superseded by
+[one runtime-generated affordance contract](ADR_UNIFIED_AFFORDANCE_CONTRACT.md)
 
 ## Context
 

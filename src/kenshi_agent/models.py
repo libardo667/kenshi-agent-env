@@ -100,7 +100,7 @@ class AffordanceTarget(StrictModel):
 
 
 class BoundAffordance(StrictModel):
-    """Runtime provenance retained after a planner selection is compiled."""
+    """Runtime provenance retained after an exact affordance selection is compiled."""
 
     affordance_id: str = Field(pattern=r"^aff-[0-9a-f]{20}$")
     source: AffordanceSource
@@ -119,7 +119,7 @@ class AffordanceLifecycleEvent(StrictModel):
 
 
 class AffordanceReceipt(StrictModel):
-    """Common terminal evidence emitted for every planner-selected affordance."""
+    """Common terminal evidence emitted for every selected affordance."""
 
     affordance: BoundAffordance
     status: AffordanceLifecycleStatus
@@ -1793,7 +1793,7 @@ class GameBinding(StrEnum):
 
     The current physical mapping is a hard-coded copy of the shipped
     `controls.cfg`; it is not read from the user's active keymap. Membership is
-    the planner-visible subset recorded by the game-binding parity ledger.
+    the adapter-owned subset recorded by the game-binding parity ledger.
     """
 
     # Screens. Each is a toggle, so pressing twice returns to where it started.
@@ -2021,9 +2021,8 @@ class UseGameBindingAction(StrictModel):
 
     kind: Literal["use_game_binding"] = "use_game_binding"
     binding: GameBinding
-    # Human-readable intent for logs and uncertain bindings. When the binding
-    # has a mechanically derivable transition, the runtime owns its typed
-    # completion condition instead of asking the planner to duplicate it.
+    # Runtime-authored audit label. The playing model selects the offered
+    # binding and never writes this private operation field.
     expected_effect: str = Field(min_length=1, max_length=200)
 
 
@@ -2038,12 +2037,12 @@ ControllerPrimitive: TypeAlias = (
 )
 """Deterministic executor/controller implementation details.
 
-These remain the only way input actually reaches Windows, but they are not an
-intention a planner may author: a raw coordinate carries no evidence about what
-it would activate. The generic live planner surface never advertises them.
+These remain the only way input actually reaches Windows, but they are never an
+offered gameplay intention: a raw coordinate carries no evidence about what it
+would activate. The affordance surface never advertises them.
 """
 
-PlannerControlAction: TypeAlias = (
+RuntimeControlAction: TypeAlias = (
     NoopAction
     | StopAction
     | PauseAction
@@ -2053,9 +2052,9 @@ PlannerControlAction: TypeAlias = (
     | RecallMemoryAction
     | ReadFieldbookAction
 )
-"""Planner-layer intentions that touch no game object and bind to no reference."""
+"""Runtime intentions that touch no game object and bind to no reference."""
 
-PlannerAtomicSemanticAction: TypeAlias = (
+AtomicRuntimeOperation: TypeAlias = (
     ApproachDialogueTargetAction
     | CommandWorldTargetAction
     | SelectSquadMemberAction
@@ -2074,21 +2073,21 @@ PlannerAtomicSemanticAction: TypeAlias = (
     | EquipItemAction
     | RecoverCameraViewAction
 )
-"""Reusable atomic game/UI intentions either planner mode may author."""
+"""Reusable atomic game/UI operations materialized from affordances."""
 
-PlannerCompositeSemanticAction: TypeAlias = (
+CompositeRuntimeOperation: TypeAlias = (
     HarvestResourceAction
     | RespondToImmediateThreatAction
     | RegroupWithSquadMemberAction
 )
 """Executor-owned options that require continuous plan supervision."""
 
-PlannerSemanticAction: TypeAlias = (
-    PlannerAtomicSemanticAction | PlannerCompositeSemanticAction
+RuntimeSemanticOperation: TypeAlias = (
+    AtomicRuntimeOperation | CompositeRuntimeOperation
 )
-"""Every game/UI intention a continuous strategic planner may author."""
+"""Every game/UI operation materialized from a continuous affordance."""
 
-InternalSemanticAction: TypeAlias = (
+InternalRuntimeOperation: TypeAlias = (
     PerformContextAction
     | ProduceResourceOutputAction
     | OpenContextInventoryAction
@@ -2096,16 +2095,16 @@ InternalSemanticAction: TypeAlias = (
 )
 """Controller-owned phases used only inside larger semantic options."""
 
-SemanticAction: TypeAlias = PlannerSemanticAction | InternalSemanticAction
+SemanticAction: TypeAlias = RuntimeSemanticOperation | InternalRuntimeOperation
 """Every typed game/UI intention, including controller-owned phases."""
 
-PlannerAction: TypeAlias = PlannerControlAction | PlannerSemanticAction | SkillAction
-"""What a continuous planner may author."""
+RuntimeAction: TypeAlias = RuntimeControlAction | RuntimeSemanticOperation | SkillAction
+"""Executor operations that can appear in a continuously supervised plan."""
 
-SingleStepPlannerAction: TypeAlias = (
-    PlannerControlAction | PlannerAtomicSemanticAction | SkillAction
+SingleStepRuntimeAction: TypeAlias = (
+    RuntimeControlAction | AtomicRuntimeOperation | SkillAction
 )
-"""Actions that do not require the continuous executor's option ownership."""
+"""Executor operations that do not require continuous option ownership."""
 
 Action: TypeAlias = (
     NoopAction
@@ -2199,7 +2198,7 @@ def is_semantic_action(action: Action) -> bool:
     return action.kind in SEMANTIC_ACTION_KINDS
 
 
-PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
+RUNTIME_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
     {
         "noop",
         "stop",
@@ -2213,10 +2212,10 @@ PLANNER_CONTROL_ACTION_KINDS: frozenset[str] = frozenset(
 )
 
 
-def is_planner_control_action(action: Action) -> bool:
-    """Planner-layer control that touches no game object and binds to no reference."""
+def is_runtime_control_action(action: Action) -> bool:
+    """Runtime control that touches no game object and binds to no reference."""
 
-    return action.kind in PLANNER_CONTROL_ACTION_KINDS
+    return action.kind in RUNTIME_CONTROL_ACTION_KINDS
 
 
 def new_command_id() -> str:
@@ -4579,8 +4578,8 @@ class Observation(StrictModel):
         The bounded argument source for `activate_visible_control`. A label that
         currently appears more than once is marked ambiguous rather than
         silently resolved, because a duplicate reference must fail closed rather
-        than pick one. Bounds stay in telemetry; the planner names a label and
-        role, never a coordinate.
+        than pick one. Bounds stay in telemetry; the adapter offers a semantic
+        control and the controller re-resolves its coordinate.
 
         `limit` is normally derived from the room left in the payload rather
         than passed, so a screen with few controls surfaces all of them and a
@@ -4838,7 +4837,7 @@ class Observation(StrictModel):
 class PlannerDecision(StrictModel):
     intent: str = Field(min_length=1, max_length=1000)
     rationale: str = Field(min_length=1, max_length=1500)
-    action: SingleStepPlannerAction
+    action: SingleStepRuntimeAction
     # Present for hosted play. Deterministic safety/reflex decisions remain
     # runtime-internal and therefore do not pretend to have been offered.
     affordance: BoundAffordance | None = None

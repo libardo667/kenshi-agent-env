@@ -335,7 +335,7 @@ def test_mode_toggle_binding_is_reachable_without_invented_completion_state(
     assert binding in TOGGLE_GAME_BINDINGS
     assert (
         completion_contract_for(action, observation()).owner
-        is CompletionOwner.PLANNER_CONDITIONS
+        is CompletionOwner.STEP_CONDITIONS
     )
 
 
@@ -371,7 +371,7 @@ def test_remaining_squad_stance_binding_is_reachable(
     assert binding in TOGGLE_GAME_BINDINGS
     assert (
         completion_contract_for(action, observation()).owner
-        is CompletionOwner.PLANNER_CONDITIONS
+        is CompletionOwner.STEP_CONDITIONS
     )
 
 

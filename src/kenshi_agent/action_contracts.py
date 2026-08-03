@@ -160,9 +160,10 @@ class ActionExecution(StrEnum):
 class CompletionOwner(StrEnum):
     """Who turns one dispatched intention into a terminal result."""
 
-    PLANNER_CONDITIONS = "planner_conditions"
+    STEP_CONDITIONS = "step_conditions"
     RUNTIME_CONDITIONS = "runtime_conditions"
     CONTROLLER_TERMINAL = "controller_terminal"
+    AFFORDANCE_DELIVERY = "affordance_delivery"
 
 
 @dataclass(frozen=True, slots=True)
@@ -2087,11 +2088,11 @@ class ActionContract:
         compare=False,
     )
     # The handler itself returns a typed terminal verdict based on evidence it
-    # owns, so the planner must not invent a redundant postcondition.
+    # owns, so a caller must not invent a redundant postcondition.
     controller_verified: bool = False
     # A deterministic effect derived from the action and its immediate
-    # pre-dispatch observation. `None` means this action variant remains
-    # planner-owned; an empty tuple means the runtime owns it but the required
+    # pre-dispatch observation. `None` means this operation has no effect-level
+    # condition; an empty tuple means the runtime owns one but the required
     # baseline is unavailable, which fails closed before dispatch.
     derive_completion_conditions: CompletionConditionFactory | None = field(
         default=None,
@@ -2584,7 +2585,7 @@ REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
     model=RegroupWithSquadMemberAction,
     summary=(
         "Bring one exact selected actor to one distinct current squadmate. The "
-        "model chooses only actor and squadmate; native code owns global squad "
+        "character adapter binds the current actor and exact target; native code owns global squad "
         "lookup, container-stable identity, pathing, 5x playback, moving-target "
         "tracking, arrival, and a confirmed terminal pause."
     ),
@@ -2934,12 +2935,11 @@ OPEN_SCREEN_CONTRACT = ActionContract(
     model=OpenScreenAction,
     summary=(
         "Have a named screen open. The controller presses whichever binding "
-        "opens it and proves the exact screen arrived, so the planner names an "
-        "intent rather than a key."
+        "opens it and proves the exact screen arrived, so the affordance expresses "
+        "state intent rather than a key."
     ),
     argument_source=(
-        "screen must be one of the GameScreen values in the projected action "
-        "schema."
+        "The screen adapter supplies one current GameScreen state intention."
     ),
     allowed_control_modes=frozenset(
         {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
@@ -2970,10 +2970,10 @@ USE_GAME_BINDING_CONTRACT = ActionContract(
         "for a widget when one exists. Customized keymaps are not currently read."
     ),
     argument_source=(
-        "binding must be one of the GameBinding values in the projected action "
-        "schema; live continuous time controls are runtime-owned instead. "
-        "expected_effect states in one phrase what the press should change, "
-        "and the step's success conditions must check it."
+        "The game-binding adapter supplies one exact current GameBinding. Live "
+        "time controls remain runtime-owned. expected_effect is a runtime audit "
+        "label; completion is either a derived terminal or the adapter's explicit "
+        "delivery boundary."
     ),
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     # A keypress needs the game loaded and nothing else; requiring more would
@@ -3232,14 +3232,25 @@ def contract_for(action: Action) -> ActionContract | None:
 def completion_contract_for(
     action: Action,
     observation: Observation,
+    *,
+    selected_affordance: bool = False,
 ) -> ActionCompletionContract:
     """Resolve completion once, against the state immediately before dispatch.
 
-    The planner chooses an intention. It does not repeat motor semantics the
-    runtime can calculate exactly: a purchase lowers current money, a sale
-    raises it, a toggle changes its current state, and playback names its exact
-    target state. Ambiguous effects remain planner-owned.
+    The playing model never authors completion. Deterministic effect conditions
+    and controller verdicts take precedence. When an adapter cannot observe the
+    gameplay effect, an offered affordance terminates only at the narrower
+    delivery boundary: accepted input plus a causally later observation.
     """
+
+    def unresolved() -> ActionCompletionContract:
+        return ActionCompletionContract(
+            owner=(
+                CompletionOwner.AFFORDANCE_DELIVERY
+                if selected_affordance
+                else CompletionOwner.STEP_CONDITIONS
+            )
+        )
 
     if isinstance(action, PauseAction):
         return ActionCompletionContract(
@@ -3294,14 +3305,14 @@ def completion_contract_for(
 
     contract = contract_for(action)
     if contract is None:
-        return ActionCompletionContract(owner=CompletionOwner.PLANNER_CONDITIONS)
+        return unresolved()
     if contract.controller_verified:
         return ActionCompletionContract(owner=CompletionOwner.CONTROLLER_TERMINAL)
     if contract.derive_completion_conditions is None:
-        return ActionCompletionContract(owner=CompletionOwner.PLANNER_CONDITIONS)
+        return unresolved()
     conditions = contract.derive_completion_conditions(action, observation)
     if conditions is None:
-        return ActionCompletionContract(owner=CompletionOwner.PLANNER_CONDITIONS)
+        return unresolved()
     return ActionCompletionContract(
         owner=CompletionOwner.RUNTIME_CONDITIONS,
         conditions=conditions,

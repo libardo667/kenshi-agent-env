@@ -1,26 +1,5 @@
 {
   "$defs": {
-    "ActionOutcomeEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "const": "action_outcome",
-          "default": "action_outcome",
-          "title": "Source",
-          "type": "string"
-        },
-        "outcome_id": {
-          "pattern": "^ao-[1-9][0-9]{0,8}$",
-          "title": "Outcome Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "outcome_id"
-      ],
-      "title": "ActionOutcomeEvidence",
-      "type": "object"
-    },
     "ActivateVisibleControlAction": {
       "additionalProperties": false,
       "description": "Activate exactly one control the interface currently advertises.\n\nThe arguments are an exact current label and role, not coordinates: the\nbounds come from telemetry and are re-resolved inside the input lease. The\naction knows nothing about which screen, which conversation, or which option\nindex it is activating.",
@@ -60,27 +39,200 @@
       "title": "ActivateVisibleControlAction",
       "type": "object"
     },
-    "AdvisorBriefEvidence": {
+    "AdvisorAttribution": {
       "additionalProperties": false,
-      "description": "Advice, not world evidence. Rendered as such wherever it is stored.",
       "properties": {
-        "source": {
-          "const": "advisor_brief",
-          "default": "advisor_brief",
-          "title": "Source",
+        "source_id": {
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,79}$",
+          "title": "Source Id",
           "type": "string"
         },
-        "brief_id": {
-          "pattern": "^advisor-[0-9a-f]{32}$",
-          "title": "Brief Id",
+        "title": {
+          "maxLength": 300,
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "creator": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Creator"
+        },
+        "url": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Url",
           "type": "string"
         }
       },
       "required": [
-        "brief_id"
+        "source_id",
+        "title",
+        "url"
       ],
-      "title": "AdvisorBriefEvidence",
+      "title": "AdvisorAttribution",
       "type": "object"
+    },
+    "AdvisorBrief": {
+      "additionalProperties": false,
+      "properties": {
+        "brief_id": {
+          "pattern": "^advisor-[0-9a-f]{32}$",
+          "title": "Brief Id",
+          "type": "string"
+        },
+        "question": {
+          "maxLength": 600,
+          "minLength": 1,
+          "title": "Question",
+          "type": "string"
+        },
+        "focus": {
+          "$ref": "#/$defs/AdvisorFocus"
+        },
+        "based_on_revision": {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        "summary": {
+          "maxLength": 1200,
+          "minLength": 1,
+          "title": "Summary",
+          "type": "string"
+        },
+        "recommendations": {
+          "items": {
+            "$ref": "#/$defs/AdvisorRecommendation"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "title": "Recommendations",
+          "type": "array"
+        },
+        "uncertainties": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Uncertainties",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/AdvisorAttribution"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Sources",
+          "type": "array"
+        },
+        "corpus_version": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Corpus Version",
+          "type": "string"
+        },
+        "provider": {
+          "maxLength": 40,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "generated_at": {
+          "format": "date-time",
+          "title": "Generated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "brief_id",
+        "question",
+        "focus",
+        "based_on_revision",
+        "summary",
+        "recommendations",
+        "sources",
+        "corpus_version",
+        "provider",
+        "model"
+      ],
+      "title": "AdvisorBrief",
+      "type": "object"
+    },
+    "AdvisorConsultEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/AdvisorConsultStatus"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "calls_used": {
+          "minimum": 0,
+          "title": "Calls Used",
+          "type": "integer"
+        },
+        "max_calls": {
+          "minimum": 0,
+          "title": "Max Calls",
+          "type": "integer"
+        },
+        "state_fingerprint": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "State Fingerprint",
+          "type": "string"
+        },
+        "brief": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdvisorBrief"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "status",
+        "reason",
+        "calls_used",
+        "max_calls",
+        "state_fingerprint"
+      ],
+      "title": "AdvisorConsultEvidence",
+      "type": "object"
+    },
+    "AdvisorConsultStatus": {
+      "enum": [
+        "pending",
+        "answered",
+        "disabled",
+        "cooldown",
+        "unchanged_state",
+        "budget_exhausted",
+        "failed"
+      ],
+      "title": "AdvisorConsultStatus",
+      "type": "string"
     },
     "AdvisorFocus": {
       "enum": [
@@ -95,136 +247,60 @@
       "title": "AdvisorFocus",
       "type": "string"
     },
-    "AffordanceExecution": {
-      "enum": [
-        "immediate",
-        "monitored",
-        "composite"
-      ],
-      "title": "AffordanceExecution",
-      "type": "string"
-    },
-    "AffordanceParameter": {
+    "AdvisorRecommendation": {
       "additionalProperties": false,
       "properties": {
-        "name": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Name",
-          "type": "string"
+        "rank": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
         },
-        "value": {
-          "$ref": "#/$defs/JsonValue"
-        }
-      },
-      "required": [
-        "name",
-        "value"
-      ],
-      "title": "AffordanceParameter",
-      "type": "object"
-    },
-    "AffordanceSource": {
-      "enum": [
-        "runtime",
-        "game_binding",
-        "visible_control",
-        "context_order",
-        "dialogue",
-        "inventory",
-        "squad",
-        "nearby_character",
-        "map",
-        "native_operation",
-        "composite_operation"
-      ],
-      "title": "AffordanceSource",
-      "type": "string"
-    },
-    "AffordanceTarget": {
-      "additionalProperties": false,
-      "properties": {
-        "target_id": {
+        "goal": {
           "maxLength": 500,
           "minLength": 1,
-          "title": "Target Id",
+          "title": "Goal",
           "type": "string"
         },
-        "label": {
-          "maxLength": 500,
+        "why_now": {
+          "maxLength": 800,
           "minLength": 1,
-          "title": "Label",
+          "title": "Why Now",
           "type": "string"
         },
-        "kind": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Kind",
-          "type": "string"
-        }
-      },
-      "required": [
-        "target_id",
-        "label",
-        "kind"
-      ],
-      "title": "AffordanceTarget",
-      "type": "object"
-    },
-    "AppendFieldbookEntryOperation": {
-      "additionalProperties": false,
-      "properties": {
-        "operation": {
-          "const": "append_entry",
-          "default": "append_entry",
-          "title": "Operation",
-          "type": "string"
-        },
-        "project_id": {
-          "pattern": "^fbp-[0-9a-f]{32}$",
-          "title": "Project Id",
-          "type": "string"
-        },
-        "kind": {
-          "$ref": "#/$defs/FieldbookEntryKind"
-        },
-        "content": {
-          "maxLength": 2000,
-          "minLength": 1,
-          "title": "Content",
-          "type": "string"
-        },
-        "references": {
+        "prerequisites": {
           "items": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/CurrentObservationEvidence"
-              },
-              {
-                "$ref": "#/$defs/ActionOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/PlanOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/MemoryEvidence"
-              },
-              {
-                "$ref": "#/$defs/AdvisorBriefEvidence"
-              }
-            ]
+            "type": "string"
           },
-          "maxItems": 4,
-          "title": "References",
+          "maxItems": 6,
+          "title": "Prerequisites",
+          "type": "array"
+        },
+        "cautions": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 6,
+          "title": "Cautions",
+          "type": "array"
+        },
+        "source_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "title": "Source Ids",
           "type": "array"
         }
       },
       "required": [
-        "project_id",
-        "kind",
-        "content"
+        "rank",
+        "goal",
+        "why_now",
+        "source_ids"
       ],
-      "title": "AppendFieldbookEntryOperation",
+      "title": "AdvisorRecommendation",
       "type": "object"
     },
     "ApproachDialogueTargetAction": {
@@ -250,28 +326,156 @@
       "title": "ApproachDialogueTargetAction",
       "type": "object"
     },
-    "BoundAffordance": {
+    "CalibrationIdentity": {
       "additionalProperties": false,
-      "description": "Runtime provenance retained after a planner selection is compiled.",
+      "description": "Every fact a profile-calibrated pointer action depends on.\n\nEach field is nullable and a missing value stays missing. A null is never\ntreated as a match, because an unobserved window mode or UI scale is not\nevidence that it is the expected one.",
       "properties": {
-        "affordance_id": {
-          "pattern": "^aff-[0-9a-f]{20}$",
-          "title": "Affordance Id",
-          "type": "string"
-        },
-        "source": {
-          "$ref": "#/$defs/AffordanceSource"
-        },
-        "semantic": {
-          "maxLength": 100,
-          "minLength": 1,
-          "title": "Semantic",
-          "type": "string"
-        },
-        "target": {
+        "client_width": {
           "anyOf": [
             {
-              "$ref": "#/$defs/AffordanceTarget"
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Width"
+        },
+        "client_height": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Height"
+        },
+        "window_mode": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Window Mode"
+        },
+        "ui_scale": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 8.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ui Scale"
+        },
+        "dpi_scale": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 8.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dpi Scale"
+        },
+        "keymap_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Keymap Id"
+        },
+        "profile_id": {
+          "anyOf": [
+            {
+              "maxLength": 80,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile Id"
+        },
+        "profile_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile Version"
+        },
+        "macro_set_hash": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Macro Set Hash"
+        }
+      },
+      "title": "CalibrationIdentity",
+      "type": "object"
+    },
+    "CalibrationReport": {
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CalibrationStatus"
+        },
+        "action_class": {
+          "$ref": "#/$defs/PointerActionClass"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalibrationIdentity"
             },
             {
               "type": "null"
@@ -279,39 +483,260 @@
           ],
           "default": null
         },
-        "parameters": {
+        "observed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CalibrationIdentity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mismatched_fields": {
           "items": {
-            "$ref": "#/$defs/AffordanceParameter"
+            "type": "string"
           },
-          "maxItems": 8,
-          "title": "Parameters",
+          "maxItems": 16,
+          "title": "Mismatched Fields",
           "type": "array"
         },
-        "execution": {
-          "$ref": "#/$defs/AffordanceExecution"
-        },
-        "operation_kind": {
-          "maxLength": 80,
-          "minLength": 1,
-          "title": "Operation Kind",
-          "type": "string"
-        },
-        "offered_at_telemetry_sequence": {
-          "minimum": 0,
-          "title": "Offered At Telemetry Sequence",
-          "type": "integer"
+        "unobserved_fields": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 16,
+          "title": "Unobserved Fields",
+          "type": "array"
         }
       },
       "required": [
-        "affordance_id",
-        "source",
-        "semantic",
-        "execution",
-        "operation_kind",
-        "offered_at_telemetry_sequence"
+        "status",
+        "action_class",
+        "reason"
       ],
-      "title": "BoundAffordance",
+      "title": "CalibrationReport",
       "type": "object"
+    },
+    "CalibrationStatus": {
+      "enum": [
+        "not_required",
+        "matched",
+        "mismatched",
+        "unknown"
+      ],
+      "title": "CalibrationStatus",
+      "type": "string"
+    },
+    "CameraFrameScore": {
+      "additionalProperties": false,
+      "description": "One retained frame and the deterministic signals used to rank it.",
+      "properties": {
+        "candidate": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Candidate",
+          "type": "string"
+        },
+        "screenshot_path": {
+          "format": "path",
+          "title": "Screenshot Path",
+          "type": "string"
+        },
+        "screenshot_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Screenshot Sha256",
+          "type": "string"
+        },
+        "telemetry_sequence": {
+          "minimum": 0,
+          "title": "Telemetry Sequence",
+          "type": "integer"
+        },
+        "frame_sequence": {
+          "minimum": 0,
+          "title": "Frame Sequence",
+          "type": "integer"
+        },
+        "floor": {
+          "title": "Floor",
+          "type": "integer"
+        },
+        "score": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Score",
+          "type": "number"
+        },
+        "edge_density": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Edge Density",
+          "type": "number"
+        },
+        "contrast": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Contrast",
+          "type": "number"
+        },
+        "color_diversity": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Color Diversity",
+          "type": "number"
+        },
+        "nonflat_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Nonflat Fraction",
+          "type": "number"
+        },
+        "inverse_dominant_color": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Inverse Dominant Color",
+          "type": "number"
+        },
+        "selected_world_label_visible": {
+          "title": "Selected World Label Visible",
+          "type": "boolean"
+        },
+        "anchor_distance": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchor Distance"
+        },
+        "clear": {
+          "title": "Clear",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "candidate",
+        "screenshot_path",
+        "screenshot_sha256",
+        "telemetry_sequence",
+        "frame_sequence",
+        "floor",
+        "score",
+        "edge_density",
+        "contrast",
+        "color_diversity",
+        "nonflat_fraction",
+        "inverse_dominant_color",
+        "selected_world_label_visible",
+        "clear"
+      ],
+      "title": "CameraFrameScore",
+      "type": "object"
+    },
+    "CameraRecoveryEvidence": {
+      "additionalProperties": false,
+      "description": "Controller-owned proof for a complete bounded recovery transaction.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/CameraRecoveryStatus"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "selected_character_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Name",
+          "type": "string"
+        },
+        "initial_floor": {
+          "title": "Initial Floor",
+          "type": "integer"
+        },
+        "final_floor": {
+          "title": "Final Floor",
+          "type": "integer"
+        },
+        "clear_score_threshold": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Clear Score Threshold",
+          "type": "number"
+        },
+        "anchor_max_distance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Anchor Max Distance",
+          "type": "number"
+        },
+        "paused_for_recovery": {
+          "title": "Paused For Recovery",
+          "type": "boolean"
+        },
+        "primitive_actions": {
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Primitive Actions",
+          "type": "integer"
+        },
+        "follow_method": {
+          "enum": [
+            "already_anchored",
+            "portrait_double_click"
+          ],
+          "title": "Follow Method",
+          "type": "string"
+        },
+        "chosen_candidate": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Chosen Candidate",
+          "type": "string"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/CameraFrameScore"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Candidates",
+          "type": "array"
+        }
+      },
+      "required": [
+        "status",
+        "selected_character_id",
+        "selected_character_name",
+        "initial_floor",
+        "final_floor",
+        "clear_score_threshold",
+        "anchor_max_distance",
+        "paused_for_recovery",
+        "primitive_actions",
+        "follow_method",
+        "chosen_candidate",
+        "candidates"
+      ],
+      "title": "CameraRecoveryEvidence",
+      "type": "object"
+    },
+    "CameraRecoveryStatus": {
+      "enum": [
+        "already_clear",
+        "recovered",
+        "failed_after_bounded_attempts"
+      ],
+      "title": "CameraRecoveryStatus",
+      "type": "string"
     },
     "CameraRotationDirection": {
       "enum": [
@@ -528,6 +953,51 @@
       "description": "One schema branch whose fields can only express that condition's meaning.",
       "title": "Condition"
     },
+    "ConditionEvaluation": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "$ref": "#/$defs/Condition"
+        },
+        "result": {
+          "$ref": "#/$defs/ConditionResult"
+        },
+        "actual": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition",
+        "result",
+        "reason"
+      ],
+      "title": "ConditionEvaluation",
+      "type": "object"
+    },
     "ConditionOperator": {
       "enum": [
         "equals",
@@ -539,6 +1009,17 @@
         "contains"
       ],
       "title": "ConditionOperator",
+      "type": "string"
+    },
+    "ConditionResult": {
+      "enum": [
+        "true",
+        "false",
+        "unknown",
+        "unavailable",
+        "stale"
+      ],
+      "title": "ConditionResult",
       "type": "string"
     },
     "ConsultAdvisorAction": {
@@ -568,6 +1049,14 @@
       "title": "ConsultAdvisorAction",
       "type": "object"
     },
+    "ControlMode": {
+      "enum": [
+        "interface_only",
+        "native_assisted"
+      ],
+      "title": "ControlMode",
+      "type": "string"
+    },
     "CoordinateSpace": {
       "enum": [
         "normalized",
@@ -576,53 +1065,6 @@
       ],
       "title": "CoordinateSpace",
       "type": "string"
-    },
-    "CreateFieldbookProjectOperation": {
-      "additionalProperties": false,
-      "properties": {
-        "operation": {
-          "const": "create_project",
-          "default": "create_project",
-          "title": "Operation",
-          "type": "string"
-        },
-        "kind": {
-          "$ref": "#/$defs/FieldbookProjectKind"
-        },
-        "title": {
-          "maxLength": 120,
-          "minLength": 1,
-          "title": "Title",
-          "type": "string"
-        },
-        "summary": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Summary",
-          "type": "string"
-        }
-      },
-      "required": [
-        "kind",
-        "title",
-        "summary"
-      ],
-      "title": "CreateFieldbookProjectOperation",
-      "type": "object"
-    },
-    "CurrentObservationEvidence": {
-      "additionalProperties": false,
-      "description": "The exact observation the planner was looking at when it wrote this.",
-      "properties": {
-        "source": {
-          "const": "current_observation",
-          "default": "current_observation",
-          "title": "Source",
-          "type": "string"
-        }
-      },
-      "title": "CurrentObservationEvidence",
-      "type": "object"
     },
     "DismissScreenAction": {
       "additionalProperties": false,
@@ -842,45 +1284,8 @@
       "title": "FieldConditionPath",
       "type": "string"
     },
-    "FieldbookEntryKind": {
-      "enum": [
-        "note",
-        "decision",
-        "observation",
-        "incident",
-        "manifest",
-        "route_entry",
-        "expense",
-        "question"
-      ],
-      "title": "FieldbookEntryKind",
-      "type": "string"
-    },
-    "FieldbookProjectKind": {
-      "enum": [
-        "delivery_docket",
-        "route_atlas",
-        "incident_log",
-        "vendor_ledger",
-        "equipment_plan",
-        "journal",
-        "generic"
-      ],
-      "title": "FieldbookProjectKind",
-      "type": "string"
-    },
-    "FieldbookProjectStatus": {
-      "enum": [
-        "active",
-        "paused",
-        "completed",
-        "abandoned"
-      ],
-      "title": "FieldbookProjectStatus",
-      "type": "string"
-    },
     "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe planner-visible subset recorded by the game-binding parity ledger.",
+      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe adapter-owned subset recorded by the game-binding parity ledger.",
       "enum": [
         "toggle_inventory",
         "toggle_map",
@@ -1035,54 +1440,39 @@
       "title": "HotkeyAction",
       "type": "object"
     },
-    "IdempotencyPolicy": {
+    "InputBoundaryDecision": {
+      "description": "Outcome of the final revalidation performed inside the acquired input lease.",
       "enum": [
-        "at_most_once",
-        "safe_to_retry"
+        "not_required",
+        "revalidated",
+        "rejected"
       ],
-      "title": "IdempotencyPolicy",
+      "title": "InputBoundaryDecision",
       "type": "string"
     },
-    "InterruptPolicy": {
-      "enum": [
-        "cancel_on_reflex",
-        "cancel_on_reflex_or_plan_patch"
-      ],
-      "title": "InterruptPolicy",
-      "type": "string"
-    },
-    "JsonValue": {},
-    "KeepMemoryOperation": {
+    "InputBoundaryReport": {
       "additionalProperties": false,
-      "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
+      "description": "Evidence from the final fence that runs after the input lease is acquired.\n\nValidation performed before a polite input lease can become obsolete while\nthe lease is pending, so a sensitive action revalidates its typed plan\nconditions against the latest canonical revision immediately before the\nfirst primitive is emitted.",
       "properties": {
-        "operation": {
-          "const": "keep",
-          "default": "keep",
-          "title": "Operation",
-          "type": "string"
+        "decision": {
+          "$ref": "#/$defs/InputBoundaryDecision"
         },
-        "kind": {
-          "$ref": "#/$defs/MemoryKind"
-        },
-        "content": {
-          "maxLength": 2000,
+        "reason": {
+          "maxLength": 1000,
           "minLength": 1,
-          "title": "Content",
+          "title": "Reason",
           "type": "string"
         },
-        "salience": {
-          "default": 0.5,
-          "maximum": 1.0,
+        "lease_wait_seconds": {
+          "default": 0.0,
           "minimum": 0.0,
-          "title": "Salience",
+          "title": "Lease Wait Seconds",
           "type": "number"
         },
-        "target_id": {
+        "plan_id": {
           "anyOf": [
             {
-              "maxLength": 200,
-              "minLength": 1,
+              "maxLength": 96,
               "type": "string"
             },
             {
@@ -1090,38 +1480,70 @@
             }
           ],
           "default": null,
-          "title": "Target Id"
+          "title": "Plan Id"
         },
-        "references": {
+        "plan_version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Plan Version"
+        },
+        "step_id": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Step Id"
+        },
+        "validated_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "boundary_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evaluations": {
           "items": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/CurrentObservationEvidence"
-              },
-              {
-                "$ref": "#/$defs/ActionOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/PlanOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/MemoryEvidence"
-              },
-              {
-                "$ref": "#/$defs/AdvisorBriefEvidence"
-              }
-            ]
+            "$ref": "#/$defs/ConditionEvaluation"
           },
-          "maxItems": 4,
-          "title": "References",
+          "maxItems": 24,
+          "title": "Evaluations",
           "type": "array"
         }
       },
       "required": [
-        "kind",
-        "content"
+        "decision",
+        "reason"
       ],
-      "title": "KeepMemoryOperation",
+      "title": "InputBoundaryReport",
       "type": "object"
     },
     "KeyAction": {
@@ -1152,49 +1574,6 @@
       ],
       "title": "KeyAction",
       "type": "object"
-    },
-    "MemoryEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "const": "memory",
-          "default": "memory",
-          "title": "Source",
-          "type": "string"
-        },
-        "memory_id": {
-          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
-          "title": "Memory Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "memory_id"
-      ],
-      "title": "MemoryEvidence",
-      "type": "object"
-    },
-    "MemoryKind": {
-      "enum": [
-        "fact",
-        "episode",
-        "commitment",
-        "hypothesis"
-      ],
-      "title": "MemoryKind",
-      "type": "string"
-    },
-    "MemoryResolutionDisposition": {
-      "description": "What resolving an intention or uncertainty actually concluded.",
-      "enum": [
-        "completed",
-        "abandoned",
-        "confirmed",
-        "rejected",
-        "unknown"
-      ],
-      "title": "MemoryResolutionDisposition",
-      "type": "string"
     },
     "MouseButton": {
       "enum": [
@@ -1362,6 +1741,133 @@
       "title": "MoveToCharacterAction",
       "type": "object"
     },
+    "NativeCommandAcknowledgement": {
+      "additionalProperties": false,
+      "properties": {
+        "command_id": {
+          "pattern": "^cmd-[0-9a-f]{32}$",
+          "title": "Command Id",
+          "type": "string"
+        },
+        "command": {
+          "enum": [
+            "approach_confirmed_vendor",
+            "move_to_character",
+            "regroup_with_squad_member",
+            "move_in_direction",
+            "travel_to_map_destination",
+            "exit_current_building",
+            "operate_natural_resource",
+            "produce_resource_output",
+            "open_context_inventory"
+          ],
+          "title": "Command",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/NativeCommandStatus"
+        },
+        "reason": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "target_id": {
+          "default": "",
+          "maxLength": 200,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "bearing_degrees": {
+          "default": 0.0,
+          "exclusiveMaximum": 360.0,
+          "minimum": 0.0,
+          "title": "Bearing Degrees",
+          "type": "number"
+        },
+        "distance_units": {
+          "default": 0.0,
+          "maximum": 2000.0,
+          "minimum": 0.0,
+          "title": "Distance Units",
+          "type": "number"
+        },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
+        },
+        "selected_character_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "title": "Selected Character Ids",
+          "type": "array"
+        },
+        "based_on_telemetry_sequence": {
+          "minimum": 0,
+          "title": "Based On Telemetry Sequence",
+          "type": "integer"
+        },
+        "acknowledged_at_telemetry_sequence": {
+          "minimum": 0,
+          "title": "Acknowledged At Telemetry Sequence",
+          "type": "integer"
+        },
+        "accepted_at_telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Accepted At Telemetry Sequence"
+        },
+        "terminal_at_telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Terminal At Telemetry Sequence"
+        }
+      },
+      "required": [
+        "command_id",
+        "command",
+        "status",
+        "reason",
+        "selected_character_ids",
+        "based_on_telemetry_sequence",
+        "acknowledged_at_telemetry_sequence"
+      ],
+      "title": "NativeCommandAcknowledgement",
+      "type": "object"
+    },
+    "NativeCommandStatus": {
+      "enum": [
+        "accepted",
+        "completed",
+        "rejected",
+        "cancelled"
+      ],
+      "title": "NativeCommandStatus",
+      "type": "string"
+    },
     "NoopAction": {
       "additionalProperties": false,
       "properties": {
@@ -1380,13 +1886,42 @@
       "title": "NoopAction",
       "type": "object"
     },
-    "ObservationPolicy": {
-      "enum": [
-        "after_action",
-        "until_terminal"
+    "NormalizedPointerBounds": {
+      "additionalProperties": false,
+      "properties": {
+        "min_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min X",
+          "type": "number"
+        },
+        "max_x": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max X",
+          "type": "number"
+        },
+        "min_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Min Y",
+          "type": "number"
+        },
+        "max_y": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Max Y",
+          "type": "number"
+        }
+      },
+      "required": [
+        "min_x",
+        "max_x",
+        "min_y",
+        "max_y"
       ],
-      "title": "ObservationPolicy",
-      "type": "string"
+      "title": "NormalizedPointerBounds",
+      "type": "object"
     },
     "OpenContextInventoryAction": {
       "additionalProperties": false,
@@ -1480,256 +2015,16 @@
       "title": "PerformContextAction",
       "type": "object"
     },
-    "PlanOutcomeEvidence": {
-      "additionalProperties": false,
-      "properties": {
-        "source": {
-          "const": "plan_outcome",
-          "default": "plan_outcome",
-          "title": "Source",
-          "type": "string"
-        },
-        "plan_outcome_id": {
-          "pattern": "^po-[1-9][0-9]{0,8}$",
-          "title": "Plan Outcome Id",
-          "type": "string"
-        }
-      },
-      "required": [
-        "plan_outcome_id"
+    "PointerActionClass": {
+      "description": "How an action's coordinates are derived, which decides what must match.\n\n`coordinate_independent` actions carry no screen position at all.\n`semantic_current` actions resolve their position from live control,\ntooltip, or entity bounds that are re-read inside the input lease, so they\nsurvive a resolution change. `profile_calibrated` actions replay fixed\nnormalized coordinates and are valid only under one exact identity.",
+      "enum": [
+        "coordinate_independent",
+        "semantic_current",
+        "profile_calibrated",
+        "unsupported"
       ],
-      "title": "PlanOutcomeEvidence",
-      "type": "object"
-    },
-    "PlanStep": {
-      "additionalProperties": false,
-      "properties": {
-        "step_id": {
-          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
-          "title": "Step Id",
-          "type": "string"
-        },
-        "action": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/NoopAction"
-            },
-            {
-              "$ref": "#/$defs/StopAction"
-            },
-            {
-              "$ref": "#/$defs/PauseAction"
-            },
-            {
-              "$ref": "#/$defs/SetSpeedAction"
-            },
-            {
-              "$ref": "#/$defs/WaitAction"
-            },
-            {
-              "$ref": "#/$defs/ConsultAdvisorAction"
-            },
-            {
-              "$ref": "#/$defs/RecallMemoryAction"
-            },
-            {
-              "$ref": "#/$defs/ReadFieldbookAction"
-            },
-            {
-              "$ref": "#/$defs/KeyAction"
-            },
-            {
-              "$ref": "#/$defs/HotkeyAction"
-            },
-            {
-              "$ref": "#/$defs/MouseButtonAction"
-            },
-            {
-              "$ref": "#/$defs/MouseDragAction"
-            },
-            {
-              "$ref": "#/$defs/MoveCursorAction"
-            },
-            {
-              "$ref": "#/$defs/ClickAction"
-            },
-            {
-              "$ref": "#/$defs/ScrollAction"
-            },
-            {
-              "$ref": "#/$defs/SkillAction"
-            },
-            {
-              "$ref": "#/$defs/ApproachDialogueTargetAction"
-            },
-            {
-              "$ref": "#/$defs/CommandWorldTargetAction"
-            },
-            {
-              "$ref": "#/$defs/SelectSquadMemberAction"
-            },
-            {
-              "$ref": "#/$defs/RotateCameraAction"
-            },
-            {
-              "$ref": "#/$defs/PerformContextAction"
-            },
-            {
-              "$ref": "#/$defs/ProduceResourceOutputAction"
-            },
-            {
-              "$ref": "#/$defs/OpenContextInventoryAction"
-            },
-            {
-              "$ref": "#/$defs/HarvestResourceAction"
-            },
-            {
-              "$ref": "#/$defs/RespondToImmediateThreatAction"
-            },
-            {
-              "$ref": "#/$defs/RegroupWithSquadMemberAction"
-            },
-            {
-              "$ref": "#/$defs/MoveToCharacterAction"
-            },
-            {
-              "$ref": "#/$defs/MoveInDirectionAction"
-            },
-            {
-              "$ref": "#/$defs/TravelToMapDestinationAction"
-            },
-            {
-              "$ref": "#/$defs/ExitCurrentBuildingAction"
-            },
-            {
-              "$ref": "#/$defs/ActivateVisibleControlAction"
-            },
-            {
-              "$ref": "#/$defs/DismissScreenAction"
-            },
-            {
-              "$ref": "#/$defs/PurchaseItemAction"
-            },
-            {
-              "$ref": "#/$defs/OpenScreenAction"
-            },
-            {
-              "$ref": "#/$defs/UseGameBindingAction"
-            },
-            {
-              "$ref": "#/$defs/ScrollScreenAction"
-            },
-            {
-              "$ref": "#/$defs/SellItemAction"
-            },
-            {
-              "$ref": "#/$defs/EquipItemAction"
-            },
-            {
-              "$ref": "#/$defs/CollectResourceOutputAction"
-            },
-            {
-              "$ref": "#/$defs/RecoverCameraViewAction"
-            }
-          ],
-          "title": "Action"
-        },
-        "affordance": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/BoundAffordance"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "preconditions": {
-          "items": {
-            "$ref": "#/$defs/Condition"
-          },
-          "maxItems": 12,
-          "minItems": 1,
-          "title": "Preconditions",
-          "type": "array"
-        },
-        "success_conditions": {
-          "items": {
-            "$ref": "#/$defs/Condition"
-          },
-          "maxItems": 12,
-          "title": "Success Conditions",
-          "type": "array"
-        },
-        "failure_conditions": {
-          "items": {
-            "$ref": "#/$defs/Condition"
-          },
-          "maxItems": 12,
-          "title": "Failure Conditions",
-          "type": "array"
-        },
-        "timeout_seconds": {
-          "exclusiveMinimum": 0.0,
-          "maximum": 300.0,
-          "title": "Timeout Seconds",
-          "type": "number"
-        },
-        "retry_budget": {
-          "default": 0,
-          "maximum": 2,
-          "minimum": 0,
-          "title": "Retry Budget",
-          "type": "integer"
-        },
-        "idempotency": {
-          "$ref": "#/$defs/IdempotencyPolicy",
-          "default": "at_most_once"
-        },
-        "on_success": {
-          "anyOf": [
-            {
-              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "On Success"
-        },
-        "on_failure": {
-          "anyOf": [
-            {
-              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "On Failure"
-        },
-        "interrupt_policy": {
-          "$ref": "#/$defs/InterruptPolicy",
-          "default": "cancel_on_reflex"
-        },
-        "observation_policy": {
-          "$ref": "#/$defs/ObservationPolicy",
-          "default": "until_terminal"
-        }
-      },
-      "required": [
-        "step_id",
-        "action",
-        "preconditions",
-        "timeout_seconds"
-      ],
-      "title": "PlanStep",
-      "type": "object"
+      "title": "PointerActionClass",
+      "type": "string"
     },
     "ProduceResourceOutputAction": {
       "additionalProperties": false,
@@ -1759,6 +2054,113 @@
         "target_id"
       ],
       "title": "ProduceResourceOutputAction",
+      "type": "object"
+    },
+    "PurchaseEvidence": {
+      "additionalProperties": false,
+      "description": "Terminal conservation proof for one bounded purchasing transaction.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/PurchaseStatus"
+        },
+        "seller_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Seller Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "requested_quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Requested Quantity",
+          "type": "integer"
+        },
+        "purchased_quantity": {
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Purchased Quantity",
+          "type": "integer"
+        },
+        "money_before": {
+          "minimum": 0,
+          "title": "Money Before",
+          "type": "integer"
+        },
+        "money_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Money After"
+        },
+        "inventory_quantity_before": {
+          "minimum": 0,
+          "title": "Inventory Quantity Before",
+          "type": "integer"
+        },
+        "inventory_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Quantity After"
+        },
+        "observed_after_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed After Sequence"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "seller_id",
+        "selected_character_id",
+        "item_name",
+        "requested_quantity",
+        "purchased_quantity",
+        "money_before",
+        "inventory_quantity_before",
+        "reason"
+      ],
+      "title": "PurchaseEvidence",
       "type": "object"
     },
     "PurchaseItemAction": {
@@ -1817,6 +2219,76 @@
       ],
       "title": "PurchaseItemAction",
       "type": "object"
+    },
+    "PurchaseStatus": {
+      "enum": [
+        "purchased",
+        "partially_purchased",
+        "not_purchased",
+        "outcome_unknown"
+      ],
+      "title": "PurchaseStatus",
+      "type": "string"
+    },
+    "QuicksaveEvidence": {
+      "additionalProperties": false,
+      "description": "Controller-owned proof that F5 replaced the exact quicksave tree.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/QuicksaveStatus"
+        },
+        "slot": {
+          "const": "quicksave",
+          "default": "quicksave",
+          "title": "Slot",
+          "type": "string"
+        },
+        "changed_files": {
+          "minimum": 0,
+          "title": "Changed Files",
+          "type": "integer"
+        },
+        "quick_save_size_bytes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quick Save Size Bytes"
+        },
+        "quiescent_seconds": {
+          "minimum": 0.0,
+          "title": "Quiescent Seconds",
+          "type": "number"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "changed_files",
+        "quiescent_seconds",
+        "reason"
+      ],
+      "title": "QuicksaveEvidence",
+      "type": "object"
+    },
+    "QuicksaveStatus": {
+      "enum": [
+        "saved",
+        "not_observed"
+      ],
+      "title": "QuicksaveStatus",
+      "type": "string"
     },
     "ReadFieldbookAction": {
       "additionalProperties": false,
@@ -1949,91 +2421,81 @@
       "title": "RegroupWithSquadMemberAction",
       "type": "object"
     },
-    "ReinforceMemoryOperation": {
+    "ResourceHarvestEvidence": {
       "additionalProperties": false,
-      "description": "Say an existing record still matters, without writing a second copy.",
+      "description": "Terminal proof for one controller-owned production and transfer bundle.",
       "properties": {
-        "operation": {
-          "const": "reinforce",
-          "default": "reinforce",
-          "title": "Operation",
+        "status": {
+          "$ref": "#/$defs/ResourceHarvestStatus"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
           "type": "string"
         },
-        "memory_id": {
-          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
-          "title": "Memory Id",
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
           "type": "string"
         },
-        "salience": {
+        "requested_quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Requested Quantity",
+          "type": "integer"
+        },
+        "item_name": {
           "anyOf": [
             {
-              "maximum": 1.0,
-              "minimum": 0.0,
-              "type": "number"
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "title": "Salience"
+          "title": "Item Name"
         },
-        "references": {
-          "items": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/CurrentObservationEvidence"
-              },
-              {
-                "$ref": "#/$defs/ActionOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/PlanOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/MemoryEvidence"
-              },
-              {
-                "$ref": "#/$defs/AdvisorBriefEvidence"
-              }
-            ]
-          },
-          "maxItems": 4,
-          "title": "References",
-          "type": "array"
-        }
-      },
-      "required": [
-        "memory_id"
-      ],
-      "title": "ReinforceMemoryOperation",
-      "type": "object"
-    },
-    "ResolveMemoryOperation": {
-      "additionalProperties": false,
-      "description": "Close an open commitment or question with the evidence that closed it.",
-      "properties": {
-        "operation": {
-          "const": "resolve",
-          "default": "resolve",
-          "title": "Operation",
-          "type": "string"
+        "transferred_quantity": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Transferred Quantity",
+          "type": "integer"
         },
-        "memory_id": {
-          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
-          "title": "Memory Id",
-          "type": "string"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        },
-        "disposition": {
+        "production_command_id": {
           "anyOf": [
             {
-              "$ref": "#/$defs/MemoryResolutionDisposition"
+              "pattern": "^cmd-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Production Command Id"
+        },
+        "inventory_command_id": {
+          "anyOf": [
+            {
+              "pattern": "^cmd-[0-9a-f]{32}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Command Id"
+        },
+        "transfer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceTransferEvidence"
             },
             {
               "type": "null"
@@ -2041,37 +2503,159 @@
           ],
           "default": null
         },
-        "references": {
-          "items": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/CurrentObservationEvidence"
-              },
-              {
-                "$ref": "#/$defs/ActionOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/PlanOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/MemoryEvidence"
-              },
-              {
-                "$ref": "#/$defs/AdvisorBriefEvidence"
-              }
-            ]
-          },
-          "maxItems": 4,
-          "title": "References",
-          "type": "array"
+        "cleanup_confirmed": {
+          "title": "Cleanup Confirmed",
+          "type": "boolean"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
         }
       },
       "required": [
-        "memory_id",
+        "status",
+        "target_id",
+        "selected_character_id",
+        "requested_quantity",
+        "cleanup_confirmed",
         "reason"
       ],
-      "title": "ResolveMemoryOperation",
+      "title": "ResourceHarvestEvidence",
       "type": "object"
+    },
+    "ResourceHarvestStatus": {
+      "enum": [
+        "harvested",
+        "not_harvested",
+        "cleanup_failed"
+      ],
+      "title": "ResourceHarvestStatus",
+      "type": "string"
+    },
+    "ResourceTransferEvidence": {
+      "additionalProperties": false,
+      "description": "Controller-owned conservation proof for one resource-output transfer.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/ResourceTransferStatus"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selected Character Id"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity_before": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Quantity Before"
+        },
+        "source_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Quantity After"
+        },
+        "destination_quantity_before": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination Quantity Before"
+        },
+        "destination_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Destination Quantity After"
+        },
+        "observed_after_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed After Sequence"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "target_id",
+        "item_name",
+        "reason"
+      ],
+      "title": "ResourceTransferEvidence",
+      "type": "object"
+    },
+    "ResourceTransferStatus": {
+      "enum": [
+        "transferred",
+        "not_transferred",
+        "unverified"
+      ],
+      "title": "ResourceTransferStatus",
+      "type": "string"
     },
     "RespondToImmediateThreatAction": {
       "additionalProperties": false,
@@ -2100,35 +2684,6 @@
       "title": "RespondToImmediateThreatAction",
       "type": "object"
     },
-    "RetractMemoryOperation": {
-      "additionalProperties": false,
-      "description": "Withdraw a record from active recall without deleting its history.",
-      "properties": {
-        "operation": {
-          "const": "retract",
-          "default": "retract",
-          "title": "Operation",
-          "type": "string"
-        },
-        "memory_id": {
-          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
-          "title": "Memory Id",
-          "type": "string"
-        },
-        "reason": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Reason",
-          "type": "string"
-        }
-      },
-      "required": [
-        "memory_id",
-        "reason"
-      ],
-      "title": "RetractMemoryOperation",
-      "type": "object"
-    },
     "RotateCameraAction": {
       "additionalProperties": false,
       "description": "Rotate the world camera one bounded horizontal increment.",
@@ -2148,6 +2703,123 @@
       ],
       "title": "RotateCameraAction",
       "type": "object"
+    },
+    "SaleEvidence": {
+      "additionalProperties": false,
+      "description": "Terminal conservation proof for one bounded selling transaction.",
+      "properties": {
+        "status": {
+          "$ref": "#/$defs/SaleStatus"
+        },
+        "buyer_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Buyer Id",
+          "type": "string"
+        },
+        "selected_character_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Selected Character Id",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "requested_quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Requested Quantity",
+          "type": "integer"
+        },
+        "sold_quantity": {
+          "maximum": 5,
+          "minimum": 0,
+          "title": "Sold Quantity",
+          "type": "integer"
+        },
+        "money_before": {
+          "minimum": 0,
+          "title": "Money Before",
+          "type": "integer"
+        },
+        "money_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Money After"
+        },
+        "inventory_quantity_before": {
+          "minimum": 0,
+          "title": "Inventory Quantity Before",
+          "type": "integer"
+        },
+        "inventory_quantity_after": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inventory Quantity After"
+        },
+        "observed_after_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed After Sequence"
+        },
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "buyer_id",
+        "selected_character_id",
+        "item_name",
+        "requested_quantity",
+        "sold_quantity",
+        "money_before",
+        "inventory_quantity_before",
+        "reason"
+      ],
+      "title": "SaleEvidence",
+      "type": "object"
+    },
+    "SaleStatus": {
+      "enum": [
+        "sold",
+        "partially_sold",
+        "not_sold",
+        "outcome_unknown"
+      ],
+      "title": "SaleStatus",
+      "type": "string"
     },
     "ScrollAction": {
       "additionalProperties": false,
@@ -2213,32 +2885,6 @@
         "notches"
       ],
       "title": "ScrollScreenAction",
-      "type": "object"
-    },
-    "SelectFieldbookProjectOperation": {
-      "additionalProperties": false,
-      "properties": {
-        "operation": {
-          "const": "select_project",
-          "default": "select_project",
-          "title": "Operation",
-          "type": "string"
-        },
-        "project_id": {
-          "anyOf": [
-            {
-              "pattern": "^fbp-[0-9a-f]{32}$",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Project Id"
-        }
-      },
-      "title": "SelectFieldbookProjectOperation",
       "type": "object"
     },
     "SelectSquadMemberAction": {
@@ -2315,29 +2961,175 @@
       "title": "SellItemAction",
       "type": "object"
     },
-    "SetFieldbookProjectStatusOperation": {
+    "SemanticActionReceipt": {
       "additionalProperties": false,
+      "description": "Causal evidence for one reusable semantic action.\n\nRecords what the action's arguments actually resolved to against observed\nstate, so a receipt proves which real reference was acted on rather than\nonly which arguments were requested.",
       "properties": {
-        "operation": {
-          "const": "set_project_status",
-          "default": "set_project_status",
-          "title": "Operation",
+        "action_kind": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Action Kind",
           "type": "string"
         },
-        "project_id": {
-          "pattern": "^fbp-[0-9a-f]{32}$",
-          "title": "Project Id",
+        "contract_version": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Contract Version",
           "type": "string"
         },
-        "status": {
-          "$ref": "#/$defs/FieldbookProjectStatus"
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "resolved_label": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Label"
+        },
+        "resolved_role": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolved Role"
+        },
+        "resolved_bounds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NormalizedPointerBounds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_revision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorldStateRevision"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "option_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Option Id"
+        },
+        "revalidation": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Revalidation",
+          "type": "string"
+        },
+        "camera_recovery": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CameraRecoveryEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "purchase": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PurchaseEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sale": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SaleEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "quicksave": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuicksaveEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resource_transfer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceTransferEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "resource_harvest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResourceHarvestEvidence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
-        "project_id",
-        "status"
+        "action_kind",
+        "contract_version",
+        "revalidation"
       ],
-      "title": "SetFieldbookProjectStatusOperation",
+      "title": "SemanticActionReceipt",
       "type": "object"
     },
     "SetSpeedAction": {
@@ -2454,84 +3246,6 @@
       "title": "StopAction",
       "type": "object"
     },
-    "SupersedeMemoryOperation": {
-      "additionalProperties": false,
-      "description": "Replace a record and link the old one to its replacement, atomically.",
-      "properties": {
-        "operation": {
-          "const": "supersede",
-          "default": "supersede",
-          "title": "Operation",
-          "type": "string"
-        },
-        "memory_id": {
-          "pattern": "^mem-[A-Za-z0-9]{1,72}$",
-          "title": "Memory Id",
-          "type": "string"
-        },
-        "kind": {
-          "$ref": "#/$defs/MemoryKind"
-        },
-        "content": {
-          "maxLength": 2000,
-          "minLength": 1,
-          "title": "Content",
-          "type": "string"
-        },
-        "salience": {
-          "default": 0.5,
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "title": "Salience",
-          "type": "number"
-        },
-        "target_id": {
-          "anyOf": [
-            {
-              "maxLength": 200,
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Target Id"
-        },
-        "references": {
-          "items": {
-            "anyOf": [
-              {
-                "$ref": "#/$defs/CurrentObservationEvidence"
-              },
-              {
-                "$ref": "#/$defs/ActionOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/PlanOutcomeEvidence"
-              },
-              {
-                "$ref": "#/$defs/MemoryEvidence"
-              },
-              {
-                "$ref": "#/$defs/AdvisorBriefEvidence"
-              }
-            ]
-          },
-          "maxItems": 4,
-          "title": "References",
-          "type": "array"
-        }
-      },
-      "required": [
-        "memory_id",
-        "kind",
-        "content"
-      ],
-      "title": "SupersedeMemoryOperation",
-      "type": "object"
-    },
     "TelemetryFreshCondition": {
       "additionalProperties": false,
       "properties": {
@@ -2595,34 +3309,6 @@
         "destination_id"
       ],
       "title": "TravelToMapDestinationAction",
-      "type": "object"
-    },
-    "UpdateFieldbookSummaryOperation": {
-      "additionalProperties": false,
-      "properties": {
-        "operation": {
-          "const": "update_summary",
-          "default": "update_summary",
-          "title": "Operation",
-          "type": "string"
-        },
-        "project_id": {
-          "pattern": "^fbp-[0-9a-f]{32}$",
-          "title": "Project Id",
-          "type": "string"
-        },
-        "summary": {
-          "maxLength": 1000,
-          "minLength": 1,
-          "title": "Summary",
-          "type": "string"
-        }
-      },
-      "required": [
-        "project_id",
-        "summary"
-      ],
-      "title": "UpdateFieldbookSummaryOperation",
       "type": "object"
     },
     "UseGameBindingAction": {
@@ -2721,28 +3407,139 @@
   },
   "additionalProperties": false,
   "properties": {
-    "schema_version": {
-      "const": "1.0",
-      "title": "Schema Version",
-      "type": "string"
-    },
-    "plan_id": {
-      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
-      "title": "Plan Id",
-      "type": "string"
-    },
-    "based_on_plan_version": {
-      "minimum": 1,
-      "title": "Based On Plan Version",
-      "type": "integer"
-    },
-    "based_on_revision": {
-      "$ref": "#/$defs/WorldStateRevision"
-    },
-    "interrupt_active_step_id": {
+    "action": {
       "anyOf": [
         {
-          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "$ref": "#/$defs/NoopAction"
+        },
+        {
+          "$ref": "#/$defs/StopAction"
+        },
+        {
+          "$ref": "#/$defs/PauseAction"
+        },
+        {
+          "$ref": "#/$defs/SetSpeedAction"
+        },
+        {
+          "$ref": "#/$defs/WaitAction"
+        },
+        {
+          "$ref": "#/$defs/ConsultAdvisorAction"
+        },
+        {
+          "$ref": "#/$defs/RecallMemoryAction"
+        },
+        {
+          "$ref": "#/$defs/ReadFieldbookAction"
+        },
+        {
+          "$ref": "#/$defs/KeyAction"
+        },
+        {
+          "$ref": "#/$defs/HotkeyAction"
+        },
+        {
+          "$ref": "#/$defs/MouseButtonAction"
+        },
+        {
+          "$ref": "#/$defs/MouseDragAction"
+        },
+        {
+          "$ref": "#/$defs/MoveCursorAction"
+        },
+        {
+          "$ref": "#/$defs/ClickAction"
+        },
+        {
+          "$ref": "#/$defs/ScrollAction"
+        },
+        {
+          "$ref": "#/$defs/SkillAction"
+        },
+        {
+          "$ref": "#/$defs/ApproachDialogueTargetAction"
+        },
+        {
+          "$ref": "#/$defs/CommandWorldTargetAction"
+        },
+        {
+          "$ref": "#/$defs/SelectSquadMemberAction"
+        },
+        {
+          "$ref": "#/$defs/RotateCameraAction"
+        },
+        {
+          "$ref": "#/$defs/PerformContextAction"
+        },
+        {
+          "$ref": "#/$defs/ProduceResourceOutputAction"
+        },
+        {
+          "$ref": "#/$defs/OpenContextInventoryAction"
+        },
+        {
+          "$ref": "#/$defs/HarvestResourceAction"
+        },
+        {
+          "$ref": "#/$defs/RespondToImmediateThreatAction"
+        },
+        {
+          "$ref": "#/$defs/RegroupWithSquadMemberAction"
+        },
+        {
+          "$ref": "#/$defs/MoveToCharacterAction"
+        },
+        {
+          "$ref": "#/$defs/MoveInDirectionAction"
+        },
+        {
+          "$ref": "#/$defs/TravelToMapDestinationAction"
+        },
+        {
+          "$ref": "#/$defs/ExitCurrentBuildingAction"
+        },
+        {
+          "$ref": "#/$defs/ActivateVisibleControlAction"
+        },
+        {
+          "$ref": "#/$defs/DismissScreenAction"
+        },
+        {
+          "$ref": "#/$defs/PurchaseItemAction"
+        },
+        {
+          "$ref": "#/$defs/OpenScreenAction"
+        },
+        {
+          "$ref": "#/$defs/UseGameBindingAction"
+        },
+        {
+          "$ref": "#/$defs/ScrollScreenAction"
+        },
+        {
+          "$ref": "#/$defs/SellItemAction"
+        },
+        {
+          "$ref": "#/$defs/EquipItemAction"
+        },
+        {
+          "$ref": "#/$defs/CollectResourceOutputAction"
+        },
+        {
+          "$ref": "#/$defs/RecoverCameraViewAction"
+        }
+      ],
+      "title": "Action"
+    },
+    "control_mode": {
+      "$ref": "#/$defs/ControlMode",
+      "default": "interface_only"
+    },
+    "command_id": {
+      "anyOf": [
+        {
+          "pattern": "^cmd-[0-9a-f]{32}$",
           "type": "string"
         },
         {
@@ -2750,80 +3547,149 @@
         }
       ],
       "default": null,
-      "title": "Interrupt Active Step Id"
+      "title": "Command Id"
     },
-    "replace_future_steps": {
-      "items": {
-        "$ref": "#/$defs/PlanStep"
-      },
-      "maxItems": 8,
-      "minItems": 1,
-      "title": "Replace Future Steps",
-      "type": "array"
+    "started_after_revision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
-    "rationale": {
-      "maxLength": 1000,
-      "minLength": 1,
-      "title": "Rationale",
+    "completed_at_revision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WorldStateRevision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "causal_revision_advanced": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Causal Revision Advanced"
+    },
+    "native_acknowledgement": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NativeCommandAcknowledgement"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "input_boundary": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InputBoundaryReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "calibration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CalibrationReport"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "semantic": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SemanticActionReceipt"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "advisor": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AdvisorConsultEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "accepted": {
+      "title": "Accepted",
+      "type": "boolean"
+    },
+    "executed": {
+      "title": "Executed",
+      "type": "boolean"
+    },
+    "dry_run": {
+      "title": "Dry Run",
+      "type": "boolean"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
       "type": "string"
     },
-    "continuity_operations": {
-      "items": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/KeepMemoryOperation"
-          },
-          {
-            "$ref": "#/$defs/ReinforceMemoryOperation"
-          },
-          {
-            "$ref": "#/$defs/ResolveMemoryOperation"
-          },
-          {
-            "$ref": "#/$defs/SupersedeMemoryOperation"
-          },
-          {
-            "$ref": "#/$defs/RetractMemoryOperation"
-          }
-        ]
-      },
-      "maxItems": 6,
-      "title": "Continuity Operations",
-      "type": "array"
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
     },
-    "fieldbook_operations": {
-      "items": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/CreateFieldbookProjectOperation"
-          },
-          {
-            "$ref": "#/$defs/AppendFieldbookEntryOperation"
-          },
-          {
-            "$ref": "#/$defs/UpdateFieldbookSummaryOperation"
-          },
-          {
-            "$ref": "#/$defs/SelectFieldbookProjectOperation"
-          },
-          {
-            "$ref": "#/$defs/SetFieldbookProjectStatusOperation"
-          }
-        ]
-      },
-      "maxItems": 4,
-      "title": "Fieldbook Operations",
-      "type": "array"
+    "primitive_actions": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Primitive Actions",
+      "type": "integer"
+    },
+    "message": {
+      "default": "",
+      "title": "Message",
+      "type": "string"
+    },
+    "error_type": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error Type"
     }
   },
   "required": [
-    "schema_version",
-    "plan_id",
-    "based_on_plan_version",
-    "based_on_revision",
-    "replace_future_steps",
-    "rationale"
+    "action",
+    "accepted",
+    "executed",
+    "dry_run"
   ],
-  "title": "PlanPatch",
+  "title": "ActionReceipt",
   "type": "object"
 }

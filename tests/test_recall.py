@@ -22,7 +22,7 @@ from kenshi_agent.models import (
     MemoryRecord,
     RecallMemoryAction,
     RecallTier,
-    is_planner_control_action,
+    is_runtime_control_action,
 )
 
 
@@ -292,7 +292,7 @@ def test_another_campaigns_records_reach_no_tier(tmp_path: Path) -> None:
 def test_recall_memory_is_a_cognitive_planner_control() -> None:
     action = RecallMemoryAction(query="gate")
 
-    assert is_planner_control_action(action)
+    assert is_runtime_control_action(action)
 
 
 def test_a_read_receipt_cannot_advertise_memory_ids_it_did_not_return(

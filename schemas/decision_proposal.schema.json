@@ -1,0 +1,404 @@
+{
+  "$defs": {
+    "AffordanceParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "AffordanceParameter",
+      "type": "object"
+    },
+    "AffordanceSelection": {
+      "additionalProperties": false,
+      "description": "The entire game-action language exposed to the playing model.",
+      "properties": {
+        "affordance_id": {
+          "pattern": "^aff-[0-9a-f]{20}$",
+          "title": "Affordance Id",
+          "type": "string"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "parameters": {
+          "items": {
+            "$ref": "#/$defs/AffordanceParameter"
+          },
+          "maxItems": 8,
+          "title": "Parameters",
+          "type": "array"
+        }
+      },
+      "required": [
+        "affordance_id"
+      ],
+      "title": "AffordanceSelection",
+      "type": "object"
+    },
+    "ContinuityProposal": {
+      "additionalProperties": false,
+      "description": "A memory transition proposal using evidence IDs, not tagged ID wrappers.",
+      "properties": {
+        "operation": {
+          "enum": [
+            "keep",
+            "reinforce",
+            "resolve",
+            "supersede",
+            "retract"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "memory_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Memory Id"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "disposition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryResolutionDisposition"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "salience": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Salience"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "ContinuityProposal",
+      "type": "object"
+    },
+    "FieldbookEntryKind": {
+      "enum": [
+        "note",
+        "decision",
+        "observation",
+        "incident",
+        "manifest",
+        "route_entry",
+        "expense",
+        "question"
+      ],
+      "title": "FieldbookEntryKind",
+      "type": "string"
+    },
+    "FieldbookProjectKind": {
+      "enum": [
+        "delivery_docket",
+        "route_atlas",
+        "incident_log",
+        "vendor_ledger",
+        "equipment_plan",
+        "journal",
+        "generic"
+      ],
+      "title": "FieldbookProjectKind",
+      "type": "string"
+    },
+    "FieldbookProjectStatus": {
+      "enum": [
+        "active",
+        "paused",
+        "completed",
+        "abandoned"
+      ],
+      "title": "FieldbookProjectStatus",
+      "type": "string"
+    },
+    "FieldbookProposal": {
+      "additionalProperties": false,
+      "description": "A private-project transition proposal with runtime-resolved evidence.",
+      "properties": {
+        "operation": {
+          "enum": [
+            "create_project",
+            "append_entry",
+            "update_summary",
+            "select_project",
+            "set_project_status"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "project_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Project Id"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FieldbookProjectKind"
+            },
+            {
+              "$ref": "#/$defs/FieldbookEntryKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summary"
+        },
+        "status": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FieldbookProjectStatus"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evidence_ids": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 4,
+          "title": "Evidence Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "title": "FieldbookProposal",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "MemoryKind": {
+      "enum": [
+        "fact",
+        "episode",
+        "commitment",
+        "hypothesis"
+      ],
+      "title": "MemoryKind",
+      "type": "string"
+    },
+    "MemoryResolutionDisposition": {
+      "description": "What resolving an intention or uncertainty actually concluded.",
+      "enum": [
+        "completed",
+        "abandoned",
+        "confirmed",
+        "rejected",
+        "unknown"
+      ],
+      "title": "MemoryResolutionDisposition",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One hosted-model choice using the same current affordance contract.",
+  "properties": {
+    "intent": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Intent",
+      "type": "string"
+    },
+    "rationale": {
+      "maxLength": 1500,
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "selection": {
+      "$ref": "#/$defs/AffordanceSelection"
+    },
+    "confidence": {
+      "default": 0.5,
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "expected_observation": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expected Observation"
+    },
+    "continuity_operations": {
+      "items": {
+        "$ref": "#/$defs/ContinuityProposal"
+      },
+      "maxItems": 6,
+      "title": "Continuity Operations",
+      "type": "array"
+    },
+    "fieldbook_operations": {
+      "items": {
+        "$ref": "#/$defs/FieldbookProposal"
+      },
+      "maxItems": 4,
+      "title": "Fieldbook Operations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "intent",
+    "rationale",
+    "selection"
+  ],
+  "title": "DecisionProposal",
+  "type": "object"
+}

@@ -148,24 +148,35 @@ def test_mechanical_effects_are_owned_by_one_completion_boundary() -> None:
     ]
 
 
-def test_only_genuinely_ambiguous_effects_remain_planner_owned() -> None:
+def test_only_genuinely_ambiguous_internal_effects_need_explicit_step_conditions() -> None:
     state = observation()
 
     assert completion_contract_for(
         ActivateVisibleControlAction(exact_label="Goodbye.", role="button"),
         state,
-    ).owner is CompletionOwner.PLANNER_CONDITIONS
+    ).owner is CompletionOwner.STEP_CONDITIONS
     assert completion_contract_for(
         UseGameBindingAction(
             binding=GameBinding.CAMERA_FORWARD,
             expected_effect="move the camera forward",
         ),
         state,
-    ).owner is CompletionOwner.PLANNER_CONDITIONS
+    ).owner is CompletionOwner.STEP_CONDITIONS
     assert completion_contract_for(
         DismissScreenAction(expected_screen="trade"),
         state,
-    ).owner is CompletionOwner.PLANNER_CONDITIONS
+    ).owner is CompletionOwner.STEP_CONDITIONS
+
+
+def test_selected_affordance_never_delegates_ambiguous_completion_to_model() -> None:
+    completion = completion_contract_for(
+        ActivateVisibleControlAction(exact_label="Goodbye.", role="button"),
+        observation(),
+        selected_affordance=True,
+    )
+
+    assert completion.owner is CompletionOwner.AFFORDANCE_DELIVERY
+    assert completion.conditions == ()
 
 
 def test_receipt_terminal_controls_do_not_need_a_fictional_world_effect() -> None:

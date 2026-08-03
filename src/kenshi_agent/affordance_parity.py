@@ -184,7 +184,7 @@ class BindingParityReport:
         )
 
     def unwitnessed(self) -> tuple[str, ...]:
-        """Wired bindings no observation can prove, so no plan may use them."""
+        """Wired bindings whose gameplay effect has no observable terminal."""
 
         return tuple(
             name
@@ -205,16 +205,16 @@ class BindingParityReport:
             f"missing     {len(missing):3d}",
             f"unclassified {len(self.unclassified()):2d}",
             "",
-            # Wired means an action can express the binding. It does not mean a
-            # plan naming it can be accepted: a step needs a causal completion
-            # condition, and a binding nothing can witness has none. These were
-            # one number until a live sweep found 71 wired and 4 usable.
+            # Wired means the binding is reachable through its source adapter.
+            # Witnessed bindings have effect-level completion. Unwitnessed ones
+            # preserve the narrower delivery boundary instead of pretending a
+            # resulting gameplay effect was observed.
             f"witnessed   {len(self.witnessed()):3d}  (wired AND has an "
             "observable completion terminal)",
             f"unwitnessed {len(self.unwitnessed()):3d}  (wired but no "
             "observation proves it landed)",
             "",
-            "UNWITNESSED — wired, but a plan naming these is rejected",
+            "UNWITNESSED — offered at delivery boundary; gameplay effect unproved",
         ]
         reasons = _unwitnessed_reasons()
         grouped: dict[str, list[str]] = {}

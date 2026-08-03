@@ -278,9 +278,8 @@ safety:
     - consult_advisor
     - recall_memory
     - read_fieldbook
-  # The generic chain authors semantic actions, not macros. Only the transport
-  # and native-approach macros remain allowlisted, because the semantic approach
-  # reuses the latter's primitives.
+  # These macros are private runtime mechanics. They are never affordances and
+  # cannot be selected by the playing model.
   allow_skills:
     - pause_game
     - recenter_camera

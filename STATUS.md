@@ -34,8 +34,8 @@ mutation coverage in the generated [attestation](docs/generated/MUTATION_ATTESTA
 - Hosted calls project schemas and record cache diagnostics; exact-model capacity owns compaction.
   Both hosted modes select exact current runtime-generated affordances; the compiler derives private
   operations, plan mechanics, and a common lifecycle receipt. Malformed OpenRouter proposals safely
-  reobserve. See the [capacity](docs/ADR_HOSTED_CONTEXT_CAPACITY.md), [proposal](docs/ADR_HOSTED_PLAN_PROPOSALS.md),
-  and [affordance contract](docs/ADR_UNIFIED_AFFORDANCE_CONTRACT.md) decisions.
+  reobserve. See the [capacity](docs/ADR_HOSTED_CONTEXT_CAPACITY.md) and
+  [affordance contract](docs/ADR_UNIFIED_AFFORDANCE_CONTRACT.md) decisions.
 - [Continuity](docs/ADR_CONTINUITY_EVIDENCE_CAPABILITIES.md) separates world evidence, run-local
   `ao-`/`po-` history, and durable memory; IDs resolve to immutable typed snapshots and an
   admissibility matrix before rendering; non-effects cannot become world proof or close a

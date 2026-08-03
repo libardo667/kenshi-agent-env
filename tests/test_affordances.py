@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
+import kenshi_agent.affordances as affordance_module
+from kenshi_agent.action_contracts import (
+    USE_GAME_BINDING_CONTRACT,
+    CompletionOwner,
+    completion_contract_for,
+)
 from kenshi_agent.affordances import (
+    AFFORDANCE_ADAPTERS,
     SEMANTICALLY_ADAPTED_GAME_BINDINGS,
     AffordanceSource,
     bind_affordance,
@@ -23,18 +32,19 @@ from kenshi_agent.models import (
     GameBinding,
     GameScreen,
     GameState,
+    KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
     PlanningMode,
     TelemetrySnapshot,
     UIState,
+    UseGameBindingAction,
     Vec2,
     Vec3,
     VisibleUIControl,
     WorldStateRevision,
     WorldTarget,
-    game_binding_success_condition,
     is_runtime_owned_visible_control,
 )
 
@@ -53,6 +63,7 @@ def _observation(
     targets: list[WorldTarget] | None = None,
     stale: bool = False,
     active_shop_trader_count: int = 0,
+    money: int | None = None,
 ) -> Observation:
     return Observation(
         run_id="affordance-test",
@@ -65,7 +76,12 @@ def _observation(
             sequence=41,
             identity_session_id="session-affordance-test",
             capabilities=capabilities,
-            game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
+            game=GameState(
+                loaded=True,
+                paused=True,
+                speed_multiplier=1.0,
+                money=money,
+            ),
             ui=ui or UIState(),
             squad=squad or [],
             nearby_entities=nearby or [],
@@ -92,13 +108,27 @@ def test_named_binding_adapter_covers_its_whole_current_denominator() -> None:
     )
     telemetry = observation.telemetry
     assert telemetry is not None
-    expected = {
-        binding.value
-        for binding in GameBinding
-        if binding not in TIME_GAME_BINDINGS
-        and binding not in SEMANTICALLY_ADAPTED_GAME_BINDINGS
-        and game_binding_success_condition(binding, telemetry) is not None
-    }
+    expected = set()
+    for binding in GameBinding:
+        if binding in TIME_GAME_BINDINGS or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS:
+            continue
+        action = UseGameBindingAction(
+            binding=binding,
+            expected_effect=binding.value,
+        )
+        completion = completion_contract_for(
+            action,
+            observation,
+            selected_affordance=True,
+        )
+        if (
+            USE_GAME_BINDING_CONTRACT.bind(action, observation).bound
+            and not (
+                completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+                and not completion.conditions
+            )
+        ):
+            expected.add(binding.value)
     actual = {
         offer.semantic
         for offer in offered_affordances(observation)
@@ -270,6 +300,136 @@ def test_context_adapter_preserves_every_executable_runtime_order_without_enumer
     }
 
 
+def test_inventory_adapter_bounds_transaction_quantities_from_current_cells() -> None:
+    actor = CharacterState(
+        id="actor-1",
+        name="Bark",
+        selected=True,
+        alive=True,
+        conscious=True,
+    )
+    vendor = NearbyEntity(
+        id="vendor-1",
+        name="Trader",
+        disposition=Disposition.FRIENDLY,
+        has_vendor_list=True,
+        shop_inventory_owner=True,
+    )
+    observation = _observation(
+        capabilities=[
+            "game.money",
+            "game.pause",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.shop_owners",
+            "squad.inventory",
+            "squad.basic",
+            "ui.inventory",
+            "ui.tooltip",
+            "ui.visible_controls",
+        ],
+        money=95,
+        squad=[actor],
+        nearby=[vendor],
+        active_shop_trader_count=1,
+        ui=UIState(
+            active_screen="trade",
+            open_inventory_windows=2,
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+            visible_controls=[
+                VisibleUIControl(
+                    label="vendor-cell",
+                    role="item",
+                    window="Trader",
+                    bounds=_bounds(1),
+                    item_name="Bread",
+                    item_base_value=30,
+                    item_quantity=4,
+                ),
+                VisibleUIControl(
+                    label="actor-cell",
+                    role="item",
+                    window="Bark",
+                    bounds=_bounds(2),
+                    item_name="Cactus Rum",
+                    item_quantity=2,
+                ),
+            ],
+        ),
+    )
+
+    inventory = {
+        offer.semantic: offer
+        for offer in offered_affordances(observation)
+        if offer.source is AffordanceSource.INVENTORY
+    }
+    assert set(inventory) == {"buy", "sell"}
+    assert inventory["buy"].parameters[0].maximum == 3
+    assert inventory["sell"].parameters[0].maximum == 2
+
+
+def test_map_adapter_offers_every_currently_travelable_exact_destination() -> None:
+    actor = CharacterState(
+        id="actor-1",
+        name="Bark",
+        selected=True,
+        alive=True,
+        conscious=True,
+        down=False,
+    )
+    observation = _observation(
+        capabilities=[
+            "control.travel_to_map_destination",
+            "game.location.identity",
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.health",
+            "world.known_map_destinations",
+        ],
+        squad=[actor],
+        ui=UIState(
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+        ),
+    )
+    assert observation.telemetry is not None
+    observation.telemetry.game = observation.telemetry.game.model_copy(
+        update={
+            "location_id": "current-town",
+            "location_name": "Current Town",
+            "inside_town_walls": True,
+        }
+    )
+    observation.telemetry.known_map_destinations = [
+        KnownMapDestination(
+            id="current-town",
+            name="Current Town",
+            distance=1000,
+            has_gates=True,
+        ),
+        KnownMapDestination(
+            id="destination-1",
+            name="Squin",
+            distance=9000,
+            has_gates=True,
+        ),
+        KnownMapDestination(
+            id="destination-2",
+            name="The Hub",
+            distance=12000,
+            has_gates=False,
+        ),
+    ]
+
+    assert {
+        offer.target.target_id
+        for offer in offered_affordances(observation)
+        if offer.source is AffordanceSource.MAP and offer.target is not None
+    } == {"destination-1", "destination-2"}
+
+
 def test_exact_current_offer_is_the_only_action_language() -> None:
     target = NearbyEntity(
         id="person-1",
@@ -403,6 +563,16 @@ def test_every_adapter_closes_with_the_same_runtime_owned_lifecycle() -> None:
             if spec.required
         }
         materialized = bind_affordance(selection_for(offer, **required), observation)
+        completion = completion_contract_for(
+            materialized.operation,
+            observation,
+            selected_affordance=True,
+        )
+        assert completion.owner is not CompletionOwner.STEP_CONDITIONS
+        assert (
+            completion.owner is not CompletionOwner.RUNTIME_CONDITIONS
+            or completion.conditions
+        )
         receipt = terminal_affordance_receipt(
             bound_affordance(materialized),
             status=AffordanceLifecycleStatus.SUCCEEDED,
@@ -426,3 +596,18 @@ def test_every_adapter_closes_with_the_same_runtime_owned_lifecycle() -> None:
             message="An offered affordance is not a terminal receipt.",
             telemetry_sequence=42,
         )
+
+
+def test_adapter_declarations_guard_every_emitted_offer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observation = _observation(capabilities=[])
+    runtime_adapter = AFFORDANCE_ADAPTERS[0]
+    monkeypatch.setattr(
+        affordance_module,
+        "AFFORDANCE_ADAPTERS",
+        (replace(runtime_adapter, operation_kinds=frozenset()),),
+    )
+
+    with pytest.raises(RuntimeError, match="emitted undeclared operation"):
+        offered_affordances(observation)

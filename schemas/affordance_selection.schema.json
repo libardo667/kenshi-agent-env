@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "AffordanceParameter": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/JsonValue"
+        }
+      },
+      "required": [
+        "name",
+        "value"
+      ],
+      "title": "AffordanceParameter",
+      "type": "object"
+    },
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "The entire game-action language exposed to the playing model.",
+  "properties": {
+    "affordance_id": {
+      "pattern": "^aff-[0-9a-f]{20}$",
+      "title": "Affordance Id",
+      "type": "string"
+    },
+    "target_id": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Target Id"
+    },
+    "parameters": {
+      "items": {
+        "$ref": "#/$defs/AffordanceParameter"
+      },
+      "maxItems": 8,
+      "title": "Parameters",
+      "type": "array"
+    }
+  },
+  "required": [
+    "affordance_id"
+  ],
+  "title": "AffordanceSelection",
+  "type": "object"
+}

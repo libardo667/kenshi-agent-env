@@ -344,7 +344,7 @@
       "type": "object"
     },
     "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe planner-visible subset recorded by the game-binding parity ledger.",
+      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe adapter-owned subset recorded by the game-binding parity ledger.",
       "enum": [
         "toggle_inventory",
         "toggle_map",

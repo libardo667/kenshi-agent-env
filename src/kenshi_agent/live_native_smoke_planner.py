@@ -22,7 +22,6 @@ from kenshi_agent.models import (
     MoveToCharacterAction,
     Observation,
     PlanEnvelope,
-    PlannerAction,
     PlannerDecision,
     PlannerOutput,
     PlanningMode,
@@ -30,6 +29,7 @@ from kenshi_agent.models import (
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
     RiskBudget,
+    RuntimeAction,
 )
 
 SmokeActionKind = Literal[
@@ -54,7 +54,7 @@ def _smoke_action(
     *,
     action_kind: SmokeActionKind,
     target_id: str | None,
-) -> tuple[PlannerAction, str]:
+) -> tuple[RuntimeAction, str]:
     telemetry = observation.telemetry
     if telemetry is None:
         raise ValueError("live native smoke requires telemetry")

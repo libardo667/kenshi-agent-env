@@ -1,4 +1,4 @@
-"""One runtime-generated contract for every planner-visible possibility.
+"""One runtime-generated contract for every playing-model possibility.
 
 The playing model selects an offer from the current observation.  It does not
 name an executor class, restate a UI binding, or author mechanical policy.  A
@@ -40,12 +40,10 @@ from .models import (
     ControlMode,
     GameBinding,
     GameScreen,
-    IdempotencyPolicy,
     Observation,
     PlanningMode,
-    SingleStepPlannerAction,
+    SingleStepRuntimeAction,
     ThreatResponseStrategy,
-    game_binding_success_condition,
     is_runtime_owned_visible_control,
     map_destination_travel_available,
     normalize_control_label,
@@ -98,21 +96,6 @@ class AffordanceSelection(_StrictModel):
         return {parameter.name: parameter.value for parameter in self.parameters}
 
 
-class AffordancePolicy(_StrictModel):
-    """Mechanical policy owned by runtime code and hidden from planner prose."""
-
-    control_modes: frozenset[ControlMode]
-    required_capabilities: frozenset[str] = frozenset()
-    execution: AffordanceExecution
-    idempotency: IdempotencyPolicy
-    pointer_actions: int = Field(default=0, ge=0)
-    purchase_actions: int = Field(default=0, ge=0)
-    native_assisted_actions: int = Field(default=0, ge=0)
-    max_primitive_actions: int = Field(default=0, ge=0)
-    timeout_seconds: float = Field(gt=0.0, le=300.0)
-    controller_verified: bool = False
-
-
 class AffordanceOffer(_StrictModel):
     affordance_id: str = Field(pattern=r"^aff-[0-9a-f]{20}$")
     source: AffordanceSource
@@ -120,7 +103,6 @@ class AffordanceOffer(_StrictModel):
     description: str = Field(min_length=1, max_length=500)
     target: AffordanceTarget | None = None
     parameters: tuple[AffordanceParameterSpec, ...] = ()
-    policy: AffordancePolicy
     operation_kind: str = Field(min_length=1, max_length=80)
     operation_arguments: dict[str, JsonValue] = Field(default_factory=dict)
     offered_at_telemetry_sequence: int = Field(ge=0)
@@ -165,35 +147,6 @@ def _offer_id(
     return f"aff-{sha256(identity.encode('utf-8')).hexdigest()[:20]}"
 
 
-def _policy(
-    *,
-    execution: AffordanceExecution = AffordanceExecution.IMMEDIATE,
-    idempotency: IdempotencyPolicy = IdempotencyPolicy.AT_MOST_ONCE,
-    modes: frozenset[ControlMode] = frozenset(
-        {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
-    ),
-    capabilities: Iterable[str] = (),
-    pointer_actions: int = 0,
-    purchase_actions: int = 0,
-    native_actions: int = 0,
-    primitives: int = 0,
-    timeout_seconds: float = 10.0,
-    controller_verified: bool = False,
-) -> AffordancePolicy:
-    return AffordancePolicy(
-        control_modes=modes,
-        required_capabilities=frozenset(capabilities),
-        execution=execution,
-        idempotency=idempotency,
-        pointer_actions=pointer_actions,
-        purchase_actions=purchase_actions,
-        native_assisted_actions=native_actions,
-        max_primitive_actions=primitives,
-        timeout_seconds=timeout_seconds,
-        controller_verified=controller_verified,
-    )
-
-
 def _offer(
     observation: Observation,
     *,
@@ -204,7 +157,6 @@ def _offer(
     target: AffordanceTarget | None = None,
     parameters: tuple[AffordanceParameterSpec, ...] = (),
     arguments: dict[str, JsonValue] | None = None,
-    policy: AffordancePolicy | None = None,
 ) -> AffordanceOffer:
     telemetry = observation.telemetry
     if telemetry is None:
@@ -224,7 +176,6 @@ def _offer(
         description=description,
         target=target,
         parameters=parameters,
-        policy=policy or _policy(),
         operation_kind=operation_kind,
         operation_arguments=operation_arguments,
         offered_at_telemetry_sequence=telemetry.sequence,
@@ -249,12 +200,6 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         description="Take no game input and re-evaluate current evidence.",
         operation_kind="noop",
         arguments={"reason": "Re-evaluate current evidence."},
-        policy=_policy(
-            execution=AffordanceExecution.IMMEDIATE,
-            idempotency=IdempotencyPolicy.SAFE_TO_RETRY,
-            primitives=0,
-            controller_verified=True,
-        ),
     )
     yield _offer(
         observation,
@@ -263,7 +208,6 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         description="End the whole run at an explicit terminal boundary.",
         operation_kind="stop",
         arguments={"reason": "The selected objective is terminal."},
-        policy=_policy(controller_verified=True),
     )
     if observation.advisor is not None and observation.advisor.may_request:
         yield _offer(
@@ -293,7 +237,6 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     ),
                 ),
             ),
-            policy=_policy(controller_verified=True),
         )
     if observation.memories or observation.recent_action_outcomes:
         yield _offer(
@@ -310,7 +253,6 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 ),
             ),
             arguments={"source": "durable_memory", "max_records": 4},
-            policy=_policy(controller_verified=True),
         )
     if observation.fieldbook_projects:
         yield _offer(
@@ -327,7 +269,6 @@ def _runtime_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 ),
             ),
             arguments={"max_entries": 4},
-            policy=_policy(controller_verified=True),
         )
 
 
@@ -341,8 +282,6 @@ def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS
         ):
             continue
-        if game_binding_success_condition(binding, telemetry) is None:
-            continue
         yield _offer(
             observation,
             source=AffordanceSource.GAME_BINDING,
@@ -350,10 +289,6 @@ def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             description=f"Use Kenshi's named {binding.value} binding.",
             operation_kind="use_game_binding",
             arguments={"binding": binding.value, "expected_effect": binding.value},
-            policy=_policy(
-                idempotency=IdempotencyPolicy.AT_MOST_ONCE,
-                primitives=1,
-            ),
         )
 
 
@@ -371,10 +306,6 @@ def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             description=f"Have the {screen.value!r} screen open.",
             operation_kind="open_screen",
             arguments={"screen": screen.value},
-            policy=_policy(
-                execution=AffordanceExecution.MONITORED,
-                primitives=1,
-            ),
         )
 
     current = telemetry.ui.active_screen
@@ -395,7 +326,6 @@ def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     kind="window",
                 ),
                 arguments={"expected_screen": current, "window": window},
-                policy=_policy(pointer_actions=1, primitives=3),
             )
     else:
         yield _offer(
@@ -405,7 +335,6 @@ def _screen_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             description=f"Close the current {current!r} screen.",
             operation_kind="dismiss_screen",
             arguments={"expected_screen": current},
-            policy=_policy(pointer_actions=1, primitives=1),
         )
 
 
@@ -442,7 +371,6 @@ def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffe
                 "role": control.role,
                 "window": control.window,
             },
-            policy=_policy(pointer_actions=1, primitives=2),
         )
 
 
@@ -475,25 +403,6 @@ def _context_order_offers(observation: Observation) -> Iterable[AffordanceOffer]
                     kind=target.kind,
                 ),
                 arguments={"target_id": target.id, "context_action": order.value},
-                policy=_policy(
-                    execution=(
-                        AffordanceExecution.MONITORED
-                        if native_order
-                        else AffordanceExecution.IMMEDIATE
-                    ),
-                    modes=(
-                        frozenset({ControlMode.NATIVE_ASSISTED})
-                        if native_order
-                        else frozenset(
-                            {ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}
-                        )
-                    ),
-                    native_actions=1 if native_order else 0,
-                    pointer_actions=0 if native_order else 1,
-                    primitives=1,
-                    timeout_seconds=300.0 if native_order else 10.0,
-                    controller_verified=native_order,
-                ),
             )
 
 
@@ -525,15 +434,6 @@ def _dialogue_target_offers(observation: Observation) -> Iterable[AffordanceOffe
                 kind="character",
             ),
             arguments={"target_id": str(target["id"])},
-            policy=_policy(
-                execution=AffordanceExecution.MONITORED,
-                modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                capabilities=required,
-                native_actions=1,
-                primitives=1,
-                timeout_seconds=300.0,
-                controller_verified=True,
-            ),
         )
 
 
@@ -571,10 +471,22 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             if control.item_quantity is not None
             else "unknown"
         )
+        cell_quantity_max = (
+            min(5, control.item_quantity)
+            if control.item_quantity is not None
+            else 5
+        )
+        purchase_quantity_max = cell_quantity_max
+        if telemetry.game.money is not None and control.item_base_value:
+            purchase_quantity_max = min(
+                purchase_quantity_max,
+                telemetry.game.money // control.item_base_value,
+            )
         if (
             owner.get("belongs_to") == "vendor"
             and seller_id
             and control.item_base_value is not None
+            and purchase_quantity_max >= 1
         ):
             yield _offer(
                 observation,
@@ -587,23 +499,19 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 ),
                 operation_kind="purchase_item",
                 target=target,
-                parameters=(_quantity_parameter(),),
+                parameters=(_quantity_parameter(purchase_quantity_max),),
                 arguments={
                     **base,
                     "expected_price": control.item_base_value,
                     "seller_id": seller_id,
                 },
-                policy=_policy(
-                    execution=AffordanceExecution.COMPOSITE,
-                    pointer_actions=5,
-                    purchase_actions=5,
-                    primitives=10,
-                    timeout_seconds=300.0,
-                    controller_verified=True,
-                ),
             )
         if owner.get("belongs_to") == "you" and selected_id:
-            if telemetry.active_shop_trader_count == 1 and seller_id:
+            if (
+                telemetry.active_shop_trader_count == 1
+                and seller_id
+                and cell_quantity_max >= 1
+            ):
                 yield _offer(
                     observation,
                     source=AffordanceSource.INVENTORY,
@@ -614,16 +522,8 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     ),
                     operation_kind="sell_item",
                     target=target,
-                    parameters=(_quantity_parameter(),),
+                    parameters=(_quantity_parameter(cell_quantity_max),),
                     arguments={**base, "buyer_id": seller_id},
-                    policy=_policy(
-                        execution=AffordanceExecution.COMPOSITE,
-                        pointer_actions=5,
-                        purchase_actions=5,
-                        primitives=10,
-                        timeout_seconds=300.0,
-                        controller_verified=True,
-                    ),
                 )
             elif telemetry.active_shop_trader_count == 0:
                 yield _offer(
@@ -634,7 +534,6 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     operation_kind="equip_item",
                     target=target,
                     arguments=base,
-                    policy=_policy(pointer_actions=1, primitives=2),
                 )
 
 
@@ -659,7 +558,6 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 operation_kind="select_squad_member",
                 target=target,
                 arguments={"target_id": member.id},
-                policy=_policy(pointer_actions=1, primitives=2),
             )
         if (
             selected is not None
@@ -674,14 +572,6 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 operation_kind="regroup_with_squad_member",
                 target=target,
                 arguments={"actor_id": selected.id, "target_id": member.id},
-                policy=_policy(
-                    execution=AffordanceExecution.MONITORED,
-                    modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                    native_actions=1,
-                    primitives=1,
-                    timeout_seconds=300.0,
-                    controller_verified=True,
-                ),
             )
     for character in telemetry.nearby_entities:
         if character.is_animal or character.disposition.value == "hostile":
@@ -698,14 +588,6 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 kind="character",
             ),
             arguments={"target_id": character.id},
-            policy=_policy(
-                execution=AffordanceExecution.MONITORED,
-                modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                native_actions=1,
-                primitives=1,
-                timeout_seconds=300.0,
-                controller_verified=True,
-            ),
         )
     if selected is not None and selected.in_combat and telemetry.game.paused:
         yield _offer(
@@ -728,14 +610,6 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 ),
             ),
             arguments={"actor_id": selected.id},
-            policy=_policy(
-                execution=AffordanceExecution.MONITORED,
-                modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                native_actions=1,
-                primitives=1,
-                timeout_seconds=300.0,
-                controller_verified=True,
-            ),
         )
 
 
@@ -772,14 +646,6 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 kind="map_destination",
             ),
             arguments={"destination_id": destination.id},
-            policy=_policy(
-                execution=AffordanceExecution.MONITORED,
-                modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                native_actions=1,
-                primitives=1,
-                timeout_seconds=300.0,
-                controller_verified=True,
-            ),
         )
 
 
@@ -799,7 +665,6 @@ def _native_and_composite_offers(
             description=f"Rotate the camera {direction.value} one bounded increment.",
             operation_kind="rotate_camera",
             arguments={"direction": direction.value},
-            policy=_policy(pointer_actions=1, primitives=1),
         )
 
     yield _offer(
@@ -824,14 +689,6 @@ def _native_and_composite_offers(
                 maximum=2000,
             ),
         ),
-        policy=_policy(
-            execution=AffordanceExecution.MONITORED,
-            modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-            native_actions=1,
-            primitives=1,
-            timeout_seconds=300.0,
-            controller_verified=True,
-        ),
     )
 
     if selected is not None and selected.indoors is True:
@@ -846,14 +703,6 @@ def _native_and_composite_offers(
                 label=selected.name,
                 kind="squad_member",
             ),
-            policy=_policy(
-                execution=AffordanceExecution.MONITORED,
-                modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                native_actions=1,
-                primitives=1,
-                timeout_seconds=300.0,
-                controller_verified=True,
-            ),
         )
 
     yield _offer(
@@ -862,13 +711,6 @@ def _native_and_composite_offers(
         semantic="recover_camera_view",
         description="Restore a readable, character-following camera view.",
         operation_kind="recover_camera_view",
-        policy=_policy(
-            execution=AffordanceExecution.COMPOSITE,
-            pointer_actions=1,
-            primitives=20,
-            timeout_seconds=30.0,
-            controller_verified=True,
-        ),
     )
 
     if telemetry.ui.visible_controls is not None:
@@ -885,7 +727,6 @@ def _native_and_composite_offers(
                     kind="window",
                 ),
                 arguments={"window": window, "notches": -3},
-                policy=_policy(pointer_actions=1, primitives=2),
             )
             yield _offer(
                 observation,
@@ -899,7 +740,6 @@ def _native_and_composite_offers(
                     kind="window",
                 ),
                 arguments={"window": window, "notches": 3},
-                policy=_policy(pointer_actions=1, primitives=2),
             )
 
     if selected is not None:
@@ -922,15 +762,6 @@ def _native_and_composite_offers(
                 ),
                 parameters=(_quantity_parameter(),),
                 arguments={"actor_id": selected.id, "target_id": target.id},
-                policy=_policy(
-                    execution=AffordanceExecution.COMPOSITE,
-                    modes=frozenset({ControlMode.NATIVE_ASSISTED}),
-                    native_actions=5,
-                    pointer_actions=5,
-                    primitives=45,
-                    timeout_seconds=300.0,
-                    controller_verified=True,
-                ),
             )
 
 
@@ -963,8 +794,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset({"use_game_binding"}),
         denominator="Every captured-default-keymap binding not owned by another adapter.",
         completeness_boundary=(
-            "Raw playback bindings are runtime-owned; stateful screens and camera "
-            "rotation route through semantic adapters."
+            "Witnessed bindings use effect terminals; unwitnessed bindings stop at "
+            "accepted delivery plus a later observation. Playback, stateful screens, "
+            "and camera rotation route through semantic adapters."
         ),
         enumerate=_game_binding_offers,
     ),
@@ -976,7 +808,9 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset({"open_screen", "dismiss_screen"}),
         denominator="Observable named-screen states and currently open window captions.",
         completeness_boundary=(
-            "Opening requires an observable exact terminal; dismissal excludes dialogue."
+            "Opening requires an observable exact terminal. Named-window dismissal "
+            "uses a count terminal; uncaptained dismissal stops at delivery. Dialogue "
+            "is excluded."
         ),
         enumerate=_screen_offers,
     ),
@@ -987,7 +821,10 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         ),
         operation_kinds=frozenset({"activate_visible_control"}),
         denominator="Every current non-item, non-runtime-owned visible control.",
-        completeness_boundary="Ambiguous or stale controls fail exact rebinding.",
+        completeness_boundary=(
+            "Ambiguous or stale controls fail exact rebinding. Activation proves exact "
+            "delivery and a later observation, not the gameplay meaning of the result."
+        ),
         enumerate=_visible_control_offers,
     ),
     AffordanceAdapter(
@@ -999,7 +836,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         denominator="Every exact world-target/order pair advertised by current telemetry.",
         completeness_boundary=(
             "Native execution currently proves natural-resource operate; other orders "
-            "require current screen geometry for the generic UI path."
+            "require current screen geometry and stop at the generic UI delivery boundary."
         ),
         enumerate=_context_order_offers,
     ),
@@ -1017,7 +854,8 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset({"purchase_item", "sell_item", "equip_item"}),
         denominator="Every current item cell with exact window ownership and item facts.",
         completeness_boundary=(
-            "Transactions require unambiguous counterpart identity and conservation evidence."
+            "Transactions require unambiguous counterpart identity and conservation "
+            "evidence. Equip currently proves exact delivery, not final equipment state."
         ),
         enumerate=_inventory_offers,
     ),
@@ -1072,7 +910,10 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             }
         ),
         denominator="Current state for native movement, camera, scrolling, and harvesting.",
-        completeness_boundary="Only operations with a current binder and terminal policy.",
+        completeness_boundary=(
+            "Only operations with a current binder and declared runtime completion "
+            "boundary. Scrolling proves exact delivery, not newly revealed content."
+        ),
         enumerate=_native_and_composite_offers,
     ),
 )
@@ -1117,24 +958,40 @@ def _operation_for(
 
 
 def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
-    from .action_contracts import contract_for
+    from .action_contracts import (
+        CompletionOwner,
+        completion_contract_for,
+        contract_for,
+    )
 
     operation = _operation_for(offer, _sample_parameters(offer))
     if observation.planning_mode is PlanningMode.SINGLE_STEP:
         try:
-            TypeAdapter(SingleStepPlannerAction).validate_python(operation)
+            TypeAdapter(SingleStepRuntimeAction).validate_python(operation)
         except ValidationError:
             return False
     contract = contract_for(operation)
-    if contract is None:
-        return True
-    telemetry = observation.telemetry
-    capabilities = set(telemetry.capabilities if telemetry is not None else [])
-    return (
-        contract.allows_control_mode(observation.control_mode)
-        and not contract.missing_capabilities(capabilities)
-        and contract.is_currently_authorable(observation)
-        and contract.bind(operation, observation).bound
+    if contract is not None:
+        telemetry = observation.telemetry
+        capabilities = set(telemetry.capabilities if telemetry is not None else [])
+        bound = (
+            contract.allows_control_mode(observation.control_mode)
+            and not contract.missing_capabilities(capabilities)
+            and contract.is_currently_authorable(observation)
+            and contract.bind(operation, observation).bound
+        )
+        if not bound:
+            return False
+    completion = completion_contract_for(
+        operation,
+        observation,
+        selected_affordance=True,
+    )
+    if completion.owner is CompletionOwner.STEP_CONDITIONS:
+        raise RuntimeError("an offered affordance delegated completion to its caller")
+    return not (
+        completion.owner is CompletionOwner.RUNTIME_CONDITIONS
+        and not completion.conditions
     )
 
 
@@ -1144,18 +1001,31 @@ def offered_affordances(observation: Observation) -> tuple[AffordanceOffer, ...]
     telemetry = observation.telemetry
     if telemetry is None or observation.telemetry_stale:
         return ()
-    capabilities = set(telemetry.capabilities)
-    offers = tuple(
-        offer
+    enumerated = tuple(
+        (adapter, offer)
         for adapter in AFFORDANCE_ADAPTERS
         for offer in adapter.enumerate(observation)
-        if observation.control_mode in offer.policy.control_modes
-        and offer.policy.required_capabilities <= capabilities
-        and _offer_binds_now(offer, observation)
     )
-    ids = [offer.affordance_id for offer in offers]
-    if len(ids) != len(set(ids)):
-        raise RuntimeError("source adapters generated duplicate affordance IDs")
+    offers_by_id: dict[str, AffordanceOffer] = {}
+    for adapter, offer in enumerated:
+        if offer.source not in adapter.sources:
+            raise RuntimeError(
+                f"adapter {adapter.name!r} emitted undeclared source {offer.source.value!r}"
+            )
+        if offer.operation_kind not in adapter.operation_kinds:
+            raise RuntimeError(
+                f"adapter {adapter.name!r} emitted undeclared operation "
+                f"{offer.operation_kind!r}"
+            )
+        if not _offer_binds_now(offer, observation):
+            continue
+        existing = offers_by_id.get(offer.affordance_id)
+        if existing is None:
+            offers_by_id[offer.affordance_id] = offer
+            continue
+        if existing != offer:
+            raise RuntimeError("source adapters generated a colliding affordance ID")
+    offers = tuple(offers_by_id.values())
     if any(
         len(spec.choices) != len(set(spec.choices))
         for offer in offers
@@ -1209,6 +1079,22 @@ class MaterializedAffordance:
     operation: Action
 
 
+def _execution_for(operation: Action) -> AffordanceExecution:
+    from .action_contracts import ActionExecution, contract_for
+
+    contract = contract_for(operation)
+    if contract is None:
+        return AffordanceExecution.IMMEDIATE
+    if contract.execution is ActionExecution.COMPOSITE_OPTION:
+        return AffordanceExecution.COMPOSITE
+    if (
+        contract.execution is ActionExecution.MONITORED_OPTION
+        or contract.derive_completion_conditions is not None
+    ):
+        return AffordanceExecution.MONITORED
+    return AffordanceExecution.IMMEDIATE
+
+
 def bind_affordance(
     selection: AffordanceSelection,
     observation: Observation,
@@ -1252,7 +1138,7 @@ def bound_affordance(materialized: MaterializedAffordance) -> BoundAffordance:
         semantic=offer.semantic,
         target=offer.target,
         parameters=materialized.selection.parameters,
-        execution=offer.policy.execution,
+        execution=_execution_for(materialized.operation),
         operation_kind=offer.operation_kind,
         offered_at_telemetry_sequence=offer.offered_at_telemetry_sequence,
     )

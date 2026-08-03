@@ -993,7 +993,11 @@ class ContinuousPlanExecutor:
                 reason=f"Existing action guard rejected the step: {exc}",
             )
 
-        completion = completion_contract_for(action, observation)
+        completion = completion_contract_for(
+            action,
+            observation,
+            selected_affordance=step.affordance is not None,
+        )
         if (
             completion.owner is CompletionOwner.RUNTIME_CONDITIONS
             and not completion.conditions
@@ -1964,6 +1968,44 @@ class ContinuousPlanExecutor:
                     "Controller-owned action reached its terminal receipt."
                     if succeeded
                     else "Controller-owned action lacked an accepted terminal receipt."
+                ),
+                terminated=transition.terminated,
+                success=transition.success,
+                staged_patch=staged_patch if succeeded else None,
+            )
+
+        if completion.owner is CompletionOwner.AFFORDANCE_DELIVERY:
+            causal_revision_advanced = latest.world_revision.is_later_than(
+                action_start_revision
+            )
+            succeeded = bool(
+                transition.receipt.accepted
+                and transition.receipt.executed
+                and causal_revision_advanced
+            )
+            self._event(
+                "plan_step_progress",
+                plan,
+                latest,
+                step=step,
+                reason="Checked the adapter's declared delivery terminal.",
+                evidence={
+                    "completion_owner": completion.owner.value,
+                    "accepted": transition.receipt.accepted,
+                    "executed": transition.receipt.executed,
+                    "causal_revision_advanced": causal_revision_advanced,
+                    "effect_verified": False,
+                },
+            )
+            return _StepResult(
+                observation=latest,
+                succeeded=succeeded,
+                actions_completed=1,
+                reason=(
+                    "Runtime delivered the exact affordance and received a later "
+                    "observation; this adapter does not claim effect-level proof."
+                    if succeeded
+                    else "The affordance did not reach its bounded delivery terminal."
                 ),
                 terminated=transition.terminated,
                 success=transition.success,

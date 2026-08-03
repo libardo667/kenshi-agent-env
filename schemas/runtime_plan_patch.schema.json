@@ -252,7 +252,7 @@
     },
     "BoundAffordance": {
       "additionalProperties": false,
-      "description": "Runtime provenance retained after a planner selection is compiled.",
+      "description": "Runtime provenance retained after an exact affordance selection is compiled.",
       "properties": {
         "affordance_id": {
           "pattern": "^aff-[0-9a-f]{20}$",
@@ -321,6 +321,167 @@
       "title": "CameraRotationDirection",
       "type": "string"
     },
+    "CapabilityCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "const": "equals",
+          "default": "equals",
+          "title": "Operator",
+          "type": "string"
+        },
+        "expected": {
+          "const": true,
+          "default": true,
+          "title": "Expected",
+          "type": "boolean"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        },
+        "required_capabilities": {
+          "description": "Additional capability names copied exactly from the current observation. Field paths do not belong here.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "kind": {
+          "const": "capability",
+          "default": "capability",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "description": "One capability name copied exactly from the current observation's telemetry.capabilities list; never a telemetry, selected, or target field path.",
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "max_age_seconds",
+        "path"
+      ],
+      "title": "CapabilityCondition",
+      "type": "object"
+    },
+    "ClickAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "click",
+          "default": "click",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton",
+          "default": "left"
+        },
+        "clicks": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Clicks",
+          "type": "integer"
+        },
+        "hold_seconds": {
+          "default": 0.0,
+          "maximum": 0.5,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        },
+        "interval_seconds": {
+          "default": 0.08,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Interval Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ClickAction",
+      "type": "object"
+    },
+    "CollectResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
+      "properties": {
+        "kind": {
+          "const": "collect_resource_output",
+          "default": "collect_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity": {
+          "exclusiveMinimum": 0,
+          "title": "Source Quantity",
+          "type": "integer"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "section": {
+          "const": "out",
+          "default": "out",
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "cell_label",
+        "item_name",
+        "source_quantity",
+        "window"
+      ],
+      "title": "CollectResourceOutputAction",
+      "type": "object"
+    },
     "CommandWorldTargetAction": {
       "additionalProperties": false,
       "description": "Right-click one exact current world target at telemetry-owned geometry.",
@@ -352,6 +513,34 @@
       "title": "CommandWorldTargetAction",
       "type": "object"
     },
+    "Condition": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FieldCondition"
+        },
+        {
+          "$ref": "#/$defs/CapabilityCondition"
+        },
+        {
+          "$ref": "#/$defs/TelemetryFreshCondition"
+        }
+      ],
+      "description": "One schema branch whose fields can only express that condition's meaning.",
+      "title": "Condition"
+    },
+    "ConditionOperator": {
+      "enum": [
+        "equals",
+        "not_equals",
+        "less_than",
+        "less_than_or_equal",
+        "greater_than",
+        "greater_than_or_equal",
+        "contains"
+      ],
+      "title": "ConditionOperator",
+      "type": "string"
+    },
     "ConsultAdvisorAction": {
       "additionalProperties": false,
       "description": "Ask a read-only guide-grounded model for strategic advice.\n\nThis is a cognitive action. It emits no controller primitives, never enters\nthe environment dispatch path, and cannot directly change Kenshi state.",
@@ -378,6 +567,15 @@
       ],
       "title": "ConsultAdvisorAction",
       "type": "object"
+    },
+    "CoordinateSpace": {
+      "enum": [
+        "normalized",
+        "client",
+        "screen"
+      ],
+      "title": "CoordinateSpace",
+      "type": "string"
     },
     "CreateFieldbookProjectOperation": {
       "additionalProperties": false,
@@ -509,6 +707,141 @@
       "title": "ExitCurrentBuildingAction",
       "type": "object"
     },
+    "FieldCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "operator": {
+          "$ref": "#/$defs/ConditionOperator"
+        },
+        "expected": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            }
+          ],
+          "title": "Expected"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        },
+        "required_capabilities": {
+          "description": "Additional capability names copied exactly from the current observation. Field paths do not belong here.",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20,
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "kind": {
+          "const": "field",
+          "default": "field",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "$ref": "#/$defs/FieldConditionPath"
+        },
+        "target_id": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Id"
+        }
+      },
+      "required": [
+        "operator",
+        "expected",
+        "max_age_seconds",
+        "path"
+      ],
+      "title": "FieldCondition",
+      "type": "object"
+    },
+    "FieldConditionPath": {
+      "enum": [
+        "control_mode",
+        "telemetry_stale",
+        "telemetry.identity_session_id",
+        "telemetry.game.loaded",
+        "telemetry.game.paused",
+        "telemetry.game.speed_multiplier",
+        "telemetry.game.elapsed_minutes",
+        "telemetry.game.money",
+        "selected.indoors",
+        "telemetry.game.location_name",
+        "telemetry.game.day",
+        "telemetry.game.hour",
+        "telemetry.game.minute",
+        "telemetry.ui.active_screen",
+        "telemetry.ui.modal_open",
+        "telemetry.ui.dialogue_open",
+        "telemetry.ui.dialogue_target_id",
+        "telemetry.ui.dialogue_option_count",
+        "telemetry.ui.dialogue_option_0",
+        "telemetry.ui.visible_control_count",
+        "telemetry.ui.stats_window_open",
+        "telemetry.ui.open_inventory_windows",
+        "telemetry.ui.management_screen_open",
+        "telemetry.ui.management_tab",
+        "telemetry.ui.tooltip_visible",
+        "telemetry.ui.tooltip_text",
+        "telemetry.ui.context_menu_open",
+        "telemetry.ui.selected_character_id",
+        "telemetry.ui.selected_character_count",
+        "telemetry.active_shop_trader_count",
+        "telemetry.native_control.available",
+        "telemetry.native_control.command_active",
+        "telemetry.native_control.last_command_sequence",
+        "telemetry.native_control.last_command",
+        "telemetry.native_control.last_result",
+        "telemetry.native_control.last_target",
+        "telemetry.native_control.last_target_id",
+        "selected.alive",
+        "selected.conscious",
+        "selected.down",
+        "selected.in_combat",
+        "selected.position.x",
+        "selected.position.y",
+        "selected.position.z",
+        "selected.movement_speed",
+        "selected.nutrition_reserve",
+        "selected.bleeding_rate",
+        "selected.food_items",
+        "selected.first_aid_kits",
+        "selected.current_goal",
+        "target.disposition",
+        "target.distance",
+        "target.visible",
+        "target.conscious",
+        "target.has_vendor_list",
+        "target.is_squad_leader",
+        "target.has_dialogue",
+        "target.shop_inventory_owner"
+      ],
+      "title": "FieldConditionPath",
+      "type": "string"
+    },
     "FieldbookEntryKind": {
       "enum": [
         "note",
@@ -547,7 +880,7 @@
       "type": "string"
     },
     "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe planner-visible subset recorded by the game-binding parity ledger.",
+      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe adapter-owned subset recorded by the game-binding parity ledger.",
       "enum": [
         "toggle_inventory",
         "toggle_map",
@@ -633,6 +966,91 @@
       "title": "GameScreen",
       "type": "string"
     },
+    "HarvestResourceAction": {
+      "additionalProperties": false,
+      "description": "Harvest a bounded yield from one exact resource into one exact actor.\n\nThe planner chooses the actor, resource, and useful yield once. The\ncontroller owns production, inventory opening, exact conserved transfer,\ncleanup, and terminal proof as one interruptible option.",
+      "properties": {
+        "kind": {
+          "const": "harvest_resource",
+          "default": "harvest_resource",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "quantity": {
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id",
+        "quantity"
+      ],
+      "title": "HarvestResourceAction",
+      "type": "object"
+    },
+    "HotkeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "hotkey",
+          "default": "hotkey",
+          "title": "Kind",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 2,
+          "title": "Keys",
+          "type": "array"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "HotkeyAction",
+      "type": "object"
+    },
+    "IdempotencyPolicy": {
+      "enum": [
+        "at_most_once",
+        "safe_to_retry"
+      ],
+      "title": "IdempotencyPolicy",
+      "type": "string"
+    },
+    "InterruptPolicy": {
+      "enum": [
+        "cancel_on_reflex",
+        "cancel_on_reflex_or_plan_patch"
+      ],
+      "title": "InterruptPolicy",
+      "type": "string"
+    },
     "JsonValue": {},
     "KeepMemoryOperation": {
       "additionalProperties": false,
@@ -706,6 +1124,35 @@
       "title": "KeepMemoryOperation",
       "type": "object"
     },
+    "KeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "key",
+          "default": "key",
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "KeyAction",
+      "type": "object"
+    },
     "MemoryEvidence": {
       "additionalProperties": false,
       "properties": {
@@ -748,6 +1195,112 @@
       ],
       "title": "MemoryResolutionDisposition",
       "type": "string"
+    },
+    "MouseButton": {
+      "enum": [
+        "left",
+        "right",
+        "middle",
+        "x1",
+        "x2"
+      ],
+      "title": "MouseButton",
+      "type": "string"
+    },
+    "MouseButtonAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mouse_button",
+          "default": "mouse_button",
+          "title": "Kind",
+          "type": "string"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "button"
+      ],
+      "title": "MouseButtonAction",
+      "type": "object"
+    },
+    "MouseDragAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mouse_drag",
+          "default": "mouse_drag",
+          "title": "Kind",
+          "type": "string"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton"
+        },
+        "delta_x": {
+          "maximum": 512,
+          "minimum": -512,
+          "title": "Delta X",
+          "type": "integer"
+        },
+        "delta_y": {
+          "maximum": 512,
+          "minimum": -512,
+          "title": "Delta Y",
+          "type": "integer"
+        },
+        "steps": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Steps",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "button",
+        "delta_x",
+        "delta_y"
+      ],
+      "title": "MouseDragAction",
+      "type": "object"
+    },
+    "MoveCursorAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "move_cursor",
+          "default": "move_cursor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "MoveCursorAction",
+      "type": "object"
     },
     "MoveInDirectionAction": {
       "additionalProperties": false,
@@ -827,6 +1380,37 @@
       "title": "NoopAction",
       "type": "object"
     },
+    "ObservationPolicy": {
+      "enum": [
+        "after_action",
+        "until_terminal"
+      ],
+      "title": "ObservationPolicy",
+      "type": "string"
+    },
+    "OpenContextInventoryAction": {
+      "additionalProperties": false,
+      "description": "Open the ordinary inventory UI for one exact observed world target.",
+      "properties": {
+        "kind": {
+          "const": "open_context_inventory",
+          "default": "open_context_inventory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "OpenContextInventoryAction",
+      "type": "object"
+    },
     "OpenScreenAction": {
       "additionalProperties": false,
       "description": "Have a named screen open. Prefer this over pressing its key.\n\nIdempotent: succeeds if the screen is already open.",
@@ -865,6 +1449,37 @@
       "title": "PauseAction",
       "type": "object"
     },
+    "PerformContextAction": {
+      "additionalProperties": false,
+      "description": "Perform one exact contextual task an observed world object advertises.\n\nThe planner copies only a `(target_id, context_action)` pair from current\n`context_targets`. Native code re-resolves the object, rechecks the reviewed\ntask, issues Kenshi's own default order, and proves the selected character's\nAI accepted that exact object/task pair.",
+      "properties": {
+        "kind": {
+          "const": "perform_context_action",
+          "default": "perform_context_action",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "context_action": {
+          "maxLength": 80,
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "title": "Context Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "context_action"
+      ],
+      "title": "PerformContextAction",
+      "type": "object"
+    },
     "PlanOutcomeEvidence": {
       "additionalProperties": false,
       "properties": {
@@ -884,6 +1499,266 @@
         "plan_outcome_id"
       ],
       "title": "PlanOutcomeEvidence",
+      "type": "object"
+    },
+    "PlanStep": {
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+          "title": "Step Id",
+          "type": "string"
+        },
+        "action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NoopAction"
+            },
+            {
+              "$ref": "#/$defs/StopAction"
+            },
+            {
+              "$ref": "#/$defs/PauseAction"
+            },
+            {
+              "$ref": "#/$defs/SetSpeedAction"
+            },
+            {
+              "$ref": "#/$defs/WaitAction"
+            },
+            {
+              "$ref": "#/$defs/ConsultAdvisorAction"
+            },
+            {
+              "$ref": "#/$defs/RecallMemoryAction"
+            },
+            {
+              "$ref": "#/$defs/ReadFieldbookAction"
+            },
+            {
+              "$ref": "#/$defs/KeyAction"
+            },
+            {
+              "$ref": "#/$defs/HotkeyAction"
+            },
+            {
+              "$ref": "#/$defs/MouseButtonAction"
+            },
+            {
+              "$ref": "#/$defs/MouseDragAction"
+            },
+            {
+              "$ref": "#/$defs/MoveCursorAction"
+            },
+            {
+              "$ref": "#/$defs/ClickAction"
+            },
+            {
+              "$ref": "#/$defs/ScrollAction"
+            },
+            {
+              "$ref": "#/$defs/SkillAction"
+            },
+            {
+              "$ref": "#/$defs/ApproachDialogueTargetAction"
+            },
+            {
+              "$ref": "#/$defs/CommandWorldTargetAction"
+            },
+            {
+              "$ref": "#/$defs/SelectSquadMemberAction"
+            },
+            {
+              "$ref": "#/$defs/RotateCameraAction"
+            },
+            {
+              "$ref": "#/$defs/PerformContextAction"
+            },
+            {
+              "$ref": "#/$defs/ProduceResourceOutputAction"
+            },
+            {
+              "$ref": "#/$defs/OpenContextInventoryAction"
+            },
+            {
+              "$ref": "#/$defs/HarvestResourceAction"
+            },
+            {
+              "$ref": "#/$defs/RespondToImmediateThreatAction"
+            },
+            {
+              "$ref": "#/$defs/RegroupWithSquadMemberAction"
+            },
+            {
+              "$ref": "#/$defs/MoveToCharacterAction"
+            },
+            {
+              "$ref": "#/$defs/MoveInDirectionAction"
+            },
+            {
+              "$ref": "#/$defs/TravelToMapDestinationAction"
+            },
+            {
+              "$ref": "#/$defs/ExitCurrentBuildingAction"
+            },
+            {
+              "$ref": "#/$defs/ActivateVisibleControlAction"
+            },
+            {
+              "$ref": "#/$defs/DismissScreenAction"
+            },
+            {
+              "$ref": "#/$defs/PurchaseItemAction"
+            },
+            {
+              "$ref": "#/$defs/OpenScreenAction"
+            },
+            {
+              "$ref": "#/$defs/UseGameBindingAction"
+            },
+            {
+              "$ref": "#/$defs/ScrollScreenAction"
+            },
+            {
+              "$ref": "#/$defs/SellItemAction"
+            },
+            {
+              "$ref": "#/$defs/EquipItemAction"
+            },
+            {
+              "$ref": "#/$defs/CollectResourceOutputAction"
+            },
+            {
+              "$ref": "#/$defs/RecoverCameraViewAction"
+            }
+          ],
+          "title": "Action"
+        },
+        "affordance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BoundAffordance"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "preconditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "maxItems": 12,
+          "minItems": 1,
+          "title": "Preconditions",
+          "type": "array"
+        },
+        "success_conditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "maxItems": 12,
+          "title": "Success Conditions",
+          "type": "array"
+        },
+        "failure_conditions": {
+          "items": {
+            "$ref": "#/$defs/Condition"
+          },
+          "maxItems": 12,
+          "title": "Failure Conditions",
+          "type": "array"
+        },
+        "timeout_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "retry_budget": {
+          "default": 0,
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Retry Budget",
+          "type": "integer"
+        },
+        "idempotency": {
+          "$ref": "#/$defs/IdempotencyPolicy",
+          "default": "at_most_once"
+        },
+        "on_success": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Success"
+        },
+        "on_failure": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Failure"
+        },
+        "interrupt_policy": {
+          "$ref": "#/$defs/InterruptPolicy",
+          "default": "cancel_on_reflex"
+        },
+        "observation_policy": {
+          "$ref": "#/$defs/ObservationPolicy",
+          "default": "until_terminal"
+        }
+      },
+      "required": [
+        "step_id",
+        "action",
+        "preconditions",
+        "timeout_seconds"
+      ],
+      "title": "PlanStep",
+      "type": "object"
+    },
+    "ProduceResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Internal production phase retained until a bounded output yield exists.",
+      "properties": {
+        "kind": {
+          "const": "produce_resource_output",
+          "default": "produce_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ProduceResourceOutputAction",
       "type": "object"
     },
     "PurchaseItemAction": {
@@ -1044,6 +1919,36 @@
       "title": "RecoverCameraViewAction",
       "type": "object"
     },
+    "RegroupWithSquadMemberAction": {
+      "additionalProperties": false,
+      "description": "Bring the selected actor to one exact current squadmate.",
+      "properties": {
+        "kind": {
+          "const": "regroup_with_squad_member",
+          "default": "regroup_with_squad_member",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actor_id",
+        "target_id"
+      ],
+      "title": "RegroupWithSquadMemberAction",
+      "type": "object"
+    },
     "ReinforceMemoryOperation": {
       "additionalProperties": false,
       "description": "Say an existing record still matters, without writing a second copy.",
@@ -1168,6 +2073,33 @@
       "title": "ResolveMemoryOperation",
       "type": "object"
     },
+    "RespondToImmediateThreatAction": {
+      "additionalProperties": false,
+      "description": "Choose whether one selected actor engages or withdraws from a threat.\n\nThe runtime owns playback, an observed escape vector for withdrawal,\ncontinuous threat and squad-health observation, timeout, interruption, and\nthe terminal pause. The planner chooses only the actor and gameplay policy.",
+      "properties": {
+        "kind": {
+          "const": "respond_to_immediate_threat",
+          "default": "respond_to_immediate_threat",
+          "title": "Kind",
+          "type": "string"
+        },
+        "actor_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "strategy": {
+          "$ref": "#/$defs/ThreatResponseStrategy"
+        }
+      },
+      "required": [
+        "actor_id",
+        "strategy"
+      ],
+      "title": "RespondToImmediateThreatAction",
+      "type": "object"
+    },
     "RetractMemoryOperation": {
       "additionalProperties": false,
       "description": "Withdraw a record from active recall without deleting its history.",
@@ -1215,6 +2147,42 @@
         "direction"
       ],
       "title": "RotateCameraAction",
+      "type": "object"
+    },
+    "ScrollAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scroll",
+          "default": "scroll",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "notches": {
+          "maximum": 8,
+          "minimum": -8,
+          "title": "Notches",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "notches"
+      ],
+      "title": "ScrollAction",
       "type": "object"
     },
     "ScrollScreenAction": {
@@ -1564,6 +2532,48 @@
       "title": "SupersedeMemoryOperation",
       "type": "object"
     },
+    "TelemetryFreshCondition": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "telemetry_fresh",
+          "default": "telemetry_fresh",
+          "title": "Kind",
+          "type": "string"
+        },
+        "operator": {
+          "const": "equals",
+          "default": "equals",
+          "title": "Operator",
+          "type": "string"
+        },
+        "expected": {
+          "const": true,
+          "default": true,
+          "title": "Expected",
+          "type": "boolean"
+        },
+        "max_age_seconds": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 300.0,
+          "title": "Max Age Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "max_age_seconds"
+      ],
+      "title": "TelemetryFreshCondition",
+      "type": "object"
+    },
+    "ThreatResponseStrategy": {
+      "enum": [
+        "engage",
+        "withdraw"
+      ],
+      "title": "ThreatResponseStrategy",
+      "type": "string"
+    },
     "TravelToMapDestinationAction": {
       "additionalProperties": false,
       "description": "Travel to one exact settlement marker already known to the player.\n\nNative code re-resolves the discovered marker, chooses Kenshi's waypoint,\nissues one pathing order, and owns camera follow and arrival. The planner\nnever supplies map coordinates or re-authors movement pulses.",
@@ -1663,127 +2673,76 @@
       ],
       "title": "WaitAction",
       "type": "object"
+    },
+    "WorldStateRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "telemetry_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Telemetry Sequence"
+        },
+        "frame_sequence": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Frame Sequence"
+        },
+        "capability_epoch": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Capability Epoch",
+          "type": "integer"
+        },
+        "observed_at_monotonic": {
+          "minimum": 0.0,
+          "title": "Observed At Monotonic",
+          "type": "number"
+        }
+      },
+      "title": "WorldStateRevision",
+      "type": "object"
     }
   },
   "additionalProperties": false,
   "properties": {
-    "intent": {
-      "maxLength": 1000,
-      "minLength": 1,
-      "title": "Intent",
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
       "type": "string"
     },
-    "rationale": {
-      "maxLength": 1500,
-      "minLength": 1,
-      "title": "Rationale",
+    "plan_id": {
+      "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,95}$",
+      "title": "Plan Id",
       "type": "string"
     },
-    "action": {
+    "based_on_plan_version": {
+      "minimum": 1,
+      "title": "Based On Plan Version",
+      "type": "integer"
+    },
+    "based_on_revision": {
+      "$ref": "#/$defs/WorldStateRevision"
+    },
+    "interrupt_active_step_id": {
       "anyOf": [
         {
-          "$ref": "#/$defs/NoopAction"
-        },
-        {
-          "$ref": "#/$defs/StopAction"
-        },
-        {
-          "$ref": "#/$defs/PauseAction"
-        },
-        {
-          "$ref": "#/$defs/SetSpeedAction"
-        },
-        {
-          "$ref": "#/$defs/WaitAction"
-        },
-        {
-          "$ref": "#/$defs/ConsultAdvisorAction"
-        },
-        {
-          "$ref": "#/$defs/RecallMemoryAction"
-        },
-        {
-          "$ref": "#/$defs/ReadFieldbookAction"
-        },
-        {
-          "$ref": "#/$defs/ApproachDialogueTargetAction"
-        },
-        {
-          "$ref": "#/$defs/CommandWorldTargetAction"
-        },
-        {
-          "$ref": "#/$defs/SelectSquadMemberAction"
-        },
-        {
-          "$ref": "#/$defs/RotateCameraAction"
-        },
-        {
-          "$ref": "#/$defs/MoveToCharacterAction"
-        },
-        {
-          "$ref": "#/$defs/MoveInDirectionAction"
-        },
-        {
-          "$ref": "#/$defs/TravelToMapDestinationAction"
-        },
-        {
-          "$ref": "#/$defs/ExitCurrentBuildingAction"
-        },
-        {
-          "$ref": "#/$defs/ActivateVisibleControlAction"
-        },
-        {
-          "$ref": "#/$defs/DismissScreenAction"
-        },
-        {
-          "$ref": "#/$defs/PurchaseItemAction"
-        },
-        {
-          "$ref": "#/$defs/OpenScreenAction"
-        },
-        {
-          "$ref": "#/$defs/UseGameBindingAction"
-        },
-        {
-          "$ref": "#/$defs/ScrollScreenAction"
-        },
-        {
-          "$ref": "#/$defs/SellItemAction"
-        },
-        {
-          "$ref": "#/$defs/EquipItemAction"
-        },
-        {
-          "$ref": "#/$defs/RecoverCameraViewAction"
-        },
-        {
-          "$ref": "#/$defs/SkillAction"
-        }
-      ],
-      "title": "Action"
-    },
-    "affordance": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/BoundAffordance"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null
-    },
-    "confidence": {
-      "default": 0.5,
-      "maximum": 1.0,
-      "minimum": 0.0,
-      "title": "Confidence",
-      "type": "number"
-    },
-    "expected_observation": {
-      "anyOf": [
-        {
-          "maxLength": 1000,
+          "pattern": "^[A-Za-z][A-Za-z0-9_-]{0,63}$",
           "type": "string"
         },
         {
@@ -1791,7 +2750,22 @@
         }
       ],
       "default": null,
-      "title": "Expected Observation"
+      "title": "Interrupt Active Step Id"
+    },
+    "replace_future_steps": {
+      "items": {
+        "$ref": "#/$defs/PlanStep"
+      },
+      "maxItems": 8,
+      "minItems": 1,
+      "title": "Replace Future Steps",
+      "type": "array"
+    },
+    "rationale": {
+      "maxLength": 1000,
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
     },
     "continuity_operations": {
       "items": {
@@ -1843,10 +2817,13 @@
     }
   },
   "required": [
-    "intent",
-    "rationale",
-    "action"
+    "schema_version",
+    "plan_id",
+    "based_on_plan_version",
+    "based_on_revision",
+    "replace_future_steps",
+    "rationale"
   ],
-  "title": "PlannerDecision",
+  "title": "PlanPatch",
   "type": "object"
 }

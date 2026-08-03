@@ -2,7 +2,8 @@
 
 A safety-first agent environment for Kenshi: versioned native telemetry,
 screenshots, persistent memory, structured continuous planning, semantic action
-contracts, analyzable lifecycle logs, and explicitly labelled control modes.
+adapters behind one runtime-generated affordance contract, analyzable lifecycle
+logs, and explicitly labelled control modes.
 
 `interface_only` is the default and uses ordinary Windows input.
 `native_assisted` additionally permits a small set of reviewed native command

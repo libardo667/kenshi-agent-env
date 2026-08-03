@@ -39,9 +39,9 @@ from kenshi_agent.models import (
 from kenshi_agent.planners.base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
+    hosted_proposal_model,
     output_token_budget,
     planner_context_manifest,
-    structured_output_model,
     validate_planner_prompt_budget,
 )
 from kenshi_agent.planners.context_capacity import (
@@ -463,12 +463,12 @@ def test_context_envelope_rejects_zero_room_after_static_reservations() -> None:
 
 def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> None:
     assert (
-        structured_output_model(observation(planning_mode=PlanningMode.SINGLE_STEP))
-        is PlannerDecision
+        hosted_proposal_model(observation(planning_mode=PlanningMode.SINGLE_STEP))
+        is DecisionProposal
     )
-    assert structured_output_model(observation()) is PlanEnvelope
+    assert hosted_proposal_model(observation()) is PlanProposal
     assert (
-        structured_output_model(
+        hosted_proposal_model(
             observation(
                 active_plan=ActivePlanContext(
                     plan_id="active-plan",
@@ -479,7 +479,7 @@ def test_hosted_output_model_switches_to_future_only_patch_for_active_plan() -> 
                 )
             )
         )
-        is PlanPatch
+        is PlanProposal
     )
 
 

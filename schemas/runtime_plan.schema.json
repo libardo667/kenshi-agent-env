@@ -252,7 +252,7 @@
     },
     "BoundAffordance": {
       "additionalProperties": false,
-      "description": "Runtime provenance retained after a planner selection is compiled.",
+      "description": "Runtime provenance retained after an exact affordance selection is compiled.",
       "properties": {
         "affordance_id": {
           "pattern": "^aff-[0-9a-f]{20}$",
@@ -888,7 +888,7 @@
       "type": "string"
     },
     "GameBinding": {
-      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe planner-visible subset recorded by the game-binding parity ledger.",
+      "description": "Kenshi's named control intentions under the shipped default keymap.\n\nThe current physical mapping is a hard-coded copy of the shipped\n`controls.cfg`; it is not read from the user's active keymap. Membership is\nthe adapter-owned subset recorded by the game-binding parity ledger.",
       "enum": [
         "toggle_inventory",
         "toggle_map",
