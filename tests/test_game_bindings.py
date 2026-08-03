@@ -1715,7 +1715,7 @@ def test_every_declared_terminal_resolves_to_a_readable_field() -> None:
 
     telemetry = TelemetrySnapshot(
         identity_session_id="session-a",
-        capabilities=["identity.stable_handles"],
+        capabilities=["identity.stable_handles", "squad.basic"],
         squad=[CharacterState(id="char-a", name="Hep", selected=True)],
         ui=UIState(
             open_inventory_windows=1,
@@ -1730,6 +1730,35 @@ def test_every_declared_terminal_resolves_to_a_readable_field() -> None:
         assert game_binding_success_condition(binding, telemetry) is not None, (
             f"{binding.value} declares a terminal that resolves to nothing"
         )
+
+
+def test_select_all_terminal_requires_the_complete_current_party() -> None:
+    telemetry = TelemetrySnapshot(
+        identity_session_id="session-party",
+        capabilities=["identity.stable_handles", "squad.basic"],
+        squad=[
+            CharacterState(id="char-a", name="Bark", selected=True),
+            CharacterState(id="char-b", name="Plant", selected=False),
+        ],
+        ui=UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+            selected_character_id="char-a",
+            selected_character_ids=["char-a"],
+        ),
+    )
+
+    condition = game_binding_success_condition(GameBinding.SELECT_ALL, telemetry)
+
+    assert condition is not None
+    assert condition.root.path is FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT
+    assert condition.root.operator is ConditionOperator.EQUALS
+    assert condition.root.expected == 2
+    assert set(condition.root.required_capabilities) == {
+        "identity.stable_handles",
+        "squad.basic",
+    }
 
 
 def test_a_management_tab_binding_is_witnessed_by_the_tab_not_the_window() -> None:

@@ -3747,6 +3747,7 @@ GAME_BINDING_TERMINALS: dict[GameBinding, BindingTerminal] = {
     GameBinding.SELECT_ALL: BindingTerminal(
         FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_COUNT,
         BindingWitness.CHANGED,
+        ("identity.stable_handles", "squad.basic"),
     ),
     GameBinding.CHARACTER_NEXT: BindingTerminal(
         FieldConditionPath.TELEMETRY_UI_SELECTED_CHARACTER_ID,
@@ -4046,6 +4047,15 @@ def game_binding_success_condition(
     current = _binding_terminal_value(telemetry, terminal.path)
     if current is None:
         return None
+    if binding is GameBinding.SELECT_ALL:
+        return Condition(
+            kind=ConditionKind.FIELD,
+            path=terminal.path,
+            operator=ConditionOperator.EQUALS,
+            expected=len(telemetry.squad),
+            max_age_seconds=3.0,
+            required_capabilities=list(terminal.required_capabilities),
+        )
     if terminal.witness is BindingWitness.TOGGLED:
         if not isinstance(current, bool):
             return None

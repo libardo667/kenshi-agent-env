@@ -72,6 +72,7 @@ SEMANTICALLY_ADAPTED_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
         GameBinding.TOGGLE_CRAFTING,
         GameBinding.CAMERA_ROTATE_LEFT,
         GameBinding.CAMERA_ROTATE_RIGHT,
+        GameBinding.SELECT_ALL,
     }
 )
 
@@ -602,8 +603,11 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             yield _offer(
                 observation,
                 source=AffordanceSource.SQUAD,
-                semantic="select",
-                description=f"Select {member.name!r} as the exact active squad member.",
+                semantic="select_only",
+                description=(
+                    f"Replace the current selection with only {member.name!r}, "
+                    "deselecting every other party member."
+                ),
                 operation_kind=(
                     "select_squad_member_exact"
                     if exact_selection
@@ -612,6 +616,35 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 target=target,
                 arguments={"target_id": member.id},
             )
+    all_member_ids = {member.id for member in telemetry.squad}
+    if (
+        all_member_ids
+        and set(telemetry.ui.selected_character_ids) != all_member_ids
+        and telemetry.ui.active_screen == "world"
+        and telemetry.ui.modal_open is False
+        and telemetry.ui.dialogue_open is False
+        and "squad.basic" in capabilities
+        and "identity.stable_handles" in capabilities
+    ):
+        names = ", ".join(member.name for member in telemetry.squad)
+        if len(names) > 240:
+            names = f"{len(telemetry.squad)} current members"
+        yield _offer(
+            observation,
+            source=AffordanceSource.SQUAD,
+            semantic="select_whole_party",
+            description=(
+                f"Select the complete current party together: {names}. This "
+                "replaces the current selection with all current members."
+            ),
+            operation_kind="use_game_binding",
+            arguments={
+                "binding": GameBinding.SELECT_ALL.value,
+                "expected_effect": (
+                    f"select all {len(telemetry.squad)} current party members"
+                ),
+            },
+        )
     if (
         selected is not None
         and selected.position is not None
@@ -976,6 +1009,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
             {
                 "select_squad_member",
                 "select_squad_member_exact",
+                "use_game_binding",
                 "regroup_with_squad_member",
                 "move_to_character",
                 "respond_to_immediate_threat",

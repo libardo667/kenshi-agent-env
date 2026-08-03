@@ -158,17 +158,26 @@ def test_exact_identity_selection_subsumes_opaque_character_bindings() -> None:
         squad=[bark, plant],
     )
 
-    semantics = {offer.semantic for offer in offered_affordances(observation)}
+    offers = offered_affordances(observation)
+    semantics = {offer.semantic for offer in offers}
     assert not {
         binding.value for binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
     } & semantics
-    assert "select_all" in semantics
-    assert any(
-        offer.semantic == "select"
+    assert "select_all" not in semantics
+    whole_party = next(offer for offer in offers if offer.semantic == "select_whole_party")
+    assert whole_party.operation_kind == "use_game_binding"
+    assert "Bark" in whole_party.description
+    assert "Plant" in whole_party.description
+    assert "complete current party" in whole_party.description
+    singular = next(
+        offer
+        for offer in offers
+        if offer.semantic == "select_only"
         and offer.target is not None
         and offer.target.target_id == plant.id
-        for offer in offered_affordances(observation)
     )
+    assert "only" in singular.description
+    assert "deselecting every other" in singular.description
 
     # A modal suppresses exact selection itself, but must not resurrect the
     # opaque key bindings as a guard bypass. The next choice should close the UI.
@@ -181,11 +190,29 @@ def test_exact_identity_selection_subsumes_opaque_character_bindings() -> None:
         deep=True,
     )
     modal_semantics = {offer.semantic for offer in offered_affordances(modal)}
-    assert "select" not in modal_semantics
+    assert "select_only" not in modal_semantics
+    assert "select_whole_party" not in modal_semantics
     assert not {
         binding.value for binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
     } & modal_semantics
-    assert "select_all" in modal_semantics
+    assert "select_all" not in modal_semantics
+
+    all_selected = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "ui": base_ui.model_copy(
+                        update={"selected_character_ids": [bark.id, plant.id]}
+                    ),
+                    "squad": [bark, plant.model_copy(update={"selected": True})],
+                }
+            )
+        },
+        deep=True,
+    )
+    assert "select_whole_party" not in {
+        offer.semantic for offer in offered_affordances(all_selected)
+    }
 
 
 def test_ui_adapter_offers_only_controls_with_current_semantic_authority() -> None:
@@ -358,7 +385,7 @@ def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry
     offer = next(
         offer
         for offer in offered_affordances(observation)
-        if offer.semantic == "select"
+        if offer.semantic == "select_only"
     )
 
     assert offer.operation_kind == "select_squad_member_exact"
@@ -389,7 +416,7 @@ def test_character_adapter_retains_exact_native_selection_from_a_group() -> None
     offers = [
         offer
         for offer in offered_affordances(observation)
-        if offer.semantic == "select"
+        if offer.semantic == "select_only"
     ]
 
     assert len(offers) == 2
