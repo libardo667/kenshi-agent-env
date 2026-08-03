@@ -180,6 +180,16 @@ class RunSummary:
     final_observation: Observation | None
 
 
+@dataclass(frozen=True, slots=True)
+class _RunSession:
+    """Everything one run opens and must close, whatever schedules its steps."""
+
+    observation: Observation
+    state_store: WorldStateStore
+    safety_supervisor: SafetySupervisor | None
+    observation_pump: ObservationPump | None
+
+
 class AgentRuntime:
     _MATERIAL_VISUAL_CHANGE_FRACTION = 0.01
     _PLANNER_ERROR_LOG_MAX_CHARS = 8_000
@@ -379,6 +389,92 @@ class AgentRuntime:
             return await self._run_continuous(max_steps=max_steps, seed=seed)
         return await self._run_single_step(max_steps=max_steps, seed=seed)
 
+    async def _begin_run(
+        self,
+        *,
+        max_steps: int,
+        seed: int | None,
+        supervised: bool,
+    ) -> _RunSession:
+        """Open one run's session: campaign state, world store, and observers.
+
+        Both scheduling policies open a run identically. Whether an independent
+        supervisor and observation pump are attached is the only difference, and
+        that is a policy of the schedule, not a different runtime.
+        """
+
+        self._ledger.reset()
+        self._advisor_brief_ids.clear()
+        self._planner_contexts_issued = 0
+        self._continuity_receipts.clear()
+        self._pending_memory_search = None
+        self._fieldbook_receipts.clear()
+        self._pending_fieldbook_read = None
+        observation = self._with_memories(await self.environment.reset(seed=seed))
+        self.logger.write(
+            "run_started",
+            payload={
+                "max_steps": max_steps,
+                "seed": seed,
+                "control_mode": self.control_mode.value,
+                "planning_mode": self.planning_config.mode.value,
+                "memory_retrieval_policy": (self.memory_retrieval_policy.value),
+                "scenario": (
+                    self.scenario.model_dump(mode="json") if self.scenario is not None else None
+                ),
+                "scenario_attestation": (
+                    self.scenario_attestation.model_dump(mode="json")
+                    if self.scenario_attestation is not None
+                    else None
+                ),
+            },
+        )
+        if self.reporter is not None:
+            self.reporter.run_started(max_steps)
+        state_store = self._new_world_state_store()
+        self._state_store = state_store
+        initial_update = state_store.publish(observation)
+        self._log_world_state_update(initial_update)
+        safety_supervisor: SafetySupervisor | None = None
+        observation_pump: ObservationPump | None = None
+        if supervised:
+            if self.guard.config.supervisor_enabled:
+                safety_supervisor = self._new_safety_supervisor(state_store)
+                await safety_supervisor.start()
+            if self.planning_config.observation_pump_enabled:
+                observation_pump = ObservationPump(
+                    self.environment,
+                    state_store,
+                    interval_seconds=(self.planning_config.observation_pump_seconds),
+                    clock=self.observation_clock,
+                    transform=self._with_memories,
+                    on_update=self._log_world_state_update,
+                )
+                await observation_pump.start()
+        return _RunSession(
+            observation=initial_update.observation,
+            state_store=state_store,
+            safety_supervisor=safety_supervisor,
+            observation_pump=observation_pump,
+        )
+
+    async def _finish_run(self, session: _RunSession | None) -> None:
+        """Close one run's session. Runs on every exit path, including failure."""
+
+        if session is not None and session.safety_supervisor is not None:
+            await self._finish_safety_supervisor(session.safety_supervisor)
+        if session is not None and session.observation_pump is not None:
+            await session.observation_pump.stop()
+        await self._finish_advisor_task()
+        if session is not None:
+            session.state_store.shutdown()
+            self.logger.write(
+                "world_state_finished",
+                payload=asdict(session.state_store.metrics),
+            )
+        self._state_store = None
+        await self._close_environment()
+
     async def _run_single_step(
         self,
         *,
@@ -391,41 +487,10 @@ class AgentRuntime:
         success: bool | None = None
         stop_reason = "Maximum step count reached."
         observation: Observation | None = None
-        state_store: WorldStateStore | None = None
+        session: _RunSession | None = None
         try:
-            self._ledger.reset()
-            self._advisor_brief_ids.clear()
-            self._planner_contexts_issued = 0
-            self._continuity_receipts.clear()
-            self._pending_memory_search = None
-            self._fieldbook_receipts.clear()
-            self._pending_fieldbook_read = None
-            observation = await self.environment.reset(seed=seed)
-            observation = self._with_memories(observation)
-            state_store = self._new_world_state_store()
-            self._state_store = state_store
-            initial_update = state_store.publish(observation)
-            observation = initial_update.observation
-            self._log_world_state_update(initial_update)
-            self.logger.write(
-                "run_started",
-                payload={
-                    "max_steps": max_steps,
-                    "seed": seed,
-                    "control_mode": self.control_mode.value,
-                    "memory_retrieval_policy": (self.memory_retrieval_policy.value),
-                    "scenario": (
-                        self.scenario.model_dump(mode="json") if self.scenario is not None else None
-                    ),
-                    "scenario_attestation": (
-                        self.scenario_attestation.model_dump(mode="json")
-                        if self.scenario_attestation is not None
-                        else None
-                    ),
-                },
-            )
-            if self.reporter is not None:
-                self.reporter.run_started(max_steps)
+            session = await self._begin_run(max_steps=max_steps, seed=seed, supervised=False)
+            observation = session.observation
             self._log_observation(observation)
 
             for _ in range(max_steps):
@@ -486,47 +551,16 @@ class AgentRuntime:
                 if terminated:
                     break
 
-            finished = datetime.now(UTC)
-            summary = RunSummary(
-                run_id=self.run_id,
-                control_mode=self.control_mode,
+            return self._finish_run_summary(
+                started=started,
                 steps_completed=steps_completed,
                 terminated=terminated,
                 success=success,
                 stop_reason=stop_reason,
-                started_at=started,
-                finished_at=finished,
-                final_observation=observation,
+                observation=observation,
             )
-            self.logger.write(
-                "run_finished",
-                step_index=observation.step_index if observation else None,
-                payload={
-                    "steps_completed": summary.steps_completed,
-                    "control_mode": summary.control_mode.value,
-                    "terminated": summary.terminated,
-                    "success": summary.success,
-                    "stop_reason": summary.stop_reason,
-                    "started_at": summary.started_at.isoformat(),
-                    "finished_at": summary.finished_at.isoformat(),
-                },
-            )
-            if self.reporter is not None:
-                self.reporter.run_finished(
-                    steps_completed=summary.steps_completed,
-                    stop_reason=summary.stop_reason,
-                )
-            return summary
         finally:
-            await self._finish_advisor_task()
-            if state_store is not None:
-                state_store.shutdown()
-                self.logger.write(
-                    "world_state_finished",
-                    payload=asdict(state_store.metrics),
-                )
-            self._state_store = None
-            await self._close_environment()
+            await self._finish_run(session)
 
     async def _run_continuous(
         self,
@@ -545,7 +579,6 @@ class AgentRuntime:
         pending_reflex: PlannerDecision | None = None
         last_replan_failure: str | None = None
         identical_replan_failures = 0
-        observation_pump: ObservationPump | None = None
         safety_supervisor: SafetySupervisor | None = None
         state_store: WorldStateStore | None = None
 
@@ -575,61 +608,12 @@ class AgentRuntime:
             last_replan_failure = None
             identical_replan_failures = 0
 
+        session: _RunSession | None = None
         try:
-            self._ledger.reset()
-            self._advisor_brief_ids.clear()
-            self._planner_contexts_issued = 0
-            self._continuity_receipts.clear()
-            self._pending_memory_search = None
-            self._fieldbook_receipts.clear()
-            self._pending_fieldbook_read = None
-            observation = self._with_memories(await self.environment.reset(seed=seed))
-            self.logger.write(
-                "run_started",
-                payload={
-                    "max_steps": max_steps,
-                    "seed": seed,
-                    "control_mode": self.control_mode.value,
-                    "planning_mode": self.planning_config.mode.value,
-                    "memory_retrieval_policy": (self.memory_retrieval_policy.value),
-                    "scenario": (
-                        self.scenario.model_dump(mode="json") if self.scenario is not None else None
-                    ),
-                    "scenario_attestation": (
-                        self.scenario_attestation.model_dump(mode="json")
-                        if self.scenario_attestation is not None
-                        else None
-                    ),
-                },
-            )
-            if self.reporter is not None:
-                self.reporter.run_started(max_steps)
-            state_store = WorldStateStore(
-                history_limit=self.planning_config.state_history_limit,
-                delta_limit=self.planning_config.state_delta_limit,
-                event_limit=self.planning_config.event_journal_limit,
-                subscriber_queue_limit=(self.planning_config.subscriber_queue_limit),
-                max_delta_paths=self.planning_config.max_delta_paths,
-                clock=self.planning_clock,
-                event_sink=self._log_world_event,
-            )
-            self._state_store = state_store
-            initial_update = state_store.publish(observation)
-            observation = initial_update.observation
-            self._log_world_state_update(initial_update)
-            if self.guard.config.supervisor_enabled:
-                safety_supervisor = self._new_safety_supervisor(state_store)
-                await safety_supervisor.start()
-            if self.planning_config.observation_pump_enabled:
-                observation_pump = ObservationPump(
-                    self.environment,
-                    state_store,
-                    interval_seconds=(self.planning_config.observation_pump_seconds),
-                    clock=self.observation_clock,
-                    transform=self._with_memories,
-                    on_update=self._log_world_state_update,
-                )
-                await observation_pump.start()
+            session = await self._begin_run(max_steps=max_steps, seed=seed, supervised=True)
+            state_store = session.state_store
+            observation = session.observation
+            safety_supervisor = session.safety_supervisor
 
             while steps_completed < max_steps and not terminated:
                 observation = state_store.latest or observation
@@ -1192,7 +1176,7 @@ class AgentRuntime:
                     )
                     terminated = True
 
-            return self._finish_continuous_summary(
+            return self._finish_run_summary(
                 started=started,
                 steps_completed=steps_completed,
                 terminated=terminated,
@@ -1201,19 +1185,7 @@ class AgentRuntime:
                 observation=observation,
             )
         finally:
-            if safety_supervisor is not None:
-                await self._finish_safety_supervisor(safety_supervisor)
-            if observation_pump is not None:
-                await observation_pump.stop()
-            await self._finish_advisor_task()
-            if state_store is not None:
-                state_store.shutdown()
-                self.logger.write(
-                    "world_state_finished",
-                    payload=asdict(state_store.metrics),
-                )
-            self._state_store = None
-            await self._close_environment()
+            await self._finish_run(session)
 
     async def _close_environment(self) -> None:
         try:
@@ -2349,7 +2321,7 @@ class AgentRuntime:
             },
         )
 
-    def _finish_continuous_summary(
+    def _finish_run_summary(
         self,
         *,
         started: datetime,
