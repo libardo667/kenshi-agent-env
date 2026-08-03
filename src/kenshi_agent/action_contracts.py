@@ -2866,10 +2866,11 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     version="1.0",
     model=MoveToCharacterAction,
     summary=(
-        "Walk to one exact currently observed nearby character without talking "
-        "to them. This is how the agent goes somewhere: nearby characters are "
-        "reported within four hundred units, so someone standing where you want "
-        "to be is a destination. One monitored option owns the whole walk."
+        "Walk the complete current selection to one exact currently observed "
+        "nearby character without talking to them. This is how the agent goes "
+        "somewhere: nearby characters are reported within four hundred units, "
+        "so someone standing where you want to be is a destination. One "
+        "monitored option owns the whole group walk."
     ),
     argument_source=(
         "target_id must be an exact id from the observation's "
@@ -2886,7 +2887,7 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_MOVE_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    selection_requirement=SelectionRequirement.EXACTLY_ONE,
+    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),

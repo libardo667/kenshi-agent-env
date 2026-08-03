@@ -410,6 +410,54 @@ namespace
         return 0;
     }
 
+    int TestNativeGroupCharacterCompletion()
+    {
+        using KenshiAgentTelemetry::HasGroupReachedDynamicDestination;
+        using KenshiAgentTelemetry::NativeMovementPosition;
+
+        std::vector<NativeMovementPosition> positions(2);
+        positions[0].x = 3.0f;
+        positions[0].z = 4.0f;
+        positions[1].x = 20.0f;
+        positions[1].z = 0.0f;
+        float farthestX = 0.0f;
+        float farthestZ = 0.0f;
+        if (HasGroupReachedDynamicDestination(
+                positions,
+                0.0f,
+                0.0f,
+                farthestX,
+                farthestZ))
+        {
+            return Fail("one arrived member masked a distant squadmate");
+        }
+        if (farthestX != 20.0f || farthestZ != 0.0f)
+            return Fail("group stall ownership did not follow the farthest member");
+
+        positions[1].x = 6.0f;
+        positions[1].z = 8.0f;
+        if (!HasGroupReachedDynamicDestination(
+                positions,
+                0.0f,
+                0.0f,
+                farthestX,
+                farthestZ))
+        {
+            return Fail("a fully arrived group did not complete");
+        }
+        std::vector<NativeMovementPosition> empty;
+        if (HasGroupReachedDynamicDestination(
+                empty,
+                0.0f,
+                0.0f,
+                farthestX,
+                farthestZ))
+        {
+            return Fail("an empty selection completed a group walk");
+        }
+        return 0;
+    }
+
     int TestNativeMapTravelEntry()
     {
         using KenshiAgentTelemetry::EvaluateNativeMapTravel;
@@ -905,6 +953,9 @@ int main(int argc, char** argv)
     const int completionResult = TestNativeDirectionCompletion();
     if (completionResult != 0)
         return completionResult;
+    const int groupCompletionResult = TestNativeGroupCharacterCompletion();
+    if (groupCompletionResult != 0)
+        return groupCompletionResult;
     const int mapTravelResult = TestNativeMapTravelEntry();
     if (mapTravelResult != 0)
         return mapTravelResult;
@@ -978,6 +1029,9 @@ int main(int argc, char** argv)
         return Fail("valid targeted request was rejected as " + rejectionReason);
     }
     if (targeted.command != "move_to_character" ||
+        targeted.selectedCharacterIds.size() != 2 ||
+        targeted.selectedCharacterIds[0] != "entity-selected" ||
+        targeted.selectedCharacterIds[1] != "entity-companion" ||
         targeted.targetId != "entity-destination" ||
         targeted.bearingDegrees != 0.0 ||
         targeted.distanceUnits != 0.0)

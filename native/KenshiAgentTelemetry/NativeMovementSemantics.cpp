@@ -201,6 +201,36 @@ namespace KenshiAgentTelemetry
         return progressX * goalX + progressZ * goalZ >= goalLengthSquared;
     }
 
+    bool HasGroupReachedDynamicDestination(
+        const std::vector<NativeMovementPosition>& positions,
+        float destinationX,
+        float destinationZ,
+        float& farthestX,
+        float& farthestZ)
+    {
+        if (positions.empty())
+            return false;
+        const float toleranceSquared =
+            WALK_DESTINATION_TOLERANCE * WALK_DESTINATION_TOLERANCE;
+        bool allReached = true;
+        float farthestDistanceSquared = -1.0f;
+        for (unsigned int index = 0; index < positions.size(); ++index)
+        {
+            const float dx = positions[index].x - destinationX;
+            const float dz = positions[index].z - destinationZ;
+            const float distanceSquared = dx * dx + dz * dz;
+            if (distanceSquared > toleranceSquared)
+                allReached = false;
+            if (distanceSquared > farthestDistanceSquared)
+            {
+                farthestDistanceSquared = distanceSquared;
+                farthestX = positions[index].x;
+                farthestZ = positions[index].z;
+            }
+        }
+        return allReached;
+    }
+
     bool IsNativeMapDestinationPresentlyReached(
         bool currentTownIdentityMatches,
         bool destinationHasGates,

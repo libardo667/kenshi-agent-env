@@ -31,6 +31,10 @@ def test_python_accepts_targeted_request_fixture_with_no_direction_payload() -> 
     )
 
     assert request.command == "move_to_character"
+    assert request.selected_character_ids == [
+        "entity-selected",
+        "entity-companion",
+    ]
     assert request.target_id == "entity-destination"
     assert request.bearing_degrees == 0.0
     assert request.distance_units == 0.0

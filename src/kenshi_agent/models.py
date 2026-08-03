@@ -1040,6 +1040,7 @@ class NativeCommandAcknowledgement(StrictModel):
         if (
             len(self.selected_character_ids) != 1
             and self.command not in {
+                "move_to_character",
                 "select_squad_member",
                 "travel_to_map_destination",
             }
@@ -1148,7 +1149,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.10.0"
+    protocol_version: str = "1.11.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -3581,6 +3582,7 @@ class NativeCommandRequest(StrictModel):
         if (
             len(self.selected_character_ids) != 1
             and self.command not in {
+                "move_to_character",
                 "select_squad_member",
                 "travel_to_map_destination",
             }

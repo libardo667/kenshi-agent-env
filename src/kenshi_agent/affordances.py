@@ -75,6 +75,19 @@ SEMANTICALLY_ADAPTED_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
     }
 )
 
+# These controls address a changing portrait slot rather than a witnessed
+# character identity. Keep them as actuator coverage, but do not offer them to
+# the playing model when the native exact-identity route is available. The
+# semantic route may itself be temporarily blocked by a modal; that is a reason
+# to close the modal, not to resurrect an opaque guard bypass.
+OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS: frozenset[GameBinding] = frozenset(
+    {
+        GameBinding.CHARACTER_NEXT,
+        GameBinding.CHARACTER_PREV,
+        *(GameBinding[f"SELECT_GROUP_{index}"] for index in range(10)),
+    }
+)
+
 
 class AffordanceParameterSpec(_StrictModel):
     name: str = Field(min_length=1, max_length=80)
@@ -277,10 +290,22 @@ def _game_binding_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     telemetry = observation.telemetry
     if telemetry is None:
         return
+    exact_identity_selection = bool(
+        observation.control_mode is ControlMode.NATIVE_ASSISTED
+        and "control.select_squad_member" in telemetry.capabilities
+        and "identity.stable_handles" in telemetry.capabilities
+        and telemetry.ui.selected_character_id is not None
+        and telemetry.ui.selected_character_id
+        in telemetry.ui.selected_character_ids
+    )
     for binding in GameBinding:
         if (
             binding in TIME_GAME_BINDINGS
             or binding in SEMANTICALLY_ADAPTED_GAME_BINDINGS
+            or (
+                exact_identity_selection
+                and binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
+            )
         ):
             continue
         yield _offer(
@@ -637,14 +662,22 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     "target_id": target_member.id,
                 },
             )
+    selected_count = len([member for member in telemetry.squad if member.selected])
+    if selected_count == 0:
+        return
     for character in telemetry.nearby_entities:
         if character.is_animal or character.disposition.value == "hostile":
             continue
         yield _offer(
             observation,
             source=AffordanceSource.NEARBY_CHARACTER,
-            semantic="move_to",
-            description=f"Move to nearby character {character.name!r}.",
+            semantic="move_to" if selected_count == 1 else "move_squad_to",
+            description=(
+                f"Move to nearby character {character.name!r}."
+                if selected_count == 1
+                else f"Move {selected_count} selected squad members together "
+                f"to nearby character {character.name!r}."
+            ),
             operation_kind="move_to_character",
             target=AffordanceTarget(
                 target_id=character.id,

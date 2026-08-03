@@ -46,6 +46,7 @@ from kenshi_agent.models import (
     GameState,
     IdempotencyPolicy,
     KnownMapDestination,
+    MoveToCharacterAction,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
@@ -1192,7 +1193,7 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
     assert not contract.bind(missing, state).bound
 
 
-def test_exact_selection_and_map_travel_bind_a_current_squad_group() -> None:
+def test_exact_selection_travel_and_ordinary_movement_bind_a_current_squad_group() -> None:
     squad = [
         CharacterState(id="entity-bark", name="Bark", selected=True),
         CharacterState(id="entity-plant", name="Plant", selected=True),
@@ -1200,13 +1201,24 @@ def test_exact_selection_and_map_travel_bind_a_current_squad_group() -> None:
     state = observation(
         capabilities=[
             "control.select_squad_member",
+            "control.move_to_character",
             "control.travel_to_map_destination",
             "world.known_map_destinations",
             "game.pause",
             "game.speed",
             "identity.stable_handles",
+            "nearby.characters",
             "squad.basic",
             "squad.health",
+        ],
+        entities=[
+            NearbyEntity(
+                id="entity-barman",
+                name="Barman",
+                is_animal=False,
+                disposition=Disposition.NEUTRAL,
+                distance=20.0,
+            )
         ],
         squad=squad,
         ui=UIState(
@@ -1234,9 +1246,14 @@ def test_exact_selection_and_map_travel_bind_a_current_squad_group() -> None:
         TravelToMapDestinationAction(destination_id="entity-known-town"),
         state,
     )
+    movement = MOVE_TO_CHARACTER_CONTRACT.bind(
+        MoveToCharacterAction(target_id="entity-barman"),
+        state,
+    )
 
     assert selection.bound
     assert travel.bound
+    assert movement.bound
     travel_offer = next(
         offer
         for offer in offered_affordances(state)
@@ -1244,6 +1261,13 @@ def test_exact_selection_and_map_travel_bind_a_current_squad_group() -> None:
     )
     assert travel_offer.semantic == "travel_squad"
     assert "2 selected squad members" in travel_offer.description
+    movement_offer = next(
+        offer
+        for offer in offered_affordances(state)
+        if offer.operation_kind == "move_to_character"
+    )
+    assert movement_offer.semantic == "move_squad_to"
+    assert "2 selected squad members" in movement_offer.description
 
 
 def test_map_travel_cannot_bind_a_destination_already_reached() -> None:

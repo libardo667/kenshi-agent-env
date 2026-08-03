@@ -318,6 +318,7 @@ def character_acknowledgement(
     status: NativeCommandStatus,
     *,
     target_id: str = TARGET_ID,
+    selected_character_ids: list[str] | None = None,
 ) -> NativeCommandAcknowledgement:
     terminal = status is not NativeCommandStatus.ACCEPTED
     return NativeCommandAcknowledgement(
@@ -334,7 +335,7 @@ def character_acknowledgement(
             )
         ),
         target_id=target_id,
-        selected_character_ids=[SELECTED_ID],
+        selected_character_ids=selected_character_ids or [SELECTED_ID],
         based_on_telemetry_sequence=1,
         acknowledged_at_telemetry_sequence=2,
         accepted_at_telemetry_sequence=2,
@@ -348,7 +349,9 @@ def character_observation(
     ack: NativeCommandAcknowledgement | None = None,
     target_present: bool = True,
     target_distance: float = 200.0,
+    selected_character_ids: list[str] | None = None,
 ) -> Observation:
+    selection = selected_character_ids or [SELECTED_ID]
     return Observation(
         run_id="native-character-movement-option-test",
         step_index=sequence,
@@ -371,14 +374,25 @@ def character_observation(
             game=GameState(paused=True, elapsed_minutes=0.0),
             ui=UIState(
                 selected_character_id=SELECTED_ID,
-                selected_character_ids=[SELECTED_ID],
+                selected_character_ids=selection,
             ),
             squad=[
                 CharacterState(
                     id=SELECTED_ID,
                     name="Hep",
                     selected=True,
-                )
+                ),
+                *(
+                    [
+                        CharacterState(
+                            id=SQUADMATE_ID,
+                            name="Bark",
+                            selected=True,
+                        )
+                    ]
+                    if SQUADMATE_ID in selection
+                    else []
+                ),
             ],
             nearby_entities=(
                 [
@@ -666,15 +680,28 @@ class InstantNativeMovementEnvironment(AgentEnvironment):
 
 
 class InstantCharacterMovementEnvironment(AgentEnvironment):
+    def __init__(self, selected_character_ids: list[str] | None = None) -> None:
+        self.selected_character_ids = selected_character_ids or [SELECTED_ID]
+
     async def reset(self, *, seed: int | None = None) -> Observation:
         del seed
-        return character_observation(1)
+        return character_observation(
+            1,
+            selected_character_ids=self.selected_character_ids,
+        )
 
     async def observe(self) -> Observation:
-        return character_observation(1)
+        return character_observation(
+            1,
+            selected_character_ids=self.selected_character_ids,
+        )
 
     async def step(self, action: Action) -> Transition:
-        accepted = character_acknowledgement(2, NativeCommandStatus.ACCEPTED)
+        accepted = character_acknowledgement(
+            2,
+            NativeCommandStatus.ACCEPTED,
+            selected_character_ids=self.selected_character_ids,
+        )
         return Transition(
             receipt=ActionReceipt(
                 action=action,
@@ -684,7 +711,11 @@ class InstantCharacterMovementEnvironment(AgentEnvironment):
                 message="exact character walk issued",
                 native_acknowledgement=accepted,
             ),
-            observation=character_observation(2, ack=accepted),
+            observation=character_observation(
+                2,
+                ack=accepted,
+                selected_character_ids=self.selected_character_ids,
+            ),
         )
 
     async def close(self) -> None:
@@ -940,6 +971,45 @@ def test_character_walk_uses_the_exact_native_terminal_not_a_second_radius() -> 
         )
         assert arrived.status is OptionStatus.SUCCEEDED
         assert NATIVE_WALK_DESTINATION_REACHED_RESULT in arrived.reason
+
+    asyncio.run(scenario())
+
+
+def test_character_walk_matches_a_group_basis_independent_of_set_order() -> None:
+    async def scenario() -> None:
+        selection = [SELECTED_ID, SQUADMATE_ID]
+        action = MoveToCharacterAction(target_id=TARGET_ID)
+        movement = StatefulNativeMovementOption(
+            option_id="native-character-group",
+            action=action,
+            environment=InstantCharacterMovementEnvironment(selection),
+        )
+        start = character_observation(1, selected_character_ids=selection)
+        assert movement.prepare(start).status is OptionStatus.PREPARED
+        await movement.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=start.world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+
+        completed = character_acknowledgement(
+            3,
+            NativeCommandStatus.COMPLETED,
+            selected_character_ids=[SQUADMATE_ID, SELECTED_ID],
+        )
+        arrived = movement.poll(
+            update(
+                character_observation(
+                    3,
+                    ack=completed,
+                    selected_character_ids=selection,
+                )
+            )
+        )
+
+        assert arrived.status is OptionStatus.SUCCEEDED
 
     asyncio.run(scenario())
 

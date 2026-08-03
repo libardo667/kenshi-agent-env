@@ -4064,6 +4064,7 @@ class LiveEnvironment(AgentEnvironment):
             raise RuntimeError("Native command requires a current identity session.")
         selected_ids = telemetry.ui.selected_character_ids
         group_selection_command = wire_command in {
+            NATIVE_MOVE_WIRE_COMMAND,
             NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
             NATIVE_MAP_TRAVEL_WIRE_COMMAND,
         }

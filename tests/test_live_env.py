@@ -34,6 +34,7 @@ from kenshi_agent.models import (
     MouseButtonAction,
     MouseDragAction,
     MoveInDirectionAction,
+    MoveToCharacterAction,
     NativeCommandAcknowledgement,
     NativeCommandRequest,
     NativeCommandStatus,
@@ -1667,6 +1668,38 @@ def test_exact_native_selection_collapses_a_current_squad_group(
             "entity-ruka",
         ]
         assert controller.request.target_id == "entity-ruka"
+
+    asyncio.run(scenario())
+
+
+def test_native_character_movement_carries_the_complete_selected_group(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities.extend(["control.move_to_character"])
+        telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"native_approach_skill": "approach_confirmed_vendor"}
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            MoveToCharacterAction(target_id="entity-vendor"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "b" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "move_to_character"
+        assert controller.request.selected_character_ids == [
+            "entity-selected",
+            "entity-ruka",
+        ]
+        assert controller.request.target_id == "entity-vendor"
 
     asyncio.run(scenario())
 

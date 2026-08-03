@@ -1,7 +1,15 @@
 #pragma once
 
+#include <vector>
+
 namespace KenshiAgentTelemetry
 {
+    struct NativeMovementPosition
+    {
+        float x;
+        float z;
+    };
+
     struct NativeTrailingCameraPose
     {
         float w;
@@ -98,6 +106,16 @@ namespace KenshiAgentTelemetry
         float destinationZ,
         float currentX,
         float currentZ);
+
+    // A group walk owns every selected member. It reaches a dynamic character
+    // only when every member is inside the ordinary walk radius; the farthest
+    // member also owns stall progress so the leader cannot mask a stuck party.
+    bool HasGroupReachedDynamicDestination(
+        const std::vector<NativeMovementPosition>& positions,
+        float destinationX,
+        float destinationZ,
+        float& farthestX,
+        float& farthestZ);
 
     enum NativeMapTravelDecision
     {

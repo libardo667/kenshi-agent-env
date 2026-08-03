@@ -578,7 +578,10 @@ class StatefulNativeMovementOption:
             not selected_ids
             or telemetry.ui.selected_character_id not in selected_ids
             or (
-                not isinstance(self.action, TravelToMapDestinationAction)
+                not isinstance(
+                    self.action,
+                    (MoveToCharacterAction, TravelToMapDestinationAction),
+                )
                 and len(selected_ids) != 1
             )
         ):

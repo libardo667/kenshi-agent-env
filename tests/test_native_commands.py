@@ -63,6 +63,25 @@ def test_native_request_is_strict_exact_and_telemetry_revision_bound() -> None:
         NativeCommandRequest.model_validate(valid.model_dump(mode="python") | {"unexpected": True})
 
 
+def test_group_selection_is_allowed_only_for_set_aware_native_commands() -> None:
+    valid = request().model_dump(mode="python")
+    group = ["entity-selected", "entity-companion"]
+
+    move = NativeCommandRequest.model_validate(
+        valid
+        | {
+            "command": "move_to_character",
+            "selected_character_ids": group,
+        }
+    )
+    assert move.selected_character_ids == group
+
+    with pytest.raises(ValidationError, match="exactly one selected character"):
+        NativeCommandRequest.model_validate(
+            valid | {"selected_character_ids": group}
+        )
+
+
 def test_only_resource_production_may_request_a_larger_bounded_yield() -> None:
     valid = request()
     production = NativeCommandRequest.model_validate(

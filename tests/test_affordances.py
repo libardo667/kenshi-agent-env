@@ -14,6 +14,7 @@ from kenshi_agent.action_contracts import (
 )
 from kenshi_agent.affordances import (
     AFFORDANCE_ADAPTERS,
+    OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS,
     SEMANTICALLY_ADAPTED_GAME_BINDINGS,
     AffordanceSource,
     bind_affordance,
@@ -135,6 +136,56 @@ def test_named_binding_adapter_covers_its_whole_current_denominator() -> None:
         if offer.source is AffordanceSource.GAME_BINDING
     }
     assert actual == expected
+
+
+def test_exact_identity_selection_subsumes_opaque_character_bindings() -> None:
+    bark = CharacterState(id="bark", name="Bark", selected=True)
+    plant = CharacterState(id="plant", name="Plant", selected=False)
+    base_ui = UIState(
+        active_screen="world",
+        dialogue_open=False,
+        modal_open=False,
+        selected_character_id=bark.id,
+        selected_character_ids=[bark.id],
+    )
+    observation = _observation(
+        capabilities=[
+            "control.select_squad_member",
+            "identity.stable_handles",
+            "squad.basic",
+        ],
+        ui=base_ui,
+        squad=[bark, plant],
+    )
+
+    semantics = {offer.semantic for offer in offered_affordances(observation)}
+    assert not {
+        binding.value for binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
+    } & semantics
+    assert "select_all" in semantics
+    assert any(
+        offer.semantic == "select"
+        and offer.target is not None
+        and offer.target.target_id == plant.id
+        for offer in offered_affordances(observation)
+    )
+
+    # A modal suppresses exact selection itself, but must not resurrect the
+    # opaque key bindings as a guard bypass. The next choice should close the UI.
+    modal = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={"ui": base_ui.model_copy(update={"modal_open": True})}
+            )
+        },
+        deep=True,
+    )
+    modal_semantics = {offer.semantic for offer in offered_affordances(modal)}
+    assert "select" not in modal_semantics
+    assert not {
+        binding.value for binding in OPAQUE_CHARACTER_SELECTION_GAME_BINDINGS
+    } & modal_semantics
+    assert "select_all" in modal_semantics
 
 
 def test_ui_adapter_offers_only_controls_with_current_semantic_authority() -> None:

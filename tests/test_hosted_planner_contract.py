@@ -17,6 +17,7 @@ from kenshi_agent.affordances import (
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
+    CharacterState,
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
@@ -1778,6 +1779,18 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
             "control_mode": ControlMode.NATIVE_ASSISTED,
             "telemetry": TelemetrySnapshot(
                 nearby_entities=crowd,
+                squad=[
+                    CharacterState(
+                        id="entity-selected",
+                        name="Hep",
+                        selected=True,
+                    )
+                ],
+                ui=UIState(
+                    active_screen="world",
+                    selected_character_id="entity-selected",
+                    selected_character_ids=["entity-selected"],
+                ),
                 capabilities=[
                     "control.move_to_character",
                     "identity.stable_handles",

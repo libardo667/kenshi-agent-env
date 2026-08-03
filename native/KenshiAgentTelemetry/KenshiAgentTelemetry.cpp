@@ -128,7 +128,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.10.0";
+    const char* PROTOCOL_VERSION = "1.11.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -2010,7 +2010,7 @@ namespace
         hand selectedHandle;
         std::vector<hand> selectedHandles;
         const bool selectionResolved =
-            g_activeNativeCommand.isMapTravel
+            g_activeNativeCommand.selectedCharacterIds.size() > 1
                 ? TryGetExactSelectionBasis(
                     player,
                     g_activeNativeCommand.selectedCharacterIds,
@@ -2372,6 +2372,8 @@ namespace
                 }
             }
             bool arrived = false;
+            float stallX = here.x;
+            float stallZ = here.z;
             if (g_activeNativeCommand.isBuildingExit)
             {
                 arrived =
@@ -2396,11 +2398,47 @@ namespace
             }
             else
             {
-                const float dx = here.x - destinationX;
-                const float dz = here.z - destinationZ;
-                arrived = dx * dx + dz * dz <=
+                const float toleranceSquared =
                     KenshiAgentTelemetry::WALK_DESTINATION_TOLERANCE *
-                        KenshiAgentTelemetry::WALK_DESTINATION_TOLERANCE;
+                    KenshiAgentTelemetry::WALK_DESTINATION_TOLERANCE;
+                if (selectedHandles.size() > 1)
+                {
+                    std::vector<KenshiAgentTelemetry::NativeMovementPosition>
+                        positions;
+                    for (unsigned int index = 0;
+                         index < selectedHandles.size();
+                         ++index)
+                    {
+                        Character* member =
+                            selectedHandles[index].getCharacter();
+                        if (member == NULL || !member->isValid())
+                        {
+                            FinishActiveNativeCommand(
+                                "cancelled",
+                                "selection_mismatch");
+                            return;
+                        }
+                        const Ogre::Vector3 memberPosition =
+                            member->getPosition();
+                        KenshiAgentTelemetry::NativeMovementPosition position;
+                        position.x = memberPosition.x;
+                        position.z = memberPosition.z;
+                        positions.push_back(position);
+                    }
+                    arrived = KenshiAgentTelemetry::
+                        HasGroupReachedDynamicDestination(
+                            positions,
+                            destinationX,
+                            destinationZ,
+                            stallX,
+                            stallZ);
+                }
+                else
+                {
+                    const float dx = here.x - destinationX;
+                    const float dz = here.z - destinationZ;
+                    arrived = dx * dx + dz * dz <= toleranceSquared;
+                }
             }
             if (arrived)
             {
@@ -2422,8 +2460,8 @@ namespace
             if (KenshiAgentTelemetry::ObserveNativeMovementStall(
                     g_activeNativeCommand.stallWindow,
                     false,
-                    here.x,
-                    here.z,
+                    stallX,
+                    stallZ,
                     GetTickCount()))
             {
                 FinishActiveNativeCommand("cancelled", "movement_stalled");
@@ -3240,7 +3278,9 @@ namespace
         g_activeNativeCommand.commandId = request.commandId;
         g_activeNativeCommand.targetId = request.targetId;
         g_activeNativeCommand.selectedCharacterId =
-            request.selectedCharacterId;
+            selectedId;
+        g_activeNativeCommand.selectedCharacterIds =
+            request.selectedCharacterIds;
         g_activeNativeCommand.targetHandle = targetHandle;
         g_activeNativeCommand.selectedHandle = selectedHandle;
         g_activeNativeCommand.isWalk = isMove || isSquadRegroup;

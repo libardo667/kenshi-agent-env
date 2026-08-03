@@ -286,6 +286,7 @@ namespace KenshiAgentTelemetry
             }
 
             const bool allowsGroupSelection =
+                request.command == "move_to_character" ||
                 request.command == "select_squad_member" ||
                 request.command == "travel_to_map_destination";
             if (selectedIds.empty() ||
