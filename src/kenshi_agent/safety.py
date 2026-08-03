@@ -361,8 +361,9 @@ class ActionGuard:
             # unpause to walk anywhere, so an unconditional check here refuses
             # every purchase it could ever reach a shop to make. What protects
             # the purchase is the cell binding, the verified seller, the exact
-            # selection and the open trade screen - all still enforced below,
-            # all independent of whether the world is moving.
+            # player-window owner and the open trade screen - all already
+            # enforced by the contract, independent of whether the world is
+            # moving.
             raise SafetyViolation(  # mutation: reason
                 "Purchase requires a confirmed paused game "  # mutation: reason
                 "because the live configuration sets "  # mutation: reason
@@ -373,7 +374,6 @@ class ActionGuard:
                 "Purchase blocked because no trade is open: a shop's own "  # mutation: reason
                 "inventory window must be open beside ours."  # mutation: reason
             )
-        self._validate_exact_selection(observation)
         # Each of these is enforced only when the profile actually asks for it.
         if (
             check_purchase_limit

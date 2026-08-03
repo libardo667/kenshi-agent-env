@@ -85,12 +85,16 @@ class PurchaseTelemetry:
         *,
         stock: int,
         money: int = 1000,
+        unit_price: int = 43,
         selected_inventory_accepts_item: bool = True,
+        group_selection: bool = False,
     ) -> None:
         self.stock = stock
         self.carried = 0
         self.money = money
+        self.unit_price = unit_price
         self.selected_inventory_accepts_item = selected_inventory_accepts_item
+        self.group_selection = group_selection
         self.message_text: str | None = None
         self.sequence = 0
         self.max_age_seconds = 3.0
@@ -99,27 +103,31 @@ class PurchaseTelemetry:
     def read(self) -> TelemetryRead:
         self.sequence += 1
         inventory = (
-            [InventoryItem(name="Dried Meat", quantity=self.carried)]
-            if self.carried
-            else []
+            [InventoryItem(name="Dried Meat", quantity=self.carried)] if self.carried else []
         )
-        controls: list[VisibleUIControl] = (
-            [
+        controls: list[VisibleUIControl] = [
+            VisibleUIControl(
+                label="BARK",
+                role="text",
+                window="BARK",
+                bounds=_bounds(2),
+            )
+        ]
+        controls.extend(
+            (
                 VisibleUIControl(
                     label="Dried Meat",
                     role="item",
                     window="BURN",
                     item_name="Dried Meat",
-                    item_base_value=43,
+                    item_base_value=self.unit_price,
                     item_quantity=self.stock,
-                    selected_inventory_accepts_item=(
-                        self.selected_inventory_accepts_item
-                    ),
+                    selected_inventory_accepts_item=(self.selected_inventory_accepts_item),
                     bounds=_bounds(0),
-                )
-            ]
+                ),
+            )
             if self.stock
-            else []
+            else ()
         )
         if self.message_text is not None:
             controls.append(
@@ -154,13 +162,26 @@ class PurchaseTelemetry:
                 elapsed_minutes=0.0,
             ),
             squad=[
+                *(
+                    [
+                        CharacterState(
+                            id="character-plant",
+                            name="Plant",
+                            selected=True,
+                            inventory=[InventoryItem(name="Dried Meat", quantity=9)],
+                            inventory_complete=True,
+                        )
+                    ]
+                    if self.group_selection
+                    else []
+                ),
                 CharacterState(
                     id="character-bark",
                     name="Bark",
                     selected=True,
                     inventory=inventory,
                     inventory_complete=True,
-                )
+                ),
             ],
             nearby_entities=[
                 NearbyEntity(
@@ -174,8 +195,14 @@ class PurchaseTelemetry:
             ui=UIState(
                 active_screen="trade",
                 open_inventory_windows=2,
-                selected_character_id="character-bark",
-                selected_character_ids=["character-bark"],
+                selected_character_id=(
+                    "character-plant" if self.group_selection else "character-bark"
+                ),
+                selected_character_ids=(
+                    ["character-bark", "character-plant"]
+                    if self.group_selection
+                    else ["character-bark"]
+                ),
                 visible_controls=controls,
                 visible_controls_complete=True,
             ),
@@ -196,6 +223,7 @@ class PurchaseController(InputController):
         inventory_updates: bool = True,
         no_effect: bool = False,
         message_on_no_effect: str | None = None,
+        charged_unit_price: int | None = None,
     ) -> None:
         self.telemetry = telemetry
         self.inventory_updates = inventory_updates
@@ -204,6 +232,9 @@ class PurchaseController(InputController):
         # affordable and in stock, and distinct from a partial transfer.
         self.no_effect = no_effect
         self.message_on_no_effect = message_on_no_effect
+        self.charged_unit_price = (
+            telemetry.unit_price if charged_unit_price is None else charged_unit_price
+        )
         self.actions: list[PrimitiveInputAction] = []
 
     def focus_window(self) -> None:
@@ -225,7 +256,7 @@ class PurchaseController(InputController):
             # value was a non-authoritative estimate of an unknowable charge.
             # It was simply the wrong side of the trade - the sell value - and
             # three live purchases have since debited the buy price exactly.
-            self.telemetry.money -= 43
+            self.telemetry.money -= self.charged_unit_price
         elif (
             isinstance(action, ClickAction)
             and action.button is MouseButton.RIGHT
@@ -260,20 +291,26 @@ def purchase_environment(
     stock: int,
     inventory_updates: bool = True,
     money: int = 1000,
+    unit_price: int = 43,
+    charged_unit_price: int | None = None,
     no_effect: bool = False,
     message_on_no_effect: str | None = None,
     selected_inventory_accepts_item: bool = True,
+    group_selection: bool = False,
 ) -> tuple[LiveEnvironment, PurchaseTelemetry, PurchaseController]:
     telemetry = PurchaseTelemetry(
         stock=stock,
         money=money,
+        unit_price=unit_price,
         selected_inventory_accepts_item=selected_inventory_accepts_item,
+        group_selection=group_selection,
     )
     controller = PurchaseController(
         telemetry,
         inventory_updates=inventory_updates,
         no_effect=no_effect,
         message_on_no_effect=message_on_no_effect,
+        charged_unit_price=charged_unit_price,
     )
     environment = LiveEnvironment(
         run_id="purchase-option-test",
@@ -294,11 +331,11 @@ def purchase_environment(
     return environment, telemetry, controller
 
 
-def _purchase(*, quantity: int) -> PurchaseItemAction:
+def _purchase(*, quantity: int, expected_price: int = 43) -> PurchaseItemAction:
     return PurchaseItemAction(
         cell_label="Dried Meat",
         item_name="Dried Meat",
-        expected_price=43,
+        expected_price=expected_price,
         quantity=quantity,
         window="BURN",
         seller_id="seller-burn",
@@ -365,20 +402,20 @@ def test_purchase_terminal_status_matches_every_bounded_quantity_pair() -> None:
                         status is PurchaseStatus.PARTIALLY_PURCHASED
                         and 0 < purchased_quantity < requested_quantity
                     )
-                    or (
-                        status is PurchaseStatus.NOT_PURCHASED
-                        and purchased_quantity == 0
-                    )
+                    or (status is PurchaseStatus.NOT_PURCHASED and purchased_quantity == 0)
                 )
                 arguments = {
                     "status": status,
                     "seller_id": "seller-burn",
                     "selected_character_id": "character-bark",
                     "item_name": "Dried Meat",
+                    "expected_price": 43,
                     "requested_quantity": requested_quantity,
                     "purchased_quantity": purchased_quantity,
                     "money_before": 1000,
+                    "money_after": 1000 - 43 * purchased_quantity,
                     "inventory_quantity_before": 0,
+                    "inventory_quantity_after": purchased_quantity,
                     "reason": "Finite-state invariant.",
                 }
                 if valid:
@@ -386,6 +423,45 @@ def test_purchase_terminal_status_matches_every_bounded_quantity_pair() -> None:
                 else:
                     with pytest.raises(ValueError):
                         PurchaseEvidence(**arguments)
+
+
+def test_known_purchase_evidence_conserves_every_bounded_price_and_quantity() -> None:
+    for expected_price in range(0, 6):
+        for purchased_quantity in range(0, 6):
+            requested_quantity = 5
+            status = (
+                PurchaseStatus.NOT_PURCHASED
+                if purchased_quantity == 0
+                else PurchaseStatus.PURCHASED
+                if purchased_quantity == requested_quantity
+                else PurchaseStatus.PARTIALLY_PURCHASED
+            )
+            evidence = PurchaseEvidence(
+                status=status,
+                seller_id="seller-burn",
+                selected_character_id="character-bark",
+                item_name="Dried Meat",
+                expected_price=expected_price,
+                requested_quantity=requested_quantity,
+                purchased_quantity=purchased_quantity,
+                money_before=100,
+                money_after=100 - expected_price * purchased_quantity,
+                inventory_quantity_before=7,
+                inventory_quantity_after=7 + purchased_quantity,
+                reason="Exact bounded conservation.",
+            )
+            assert evidence.purchased_quantity == purchased_quantity
+            assert evidence.money_after is not None
+            assert evidence.inventory_quantity_after is not None
+
+            for field, wrong_value in (
+                ("money_after", evidence.money_after - 1),
+                ("inventory_quantity_after", evidence.inventory_quantity_after + 1),
+            ):
+                with pytest.raises(ValueError, match="known purchase"):
+                    PurchaseEvidence.model_validate(
+                        {**evidence.model_dump(mode="python"), field: wrong_value}
+                    )
 
 
 def test_one_purchase_intent_transfers_its_bounded_quantity(
@@ -421,6 +497,79 @@ def test_one_purchase_intent_transfers_its_bounded_quantity(
                 and item.button is MouseButton.RIGHT
             ]
         ) == 3
+
+    asyncio.run(scenario())
+
+
+def test_purchase_conservation_follows_the_open_inventory_owner_in_a_group(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, _ = purchase_environment(
+            tmp_path,
+            stock=1,
+            group_selection=True,
+        )
+        await environment.reset()
+
+        transition = await environment.step(_purchase(quantity=1))
+
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.purchase
+        assert evidence is not None
+        assert evidence.status is PurchaseStatus.PURCHASED
+        assert evidence.selected_character_id == "character-bark"
+        assert evidence.inventory_quantity_before == 0
+        assert evidence.inventory_quantity_after == 1
+        assert telemetry.carried == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("unit_price", "charged_unit_price", "expected_status"),
+    [
+        (43, 43, PurchaseStatus.PURCHASED),
+        (0, 0, PurchaseStatus.PURCHASED),
+        (43, 42, PurchaseStatus.OUTCOME_UNKNOWN),
+        (0, 1, PurchaseStatus.OUTCOME_UNKNOWN),
+    ],
+)
+def test_vendor_acquisition_conserves_the_exact_quoted_charge(
+    tmp_path: Path,
+    unit_price: int,
+    charged_unit_price: int,
+    expected_status: PurchaseStatus,
+) -> None:
+    async def scenario() -> None:
+        action = _purchase(quantity=1, expected_price=unit_price)
+        environment, _, controller = purchase_environment(
+            tmp_path,
+            stock=1,
+            unit_price=unit_price,
+            charged_unit_price=charged_unit_price,
+        )
+        environment._PURCHASE_OBSERVATION_TIMEOUT_SECONDS = 0.02
+        await environment.reset()
+        transition = await environment.step(action)
+
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.purchase
+        assert evidence is not None
+        assert evidence.status is expected_status
+        assert evidence.purchased_quantity == (
+            1 if expected_status is PurchaseStatus.PURCHASED else 0
+        )
+        assert (
+            len(
+                [
+                    primitive
+                    for primitive in controller.actions
+                    if isinstance(primitive, ClickAction) and primitive.button is MouseButton.RIGHT
+                ]
+            )
+            == 1
+        )
 
     asyncio.run(scenario())
 

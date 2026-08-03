@@ -538,7 +538,20 @@ def test_window_ownership_requires_positive_vendor_evidence_and_squad_wins() -> 
     ]
 
     assert observation.window_owners() == {
-        "shared": {"belongs_to": "you"},
+        "shared": {"belongs_to": "you", "owner_id": "player"},
+    }
+
+
+def test_duplicate_squad_window_names_fail_closed() -> None:
+    observation = _rich_observation(item_control_count=0)
+    assert observation.telemetry is not None
+    observation.telemetry.squad = [
+        CharacterState(id="first", name="Shared"),
+        CharacterState(id="second", name="shared"),
+    ]
+
+    assert observation.window_owners()["shared"] == {
+        "belongs_to": "ambiguous",
     }
 
 

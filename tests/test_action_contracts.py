@@ -1444,10 +1444,22 @@ def test_map_travel_cannot_bind_the_exact_current_town_after_gate_entry() -> Non
 
 class TestAffordancesAreAdvertised:
     def test_digest_reports_available_semantics_and_exact_targets(self) -> None:
+        actor = CharacterState(id="entity-player", name="Player", selected=True)
         state = observation(
             entities=[vendor()],
             controls=[VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))],
             capabilities=[*APPROACH_CAPABILITIES, "ui.visible_controls"],
+            squad=[actor],
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+                visible_controls=[
+                    VisibleUIControl(label="Trade", role="button", bounds=_bounds(0.5))
+                ],
+                selected_character_id=actor.id,
+                selected_character_ids=[actor.id],
+            ),
         )
         offers = offered_affordances(state)
         kinds = {offer.operation_kind for offer in offers}
@@ -1718,7 +1730,22 @@ class TestPurchaseSafety:
         state = observation(
             entities=[seller],
             controls=[cell, our_cell],
-            capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
+            capabilities=[
+                "ui.visible_controls",
+                "ui.tooltip",
+                "ui.inventory",
+                "nearby.shop_owners",
+                "squad.basic",
+                "squad.inventory",
+            ],
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    inventory_complete=True,
+                )
+            ],
         )
         telemetry = state.telemetry
         assert telemetry is not None
@@ -1730,6 +1757,9 @@ class TestPurchaseSafety:
                         "ui": telemetry.ui.model_copy(
                             update={
                                 "active_screen": "trade",
+                                "open_inventory_windows": 2,
+                                "selected_character_id": "entity-hep",
+                                "selected_character_ids": ["entity-hep"],
                                 "tooltip_visible": tooltip_visible,
                                 "tooltip_text": tooltip,
                                 "tooltip_source_bounds": source,
@@ -1922,6 +1952,15 @@ class TestPurchaseUsesExportedCellFacts:
             cell_list = controls
         else:
             cell_list = [cell]
+        cell_list = [
+            *cell_list,
+            VisibleUIControl(
+                label="HEP",
+                role="text",
+                window="HEP",
+                bounds=_bounds(0.2),
+            ),
+        ]
         seller = NearbyEntity(
             id="entity-barman",
             name="Barman",
@@ -1935,7 +1974,22 @@ class TestPurchaseUsesExportedCellFacts:
         state = observation(
             entities=[seller],
             controls=cell_list,
-            capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
+            capabilities=[
+                "ui.visible_controls",
+                "ui.tooltip",
+                "ui.inventory",
+                "nearby.shop_owners",
+                "squad.basic",
+                "squad.inventory",
+            ],
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    inventory_complete=True,
+                )
+            ],
         )
         telemetry = state.telemetry
         assert telemetry is not None
@@ -1944,7 +1998,14 @@ class TestPurchaseUsesExportedCellFacts:
                 "telemetry": telemetry.model_copy(
                     update={
                         "active_shop_trader_count": 1,
-                        "ui": telemetry.ui.model_copy(update={"active_screen": "trade"}),
+                        "ui": telemetry.ui.model_copy(
+                            update={
+                                "active_screen": "trade",
+                                "open_inventory_windows": 2,
+                                "selected_character_id": "entity-hep",
+                                "selected_character_ids": ["entity-hep"],
+                            }
+                        ),
                     }
                 )
             },
@@ -2137,10 +2198,31 @@ class TestPurchaseBindingCarriesCellFacts:
             distance=3.0,
             conscious=True,
         )
+        player_window = VisibleUIControl(
+            label="HEP",
+            role="text",
+            window="HEP",
+            bounds=_bounds(0.2),
+        )
         state = observation(
             entities=[seller],
-            controls=[cell],
-            capabilities=["ui.visible_controls", "ui.tooltip", "nearby.shop_owners"],
+            controls=[cell, player_window],
+            capabilities=[
+                "ui.visible_controls",
+                "ui.tooltip",
+                "ui.inventory",
+                "nearby.shop_owners",
+                "squad.basic",
+                "squad.inventory",
+            ],
+            squad=[
+                CharacterState(
+                    id="entity-hep",
+                    name="Hep",
+                    selected=True,
+                    inventory_complete=True,
+                )
+            ],
         )
         telemetry = state.telemetry
         assert telemetry is not None
@@ -2149,7 +2231,14 @@ class TestPurchaseBindingCarriesCellFacts:
                 "telemetry": telemetry.model_copy(
                     update={
                         "active_shop_trader_count": 1,
-                        "ui": telemetry.ui.model_copy(update={"active_screen": "trade"}),
+                        "ui": telemetry.ui.model_copy(
+                            update={
+                                "active_screen": "trade",
+                                "open_inventory_windows": 2,
+                                "selected_character_id": "entity-hep",
+                                "selected_character_ids": ["entity-hep"],
+                            }
+                        ),
                     }
                 )
             },

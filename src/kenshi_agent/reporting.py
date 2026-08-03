@@ -175,10 +175,12 @@ def describe_action(action: Action) -> str:
     if kind == "purchase_item":
         quantity = cast(int, values["quantity"])
         item_name = cast(str, values["item_name"])
+        free = cast(int, values["expected_price"]) == 0
+        verb = "Picking up" if free else "Buying"
         return _spoken_sentence(
-            f"Buying {quantity} {item_name}"
+            f"{verb} {quantity} {item_name}"
             if quantity > 1
-            else f"Buying {item_name}"
+            else f"{verb} {item_name}"
         )
     if kind == "dismiss_screen":
         return "Closing the current screen."
@@ -231,19 +233,20 @@ def describe_receipt(receipt: ActionReceipt) -> str:
         return "I couldn't get a clear camera view."
     if semantic is not None and semantic.purchase is not None:
         purchase = semantic.purchase
+        free = purchase.expected_price == 0
         if purchase.status is PurchaseStatus.PURCHASED:
             return (
-                f"Bought {purchase.purchased_quantity} "
+                f"{'Picked up' if free else 'Bought'} {purchase.purchased_quantity} "
                 f"{purchase.item_name}."
             )
         if purchase.status is PurchaseStatus.PARTIALLY_PURCHASED:
             return (
-                f"Bought {purchase.purchased_quantity} of "
+                f"{'Picked up' if free else 'Bought'} {purchase.purchased_quantity} of "
                 f"{purchase.requested_quantity} {purchase.item_name}."
             )
         if purchase.status is PurchaseStatus.NOT_PURCHASED:
-            return "Nothing was purchased."
-        return "I couldn't verify the last purchase."
+            return "Nothing was acquired."
+        return "I couldn't verify the last acquisition."
     if semantic is not None and semantic.sale is not None:
         sale = semantic.sale
         if sale.status is SaleStatus.SOLD:

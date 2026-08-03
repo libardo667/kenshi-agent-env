@@ -39,6 +39,7 @@ from .models import (
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
+    CharacterState,
     CollectResourceOutputAction,
     CommandWorldTargetAction,
     Condition,
@@ -222,6 +223,9 @@ class ReferenceBinding:
     bound: bool
     reason: str
     target_id: str | None = None
+    # Exact squad member whose open inventory owns the carried side of this
+    # interaction. Derived from the window caption, never selection ordering.
+    inventory_owner_id: str | None = None
     resolved_label: str | None = None
     resolved_role: str | None = None
     resolved_bounds: NormalizedPointerBounds | None = None
@@ -242,6 +246,58 @@ class ReferenceBinding:
 
 def _unbound(reason: str) -> ReferenceBinding:
     return ReferenceBinding(bound=False, reason=reason)
+
+
+def _selected_player_window_owner(
+    observation: Observation,
+    window: str,
+) -> tuple[CharacterState | None, str | None]:
+    """Resolve one player window to its exact currently selected squad owner."""
+
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return None, "No telemetry is available to establish window ownership."
+    owner = observation.window_owners().get(normalize_control_label(window), {})
+    if owner.get("belongs_to") != "you" or not owner.get("owner_id"):
+        return (
+            None,
+            f"Window {window!r} does not resolve to one exact squad inventory owner.",
+        )
+    owner_id = str(owner["owner_id"])
+    character = next(
+        (candidate for candidate in telemetry.squad if candidate.id == owner_id),
+        None,
+    )
+    if (
+        character is None
+        or character.selected is not True
+        or owner_id not in telemetry.ui.selected_character_ids
+    ):
+        return (
+            None,
+            f"The exact owner of window {window!r} is not in the current selection.",
+        )
+    return character, None
+
+
+def _single_selected_player_inventory_owner(
+    observation: Observation,
+) -> tuple[CharacterState | None, str | None]:
+    """Resolve the one player-owned inventory paired with an open trade."""
+
+    owners = observation.window_owners()
+    player_windows = [
+        caption
+        for caption in observation.open_window_captions()
+        if owners.get(normalize_control_label(caption), {}).get("belongs_to") == "you"
+    ]
+    if len(player_windows) != 1:
+        return (
+            None,
+            "Trade delivery requires one exact player-owned inventory window; "
+            f"observed {len(player_windows)}.",
+        )
+    return _selected_player_window_owner(observation, player_windows[0])
 
 
 def _world_interface_error(observation: Observation) -> str | None:
@@ -1426,7 +1482,7 @@ def _bind_item_cell(
         control.selected_inventory_accepts_item is not True for control in matches
     ):
         return _unbound(
-            f"The selected character's inventory does not explicitly accept "
+            f"The open player inventory does not explicitly accept "
             f"{item_name or cell_label!r}; the transfer cannot be authorized."
         )
 
@@ -1583,15 +1639,23 @@ def bind_purchase_item(
             f"Window {action.window!r} is not the seller's own inventory "
             f"({seller.name!r}); the cell is not the shop's stock."
         )
+    recipient, recipient_error = _single_selected_player_inventory_owner(
+        observation
+    )
+    if recipient is None:
+        assert recipient_error is not None
+        return _unbound(recipient_error)
 
     return ReferenceBinding(
         bound=True,
         reason=(
             f"Bound {action.item_name!r} to seller-owned cell "
             f"{cell.resolved_label!r} for seller {action.seller_id} at a "
-            f"checked price of c.{action.expected_price}."
+            f"checked price of c.{action.expected_price}, delivered to the "
+            f"exact open inventory owned by {recipient.name!r}."
         ),
         target_id=action.seller_id,
+        inventory_owner_id=recipient.id,
         resolved_label=cell.resolved_label,
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
@@ -1613,13 +1677,12 @@ def bind_sell_item(
     action: Action,
     observation: Observation,
 ) -> ReferenceBinding:
-    """Bind a sale to a cell in the *selected character's own* inventory.
+    """Bind a sale to a cell in one exact selected squad-owned inventory.
 
     The one thing that must not be got wrong here is whose item is being sold.
     A trade screen shows two inventories side by side, and the cell ordinals run
-    across both, so "cell 12" alone is not a reference. The window caption must
-    match the selected character's own name, which is observed rather than
-    asserted; anything else - including the trader's window - fails closed.
+    across both, so "cell 12" alone is not a reference. The window caption owns
+    actor identity; primary selection and squad ordering cannot replace it.
     """
 
     if not isinstance(action, SellItemAction):
@@ -1630,21 +1693,10 @@ def bind_sell_item(
     if observation.telemetry_stale:
         return _unbound("Telemetry is stale, so the sale cannot be bound.")
 
-    selected = next(
-        (character for character in telemetry.squad if character.selected),
-        None,
-    )
-    if selected is None or not selected.name:
-        return _unbound(
-            "No single selected character is named, so ownership of the cell "
-            "cannot be established."
-        )
-    if not _window_belongs_to(action.window, selected.name):
-        return _unbound(
-            f"Window {action.window!r} is not the selected character's own "
-            f"inventory ({selected.name!r}); selling from another owner's window "
-            "is not permitted."
-        )
+    owner, owner_error = _selected_player_window_owner(observation, action.window)
+    if owner is None:
+        assert owner_error is not None
+        return _unbound(owner_error)
 
     cell = _bind_item_cell(action.cell_label, observation, window=action.window)
     if not cell.bound:
@@ -1677,10 +1729,11 @@ def bind_sell_item(
     return ReferenceBinding(
         bound=True,
         reason=(
-            f"Bound to cell {cell.resolved_label!r} in {selected.name!r}'s own "
+            f"Bound to cell {cell.resolved_label!r} in {owner.name!r}'s own "
             f"inventory, holding {action.item_name!r}, sold to {action.buyer_id}."
         ),
         target_id=action.buyer_id,
+        inventory_owner_id=owner.id,
         resolved_label=cell.resolved_label,
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
@@ -1722,20 +1775,10 @@ def bind_equip_item(
             "also open this same right-click sells the item instead."
         )
 
-    selected = next(
-        (character for character in telemetry.squad if character.selected),
-        None,
-    )
-    if selected is None or not selected.name:
-        return _unbound(
-            "No single selected character is named, so ownership of the cell "
-            "cannot be established."
-        )
-    if not _window_belongs_to(action.window, selected.name):
-        return _unbound(
-            f"Window {action.window!r} is not the selected character's own "
-            f"inventory ({selected.name!r})."
-        )
+    owner, owner_error = _selected_player_window_owner(observation, action.window)
+    if owner is None:
+        assert owner_error is not None
+        return _unbound(owner_error)
 
     cell = _bind_item_cell(action.cell_label, observation, window=action.window)
     if not cell.bound:
@@ -1747,8 +1790,9 @@ def bind_equip_item(
         bound=True,
         reason=(
             f"Bound to cell {cell.resolved_label!r} holding {action.item_name!r} in "
-            f"{selected.name!r}'s own inventory, with no trade open."
+            f"{owner.name!r}'s own inventory, with no trade open."
         ),
+        inventory_owner_id=owner.id,
         resolved_label=cell.resolved_label,
         resolved_role=cell.resolved_role,
         resolved_bounds=cell.resolved_bounds,
@@ -2297,9 +2341,20 @@ class ActionContract:
         return control_mode in self.allowed_control_modes
 
     def is_currently_authorable(self, observation: Observation | None) -> bool:
-        if observation is None or self.authorable_when is None:
+        if observation is None:
             return True
-        return self.authorable_when(observation)
+        telemetry = observation.telemetry
+        if self.selection_requirement is not SelectionRequirement.NONE:
+            if telemetry is None or observation.telemetry_stale:
+                return False
+            selected_ids = telemetry.ui.selected_character_ids
+            primary_id = telemetry.ui.selected_character_id
+            if self.selection_requirement is SelectionRequirement.EXACTLY_ONE:
+                if len(selected_ids) != 1 or primary_id != selected_ids[0]:
+                    return False
+            elif not selected_ids or primary_id not in selected_ids:
+                return False
+        return self.authorable_when is None or self.authorable_when(observation)
 
 
 def _bounded_trade_quantity(action: Action) -> int:
@@ -3022,18 +3077,21 @@ DISMISS_SCREEN_CONTRACT = ActionContract(
 
 PURCHASE_ITEM_CONTRACT = ActionContract(
     kind="purchase_item",
-    version="2.0",
+    version="2.2",
     model=PurchaseItemAction,
     summary=(
-        "Buy a bounded quantity of one item from exact seller-owned cells. The "
-        "controller rebinds each unit and proves purse loss plus carried gain."
+        "Acquire a bounded quantity of one item from exact seller-owned cells. "
+        "The controller binds the exact open player-window owner, rebinds each "
+        "unit, and proves that owner's carried gain against the exact quoted "
+        "charge, including a zero-cost transfer."
     ),
     argument_source=(
         "cell_label, item_name, expected_price and window come from one "
         "visible_controls item entry; seller_id is the exact stable id of that "
         "vendor group; quantity is the useful bounded amount, 1-5. "
-        "expected_price must equal that entry's buy_price exactly; sell_price "
-        "is what a trader pays you and is rejected here."
+        "expected_price must equal that entry's nonnegative buy_price exactly; "
+        "zero means free. sell_price is what a trader pays you and is rejected "
+        "here."
     ),
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(
@@ -3047,6 +3105,7 @@ PURCHASE_ITEM_CONTRACT = ActionContract(
             "nearby.characters",
             "nearby.shop_owners",
             "squad.basic",
+            "squad.inventory",
         }
     ),
     capability_aliases=frozenset(),
@@ -3263,16 +3322,17 @@ SCROLL_SCREEN_CONTRACT = ActionContract(
 
 SELL_ITEM_CONTRACT = ActionContract(
     kind="sell_item",
-    version="2.0",
+    version="2.1",
     model=SellItemAction,
     summary=(
-        "Sell a bounded quantity from the selected character's own inventory. "
-        "The controller rebinds every unit and proves carried loss plus purse gain."
+        "Sell a bounded quantity from the exact observed player-window owner. "
+        "The controller rebinds every unit and proves that owner's carried loss "
+        "plus purse gain."
     ),
     argument_source=(
         "cell_label from a visible_controls entry with role 'item'; window must "
-        "be the selected character's own name; item_name copied from that "
-        "cell's own entry; buyer_id the exact stable id of the one active shop "
+        "resolve to one selected squad member's own name; item_name copied from "
+        "that cell's own entry; buyer_id the exact stable id of the one active shop "
         "owner; quantity is the useful bounded amount, 1-5. No price is given: "
         "the shop's offer is not exported."
     ),
@@ -3307,17 +3367,17 @@ SELL_ITEM_CONTRACT = ActionContract(
 
 EQUIP_ITEM_CONTRACT = ActionContract(
     kind="equip_item",
-    version="1.0",
+    version="1.1",
     model=EquipItemAction,
     summary=(
-        "Equip the item in one cell of the selected character's own inventory. "
+        "Equip the item in one exact selected squad-owned inventory window. "
         "Refused while any trade is open, because there the same right-click "
         "sells the item instead."
     ),
     argument_source=(
         "cell_label from a visible_controls entry with role 'item'; window must "
-        "be the selected character's own name; item_name copied from that "
-        "cell's own entry."
+        "resolve to one selected squad member's own name; item_name copied from "
+        "that cell's own entry."
     ),
     allowed_control_modes=frozenset({ControlMode.INTERFACE_ONLY, ControlMode.NATIVE_ASSISTED}),
     required_capabilities=frozenset(

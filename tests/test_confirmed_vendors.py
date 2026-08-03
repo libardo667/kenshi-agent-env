@@ -10,6 +10,7 @@ Mercenaries, and Holy Citizens.
 from __future__ import annotations
 
 from kenshi_agent.models import (
+    CharacterState,
     Disposition,
     NearbyEntity,
     UIState,
@@ -154,6 +155,7 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
 
     from kenshi_agent.models import Observation, TelemetrySnapshot
 
+    actor = CharacterState(id="entity-player", name="Player", selected=True)
     observation = Observation(
         run_id="digest-test",
         step_index=0,
@@ -171,7 +173,10 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
                 active_screen="world",
                 modal_open=False,
                 dialogue_open=False,
+                selected_character_id=actor.id,
+                selected_character_ids=[actor.id],
             ),
+            squad=[actor],
             nearby_entities=[
                 barman(distance=26.0),
                 entity("Mercenary Captain", is_animal=False, has_vendor_list=False,

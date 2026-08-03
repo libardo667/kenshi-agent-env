@@ -8,10 +8,18 @@ from kenshi_agent.models import (
     ControlMode,
     PauseAction,
     PlannerDecision,
+    PurchaseEvidence,
     PurchaseItemAction,
+    PurchaseStatus,
+    SemanticActionReceipt,
     SkillAction,
 )
-from kenshi_agent.reporting import ConsoleDecisionReporter, format_action
+from kenshi_agent.reporting import (
+    ConsoleDecisionReporter,
+    describe_action,
+    describe_receipt,
+    format_action,
+)
 
 
 class RecordingNarrator:
@@ -104,6 +112,49 @@ def test_console_reporter_streams_decision_and_receipt() -> None:
     assert "entity-technical-identifier" not in spoken
     assert "seller-cell-9" not in spoken
     assert "purchase_item" not in spoken
+
+
+def test_free_vendor_acquisition_is_narrated_as_pickup_not_spending() -> None:
+    action = PurchaseItemAction(
+        cell_label="wanted-poster",
+        item_name="WANTED: The Red Bandit",
+        expected_price=0,
+        window="BARMAN",
+        seller_id="entity-barman",
+    )
+    started = datetime.now(UTC)
+    receipt = ActionReceipt(
+        action=action,
+        accepted=True,
+        executed=True,
+        dry_run=False,
+        started_at=started,
+        finished_at=started,
+        primitive_actions=2,
+        semantic=SemanticActionReceipt(
+            action_kind="purchase_item",
+            contract_version="2.1",
+            revalidation="Rebound the exact free seller-owned cell.",
+            purchase=PurchaseEvidence(
+                status=PurchaseStatus.PURCHASED,
+                seller_id="entity-barman",
+                selected_character_id="entity-player",
+                item_name="WANTED: The Red Bandit",
+                expected_price=0,
+                requested_quantity=1,
+                purchased_quantity=1,
+                money_before=100,
+                money_after=100,
+                inventory_quantity_before=0,
+                inventory_quantity_after=1,
+                observed_after_sequence=2,
+                reason="Conserved the free acquisition.",
+            ),
+        ),
+    )
+
+    assert describe_action(action) == "Picking up WANTED: The Red Bandit."
+    assert describe_receipt(receipt) == "Picked up 1 WANTED: The Red Bandit."
 
 
 def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:

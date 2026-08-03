@@ -1249,6 +1249,7 @@ def generic_purchase_observation() -> Observation:
                 "nearby.characters",
                 "nearby.shop_owners",
                 "squad.basic",
+                "squad.inventory",
             ],
             game=GameState(loaded=True, paused=True, money=1000),
             ui=UIState(
@@ -1259,6 +1260,17 @@ def generic_purchase_observation() -> Observation:
                 tooltip_text="Dried Meat\n[Food]\nValue: c.38",
                 tooltip_source_bounds=bounds,
                 visible_controls=[
+                    VisibleUIControl(
+                        label="HEP",
+                        role="text",
+                        window="HEP",
+                        bounds=NormalizedPointerBounds(
+                            min_x=0.10,
+                            max_x=0.14,
+                            min_y=0.20,
+                            max_y=0.24,
+                        ),
+                    ),
                     VisibleUIControl(
                         label="item_3",
                         role="item",
@@ -1274,6 +1286,7 @@ def generic_purchase_observation() -> Observation:
                     id="player:1",
                     name="Hep",
                     selected=True,
+                    inventory_complete=True,
                 )
             ],
             nearby_entities=[
@@ -1396,11 +1409,11 @@ def test_generic_purchase_limits_are_inclusive_and_independent() -> None:
             {},
             {
                 "telemetry": observation.telemetry.model_copy(
-                    update={
-                        "ui": observation.telemetry.ui.model_copy(
-                            update={"selected_character_id": None}
-                        )
-                    }
+                        update={
+                            "ui": observation.telemetry.ui.model_copy(
+                                update={"selected_character_ids": []}
+                            )
+                        }
                 )
             },
         ),
@@ -1410,6 +1423,41 @@ def test_generic_purchase_limits_are_inclusive_and_independent() -> None:
                 generic_purchase_config().model_copy(update=config_update),
                 MacroRegistry({}),
             ).validate(action, observation.model_copy(update=observation_update))
+
+
+def test_generic_purchase_budget_uses_the_bound_window_owner_in_a_group() -> None:
+    observation = generic_purchase_observation()
+    assert observation.telemetry is not None
+    plant = CharacterState(
+        id="player:2",
+        name="Plant",
+        selected=True,
+        inventory_complete=True,
+    )
+    grouped = observation.model_copy(
+        update={
+            "telemetry": observation.telemetry.model_copy(
+                update={
+                    "squad": [plant, *observation.telemetry.squad],
+                    "ui": observation.telemetry.ui.model_copy(
+                        update={
+                            "selected_character_id": plant.id,
+                            "selected_character_ids": ["player:1", plant.id],
+                        }
+                    ),
+                }
+            )
+        },
+        deep=True,
+    )
+
+    assert (
+        ActionGuard(generic_purchase_config(), MacroRegistry({})).validate(
+            generic_purchase_action(),
+            grouped,
+        )
+        == generic_purchase_action()
+    )
 
 
 def test_generic_purchase_marker_requires_real_tooltip_text() -> None:

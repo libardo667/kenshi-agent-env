@@ -1101,9 +1101,7 @@ def _trade_observation(*, selected_name: str = "HEP") -> Observation:
             window=window,
             item_name=name,
             item_base_value=value,
-            bounds=NormalizedPointerBounds(
-                min_x=0.1, min_y=0.1, max_x=0.15, max_y=0.15
-            ),
+            bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.15, max_y=0.15),
         )
 
     base = observation()
@@ -1123,9 +1121,7 @@ def _trade_observation(*, selected_name: str = "HEP") -> Observation:
                         "nearby.characters",
                         "nearby.shop_owners",
                     ],
-                    "squad": [
-                        CharacterState(id="c-hep", name=selected_name, selected=True)
-                    ],
+                    "squad": [CharacterState(id="c-hep", name=selected_name, selected=True)],
                     "active_shop_trader_count": 1,
                     "nearby_entities": [
                         NearbyEntity(
@@ -1137,10 +1133,14 @@ def _trade_observation(*, selected_name: str = "HEP") -> Observation:
                     ],
                     "ui": telemetry.ui.model_copy(
                         update={
+                            "active_screen": "trade",
+                            "open_inventory_windows": 2,
+                            "selected_character_id": "c-hep",
+                            "selected_character_ids": ["c-hep"],
                             "visible_controls": [
                                 cell("HEP", 0, "Iron Club", 240),
                                 cell("BARMAN", 1, "Foodcube", 60),
-                            ]
+                            ],
                         }
                     ),
                 }
@@ -1162,6 +1162,7 @@ def test_selling_binds_to_our_own_inventory_cell() -> None:
     binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
     assert binding.bound
     assert binding.target_id == "e-barman"
+    assert binding.inventory_owner_id == "c-hep"
 
 
 def test_selling_refuses_a_cell_in_the_traders_window() -> None:
@@ -1178,7 +1179,7 @@ def test_selling_refuses_a_cell_in_the_traders_window() -> None:
     )
     binding = SELL_ITEM_CONTRACT.bind(action, _trade_observation())
     assert not binding.bound
-    assert "not the selected character's own inventory" in binding.reason
+    assert "does not resolve to one exact squad inventory owner" in binding.reason
 
 
 def test_selling_refuses_when_the_cell_holds_something_else() -> None:
@@ -1235,9 +1236,7 @@ def test_equipping_binds_with_no_trade_open() -> None:
             "telemetry": telemetry.model_copy(
                 update={
                     "nearby_entities": [],
-                    "ui": telemetry.ui.model_copy(
-                        update={"open_inventory_windows": 1}
-                    ),
+                    "ui": telemetry.ui.model_copy(update={"open_inventory_windows": 1}),
                 }
             )
         }
@@ -1246,6 +1245,7 @@ def test_equipping_binds_with_no_trade_open() -> None:
     action = EquipItemAction(cell_label="item_0", item_name="Iron Club", window="HEP")
     binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
     assert binding.bound
+    assert binding.inventory_owner_id == "c-hep"
     assert "no trade open" in binding.reason
 
 
@@ -1259,11 +1259,7 @@ def test_equipping_refuses_another_owners_window() -> None:
     no_trade = base.model_copy(
         update={
             "telemetry": telemetry.model_copy(
-                update={
-                    "ui": telemetry.ui.model_copy(
-                        update={"open_inventory_windows": 1}
-                    )
-                }
+                update={"ui": telemetry.ui.model_copy(update={"open_inventory_windows": 1})}
             )
         }
     )
@@ -1271,7 +1267,7 @@ def test_equipping_refuses_another_owners_window() -> None:
     action = EquipItemAction(cell_label="item_1", item_name="Foodcube", window="BARMAN")
     binding = EQUIP_ITEM_CONTRACT.bind(action, no_trade)
     assert not binding.bound
-    assert "own inventory" in binding.reason
+    assert "one exact squad inventory owner" in binding.reason
 
 
 def test_price_separates_cells_that_share_a_name() -> None:
@@ -1298,9 +1294,7 @@ def test_price_separates_cells_that_share_a_name() -> None:
             window="BARMAN",
             item_name="Tooth Pick",
             item_base_value=value,
-            bounds=NormalizedPointerBounds(
-                min_x=0.3, min_y=y, max_x=0.34, max_y=y + 0.04
-            ),
+            bounds=NormalizedPointerBounds(min_x=0.3, min_y=y, max_x=0.34, max_y=y + 0.04),
         )
 
     base = observation()
@@ -1324,15 +1318,31 @@ def test_price_separates_cells_that_share_a_name() -> None:
                             shop_inventory_owner=True,
                         )
                     ],
+                    "squad": [CharacterState(id="c-hep", name="Hep", selected=True)],
                     "ui": telemetry.ui.model_copy(
                         update={
+                            "active_screen": "trade",
+                            "open_inventory_windows": 2,
+                            "selected_character_id": "c-hep",
+                            "selected_character_ids": ["c-hep"],
                             "visible_controls": [
+                                VisibleUIControl(
+                                    label="HEP",
+                                    role="text",
+                                    window="HEP",
+                                    bounds=NormalizedPointerBounds(
+                                        min_x=0.1,
+                                        min_y=0.1,
+                                        max_x=0.15,
+                                        max_y=0.15,
+                                    ),
+                                ),
                                 pick(809, 0.18),
                                 pick(390, 0.23),
                                 pick(809, 0.28),
                                 pick(390, 0.33),
                                 pick(390, 0.38),
-                            ]
+                            ],
                         }
                     ),
                 }
@@ -1562,6 +1572,12 @@ def _purchase_guard_state(*, paused: bool):
         item_base_value=38,
         bounds=NormalizedPointerBounds(min_x=0.3, min_y=0.2, max_x=0.34, max_y=0.24),
     )
+    player_window = VisibleUIControl(
+        label="HEP",
+        role="text",
+        window="HEP",
+        bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.15, max_y=0.15),
+    )
     return Observation(
         run_id="guard",
         step_index=0,
@@ -1572,17 +1588,26 @@ def _purchase_guard_state(*, paused: bool):
             captured_at=datetime.now(UTC),
             identity_session_id="sess-1",
             capabilities=[
-                "ui.visible_controls", "ui.tooltip", "ui.inventory", "game.money",
-                "game.pause", "identity.stable_handles", "nearby.characters",
-                "nearby.shop_owners", "squad.inventory", "squad.basic",
+                "ui.visible_controls",
+                "ui.tooltip",
+                "ui.inventory",
+                "game.money",
+                "game.pause",
+                "identity.stable_handles",
+                "nearby.characters",
+                "nearby.shop_owners",
+                "squad.inventory",
+                "squad.basic",
             ],
             game=GameState(loaded=True, paused=paused, money=1000),
             squad=[CharacterState(id="c-hep", name="Hep", selected=True)],
             active_shop_trader_count=1,
             nearby_entities=[
                 NearbyEntity(
-                    id="e-barman", name="Barman",
-                    disposition=Disposition.NEUTRAL, shop_inventory_owner=True,
+                    id="e-barman",
+                    name="Barman",
+                    disposition=Disposition.NEUTRAL,
+                    shop_inventory_owner=True,
                 )
             ],
             ui=UIState(
@@ -1590,7 +1615,7 @@ def _purchase_guard_state(*, paused: bool):
                 open_inventory_windows=2,
                 selected_character_ids=["c-hep"],
                 selected_character_id="c-hep",
-                visible_controls=[cell],
+                visible_controls=[player_window, cell],
             ),
         ),
         telemetry_stale=False,

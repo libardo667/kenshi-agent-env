@@ -36,7 +36,7 @@ INVENTORY
         -> Use open_inventory_windows as the exact count. active_screen is a collapsed label: inventory means no observed shop-owner window, while trade means one exact registered shop-owner window is open.
   ok  navigate  Reach cells that are scrolled out of view or in another section.  [control: scroll_screen]
   ok  interact  Read what an item actually is.  [native: telemetry.ui.visible_controls[item].item_name]
-  ok  interact  Equip an item from the selected character's own inventory.  [control: equip_item]
+  ok  interact  Equip an item from one exact selected squad-owned inventory window.  [control: equip_item]
         -> The equip route is contracted and portable-tested from observed live semantics; moving between sections and dropping still need drag-and-drop.
   ok  exit      Close the inventory window.  [control: dismiss_screen]
 

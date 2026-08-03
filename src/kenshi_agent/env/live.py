@@ -2050,6 +2050,7 @@ class LiveEnvironment(AgentEnvironment):
             seller_id=action.seller_id,
             selected_character_id=outcome.selected_character_id,
             item_name=action.item_name,
+            expected_price=action.expected_price,
             requested_quantity=action.quantity,
             purchased_quantity=outcome.completed_quantity,
             money_before=outcome.money_before,
@@ -2069,8 +2070,8 @@ class LiveEnvironment(AgentEnvironment):
             source_revision=outcome.initial_observation.world_revision,
             revalidation=(
                 "Re-bound the exact seller-owned item cell before every unit and "
-                "required a later matching purse loss plus selected-character "
-                "inventory gain before continuing. "
+                "required later exact window-owner inventory gain with the exact "
+                "quoted purse charge, including zero, before continuing. "
                 f"{outcome.initial_binding.reason}"
             ),
             purchase=evidence,
@@ -2098,7 +2099,7 @@ class LiveEnvironment(AgentEnvironment):
         """Name a reason this unit cannot trade, before any input is sent.
 
         A trade that binds, clicks and moves nothing used to report only "later
-        telemetry showed no purse or selected-inventory change" - a sentence
+        telemetry showed no purse or window-owner inventory change" - a sentence
         every possible cause produces, so an agent reading it learns nothing it
         can act on and neither does a reader of the log. Cells now carry their
         own price and stack size, so the resource reasons are answerable here,
@@ -2178,9 +2179,14 @@ class LiveEnvironment(AgentEnvironment):
         )
         telemetry = initial_observation.telemetry
         assert telemetry is not None
+        if initial_binding.inventory_owner_id is None:
+            raise RuntimeError(
+                "Trade contract bound no exact player inventory owner."
+            )
         selected_character_id, money_before, inventory_before = self._trade_state(
             telemetry,
             action.item_name,
+            expected_character_id=initial_binding.inventory_owner_id,
         )
 
         current_money = money_before
@@ -2263,6 +2269,11 @@ class LiveEnvironment(AgentEnvironment):
             ) = await self._wait_for_trade_conservation(
                 item_name=action.item_name,
                 direction=direction,
+                quoted_unit_price=(
+                    action.expected_price
+                    if isinstance(action, PurchaseItemAction)
+                    else None
+                ),
                 selected_character_id=selected_character_id,
                 money_before=current_money,
                 inventory_before=current_inventory,
@@ -2293,9 +2304,9 @@ class LiveEnvironment(AgentEnvironment):
                         f"Conserved {completed_quantity}/{action.quantity} "
                         f"{action.item_name!r} {operation}s through matching "
                         + (
-                            "purse loss and selected-character inventory gain."
+                            "quoted charge and exact window-owner inventory gain."
                             if direction == "purchase"
-                            else "purse gain and selected-character inventory loss."
+                            else "purse gain and exact window-owner inventory loss."
                         )
                     )
                     break
@@ -2357,18 +2368,16 @@ class LiveEnvironment(AgentEnvironment):
         expected_character_id: str | None = None,
     ) -> tuple[str, int, int]:
         selected_ids = telemetry.ui.selected_character_ids
-        selected_character_id = telemetry.ui.selected_character_id
-        if (
-            len(selected_ids) != 1
-            or selected_character_id != selected_ids[0]
-            or (
-                expected_character_id is not None
-                and selected_character_id != expected_character_id
-            )
-        ):
+        if expected_character_id is None:
             raise RuntimeError(
-                "Trade conservation requires the same one exact selected character."
+                "Trade conservation requires an exact inventory-window owner."
             )
+        if expected_character_id not in selected_ids:
+            raise RuntimeError(
+                "Trade conservation requires the exact inventory-window owner "
+                "to remain selected."
+            )
+        selected_character_id = expected_character_id
         selected = [
             character
             for character in telemetry.squad
@@ -2376,7 +2385,7 @@ class LiveEnvironment(AgentEnvironment):
         ]
         if len(selected) != 1 or selected[0].inventory_complete is not True:
             raise RuntimeError(
-                "Trade conservation requires one selected character with a "
+                "Trade conservation requires the exact window owner with a "
                 "complete inventory export."
             )
         if telemetry.game.money is None:
@@ -2412,6 +2421,12 @@ class LiveEnvironment(AgentEnvironment):
         binding = contract.bind(action, observation)
         if not binding.bound or binding.resolved_bounds is None:
             return None, binding.reason, None
+        if binding.inventory_owner_id != selected_character_id:
+            return (
+                None,
+                "the exact player inventory-window owner changed between units.",
+                None,
+            )
         try:
             character_id, money, inventory = self._trade_state(
                 result.snapshot,
@@ -2427,7 +2442,7 @@ class LiveEnvironment(AgentEnvironment):
         ):
             return (
                 None,
-                "purse or selected-character inventory changed between bound units.",
+                "purse or exact window-owner inventory changed between bound units.",
                 None,
             )
         return binding, binding.reason, result.snapshot
@@ -2448,6 +2463,7 @@ class LiveEnvironment(AgentEnvironment):
         *,
         item_name: str,
         direction: Literal["purchase", "sale"],
+        quoted_unit_price: int | None,
         selected_character_id: str,
         money_before: int,
         inventory_before: int,
@@ -2507,26 +2523,56 @@ class LiveEnvironment(AgentEnvironment):
                         if direction == "purchase"
                         else "carried-item loss"
                     )
-                    if (
-                        money_delta > 0
-                        and 1 <= inventory_delta <= remaining_quantity
-                    ):
+                    if direction == "purchase":
+                        if quoted_unit_price is None:
+                            raise RuntimeError(
+                                "Purchase conservation requires the quoted unit price."
+                            )
+                        expected_money_delta = quoted_unit_price * inventory_delta
+                        conserved = (
+                            1 <= inventory_delta <= remaining_quantity
+                            and money_delta == expected_money_delta
+                        )
+                    else:
+                        expected_money_delta = None
+                        conserved = (
+                            money_delta > 0
+                            and 1 <= inventory_delta <= remaining_quantity
+                        )
+                    if conserved:
+                        if direction == "purchase":
+                            assert expected_money_delta is not None
+                            outcome = (
+                                f"Observed exact c.{money_delta} quoted charge for "
+                                f"{inventory_delta} {inventory_label} at "
+                                f"c.{quoted_unit_price} each."
+                            )
+                        else:
+                            outcome = (
+                                f"Observed c.{money_delta} {money_label} and "
+                                f"{inventory_delta} matching {inventory_label}."
+                            )
                         return (
                             "transferred",
                             money_after,
                             inventory_after,
                             result.snapshot.sequence,
-                            (
-                                f"Observed c.{money_delta} {money_label} and "
-                                f"{inventory_delta} matching {inventory_label}."
-                            ),
+                            outcome,
                         )
                     if money_delta != 0 or inventory_delta != 0:
-                        mismatch_reason = (
-                            f"{money_label} {money_delta} and {inventory_label} "
-                            f"{inventory_delta} do not conservatively match the "
-                            f"remaining bound {remaining_quantity}."
-                        )
+                        if direction == "purchase":
+                            mismatch_reason = (
+                                f"purse loss {money_delta} did not equal quoted "
+                                f"charge c.{quoted_unit_price} times carried-item "
+                                f"gain {inventory_delta}; remaining bound quantity "
+                                f"was {remaining_quantity}."
+                            )
+                        else:
+                            mismatch_reason = (
+                                f"{money_label} {money_delta} and {inventory_label} "
+                                f"{inventory_delta} do not conservatively match the "
+                                f"remaining bound {remaining_quantity}."
+                            )
                     else:
                         refusal = causally_new_game_message(
                             result.snapshot,
@@ -2557,7 +2603,7 @@ class LiveEnvironment(AgentEnvironment):
                         latest[0],
                         latest[1],
                         latest[2],
-                        "later telemetry showed no purse or selected-inventory change.",
+                        "later telemetry showed no purse or window-owner inventory change.",
                     )
                 return (
                     "outcome_unknown",
@@ -3330,9 +3376,9 @@ class LiveEnvironment(AgentEnvironment):
             resolved_bounds=outcome.initial_binding.resolved_bounds,
             source_revision=outcome.initial_observation.world_revision,
             revalidation=(
-                "Re-bound the exact selected-character-owned item cell before "
+                "Re-bound the exact player-window-owned item cell before "
                 "every unit and required a later matching purse gain plus "
-                "selected-character inventory loss before continuing. "
+                "exact window-owner inventory loss before continuing. "
                 f"{outcome.initial_binding.reason}"
             ),
             sale=evidence,

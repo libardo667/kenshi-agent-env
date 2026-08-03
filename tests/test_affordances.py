@@ -446,6 +446,47 @@ def test_character_adapter_retains_exact_native_selection_from_a_group() -> None
     } == {bark.id, plant.id}
 
 
+def test_group_selection_exposes_selection_repair_not_exact_actor_orders() -> None:
+    bark = CharacterState(id="entity-bark", name="Bark", selected=True)
+    plant = CharacterState(id="entity-plant", name="Plant", selected=True)
+    resource = WorldTarget(
+        id="resource-copper",
+        name="Copper Resource",
+        kind="natural_resource",
+        position=Vec3(x=10, y=0, z=20),
+        distance=25,
+        context_actions=[ContextActionKind.OPERATE],
+        default_task="operate_machinery",
+    )
+    observation = _observation(
+        capabilities=[
+            "control.perform_context_action",
+            "control.produce_resource_output",
+            "control.select_squad_member",
+            "game.pause",
+            "identity.stable_handles",
+            "squad.basic",
+            "world.context_targets",
+        ],
+        squad=[bark, plant],
+        targets=[resource],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id=bark.id,
+            selected_character_ids=[bark.id, plant.id],
+        ),
+    )
+
+    operation_kinds = {
+        offer.operation_kind for offer in offered_affordances(observation)
+    }
+
+    assert "select_squad_member_exact" in operation_kinds
+    assert "perform_context_action" not in operation_kinds
+
+
 def test_screen_adapter_offers_exact_current_window_dismissal() -> None:
     bark = CharacterState(id="bark", name="Bark", selected=True)
     observation = _observation(
@@ -571,6 +612,7 @@ def test_every_named_open_screen_exposes_one_exact_close(
 
 
 def test_context_adapter_preserves_every_executable_runtime_order_without_enumeration() -> None:
+    actor = CharacterState(id="actor-1", name="Bark", selected=True)
     targets = [
         WorldTarget(
             id="resource-1",
@@ -601,7 +643,14 @@ def test_context_adapter_preserves_every_executable_runtime_order_without_enumer
             "game.pause",
             "identity.stable_handles",
         ],
-        ui=UIState(active_screen="world", dialogue_open=False, modal_open=False),
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+        ),
+        squad=[actor],
         targets=targets,
     )
     expected = {
@@ -626,6 +675,7 @@ def test_context_adapter_preserves_every_executable_runtime_order_without_enumer
 
 
 def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> None:
+    healer = CharacterState(id="squad-healer", name="Plant", selected=True)
     target = WorldTarget(
         id="squad-injured",
         name="Bark",
@@ -642,8 +692,14 @@ def test_reviewed_first_aid_context_order_uses_the_generic_native_route() -> Non
             "game.pause",
             "identity.stable_handles",
         ],
-        ui=UIState(active_screen="world", dialogue_open=False, modal_open=False),
-        squad=[CharacterState(id="squad-injured", name="Bark")],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id=healer.id,
+            selected_character_ids=[healer.id],
+        ),
+        squad=[healer, CharacterState(id="squad-injured", name="Bark")],
         targets=[target],
     )
 
@@ -740,6 +796,94 @@ def test_inventory_adapter_binds_exact_open_vendor_when_other_traders_are_loaded
     assert inventory["sell"].operation_arguments["buyer_id"] == vendor.id
 
 
+@pytest.mark.parametrize("primary_id", ["actor-bark", "actor-plant"])
+@pytest.mark.parametrize("reverse_squad_order", [False, True])
+def test_trade_affordances_follow_the_exact_player_window_owner(
+    primary_id: str,
+    reverse_squad_order: bool,
+) -> None:
+    """Selection ordering cannot silently replace an observed UI owner."""
+
+    bark = CharacterState(
+        id="actor-bark",
+        name="Bark",
+        selected=True,
+        alive=True,
+        conscious=True,
+    )
+    plant = CharacterState(
+        id="actor-plant",
+        name="Plant",
+        selected=True,
+        alive=True,
+        conscious=True,
+    )
+    vendor = NearbyEntity(
+        id="vendor-barman",
+        name="Barman",
+        disposition=Disposition.FRIENDLY,
+        shop_inventory_owner=True,
+    )
+    squad = [bark, plant]
+    if reverse_squad_order:
+        squad.reverse()
+    observation = _observation(
+        capabilities=[
+            "game.money",
+            "game.pause",
+            "identity.stable_handles",
+            "nearby.characters",
+            "nearby.shop_owners",
+            "squad.inventory",
+            "squad.basic",
+            "ui.inventory",
+            "ui.tooltip",
+            "ui.visible_controls",
+        ],
+        money=1000,
+        squad=squad,
+        nearby=[vendor],
+        active_shop_trader_count=1,
+        ui=UIState(
+            active_screen="trade",
+            open_inventory_windows=2,
+            selected_character_id=primary_id,
+            selected_character_ids=[bark.id, plant.id],
+            visible_controls=[
+                VisibleUIControl(
+                    label="vendor-cell",
+                    role="item",
+                    window="BARMAN",
+                    bounds=_bounds(1),
+                    item_name="WANTED: The Preacher",
+                    item_base_value=0,
+                    item_quantity=1,
+                ),
+                VisibleUIControl(
+                    label="actor-cell",
+                    role="item",
+                    window="BARK",
+                    bounds=_bounds(2),
+                    item_name="Copper",
+                    item_quantity=5,
+                ),
+            ],
+        ),
+    )
+
+    inventory = {
+        offer.semantic: offer
+        for offer in offered_affordances(observation)
+        if offer.source is AffordanceSource.INVENTORY
+    }
+
+    assert set(inventory) == {"buy", "sell"}
+    assert inventory["buy"].target is not None
+    assert inventory["buy"].target.label == "WANTED: The Preacher"
+    assert inventory["sell"].target is not None
+    assert inventory["sell"].target.label == "Copper"
+
+
 def test_map_adapter_offers_every_currently_travelable_exact_destination() -> None:
     actor = CharacterState(
         id="actor-1",
@@ -802,6 +946,7 @@ def test_map_adapter_offers_every_currently_travelable_exact_destination() -> No
 
 
 def test_exact_current_offer_is_the_only_action_language() -> None:
+    actor = CharacterState(id="actor-1", name="Bark", selected=True)
     target = NearbyEntity(
         id="person-1",
         name="Wanderer",
@@ -817,6 +962,14 @@ def test_exact_current_offer_is_the_only_action_language() -> None:
             "nearby.characters",
             "nearby.roles",
         ],
+        squad=[actor],
+        ui=UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+        ),
         nearby=[target],
     )
     offer = next(

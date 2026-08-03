@@ -672,7 +672,7 @@
     },
     "EquipItemAction": {
       "additionalProperties": false,
-      "description": "Equip the item in one cell of the selected character's own inventory.\n\nKenshi equips on right-click (`rightClickAutoEquipping`) - the *same*\ngesture that sells an item when a trade is open. That collision is the whole\nhazard: an equip attempted with a shop window up is a sale, and the item is\ngone before any postcondition could notice. So this action refuses outright\nunless no trade is active.",
+      "description": "Equip one item from an exact currently selected squad-owned window.\n\nKenshi equips on right-click (`rightClickAutoEquipping`) - the *same*\ngesture that sells an item when a trade is open. That collision is the whole\nhazard: an equip attempted with a shop window up is a sale, and the item is\ngone before any postcondition could notice. So this action refuses outright\nunless no trade is active.",
       "properties": {
         "kind": {
           "const": "equip_item",
@@ -1780,7 +1780,7 @@
     },
     "PurchaseItemAction": {
       "additionalProperties": false,
-      "description": "Buy a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the per-unit charge, taken from the cell's buy_price.\nThe controller rebinds interchangeable stock after each transfer and proves\nboth money loss and carried-item gain before attempting the next unit.",
+      "description": "Acquire a bounded quantity of one item from exact seller-owned cells.\n\n`expected_price` is the nonnegative per-unit charge reported as buy_price.\nZero is a real free acquisition, not missing price evidence. The controller\nrebinds interchangeable stock after each transfer and proves that carried\ngain exactly matches the quoted charge before attempting the next unit.",
       "properties": {
         "kind": {
           "const": "purchase_item",
@@ -1801,7 +1801,7 @@
           "type": "string"
         },
         "expected_price": {
-          "exclusiveMinimum": 0,
+          "minimum": 0,
           "title": "Expected Price",
           "type": "integer"
         },
@@ -2344,7 +2344,7 @@
     },
     "SellItemAction": {
       "additionalProperties": false,
-      "description": "Sell a bounded quantity from the agent's own inventory.\n\nChecked: the cell is in this character's own inventory and holds this item.",
+      "description": "Sell a bounded quantity from an exact squad-owned inventory window.\n\nChecked: the window resolves to one selected owner and its cell holds this\nitem.",
       "properties": {
         "kind": {
           "const": "sell_item",

@@ -550,7 +550,6 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
     ):
         return
     owners = observation.window_owners()
-    selected_id = telemetry.ui.selected_character_id
     open_vendor_ids = {
         str(owner["seller_id"])
         for caption in observation.open_window_captions()
@@ -598,16 +597,22 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             owner.get("belongs_to") == "vendor"
             and owner.get("seller_id")
             and control.item_base_value is not None
+            and control.item_base_value >= 0
             and purchase_quantity_max >= 1
         ):
             seller_id = str(owner["seller_id"])
+            quoted_charge = (
+                "for free"
+                if control.item_base_value == 0
+                else f"for {control.item_base_value} cats per unit"
+            )
             yield _offer(
                 observation,
                 source=AffordanceSource.INVENTORY,
                 semantic="buy",
                 description=(
-                    f"Buy {control.item_name!r} from {control.window!r} for "
-                    f"{control.item_base_value} cats per unit; current cell "
+                    f"Acquire {control.item_name!r} from {control.window!r} "
+                    f"{quoted_charge}; current cell "
                     f"quantity is {cell_quantity}."
                 ),
                 operation_kind="purchase_item",
@@ -619,7 +624,7 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                     "seller_id": seller_id,
                 },
             )
-        if owner.get("belongs_to") == "you" and selected_id:
+        if owner.get("belongs_to") == "you":
             if (
                 paired_vendor_id
                 and cell_quantity_max >= 1
@@ -1176,6 +1181,10 @@ def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
     )
 
     operation = _operation_for(offer, _sample_parameters(offer))
+    from .non_progress import unchanged_definitive_no_op_reason
+
+    if unchanged_definitive_no_op_reason(operation, observation) is not None:
+        return False
     if observation.planning_mode is PlanningMode.SINGLE_STEP:
         try:
             TypeAdapter(SingleStepRuntimeAction).validate_python(operation)

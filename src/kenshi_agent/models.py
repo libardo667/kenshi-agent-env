@@ -1654,17 +1654,18 @@ class MoveToCharacterAction(StrictModel):
 # spending gate advisory: one run declared 300 for Bread, was charged 549, and
 # tripped nothing.
 class PurchaseItemAction(StrictModel):
-    """Buy a bounded quantity of one item from exact seller-owned cells.
+    """Acquire a bounded quantity of one item from exact seller-owned cells.
 
-    `expected_price` is the per-unit charge, taken from the cell's buy_price.
-    The controller rebinds interchangeable stock after each transfer and proves
-    both money loss and carried-item gain before attempting the next unit.
+    `expected_price` is the nonnegative per-unit charge reported as buy_price.
+    Zero is a real free acquisition, not missing price evidence. The controller
+    rebinds interchangeable stock after each transfer and proves that carried
+    gain exactly matches the quoted charge before attempting the next unit.
     """
 
     kind: Literal["purchase_item"] = "purchase_item"
     cell_label: str = Field(min_length=1, max_length=80)
     item_name: str = Field(min_length=1, max_length=200)
-    expected_price: int = Field(gt=0)
+    expected_price: int = Field(ge=0)
     quantity: int = Field(default=1, ge=1, le=5)
     # Caption of the seller's own inventory window. A trade screen shows two
     # inventories whose cell ordinals run across both, so this is what says the
@@ -1735,7 +1736,7 @@ class SkillAction(StrictModel):
 
 
 class EquipItemAction(StrictModel):
-    """Equip the item in one cell of the selected character's own inventory.
+    """Equip one item from an exact currently selected squad-owned window.
 
     Kenshi equips on right-click (`rightClickAutoEquipping`) - the *same*
     gesture that sells an item when a trade is open. That collision is the whole
@@ -1762,9 +1763,10 @@ class EquipItemAction(StrictModel):
 # `item_base_value`. Until a live sale demonstrates it, asserting a price here
 # would assert something unverified.
 class SellItemAction(StrictModel):
-    """Sell a bounded quantity from the agent's own inventory.
+    """Sell a bounded quantity from an exact squad-owned inventory window.
 
-    Checked: the cell is in this character's own inventory and holds this item.
+    Checked: the window resolves to one selected owner and its cell holds this
+    item.
     """
 
     kind: Literal["sell_item"] = "sell_item"
@@ -4695,19 +4697,36 @@ class Observation(StrictModel):
         if telemetry is None:
             return {}
         owners: dict[str, dict[str, Any]] = {}
+        vendors_by_caption: dict[str, list[NearbyEntity]] = {}
         for entity in telemetry.nearby_entities:
             if entity.shop_inventory_owner is True and entity.name:
-                owners[normalize_control_label(entity.name)] = {
+                vendors_by_caption.setdefault(
+                    normalize_control_label(entity.name), []
+                ).append(entity)
+        for caption, vendors in vendors_by_caption.items():
+            if len(vendors) == 1:
+                owners[caption] = {
                     "belongs_to": "vendor",
-                    "seller_id": entity.id,
+                    "seller_id": vendors[0].id,
                 }
+            else:
+                owners[caption] = {"belongs_to": "ambiguous"}
         # Squad last: a window naming one of your own characters is yours, even
         # if something nearby shares the name.
+        squad_by_caption: dict[str, list[CharacterState]] = {}
         for character in telemetry.squad:
             if character.name:
-                owners[normalize_control_label(character.name)] = {
+                squad_by_caption.setdefault(
+                    normalize_control_label(character.name), []
+                ).append(character)
+        for caption, characters in squad_by_caption.items():
+            if len(characters) == 1:
+                owners[caption] = {
                     "belongs_to": "you",
+                    "owner_id": characters[0].id,
                 }
+            else:
+                owners[caption] = {"belongs_to": "ambiguous"}
         return owners
 
     def vendor_inventory_windows(self) -> list[str]:
@@ -5163,12 +5182,17 @@ class PurchaseStatus(StrEnum):
     OUTCOME_UNKNOWN = "outcome_unknown"
 
 
-def _validate_purchase_status_quantity(
+def _validate_purchase_evidence(
     status: PurchaseStatus,
+    expected_price: int,
     requested_quantity: int,
     purchased_quantity: int,
+    money_before: int,
+    money_after: int | None,
+    inventory_quantity_before: int,
+    inventory_quantity_after: int | None,
 ) -> None:
-    """Keep terminal status consistent with the controller-proven quantity."""
+    """Keep a known terminal coupled to exact acquisition conservation."""
 
     if purchased_quantity > requested_quantity:
         raise ValueError("purchased_quantity cannot exceed requested_quantity")
@@ -5190,15 +5214,28 @@ def _validate_purchase_status_quantity(
         and purchased_quantity >= requested_quantity
     ):
         raise ValueError("outcome_unknown requires an unresolved remaining quantity")
+    if status is PurchaseStatus.OUTCOME_UNKNOWN:
+        return
+    if money_after is None or inventory_quantity_after is None:
+        raise ValueError("a known purchase terminal requires final money and inventory")
+    charged = money_before - money_after
+    acquired = inventory_quantity_after - inventory_quantity_before
+    if acquired != purchased_quantity:
+        raise ValueError(
+            "known purchase quantity must equal selected inventory gain"
+        )
+    if charged != expected_price * purchased_quantity:
+        raise ValueError("known purchase charge must equal quoted price times quantity")
 
 
 class PurchaseEvidence(StrictModel):
-    """Terminal conservation proof for one bounded purchasing transaction."""
+    """Terminal proof against the exact open player-window owner's inventory."""
 
     status: PurchaseStatus
     seller_id: str = Field(min_length=1, max_length=200)
     selected_character_id: str = Field(min_length=1, max_length=200)
     item_name: str = Field(min_length=1, max_length=200)
+    expected_price: int = Field(ge=0)
     requested_quantity: int = Field(ge=1, le=5)
     purchased_quantity: int = Field(ge=0, le=5)
     money_before: int = Field(ge=0)
@@ -5210,10 +5247,15 @@ class PurchaseEvidence(StrictModel):
 
     @model_validator(mode="after")
     def status_matches_conserved_quantity(self) -> PurchaseEvidence:
-        _validate_purchase_status_quantity(
+        _validate_purchase_evidence(
             self.status,
+            self.expected_price,
             self.requested_quantity,
             self.purchased_quantity,
+            self.money_before,
+            self.money_after,
+            self.inventory_quantity_before,
+            self.inventory_quantity_after,
         )
         return self
 
@@ -5247,7 +5289,7 @@ def _validate_sale_status_quantity(
 
 
 class SaleEvidence(StrictModel):
-    """Terminal conservation proof for one bounded selling transaction."""
+    """Terminal proof against the exact selling-window owner's inventory."""
 
     status: SaleStatus
     buyer_id: str = Field(min_length=1, max_length=200)

@@ -3673,7 +3673,7 @@ class AgentRuntime:
                     ActionOutcomeAssessment.CHANGED,
                     f"The controller conserved all {purchase.purchased_quantity} "
                     f"requested {purchase.item_name!r} purchases through matching "
-                    "purse loss and selected-character inventory gain.",
+                    "quoted charge and exact window-owner inventory gain.",
                 )
             if purchase.status is PurchaseStatus.PARTIALLY_PURCHASED:
                 return (
@@ -3705,7 +3705,7 @@ class AgentRuntime:
                     ActionOutcomeAssessment.CHANGED,
                     f"The controller conserved all {sale.sold_quantity} requested "
                     f"{sale.item_name!r} sales through matching purse gain and "
-                    "selected-character inventory loss.",
+                    "exact window-owner inventory loss.",
                 )
             if sale.status is SaleStatus.PARTIALLY_SOLD:
                 return (

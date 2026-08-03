@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 
+from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.continuity import ContinuityLedger
 from kenshi_agent.models import (
     ActionOutcome,
@@ -14,18 +15,24 @@ from kenshi_agent.models import (
     ControlMode,
     Disposition,
     GameState,
+    HarvestResourceAction,
+    InventoryItem,
     NearbyEntity,
     NormalizedPointerBounds,
     Observation,
     PlannerDecision,
+    PlanningMode,
     PurchaseEvidence,
     PurchaseItemAction,
     PurchaseStatus,
+    ResourceHarvestStatus,
     SemanticActionReceipt,
     TelemetrySnapshot,
     UIState,
+    Vec3,
     VisibleUIControl,
     WorldStateRevision,
+    WorldTarget,
 )
 from kenshi_agent.non_progress import (
     retry_state_fingerprint,
@@ -111,6 +118,7 @@ def _trade_observation(
         observed_at=datetime(2026, 7, 30, 12, sequence, tzinfo=UTC),
         mode="live",
         control_mode=ControlMode.NATIVE_ASSISTED,
+        planning_mode=PlanningMode.CONTINUOUS,
         world_revision=WorldStateRevision(
             telemetry_sequence=sequence,
             frame_sequence=sequence,
@@ -176,6 +184,90 @@ def _purchase() -> PurchaseItemAction:
     )
 
 
+def _harvest() -> HarvestResourceAction:
+    return HarvestResourceAction(
+        actor_id="character-plant",
+        target_id="resource-copper",
+        quantity=1,
+    )
+
+
+def _harvest_observation(
+    *,
+    inventory: list[InventoryItem] | None = None,
+    current_goal: str | None = "Operating machine",
+    resource_level: float | None = 0.2,
+    recent_outcomes: list[ActionOutcome] | None = None,
+) -> Observation:
+    actor = CharacterState(
+        id="character-plant",
+        name="Plant",
+        selected=True,
+        alive=True,
+        conscious=True,
+        down=False,
+        in_combat=False,
+        current_goal=current_goal,
+        inventory=inventory
+        or [InventoryItem(name="Copper", quantity=2, item_type=7, section="main")],
+        inventory_complete=True,
+    )
+    return Observation(
+        run_id="harvest-retry",
+        step_index=2,
+        observed_at=datetime(2026, 8, 3, 8, 24, tzinfo=UTC),
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        planning_mode=PlanningMode.CONTINUOUS,
+        world_revision=WorldStateRevision(
+            telemetry_sequence=2,
+            frame_sequence=2,
+            capability_epoch=1,
+            observed_at_monotonic=2.0,
+        ),
+        telemetry=TelemetrySnapshot(
+            sequence=2,
+            identity_session_id="session-harvest",
+            capabilities=[
+                "control.open_context_inventory",
+                "control.produce_resource_output",
+                "game.pause",
+                "game.speed",
+                "identity.stable_handles",
+                "squad.basic",
+                "squad.health",
+                "squad.inventory",
+                "ui.context_inventory_target",
+                "ui.inventory",
+                "ui.visible_controls",
+                "world.context_targets",
+            ],
+            game=GameState(loaded=True, paused=True, speed_multiplier=1.0),
+            ui=UIState(
+                active_screen="world",
+                modal_open=False,
+                dialogue_open=False,
+                selected_character_id=actor.id,
+                selected_character_ids=[actor.id],
+            ),
+            squad=[actor],
+            world_targets=[
+                WorldTarget(
+                    id="resource-copper",
+                    name="Copper Resource",
+                    kind="natural_resource",
+                    position=Vec3(x=1, y=0, z=2),
+                    distance=3,
+                    context_actions=["operate"],
+                    default_task="operate_machinery",
+                    mining_resource_level=resource_level,
+                )
+            ],
+        ),
+        recent_action_outcomes=recent_outcomes or [],
+    )
+
+
 def _replace_seller_cell(
     observation: Observation,
     **updates: object,
@@ -206,7 +298,7 @@ def _replace_seller_cell(
 def _outcome(
     *,
     outcome_id: str,
-    action: PurchaseItemAction | ActivateVisibleControlAction,
+    action: PurchaseItemAction | HarvestResourceAction | ActivateVisibleControlAction,
     assessment: ActionOutcomeAssessment,
     retry_fingerprint: str | None = None,
     semantic_status: str | None = None,
@@ -228,6 +320,63 @@ def _outcome(
         identity_session_id="session-trade",
         retry_state_fingerprint=retry_fingerprint,
     )
+
+
+def test_harvest_no_op_blocks_every_quantity_until_relevant_state_changes() -> None:
+    action = _harvest()
+    initial = _harvest_observation()
+    fingerprint = retry_state_fingerprint(action, initial)
+    assert fingerprint is not None
+    failed = _outcome(
+        outcome_id="ao-10",
+        action=action,
+        assessment=ActionOutcomeAssessment.NO_OP,
+        retry_fingerprint=fingerprint,
+        semantic_status=ResourceHarvestStatus.NOT_HARVESTED,
+    ).model_copy(update={"identity_session_id": "session-harvest"})
+    unchanged = _harvest_observation(recent_outcomes=[failed])
+
+    assert unchanged_definitive_no_op_reason(action, unchanged) is not None
+    assert (
+        unchanged_definitive_no_op_reason(
+            action.model_copy(update={"quantity": 5}),
+            unchanged,
+        )
+        is not None
+    )
+
+    changed_inventory = _harvest_observation(
+        inventory=[InventoryItem(name="Copper", quantity=1, item_type=7, section="main")],
+        recent_outcomes=[failed],
+    )
+    changed_target = _harvest_observation(
+        resource_level=0.8,
+        recent_outcomes=[failed],
+    )
+    assert unchanged_definitive_no_op_reason(action, changed_inventory) is None
+    assert unchanged_definitive_no_op_reason(action, changed_target) is None
+
+
+def test_unchanged_harvest_no_op_is_not_redelivered_as_an_affordance() -> None:
+    action = _harvest()
+    initial = _harvest_observation()
+    fingerprint = retry_state_fingerprint(action, initial)
+    assert fingerprint is not None
+    assert "harvest_resource" in {
+        offer.operation_kind for offer in offered_affordances(initial)
+    }
+    failed = _outcome(
+        outcome_id="ao-10",
+        action=action,
+        assessment=ActionOutcomeAssessment.NO_OP,
+        retry_fingerprint=fingerprint,
+        semantic_status=ResourceHarvestStatus.NOT_HARVESTED,
+    ).model_copy(update={"identity_session_id": "session-harvest"})
+    unchanged = _harvest_observation(recent_outcomes=[failed])
+
+    assert "harvest_resource" not in {
+        offer.operation_kind for offer in offered_affordances(unchanged)
+    }
 
 
 @pytest.mark.parametrize(
@@ -712,9 +861,24 @@ def test_retry_barrier_ignores_other_actions_and_absent_history() -> None:
         is None
     )
 
-    different_purchase = action.model_copy(update={"quantity": 2})
+    same_purchase_other_quantity = action.model_copy(update={"quantity": 2})
     fingerprint = retry_state_fingerprint(action, empty)
     assert fingerprint is not None
+    same_class = _outcome(
+        outcome_id="ao-8",
+        action=same_purchase_other_quantity,
+        assessment=ActionOutcomeAssessment.NO_OP,
+        retry_fingerprint=fingerprint,
+        semantic_status=PurchaseStatus.NOT_PURCHASED,
+    )
+    with_same_class = empty.model_copy(
+        update={"recent_action_outcomes": [same_class]}
+    )
+    assert unchanged_definitive_no_op_reason(action, with_same_class) is not None
+
+    different_purchase = action.model_copy(
+        update={"cell_label": "Riceweed", "item_name": "Riceweed"}
+    )
     unrelated = _outcome(
         outcome_id="ao-9",
         action=different_purchase,
@@ -766,6 +930,7 @@ def test_runtime_records_the_post_action_purchase_retry_state() -> None:
                 seller_id=action.seller_id,
                 selected_character_id="character-steyerfast",
                 item_name=action.item_name,
+                expected_price=action.expected_price,
                 requested_quantity=1,
                 purchased_quantity=0,
                 money_before=344,

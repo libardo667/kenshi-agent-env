@@ -424,6 +424,7 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
 
 
 def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
+    actor = CharacterState(id="entity-player", name="Player", selected=True)
     target = WorldTarget(
         id="entity-copper",
         name="Copper Resource",
@@ -450,7 +451,14 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
                 "identity.stable_handles",
             ],
             game=GameState(loaded=True, paused=True),
-            ui=UIState(active_screen="world", dialogue_open=False, modal_open=False),
+            ui=UIState(
+                active_screen="world",
+                dialogue_open=False,
+                modal_open=False,
+                selected_character_id=actor.id,
+                selected_character_ids=[actor.id],
+            ),
+            squad=[actor],
             world_targets=[target],
         ),
     )

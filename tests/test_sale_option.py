@@ -78,9 +78,16 @@ def _bounds(index: int, *, buyer: bool = False) -> NormalizedPointerBounds:
 
 
 class SaleTelemetry:
-    def __init__(self, *, carried: int, stacked: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        carried: int,
+        stacked: bool = False,
+        group_selection: bool = False,
+    ) -> None:
         self.carried = carried
         self.stacked = stacked
+        self.group_selection = group_selection
         self.money = 1000
         self.sequence = 0
         self.max_age_seconds = 3.0
@@ -146,13 +153,26 @@ class SaleTelemetry:
                 elapsed_minutes=0.0,
             ),
             squad=[
+                *(
+                    [
+                        CharacterState(
+                            id="character-plant",
+                            name="Plant",
+                            selected=True,
+                            inventory=[InventoryItem(name="Dried Meat", quantity=9)],
+                            inventory_complete=True,
+                        )
+                    ]
+                    if self.group_selection
+                    else []
+                ),
                 CharacterState(
                     id="character-jaglonger",
                     name="Jaglonger",
                     selected=True,
                     inventory=self._inventory(),
                     inventory_complete=True,
-                )
+                ),
             ],
             nearby_entities=[
                 NearbyEntity(
@@ -166,8 +186,14 @@ class SaleTelemetry:
             ui=UIState(
                 active_screen="trade",
                 open_inventory_windows=2,
-                selected_character_id="character-jaglonger",
-                selected_character_ids=["character-jaglonger"],
+                selected_character_id=(
+                    "character-plant" if self.group_selection else "character-jaglonger"
+                ),
+                selected_character_ids=(
+                    ["character-jaglonger", "character-plant"]
+                    if self.group_selection
+                    else ["character-jaglonger"]
+                ),
                 visible_controls=[
                     *self._own_cells(),
                     VisibleUIControl(
@@ -247,8 +273,13 @@ def sale_environment(
     stacked: bool = False,
     inventory_updates: bool = True,
     reverse_transfer: bool = False,
+    group_selection: bool = False,
 ) -> tuple[LiveEnvironment, SaleTelemetry, SaleController]:
-    telemetry = SaleTelemetry(carried=carried, stacked=stacked)
+    telemetry = SaleTelemetry(
+        carried=carried,
+        stacked=stacked,
+        group_selection=group_selection,
+    )
     controller = SaleController(
         telemetry,
         inventory_updates=inventory_updates,
@@ -409,6 +440,31 @@ def test_one_sale_intent_transfers_its_bounded_quantity(
                 and item.button is MouseButton.RIGHT
             ]
         ) == 3
+
+    asyncio.run(scenario())
+
+
+def test_sale_conservation_follows_the_open_inventory_owner_in_a_group(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, _ = sale_environment(
+            tmp_path,
+            carried=1,
+            group_selection=True,
+        )
+        await environment.reset()
+
+        transition = await environment.step(_sale(quantity=1))
+
+        assert transition.receipt.semantic is not None
+        evidence = transition.receipt.semantic.sale
+        assert evidence is not None
+        assert evidence.status is SaleStatus.SOLD
+        assert evidence.selected_character_id == "character-jaglonger"
+        assert evidence.inventory_quantity_before == 1
+        assert evidence.inventory_quantity_after == 0
+        assert telemetry.carried == 0
 
     asyncio.run(scenario())
 

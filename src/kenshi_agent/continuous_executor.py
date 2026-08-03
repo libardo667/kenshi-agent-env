@@ -1780,6 +1780,7 @@ class ContinuousPlanExecutor:
                     evidence={
                         "controller_verified": True,
                         "status": purchase.status.value,
+                        "expected_price": purchase.expected_price,
                         "requested_quantity": purchase.requested_quantity,
                         "purchased_quantity": purchase.purchased_quantity,
                         "money_before": purchase.money_before,

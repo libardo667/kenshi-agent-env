@@ -214,7 +214,7 @@ AFFORDANCES: tuple[Affordance, ...] = (
     Affordance(
         Interface.INVENTORY,
         Operation.INTERACT,
-        "Equip an item from the selected character's own inventory.",
+        "Equip an item from one exact selected squad-owned inventory window.",
         Mechanism.CONTROL,
         "equip_item",
         native_entry_point="InventoryGUI::rightClickAutoEquipping @ 0x7137B0",
