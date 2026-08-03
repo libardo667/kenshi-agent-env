@@ -1028,6 +1028,28 @@ int main(int argc, char** argv)
         return Fail("squad regroup did not retain its exact actor and target");
     }
 
+    KenshiAgentTelemetry::NativeCommandRequest squadSelection;
+    const std::string squadSelectionPayload =
+        ReadFile(prefix + "valid_squad_selection_request.json");
+    if (squadSelectionPayload.empty())
+        return Fail("could not read valid_squad_selection_request.json");
+    if (!KenshiAgentTelemetry::ParseNativeCommandRequest(
+            squadSelectionPayload,
+            squadSelection,
+            rejectionReason))
+    {
+        return Fail(
+            "valid squad-selection request was rejected as " + rejectionReason);
+    }
+    if (squadSelection.command != "select_squad_member" ||
+        squadSelection.selectedCharacterId != "entity-bark" ||
+        squadSelection.targetId != "entity-plant" ||
+        squadSelection.bearingDegrees != 0.0 ||
+        squadSelection.distanceUnits != 0.0)
+    {
+        return Fail("squad selection did not retain its basis and exact target");
+    }
+
     KenshiAgentTelemetry::NativeCommandRequest approach;
     const std::string approachPayload =
         ReadFile(prefix + "valid_approach_request.json");

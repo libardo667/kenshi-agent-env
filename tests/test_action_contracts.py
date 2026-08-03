@@ -22,6 +22,7 @@ from kenshi_agent.action_contracts import (
     PURCHASE_ITEM_CONTRACT,
     REGROUP_WITH_SQUAD_MEMBER_CONTRACT,
     ROTATE_CAMERA_CONTRACT,
+    SELECT_SQUAD_MEMBER_EXACT_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     contract_for,
 )
@@ -57,6 +58,7 @@ from kenshi_agent.models import (
     PurchaseItemAction,
     RegroupWithSquadMemberAction,
     RotateCameraAction,
+    SelectSquadMemberExactAction,
     TelemetrySnapshot,
     TravelToMapDestinationAction,
     UIState,
@@ -209,6 +211,37 @@ def test_squad_regroup_binds_a_selected_actor_to_a_distinct_downed_squadmate() -
         action,
         already_together,
     ).bound
+
+
+def test_squad_selection_prefers_exact_native_identity_without_portrait_geometry() -> None:
+    actor = CharacterState(id="entity-bark", name="Bark", selected=True)
+    target = CharacterState(id="entity-plant", name="Plant")
+    state = observation(
+        capabilities=[
+            "control.select_squad_member",
+            "identity.stable_handles",
+            "squad.basic",
+        ],
+        squad=[actor, target],
+        ui=UIState(
+            active_screen="world",
+            modal_open=False,
+            dialogue_open=False,
+            selected_character_id=actor.id,
+            selected_character_ids=[actor.id],
+            visible_controls=[],
+        ),
+    )
+
+    binding = SELECT_SQUAD_MEMBER_EXACT_CONTRACT.bind(
+        SelectSquadMemberExactAction(target_id=target.id),
+        state,
+    )
+
+    assert binding.bound
+    assert binding.target_id == target.id
+    assert binding.resolved_label == target.name
+    assert binding.resolved_bounds is None
 
 
 class TestApproachBindsAnyDialogueTarget:
@@ -1038,6 +1071,7 @@ class TestContractCatalog:
             "purchase_item",
             "rotate_camera",
             "select_squad_member",
+            "select_squad_member_exact",
             "use_game_binding",
             "scroll_screen",
             "sell_item",

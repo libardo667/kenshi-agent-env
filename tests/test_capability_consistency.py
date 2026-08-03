@@ -57,6 +57,8 @@ from kenshi_agent.action_contracts import (
     NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
     NATIVE_SQUAD_REGROUP_CAPABILITY,
     NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
+    NATIVE_SQUAD_SELECTION_CAPABILITY,
+    NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
 )
 from kenshi_agent.config import MockConfig
 from kenshi_agent.env.mock import MockEnvironment
@@ -94,6 +96,7 @@ NATIVE_WIRE_COMMANDS: dict[str, str] = {
         NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND
     ),
     NATIVE_SQUAD_REGROUP_CAPABILITY: NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
+    NATIVE_SQUAD_SELECTION_CAPABILITY: NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
 }
 
 # Contracts the mock cannot yet exercise, because the mock world has no inventory,

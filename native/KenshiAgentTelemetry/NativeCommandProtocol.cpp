@@ -316,6 +316,7 @@ namespace KenshiAgentTelemetry
             const bool isTargeted =
                 request.command == "approach_confirmed_vendor" ||
                 request.command == "move_to_character" ||
+                request.command == "select_squad_member" ||
                 request.command == "regroup_with_squad_member" ||
                 request.command == "travel_to_map_destination" ||
                 request.command == "perform_context_action" ||

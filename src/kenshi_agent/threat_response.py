@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from math import atan2, degrees
+from math import atan2, degrees, hypot
 
 from .models import (
     CharacterState,
@@ -157,6 +157,57 @@ def withdrawal_move(
     away_z = actor.position.z - hostile.position.z
     if away_x == 0.0 and away_z == 0.0:
         return None
+    reunion_candidates = [
+        member
+        for member in telemetry.squad
+        if member.id != actor.id
+        and member.alive is True
+        and member.position is not None
+        and all(
+            threat.position is not None
+            and (
+                (member.position.x - actor.position.x)
+                * (actor.position.x - threat.position.x)
+                + (member.position.z - actor.position.z)
+                * (actor.position.z - threat.position.z)
+                >= 0.0
+            )
+            and (
+                (member.position.x - threat.position.x) ** 2
+                + (member.position.z - threat.position.z) ** 2
+                > (actor.position.x - threat.position.x) ** 2
+                + (actor.position.z - threat.position.z) ** 2
+            )
+            for threat in positioned
+        )
+    ]
+    if reunion_candidates:
+        def reunion_distance_key(member: CharacterState) -> tuple[float, str]:
+            assert actor.position is not None
+            assert member.position is not None
+            return (
+                (member.position.x - actor.position.x) ** 2
+                + (member.position.z - actor.position.z) ** 2,
+                member.id,
+            )
+
+        squadmate = min(
+            reunion_candidates,
+            key=reunion_distance_key,
+        )
+        assert squadmate.position is not None
+        toward_x = squadmate.position.x - actor.position.x
+        toward_z = squadmate.position.z - actor.position.z
+        distance = hypot(toward_x, toward_z)
+        if distance > 0.0:
+            return MoveInDirectionAction(
+                bearing_degrees=degrees(atan2(toward_x, toward_z)) % 360.0,
+                distance_units=min(distance, THREAT_WITHDRAW_DISTANCE),
+                expected_effect=(
+                    f"Withdraw toward squadmate {squadmate.name} while increasing "
+                    "distance from the nearest immediate hostile."
+                ),
+            )
     bearing = degrees(atan2(away_x, away_z)) % 360.0
     return MoveInDirectionAction(
         bearing_degrees=bearing,

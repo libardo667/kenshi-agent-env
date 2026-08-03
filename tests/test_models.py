@@ -285,7 +285,7 @@ def test_stable_identity_snapshot_requires_consistent_selection_and_unique_ids()
         )
 
     squad_context_target = TelemetrySnapshot(
-        protocol_version="1.8.0",
+        protocol_version="1.9.0",
         identity_session_id="session-process-1",
         capabilities=["identity.stable_handles"],
         squad=[CharacterState(id="entity-injured", name="Bark")],

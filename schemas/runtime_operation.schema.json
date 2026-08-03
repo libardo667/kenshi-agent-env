@@ -1158,6 +1158,29 @@
       "title": "SelectSquadMemberAction",
       "type": "object"
     },
+    "SelectSquadMemberExactAction": {
+      "additionalProperties": false,
+      "description": "Select one exact squad member through native stable identity.",
+      "properties": {
+        "kind": {
+          "const": "select_squad_member_exact",
+          "default": "select_squad_member_exact",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "SelectSquadMemberExactAction",
+      "type": "object"
+    },
     "SellItemAction": {
       "additionalProperties": false,
       "description": "Sell a bounded quantity from the agent's own inventory.\n\nChecked: the cell is in this character's own inventory and holds this item.",
@@ -1461,6 +1484,9 @@
     },
     {
       "$ref": "#/$defs/SelectSquadMemberAction"
+    },
+    {
+      "$ref": "#/$defs/SelectSquadMemberExactAction"
     },
     {
       "$ref": "#/$defs/RotateCameraAction"

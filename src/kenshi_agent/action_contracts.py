@@ -75,6 +75,7 @@ from .models import (
     RotateCameraAction,
     ScrollScreenAction,
     SelectSquadMemberAction,
+    SelectSquadMemberExactAction,
     SellItemAction,
     SetSpeedAction,
     StopAction,
@@ -109,6 +110,10 @@ NATIVE_APPROACH_CAPABILITY_ALIASES: frozenset[str] = frozenset(
 NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = "approach_confirmed_vendor"
 
 NATIVE_MOVE_CAPABILITY = "control.move_to_character"
+NATIVE_SQUAD_SELECTION_CAPABILITY = "control.select_squad_member"
+NATIVE_SQUAD_SELECTION_WIRE_COMMAND: Literal["select_squad_member"] = (
+    "select_squad_member"
+)
 NATIVE_SQUAD_REGROUP_CAPABILITY = "control.regroup_with_squad_member"
 NATIVE_SQUAD_REGROUP_WIRE_COMMAND: Literal["regroup_with_squad_member"] = (
     "regroup_with_squad_member"
@@ -585,6 +590,75 @@ def squad_member_selection_is_currently_authorable(
         and any(
             bind_select_squad_member(
                 SelectSquadMemberAction(target_id=character.id),
+                observation,
+            ).bound
+            for character in telemetry.squad
+        )
+    )
+
+
+def bind_select_squad_member_exact(
+    action: Action,
+    observation: Observation,
+) -> ReferenceBinding:
+    """Bind one native selection request to an exact stable squad identity."""
+
+    if not isinstance(action, SelectSquadMemberExactAction):
+        return _unbound("Action is not a select_squad_member_exact action.")
+    telemetry = observation.telemetry
+    if telemetry is None:
+        return _unbound("No telemetry is available to bind the squad member.")
+    if observation.telemetry_stale:
+        return _unbound("Telemetry is stale, so the squad member cannot be bound.")
+    if (
+        telemetry.ui.active_screen != "world"
+        or telemetry.ui.dialogue_open is not False
+        or telemetry.ui.modal_open is not False
+    ):
+        return _unbound(
+            "The modal and dialogue state is not confirmed clear, so a squad "
+            "member selection cannot bind; finish or close the interface first."
+        )
+    selected_ids = telemetry.ui.selected_character_ids
+    if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+        return _unbound(
+            "Native squad selection requires one exact current selection as its "
+            "causal basis."
+        )
+    matches = [
+        character for character in telemetry.squad if character.id == action.target_id
+    ]
+    if len(matches) != 1:
+        return _unbound(
+            f"Target {action.target_id!r} identifies {len(matches)} current squad "
+            "members; exact native selection fails closed."
+        )
+    target = matches[0]
+    return ReferenceBinding(
+        bound=True,
+        reason=(
+            f"Bound exact native squad selection to {target.name!r} ({target.id}); "
+            "the current singular selection is carried as the causal basis."
+        ),
+        target_id=target.id,
+        resolved_label=target.name,
+        source_revision=observation.world_revision,
+    )
+
+
+def exact_squad_member_selection_is_currently_authorable(
+    observation: Observation,
+) -> bool:
+    telemetry = observation.telemetry
+    return bool(
+        telemetry is not None
+        and not observation.telemetry_stale
+        and len(telemetry.ui.selected_character_ids) == 1
+        and telemetry.ui.selected_character_id
+        == telemetry.ui.selected_character_ids[0]
+        and any(
+            bind_select_squad_member_exact(
+                SelectSquadMemberExactAction(target_id=character.id),
                 observation,
             ).bound
             for character in telemetry.squad
@@ -2218,7 +2292,7 @@ def _selected_squad_member(
     action: Action,
     observation: Observation,
 ) -> tuple[Condition, ...] | None:
-    if not isinstance(action, SelectSquadMemberAction):
+    if not isinstance(action, (SelectSquadMemberAction, SelectSquadMemberExactAction)):
         return ()
     return (
         Condition(
@@ -2342,6 +2416,40 @@ SELECT_SQUAD_MEMBER_CONTRACT = ActionContract(
     bind=bind_select_squad_member,
     derive_completion_conditions=_selected_squad_member,
     authorable_when=squad_member_selection_is_currently_authorable,
+)
+
+
+SELECT_SQUAD_MEMBER_EXACT_CONTRACT = ActionContract(
+    kind="select_squad_member_exact",
+    version="1.0",
+    model=SelectSquadMemberExactAction,
+    summary=(
+        "Select one exact current squad member by stable native identity and "
+        "verify the singular resulting selection before acknowledging completion."
+    ),
+    argument_source="target_id is copied from one exact current squad entry.",
+    allowed_control_modes=frozenset({ControlMode.NATIVE_ASSISTED}),
+    required_capabilities=frozenset(
+        {
+            NATIVE_SQUAD_SELECTION_CAPABILITY,
+            "identity.stable_handles",
+            "squad.basic",
+        }
+    ),
+    capability_aliases=frozenset(),
+    pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
+    native_assisted=True,
+    requires_exact_selection=True,
+    risk=ActionRiskCost(native_assisted_actions=1),
+    max_primitive_actions=1,
+    reference_fields=("target_id",),
+    idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+    execution=ActionExecution.ATOMIC_HANDLER,
+    receipt_kind="semantic_squad_selection",
+    bind=bind_select_squad_member_exact,
+    derive_completion_conditions=_selected_squad_member,
+    controller_verified=True,
+    authorable_when=exact_squad_member_selection_is_currently_authorable,
 )
 
 
@@ -3199,6 +3307,7 @@ ACTION_CONTRACTS: dict[str, ActionContract] = {
         OPEN_SCREEN_CONTRACT,
         COMMAND_WORLD_TARGET_CONTRACT,
         SELECT_SQUAD_MEMBER_CONTRACT,
+        SELECT_SQUAD_MEMBER_EXACT_CONTRACT,
         ROTATE_CAMERA_CONTRACT,
         PERFORM_CONTEXT_ACTION_CONTRACT,
         PRODUCE_RESOURCE_OUTPUT_CONTRACT,

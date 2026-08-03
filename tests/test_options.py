@@ -291,3 +291,95 @@ def test_withdrawal_derives_the_escape_vector_instead_of_asking_the_model() -> N
     assert option.movement_option is not None
     assert option.movement_option.action.bearing_degrees == 90.0
     assert option.movement_option.action.distance_units == 160.0
+
+
+def test_withdrawal_prefers_a_squadmate_when_reunion_also_increases_safety() -> None:
+    current = _threat_observation(
+        1,
+        paused=True,
+        threatened=True,
+        in_combat=True,
+    )
+    assert current.telemetry is not None
+    current = current.model_copy(
+        update={
+            "telemetry": current.telemetry.model_copy(
+                update={
+                    "squad": [
+                        *current.telemetry.squad,
+                        CharacterState(
+                            id="entity-plant",
+                            name="Plant",
+                            alive=True,
+                            conscious=True,
+                            down=False,
+                            blood=100.0,
+                            position=Vec3(x=10.0, y=0.0, z=100.0),
+                        ),
+                    ]
+                }
+            )
+        },
+        deep=True,
+    )
+    option = StatefulThreatResponseOption(
+        option_id="threat-withdrawal-reunion",
+        action=RespondToImmediateThreatAction(
+            actor_id="entity-bark",
+            strategy=ThreatResponseStrategy.WITHDRAW,
+        ),
+        environment=BlockingEnvironment(),
+    )
+
+    option.prepare(current)
+
+    assert option.movement_option is not None
+    assert option.movement_option.action.bearing_degrees == 0.0
+    assert option.movement_option.action.distance_units == 100.0
+    assert "Plant" in option.movement_option.action.expected_effect
+
+
+def test_withdrawal_does_not_cross_a_hostile_to_reach_a_distant_squadmate() -> None:
+    current = _threat_observation(
+        1,
+        paused=True,
+        threatened=True,
+        in_combat=True,
+    )
+    assert current.telemetry is not None
+    current = current.model_copy(
+        update={
+            "telemetry": current.telemetry.model_copy(
+                update={
+                    "squad": [
+                        *current.telemetry.squad,
+                        CharacterState(
+                            id="entity-plant",
+                            name="Plant",
+                            alive=True,
+                            conscious=True,
+                            down=False,
+                            blood=100.0,
+                            position=Vec3(x=-100.0, y=0.0, z=0.0),
+                        ),
+                    ]
+                }
+            )
+        },
+        deep=True,
+    )
+    option = StatefulThreatResponseOption(
+        option_id="threat-withdrawal-no-crossing",
+        action=RespondToImmediateThreatAction(
+            actor_id="entity-bark",
+            strategy=ThreatResponseStrategy.WITHDRAW,
+        ),
+        environment=BlockingEnvironment(),
+    )
+
+    option.prepare(current)
+
+    assert option.movement_option is not None
+    assert option.movement_option.action.bearing_degrees == 90.0
+    assert option.movement_option.action.distance_units == 160.0
+    assert "nearest immediate hostile" in option.movement_option.action.expected_effect

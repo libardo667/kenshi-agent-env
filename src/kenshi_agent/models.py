@@ -1003,6 +1003,7 @@ class NativeCommandAcknowledgement(StrictModel):
     command: Literal[
         "approach_confirmed_vendor",
         "move_to_character",
+        "select_squad_member",
         "regroup_with_squad_member",
         "move_in_direction",
         "travel_to_map_destination",
@@ -1137,7 +1138,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.8.0"
+    protocol_version: str = "1.9.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -1461,6 +1462,13 @@ class SelectSquadMemberAction(StrictModel):
     """Select one exact current squad member through observed world geometry."""
 
     kind: Literal["select_squad_member"] = "select_squad_member"
+    target_id: str = Field(min_length=1, max_length=200)
+
+
+class SelectSquadMemberExactAction(StrictModel):
+    """Select one exact squad member through native stable identity."""
+
+    kind: Literal["select_squad_member_exact"] = "select_squad_member_exact"
     target_id: str = Field(min_length=1, max_length=200)
 
 
@@ -2104,6 +2112,7 @@ AtomicRuntimeOperation: TypeAlias = (
     ApproachDialogueTargetAction
     | CommandWorldTargetAction
     | SelectSquadMemberAction
+    | SelectSquadMemberExactAction
     | RotateCameraAction
     | MoveToCharacterAction
     | MoveInDirectionAction
@@ -2172,6 +2181,7 @@ Action: TypeAlias = (
     | ApproachDialogueTargetAction
     | CommandWorldTargetAction
     | SelectSquadMemberAction
+    | SelectSquadMemberExactAction
     | RotateCameraAction
     | PerformContextAction
     | ProduceResourceOutputAction
@@ -2201,6 +2211,7 @@ SEMANTIC_ACTION_KINDS: frozenset[str] = frozenset(
         "approach_dialogue_target",
         "command_world_target",
         "select_squad_member",
+        "select_squad_member_exact",
         "rotate_camera",
         "perform_context_action",
         "produce_resource_output",
@@ -3530,6 +3541,7 @@ class NativeCommandRequest(StrictModel):
     command: Literal[
         "approach_confirmed_vendor",
         "move_to_character",
+        "select_squad_member",
         "regroup_with_squad_member",
         "move_in_direction",
         "travel_to_map_destination",

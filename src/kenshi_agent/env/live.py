@@ -26,6 +26,7 @@ from ..action_contracts import (
     NATIVE_OPEN_CONTEXT_INVENTORY_WIRE_COMMAND,
     NATIVE_PRODUCE_RESOURCE_WIRE_COMMAND,
     NATIVE_SQUAD_REGROUP_WIRE_COMMAND,
+    NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
     OPEN_CONTEXT_INVENTORY_CONTRACT,
     OPEN_SCREEN_CONTRACT,
     PERFORM_CONTEXT_ACTION_CONTRACT,
@@ -36,6 +37,7 @@ from ..action_contracts import (
     ROTATE_CAMERA_CONTRACT,
     SCROLL_SCREEN_CONTRACT,
     SELECT_SQUAD_MEMBER_CONTRACT,
+    SELECT_SQUAD_MEMBER_EXACT_CONTRACT,
     SELL_ITEM_CONTRACT,
     TRAVEL_TO_MAP_DESTINATION_CONTRACT,
     USE_GAME_BINDING_CONTRACT,
@@ -117,6 +119,7 @@ from ..models import (
     ScrollAction,
     ScrollScreenAction,
     SelectSquadMemberAction,
+    SelectSquadMemberExactAction,
     SellItemAction,
     SemanticActionReceipt,
     SetSpeedAction,
@@ -863,6 +866,16 @@ class LiveEnvironment(AgentEnvironment):
             return await self._execute_world_target_command(action, started)
         if isinstance(action, SelectSquadMemberAction):
             return await self._execute_select_squad_member(action, started)
+        if isinstance(action, SelectSquadMemberExactAction):
+            if command is None:
+                raise RuntimeError(
+                    "Native command execution requires caller-owned command context."
+                )
+            return await self._execute_select_squad_member_exact(
+                action,
+                started,
+                command,
+            )
         if isinstance(action, RotateCameraAction):
             return await self._execute_rotate_camera(action, started)
         if isinstance(action, PerformContextAction):
@@ -1550,6 +1563,52 @@ class LiveEnvironment(AgentEnvironment):
                     "selected character."
                 ),
             }
+        )
+
+    async def _execute_select_squad_member_exact(
+        self,
+        action: SelectSquadMemberExactAction,
+        started: datetime,
+        command: CommandDispatchContext,
+    ) -> ActionReceipt:
+        """Select and verify one exact squad identity through native code."""
+
+        skill_name = self.controls_config.native_approach_skill
+        if skill_name is None or not self.macros.has(skill_name):
+            raise RuntimeError(
+                "Exact squad selection requires a configured native transport skill."
+            )
+        primitive_skill = SkillAction(
+            name=skill_name,
+            args=[SkillArgument(name="target_id", value=action.target_id)],
+        )
+        pulse_seconds = self.macros.resolve_movement_pulse_seconds(primitive_skill)
+        if pulse_seconds is None:
+            raise RuntimeError(
+                f"Configured native approach skill {skill_name!r} has no movement pulse."
+            )
+        semantic = SemanticActionReceipt(
+            action_kind=action.kind,
+            contract_version=SELECT_SQUAD_MEMBER_EXACT_CONTRACT.version,
+            target_id=action.target_id,
+            source_revision=command.based_on_revision,
+            revalidation=(
+                "Re-bound the exact current squad target and singular selection "
+                "basis; native code owns selection and terminal verification."
+            ),
+        )
+        return await self._execute_native_approach(
+            action,
+            started,
+            command,
+            target_id=action.target_id,
+            pulse_seconds=pulse_seconds,
+            primitive_skill=primitive_skill,
+            require_vendor_role=False,
+            semantic=semantic,
+            wire_command=NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            require_dialogue_target=False,
+            accepted_is_terminal_error=True,
         )
 
     def _context_native_transport(
@@ -3517,6 +3576,7 @@ class LiveEnvironment(AgentEnvironment):
         wire_command: Literal[
             "approach_confirmed_vendor",
             "move_to_character",
+            "select_squad_member",
             "regroup_with_squad_member",
             "move_in_direction",
             "travel_to_map_destination",
@@ -3838,6 +3898,7 @@ class LiveEnvironment(AgentEnvironment):
         wire_command: Literal[
             "approach_confirmed_vendor",
             "move_to_character",
+            "select_squad_member",
             "regroup_with_squad_member",
             "move_in_direction",
             "travel_to_map_destination",
@@ -3918,6 +3979,7 @@ class LiveEnvironment(AgentEnvironment):
         wire_command: Literal[
             "approach_confirmed_vendor",
             "move_to_character",
+            "select_squad_member",
             "regroup_with_squad_member",
             "move_in_direction",
             "travel_to_map_destination",
@@ -3972,6 +4034,8 @@ class LiveEnvironment(AgentEnvironment):
             native_contract = MOVE_IN_DIRECTION_CONTRACT
         elif wire_command == NATIVE_MAP_TRAVEL_WIRE_COMMAND:
             native_contract = TRAVEL_TO_MAP_DESTINATION_CONTRACT
+        elif wire_command == NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
+            native_contract = SELECT_SQUAD_MEMBER_EXACT_CONTRACT
         elif wire_command == NATIVE_SQUAD_REGROUP_WIRE_COMMAND:
             native_contract = REGROUP_WITH_SQUAD_MEMBER_CONTRACT
         elif wire_command == NATIVE_EXIT_BUILDING_WIRE_COMMAND:
@@ -4046,6 +4110,25 @@ class LiveEnvironment(AgentEnvironment):
                 raise RuntimeError(
                     "Native map destination is absent, undiscovered, or ambiguous "
                     "at issue time."
+                )
+            return NativeCommandRequest(
+                schema_version="1.2",
+                command_id=command.command_id,
+                command=wire_command,
+                control_mode=ControlMode.NATIVE_ASSISTED,
+                identity_session_id=telemetry.identity_session_id,
+                based_on_revision=observation.world_revision,
+                selected_character_ids=list(selected_ids),
+                target_id=target_id,
+            )
+        if wire_command == NATIVE_SQUAD_SELECTION_WIRE_COMMAND:
+            target_matches = [
+                member for member in telemetry.squad if member.id == target_id
+            ]
+            if len(target_matches) != 1:
+                raise RuntimeError(
+                    "Native squad-selection target is absent or ambiguous at "
+                    "issue time."
                 )
             return NativeCommandRequest(
                 schema_version="1.2",

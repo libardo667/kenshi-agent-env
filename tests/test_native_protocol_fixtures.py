@@ -47,6 +47,16 @@ def test_python_accepts_exact_known_map_destination_request_fixture() -> None:
     assert request.distance_units == 0.0
 
 
+def test_python_accepts_exact_squad_selection_request_fixture() -> None:
+    request = NativeCommandRequest.model_validate_json(
+        (FIXTURES / "valid_squad_selection_request.json").read_bytes()
+    )
+
+    assert request.command == "select_squad_member"
+    assert request.selected_character_ids == ["entity-bark"]
+    assert request.target_id == "entity-plant"
+
+
 def test_python_accepts_exact_dialogue_approach_request_fixture() -> None:
     request = NativeCommandRequest.model_validate_json(
         (FIXTURES / "valid_approach_request.json").read_bytes()

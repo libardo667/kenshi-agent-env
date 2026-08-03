@@ -50,6 +50,7 @@ from kenshi_agent.models import (
     RespondToImmediateThreatAction,
     RotateCameraAction,
     SelectSquadMemberAction,
+    SelectSquadMemberExactAction,
     SetSpeedAction,
     SkillAction,
     TelemetrySnapshot,
@@ -1581,6 +1582,48 @@ def test_squad_member_selection_rebinds_geometry_inside_input_lease(
             min_y=0.84,
             max_y=0.94,
         )
+
+    asyncio.run(scenario())
+
+
+def test_squad_member_selection_uses_exact_native_identity_without_pointer_input(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="exact_squad_member_selected",
+        )
+        telemetry.capabilities.extend(
+            [
+                "control.select_squad_member",
+                "squad.basic",
+            ]
+        )
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"native_approach_skill": "approach_confirmed_vendor"}
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            SelectSquadMemberExactAction(target_id="entity-ruka"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "f" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert controller.request is not None
+        assert controller.request.command == "select_squad_member"
+        assert controller.request.selected_character_ids == ["entity-selected"]
+        assert controller.request.target_id == "entity-ruka"
+        assert [action.kind for action in controller.actions] == ["hotkey"]
+        assert transition.receipt.native_acknowledgement is not None
+        assert transition.receipt.native_acknowledgement.status is NativeCommandStatus.COMPLETED
+        assert transition.receipt.semantic is not None
+        assert transition.receipt.semantic.target_id == "entity-ruka"
+        assert transition.receipt.semantic.resolved_bounds is None
 
     asyncio.run(scenario())
 

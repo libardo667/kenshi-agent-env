@@ -36,6 +36,7 @@ from .models import (
     AffordanceTarget,
     BoundAffordance,
     CameraRotationDirection,
+    CharacterState,
     ContextActionKind,
     ControlMode,
     GameBinding,
@@ -542,11 +543,21 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
 
 
 def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
+    from .action_contracts import SQUAD_REGROUP_ARRIVAL_DISTANCE
+
     telemetry = observation.telemetry
     if telemetry is None:
         return
     capabilities = set(telemetry.capabilities)
     selected = next((member for member in telemetry.squad if member.selected), None)
+    exact_selection = bool(
+        observation.control_mode is ControlMode.NATIVE_ASSISTED
+        and "control.select_squad_member" in capabilities
+        and "identity.stable_handles" in capabilities
+        and telemetry.ui.selected_character_id is not None
+        and telemetry.ui.selected_character_ids
+        == [telemetry.ui.selected_character_id]
+    )
     for member in telemetry.squad:
         target = AffordanceTarget(
             target_id=member.id,
@@ -559,23 +570,63 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
                 source=AffordanceSource.SQUAD,
                 semantic="select",
                 description=f"Select {member.name!r} as the exact active squad member.",
-                operation_kind="select_squad_member",
+                operation_kind=(
+                    "select_squad_member_exact"
+                    if exact_selection
+                    else "select_squad_member"
+                ),
                 target=target,
                 arguments={"target_id": member.id},
             )
-        if (
-            selected is not None
-            and member.id != selected.id
-            and "control.regroup_with_squad_member" in capabilities
-        ):
+    if (
+        selected is not None
+        and selected.position is not None
+        and "control.regroup_with_squad_member" in capabilities
+    ):
+        candidates = [
+            member
+            for member in telemetry.squad
+            if member.id != selected.id
+            and member.alive is True
+            and member.position is not None
+            and (
+                (member.position.x - selected.position.x) ** 2
+                + (member.position.z - selected.position.z) ** 2
+                > SQUAD_REGROUP_ARRIVAL_DISTANCE**2
+            )
+        ]
+        if candidates:
+            def reunion_distance_key(member: CharacterState) -> tuple[float, str]:
+                assert selected.position is not None
+                assert member.position is not None
+                return (
+                    (member.position.x - selected.position.x) ** 2
+                    + (member.position.z - selected.position.z) ** 2,
+                    member.id,
+                )
+
+            target_member = min(
+                candidates,
+                key=reunion_distance_key,
+            )
             yield _offer(
                 observation,
                 source=AffordanceSource.COMPOSITE_OPERATION,
-                semantic="regroup",
-                description=f"Bring {selected.name!r} to squadmate {member.name!r}.",
+                semantic="reunite_squad",
+                description=(
+                    f"Reunite {selected.name!r} with the nearest separated "
+                    f"squadmate, currently {target_member.name!r}."
+                ),
                 operation_kind="regroup_with_squad_member",
-                target=target,
-                arguments={"actor_id": selected.id, "target_id": member.id},
+                target=AffordanceTarget(
+                    target_id=target_member.id,
+                    label=target_member.name,
+                    kind="squad_member",
+                ),
+                arguments={
+                    "actor_id": selected.id,
+                    "target_id": target_member.id,
+                },
             )
     for character in telemetry.nearby_entities:
         if character.is_animal or character.disposition.value == "hostile":
@@ -876,6 +927,7 @@ AFFORDANCE_ADAPTERS: tuple[AffordanceAdapter, ...] = (
         operation_kinds=frozenset(
             {
                 "select_squad_member",
+                "select_squad_member_exact",
                 "regroup_with_squad_member",
                 "move_to_character",
                 "respond_to_immediate_threat",

@@ -215,6 +215,92 @@ def test_screen_adapter_exposes_state_intent_not_toggle_mechanics() -> None:
     )
 
 
+def test_character_adapter_exposes_one_runtime_chosen_squad_reunion() -> None:
+    bark = CharacterState(
+        id="entity-bark",
+        name="Bark",
+        selected=True,
+        alive=True,
+        conscious=True,
+        down=False,
+        position=Vec3(x=0, y=0, z=0),
+    )
+    plant = CharacterState(
+        id="entity-plant",
+        name="Plant",
+        alive=True,
+        position=Vec3(x=80, y=0, z=0),
+    )
+    ruka = CharacterState(
+        id="entity-ruka",
+        name="Ruka",
+        alive=True,
+        position=Vec3(x=300, y=0, z=0),
+    )
+    observation = _observation(
+        capabilities=[
+            "control.regroup_with_squad_member",
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.basic",
+            "squad.health",
+        ],
+        squad=[bark, ruka, plant],
+        ui=UIState(
+            active_screen="world",
+            selected_character_id=bark.id,
+            selected_character_ids=[bark.id],
+        ),
+    )
+
+    offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.operation_kind == "regroup_with_squad_member"
+    ]
+
+    assert len(offers) == 1
+    assert offers[0].semantic == "reunite_squad"
+    assert offers[0].target is not None
+    assert offers[0].target.target_id == plant.id
+    assert offers[0].operation_arguments == {
+        "actor_id": bark.id,
+        "target_id": plant.id,
+    }
+
+
+def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry() -> None:
+    bark = CharacterState(id="entity-bark", name="Bark", selected=True)
+    plant = CharacterState(id="entity-plant", name="Plant")
+    observation = _observation(
+        capabilities=[
+            "control.select_squad_member",
+            "identity.stable_handles",
+            "squad.basic",
+        ],
+        squad=[bark, plant],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id=bark.id,
+            selected_character_ids=[bark.id],
+            visible_controls=[],
+        ),
+    )
+
+    offer = next(
+        offer
+        for offer in offered_affordances(observation)
+        if offer.semantic == "select"
+    )
+
+    assert offer.operation_kind == "select_squad_member_exact"
+    assert offer.target is not None
+    assert offer.target.target_id == plant.id
+
+
 def test_screen_adapter_offers_exact_current_window_dismissal() -> None:
     observation = _observation(
         capabilities=["ui.visible_controls", "ui.inventory"],

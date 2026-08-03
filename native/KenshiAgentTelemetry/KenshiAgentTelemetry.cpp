@@ -128,7 +128,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.8.0";
+    const char* PROTOCOL_VERSION = "1.9.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -2409,6 +2409,7 @@ namespace
             if (IsValidCommandId(request.commandId) &&
                 (request.command == "approach_confirmed_vendor" ||
                  request.command == "move_to_character" ||
+                 request.command == "select_squad_member" ||
                  request.command == "regroup_with_squad_member" ||
                  request.command == "move_in_direction" ||
                  request.command == "travel_to_map_destination" ||
@@ -2441,6 +2442,8 @@ namespace
         }
         const bool isApproach = request.command == "approach_confirmed_vendor";
         const bool isMove = request.command == "move_to_character";
+        const bool isSquadSelection =
+            request.command == "select_squad_member";
         const bool isSquadRegroup =
             request.command == "regroup_with_squad_member";
         const bool isDirection = request.command == "move_in_direction";
@@ -2454,12 +2457,13 @@ namespace
             request.command == "produce_resource_output";
         const bool isContextInventory =
             request.command == "open_context_inventory";
-        if (isApproach || isMove || isSquadRegroup || isDirection || isMapTravel ||
-            isBuildingExit || isContextAction || isResourceProduction ||
-            isContextInventory)
+        if (isApproach || isMove || isSquadSelection || isSquadRegroup ||
+            isDirection || isMapTravel || isBuildingExit || isContextAction ||
+            isResourceProduction || isContextInventory)
             g_lastNativeCommand = request.command;
         if (!isApproach &&
             !isMove &&
+            !isSquadSelection &&
             !isSquadRegroup &&
             !isDirection &&
             !isMapTravel &&
@@ -2510,6 +2514,45 @@ namespace
             selectedId != request.selectedCharacterId)
         {
             RejectNativeCommand(request, "selection_mismatch");
+            return;
+        }
+
+        if (isSquadSelection)
+        {
+            bool exactIdentityFound = false;
+            Character* target = FindExactSquadMember(
+                player,
+                request.targetId,
+                exactIdentityFound);
+            if (target == NULL)
+            {
+                RejectNativeCommand(request, "target_lifetime_changed");
+                return;
+            }
+            if (selectedId != request.targetId)
+            {
+                player->_selectPlayerCharacter(target, false, false);
+                std::string resultingId;
+                hand resultingHandle;
+                if (!TryGetExactSelection(player, resultingId, resultingHandle) ||
+                    resultingId != request.targetId)
+                {
+                    Character* original = selectedHandle.getCharacter();
+                    if (original != NULL && original->isValid())
+                        player->_selectPlayerCharacter(original, false, false);
+                    RejectNativeCommand(request, "selection_not_changed");
+                    return;
+                }
+            }
+            AddNativeAcknowledgement(
+                request,
+                "completed",
+                "exact_squad_member_selected",
+                true,
+                true);
+            g_lastNativeCommandResult = "exact_squad_member_selected";
+            g_lastNativeCommandTarget = target->getName();
+            g_lastNativeCommandTargetId = request.targetId;
             return;
         }
 

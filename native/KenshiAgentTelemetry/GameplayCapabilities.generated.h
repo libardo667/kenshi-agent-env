@@ -36,6 +36,7 @@ namespace KenshiAgentTelemetry
             "nearby.roles",
             "control.approach_vendor",
             "control.move_to_character",
+            "control.select_squad_member",
             "control.regroup_with_squad_member",
             "control.move_in_direction",
             "control.travel_to_map_destination",

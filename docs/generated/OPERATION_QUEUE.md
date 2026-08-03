@@ -13,8 +13,8 @@ worse than gaps that fail: a generated completion returning nothing
 satisfies every structural check and verifies nothing.
 
 ```text
-contracted    24
-finished      24
+contracted    25
+finished      25
 unfinished     0
 
 No unfinished actions.

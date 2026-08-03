@@ -61,6 +61,7 @@
       "enum": [
         "approach_confirmed_vendor",
         "move_to_character",
+        "select_squad_member",
         "regroup_with_squad_member",
         "move_in_direction",
         "travel_to_map_destination",
