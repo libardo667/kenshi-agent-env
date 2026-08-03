@@ -12,6 +12,7 @@ from kenshi_agent.models import (
     ConditionKind,
     ConditionOperator,
     ContextActionKind,
+    ControlMode,
     Disposition,
     GameState,
     KnownMapDestination,
@@ -21,6 +22,7 @@ from kenshi_agent.models import (
     Observation,
     PerformContextAction,
     PlannerDecision,
+    PlanningMode,
     PlanStep,
     ScrollAction,
     SkillAction,
@@ -409,9 +411,19 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
         run_id="resource-perception",
         step_index=0,
         mode="mock",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        planning_mode=PlanningMode.CONTINUOUS,
         telemetry=TelemetrySnapshot(
             protocol_version="1.0.0",
-            capabilities=["world.context_targets"],
+            identity_session_id="resource-affordance-test",
+            capabilities=[
+                "world.context_targets",
+                "control.perform_context_action",
+                "game.pause",
+                "identity.stable_handles",
+            ],
+            game=GameState(loaded=True, paused=True),
+            ui=UIState(active_screen="world", dialogue_open=False, modal_open=False),
             world_targets=[target],
         ),
     )
@@ -421,16 +433,18 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
     assert payload["telemetry"]["world_targets"] == [
         target.model_dump(mode="json")
     ]
-    assert payload["context_targets"] == [
-        {
-            "id": target.id,
-            "name": target.name,
-            "kind": target.kind,
-            "distance": target.distance,
-            "context_actions": ["operate"],
-            "mining_resource_level": target.mining_resource_level,
-        }
+    context_offers = [
+        offer
+        for offer in payload["affordances"]
+        if offer["source"] == "context_order"
     ]
+    assert len(context_offers) == 1
+    assert context_offers[0]["semantic"] == "operate"
+    assert context_offers[0]["target"] == {
+        "target_id": target.id,
+        "label": target.name,
+        "kind": target.kind,
+    }
 
 
 def test_schema_export_includes_continuous_plan_contracts(tmp_path: Path) -> None:

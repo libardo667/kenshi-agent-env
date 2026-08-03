@@ -364,18 +364,12 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     nearby = _path(document, "telemetry.nearby_entities")
     assert isinstance(nearby, list)
     assert {item["id"] for item in nearby} == {_TARGET_ID, _OUTCOME_TARGET_ID}
-    context_targets = document["context_targets"]
-    assert isinstance(context_targets, list)
-    assert context_targets == [
-        {
-            "id": "entity-copper",
-            "name": "Copper Resource",
-            "kind": "natural_resource",
-            "distance": 30.0,
-            "context_actions": ["operate"],
-            "mining_resource_level": 0.8,
-        }
-    ]
+    affordances = document["affordances"]
+    assert isinstance(affordances, list)
+    assert {"observe", "stop_run"} <= {
+        offer["semantic"] for offer in affordances
+    }
+    assert not any(offer["source"] == "context_order" for offer in affordances)
 
     outcomes = document["recent_action_outcomes"]
     assert isinstance(outcomes, list)

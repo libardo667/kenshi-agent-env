@@ -48,10 +48,9 @@ def planner_action_kinds(observation: Observation) -> frozenset[str]:
     """
 
     kinds = set(PLANNER_CONTROL_ACTION_KINDS)
-    kinds.update(
-        str(entry["kind"])
-        for entry in observation.semantic_action_digest()
-    )
+    from ..affordances import offered_affordances
+
+    kinds.update(offer.operation_kind for offer in offered_affordances(observation))
     semantic_live_planning = (
         observation.mode == "live"
         and observation.planning_mode is PlanningMode.CONTINUOUS
@@ -170,13 +169,16 @@ def _payload_target_ids(payload: dict[str, Any], observation: Observation) -> se
             selected = ui.get("selected_character_ids")
             if isinstance(selected, list):
                 candidates.update(value for value in selected if isinstance(value, str))
-    for field in (
-        "dialogue_targets",
-        "travel_destinations",
-        "known_map_destinations",
-        "context_targets",
-    ):
-        candidates.update(_string_ids(payload.get(field), "id"))
+    affordances = payload.get("affordances")
+    if isinstance(affordances, list):
+        for affordance in affordances:
+            if not isinstance(affordance, dict):
+                continue
+            target = affordance.get("target")
+            if isinstance(target, dict):
+                target_id = target.get("target_id")
+                if isinstance(target_id, str):
+                    candidates.add(target_id)
     return candidates & observation.current_memory_target_ids()
 
 

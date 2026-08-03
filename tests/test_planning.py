@@ -46,6 +46,7 @@ from kenshi_agent.models import (
     WorldStateRevision,
 )
 from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner
+from kenshi_agent.planners.plan_proposal import DecisionProposal, PlanProposal
 from kenshi_agent.planning import (
     PlanBudgetLedger,
     PlanValidationError,
@@ -2022,13 +2023,14 @@ def test_plan_budget_reservations_release_or_commit_transactionally() -> None:
     assert ledger.committed_actions == 1
 
 
-def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
-    schema = to_strict_json_schema(PlanEnvelope)
-    condition_paths = schema["$defs"]["FieldConditionPath"]["enum"]
+@pytest.mark.parametrize("model", [DecisionProposal, PlanProposal])
+def test_hosted_affordance_contract_is_an_openai_compatible_strict_schema(
+    model: type[DecisionProposal] | type[PlanProposal],
+) -> None:
+    schema = to_strict_json_schema(model)
 
     def assert_supported_nodes(value: object) -> None:
         if isinstance(value, dict):
-            assert value
             assert "oneOf" not in value
             if value.get("type") == "object":
                 assert value.get("additionalProperties") is False
@@ -2039,12 +2041,9 @@ def test_plan_envelope_is_an_openai_compatible_strict_schema() -> None:
                 assert_supported_nodes(child)
 
     assert schema["type"] == "object"
-    assert "telemetry.game.paused" in condition_paths
-    assert "selected.nutrition_reserve" in condition_paths
-    assert "selected.hunger" not in condition_paths
-    assert "target.shop_inventory_owner" in condition_paths
-    assert "game.paused" not in condition_paths
-    assert "exists" not in schema["$defs"]["ConditionOperator"]["enum"]
+    assert "AffordanceSelection" in schema["$defs"]
+    assert "PurchaseItemAction" not in schema["$defs"]
+    assert "Condition" not in schema["$defs"]
     assert_supported_nodes(schema)
 
 

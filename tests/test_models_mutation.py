@@ -44,7 +44,6 @@ from kenshi_agent.models import (
     normalize_control_label,
 )
 from kenshi_agent.nutrition import model_facing_telemetry_payload
-from kenshi_agent.observation_budget import irreducible_payload
 
 NOW = datetime(2026, 7, 28, 1, 2, 3, tzinfo=UTC)
 
@@ -881,63 +880,9 @@ def test_log_digest_marks_absent_telemetry_without_inventing_nested_state() -> N
 def _planner_payload_base(observation: Observation) -> dict[str, Any]:
     payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
     payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
-    payload["dialogue_targets"] = observation.dialogue_target_digest()
-    payload["travel_destinations"] = observation.travel_destination_digest()
-    payload["known_map_destinations"] = observation.known_map_destination_digest()
-    payload["context_targets"] = observation.context_target_digest()
-    payload["semantic_actions"] = observation.semantic_action_digest()
+    payload["affordances"] = observation.affordance_digest()
     payload["squad_nutrition"] = observation.squad_nutrition_digest()
     return payload
-
-
-def test_fitted_controls_equal_the_largest_role_balanced_selection_that_fits() -> None:
-    observation = _rich_observation(item_control_count=8)
-    payload = _planner_payload_base(observation)
-    floor = irreducible_payload(payload)
-    owners = observation.window_owners()
-
-    rendered_sizes: list[int] = []
-    candidates: list[list[dict[str, Any]]] = []
-    for limit in range(10):
-        candidate = observation.visible_control_digest(limit)
-        candidate_floor = dict(floor)
-        candidate_floor["visible_controls"] = group_controls_by_window(
-            candidate,
-            owners,
-        )
-        rendered_sizes.append(
-            len(json.dumps(candidate_floor, indent=2, ensure_ascii=False))
-        )
-        candidates.append(candidate)
-
-    budgets = {
-        boundary
-        for size in rendered_sizes
-        for boundary in (size - 1, size)
-    }
-    for budget in sorted(budgets):
-        fitting = [
-            candidate
-            for candidate, size in zip(candidates, rendered_sizes, strict=True)
-            if size <= budget
-        ]
-        expected = max(fitting, key=len) if fitting else []
-        assert observation._fitted_visible_controls(payload, budget) == expected
-
-
-def test_fitted_controls_without_telemetry_is_empty() -> None:
-    observation = Observation(
-        run_id="no-telemetry-controls",
-        step_index=0,
-        observed_at=NOW,
-        mode="mock",
-        telemetry=None,
-    )
-
-    assert observation._fitted_visible_controls(
-        _planner_payload_base(observation),
-        100_000,
-    ) == []
 
 
 def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> None:
@@ -949,13 +894,15 @@ def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> N
     payload_text = observation.planner_payload()
     payload = json.loads(payload_text)
 
-    assert payload["semantic_actions"] == observation.semantic_action_digest()
-    assert payload["visible_controls"] == group_controls_by_window(
-        observation.visible_control_digest(),
-        observation.window_owners(),
-    )
-    assert payload["visible_controls"][0]["belongs_to"] == "vendor"
-    assert payload["visible_controls"][0]["seller_id"] == "entity-vendor"
+    assert payload["affordances"] == observation.affordance_digest()
+    for superseded in (
+        "semantic_actions",
+        "dialogue_targets",
+        "travel_destinations",
+        "context_targets",
+        "visible_controls",
+    ):
+        assert superseded not in payload
     assert "\\u00e9" not in payload_text
     assert payload_text == json.dumps(payload, indent=2, ensure_ascii=False)
 
@@ -1119,38 +1066,23 @@ def test_planner_payload_passes_compaction_target_and_hard_envelope(
     assert passed_budgets == [(8_000, 1_000_000), (12_000, 900_000)]
 
 
-def test_planner_payload_truncation_is_explicit_and_only_above_the_exact_ceiling() -> None:
+def test_planner_payload_fails_closed_below_the_complete_affordance_ceiling() -> None:
     observation = _rich_observation(item_control_count=20)
-    payload = _planner_payload_base(observation)
-    controls = observation.visible_control_digest()
-    floor = irreducible_payload(payload)
-    floor["visible_controls"] = group_controls_by_window(
-        controls,
-        observation.window_owners(),
-    )
-    full_required = len(json.dumps(floor, indent=2, ensure_ascii=False))
+    from kenshi_agent.observation_budget import PlannerPayloadContextError
+
+    with pytest.raises(PlannerPayloadContextError):
+        observation.planner_payload(max_chars=1, max_context_chars=1)
 
     exact = json.loads(
         observation.planner_payload(
-            max_chars=full_required,
-            max_context_chars=full_required,
+            max_chars=100_000,
+            max_context_chars=100_000,
         )
     )
-    assert "visible_controls_truncated" not in exact
+    assert exact["affordances"] == observation.affordance_digest()
 
-    truncated = json.loads(
+    with pytest.raises(PlannerPayloadContextError):
         observation.planner_payload(
-            max_chars=full_required,
-            max_context_chars=full_required - 1,
+            max_chars=1_000,
+            max_context_chars=1_000,
         )
-    )
-    assert truncated["visible_controls_truncated"] == {
-        "shown": sum(
-            len(group["controls"]) for group in truncated["visible_controls"]
-        ),
-        "total": len(controls),
-        "consequence": (
-            "The controls not listed cannot be acted on. Close a window "
-            "to reduce the screen before relying on this list."
-        ),
-    }

@@ -8,7 +8,6 @@ chain work" test and still have failed this milestone.
 from __future__ import annotations
 
 import pytest
-from pydantic import ValidationError
 
 from kenshi_agent.live_plan_policy import (
     live_plan_policy_errors,
@@ -343,23 +342,19 @@ class TestGenericPolicyRejections:
             for error in errors
         )
 
-    def test_a_raw_primitive_cannot_even_be_expressed_as_a_plan_step(self) -> None:
+    def test_a_raw_primitive_is_absent_from_the_hosted_selection_schema(self) -> None:
         """A raw coordinate carries no evidence of what it would activate.
 
-        The policy used to be the only thing refusing these, which meant the
-        response schema still offered the planner five primitives it was never
-        allowed to pick. `PlanStep.action` is now the narrower `PlannerAction`,
-        so a primitive fails at parse time and never reaches the policy.
+        PlanStep is now runtime-private and can carry adapter operations. The
+        hosted model sees only AffordanceSelection, so primitives have no
+        representable branch at all.
         """
-        from kenshi_agent.models import HotkeyAction, KeyAction
+        from kenshi_agent.planners.plan_proposal import PlanProposal
 
-        for action in (
-            ClickAction(x=0.5, y=0.5),
-            KeyAction(key="space"),
-            HotkeyAction(keys=["ctrl", "s"]),
-        ):
-            with pytest.raises(ValidationError):
-                step("raw", action, success=[screen_is("trade")])
+        schema = PlanProposal.model_json_schema()
+        blob = str(schema)
+        for primitive in ("ClickAction", "KeyAction", "HotkeyAction"):
+            assert primitive not in blob
 
     def test_a_raw_primitive_smuggled_past_the_schema_is_still_refused(self) -> None:
         """Validation is the first defence, not the only one."""

@@ -233,6 +233,116 @@
       "title": "CapabilityCondition",
       "type": "object"
     },
+    "ClickAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "click",
+          "default": "click",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton",
+          "default": "left"
+        },
+        "clicks": {
+          "default": 1,
+          "maximum": 3,
+          "minimum": 1,
+          "title": "Clicks",
+          "type": "integer"
+        },
+        "hold_seconds": {
+          "default": 0.0,
+          "maximum": 0.5,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        },
+        "interval_seconds": {
+          "default": 0.08,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Interval Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "ClickAction",
+      "type": "object"
+    },
+    "CollectResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Transfer one exact resource-output cell into the selected squadmate.\n\nThe exact world-target ID binds the source window to its observed resource.\n`source_quantity` is copied from the cell so the controller can prove that\nsource loss equals destination gain after the right-click.",
+      "properties": {
+        "kind": {
+          "const": "collect_resource_output",
+          "default": "collect_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "cell_label": {
+          "maxLength": 80,
+          "minLength": 1,
+          "title": "Cell Label",
+          "type": "string"
+        },
+        "item_name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Item Name",
+          "type": "string"
+        },
+        "source_quantity": {
+          "exclusiveMinimum": 0,
+          "title": "Source Quantity",
+          "type": "integer"
+        },
+        "window": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Window",
+          "type": "string"
+        },
+        "section": {
+          "const": "out",
+          "default": "out",
+          "title": "Section",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id",
+        "cell_label",
+        "item_name",
+        "source_quantity",
+        "window"
+      ],
+      "title": "CollectResourceOutputAction",
+      "type": "object"
+    },
     "CommandWorldTargetAction": {
       "additionalProperties": false,
       "description": "Right-click one exact current world target at telemetry-owned geometry.",
@@ -329,6 +439,15 @@
         "native_assisted"
       ],
       "title": "ControlMode",
+      "type": "string"
+    },
+    "CoordinateSpace": {
+      "enum": [
+        "normalized",
+        "client",
+        "screen"
+      ],
+      "title": "CoordinateSpace",
       "type": "string"
     },
     "CreateFieldbookProjectOperation": {
@@ -757,6 +876,38 @@
       "title": "HarvestResourceAction",
       "type": "object"
     },
+    "HotkeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "hotkey",
+          "default": "hotkey",
+          "title": "Kind",
+          "type": "string"
+        },
+        "keys": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 5,
+          "minItems": 2,
+          "title": "Keys",
+          "type": "array"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "keys"
+      ],
+      "title": "HotkeyAction",
+      "type": "object"
+    },
     "IdempotencyPolicy": {
       "enum": [
         "at_most_once",
@@ -773,6 +924,7 @@
       "title": "InterruptPolicy",
       "type": "string"
     },
+    "JsonValue": {},
     "KeepMemoryOperation": {
       "additionalProperties": false,
       "description": "Create one durable record from something already established.\n\n`evidence` is absent on purpose. The stored grounding string is rendered by\nthe runtime from `references` after each one resolves, so a record can\nnever describe proof it does not have.",
@@ -845,6 +997,35 @@
       "title": "KeepMemoryOperation",
       "type": "object"
     },
+    "KeyAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "key",
+          "default": "key",
+          "title": "Kind",
+          "type": "string"
+        },
+        "key": {
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Key",
+          "type": "string"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "KeyAction",
+      "type": "object"
+    },
     "MemoryEvidence": {
       "additionalProperties": false,
       "properties": {
@@ -887,6 +1068,112 @@
       ],
       "title": "MemoryResolutionDisposition",
       "type": "string"
+    },
+    "MouseButton": {
+      "enum": [
+        "left",
+        "right",
+        "middle",
+        "x1",
+        "x2"
+      ],
+      "title": "MouseButton",
+      "type": "string"
+    },
+    "MouseButtonAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mouse_button",
+          "default": "mouse_button",
+          "title": "Kind",
+          "type": "string"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton"
+        },
+        "hold_seconds": {
+          "default": 0.04,
+          "maximum": 5.0,
+          "minimum": 0.0,
+          "title": "Hold Seconds",
+          "type": "number"
+        }
+      },
+      "required": [
+        "button"
+      ],
+      "title": "MouseButtonAction",
+      "type": "object"
+    },
+    "MouseDragAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "mouse_drag",
+          "default": "mouse_drag",
+          "title": "Kind",
+          "type": "string"
+        },
+        "button": {
+          "$ref": "#/$defs/MouseButton"
+        },
+        "delta_x": {
+          "maximum": 512,
+          "minimum": -512,
+          "title": "Delta X",
+          "type": "integer"
+        },
+        "delta_y": {
+          "maximum": 512,
+          "minimum": -512,
+          "title": "Delta Y",
+          "type": "integer"
+        },
+        "steps": {
+          "default": 8,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Steps",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "button",
+        "delta_x",
+        "delta_y"
+      ],
+      "title": "MouseDragAction",
+      "type": "object"
+    },
+    "MoveCursorAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "move_cursor",
+          "default": "move_cursor",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ],
+      "title": "MoveCursorAction",
+      "type": "object"
     },
     "MoveInDirectionAction": {
       "additionalProperties": false,
@@ -974,6 +1261,29 @@
       "title": "ObservationPolicy",
       "type": "string"
     },
+    "OpenContextInventoryAction": {
+      "additionalProperties": false,
+      "description": "Open the ordinary inventory UI for one exact observed world target.",
+      "properties": {
+        "kind": {
+          "const": "open_context_inventory",
+          "default": "open_context_inventory",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "OpenContextInventoryAction",
+      "type": "object"
+    },
     "OpenScreenAction": {
       "additionalProperties": false,
       "description": "Have a named screen open. Prefer this over pressing its key.\n\nIdempotent: succeeds if the screen is already open.",
@@ -1010,6 +1320,33 @@
         }
       },
       "title": "PauseAction",
+      "type": "object"
+    },
+    "PerformContextAction": {
+      "additionalProperties": false,
+      "description": "Perform one exact contextual task an observed world object advertises.\n\nThe planner copies only a `(target_id, context_action)` pair from current\n`context_targets`. Native code re-resolves the object, rechecks the reviewed\ntask, issues Kenshi's own default order, and proves the selected character's\nAI accepted that exact object/task pair.",
+      "properties": {
+        "kind": {
+          "const": "perform_context_action",
+          "default": "perform_context_action",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "context_action": {
+          "$ref": "#/$defs/ContextActionKind"
+        }
+      },
+      "required": [
+        "target_id",
+        "context_action"
+      ],
+      "title": "PerformContextAction",
       "type": "object"
     },
     "PlanOutcomeEvidence": {
@@ -1068,6 +1405,30 @@
               "$ref": "#/$defs/ReadFieldbookAction"
             },
             {
+              "$ref": "#/$defs/KeyAction"
+            },
+            {
+              "$ref": "#/$defs/HotkeyAction"
+            },
+            {
+              "$ref": "#/$defs/MouseButtonAction"
+            },
+            {
+              "$ref": "#/$defs/MouseDragAction"
+            },
+            {
+              "$ref": "#/$defs/MoveCursorAction"
+            },
+            {
+              "$ref": "#/$defs/ClickAction"
+            },
+            {
+              "$ref": "#/$defs/ScrollAction"
+            },
+            {
+              "$ref": "#/$defs/SkillAction"
+            },
+            {
               "$ref": "#/$defs/ApproachDialogueTargetAction"
             },
             {
@@ -1078,6 +1439,24 @@
             },
             {
               "$ref": "#/$defs/RotateCameraAction"
+            },
+            {
+              "$ref": "#/$defs/PerformContextAction"
+            },
+            {
+              "$ref": "#/$defs/ProduceResourceOutputAction"
+            },
+            {
+              "$ref": "#/$defs/OpenContextInventoryAction"
+            },
+            {
+              "$ref": "#/$defs/HarvestResourceAction"
+            },
+            {
+              "$ref": "#/$defs/RespondToImmediateThreatAction"
+            },
+            {
+              "$ref": "#/$defs/RegroupWithSquadMemberAction"
             },
             {
               "$ref": "#/$defs/MoveToCharacterAction"
@@ -1116,22 +1495,50 @@
               "$ref": "#/$defs/EquipItemAction"
             },
             {
+              "$ref": "#/$defs/CollectResourceOutputAction"
+            },
+            {
               "$ref": "#/$defs/RecoverCameraViewAction"
-            },
-            {
-              "$ref": "#/$defs/HarvestResourceAction"
-            },
-            {
-              "$ref": "#/$defs/RespondToImmediateThreatAction"
-            },
-            {
-              "$ref": "#/$defs/RegroupWithSquadMemberAction"
-            },
-            {
-              "$ref": "#/$defs/SkillAction"
             }
           ],
           "title": "Action"
+        },
+        "affordance_id": {
+          "anyOf": [
+            {
+              "pattern": "^aff-[0-9a-f]{20}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affordance Id"
+        },
+        "affordance_target_id": {
+          "anyOf": [
+            {
+              "maxLength": 500,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affordance Target Id"
+        },
+        "affordance_parameters": {
+          "items": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "maxItems": 8,
+          "title": "Affordance Parameters",
+          "type": "array"
         },
         "preconditions": {
           "items": {
@@ -1217,6 +1624,36 @@
         "timeout_seconds"
       ],
       "title": "PlanStep",
+      "type": "object"
+    },
+    "ProduceResourceOutputAction": {
+      "additionalProperties": false,
+      "description": "Internal production phase retained until a bounded output yield exists.",
+      "properties": {
+        "kind": {
+          "const": "produce_resource_output",
+          "default": "produce_resource_output",
+          "title": "Kind",
+          "type": "string"
+        },
+        "target_id": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        },
+        "minimum_output_quantity": {
+          "default": 1,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Minimum Output Quantity",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "target_id"
+      ],
+      "title": "ProduceResourceOutputAction",
       "type": "object"
     },
     "PurchaseItemAction": {
@@ -1643,6 +2080,42 @@
         "direction"
       ],
       "title": "RotateCameraAction",
+      "type": "object"
+    },
+    "ScrollAction": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "scroll",
+          "default": "scroll",
+          "title": "Kind",
+          "type": "string"
+        },
+        "x": {
+          "title": "X",
+          "type": "number"
+        },
+        "y": {
+          "title": "Y",
+          "type": "number"
+        },
+        "space": {
+          "$ref": "#/$defs/CoordinateSpace",
+          "default": "normalized"
+        },
+        "notches": {
+          "maximum": 8,
+          "minimum": -8,
+          "title": "Notches",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "notches"
+      ],
+      "title": "ScrollAction",
       "type": "object"
     },
     "ScrollScreenAction": {

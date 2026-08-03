@@ -148,7 +148,7 @@ def test_missing_distance_sorts_last_not_crash() -> None:
     assert [v.name for v in result] == ["Close", "Unknown Distance"]
 
 
-def test_planner_payload_surfaces_deterministic_dialogue_targets() -> None:
+def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
     import json
 
     from kenshi_agent.models import Observation, TelemetrySnapshot
@@ -157,7 +157,15 @@ def test_planner_payload_surfaces_deterministic_dialogue_targets() -> None:
         run_id="digest-test",
         step_index=0,
         mode="live",
+        control_mode="native_assisted",
         telemetry=TelemetrySnapshot(
+            identity_session_id="dialogue-affordance-test",
+            capabilities=[
+                "control.approach_dialogue_target",
+                "identity.stable_handles",
+                "nearby.characters",
+                "nearby.roles",
+            ],
             nearby_entities=[
                 barman(distance=26.0),
                 entity("Mercenary Captain", is_animal=False, has_vendor_list=False,
@@ -170,20 +178,22 @@ def test_planner_payload_surfaces_deterministic_dialogue_targets() -> None:
     )
 
     payload = json.loads(observation.planner_payload())
-    targets = payload["dialogue_targets"]
+    targets = [
+        affordance["target"]
+        for affordance in payload["affordances"]
+        if affordance["semantic"] == "approach_for_dialogue"
+    ]
 
-    # Hostile bandit excluded; nearest-first (Captain 15 before Barman 26).
-    assert [t["name"] for t in targets] == ["Mercenary Captain", "Barman"]
-    by_name = {t["name"]: t for t in targets}
-    assert by_name["Barman"]["is_vendor"] is True
-    assert by_name["Mercenary Captain"]["is_vendor"] is False
+    # The hostile bandit is absent; each current valid target is exact.
+    assert {target["label"] for target in targets} == {"Mercenary Captain", "Barman"}
+    assert all(target["target_id"] for target in targets)
 
 
-def test_planner_payload_dialogue_targets_empty_without_telemetry() -> None:
+def test_planner_payload_affordances_empty_without_telemetry() -> None:
     import json
 
     from kenshi_agent.models import Observation
 
     observation = Observation(run_id="no-telemetry", step_index=0, mode="mock")
     payload = json.loads(observation.planner_payload())
-    assert payload["dialogue_targets"] == []
+    assert payload["affordances"] == []

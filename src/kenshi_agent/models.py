@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,7 +28,7 @@ from .nutrition import (
 from .nutrition import (
     squad_nutrition_digest as build_squad_nutrition_digest,
 )
-from .observation_budget import budget_observation_payload, irreducible_payload
+from .observation_budget import budget_observation_payload
 from .runtime_context_menu import (
     require_consistent_context_menu_state,
     require_truthful_context_menu_capability,
@@ -3978,10 +3977,18 @@ def _unique_conditions(conditions: list[Condition]) -> list[Condition]:
 
 class PlanStep(StrictModel):
     step_id: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_-]{0,63}$")
-    # `PlannerAction`, not `Action`: a plan is authored, so it must not offer
-    # the controller primitives. Advertising them put five raw-input actions in
-    # the response schema the planner is never allowed to choose.
-    action: PlannerAction
+    # Runtime-private operation materialized from an exact current affordance.
+    # Hosted planner schemas never expose this union.
+    action: Action
+    affordance_id: str | None = Field(
+        default=None,
+        pattern=r"^aff-[0-9a-f]{20}$",
+    )
+    affordance_target_id: str | None = Field(default=None, max_length=500)
+    affordance_parameters: list[dict[str, JsonValue]] = Field(
+        default_factory=list,
+        max_length=8,
+    )
     preconditions: list[Condition] = Field(min_length=1, max_length=12)
     # The action-completion catalog decides whether the controller, runtime, or
     # planner owns verification. Keeping that rule out of this generic schema
@@ -4591,6 +4598,13 @@ class Observation(StrictModel):
             digest.append(entry)
         return digest
 
+    def affordance_digest(self) -> list[dict[str, Any]]:
+        """One exact runtime-generated action surface for the playing model."""
+
+        from .affordances import offered_affordances
+
+        return [offer.planner_digest() for offer in offered_affordances(self)]
+
     def log_digest(self) -> dict[str, Any]:
         """A compact record of this observation for the session log.
 
@@ -4720,68 +4734,6 @@ class Observation(StrictModel):
         }
         return digest
 
-    def _fitted_visible_controls(
-        self,
-        payload: dict[str, Any],
-        max_chars: int,
-        *,
-        measure: Callable[[str], int] = len,
-    ) -> list[dict[str, Any]]:
-        """As many controls as the payload has room for, role-balanced.
-
-        The control digest is preserved whole through prompt compaction - the
-        planner may only act on a control it was shown, so a half-listed action
-        surface is worse than a smaller observation elsewhere. That made it the
-        one collection nothing bounded, which is why it carried a hand-picked
-        cap of 120 for so long. Measuring the room that is actually left keeps
-        the fail-closed guarantee without guessing the number: a dialogue with
-        nine controls surfaces all nine, a trade screen surfaces what fits, and
-        raising the measured envelope widens both without another edit here.
-        """
-
-        # Measured against the irreducible payload, not the full one. Compaction
-        # has not run yet, so the payload still carries whole telemetry and is
-        # normally larger than the target on its own; comparing against it would
-        # conclude there is never room for a single control. What the digest
-        # actually competes with is the content that compaction can never drop.
-        floor = irreducible_payload(payload)
-        owners = self.window_owners()
-
-        def rendered_size(candidate: list[dict[str, Any]]) -> int:
-            # This scratch document is measured and discarded. Any same-length
-            # spelling has identical behavior, so keep the canonical key out of
-            # the mutation signal while testing its consumer at planner_payload.
-            # pragma: no mutate start
-            floor["visible_controls"] = group_controls_by_window(
-                candidate,
-                owners,
-            )
-            # pragma: no mutate end
-            return measure(_planner_json(floor))
-
-        controls = (
-            self.telemetry.ui.visible_controls
-            if self.telemetry is not None
-            and self.telemetry.ui.visible_controls is not None
-            else []
-        )
-        candidates = [self.visible_control_digest(0)]
-        for limit, _control in enumerate(
-            controls[:MAX_DIGESTED_VISIBLE_CONTROLS],
-            start=1,
-        ):
-            candidates.append(self.visible_control_digest(limit))
-
-        fitted_index = max(
-            0,
-            bisect_right(
-                [rendered_size(candidate) for candidate in candidates],
-                max_chars,
-            )
-            - 1,
-        )
-        return candidates[fitted_index]
-
     def planner_payload(
         self,
         *,
@@ -4802,21 +4754,8 @@ class Observation(StrictModel):
 
         payload = self.model_dump(mode="json", exclude={"screenshot_path"})
         payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
-        # Surface the deterministic talk-target list the planner must trust
-        # rather than re-derive. A top-level non-collection key is preserved
-        # through budgeting.
-        payload["dialogue_targets"] = self.dialogue_target_digest()
-        payload["travel_destinations"] = self.travel_destination_digest()
-        payload["known_map_destinations"] = self.known_map_destination_digest()
-        payload["context_targets"] = self.context_target_digest()
-        payload["semantic_actions"] = self.semantic_action_digest()
+        payload["affordances"] = self.affordance_digest()
         payload["squad_nutrition"] = self.squad_nutrition_digest()
-
-        controls = self.visible_control_digest()
-        payload["visible_controls"] = group_controls_by_window(
-            controls,
-            self.window_owners(),
-        )
         if max_chars is None and max_context_chars is None:
             return _planner_json(payload)
         if max_chars is None:
@@ -4825,39 +4764,6 @@ class Observation(StrictModel):
         if max_context_chars is None:
             max_context_chars = max_chars
 
-        floor = irreducible_payload(payload)
-        # This scratch document is measured and discarded. The canonical key
-        # itself is asserted on the final planner payload below.
-        # pragma: no mutate start
-        floor["visible_controls"] = group_controls_by_window(
-            controls,
-            self.window_owners(),
-        )
-        # pragma: no mutate end
-        required = measure(_planner_json(floor))
-        if required > max_context_chars:
-            # Only here is dropping a control the lesser evil. Say so in the
-            # payload: an agent that knows its view is incomplete can ask for a
-            # simpler screen, where one that is silently blinded cannot.
-            shown = self._fitted_visible_controls(
-                payload,
-                max_context_chars,
-                measure=measure,
-            )
-            payload["visible_controls_truncated"] = {
-                "shown": len(shown),
-                "total": len(controls),
-                "consequence": (
-                    "The controls not listed cannot be acted on. Close a window "
-                    "to reduce the screen before relying on this list."
-                ),
-            }
-            controls = shown
-
-        payload["visible_controls"] = group_controls_by_window(
-            controls,
-            self.window_owners(),
-        )
         text = _planner_json(payload)
         return budget_observation_payload(
             payload,

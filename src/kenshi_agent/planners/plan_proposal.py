@@ -12,31 +12,27 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, TypeAdapter
 
 from ..action_contracts import (
     ActionExecution,
-    CompletionOwner,
-    completion_contract_for,
     contract_for,
 )
+from ..affordances import AffordanceSelection, bind_affordance
 from ..config import PlanningConfig
 from ..models import (
     ActionOutcomeEvidence,
     AdvisorBriefEvidence,
     AppendFieldbookEntryOperation,
     Condition,
-    ConditionOperator,
     ContinuityOperation,
     CreateFieldbookProjectOperation,
     CurrentObservationEvidence,
     EvidenceReference,
-    ExpectedConditionScalar,
     FieldbookEntryKind,
     FieldbookOperation,
     FieldbookProjectKind,
     FieldbookProjectStatus,
-    FieldConditionPath,
     IdempotencyPolicy,
     KeepMemoryOperation,
     MemoryEvidence,
@@ -44,7 +40,7 @@ from ..models import (
     MemoryResolutionDisposition,
     Observation,
     PlanEnvelope,
-    PlannerAction,
+    PlannerDecision,
     PlanOutcomeEvidence,
     PlanPatch,
     PlanStep,
@@ -55,29 +51,17 @@ from ..models import (
     RiskBudget,
     SelectFieldbookProjectOperation,
     SetFieldbookProjectStatusOperation,
+    SingleStepPlannerAction,
     StrictModel,
     SupersedeMemoryOperation,
     UpdateFieldbookSummaryOperation,
 )
 
 
-class ProposedOutcome(StrictModel):
-    """A strategic effect for actions whose terminal is genuinely ambiguous."""
-
-    path: FieldConditionPath
-    operator: ConditionOperator
-    expected: ExpectedConditionScalar
-    target_id: str | None = Field(default=None, min_length=1, max_length=200)
-
-
 class ProposedPlanStep(StrictModel):
-    """One semantic action, without executor bookkeeping."""
+    """One exact current affordance, without executor bookkeeping."""
 
-    action: PlannerAction
-    expected_outcomes: list[ProposedOutcome] = Field(
-        default_factory=list,
-        max_length=4,
-    )
+    selection: AffordanceSelection
 
 
 class ContinuityProposal(StrictModel):
@@ -128,6 +112,24 @@ class PlanProposal(StrictModel):
     )
 
 
+class DecisionProposal(StrictModel):
+    """One hosted-model choice using the same current affordance contract."""
+
+    intent: str = Field(min_length=1, max_length=1000)
+    rationale: str = Field(min_length=1, max_length=1500)
+    selection: AffordanceSelection
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+    expected_observation: str | None = Field(default=None, max_length=1000)
+    continuity_operations: list[ContinuityProposal] = Field(
+        default_factory=list,
+        max_length=6,
+    )
+    fieldbook_operations: list[FieldbookProposal] = Field(
+        default_factory=list,
+        max_length=4,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class RejectedProposalSidecar:
     surface: Literal["continuity_operations", "fieldbook_operations"]
@@ -153,6 +155,12 @@ class CompiledHostedPlanProposal:
     rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
 
 
+@dataclass(frozen=True, slots=True)
+class CompiledDecisionProposal:
+    decision: PlannerDecision
+    rejected_sidecars: tuple[RejectedProposalSidecar, ...] = ()
+
+
 _ATOMIC_EFFECT_TIMEOUT_SECONDS = 10.0
 _OWNED_OPTION_TIMEOUT_SECONDS = 300.0
 
@@ -168,39 +176,7 @@ def _proposal_step(raw: object) -> ProposedPlanStep:
         raise ValueError(  # mutation: diagnostic-only
             "PlanProposal steps must be JSON objects"
         )
-    # Accept an old PlanStep-shaped reply during migration, but deliberately
-    # discard every administrative field it tried to author.
-    raw_outcomes = raw.get(
-        "expected_outcomes",
-        raw.get("success_conditions", []),
-    )
-    if isinstance(raw_outcomes, list):
-        raw_outcomes = [
-            {
-                name: outcome[name]
-                for name in ProposedOutcome.model_fields
-                if name in outcome
-            }
-            if isinstance(outcome, Mapping)
-            else outcome
-            for outcome in raw_outcomes
-        ]
-    return ProposedPlanStep.model_validate(
-        {
-            "action": raw.get("action"),
-            "expected_outcomes": raw_outcomes,
-        }
-    )
-
-
-def _outcome_condition(outcome: ProposedOutcome) -> Condition:
-    return Condition(
-        path=outcome.path,
-        operator=outcome.operator,
-        expected=outcome.expected,
-        max_age_seconds=3.0,
-        target_id=outcome.target_id,
-    )
+    return ProposedPlanStep.model_validate({"selection": raw.get("selection")})
 
 
 def _evidence_reference(evidence_id: str) -> EvidenceReference:
@@ -469,14 +445,10 @@ def compile_plan_proposal(
     steps: list[PlanStep] = []
     pointer_risk = purchase_risk = native_risk = max_spend = 0
     for index, proposal in enumerate(proposals):
-        action = proposal.action
+        bound = bind_affordance(proposal.selection, observation)
+        action = bound.operation
         contract = contract_for(action)
-        completion = completion_contract_for(action, observation)
-        authored_outcomes = [_outcome_condition(outcome) for outcome in proposal.expected_outcomes]
-        if completion.owner is CompletionOwner.PLANNER_CONDITIONS:
-            success_conditions = authored_outcomes
-        else:
-            success_conditions = []
+        success_conditions: list[Condition] = []
 
         if contract is None:
             idempotency = IdempotencyPolicy.AT_MOST_ONCE
@@ -495,6 +467,14 @@ def compile_plan_proposal(
             PlanStep(
                 step_id=step_id,
                 action=action,
+                affordance_id=bound.offer.affordance_id,
+                affordance_target_id=(
+                    bound.offer.target.target_id if bound.offer.target else None
+                ),
+                affordance_parameters=[
+                    parameter.model_dump(mode="json")
+                    for parameter in proposal.selection.parameters
+                ],
                 preconditions=[fresh],
                 success_conditions=success_conditions,
                 timeout_seconds=_step_timeout_seconds(
@@ -535,6 +515,40 @@ def compile_plan_proposal(
     )
     return CompiledPlanProposal(
         plan=plan,
+        rejected_sidecars=tuple([*continuity_rejected, *fieldbook_rejected]),
+    )
+
+
+def compile_decision_proposal(
+    document: object,
+    *,
+    observation: Observation,
+) -> CompiledDecisionProposal:
+    """Compile one hosted single-step selection into a runtime decision."""
+
+    if not isinstance(document, Mapping):
+        raise ValueError("DecisionProposal must be one JSON object")
+    proposal = DecisionProposal.model_validate(document)
+    bound = bind_affordance(proposal.selection, observation)
+    action: SingleStepPlannerAction = TypeAdapter(
+        SingleStepPlannerAction
+    ).validate_python(bound.operation)
+    continuity, continuity_rejected = _compile_continuity_sidecars(
+        document.get("continuity_operations")
+    )
+    fieldbook, fieldbook_rejected = _compile_fieldbook_sidecars(
+        document.get("fieldbook_operations")
+    )
+    return CompiledDecisionProposal(
+        decision=PlannerDecision(
+            intent=proposal.intent,
+            rationale=proposal.rationale,
+            action=action,
+            confidence=proposal.confidence,
+            expected_observation=proposal.expected_observation,
+            continuity_operations=continuity,
+            fieldbook_operations=fieldbook,
+        ),
         rejected_sidecars=tuple([*continuity_rejected, *fieldbook_rejected]),
     )
 

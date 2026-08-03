@@ -11,6 +11,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from ..affordances import offered_affordances, selection_for
 from ..config import PlannerConfig, PlanningConfig
 from ..hosted_continuation import (
     CONTINUE_STRUCTURED_JSON_SUFFIX,
@@ -41,7 +42,12 @@ from .context_capacity import (
     hosted_context_envelope,
     resolve_openrouter_model_capacity,
 )
-from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
+from .plan_proposal import (
+    DecisionProposal,
+    PlanProposal,
+    compile_decision_proposal,
+    compile_hosted_plan_proposal,
+)
 from .schema_dialect import projected_response_format
 
 # Phrases providers use when the request was fine but the schema was not. They
@@ -131,6 +137,15 @@ def _planner_request_text(output_model: type[BaseModel]) -> str:
     else:
         request = "Choose exactly one next action from this observation. "
     return request + f"Return the {output_model.__name__} schema only.\n\n"
+
+
+def _observe_selection(observation: Observation) -> dict[str, Any]:
+    offer = next(
+        offer
+        for offer in offered_affordances(observation)
+        if offer.semantic == "observe"
+    )
+    return selection_for(offer).model_dump(mode="json")
 
 
 def _sum_optional(
@@ -233,7 +248,7 @@ class OpenRouterPlanner(Planner):
         response_model = (
             PlanProposal
             if output_model in (PlanEnvelope, PlanPatch)
-            else output_model
+            else DecisionProposal
         )
         allowed_action_kinds = planner_action_kinds(observation)
         schema_text = json.dumps(
@@ -319,7 +334,7 @@ class OpenRouterPlanner(Planner):
         response_model = (
             PlanProposal
             if output_model in (PlanEnvelope, PlanPatch)
-            else output_model
+            else DecisionProposal
         )
         allowed_action_kinds = planner_action_kinds(observation)
         schema_surface = (response_model.__name__, allowed_action_kinds)
@@ -512,7 +527,10 @@ class OpenRouterPlanner(Planner):
                         ),
                     )
             else:
-                output = output_model.model_validate(document)
+                output = compile_decision_proposal(
+                    document,
+                    observation=observation,
+                ).decision
         except ValueError as exc:
             if response_model is not PlanProposal:
                 raise HostedPlannerResponseError(
@@ -526,13 +544,7 @@ class OpenRouterPlanner(Planner):
                     "objective": "Regain a fresh planning turn after an unusable proposal.",
                     "steps": [
                         {
-                            "action": {
-                                "kind": "noop",
-                                "reason": (
-                                    "I could not express that plan cleanly, so I am "
-                                    "taking a fresh look at the world."
-                                ),
-                            }
+                            "selection": _observe_selection(observation),
                         }
                     ],
                 },
@@ -562,13 +574,7 @@ class OpenRouterPlanner(Planner):
                     "objective": "Regain a fresh planning turn after an unavailable action.",
                     "steps": [
                         {
-                            "action": {
-                                "kind": "noop",
-                                "reason": (
-                                    "That action is not available now, so I am "
-                                    "reconsidering from current evidence."
-                                ),
-                            }
+                            "selection": _observe_selection(observation),
                         }
                     ],
                 },

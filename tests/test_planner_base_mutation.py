@@ -192,9 +192,13 @@ def test_budgeted_manifest_is_the_exact_final_json_projection(
                 "selected_character_ids": ["entity-7", 8],
             },
         },
-        "dialogue_targets": [{"id": "entity-8"}],
-        "travel_destinations": [{"id": "entity-9"}],
-        "context_targets": [{"id": "entity-10"}, {"id": "not-current"}],
+        "affordances": [
+            {"target": {"target_id": "entity-8"}},
+            {"target": {"target_id": "entity-9"}},
+            {"target": {"target_id": "entity-10"}},
+            {"target": {"target_id": "not-current"}},
+            {"target": None},
+        ],
         "recent_action_outcomes": [{"outcome_id": "ao-4"}],
         "recent_plan_outcomes": [{"plan_outcome_id": "po-4"}],
         "memories": [{"memory_id": "mem-payload"}],
@@ -353,9 +357,14 @@ def test_payload_identity_extractors_reject_malformed_and_historical_shapes() ->
                 "selected_character_ids": ["entity-7", None],
             },
         },
-        "dialogue_targets": [{"id": "entity-8"}],
-        "travel_destinations": [{"id": "entity-9"}],
-        "context_targets": [{"id": "entity-10"}, {"id": "historical-only"}],
+        "affordances": [
+            {"target": {"target_id": "entity-8"}},
+            {"target": {"target_id": "entity-9"}},
+            {"target": {"target_id": "entity-10"}},
+            {"target": {"target_id": "historical-only"}},
+            {"target": {"target_id": 12}},
+            "invalid",
+        ],
     }
 
     assert planner_base._payload_target_ids(payload, current) == set(_TARGET_IDS)

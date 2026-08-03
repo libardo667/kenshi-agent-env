@@ -179,7 +179,12 @@ def _build_projected_response_format(
     response_format = deepcopy(portable_response_format(model))
     schema = response_format["json_schema"]["schema"]
     definitions = schema["$defs"]
-    action_union = _action_union(schema)
+    try:
+        action_union = _action_union(schema)
+    except RuntimeError:
+        # PlanProposal exposes one AffordanceSelection, not an operation union.
+        _prune_unreachable_definitions(schema)
+        return response_format
     branches = []
     for branch in action_union["anyOf"]:
         definition_name = branch["$ref"].rsplit("/", 1)[-1]

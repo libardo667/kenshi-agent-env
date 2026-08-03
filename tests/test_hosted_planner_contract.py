@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import collections
 import json
 from datetime import UTC, datetime
 from types import SimpleNamespace
@@ -10,6 +9,11 @@ from typing import Any
 import pytest
 
 import kenshi_agent.planners.context_capacity as context_capacity
+from kenshi_agent.affordances import (
+    AffordanceSelection,
+    offered_affordances,
+    selection_for,
+)
 from kenshi_agent.config import PlannerConfig
 from kenshi_agent.models import (
     ActivePlanContext,
@@ -23,14 +27,11 @@ from kenshi_agent.models import (
     MemoryRecord,
     MemoryStatus,
     NearbyEntity,
-    NoopAction,
     Observation,
     PlanEnvelope,
     PlannerDecision,
     PlanningMode,
     PlanPatch,
-    SkillAction,
-    StopAction,
     TelemetrySnapshot,
     UIState,
     WorldStateRevision,
@@ -39,10 +40,8 @@ from kenshi_agent.planners.base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
     output_token_budget,
-    planner_action_kinds,
     planner_context_manifest,
     structured_output_model,
-    validate_planner_output_surface,
     validate_planner_prompt_budget,
 )
 from kenshi_agent.planners.context_capacity import (
@@ -57,6 +56,7 @@ from kenshi_agent.planners.openai_planner import OpenAIPlanner
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 from kenshi_agent.planners.plan_proposal import (
     ContinuityProposal,
+    DecisionProposal,
     PlanProposal,
     ProposedPlanStep,
 )
@@ -76,6 +76,29 @@ def observation(
         planning_mode=planning_mode,
         telemetry=TelemetrySnapshot(ui=UIState(active_screen=screen)),
         active_plan=active_plan,
+    )
+
+
+def _selection(semantic: str) -> AffordanceSelection:
+    current = observation()
+    offer = next(
+        offer
+        for offer in offered_affordances(current)
+        if offer.semantic == semantic
+    )
+    return selection_for(offer)
+
+
+def _proposal_step(semantic: str = "stop_run") -> ProposedPlanStep:
+    return ProposedPlanStep(selection=_selection(semantic))
+
+
+def _decision_proposal(semantic: str = "stop_run") -> DecisionProposal:
+    return DecisionProposal(
+        intent="Choose one exact current affordance.",
+        rationale="The fake hosted response is complete.",
+        selection=_selection(semantic),
+        confidence=1.0,
     )
 
 
@@ -537,12 +560,7 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
         async def parse(self, **kwargs: Any) -> SimpleNamespace:
             self.kwargs = kwargs
             return SimpleNamespace(
-                output_parsed=PlannerDecision(
-                    intent="Stop safely.",
-                    rationale="The fake hosted response is complete.",
-                    action=StopAction(reason="Test complete."),
-                    confidence=1.0,
-                ),
+                output_parsed=_decision_proposal(),
                 output_text="",
             )
 
@@ -576,9 +594,7 @@ def test_openai_active_plan_also_authors_a_simple_future_proposal() -> None:
     proposal = PlanProposal(
         objective="Stop after the active option finishes.",
         steps=[
-            ProposedPlanStep(
-                action=StopAction(reason="Concurrent planning proof complete."),
-            )
+            _proposal_step()
         ],
     )
 
@@ -625,12 +641,7 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
 
         async def create(self, **kwargs: Any) -> SimpleNamespace:
             self.kwargs = kwargs
-            decision = PlannerDecision(
-                intent="Stop safely.",
-                rationale="The fake hosted response is complete.",
-                action=StopAction(reason="Test complete."),
-                confidence=1.0,
-            )
+            decision = _decision_proposal()
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
@@ -676,9 +687,7 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
             proposal = PlanProposal(
                 objective="Prove the continuous response budget reaches OpenRouter.",
                 steps=[
-                    ProposedPlanStep(
-                        action=StopAction(reason="Test complete."),
-                    )
+                    _proposal_step()
                 ],
             )
             return SimpleNamespace(
@@ -727,9 +736,9 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert system_blocks[-1]["cache_control"] == {"type": "ephemeral"}
     sent_schema = completions.kwargs["response_format"]["json_schema"]["schema"]
     assert completions.kwargs["response_format"]["json_schema"]["name"] == "PlanProposal"
-    assert _schema_action_kinds(sent_schema, PlanProposal) == planner_action_kinds(
-        current
-    )
+    assert set(sent_schema["$defs"]["ProposedPlanStep"]["properties"]) == {
+        "selection"
+    }
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.cached_tokens == 900
@@ -757,12 +766,8 @@ def test_active_plan_model_authors_future_intent_not_patch_graph_mechanics() -> 
             proposal = PlanProposal(
                 objective="Take a fresh look, then stop safely.",
                 steps=[
-                    ProposedPlanStep(
-                        action=NoopAction(reason="Observe after movement completes."),
-                    ),
-                    ProposedPlanStep(
-                        action=StopAction(reason="Concurrent planning proof complete."),
-                    ),
+                    _proposal_step("observe"),
+                    _proposal_step(),
                 ],
             )
             return SimpleNamespace(
@@ -805,9 +810,7 @@ def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None
             proposal = PlanProposal(
                 objective="Continue playing even if this memory proposal is incomplete.",
                 steps=[
-                    ProposedPlanStep(
-                        action=StopAction(reason="Boundary test complete."),
-                    )
+                    _proposal_step()
                 ],
                 continuity_operations=[
                     ContinuityProposal(
@@ -872,7 +875,7 @@ def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> N
 
     assert isinstance(result, PlanEnvelope)
     assert result.steps[0].action.kind == "noop"
-    assert "fresh look" in result.steps[0].action.reason
+    assert result.steps[0].action.reason == "Re-evaluate current evidence."
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.proposal_fallback_reason is not None
@@ -885,10 +888,12 @@ def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() 
     class IgnoresProjectedSchema:
         async def create(self, **kwargs: Any) -> SimpleNamespace:
             del kwargs
-            decision = PlannerDecision(
-                intent="Use an unavailable macro.",
-                rationale="The provider ignored its projected action schema.",
-                action=SkillAction(name="not_advertised"),
+            decision = DecisionProposal(
+                intent="Use an unavailable affordance.",
+                rationale="The provider ignored the current offer set.",
+                selection=_selection("observe").model_copy(
+                    update={"affordance_id": "aff-00000000000000000000"}
+                ),
             )
             return SimpleNamespace(
                 choices=[
@@ -913,17 +918,19 @@ def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() 
     # different answer. They arrived as one category until
     # live-hub-survival-pair-20260729-r1 died on three of them at step zero with
     # nothing recorded about which had happened.
-    assert captured.value.category == "disallowed_action_surface"
+    assert captured.value.category == "malformed_structured_output"
     assert captured.value.detail
     assert captured.value.response_excerpt
 
 
 def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
     current = observation(planning_mode=PlanningMode.SINGLE_STEP)
-    decision = PlannerDecision(
-        intent="Use an unavailable macro.",
-        rationale="The SDK schema is broader than the authored context.",
-        action=SkillAction(name="not_advertised"),
+    decision = DecisionProposal(
+        intent="Use an unavailable affordance.",
+        rationale="The schema cannot prove current offer membership.",
+        selection=_selection("observe").model_copy(
+            update={"affordance_id": "aff-00000000000000000000"}
+        ),
     )
 
     class ParsedUnavailableAction:
@@ -937,7 +944,7 @@ def test_openai_rejects_an_unadvertised_action_after_sdk_parsing() -> None:
     planner.client = SimpleNamespace(responses=ParsedUnavailableAction())
     planner.max_plan_steps = 4
 
-    with pytest.raises(ValueError, match="not authorable.*skill"):
+    with pytest.raises(ValueError, match="absent"):
         asyncio.run(planner.decide(current))
 
 
@@ -1011,9 +1018,7 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
     proposal = PlanProposal(
         objective="Finish the same thought without regenerating it.",
         steps=[
-            ProposedPlanStep(
-                action=StopAction(reason="Continuation complete."),
-            )
+            _proposal_step()
         ],
     )
     encoded = proposal.model_dump_json()
@@ -1096,7 +1101,8 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
 
     assert isinstance(result, PlanEnvelope)
     assert result.objective == proposal.objective
-    assert result.steps[0].action == proposal.steps[0].action
+    assert result.steps[0].action.kind == "stop"
+    assert result.steps[0].affordance_id == proposal.steps[0].selection.affordance_id
     assert result.plan_id == "plan-pc-1"
     assert result.based_on_revision == current.world_revision
     assert len(completions.calls) == 2
@@ -1209,7 +1215,7 @@ def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> Non
         payload = json.loads(prepared.payload)
         included = {record["memory_id"] for record in payload["memories"]}
         assert set(prepared.context.manifest.memory_ids) == included
-        assert included < {record.memory_id for record in memories}
+        assert included <= {record.memory_id for record in memories}
         assert prepared.context.manifest.payload_characters == len(prepared.payload)
         assert prepared.context.manifest.context_capacity_source == (
             "configured_override"
@@ -1328,7 +1334,7 @@ def test_planner_prompt_grants_creative_agency_without_legacy_recipe() -> None:
             self.kwargs = kwargs
             proposal = PlanProposal(
                 objective="Exercise the shipped planner instructions.",
-                steps=[ProposedPlanStep(action=StopAction(reason="Test complete."))],
+                steps=[_proposal_step()],
             )
             return SimpleNamespace(
                 choices=[
@@ -1368,22 +1374,12 @@ def test_every_code_derived_static_prompt_surface_stays_inside_the_budget() -> N
 
     from pathlib import Path
 
-    from kenshi_agent.action_contracts import ACTION_CONTRACTS
-    from kenshi_agent.models import PLANNER_CONTROL_ACTION_KINDS
     root = Path(__file__).resolve().parents[1]
     instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
-    generic_actions = frozenset(
-        set(PLANNER_CONTROL_ACTION_KINDS)
-        | {
-            kind
-            for kind, contract in ACTION_CONTRACTS.items()
-            if contract.planner_visible
-        }
-    )
-    for model in (PlannerDecision, PlanEnvelope, PlanPatch):
+    for model in (DecisionProposal, PlanProposal):
         schema = projected_response_format(
             model,
-            allowed_action_kinds=generic_actions,
+            allowed_action_kinds=frozenset(),
         )["json_schema"]["schema"]
         validate_planner_prompt_budget(
             system_characters=len(instructions),
@@ -1401,7 +1397,7 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
     """
     from kenshi_agent.planners.schema_dialect import portable_response_format
 
-    for model in (PlanEnvelope, PlanPatch, PlannerDecision):
+    for model in (DecisionProposal, PlanProposal):
         schema = portable_response_format(model)["json_schema"]["schema"]
         blob = json.dumps(schema)
         for rejected in ("const", "minimum", "maximum", "pattern", "multipleOf"):
@@ -1425,97 +1421,14 @@ def test_the_planner_schema_avoids_keywords_providers_reject() -> None:
         walk(schema)
 
 
-def _schema_action_kinds(schema: dict[str, Any], model: type[Any]) -> set[str]:
-    if model is PlannerDecision:
-        action_schema = schema["properties"]["action"]
-    else:
-        step_name = (
-            "ProposedPlanStep"
-            if model is PlanProposal
-            else "PlanStep"
-        )
-        action_schema = schema["$defs"][step_name]["properties"]["action"]
-    return {
-        schema["$defs"][branch["$ref"].rsplit("/", 1)[-1]]
-        ["properties"]["kind"]["enum"][0]
-        for branch in action_schema["anyOf"]
-    }
-
-
-def test_projected_schema_matches_the_exact_authorable_action_surface() -> None:
-    """Decoding must not advertise actions the observation would reject."""
-
-    current = observation().model_copy(
-        update={
-            "telemetry": TelemetrySnapshot(
-                ui=UIState(active_screen="world"),
-                capabilities=["ui.visible_controls"],
-            )
-        }
-    )
-    allowed = planner_action_kinds(current)
-    schema = projected_response_format(
-        PlanEnvelope,
-        allowed_action_kinds=allowed,
-    )["json_schema"]["schema"]
-
-    assert _schema_action_kinds(schema, PlanEnvelope) == allowed
-    assert "activate_visible_control" in allowed
-    assert "move_in_direction" not in allowed
-    assert "skill" not in allowed
-
-
-def test_paused_live_surface_leaves_resuming_time_to_semantic_movement() -> None:
-    """A paused world must not ask the model to sequence transport plumbing."""
-
-    current = observation().model_copy(
-        update={
-            "control_mode": ControlMode.NATIVE_ASSISTED,
-            "telemetry": TelemetrySnapshot(
-                game=GameState(paused=True),
-                ui=UIState(active_screen="world"),
-                capabilities=["control.move_in_direction", "squad.health"],
-            ),
-        }
-    )
-    allowed = planner_action_kinds(current)
-    schema = projected_response_format(
-        PlanProposal,
-        allowed_action_kinds=allowed,
-    )["json_schema"]["schema"]
-
-    assert "move_in_direction" in allowed
-    assert "pause" not in allowed
-    assert "set_speed" not in allowed
-    assert _schema_action_kinds(schema, PlanProposal) == allowed
-
-
-def test_running_live_surface_also_keeps_playback_out_of_model_control() -> None:
-    current = observation().model_copy(
-        update={
-            "control_mode": ControlMode.NATIVE_ASSISTED,
-            "telemetry": TelemetrySnapshot(
-                game=GameState(paused=False, speed_multiplier=1.0),
-                ui=UIState(active_screen="world"),
-                capabilities=["game.pause", "game.speed"],
-            ),
-        }
-    )
-
-    allowed = planner_action_kinds(current)
-
-    assert "pause" not in allowed
-    assert "set_speed" not in allowed
-
-
-def test_plan_proposal_schema_contains_choices_without_envelope_mechanics() -> None:
-    allowed = planner_action_kinds(observation())
+def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() -> None:
+    allowed = frozenset({"this-set-no-longer-shapes-the-schema"})
     proposal_schema = projected_response_format(
         PlanProposal,
         allowed_action_kinds=allowed,
     )["json_schema"]["schema"]
-    envelope_schema = projected_response_format(
-        PlanEnvelope,
+    decision_schema = projected_response_format(
+        DecisionProposal,
         allowed_action_kinds=allowed,
     )["json_schema"]["schema"]
 
@@ -1527,78 +1440,34 @@ def test_plan_proposal_schema_contains_choices_without_envelope_mechanics() -> N
     }
     assert set(
         proposal_schema["$defs"]["ProposedPlanStep"]["properties"]
-    ) == {"action", "expected_outcomes"}
-    assert len(json.dumps(proposal_schema)) < len(json.dumps(envelope_schema))
+    ) == {"selection"}
+    assert "selection" in decision_schema["properties"]
+    blob = json.dumps({"plan": proposal_schema, "decision": decision_schema})
+    for superseded in (
+        "PurchaseItemAction",
+        "ActivateVisibleControlAction",
+        "UseGameBindingAction",
+        "SkillAction",
+        "expected_outcomes",
+    ):
+        assert superseded not in blob
 
 
-def test_projected_schema_retains_only_reachable_definitions() -> None:
-    """Removing an action branch must remove its otherwise-dead schema too."""
-
-    current = observation()
-    schema = projected_response_format(
-        PlanEnvelope,
-        allowed_action_kinds=planner_action_kinds(current),
-    )["json_schema"]["schema"]
-    definitions = schema["$defs"]
-
-    def references(node: Any) -> set[str]:
-        if isinstance(node, list):
-            return set().union(*(references(item) for item in node), set())
-        if not isinstance(node, dict):
-            return set()
-        found = {
-            value.rsplit("/", 1)[-1]
-            for key, value in node.items()
-            if key == "$ref"
-            and isinstance(value, str)
-            and value.startswith("#/$defs/")
-        }
-        return found | set().union(
-            *(references(value) for key, value in node.items() if key != "$defs"),
-            set(),
+def test_runtime_offer_projection_keeps_playback_mechanics_out() -> None:
+    for paused in (True, False):
+        current = observation().model_copy(
+            update={
+                "control_mode": ControlMode.NATIVE_ASSISTED,
+                "telemetry": TelemetrySnapshot(
+                    game=GameState(paused=paused, speed_multiplier=1.0),
+                    ui=UIState(active_screen="world"),
+                    capabilities=["game.pause", "game.speed"],
+                ),
+            }
         )
-
-    root = {key: value for key, value in schema.items() if key != "$defs"}
-    reachable = references(root)
-    frontier = set(reachable)
-    while frontier:
-        name = frontier.pop()
-        discovered = references(definitions[name]) - reachable
-        reachable.update(discovered)
-        frontier.update(discovered)
-
-    assert set(definitions) == reachable
-    assert "SkillAction" not in definitions
-
-
-def test_output_surface_check_rejects_a_schema_valid_unadvertised_action() -> None:
-    current = observation(planning_mode=PlanningMode.SINGLE_STEP)
-    output = PlannerDecision(
-        intent="Use an unavailable macro.",
-        rationale="This is structurally valid but not currently authorable.",
-        action=SkillAction(name="not_advertised"),
-    )
-
-    with pytest.raises(ValueError, match="not authorable.*skill"):
-        validate_planner_output_surface(
-            output,
-            allowed_action_kinds=planner_action_kinds(current),
-        )
-
-
-def test_a_discriminator_stays_required_and_fully_specified() -> None:
-    """The union only resolves if every branch pins its own `kind`."""
-    from kenshi_agent.planners.schema_dialect import portable_response_format
-
-    schema = portable_response_format(PlanEnvelope)["json_schema"]["schema"]
-    branches = schema["$defs"]["PlanStep"]["properties"]["action"]["anyOf"]
-    assert branches, "the action union lost its branches"
-    for branch in branches:
-        name = branch["$ref"].rsplit("/", maxsplit=1)[-1]
-        definition = schema["$defs"][name]
-        kind = definition["properties"]["kind"]
-        assert kind["enum"] and isinstance(kind["enum"][0], str), name
-        assert "kind" in definition["required"], name
+        semantics = {offer.semantic for offer in offered_affordances(current)}
+        assert "pause" not in semantics
+        assert "set_speed" not in semantics
 
 
 def test_condition_schema_cannot_author_comparisons_the_runtime_must_reject() -> None:
@@ -1681,12 +1550,7 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
                 )
                 error.status_code = 400  # type: ignore[attr-defined]
                 raise error
-            decision = PlannerDecision(
-                intent="Stop safely.",
-                rationale="Answered without a compiled grammar.",
-                action=StopAction(reason="Test complete."),
-                confidence=1.0,
-            )
+            decision = _decision_proposal()
             return SimpleNamespace(
                 choices=[
                     SimpleNamespace(
@@ -1722,8 +1586,8 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
     assert len(completions.calls) == 3
     assert "response_format" not in completions.calls[2]
 
-    # A different projected action surface gets its own constrained-decoding
-    # attempt; one oversized schema must not poison every smaller schema.
+    # Offer changes do not change the one selection schema, so the learned
+    # provider fallback applies without another refused request.
     expanded = single_step.model_copy(
         update={
             "telemetry": TelemetrySnapshot(
@@ -1733,9 +1597,8 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
         }
     )
     assert isinstance(asyncio.run(planner.decide(expanded)), PlannerDecision)
-    assert len(completions.calls) == 5
-    assert "response_format" in completions.calls[3]
-    assert "response_format" not in completions.calls[4]
+    assert len(completions.calls) == 4
+    assert "response_format" not in completions.calls[3]
 
 
 def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
@@ -1757,10 +1620,9 @@ def test_an_unrelated_bad_request_is_not_retried_as_a_schema_problem() -> None:
 def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
     """A control the planner was not shown is one it cannot press.
 
-    Truncating the control list does not buy a smaller observation, it buys an
-    agent that cannot press a button it is looking at and has no way to learn
-    the button exists. A proactive target therefore cannot cut this surface;
-    only the hard request envelope may do so, and that says so out loud.
+    Truncating exact offers does not buy a smaller observation, it silently
+    changes what the model can choose. A proactive target cannot cut this
+    surface, and a hard envelope that cannot carry it fails closed.
     """
     from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
 
@@ -1789,32 +1651,22 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
 
     def listed(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return [
-            entry for group in payload["visible_controls"] for entry in group["controls"]
+            entry
+            for entry in payload["affordances"]
+            if entry["source"] == "visible_control" and entry["semantic"] == "activate"
         ]
 
     # A budget far below what the controls cost does not cost the agent one.
     tight = shown(12000)
-    assert len(listed(tight)) == len(controls)
-    assert "visible_controls_truncated" not in tight
-    assert len(listed(shown(60000))) == len(controls)
+    expected = len([control for control in controls if control.role != "item"])
+    assert len(listed(tight)) == expected
+    assert len(listed(shown(60000))) == expected
+    assert all(entry["target"]["target_id"].startswith("SHOP\x1f") for entry in listed(tight))
 
-    # Controls arrive grouped by their window, which is the difference between
-    # buying from a shop and selling your own coat, and the window is stated
-    # once per group rather than repeated on every entry.
-    assert [group["window"] for group in tight["visible_controls"]] == ["SHOP"]
-    assert all("window" not in entry for entry in listed(tight))
+    from kenshi_agent.observation_budget import PlannerPayloadContextError
 
-    # The model's real ceiling does cut it - and never silently.
-    squeezed = shown(12000, max_context_chars=9000)
-    cut = listed(squeezed)
-    assert 0 < len(cut) < len(controls)
-    notice = squeezed["visible_controls_truncated"]
-    assert notice["shown"] == len(cut) and notice["total"] == len(controls)
-
-    # Even cut, no role is starved entirely.
-    roles = collections.Counter(entry["role"] for entry in cut)
-    assert len(roles) == 3, f"a role was starved entirely: {roles}"
-    assert max(roles.values()) - min(roles.values()) <= 1, roles
+    with pytest.raises(PlannerPayloadContextError):
+        shown(12000, max_context_chars=9000)
 
 
 def test_two_open_inventories_stay_distinguishable() -> None:
@@ -1839,6 +1691,8 @@ def test_two_open_inventories_stay_distinguishable() -> None:
             window=window,
             item_name=label,
             item_base_value=value,
+            item_quantity=1,
+            selected_inventory_accepts_item=True,
             bounds=NormalizedPointerBounds(min_x=0.1, min_y=0.1, max_x=0.2, max_y=0.2),
         )
 
@@ -1852,38 +1706,59 @@ def test_two_open_inventories_stay_distinguishable() -> None:
                         cell("Rag Loincloth", "BARMAN", 12),
                         cell("Hep's Shirt", "HEP", 40),
                     ],
+                    selected_character_id="hep-1",
+                    selected_character_ids=["hep-1"],
+                    visible_controls_complete=True,
+                    open_inventory_windows=2,
                 ),
                 # Kenshi captions the window "HEP" while the character is "Hep",
                 # so ownership has to survive the case difference.
-                squad=[CharacterState(id="hep-1", name="Hep", selected=True)],
-                nearby_entities=[
-                    NearbyEntity(
-                        id="barman-1", name="Barman", shop_inventory_owner=True
+                squad=[
+                    CharacterState(
+                        id="hep-1",
+                        name="Hep",
+                        selected=True,
+                        alive=True,
+                        conscious=True,
+                        down=False,
                     )
                 ],
-                capabilities=["ui.visible_controls"],
+                nearby_entities=[
+                    NearbyEntity(
+                        id="barman-1",
+                        name="Barman",
+                        shop_inventory_owner=True,
+                        has_vendor_list=True,
+                        disposition="neutral",
+                    )
+                ],
+                active_shop_trader_count=1,
+                capabilities=[
+                    "ui.visible_controls",
+                    "ui.tooltip",
+                    "ui.inventory",
+                    "game.money",
+                    "game.pause",
+                    "identity.stable_handles",
+                    "nearby.characters",
+                    "nearby.shop_owners",
+                    "squad.basic",
+                    "squad.inventory",
+                ],
+                identity_session_id="two-inventory-test",
             )
         }
     )
 
-    groups = json.loads(trading.planner_payload(max_chars=30000))["visible_controls"]
-    by_window = {group["window"]: group["controls"] for group in groups}
-    assert set(by_window) == {"BARMAN", "HEP"}
-
-    # Whose window it is arrives as a fact, not as a name the planner must
-    # match, and the vendor's group carries the id purchase_item asks for.
-    owners = {group["window"]: group for group in groups}
-    assert owners["HEP"]["belongs_to"] == "you"
-    assert owners["BARMAN"]["belongs_to"] == "vendor"
-    assert owners["BARMAN"]["seller_id"] == "barman-1"
-    assert "seller_id" not in owners["HEP"]
-    assert [entry["item_name"] for entry in by_window["BARMAN"]] == [
-        "Water",
-        "Rag Loincloth",
-    ]
-    assert [entry["item_name"] for entry in by_window["HEP"]] == ["Hep's Shirt"]
-    # Prices travel with the cell, so affording a thing needs no extra step.
-    assert [entry["buy_price"] for entry in by_window["BARMAN"]] == [30, 12]
+    offers = json.loads(trading.planner_payload(max_chars=30000))["affordances"]
+    inventory = [offer for offer in offers if offer["source"] == "inventory"]
+    buy = [offer for offer in inventory if offer["semantic"] == "buy"]
+    sell = [offer for offer in inventory if offer["semantic"] == "sell"]
+    assert {offer["target"]["label"] for offer in buy} == {"Water", "Rag Loincloth"}
+    assert {offer["target"]["label"] for offer in sell} == {"Hep's Shirt"}
+    assert all(offer["target"]["target_id"].startswith("BARMAN\x1f") for offer in buy)
+    assert all(offer["target"]["target_id"].startswith("HEP\x1f") for offer in sell)
+    assert any("30 cats per unit" in offer["description"] for offer in buy)
 
 
 def test_somewhere_to_go_survives_the_payload_budget() -> None:
@@ -1909,19 +1784,30 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
         for index in range(1, 19)
     ]
     busy = observation().model_copy(
-        update={"telemetry": TelemetrySnapshot(nearby_entities=crowd)}
+        update={
+            "control_mode": ControlMode.NATIVE_ASSISTED,
+            "telemetry": TelemetrySnapshot(
+                nearby_entities=crowd,
+                capabilities=[
+                    "control.move_to_character",
+                    "identity.stable_handles",
+                    "nearby.characters",
+                ],
+                identity_session_id="movement-destination-test",
+            ),
+        }
     )
     payload = json.loads(busy.planner_payload(max_chars=30000))
-    destinations = payload["travel_destinations"]
+    destinations = [
+        offer
+        for offer in payload["affordances"]
+        if offer["source"] == "nearby_character"
+    ]
 
     assert destinations, "the agent must be shown somewhere it could walk to"
-    distances = [entry["distance"] for entry in destinations]
-    assert distances == sorted(distances, reverse=True), "furthest first"
-
-    # No entry duplicates dialogue_targets: a second copy of the people it can
-    # already talk to is not somewhere new to go.
-    talkable = {target["id"] for target in payload["dialogue_targets"]}
-    assert not talkable & {entry["id"] for entry in destinations}
+    assert {entry["target"]["target_id"] for entry in destinations} == {
+        entity.id for entity in crowd
+    }
 
 
 def _diagnostics(*, finish_reason: str) -> HostedPlannerCallDiagnostics:

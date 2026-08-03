@@ -30,7 +30,12 @@ from .context_capacity import (
     conservative_text_token_estimate,
     hosted_context_envelope,
 )
-from .plan_proposal import PlanProposal, compile_hosted_plan_proposal
+from .plan_proposal import (
+    DecisionProposal,
+    PlanProposal,
+    compile_decision_proposal,
+    compile_hosted_plan_proposal,
+)
 
 
 def _planner_request_text(output_model: type[BaseModel]) -> str:
@@ -78,7 +83,7 @@ class OpenAIPlanner(Planner):
         response_model = (
             PlanProposal
             if output_model in (PlanEnvelope, PlanPatch)
-            else output_model
+            else DecisionProposal
         )
         system_text = self.instructions
         capacity = HostedModelCapacity(
@@ -150,7 +155,7 @@ class OpenAIPlanner(Planner):
         response_model = (
             PlanProposal
             if output_model in (PlanEnvelope, PlanPatch)
-            else output_model
+            else DecisionProposal
         )
         content: list[dict[str, Any]] = [
             {
@@ -208,7 +213,14 @@ class OpenAIPlanner(Planner):
                 ),
             ).output
         else:
-            output = output_model.model_validate(parsed)
+            if isinstance(parsed, BaseModel):
+                document = parsed.model_dump(mode="json")
+            else:
+                document = parsed
+            output = compile_decision_proposal(
+                document,
+                observation=observation,
+            ).decision
         validate_planner_output_surface(
             output,
             allowed_action_kinds=planner_action_kinds(observation),
