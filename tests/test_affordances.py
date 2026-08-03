@@ -137,15 +137,21 @@ def test_named_binding_adapter_covers_its_whole_current_denominator() -> None:
     assert actual == expected
 
 
-def test_ui_adapter_offers_every_and_only_current_non_item_control() -> None:
+def test_ui_adapter_offers_only_controls_with_current_semantic_authority() -> None:
     controls = [
         VisibleUIControl(label="Accept", role="button", window="Talk", bounds=_bounds(1)),
-        VisibleUIControl(label="A warning", role="text", window="Talk", bounds=_bounds(2)),
+        VisibleUIControl(
+            label="1. Show me your goods.",
+            role="text",
+            window="Talk",
+            bounds=_bounds(2),
+        ),
+        VisibleUIControl(label="A warning", role="text", window="Talk", bounds=_bounds(3)),
         VisibleUIControl(
             label="cell 3",
             role="item",
             window="SHOP",
-            bounds=_bounds(3),
+            bounds=_bounds(4),
             item_name="Bread",
             item_base_value=31,
         ),
@@ -154,17 +160,25 @@ def test_ui_adapter_offers_every_and_only_current_non_item_control() -> None:
             role="button",
             window="HUD",
             widget_name="HUDRoot/TimeControls/Pause",
-            bounds=_bounds(4),
+            bounds=_bounds(5),
         ),
     ]
     observation = _observation(
         capabilities=["ui.visible_controls"],
-        ui=UIState(dialogue_open=True, visible_controls=controls),
+        ui=UIState(
+            dialogue_open=True,
+            dialogue_options=["1. Show me your goods."],
+            visible_controls=controls,
+        ),
     )
     expected = {
         (control.window, control.role, control.label)
         for control in controls
-        if control.role != "item" and not is_runtime_owned_visible_control(control)
+        if not is_runtime_owned_visible_control(control)
+        and (
+            control.role == "button"
+            or control.label == "1. Show me your goods."
+        )
     }
     actual = {
         (
@@ -299,6 +313,43 @@ def test_character_adapter_prefers_exact_native_selection_over_portrait_geometry
     assert offer.operation_kind == "select_squad_member_exact"
     assert offer.target is not None
     assert offer.target.target_id == plant.id
+
+
+def test_character_adapter_retains_exact_native_selection_from_a_group() -> None:
+    bark = CharacterState(id="entity-bark", name="Bark", selected=True)
+    plant = CharacterState(id="entity-plant", name="Plant", selected=True)
+    observation = _observation(
+        capabilities=[
+            "control.select_squad_member",
+            "identity.stable_handles",
+            "squad.basic",
+        ],
+        squad=[bark, plant],
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id=bark.id,
+            selected_character_ids=[bark.id, plant.id],
+            visible_controls=[],
+        ),
+    )
+
+    offers = [
+        offer
+        for offer in offered_affordances(observation)
+        if offer.semantic == "select"
+    ]
+
+    assert len(offers) == 2
+    assert {
+        offer.operation_kind for offer in offers
+    } == {"select_squad_member_exact"}
+    assert {
+        offer.target.target_id
+        for offer in offers
+        if offer.target is not None
+    } == {bark.id, plant.id}
 
 
 def test_screen_adapter_offers_exact_current_window_dismissal() -> None:

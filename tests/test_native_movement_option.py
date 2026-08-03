@@ -1091,6 +1091,59 @@ def test_map_travel_option_owns_one_exact_destination_until_native_arrival() -> 
     asyncio.run(scenario())
 
 
+def test_map_travel_option_matches_a_group_basis_independent_of_set_order() -> None:
+    async def scenario() -> None:
+        start = map_travel_observation(1)
+        assert start.telemetry is not None
+        start = start.model_copy(
+            update={
+                "telemetry": start.telemetry.model_copy(
+                    update={
+                        "ui": start.telemetry.ui.model_copy(
+                            update={
+                                "selected_character_id": SELECTED_ID,
+                                "selected_character_ids": [
+                                    SELECTED_ID,
+                                    SQUADMATE_ID,
+                                ],
+                            }
+                        )
+                    }
+                )
+            },
+            deep=True,
+        )
+        travel = StatefulNativeMovementOption(
+            option_id="native-group-map-travel",
+            action=TravelToMapDestinationAction(
+                destination_id="entity-known-town",
+            ),
+            environment=InstantMapTravelEnvironment(),
+        )
+        assert travel.prepare(start).status is OptionStatus.PREPARED
+        await travel.start(
+            CommandDispatchContext(
+                command_id=COMMAND_ID,
+                based_on_revision=start.world_revision,
+            )
+        )
+        await asyncio.sleep(0)
+        acknowledgement = map_travel_acknowledgement(
+            3,
+            NativeCommandStatus.COMPLETED,
+        ).model_copy(
+            update={
+                "selected_character_ids": [SQUADMATE_ID, SELECTED_ID]
+            }
+        )
+
+        assert travel.poll(
+            update(map_travel_observation(3, ack=acknowledgement))
+        ).status is OptionStatus.SUCCEEDED
+
+    asyncio.run(scenario())
+
+
 def test_squad_regroup_option_owns_exact_actor_and_target_until_arrival() -> None:
     async def scenario() -> None:
         regroup = StatefulNativeMovementOption(

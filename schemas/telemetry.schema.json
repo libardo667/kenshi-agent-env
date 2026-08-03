@@ -805,7 +805,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 1,
+          "maxItems": 64,
           "minItems": 1,
           "title": "Selected Character Ids",
           "type": "array"
@@ -1806,7 +1806,7 @@
   "additionalProperties": false,
   "properties": {
     "protocol_version": {
-      "default": "1.9.0",
+      "default": "1.10.0",
       "title": "Protocol Version",
       "type": "string"
     },

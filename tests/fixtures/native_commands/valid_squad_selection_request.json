@@ -11,7 +11,8 @@
     "observed_at_monotonic": 31.5
   },
   "selected_character_ids": [
-    "entity-bark"
+    "entity-bark",
+    "entity-plant"
   ],
   "target_id": "entity-plant",
   "context_action": "",

@@ -128,7 +128,7 @@ namespace
     const unsigned int MAX_RUNTIME_CONTEXT_MENU_TASK_TYPES = 64;
     const wchar_t* NATIVE_COMMAND_REQUEST_FILE_W =
         L"native_command.request.json";
-    const char* PROTOCOL_VERSION = "1.9.0";
+    const char* PROTOCOL_VERSION = "1.10.0";
 
     typedef void (*PlayerInterfaceUpdateFunction)(PlayerInterface*);
     typedef void (*TitleScreenUpdateFunction)(TitleScreen*);
@@ -149,6 +149,7 @@ namespace
         std::string commandId;
         std::string targetId;
         std::string selectedCharacterId;
+        std::vector<std::string> selectedCharacterIds;
         hand targetHandle;
         hand selectedHandle;
         // A walk has no conversation to open, so it cannot be judged finished
@@ -252,6 +253,7 @@ namespace
         g_activeNativeCommand.commandId.clear();
         g_activeNativeCommand.targetId.clear();
         g_activeNativeCommand.selectedCharacterId.clear();
+        g_activeNativeCommand.selectedCharacterIds.clear();
         // Cleared with the rest, or a finished walk would leave the next
         // approach being judged by arrival instead of by dialogue.
         g_activeNativeCommand.isWalk = false;
@@ -529,6 +531,8 @@ namespace
             request.minimumOutputQuantity;
         acknowledgement.selectedCharacterId =
             request.selectedCharacterId;
+        acknowledgement.selectedCharacterIds =
+            request.selectedCharacterIds;
         acknowledgement.basedOnTelemetrySequence =
             request.basedOnTelemetrySequence;
         acknowledgement.acknowledgedAtTelemetrySequence =
@@ -575,6 +579,8 @@ namespace
         g_lastNativeCommandResult = reason;
         g_activeNativeCommand.active = false;
         g_activeNativeCommand.commandId.clear();
+        g_activeNativeCommand.selectedCharacterId.clear();
+        g_activeNativeCommand.selectedCharacterIds.clear();
         g_activeNativeCommand.isWalk = false;
         g_activeNativeCommand.hasFixedDestination = false;
         g_activeNativeCommand.isMapTravel = false;
@@ -747,6 +753,58 @@ namespace
         return true;
     }
 
+    bool TryGetExactSelectionBasis(
+        PlayerInterface* player,
+        const std::vector<std::string>& expectedIds,
+        std::string& primaryId,
+        hand& primaryHandle,
+        std::vector<hand>& selectedHandles)
+    {
+        primaryId.clear();
+        selectedHandles.clear();
+        if (player == NULL ||
+            expectedIds.empty() ||
+            player->selectedCharacters.size() != expectedIds.size())
+        {
+            return false;
+        }
+
+        std::set<std::string> expected(
+            expectedIds.begin(),
+            expectedIds.end());
+        if (expected.size() != expectedIds.size())
+            return false;
+
+        std::set<std::string> observed;
+        for (ogre_unordered_set<hand>::type::const_iterator it =
+                 player->selectedCharacters.begin();
+             it != player->selectedCharacters.end();
+             ++it)
+        {
+            Character* selected = it->getCharacter();
+            if (selected == NULL ||
+                !selected->isValid() ||
+                !selected->isPlayerCharacter())
+            {
+                return false;
+            }
+            const std::string id = StableEntityId(selected);
+            if (id.empty() ||
+                expected.find(id) == expected.end() ||
+                !observed.insert(id).second)
+            {
+                return false;
+            }
+            selectedHandles.push_back(*it);
+            if (SameHandleIdentity(*it, player->selectedCharacter))
+            {
+                primaryId = id;
+                primaryHandle = *it;
+            }
+        }
+        return observed == expected && !primaryId.empty();
+    }
+
     bool IsKnownMapDestination(TownBase* town)
     {
         return town != NULL &&
@@ -887,8 +945,16 @@ namespace
     {
         std::string selectedId;
         hand selectedHandle;
+        std::vector<hand> selectedHandles;
         const bool exactSelectionResolved =
-            TryGetExactSelection(player, selectedId, selectedHandle);
+            g_activeNativeCommand.isMapTravel
+                ? TryGetExactSelectionBasis(
+                    player,
+                    g_activeNativeCommand.selectedCharacterIds,
+                    selectedId,
+                    selectedHandle,
+                    selectedHandles)
+                : TryGetExactSelection(player, selectedId, selectedHandle);
         const bool selectionIdentityMatches =
             exactSelectionResolved &&
             selectedId == g_activeNativeCommand.selectedCharacterId &&
@@ -1942,7 +2008,17 @@ namespace
 
         std::string selectedId;
         hand selectedHandle;
-        if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
+        std::vector<hand> selectedHandles;
+        const bool selectionResolved =
+            g_activeNativeCommand.isMapTravel
+                ? TryGetExactSelectionBasis(
+                    player,
+                    g_activeNativeCommand.selectedCharacterIds,
+                    selectedId,
+                    selectedHandle,
+                    selectedHandles)
+                : TryGetExactSelection(player, selectedId, selectedHandle);
+        if (!selectionResolved ||
             selectedId != g_activeNativeCommand.selectedCharacterId)
         {
             FinishActiveNativeCommand("cancelled", "selection_mismatch");
@@ -2170,26 +2246,51 @@ namespace
             const Ogre::Vector3 here = walker->getPosition();
             if (mapTown != NULL)
             {
-                TownBase* currentTown =
-                    walker->getCurrentTownLocation();
-                const bool currentTownIdentityMatches =
-                    currentTown != NULL &&
-                    currentTown->isValid() &&
-                    StableEntityId(currentTown->getHandle()) ==
-                        g_activeNativeCommand.targetId;
-                const bool currentLegReached =
-                    KenshiAgentTelemetry::HasReachedFixedDirectionDestination(
-                        g_activeNativeCommand.originX,
-                        g_activeNativeCommand.originZ,
-                        destinationX,
-                        destinationZ,
-                        here.x,
-                        here.z);
+                bool currentTownIdentityMatches = true;
+                bool insideTownWalls = true;
+                bool currentLegReached = true;
+                for (unsigned int index = 0;
+                     index < selectedHandles.size();
+                     ++index)
+                {
+                    Character* member =
+                        selectedHandles[index].getCharacter();
+                    if (member == NULL || !member->isValid())
+                    {
+                        FinishActiveNativeCommand(
+                            "cancelled",
+                            "selection_mismatch");
+                        return;
+                    }
+                    TownBase* currentTown =
+                        member->getCurrentTownLocation();
+                    currentTownIdentityMatches =
+                        currentTownIdentityMatches &&
+                        currentTown != NULL &&
+                        currentTown->isValid() &&
+                        StableEntityId(currentTown->getHandle()) ==
+                            g_activeNativeCommand.targetId;
+                    insideTownWalls =
+                        insideTownWalls &&
+                        member->amInsideTownWalls() != 0;
+                    const Ogre::Vector3 memberPosition =
+                        member->getPosition();
+                    currentLegReached =
+                        currentLegReached &&
+                        KenshiAgentTelemetry::
+                            HasReachedFixedDirectionDestination(
+                                g_activeNativeCommand.originX,
+                                g_activeNativeCommand.originZ,
+                                destinationX,
+                                destinationZ,
+                                memberPosition.x,
+                                memberPosition.z);
+                }
                 const KenshiAgentTelemetry::NativeMapTravelDecision decision =
                     KenshiAgentTelemetry::EvaluateNativeMapTravel(
                         currentTownIdentityMatches,
                         mapTown->hasGates(),
-                        walker->amInsideTownWalls() != 0,
+                        insideTownWalls,
                         currentLegReached,
                         g_activeNativeCommand.mapInteriorOrderIssued);
                 if (decision == KenshiAgentTelemetry::MAP_TRAVEL_COMPLETE)
@@ -2418,7 +2519,7 @@ namespace
                  request.command == "produce_resource_output" ||
                  request.command == "open_context_inventory") &&
                 hasCommandIdentity &&
-                !request.selectedCharacterId.empty() &&
+                !request.selectedCharacterIds.empty() &&
                 FindNativeAcknowledgement(request.commandId) < 0)
             {
                 RejectNativeCommand(request, "malformed_request");
@@ -2510,8 +2611,13 @@ namespace
 
         std::string selectedId;
         hand selectedHandle;
-        if (!TryGetExactSelection(player, selectedId, selectedHandle) ||
-            selectedId != request.selectedCharacterId)
+        std::vector<hand> selectedHandles;
+        if (!TryGetExactSelectionBasis(
+                player,
+                request.selectedCharacterIds,
+                selectedId,
+                selectedHandle,
+                selectedHandles))
         {
             RejectNativeCommand(request, "selection_mismatch");
             return;
@@ -2529,7 +2635,8 @@ namespace
                 RejectNativeCommand(request, "target_lifetime_changed");
                 return;
             }
-            if (selectedId != request.targetId)
+            if (request.selectedCharacterIds.size() != 1 ||
+                selectedId != request.targetId)
             {
                 player->_selectPlayerCharacter(target, false, false);
                 std::string resultingId;
@@ -2611,7 +2718,9 @@ namespace
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId = request.targetId;
             g_activeNativeCommand.selectedCharacterId =
-                request.selectedCharacterId;
+                selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
             g_activeNativeCommand.targetHandle = targetHandle;
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = false;
@@ -2828,16 +2937,33 @@ namespace
                 RejectNativeCommand(request, "selection_mismatch");
                 return;
             }
-            TownBase* currentTown = walker->getCurrentTownLocation();
-            const bool currentTownIdentityMatches =
-                currentTown != NULL &&
-                currentTown->isValid() &&
-                StableEntityId(currentTown->getHandle()) ==
-                    request.targetId;
-            if (KenshiAgentTelemetry::IsNativeMapDestinationPresentlyReached(
-                    currentTownIdentityMatches,
-                    target->hasGates(),
-                    walker->amInsideTownWalls() != 0))
+            bool allSelectedPresentlyReached = true;
+            for (unsigned int index = 0;
+                 index < selectedHandles.size();
+                 ++index)
+            {
+                Character* member = selectedHandles[index].getCharacter();
+                if (member == NULL || !member->isValid())
+                {
+                    RejectNativeCommand(request, "selection_mismatch");
+                    return;
+                }
+                TownBase* currentTown = member->getCurrentTownLocation();
+                const bool currentTownIdentityMatches =
+                    currentTown != NULL &&
+                    currentTown->isValid() &&
+                    StableEntityId(currentTown->getHandle()) ==
+                        request.targetId;
+                if (!KenshiAgentTelemetry::
+                        IsNativeMapDestinationPresentlyReached(
+                            currentTownIdentityMatches,
+                            target->hasGates(),
+                            member->amInsideTownWalls() != 0))
+                {
+                    allSelectedPresentlyReached = false;
+                }
+            }
+            if (allSelectedPresentlyReached)
             {
                 RejectNativeCommand(
                     request,
@@ -2868,7 +2994,9 @@ namespace
             g_activeNativeCommand.commandId = request.commandId;
             g_activeNativeCommand.targetId = request.targetId;
             g_activeNativeCommand.selectedCharacterId =
-                request.selectedCharacterId;
+                selectedId;
+            g_activeNativeCommand.selectedCharacterIds =
+                request.selectedCharacterIds;
             g_activeNativeCommand.targetHandle = target->getHandle();
             g_activeNativeCommand.selectedHandle = selectedHandle;
             g_activeNativeCommand.isWalk = true;

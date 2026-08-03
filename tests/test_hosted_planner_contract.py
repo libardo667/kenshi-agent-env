@@ -1655,7 +1655,9 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
 
     # A budget far below what the controls cost does not cost the agent one.
     tight = shown(12000)
-    expected = len([control for control in controls if control.role != "item"])
+    # Outside dialogue, text is observation rather than an activation surface;
+    # only actual buttons carry generic visible-control authority.
+    expected = len([control for control in controls if control.role == "button"])
     assert len(listed(tight)) == expected
     assert len(listed(shown(60000))) == expected
     assert all(entry["target"]["target_id"].startswith("SHOP\x1f") for entry in listed(tight))

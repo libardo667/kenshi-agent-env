@@ -575,11 +575,16 @@ class StatefulNativeMovementOption:
             )
         selected_ids = telemetry.ui.selected_character_ids
         if (
-            len(selected_ids) != 1
-            or telemetry.ui.selected_character_id != selected_ids[0]
+            not selected_ids
+            or telemetry.ui.selected_character_id not in selected_ids
+            or (
+                not isinstance(self.action, TravelToMapDestinationAction)
+                and len(selected_ids) != 1
+            )
         ):
             raise OptionLifecycleError(
-                "Native movement option requires one exact primary selection."
+                "Native movement option selection does not satisfy the action's "
+                "exact selection-cardinality contract."
             )
         self.start_observation = observation.model_copy(deep=True)
         self.latest_observation = observation.model_copy(deep=True)
@@ -923,7 +928,12 @@ class StatefulNativeMovementOption:
     ) -> bool:
         if acknowledgement.command != self._wire_command:
             return False
-        if acknowledgement.selected_character_ids != self.selected_character_ids:
+        if (
+            len(acknowledgement.selected_character_ids)
+            != len(self.selected_character_ids)
+            or set(acknowledgement.selected_character_ids)
+            != set(self.selected_character_ids)
+        ):
             return False
         if isinstance(
             self.action,

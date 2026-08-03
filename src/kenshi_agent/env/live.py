@@ -3966,7 +3966,10 @@ class LiveEnvironment(AgentEnvironment):
         ):
             return None
         selected_ids = observation.telemetry.ui.selected_character_ids
-        if acknowledgement.selected_character_ids != selected_ids:
+        if (
+            len(acknowledgement.selected_character_ids) != len(selected_ids)
+            or set(acknowledgement.selected_character_ids) != set(selected_ids)
+        ):
             return None
         return acknowledgement
 
@@ -4060,8 +4063,19 @@ class LiveEnvironment(AgentEnvironment):
         if not telemetry.identity_session_id:
             raise RuntimeError("Native command requires a current identity session.")
         selected_ids = telemetry.ui.selected_character_ids
-        if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
-            raise RuntimeError("Native command requires one exact primary selection.")
+        group_selection_command = wire_command in {
+            NATIVE_SQUAD_SELECTION_WIRE_COMMAND,
+            NATIVE_MAP_TRAVEL_WIRE_COMMAND,
+        }
+        if (
+            not selected_ids
+            or telemetry.ui.selected_character_id not in selected_ids
+            or (not group_selection_command and len(selected_ids) != 1)
+        ):
+            raise RuntimeError(
+                "Native command selection does not satisfy the action's exact "
+                "selection-cardinality contract."
+            )
         if expected_actor_id is not None and selected_ids != [expected_actor_id]:
             raise RuntimeError(
                 "Native squad regrouping requires actor_id to remain the exact "

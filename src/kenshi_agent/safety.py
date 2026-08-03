@@ -5,7 +5,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-from .action_contracts import ActionContract, contract_for
+from .action_contracts import ActionContract, SelectionRequirement, contract_for
 from .config import SafetyConfig
 from .models import (
     Action,
@@ -334,8 +334,10 @@ class ActionGuard:
                 f"Action {contract.kind!r} does not bind to "  # mutation: reason
                 f"current state: {binding.reason}"  # mutation: reason
             )
-        if contract.requires_exact_selection:
+        if contract.selection_requirement is SelectionRequirement.EXACTLY_ONE:
             self._validate_exact_selection(observation)
+        elif contract.selection_requirement is SelectionRequirement.ONE_OR_MORE:
+            self._validate_squad_selection(observation)
 
     def _validate_generic_purchase(
         self,
@@ -427,6 +429,19 @@ class ActionGuard:
             raise SafetyViolation(  # mutation: reason
                 "Action requires one exact primary "  # mutation: reason
                 "selected character."  # mutation: reason
+            )
+
+    @staticmethod
+    def _validate_squad_selection(observation: Observation) -> None:
+        assert observation.telemetry is not None
+        telemetry = observation.telemetry
+        selected_ids = telemetry.ui.selected_character_ids
+        if (
+            not selected_ids
+            or telemetry.ui.selected_character_id not in selected_ids
+        ):
+            raise SafetyViolation(
+                "Action requires one or more exact selected squad members."
             )
 
     @staticmethod

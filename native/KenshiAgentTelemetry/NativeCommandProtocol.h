@@ -2,6 +2,7 @@
 #define KENSHI_AGENT_NATIVE_COMMAND_PROTOCOL_H
 
 #include <string>
+#include <vector>
 
 namespace KenshiAgentTelemetry
 {
@@ -30,6 +31,8 @@ namespace KenshiAgentTelemetry
         std::string controlMode;
         std::string identitySessionId;
         unsigned long long basedOnTelemetrySequence;
+        std::vector<std::string> selectedCharacterIds;
+        // Populated only for commands whose selection basis is singular.
         std::string selectedCharacterId;
         std::string targetId;
         std::string contextAction;
@@ -51,6 +54,8 @@ namespace KenshiAgentTelemetry
         double bearingDegrees;
         double distanceUnits;
         unsigned int minimumOutputQuantity;
+        std::vector<std::string> selectedCharacterIds;
+        // Retained as a compatibility convenience for singular fixtures.
         std::string selectedCharacterId;
         unsigned long long basedOnTelemetrySequence;
         unsigned long long acknowledgedAtTelemetrySequence;

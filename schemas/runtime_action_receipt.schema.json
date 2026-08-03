@@ -1821,7 +1821,7 @@
           "items": {
             "type": "string"
           },
-          "maxItems": 1,
+          "maxItems": 64,
           "minItems": 1,
           "title": "Selected Character Ids",
           "type": "array"

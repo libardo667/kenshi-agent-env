@@ -162,6 +162,14 @@ class ActionExecution(StrEnum):
     COMPOSITE_OPTION = "composite_option"
 
 
+class SelectionRequirement(StrEnum):
+    """How much current squad selection an action may safely own."""
+
+    NONE = "none"
+    EXACTLY_ONE = "exactly_one"
+    ONE_OR_MORE = "one_or_more"
+
+
 class CompletionOwner(StrEnum):
     """Who turns one dispatched intention into a terminal result."""
 
@@ -620,10 +628,13 @@ def bind_select_squad_member_exact(
             "member selection cannot bind; finish or close the interface first."
         )
     selected_ids = telemetry.ui.selected_character_ids
-    if len(selected_ids) != 1 or telemetry.ui.selected_character_id != selected_ids[0]:
+    if (
+        not selected_ids
+        or telemetry.ui.selected_character_id not in selected_ids
+    ):
         return _unbound(
-            "Native squad selection requires one exact current selection as its "
-            "causal basis."
+            "Native squad selection requires one or more exact current squad "
+            "selections as its causal basis."
         )
     matches = [
         character for character in telemetry.squad if character.id == action.target_id
@@ -638,7 +649,8 @@ def bind_select_squad_member_exact(
         bound=True,
         reason=(
             f"Bound exact native squad selection to {target.name!r} ({target.id}); "
-            "the current singular selection is carried as the causal basis."
+            f"all {len(selected_ids)} current selected identities are carried "
+            "as the causal basis."
         ),
         target_id=target.id,
         resolved_label=target.name,
@@ -653,9 +665,9 @@ def exact_squad_member_selection_is_currently_authorable(
     return bool(
         telemetry is not None
         and not observation.telemetry_stale
-        and len(telemetry.ui.selected_character_ids) == 1
+        and bool(telemetry.ui.selected_character_ids)
         and telemetry.ui.selected_character_id
-        == telemetry.ui.selected_character_ids[0]
+        in telemetry.ui.selected_character_ids
         and any(
             bind_select_squad_member_exact(
                 SelectSquadMemberExactAction(target_id=character.id),
@@ -1005,11 +1017,8 @@ def bind_travel_to_map_destination(
     if telemetry.game.loaded is not True:
         return _unbound("The game is not loaded, so map travel cannot begin.")
     selected = [character for character in telemetry.squad if character.selected]
-    if len(selected) != 1:
-        return _unbound(
-            f"{len(selected)} characters are selected; exactly one must receive "
-            "the travel order."
-        )
+    if not selected:
+        return _unbound("No squad members are selected to receive the travel order.")
     matches = [
         destination
         for destination in telemetry.known_map_destinations
@@ -1057,8 +1066,9 @@ def bind_travel_to_map_destination(
     return ReferenceBinding(
         bound=True,
         reason=(
-            f"Bound long travel to known map destination {destination.name!r} "
-            f"({destination.id}) at map distance {destination.distance:.0f}."
+            f"Bound {len(selected)} selected squad member(s) to long travel to "
+            f"known map destination {destination.name!r} ({destination.id}) at "
+            f"map distance {destination.distance:.0f}."
         ),
         target_id=destination.id,
         resolved_label=destination.name,
@@ -1074,7 +1084,7 @@ def map_travel_is_currently_authorable(observation: Observation) -> bool:
     return bool(
         not observation.telemetry_stale
         and telemetry.game.loaded is True
-        and len([character for character in telemetry.squad if character.selected]) == 1
+        and bool([character for character in telemetry.squad if character.selected])
         and any(
             map_destination_travel_available(
                 destination,
@@ -2147,10 +2157,10 @@ class ActionContract:
     execution: ActionExecution
     receipt_kind: str
     bind: Callable[[Action, Observation], ReferenceBinding]
-    # Native telemetry/control is not the same thing as acting through the
-    # current player selection. Selection itself is native-observed but must be
-    # usable to collapse an ambiguous multi-selection.
-    requires_exact_selection: bool = False
+    # Selection cardinality is action-specific. Most character operations own
+    # one exact actor, while selection collapse and ordinary group travel bind
+    # the complete current selected set.
+    selection_requirement: SelectionRequirement = SelectionRequirement.NONE
     derive_risk: RiskCostFactory | None = field(
         default=None,
         repr=False,
@@ -2164,6 +2174,10 @@ class ActionContract:
     # The handler itself returns a typed terminal verdict based on evidence it
     # owns, so a caller must not invent a redundant postcondition.
     controller_verified: bool = False
+    # Atomic native actions declare their accepted terminal reasons here. The
+    # executor consumes this generically, so adding a new exact native command
+    # cannot succeed in the controller and then fall through as untyped.
+    native_terminal_success_reasons: frozenset[str] = frozenset()
     # A deterministic effect derived from the action and its immediate
     # pre-dispatch observation. `None` means this operation has no effect-level
     # condition; an empty tuple means the runtime owns one but the required
@@ -2336,7 +2350,7 @@ APPROACH_DIALOGUE_TARGET_CONTRACT = ActionContract(
     capability_aliases=NATIVE_APPROACH_CAPABILITY_ALIASES,
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),
@@ -2370,7 +2384,7 @@ COMMAND_WORLD_TARGET_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(pointer_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id", "context_action"),
@@ -2439,7 +2453,7 @@ SELECT_SQUAD_MEMBER_EXACT_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=1,
     reference_fields=("target_id",),
@@ -2449,6 +2463,9 @@ SELECT_SQUAD_MEMBER_EXACT_CONTRACT = ActionContract(
     bind=bind_select_squad_member_exact,
     derive_completion_conditions=_selected_squad_member,
     controller_verified=True,
+    native_terminal_success_reasons=frozenset(
+        {"exact_squad_member_selected"}
+    ),
     authorable_when=exact_squad_member_selection_is_currently_authorable,
 )
 
@@ -2509,7 +2526,7 @@ PERFORM_CONTEXT_ACTION_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id", "context_action"),
@@ -2546,7 +2563,7 @@ PRODUCE_RESOURCE_OUTPUT_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=7,
     reference_fields=("target_id",),
@@ -2593,7 +2610,7 @@ HARVEST_RESOURCE_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.SEMANTIC_CURRENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(pointer_actions=12, native_assisted_actions=2),
     max_primitive_actions=45,
     reference_fields=("actor_id", "target_id"),
@@ -2634,7 +2651,7 @@ RESPOND_TO_IMMEDIATE_THREAT_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     # Withdrawal may spend the complete four-primitive native movement budget;
     # the wrapper then owns one additional terminal pause.
@@ -2674,7 +2691,7 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     capability_aliases=frozenset(),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=6,
     reference_fields=("target_id",),
@@ -2683,6 +2700,9 @@ OPEN_CONTEXT_INVENTORY_CONTRACT = ActionContract(
     receipt_kind="semantic_context_inventory",
     bind=bind_open_context_inventory,
     controller_verified=True,
+    native_terminal_success_reasons=frozenset(
+        {"exact_context_inventory_open"}
+    ),
     authorable_when=context_inventory_is_currently_authorable,
 )
 
@@ -2715,7 +2735,7 @@ REGROUP_WITH_SQUAD_MEMBER_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_SQUAD_REGROUP_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("actor_id", "target_id"),
@@ -2748,7 +2768,7 @@ MOVE_IN_DIRECTION_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_DIRECTION_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
@@ -2790,7 +2810,7 @@ TRAVEL_TO_MAP_DESTINATION_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_MAP_TRAVEL_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.ONE_OR_MORE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=5,
     reference_fields=("destination_id",),
@@ -2830,7 +2850,7 @@ EXIT_CURRENT_BUILDING_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_EXIT_BUILDING_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=(),
@@ -2866,7 +2886,7 @@ MOVE_TO_CHARACTER_CONTRACT = ActionContract(
     capability_aliases=frozenset({NATIVE_MOVE_CAPABILITY}),
     pointer_class=PointerActionClass.COORDINATE_INDEPENDENT,
     native_assisted=True,
-    requires_exact_selection=True,
+    selection_requirement=SelectionRequirement.EXACTLY_ONE,
     risk=ActionRiskCost(native_assisted_actions=1),
     max_primitive_actions=4,
     reference_fields=("target_id",),

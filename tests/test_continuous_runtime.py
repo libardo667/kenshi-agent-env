@@ -61,6 +61,7 @@ from kenshi_agent.models import (
     ReadFieldbookAction,
     RespondToImmediateThreatAction,
     RiskBudget,
+    SelectSquadMemberExactAction,
     SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
@@ -529,6 +530,7 @@ def runtime_for(
             "move_in_direction",
             "respond_to_immediate_threat",
             "activate_visible_control",
+            "select_squad_member_exact",
         ],
         max_actions_per_minute=max_actions_per_minute,
         automatic_takeover_enabled=automatic_takeover_enabled,
@@ -566,6 +568,172 @@ def runtime_for(
         reporter=reporter,
     )
     return runtime, logger
+
+
+def test_exact_native_selection_terminal_completes_the_plan(tmp_path: Path) -> None:
+    class ExactSelectionEnvironment(RevisionEnvironment):
+        def __init__(self, *, clock: FakeClock) -> None:
+            super().__init__(clock=clock, control_mode=ControlMode.NATIVE_ASSISTED)
+            self.selected_id = "entity-bark"
+
+        def observation(self) -> Observation:
+            current = super().observation()
+            assert current.telemetry is not None
+            return current.model_copy(
+                update={
+                    "telemetry": current.telemetry.model_copy(
+                        update={
+                            "capabilities": [
+                                *current.telemetry.capabilities,
+                                "control.select_squad_member",
+                                "identity.stable_handles",
+                                "squad.basic",
+                            ],
+                            "game": current.telemetry.game.model_copy(
+                                update={"loaded": True}
+                            ),
+                            "ui": UIState(
+                                active_screen="world",
+                                dialogue_open=False,
+                                modal_open=False,
+                                selected_character_id=self.selected_id,
+                                selected_character_ids=[self.selected_id],
+                            ),
+                            "squad": [
+                                CharacterState(
+                                    id="entity-bark",
+                                    name="Bark",
+                                    selected=self.selected_id == "entity-bark",
+                                ),
+                                CharacterState(
+                                    id="entity-plant",
+                                    name="Plant",
+                                    selected=self.selected_id == "entity-plant",
+                                ),
+                            ],
+                        }
+                    )
+                },
+                deep=True,
+            )
+
+        async def dispatch(
+            self,
+            action: Action,
+            *,
+            command: CommandDispatchContext,
+            token: ExecutionToken | None = None,
+        ) -> Transition:
+            del token
+            assert isinstance(action, SelectSquadMemberExactAction)
+            basis = command.based_on_revision.telemetry_sequence
+            assert basis is not None
+            self.actions.append(action)
+            self.selected_id = action.target_id
+            self.sequence += 1
+            acknowledgement = NativeCommandAcknowledgement(
+                command_id=command.command_id,
+                command="select_squad_member",
+                status=NativeCommandStatus.COMPLETED,
+                reason="exact_squad_member_selected",
+                target_id=action.target_id,
+                selected_character_ids=["entity-bark"],
+                based_on_telemetry_sequence=basis,
+                acknowledged_at_telemetry_sequence=self.sequence,
+                accepted_at_telemetry_sequence=self.sequence,
+                terminal_at_telemetry_sequence=self.sequence,
+            )
+            return Transition(
+                receipt=ActionReceipt(
+                    action=action,
+                    control_mode=ControlMode.NATIVE_ASSISTED,
+                    command_id=command.command_id,
+                    started_after_revision=command.based_on_revision,
+                    accepted=True,
+                    executed=True,
+                    dry_run=False,
+                    primitive_actions=1,
+                    native_acknowledgement=acknowledgement,
+                    semantic=SemanticActionReceipt(
+                        action_kind=action.kind,
+                        contract_version="1.0",
+                        target_id=action.target_id,
+                        revalidation="Revalidated the exact target and selection basis.",
+                    ),
+                ),
+                observation=self.observation(),
+            )
+
+    class ExactSelectionPlanner(Planner):
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def decide(self, current: Observation) -> PlannerOutput:
+            self.calls += 1
+            if self.calls == 1:
+                return PlanEnvelope(
+                    schema_version="1.0",
+                    plan_id="exact-selection-terminal",
+                    objective="Select Plant exactly.",
+                    control_mode=ControlMode.NATIVE_ASSISTED,
+                    based_on_revision=current.world_revision,
+                    assumptions=[fresh()],
+                    steps=[
+                        PlanStep(
+                            step_id="select-plant",
+                            action=SelectSquadMemberExactAction(
+                                target_id="entity-plant"
+                            ),
+                            preconditions=[fresh()],
+                            success_conditions=[],
+                            failure_conditions=[],
+                            timeout_seconds=5.0,
+                            retry_budget=0,
+                            idempotency=IdempotencyPolicy.AT_MOST_ONCE,
+                        )
+                    ],
+                    entry_step_id="select-plant",
+                    max_actions=1,
+                    max_wall_seconds=10.0,
+                    max_game_seconds=10.0,
+                    risk_budget=RiskBudget(
+                        max_pointer_actions=0,
+                        max_purchase_actions=0,
+                        max_native_assisted_actions=1,
+                    ),
+                )
+            return PlannerDecision(
+                intent="stop",
+                rationale="Exact selection terminal was accepted.",
+                action=StopAction(reason="terminal proof complete"),
+                confidence=1.0,
+            )
+
+    async def scenario() -> None:
+        clock = FakeClock()
+        environment = ExactSelectionEnvironment(clock=clock)
+        runtime, logger = runtime_for(
+            tmp_path,
+            environment,
+            ExactSelectionPlanner(),
+            clock,
+            control_mode=ControlMode.NATIVE_ASSISTED,
+            max_native_assisted_actions_per_plan=1,
+        )
+        try:
+            await runtime.run(max_steps=2)
+        finally:
+            logger.close()
+
+        outcomes = [
+            event["payload"]
+            for event in read_events(tmp_path / "events.jsonl")
+            if event["event_type"] == "plan_outcome"
+        ]
+        assert outcomes[0]["disposition"] == "completed"
+        assert outcomes[0]["reason"] == "Plan completed."
+
+    asyncio.run(scenario())
 
 
 def read_events(path: Path) -> list[dict[str, object]]:

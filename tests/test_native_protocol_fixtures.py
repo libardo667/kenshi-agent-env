@@ -42,6 +42,10 @@ def test_python_accepts_exact_known_map_destination_request_fixture() -> None:
     )
 
     assert request.command == "travel_to_map_destination"
+    assert request.selected_character_ids == [
+        "entity-selected",
+        "entity-companion",
+    ]
     assert request.target_id == "entity-known-town"
     assert request.bearing_degrees == 0.0
     assert request.distance_units == 0.0
@@ -53,7 +57,7 @@ def test_python_accepts_exact_squad_selection_request_fixture() -> None:
     )
 
     assert request.command == "select_squad_member"
-    assert request.selected_character_ids == ["entity-bark"]
+    assert request.selected_character_ids == ["entity-bark", "entity-plant"]
     assert request.target_id == "entity-plant"
 
 

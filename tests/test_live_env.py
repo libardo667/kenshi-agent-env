@@ -1077,6 +1077,8 @@ class NativePulseTelemetry(PulseTelemetry):
         self.indoors = False
         self.first_aid_target_enabled = False
         self.known_map_destinations: list[KnownMapDestination] = []
+        self.selected_character_id = "entity-selected"
+        self.selected_character_ids = ["entity-selected"]
 
     def read(self) -> TelemetryRead:
         self.sequence += 1
@@ -1093,8 +1095,8 @@ class NativePulseTelemetry(PulseTelemetry):
                     speed_multiplier=self.speed_multiplier,
                 ),
                 ui=UIState(
-                    selected_character_id="entity-selected",
-                    selected_character_ids=["entity-selected"],
+                    selected_character_id=self.selected_character_id,
+                    selected_character_ids=self.selected_character_ids,
                     active_screen=(
                         "dialogue" if self.dialogue_target_id is not None else "world"
                     ),
@@ -1119,7 +1121,7 @@ class NativePulseTelemetry(PulseTelemetry):
                     CharacterState(
                         id="entity-selected",
                         name="Wanderer",
-                        selected=True,
+                        selected="entity-selected" in self.selected_character_ids,
                         indoors=self.indoors,
                         alive=True,
                         conscious=True,
@@ -1129,7 +1131,7 @@ class NativePulseTelemetry(PulseTelemetry):
                     CharacterState(
                         id="entity-ruka",
                         name="Ruka",
-                        selected=False,
+                        selected="entity-ruka" in self.selected_character_ids,
                         alive=True,
                         conscious=False,
                         down=True,
@@ -1624,6 +1626,47 @@ def test_squad_member_selection_uses_exact_native_identity_without_pointer_input
         assert transition.receipt.semantic is not None
         assert transition.receipt.semantic.target_id == "entity-ruka"
         assert transition.receipt.semantic.resolved_bounds is None
+
+    asyncio.run(scenario())
+
+
+def test_exact_native_selection_collapses_a_current_squad_group(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(
+            tmp_path,
+            status=NativeCommandStatus.COMPLETED,
+            reason="exact_squad_member_selected",
+        )
+        telemetry.capabilities.extend(
+            [
+                "control.select_squad_member",
+                "squad.basic",
+            ]
+        )
+        telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={"native_approach_skill": "approach_confirmed_vendor"}
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            SelectSquadMemberExactAction(target_id="entity-ruka"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "a" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.command == "select_squad_member"
+        assert controller.request.selected_character_ids == [
+            "entity-selected",
+            "entity-ruka",
+        ]
+        assert controller.request.target_id == "entity-ruka"
 
     asyncio.run(scenario())
 
@@ -2651,6 +2694,53 @@ def test_map_travel_issues_one_exact_order_and_establishes_five_x(
         assert [
             action.kind for action in controller.actions
         ] == ["hotkey", "key", "key"]
+
+    asyncio.run(scenario())
+
+
+def test_map_travel_carries_the_complete_selected_squad_basis(
+    tmp_path: Path,
+) -> None:
+    async def scenario() -> None:
+        environment, telemetry, controller = native_vendor_environment(tmp_path)
+        telemetry.capabilities = [
+            "game.pause",
+            "game.speed",
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "identity.stable_handles",
+            "squad.health",
+        ]
+        telemetry.selected_character_ids = ["entity-selected", "entity-ruka"]
+        telemetry.known_map_destinations = [
+            KnownMapDestination(
+                id="entity-known-town",
+                name="The Hub",
+                distance=1250.0,
+            )
+        ]
+        environment.controls_config = environment.controls_config.model_copy(
+            update={
+                "native_approach_skill": "approach_confirmed_vendor",
+                "require_paused_between_actions": False,
+            }
+        )
+        initial = await environment.reset()
+
+        transition = await environment.dispatch(
+            TravelToMapDestinationAction(destination_id="entity-known-town"),
+            command=CommandDispatchContext(
+                command_id="cmd-" + "c" * 32,
+                based_on_revision=initial.world_revision,
+            ),
+        )
+
+        assert transition.receipt.executed
+        assert controller.request is not None
+        assert controller.request.selected_character_ids == [
+            "entity-selected",
+            "entity-ruka",
+        ]
 
     asyncio.run(scenario())
 

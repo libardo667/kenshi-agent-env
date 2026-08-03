@@ -16,6 +16,7 @@ from kenshi_agent.models import (
     GameBinding,
     GameState,
     KeyAction,
+    KnownMapDestination,
     MoveCursorAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
@@ -29,10 +30,12 @@ from kenshi_agent.models import (
     RecallMemoryAction,
     ScrollAction,
     SelectSquadMemberAction,
+    SelectSquadMemberExactAction,
     SetSpeedAction,
     SkillAction,
     SkillArgument,
     TelemetrySnapshot,
+    TravelToMapDestinationAction,
     UIState,
     UseGameBindingAction,
     VisibleUIControl,
@@ -178,6 +181,73 @@ def test_exact_squad_selection_can_reduce_a_current_multi_selection() -> None:
                     name="Twitch",
                     selected=True,
                 ),
+            ],
+        ),
+    )
+
+    assert guard.validate(action, observation) == action
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        SelectSquadMemberExactAction(target_id="entity-plant"),
+        TravelToMapDestinationAction(destination_id="entity-hub"),
+    ],
+)
+def test_native_party_control_accepts_an_exact_group_basis(
+    action: SelectSquadMemberExactAction | TravelToMapDestinationAction,
+) -> None:
+    guard = ActionGuard(
+        safety_config().model_copy(
+            update={"allow_action_kinds": [action.kind]}
+        ),
+        MacroRegistry({}),
+        control_mode=ControlMode.NATIVE_ASSISTED,
+    )
+    observation = Observation(
+        run_id="native-party-control",
+        step_index=0,
+        mode="live",
+        control_mode=ControlMode.NATIVE_ASSISTED,
+        telemetry=TelemetrySnapshot(
+            identity_session_id="session-native-party-control",
+            capabilities=[
+                "control.select_squad_member",
+                "control.travel_to_map_destination",
+                "game.pause",
+                "game.speed",
+                "identity.stable_handles",
+                "squad.basic",
+                "squad.health",
+                "world.known_map_destinations",
+            ],
+            game=GameState(loaded=True, paused=True, speed_multiplier=0.0),
+            ui=UIState(
+                active_screen="world",
+                dialogue_open=False,
+                modal_open=False,
+                selected_character_id="entity-bark",
+                selected_character_ids=["entity-bark", "entity-plant"],
+            ),
+            squad=[
+                CharacterState(
+                    id="entity-bark",
+                    name="Bark",
+                    selected=True,
+                ),
+                CharacterState(
+                    id="entity-plant",
+                    name="Plant",
+                    selected=True,
+                ),
+            ],
+            known_map_destinations=[
+                KnownMapDestination(
+                    id="entity-hub",
+                    name="The Hub",
+                    distance=1250.0,
+                )
             ],
         ),
     )

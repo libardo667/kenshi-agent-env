@@ -7,6 +7,7 @@
 #include <exception>
 #include <iomanip>
 #include <locale>
+#include <set>
 #include <sstream>
 
 namespace
@@ -240,14 +241,6 @@ namespace KenshiAgentTelemetry
                     0);
             const boost::property_tree::ptree& selectedIds =
                 root.get_child("selected_character_ids");
-            if (selectedIds.size() == 1)
-            {
-                boost::property_tree::ptree::const_iterator selected =
-                    selectedIds.begin();
-                if (selected->first.empty() && IsLeaf(selected->second))
-                    request.selectedCharacterId = selected->second.data();
-            }
-
             if (!HasOnlyKeys(root, rootKeys, ARRAY_COUNT(rootKeys)))
             {
                 rejectionReason = "malformed_request";
@@ -292,22 +285,36 @@ namespace KenshiAgentTelemetry
                 return false;
             }
 
-            if (selectedIds.size() != 1)
+            const bool allowsGroupSelection =
+                request.command == "select_squad_member" ||
+                request.command == "travel_to_map_destination";
+            if (selectedIds.empty() ||
+                selectedIds.size() > 64 ||
+                (!allowsGroupSelection && selectedIds.size() != 1))
             {
                 rejectionReason = "malformed_request";
                 return false;
             }
-            boost::property_tree::ptree::const_iterator selected =
-                selectedIds.begin();
-            if (!selected->first.empty() ||
-                !IsLeaf(selected->second) ||
-                selected->second.data().empty() ||
-                selected->second.data().size() > 200)
+            std::set<std::string> uniqueSelectedIds;
+            for (boost::property_tree::ptree::const_iterator selected =
+                     selectedIds.begin();
+                 selected != selectedIds.end();
+                 ++selected)
             {
-                rejectionReason = "malformed_request";
-                return false;
+                const std::string selectedId = selected->second.data();
+                if (!selected->first.empty() ||
+                    !IsLeaf(selected->second) ||
+                    selectedId.empty() ||
+                    selectedId.size() > 200 ||
+                    !uniqueSelectedIds.insert(selectedId).second)
+                {
+                    rejectionReason = "malformed_request";
+                    return false;
+                }
+                request.selectedCharacterIds.push_back(selectedId);
             }
-            request.selectedCharacterId = selected->second.data();
+            if (request.selectedCharacterIds.size() == 1)
+                request.selectedCharacterId = request.selectedCharacterIds[0];
 
             const bool isDirection =
                 request.command == "move_in_direction";
@@ -413,9 +420,27 @@ namespace KenshiAgentTelemetry
              << acknowledgement.distanceUnits << ",";
         json << "\"minimum_output_quantity\":"
              << acknowledgement.minimumOutputQuantity << ",";
-        json << "\"selected_character_ids\":[\""
-             << JsonEscape(acknowledgement.selectedCharacterId)
-             << "\"],";
+        json << "\"selected_character_ids\":[";
+        if (!acknowledgement.selectedCharacterIds.empty())
+        {
+            for (unsigned int index = 0;
+                 index < acknowledgement.selectedCharacterIds.size();
+                 ++index)
+            {
+                if (index > 0)
+                    json << ",";
+                json << "\""
+                     << JsonEscape(acknowledgement.selectedCharacterIds[index])
+                     << "\"";
+            }
+        }
+        else
+        {
+            json << "\""
+                 << JsonEscape(acknowledgement.selectedCharacterId)
+                 << "\"";
+        }
+        json << "],";
         json << "\"based_on_telemetry_sequence\":"
              << acknowledgement.basedOnTelemetrySequence << ",";
         json << "\"acknowledged_at_telemetry_sequence\":"

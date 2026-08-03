@@ -11,7 +11,8 @@
     "observed_at_monotonic": 12.5
   },
   "selected_character_ids": [
-    "entity-selected"
+    "entity-selected",
+    "entity-companion"
   ],
   "target_id": "entity-known-town",
   "context_action": "",

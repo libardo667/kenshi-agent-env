@@ -62,26 +62,28 @@ their callbacks.
 It also recognizes a private `Ctrl+Shift+F10` request bridge. Before the
 hotkey, Python atomically publishes a strict `native_command.request.json`
 carrying its UUID command ID, complete world revision, `native_assisted` mode,
-identity session, exactly one selected stable ID, and command-specific
-arguments:
+identity session, the complete nonempty selected stable-ID basis, and
+command-specific arguments. Character-specific commands require exactly one
+selected ID; squad selection and map travel deliberately accept a group:
 
 - `approach_confirmed_vendor` is the legacy wire name for approaching any exact
   conscious, non-hostile humanoid dialogue target. It uses `PLAYER_TALK_TO` and
   completes only when dialogue opens with that exact target.
 - `move_to_character` walks to one exact current nearby character through
   `MOVE_CUS_ORDERED` without opening dialogue and completes on arrival.
+- `select_squad_member` collapses any exact current squad selection to one exact
+  stable target and terminally verifies the resulting singular selection.
 - `move_in_direction` walks a bearing/distance from the selected character,
   capped at 2,000 units, and completes inside the fixed arrival tolerance or
   after crossing the intended destination plane. Its request and acknowledgement
   carry an empty target plus the exact bearing and distance.
-- `travel_to_map_destination` resolves one exact discovered town and approaches
-  its direction-dependent gate waypoint. A gated town then receives one
-  controller-owned interior order. Crossing the wall predicate does not
-  terminate that order. Once its native-resolved endpoint is reached, exact
-  current-town identity completes the command even when that town's geometry
-  never exposes selected-character inside-walls state. An ungated town requires
-  exact current-location identity. A reached interior leg without exact town
-  identity cancels rather than inventing arrival.
+- `travel_to_map_destination` gives the complete exact current selection one
+  ordinary group order toward an exact discovered town's direction-dependent
+  gate waypoint. A gated town then receives one controller-owned interior order.
+  Crossing the wall predicate does not terminate that order. Completion requires
+  every member of the command's selection basis to reach the exact town; a
+  reached interior leg without that group evidence cancels rather than inventing
+  arrival.
 - `exit_current_building` requires the selected character's indoor handle to
   resolve to a valid building, then resolves its current unlocked exit and
   outside point without accepting model-authored geometry.
@@ -101,11 +103,11 @@ a nearer target. `native_control` exposes a bounded ring of keyed
 accepted/rejected/completed/cancelled acknowledgements. Active work cancels if
 selection, uninterrupted pause beyond the bounded handoff window, target
 lifetime, or required target role changes. The legacy last-command fields
-remain diagnostics. While an active command still belongs to one exact selected
-character, the player-update hook reasserts `CameraClass::followObject` each
-frame. This keeps the camera and world streaming centered on the command owner;
-inactive, ambiguous, or selection-mismatched states never claim camera
-ownership.
+remain diagnostics. While an active command still belongs to its complete exact
+selection basis, the player-update hook reasserts `CameraClass::followObject`
+on the primary member each frame. This keeps the camera and world streaming
+centered on the command owner; inactive, ambiguous, or selection-mismatched
+states never claim camera ownership.
 This makes the DLL a native-assisted control bridge, not a globally read-only
 plugin. The Python runtime exposes these commands only in `native_assisted`
 mode; `interface_only` filters their capabilities/state and rejects the marked

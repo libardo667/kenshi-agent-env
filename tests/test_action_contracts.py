@@ -1141,6 +1141,8 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
         capabilities=[
             "control.travel_to_map_destination",
             "world.known_map_destinations",
+            "game.pause",
+            "game.speed",
             "identity.stable_handles",
             "squad.health",
         ],
@@ -1188,6 +1190,60 @@ def test_exact_known_map_destination_has_one_controller_owned_travel_contract() 
     assert contract.bind(action, state).bound
     missing = action.model_copy(update={"destination_id": "entity-undiscovered-town"})
     assert not contract.bind(missing, state).bound
+
+
+def test_exact_selection_and_map_travel_bind_a_current_squad_group() -> None:
+    squad = [
+        CharacterState(id="entity-bark", name="Bark", selected=True),
+        CharacterState(id="entity-plant", name="Plant", selected=True),
+    ]
+    state = observation(
+        capabilities=[
+            "control.select_squad_member",
+            "control.travel_to_map_destination",
+            "world.known_map_destinations",
+            "game.pause",
+            "game.speed",
+            "identity.stable_handles",
+            "squad.basic",
+            "squad.health",
+        ],
+        squad=squad,
+        ui=UIState(
+            active_screen="world",
+            dialogue_open=False,
+            modal_open=False,
+            selected_character_id="entity-bark",
+            selected_character_ids=["entity-bark", "entity-plant"],
+        ),
+    )
+    assert state.telemetry is not None
+    state.telemetry.known_map_destinations = [
+        KnownMapDestination(
+            id="entity-known-town",
+            name="The Hub",
+            distance=1250.0,
+        )
+    ]
+
+    selection = SELECT_SQUAD_MEMBER_EXACT_CONTRACT.bind(
+        SelectSquadMemberExactAction(target_id="entity-plant"),
+        state,
+    )
+    travel = TRAVEL_TO_MAP_DESTINATION_CONTRACT.bind(
+        TravelToMapDestinationAction(destination_id="entity-known-town"),
+        state,
+    )
+
+    assert selection.bound
+    assert travel.bound
+    travel_offer = next(
+        offer
+        for offer in offered_affordances(state)
+        if offer.operation_kind == "travel_to_map_destination"
+    )
+    assert travel_offer.semantic == "travel_squad"
+    assert "2 selected squad members" in travel_offer.description
 
 
 def test_map_travel_cannot_bind_a_destination_already_reached() -> None:

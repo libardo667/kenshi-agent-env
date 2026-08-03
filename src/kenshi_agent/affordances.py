@@ -347,8 +347,17 @@ def _visible_control_offers(observation: Observation) -> Iterable[AffordanceOffe
         or "ui.visible_controls" not in telemetry.capabilities
     ):
         return
+    dialogue_labels = {
+        normalize_control_label(label)
+        for label in (telemetry.ui.dialogue_options or [])
+    }
     for control in telemetry.ui.visible_controls:
         if is_runtime_owned_visible_control(control) or control.role == "item":
+            continue
+        if control.role == "text" and not (
+            telemetry.ui.dialogue_open
+            and normalize_control_label(control.label) in dialogue_labels
+        ):
             continue
         source = (
             AffordanceSource.DIALOGUE
@@ -555,8 +564,8 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         and "control.select_squad_member" in capabilities
         and "identity.stable_handles" in capabilities
         and telemetry.ui.selected_character_id is not None
-        and telemetry.ui.selected_character_ids
-        == [telemetry.ui.selected_character_id]
+        and telemetry.ui.selected_character_id
+        in telemetry.ui.selected_character_ids
     )
     for member in telemetry.squad:
         target = AffordanceTarget(
@@ -564,7 +573,7 @@ def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             label=member.name,
             kind="squad_member",
         )
-        if member.id != telemetry.ui.selected_character_id:
+        if telemetry.ui.selected_character_ids != [member.id]:
             yield _offer(
                 observation,
                 source=AffordanceSource.SQUAD,
@@ -678,8 +687,8 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
         "world.known_map_destinations",
     } <= capabilities:
         return
-    selected = next((member for member in telemetry.squad if member.selected), None)
-    if selected is None:
+    selected = [member for member in telemetry.squad if member.selected]
+    if not selected:
         return
     for destination in telemetry.known_map_destinations:
         if not map_destination_travel_available(
@@ -689,11 +698,17 @@ def _map_offers(observation: Observation) -> Iterable[AffordanceOffer]:
             location_authoritative="game.location.identity" in capabilities,
         ):
             continue
+        selected_count = len(selected)
         yield _offer(
             observation,
             source=AffordanceSource.MAP,
-            semantic="travel",
-            description=f"Travel to known map destination {destination.name!r}.",
+            semantic="travel" if selected_count == 1 else "travel_squad",
+            description=(
+                f"Travel to known map destination {destination.name!r}."
+                if selected_count == 1
+                else f"Travel {selected_count} selected squad members together "
+                f"to known map destination {destination.name!r}."
+            ),
             operation_kind="travel_to_map_destination",
             target=AffordanceTarget(
                 target_id=destination.id,

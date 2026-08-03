@@ -1023,7 +1023,7 @@ class NativeCommandAcknowledgement(StrictModel):
     # Retained in the acknowledgement so an adopted resource-production
     # command cannot silently satisfy a later request for a larger yield.
     minimum_output_quantity: int = Field(default=1, ge=1, le=5)
-    selected_character_ids: list[str] = Field(min_length=1, max_length=1)
+    selected_character_ids: list[str] = Field(min_length=1, max_length=64)
     based_on_telemetry_sequence: int = Field(ge=0)
     acknowledged_at_telemetry_sequence: int = Field(ge=0)
     accepted_at_telemetry_sequence: int | None = Field(default=None, ge=0)
@@ -1035,8 +1035,18 @@ class NativeCommandAcknowledgement(StrictModel):
             raise ValueError(
                 "acknowledged_at_telemetry_sequence must be later than the request basis"
             )
-        if len(set(self.selected_character_ids)) != 1:
-            raise ValueError("native acknowledgement requires exactly one selected character")
+        if len(set(self.selected_character_ids)) != len(self.selected_character_ids):
+            raise ValueError("native acknowledgement selection basis contains duplicates")
+        if (
+            len(self.selected_character_ids) != 1
+            and self.command not in {
+                "select_squad_member",
+                "travel_to_map_destination",
+            }
+        ):
+            raise ValueError(
+                "this native acknowledgement requires exactly one selected character"
+            )
         if self.command == "move_in_direction":
             if self.target_id:
                 raise ValueError("a directional acknowledgement must not name a target")
@@ -1138,7 +1148,7 @@ class NativeControlState(StrictModel):
 
 
 class TelemetrySnapshot(StrictModel):
-    protocol_version: str = "1.9.0"
+    protocol_version: str = "1.10.0"
     sequence: int = Field(default=0, ge=0)
     captured_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
@@ -3553,7 +3563,7 @@ class NativeCommandRequest(StrictModel):
     control_mode: Literal[ControlMode.NATIVE_ASSISTED]
     identity_session_id: str = Field(min_length=1, max_length=200)
     based_on_revision: WorldStateRevision
-    selected_character_ids: list[str] = Field(min_length=1, max_length=1)
+    selected_character_ids: list[str] = Field(min_length=1, max_length=64)
     # Empty for a directional walk, which references nobody.
     target_id: str = Field(default="", max_length=200)
     # Empty for every command except the generic context-action route.
@@ -3566,8 +3576,18 @@ class NativeCommandRequest(StrictModel):
     def validate_native_fences(self) -> NativeCommandRequest:
         if self.based_on_revision.telemetry_sequence is None:
             raise ValueError("native command basis requires a telemetry sequence")
-        if len(set(self.selected_character_ids)) != 1:
-            raise ValueError("native command requires exactly one selected character")
+        if len(set(self.selected_character_ids)) != len(self.selected_character_ids):
+            raise ValueError("native command selection basis contains duplicates")
+        if (
+            len(self.selected_character_ids) != 1
+            and self.command not in {
+                "select_squad_member",
+                "travel_to_map_destination",
+            }
+        ):
+            raise ValueError(
+                "this native command requires exactly one selected character"
+            )
         if self.command == "move_in_direction":
             if self.target_id:
                 raise ValueError("a directional walk must not name a target")

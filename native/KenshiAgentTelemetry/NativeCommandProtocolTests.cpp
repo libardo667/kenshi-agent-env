@@ -999,6 +999,9 @@ int main(int argc, char** argv)
             "valid map-travel request was rejected as " + rejectionReason);
     }
     if (mapTravel.command != "travel_to_map_destination" ||
+        mapTravel.selectedCharacterIds.size() != 2 ||
+        mapTravel.selectedCharacterIds[0] != "entity-selected" ||
+        mapTravel.selectedCharacterIds[1] != "entity-companion" ||
         mapTravel.targetId != "entity-known-town" ||
         mapTravel.bearingDegrees != 0.0 ||
         mapTravel.distanceUnits != 0.0)
@@ -1042,7 +1045,9 @@ int main(int argc, char** argv)
             "valid squad-selection request was rejected as " + rejectionReason);
     }
     if (squadSelection.command != "select_squad_member" ||
-        squadSelection.selectedCharacterId != "entity-bark" ||
+        squadSelection.selectedCharacterIds.size() != 2 ||
+        squadSelection.selectedCharacterIds[0] != "entity-bark" ||
+        squadSelection.selectedCharacterIds[1] != "entity-plant" ||
         squadSelection.targetId != "entity-plant" ||
         squadSelection.bearingDegrees != 0.0 ||
         squadSelection.distanceUnits != 0.0)
@@ -1282,6 +1287,39 @@ int main(int argc, char** argv)
         return Fail(
             "serialized direction acknowledgement diverged from the fixture");
     }
+
+    KenshiAgentTelemetry::NativeCommandAcknowledgement groupAcknowledgement;
+    groupAcknowledgement.commandId =
+        "cmd-fedcba9876543210fedcba9876543210";
+    groupAcknowledgement.command = "travel_to_map_destination";
+    groupAcknowledgement.status = "accepted";
+    groupAcknowledgement.reason = "issued";
+    groupAcknowledgement.targetId = "entity-known-town";
+    groupAcknowledgement.selectedCharacterIds.push_back("entity-selected");
+    groupAcknowledgement.selectedCharacterIds.push_back("entity-companion");
+    groupAcknowledgement.basedOnTelemetrySequence = 20;
+    groupAcknowledgement.acknowledgedAtTelemetrySequence = 21;
+    groupAcknowledgement.hasAcceptedSequence = true;
+    groupAcknowledgement.acceptedAtTelemetrySequence = 21;
+    const std::string groupSerialized =
+        KenshiAgentTelemetry::SerializeNativeCommandAcknowledgement(
+            groupAcknowledgement);
+    std::istringstream groupInput(groupSerialized);
+    boost::property_tree::ptree groupActual;
+    boost::property_tree::read_json(groupInput, groupActual);
+    const boost::property_tree::ptree& groupSelected =
+        groupActual.get_child("selected_character_ids");
+    boost::property_tree::ptree::const_iterator groupSelectedIt =
+        groupSelected.begin();
+    if (groupSelected.size() != 2 ||
+        groupSelectedIt->second.data() != "entity-selected")
+    {
+        return Fail(
+            "serialized group acknowledgement lost its exact selection basis");
+    }
+    ++groupSelectedIt;
+    if (groupSelectedIt->second.data() != "entity-companion")
+        return Fail("serialized group acknowledgement reordered its selection basis");
 
     std::cout
         << "Native protocol fixtures and semantics passed."

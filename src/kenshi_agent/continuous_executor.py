@@ -1671,6 +1671,50 @@ class ContinuousPlanExecutor:
                     success=transition.success,
                     staged_patch=staged_patch,
                 )
+            if contract.native_terminal_success_reasons:
+                acknowledgement = transition.receipt.native_acknowledgement
+                succeeded = bool(
+                    acknowledgement is not None
+                    and acknowledgement.status is NativeCommandStatus.COMPLETED
+                    and acknowledgement.reason
+                    in contract.native_terminal_success_reasons
+                )
+                self._event(
+                    "plan_step_progress",
+                    plan,
+                    latest,
+                    step=step,
+                    reason="Checked the contract-declared exact native terminal.",
+                    evidence={
+                        "controller_verified": True,
+                        "status": (
+                            acknowledgement.status.value
+                            if acknowledgement is not None
+                            else "missing"
+                        ),
+                        "terminal_reason": (
+                            acknowledgement.reason
+                            if acknowledgement is not None
+                            else "missing"
+                        ),
+                        "accepted_terminal_reasons": sorted(
+                            contract.native_terminal_success_reasons
+                        ),
+                    },
+                )
+                return _StepResult(
+                    observation=latest,
+                    succeeded=succeeded,
+                    actions_completed=1,
+                    reason=(
+                        "Native action reached its contract-declared exact terminal."
+                        if succeeded
+                        else "Native action lacked its contract-declared exact terminal."
+                    ),
+                    terminated=transition.terminated,
+                    success=transition.success,
+                    staged_patch=staged_patch if succeeded else None,
+                )
             recovery = (
                 transition.receipt.semantic.camera_recovery
                 if transition.receipt.semantic is not None
@@ -1828,51 +1872,6 @@ class ContinuousPlanExecutor:
                     reason=(
                         "Controller-owned resource transfer returned "
                         f"{transfer.status.value!r}: {transfer.reason}"
-                    ),
-                    terminated=transition.terminated,
-                    success=transition.success,
-                    staged_patch=staged_patch if succeeded else None,
-                )
-            if isinstance(step.action, OpenContextInventoryAction):
-                acknowledgement = transition.receipt.native_acknowledgement
-                succeeded = bool(
-                    acknowledgement is not None
-                    and acknowledgement.status is NativeCommandStatus.COMPLETED
-                    and acknowledgement.reason == "exact_context_inventory_open"
-                )
-                self._event(
-                    "plan_step_progress",
-                    plan,
-                    latest,
-                    step=step,
-                    reason=(
-                        "Checked the exact native contextual-inventory terminal."
-                    ),
-                    evidence={
-                        "controller_verified": True,
-                        "status": (
-                            acknowledgement.status.value
-                            if acknowledgement is not None
-                            else "missing"
-                        ),
-                        "terminal_reason": (
-                            acknowledgement.reason
-                            if acknowledgement is not None
-                            else "missing"
-                        ),
-                    },
-                )
-                return _StepResult(
-                    observation=latest,
-                    succeeded=succeeded,
-                    actions_completed=1,
-                    reason=(
-                        "Native contextual inventory "
-                        + (
-                            "opened for the exact target."
-                            if succeeded
-                            else "lacked exact terminal proof."
-                        )
                     ),
                     terminated=transition.terminated,
                     success=transition.success,
