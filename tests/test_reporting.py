@@ -17,6 +17,7 @@ from kenshi_agent.core.operation import (
 from kenshi_agent.core.planning import PlannerDecision
 from kenshi_agent.core.transport import ActionReceipt
 from kenshi_agent.reporting import (
+    MAX_SPOKEN_REASONING_CHARS,
     ConsoleDecisionReporter,
     describe_action,
     describe_receipt,
@@ -192,6 +193,33 @@ def test_console_reporter_narrates_continuous_plan_and_each_action() -> None:
     assert spoken == [
         "My plan is to reach Squin and look for supplies.",
         "Moving with this goal: Reach the road.",
+    ]
+
+
+def test_continuous_plan_narration_keeps_a_complete_model_authored_thought() -> None:
+    objective = (
+        "Keep Flashbox and Swiff together while they finish the current task, "
+        "then return to The Hub through the observed route and look for a food "
+        "vendor without repeating the stalled destination order"
+    )
+    assert 150 < len(objective) < MAX_SPOKEN_REASONING_CHARS
+    narrator = RecordingNarrator()
+    reporter = ConsoleDecisionReporter(
+        run_id="complete-plan-speech",
+        planner_name="openrouter",
+        model_name="playing-model",
+        narrator=narrator,
+        stream=StringIO(),
+    )
+
+    reporter.plan_accepted(
+        step_index=4,
+        objective=objective,
+        latency_seconds=3.5,
+    )
+
+    assert narrator.utterances == [
+        ("My plan is to " + objective[0].lower() + objective[1:] + ".", "decision")
     ]
 
 

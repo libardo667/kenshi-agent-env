@@ -48,7 +48,7 @@ class QueuedSpeechNarrator:
         speaker: BlockingSpeaker,
         *,
         queue_limit: int = 6,
-        max_utterance_chars: int = 280,
+        max_utterance_chars: int = 900,
     ) -> None:
         if queue_limit < 1:
             raise ValueError("queue_limit must be at least 1")
@@ -73,7 +73,11 @@ class QueuedSpeechNarrator:
         normalized = " ".join(text.split())
         if not normalized:
             return
-        normalized = normalized[: self._max_utterance_chars].rstrip()
+        if len(normalized) > self._max_utterance_chars:
+            clipped = normalized[: self._max_utterance_chars - 1].rstrip()
+            if " " in clipped:
+                clipped = clipped.rsplit(" ", 1)[0].rstrip(" ,;:-")
+            normalized = clipped + "…"
         with self._condition:
             if self._closed:
                 return
@@ -92,7 +96,7 @@ class QueuedSpeechNarrator:
         self,
         *,
         drain: bool = True,
-        timeout_seconds: float = 2.0,
+        timeout_seconds: float = 30.0,
     ) -> None:
         with self._condition:
             if not self._closed:
@@ -341,10 +345,7 @@ def windows_sapi_narrator() -> QueuedSpeechNarrator:
 def piper_narrator(executable: Path, model: Path) -> QueuedSpeechNarrator:
     """Build local neural narration from an installed Piper voice."""
 
-    return QueuedSpeechNarrator(
-        PiperSpeaker(executable, model),
-        queue_limit=1,
-    )
+    return QueuedSpeechNarrator(PiperSpeaker(executable, model))
 
 
 PIPER_HOME_VARIABLE = "KENSHI_AGENT_PIPER_HOME"

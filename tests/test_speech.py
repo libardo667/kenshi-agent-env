@@ -70,6 +70,7 @@ def test_narration_bounds_text_before_it_reaches_the_speaker() -> None:
     assert "\n" not in speaker.spoken[0]
     assert "  " not in speaker.spoken[0]
     assert len(speaker.spoken[0]) <= 40
+    assert speaker.spoken[0].endswith("…")
 
 
 def _piper_home(root: Path, *, executable: bool = True, model: bool = True) -> Path:
@@ -192,7 +193,7 @@ def test_piper_defers_cleanup_while_windows_still_owns_the_wave(
     assert not synthesized_directory.exists()
 
 
-def test_piper_narration_keeps_only_the_latest_pending_update(
+def test_piper_narration_keeps_distinct_updates_and_coalesces_matching_keys(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -206,9 +207,15 @@ def test_piper_narration_keeps_only_the_latest_pending_update(
     assert speaker.started.wait(1.0)
 
     narrator.say("Old plan.", key="decision")
+    narrator.say("Current plan.", key="decision")
     narrator.say("Intermediate action.", key="action")
     narrator.say("Newest result.", key="result")
     speaker.release.set()
     narrator.close(drain=True, timeout_seconds=2.0)
 
-    assert speaker.spoken == ["First update.", "Newest result."]
+    assert speaker.spoken == [
+        "First update.",
+        "Current plan.",
+        "Intermediate action.",
+        "Newest result.",
+    ]

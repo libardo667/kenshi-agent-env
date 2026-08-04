@@ -354,7 +354,10 @@ class ConsoleDecisionReporter:
             f"{latency_seconds:.2f}s | {objective}\n"
         )
         self._say(
-            _spoken_sentence("My plan is to " + objective[0].lower() + objective[1:]),
+            _spoken_sentence(
+                "My plan is to " + objective[0].lower() + objective[1:],
+                max_chars=MAX_SPOKEN_REASONING_CHARS,
+            ),
             key="decision",
         )
 
