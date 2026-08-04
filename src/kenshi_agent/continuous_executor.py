@@ -4,6 +4,7 @@ from collections.abc import Callable, Coroutine, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
+from .advisor_service import AdvisorActionResult
 from .affordances import bind_runtime_operation, terminal_affordance_receipt
 from .config import PlanningConfig
 from .env import AgentEnvironment
@@ -150,12 +151,6 @@ class PlanExecutionResult:
     # Which steps actually finished, so the plan outcome can say what was done
     # rather than only why the plan stopped.
     completed_step_ids: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class AdvisorActionResult:
-    observation: Observation
-    receipt: ActionReceipt
 
 
 @dataclass(frozen=True, slots=True)

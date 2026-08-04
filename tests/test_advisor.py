@@ -829,7 +829,7 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
         )
         runtime._state_store = store
         try:
-            result = await runtime._execute_advisor_action(
+            result = await runtime.advisor_service.consult(
                 ConsultAdvisorAction(
                     question="What is the safest useful next goal?",
                     focus=AdvisorFocus.NEXT_GOAL,
@@ -839,7 +839,7 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
                 plan_version=1,
                 step_id="consult",
             )
-            task = runtime._advisor_task
+            task = runtime.advisor_service._task
             assert task is not None
             await task
         finally:
@@ -913,7 +913,7 @@ def test_runtime_never_shortens_the_configured_advisor_timeout(
             minimum_memory_salience=0.0,
         )
         try:
-            result = await runtime._execute_advisor_action(
+            result = await runtime.advisor_service.consult(
                 ConsultAdvisorAction(
                     question="What is the safest useful next goal?",
                     focus=AdvisorFocus.NEXT_GOAL,
@@ -923,7 +923,7 @@ def test_runtime_never_shortens_the_configured_advisor_timeout(
                 plan_version=1,
                 step_id="consult",
             )
-            task = runtime._advisor_task
+            task = runtime.advisor_service._task
             assert task is not None
             await task
         finally:
