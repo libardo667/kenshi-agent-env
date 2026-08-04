@@ -5,10 +5,10 @@ from __future__ import annotations
 import pytest
 
 from kenshi_agent.approach import ApproachMonitor
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.telemetry import (
     Disposition,
     NearbyEntity,
-    Observation,
     TelemetrySnapshot,
     UIState,
 )

@@ -10,8 +10,7 @@ from ctypes import wintypes
 from datetime import UTC, datetime
 from typing import Any
 
-from ..models import (
-    ActionReceipt,
+from ..core.operation import (
     ClickAction,
     CoordinateSpace,
     HotkeyAction,
@@ -22,6 +21,7 @@ from ..models import (
     MoveCursorAction,
     ScrollAction,
 )
+from ..core.transport import ActionReceipt
 from .base import InputController, PrimitiveInputAction, WindowRect
 
 

@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from .action_budget import ActionBudgetLedger
 from .affordances import OPERATION_BINDING_AUTHORITY, bind_runtime_operation
 from .config import PlanningConfig
-from .env import AgentEnvironment
+from .core.observation import Observation
+from .core.operation import IdempotencyPolicy
+from .core.planning import (
+    PlanEnvelope,
+    PlanStep,
+)
+from .env.base import AgentEnvironment
 from .execution.handlers.camera import camera_handlers
 from .execution.handlers.cognition import (
     AdvisorConsultant,
@@ -40,7 +46,6 @@ from .future_planning import (
     FuturePlanResolution,
     PatchContinuityApplier,
 )
-from .models import IdempotencyPolicy, Observation, PlanEnvelope, PlanStep
 from .operation_authority import OperationAuthority
 from .plan_events import PlanEventReporter
 from .planning import PlanBudgetLedger, PlanningClock
@@ -147,9 +152,7 @@ class OperationExecutionService:
             staged_patch=staged,
             interrupted=result.interrupted,
             pause_before_replan=result.pause_before_replan,
-            retry_authorized=(
-                bound.definition.idempotency is IdempotencyPolicy.SAFE_TO_RETRY
-            ),
+            retry_authorized=(bound.definition.idempotency is IdempotencyPolicy.SAFE_TO_RETRY),
         )
 
     def activate_future_patch(

@@ -14,8 +14,17 @@ import time
 from pathlib import Path
 
 from kenshi_agent.config import AppConfig, load_config
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    PlanningMode,
+)
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.live_dev import _telemetry_read
-from kenshi_agent.models import ControlMode, Observation, PlanningMode, WorldStateRevision
+from kenshi_agent.planner_context import (
+    planner_affordance_digest,
+    render_planner_payload,
+)
 from kenshi_agent.planners.openrouter_planner import OpenRouterPlanner
 
 
@@ -34,11 +43,11 @@ def live_observation(config: AppConfig) -> Observation:
 async def main() -> int:
     config = load_config("config/live.yaml")
     obs = live_observation(config)
-    payload = obs.planner_payload()
+    payload = render_planner_payload(obs)
     assert obs.telemetry is not None
     print(
         f"observation: screen={obs.telemetry.ui.active_screen} "
-        f"affordances_offered={len(obs.affordance_digest())} "
+        f"affordances_offered={len(planner_affordance_digest(obs))} "
         f"payload={len(payload)} chars\n"
     )
 

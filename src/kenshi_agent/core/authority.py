@@ -1,13 +1,4 @@
-"""One typed vocabulary for why host input authority is granted or withdrawn.
-
-Plan-time validation and the final check inside the input lease answer the same
-question at two moments. Naming each verdict once lets a refusal be counted and
-compared across runs, and lets the wording live at the edge that renders it
-instead of every check inventing its own sentence for the same condition.
-
-This is deliberately a leaf module: it imports nothing from the package, so the
-model vocabulary can depend on it without a cycle.
-"""
+"""Typed operation and input-boundary authorization verdicts."""
 
 from __future__ import annotations
 

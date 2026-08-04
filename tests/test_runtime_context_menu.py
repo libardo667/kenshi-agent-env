@@ -5,24 +5,22 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.telemetry import (
     CharacterState,
     ContextMenuProbe,
     GameState,
-    Observation,
     RuntimeContextMenu,
     TelemetrySnapshot,
     UIState,
     Vec3,
-    WorldStateRevision,
     WorldTarget,
-)
-from kenshi_agent.runtime_context_menu import (
     context_menu_capability_is_consistent,
     context_menu_state_is_consistent,
     require_consistent_context_menu_state,
     require_truthful_context_menu_capability,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.runtime_context_menu_evidence import ContextMenuEvidenceTracker
 from kenshi_agent.world_state import WorldStateStore
 
@@ -157,29 +155,21 @@ def test_world_state_publishes_runtime_menu_evidence_without_granting_authority(
 
     first = store.publish(runtime_menu_observation(20))
     evidence = [
-        event
-        for event in first.events
-        if event.event_type == "runtime_context_menu_observed"
+        event for event in first.events if event.event_type == "runtime_context_menu_observed"
     ]
 
     assert len(evidence) == 1
     assert evidence[0].payload["task_type_values"] == [87, 26]
     assert evidence[0].payload["reviewed_context_actions"] == ["operate"]
     assert first.observation.telemetry.world_targets[0].context_actions == ["operate"]
-    assert len(
-        store.publish(runtime_menu_observation(21)).events
-    ) == 0
+    assert len(store.publish(runtime_menu_observation(21)).events) == 0
 
 
 def test_runtime_menu_evidence_retains_an_unresolved_exact_target() -> None:
     observation = runtime_menu_observation(30)
     assert observation.telemetry is not None
     observation = observation.model_copy(
-        update={
-            "telemetry": observation.telemetry.model_copy(
-                update={"world_targets": []}
-            )
-        }
+        update={"telemetry": observation.telemetry.model_copy(update={"world_targets": []})}
     )
 
     evidence = ContextMenuEvidenceTracker().observe(observation)
@@ -273,9 +263,7 @@ def test_runtime_menu_validation_errors_identify_the_failed_authority() -> None:
             context_menu_probe="captured",
             context_menu=None,
         )
-    assert state_error.value.args == (
-        "context menu open, probe, and payload are inconsistent",
-    )
+    assert state_error.value.args == ("context menu open, probe, and payload are inconsistent",)
 
     with pytest.raises(ValueError) as envelope_error:
         require_truthful_context_menu_capability(

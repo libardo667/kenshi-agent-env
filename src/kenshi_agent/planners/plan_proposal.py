@@ -20,40 +20,46 @@ from ..affordances import (
     bound_affordance,
 )
 from ..config import PlanningConfig
-from ..models import (
-    ActionOutcomeEvidence,
-    AdvisorBriefEvidence,
+from ..core.base import StrictModel
+from ..core.continuity import (
     AppendFieldbookEntryOperation,
-    Condition,
     ContinuityOperation,
     CreateFieldbookProjectOperation,
-    CurrentObservationEvidence,
-    EvidenceReference,
     FieldbookEntryKind,
     FieldbookOperation,
     FieldbookProjectKind,
     FieldbookProjectStatus,
     KeepMemoryOperation,
-    MemoryEvidence,
     MemoryKind,
     MemoryResolutionDisposition,
-    Observation,
-    PlanEnvelope,
-    PlannerDecision,
-    PlanOutcomeEvidence,
-    PlanPatch,
-    PlanStep,
-    PurchaseItemAction,
     ReinforceMemoryOperation,
     ResolveMemoryOperation,
     RetractMemoryOperation,
-    RiskBudget,
     SelectFieldbookProjectOperation,
     SetFieldbookProjectStatusOperation,
-    SingleStepRuntimeAction,
-    StrictModel,
     SupersedeMemoryOperation,
     UpdateFieldbookSummaryOperation,
+)
+from ..core.evidence import (
+    ActionOutcomeEvidence,
+    AdvisorBriefEvidence,
+    CurrentObservationEvidence,
+    EvidenceReference,
+    MemoryEvidence,
+    PlanOutcomeEvidence,
+)
+from ..core.observation import Observation
+from ..core.operation import (
+    PurchaseItemAction,
+    SingleStepRuntimeAction,
+)
+from ..core.planning import (
+    Condition,
+    PlanEnvelope,
+    PlannerDecision,
+    PlanPatch,
+    PlanStep,
+    RiskBudget,
 )
 from ..operation_definitions import (
     OperationExecution,

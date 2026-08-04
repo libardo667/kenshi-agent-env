@@ -15,28 +15,35 @@ from kenshi_agent.affordances import (
     selection_for,
 )
 from kenshi_agent.config import PlannerConfig
-from kenshi_agent.models import (
-    ActivePlanContext,
-    CharacterState,
+from kenshi_agent.core.continuity import (
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
-    ControlMode,
-    Disposition,
-    GameState,
     MemoryKind,
     MemoryRecord,
     MemoryStatus,
-    NearbyEntity,
-    Observation,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    PlanningMode,
+)
+from kenshi_agent.core.planning import (
+    ActivePlanContext,
     PlanEnvelope,
     PlannerDecision,
-    PlanningMode,
     PlanPatch,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    Disposition,
+    GameState,
+    NearbyEntity,
     TelemetrySnapshot,
     UIState,
-    WorldStateRevision,
 )
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.planner_context import render_planner_payload
 from kenshi_agent.planners.base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
@@ -82,11 +89,7 @@ def observation(
 
 def _selection(semantic: str) -> AffordanceSelection:
     current = observation()
-    offer = next(
-        offer
-        for offer in offered_affordances(current)
-        if offer.semantic == semantic
-    )
+    offer = next(offer for offer in offered_affordances(current) if offer.semantic == semantic)
     return selection_for(offer)
 
 
@@ -132,8 +135,7 @@ def test_openrouter_capacity_comes_from_the_exact_model_metadata() -> None:
     )
     assert calls == [
         (
-            "https://openrouter.example/api/v1/model/"
-            "google/gemini-3.1-flash-lite",
+            "https://openrouter.example/api/v1/model/google/gemini-3.1-flash-lite",
             {
                 "Accept": "application/json",
                 "Authorization": "Bearer secret",
@@ -173,9 +175,7 @@ def test_default_metadata_fetcher_preserves_request_auth_timeout_and_json(
     assert result == {"data": {"context_length": 12_345}}
     assert len(calls) == 1
     request, timeout = calls[0]
-    assert request.full_url == (
-        "https://openrouter.example/api/v1/model/provider/model"
-    )
+    assert request.full_url == ("https://openrouter.example/api/v1/model/provider/model")
     assert request.get_header("Accept") == "application/json"
     assert request.get_header("Authorization") == "Bearer secret"
     assert timeout == 7.5
@@ -248,9 +248,7 @@ def test_capacity_endpoint_normalizes_base_and_quotes_model_name() -> None:
         fetch_json=fetch,
     )
 
-    assert calls == [
-        "https://openrouter.example/api/vX/model/provider/model%20name"
-    ]
+    assert calls == ["https://openrouter.example/api/vX/model/provider/model%20name"]
 
 
 def test_capacity_lookup_outage_does_not_invent_a_local_limit() -> None:
@@ -379,9 +377,7 @@ def test_context_envelope_reserves_response_static_image_and_headroom() -> None:
     assert envelope.reserved_output_tokens == 4_096
     assert envelope.reserved_image_tokens == 4_096
     assert envelope.hard_observation_tokens == 100_000 - 4_096 - 4_096 - static
-    assert envelope.compaction_target_tokens == (
-        envelope.hard_observation_tokens - 4_096
-    )
+    assert envelope.compaction_target_tokens == (envelope.hard_observation_tokens - 4_096)
 
 
 def test_context_envelope_accepts_exact_completion_limit_and_one_token_payload() -> None:
@@ -423,8 +419,7 @@ def test_context_envelope_rejects_output_over_model_completion_limit() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "requested output allowance 5 exceeds provider/model "
-            "maximum completion allowance 4"
+            "requested output allowance 5 exceeds provider/model maximum completion allowance 4"
         ),
     ):
         hosted_context_envelope(
@@ -448,8 +443,7 @@ def test_context_envelope_rejects_zero_room_after_static_reservations() -> None:
     with pytest.raises(
         ValueError,
         match=(
-            "static request reservations consume the 10-token context window "
-            "for provider/model"
+            "static request reservations consume the 10-token context window for provider/model"
         ),
     ):
         hosted_context_envelope(
@@ -505,9 +499,7 @@ def test_output_token_budget_tracks_structured_response_complexity() -> None:
 
     # Screen and legacy runtime plan ceilings do not enlarge the hosted schema.
     for screen in ("trade", "dialogue", "world"):
-        assert (
-            output_token_budget(config, observation(screen=screen), max_plan_steps=8) == 6144
-        )
+        assert output_token_budget(config, observation(screen=screen), max_plan_steps=8) == 6144
 
     # Defensive active-plan calls receive the same one-choice budget.
     assert (
@@ -586,9 +578,7 @@ def test_openai_request_receives_the_computed_output_token_limit() -> None:
 def test_openai_active_plan_also_authors_a_simple_future_proposal() -> None:
     proposal = PlanProposal(
         objective="Stop after the active option finishes.",
-        steps=[
-            _proposal_step()
-        ],
+        steps=[_proposal_step()],
     )
 
     class Responses:
@@ -637,9 +627,7 @@ def test_openrouter_request_receives_the_same_valid_budgeted_json() -> None:
             decision = _decision_proposal()
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=decision.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=decision.model_dump_json()))
                 ]
             )
 
@@ -679,15 +667,11 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
             self.kwargs = kwargs
             proposal = PlanProposal(
                 objective="Prove the continuous response budget reaches OpenRouter.",
-                steps=[
-                    _proposal_step()
-                ],
+                steps=[_proposal_step()],
             )
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=proposal.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=proposal.model_dump_json()))
                 ],
                 usage=SimpleNamespace(
                     prompt_tokens=1200,
@@ -729,9 +713,7 @@ def test_openrouter_request_carries_its_configured_generation_contract() -> None
     assert system_blocks[-1]["cache_control"] == {"type": "ephemeral"}
     sent_schema = completions.kwargs["response_format"]["json_schema"]["schema"]
     assert completions.kwargs["response_format"]["json_schema"]["name"] == "PlanProposal"
-    assert set(sent_schema["$defs"]["ProposedPlanStep"]["properties"]) == {
-        "selection"
-    }
+    assert set(sent_schema["$defs"]["ProposedPlanStep"]["properties"]) == {"selection"}
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert diagnostics.cached_tokens == 900
@@ -764,9 +746,7 @@ def test_defensive_active_plan_model_can_only_author_one_future_choice() -> None
             )
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=proposal.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=proposal.model_dump_json()))
                 ]
             )
 
@@ -787,9 +767,7 @@ def test_defensive_active_plan_model_can_only_author_one_future_choice() -> None
     assert result.based_on_revision == current.world_revision
     assert result.interrupt_active_step_id is None
     replacement_ids = [step.step_id for step in result.replace_future_steps]
-    assert set(replacement_ids).isdisjoint(
-        {"future-pc-1-1", "future-pc-1-2"}
-    )
+    assert set(replacement_ids).isdisjoint({"future-pc-1-1", "future-pc-1-2"})
     assert len(replacement_ids) == 1
     assert result.replace_future_steps[0].on_success is None
     assert result.rationale == "Take a fresh look after the active option."
@@ -801,9 +779,7 @@ def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None
             del kwargs
             proposal = PlanProposal(
                 objective="Continue playing even if this memory proposal is incomplete.",
-                steps=[
-                    _proposal_step()
-                ],
+                steps=[_proposal_step()],
                 continuity_operations=[
                     ContinuityProposal(
                         operation="reinforce",
@@ -813,9 +789,7 @@ def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None
             )
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=proposal.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=proposal.model_dump_json()))
                 ]
             )
 
@@ -833,9 +807,7 @@ def test_openrouter_keeps_gameplay_when_one_proposed_memory_is_invalid() -> None
     diagnostics = planner.take_call_diagnostics()
     assert diagnostics is not None
     assert len(diagnostics.proposal_sidecar_rejections) == 1
-    assert diagnostics.proposal_sidecar_rejections[0].startswith(
-        "continuity_operations[0]:"
-    )
+    assert diagnostics.proposal_sidecar_rejections[0].startswith("continuity_operations[0]:")
 
 
 def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> None:
@@ -847,10 +819,7 @@ def test_openrouter_turns_malformed_plan_proposal_into_safe_reobservation() -> N
                     SimpleNamespace(
                         finish_reason="stop",
                         message=SimpleNamespace(
-                            content=(
-                                '{"objective":"Explore","steps":'
-                                '[{"action" {"kind":"noop"}}]}'
-                            )
+                            content=('{"objective":"Explore","steps":[{"action" {"kind":"noop"}}]}')
                         ),
                     )
                 ]
@@ -889,9 +858,7 @@ def test_openrouter_rejects_an_unadvertised_action_even_if_the_model_emits_it() 
             )
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=decision.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=decision.model_dump_json()))
                 ]
             )
 
@@ -985,9 +952,7 @@ def test_openrouter_output_limit_is_typed_and_retains_provider_evidence() -> Non
 
     error = captured.value
     assert error.category == "output_truncated"
-    assert error.failure_signature == (
-        "openrouter:output_truncated:PlanProposal:length"
-    )
+    assert error.failure_signature == ("openrouter:output_truncated:PlanProposal:length")
     assert "one compact PlanProposal" in error.retry_feedback
 
     diagnostics = planner.take_call_diagnostics()
@@ -1009,9 +974,7 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
     current = observation()
     proposal = PlanProposal(
         objective="Finish the same thought without regenerating it.",
-        steps=[
-            _proposal_step()
-        ],
+        steps=[_proposal_step()],
     )
     encoded = proposal.model_dump_json()
     split_at = len(encoded) // 2
@@ -1095,10 +1058,7 @@ def test_openrouter_continues_a_length_terminal_with_preserved_reasoning() -> No
     assert result.objective == proposal.objective
     assert result.steps[0].action.kind == "stop"
     assert result.steps[0].affordance is not None
-    assert (
-        result.steps[0].affordance.affordance_id
-        == proposal.steps[0].selection.affordance_id
-    )
+    assert result.steps[0].affordance.affordance_id == proposal.steps[0].selection.affordance_id
     assert result.plan_id == "plan-pc-1"
     assert result.based_on_revision == current.world_revision
     assert len(completions.calls) == 2
@@ -1213,9 +1173,7 @@ def test_hosted_manifests_name_only_memories_in_the_final_budgeted_json() -> Non
         assert set(prepared.context.manifest.memory_ids) == included
         assert included <= {record.memory_id for record in memories}
         assert prepared.context.manifest.payload_characters == len(prepared.payload)
-        assert prepared.context.manifest.context_capacity_source == (
-            "configured_override"
-        )
+        assert prepared.context.manifest.context_capacity_source == ("configured_override")
         assert prepared.context.manifest.context_window_tokens == 52_000
         assert prepared.context.manifest.compaction_target_tokens is not None
 
@@ -1274,9 +1232,7 @@ def test_manifest_names_only_continuity_receipts_in_the_final_payload() -> None:
             status=status,
             reason=reason,
             memory_id=memory_id,
-            memory_status=(
-                MemoryStatus.ACTIVE if memory_id is not None else None
-            ),
+            memory_status=(MemoryStatus.ACTIVE if memory_id is not None else None),
             authored_context_id="pc-1",
             authored_revision=current.world_revision,
             commit_revision=current.world_revision,
@@ -1297,9 +1253,7 @@ def test_manifest_names_only_continuity_receipts_in_the_final_payload() -> None:
             ),
         )
     ]
-    current = current.model_copy(
-        update={"recent_continuity_receipts": receipts}
-    )
+    current = current.model_copy(update={"recent_continuity_receipts": receipts})
     payload = {
         "world_revision": current.world_revision.model_dump(mode="json"),
         "recent_continuity_receipts": [
@@ -1334,9 +1288,7 @@ def test_planner_prompt_grants_creative_agency_without_legacy_recipe() -> None:
             )
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=proposal.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=proposal.model_dump_json()))
                 ]
             )
 
@@ -1344,9 +1296,7 @@ def test_planner_prompt_grants_creative_agency_without_legacy_recipe() -> None:
     completions = Captures()
     planner = object.__new__(OpenRouterPlanner)
     planner.config = PlannerConfig(include_screenshot=False)
-    planner.instructions = (root / "prompts" / "planner_system.md").read_text(
-        encoding="utf-8"
-    )
+    planner.instructions = (root / "prompts" / "planner_system.md").read_text(encoding="utf-8")
     planner.client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
 
     assert isinstance(asyncio.run(planner.decide(observation())), PlanEnvelope)
@@ -1427,9 +1377,7 @@ def test_hosted_schemas_contain_only_affordance_choice_not_operation_unions() ->
         "continuity_operations",
         "fieldbook_operations",
     }
-    assert set(
-        proposal_schema["$defs"]["ProposedPlanStep"]["properties"]
-    ) == {"selection"}
+    assert set(proposal_schema["$defs"]["ProposedPlanStep"]["properties"]) == {"selection"}
     assert "selection" in decision_schema["properties"]
     blob = json.dumps({"plan": proposal_schema, "decision": decision_schema})
     for superseded in (
@@ -1471,10 +1419,7 @@ def test_condition_schema_cannot_author_comparisons_the_runtime_must_reject() ->
     schema = portable_response_format(PlanEnvelope)["json_schema"]["schema"]
     condition = schema["$defs"]["Condition"]
     branches = [schema["$defs"][item["$ref"].rsplit("/", 1)[-1]] for item in condition["anyOf"]]
-    by_kind = {
-        branch["properties"]["kind"]["enum"][0]: branch
-        for branch in branches
-    }
+    by_kind = {branch["properties"]["kind"]["enum"][0]: branch for branch in branches}
 
     assert set(by_kind) == {"field", "capability", "telemetry_fresh"}
 
@@ -1542,9 +1487,7 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
             decision = _decision_proposal()
             return SimpleNamespace(
                 choices=[
-                    SimpleNamespace(
-                        message=SimpleNamespace(content=decision.model_dump_json())
-                    )
+                    SimpleNamespace(message=SimpleNamespace(content=decision.model_dump_json()))
                 ]
             )
 
@@ -1566,9 +1509,9 @@ def test_a_provider_that_will_not_compile_the_schema_is_asked_in_the_prompt() ->
     assert "response_format" not in completions.calls[1]
     prompted = completions.calls[1]["messages"][-1]["content"][0]["text"]
     assert "JSON Schema" in prompted and '"properties"' in prompted
-    assert completions.calls[1]["messages"][-1]["content"][0][
-        "cache_control"
-    ] == {"type": "ephemeral"}
+    assert completions.calls[1]["messages"][-1]["content"][0]["cache_control"] == {
+        "type": "ephemeral"
+    }
 
     # The lesson sticks: the second decision does not retry the refused form.
     assert isinstance(asyncio.run(planner.decide(single_step)), PlannerDecision)
@@ -1613,7 +1556,10 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
     changes what the model can choose. A proactive target cannot cut this
     surface, and a hard envelope that cannot carry it fails closed.
     """
-    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+    from kenshi_agent.core.telemetry import (
+        NormalizedPointerBounds,
+        VisibleUIControl,
+    )
 
     controls = [
         VisibleUIControl(
@@ -1636,7 +1582,7 @@ def test_the_action_surface_is_not_traded_away_for_a_smaller_payload() -> None:
 
     def shown(max_chars: int, **kwargs: Any) -> dict[str, Any]:
         kwargs.setdefault("max_context_chars", 1_000_000)
-        return json.loads(crowded.planner_payload(max_chars=max_chars, **kwargs))
+        return json.loads(render_planner_payload(crowded, max_chars=max_chars, **kwargs))
 
     def listed(payload: dict[str, Any]) -> list[dict[str, Any]]:
         return [
@@ -1668,7 +1614,7 @@ def test_two_open_inventories_stay_distinguishable() -> None:
     a probe sell a character's clothes and weapon. Grouping makes the
     distinction structural rather than a field to be noticed.
     """
-    from kenshi_agent.models import (
+    from kenshi_agent.core.telemetry import (
         CharacterState,
         NearbyEntity,
         NormalizedPointerBounds,
@@ -1741,7 +1687,7 @@ def test_two_open_inventories_stay_distinguishable() -> None:
         }
     )
 
-    offers = json.loads(trading.planner_payload(max_chars=30000))["affordances"]
+    offers = json.loads(render_planner_payload(trading, max_chars=30000))["affordances"]
     inventory = [offer for offer in offers if offer["source"] == "inventory"]
     buy = [offer for offer in inventory if offer["semantic"] == "buy"]
     sell = [offer for offer in inventory if offer["semantic"] == "sell"]
@@ -1761,7 +1707,7 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
     characters became one in the payload - and that one was in the room the
     agent was already standing in.
     """
-    from kenshi_agent.models import NearbyEntity
+    from kenshi_agent.core.telemetry import NearbyEntity
 
     crowd = [
         NearbyEntity(
@@ -1802,11 +1748,9 @@ def test_somewhere_to_go_survives_the_payload_budget() -> None:
             ),
         }
     )
-    payload = json.loads(busy.planner_payload(max_chars=30000))
+    payload = json.loads(render_planner_payload(busy, max_chars=30000))
     destinations = [
-        offer
-        for offer in payload["affordances"]
-        if offer["source"] == "nearby_character"
+        offer for offer in payload["affordances"] if offer["source"] == "nearby_character"
     ]
 
     assert destinations, "the agent must be shown somewhere it could walk to"
@@ -1849,7 +1793,7 @@ def _diagnostics(*, finish_reason: str) -> HostedPlannerCallDiagnostics:
 
 
 def test_a_schema_rejection_tells_the_model_what_to_fix() -> None:
-    """"Malformed JSON" for a well-formed plan leaves nothing to correct.
+    """ "Malformed JSON" for a well-formed plan leaves nothing to correct.
 
     live-hub-survival-pair-20260729-r2 ended at step two with a sound plan —
     close the leftover screens, go mine iron — rejected three times for setting

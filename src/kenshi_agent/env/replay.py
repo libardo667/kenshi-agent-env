@@ -5,11 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from ..models import (
-    Action,
+from ..core.observation import Observation
+from ..core.operation import Action
+from ..core.transport import (
     ActionReceipt,
     CommandDispatchContext,
-    Observation,
     Transition,
 )
 from .base import AgentEnvironment

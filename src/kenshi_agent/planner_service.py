@@ -15,12 +15,10 @@ from __future__ import annotations
 from typing import Any
 
 from .continuity_service import ContinuityService
-from .models import (
-    AuthoredPlannerOutput,
-    Observation,
-    PlannerDecision,
-    StopAction,
-)
+from .core.observation import Observation
+from .core.operation import StopAction
+from .core.planner_context import AuthoredPlannerOutput
+from .core.planning import PlannerDecision
 from .planners import Planner
 from .planners.base import (
     HostedPlannerCallDiagnostics,

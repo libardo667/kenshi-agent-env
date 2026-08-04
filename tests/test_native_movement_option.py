@@ -8,35 +8,39 @@ from typing import Any
 
 from operation_test_support import operation_for
 
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
-    ActionReceipt,
-    CharacterState,
-    CommandDispatchContext,
-    ContextActionKind,
     ExitCurrentBuildingAction,
-    GameState,
-    KnownMapDestination,
     MoveInDirectionAction,
     MoveToCharacterAction,
-    NativeCommandAcknowledgement,
-    NativeCommandStatus,
-    NativeControlState,
-    NearbyEntity,
-    Observation,
     PauseAction,
     PerformContextAction,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
-    TelemetrySnapshot,
-    Transition,
     TravelToMapDestinationAction,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    GameState,
+    KnownMapDestination,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
+    NearbyEntity,
+    TelemetrySnapshot,
     UIState,
     Vec3,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
 from kenshi_agent.movement_ownership import has_keyed_native_movement_terminal
 from kenshi_agent.operation_definitions import NATIVE_WALK_DESTINATION_REACHED_RESULT
 from kenshi_agent.options import OptionStatus, StatefulNativeMovementOption

@@ -9,46 +9,50 @@ for the calibrated Barman chain is a regression of the whole milestone.
 from __future__ import annotations
 
 from kenshi_agent.affordances import offered_affordances
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     ACTION_ADAPTER,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CharacterState,
     CollectResourceOutputAction,
     CommandWorldTargetAction,
-    Condition,
-    ConditionKind,
-    ConditionOperator,
-    ContextActionKind,
     ControlMode,
-    Disposition,
     ExitCurrentBuildingAction,
-    GameState,
     IdempotencyPolicy,
-    KnownMapDestination,
     MoveInDirectionAction,
     MoveToCharacterAction,
-    NearbyEntity,
-    NormalizedPointerBounds,
-    Observation,
     OpenContextInventoryAction,
     PerformContextAction,
     PlanningMode,
-    PlanStep,
     PointerActionClass,
     ProduceResourceOutputAction,
     PurchaseItemAction,
     RegroupWithSquadMemberAction,
     SelectSquadMemberExactAction,
-    TelemetrySnapshot,
     TravelToMapDestinationAction,
+)
+from kenshi_agent.core.planning import (
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    PlanStep,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    Disposition,
+    GameState,
+    KnownMapDestination,
+    NearbyEntity,
+    NormalizedPointerBounds,
+    TelemetrySnapshot,
     UIState,
     Vec2,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     APPROACH_DIALOGUE_TARGET_DEFINITION,
@@ -2085,7 +2089,7 @@ class TestAmbiguityMatchesTheBinder:
         entries = state.visible_control_digest()
         assert entries and not any(entry["ambiguous"] for entry in entries)
 
-        from kenshi_agent.models import SellItemAction
+        from kenshi_agent.core.operation import SellItemAction
         from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
         binding = SELL_ITEM_DEFINITION.bind(

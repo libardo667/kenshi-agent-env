@@ -31,21 +31,11 @@ from kenshi_agent.continuity import (
 from kenshi_agent.continuity import (
     render_evidence_reference as _render_evidence_reference,
 )
-from kenshi_agent.memory import MemoryStore, RecallBudget
-from kenshi_agent.models import (
-    ActionOutcome,
-    ActionOutcomeAssessment,
-    ActionOutcomeDigest,
-    ActionOutcomeEvidence,
-    AdvisorBriefEvidence,
-    AuthoredPlannerContext,
+from kenshi_agent.core.continuity import (
     ContinuityOperationStatus,
     ContinuityOrigin,
-    ControlMode,
-    CurrentObservationEvidence,
     EvidenceAuthority,
     KeepMemoryOperation,
-    MemoryEvidence,
     MemoryKind,
     MemoryLifecycleEvent,
     MemoryReadReceipt,
@@ -53,25 +43,43 @@ from kenshi_agent.models import (
     MemoryRecord,
     MemoryResolutionDisposition,
     MemoryStatus,
-    NearbyEntity,
-    Observation,
-    PlanDisposition,
-    PlannerContextManifest,
-    PlanOutcomeDigest,
-    PlanOutcomeEvidence,
     ReinforceMemoryOperation,
     ResolvedEvidenceSnapshot,
     ResolveMemoryOperation,
     RetractMemoryOperation,
-    StopAction,
     SupersedeMemoryOperation,
-    TelemetrySnapshot,
-    WorldStateRevision,
 )
+from kenshi_agent.core.evidence import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
+    ActionOutcomeDigest,
+    ActionOutcomeEvidence,
+    AdvisorBriefEvidence,
+    CurrentObservationEvidence,
+    MemoryEvidence,
+    PlanDisposition,
+    PlanOutcomeDigest,
+    PlanOutcomeEvidence,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    StopAction,
+)
+from kenshi_agent.core.planner_context import (
+    AuthoredPlannerContext,
+    PlannerContextManifest,
+)
+from kenshi_agent.core.telemetry import (
+    NearbyEntity,
+    TelemetrySnapshot,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.memory import MemoryStore, RecallBudget
+from kenshi_agent.planner_context import render_planner_payload
 
 BRIEF_ID = "advisor-" + "0" * 32
 OTHER_BRIEF_ID = "advisor-" + "f" * 32
-
 
 
 def _attach_continuity(
@@ -113,6 +121,7 @@ def _attach_continuity(
         advisor_availability=lambda _observation: disabled_advisor_availability(),
     )
     return service
+
 
 def observation(
     *,
@@ -2136,7 +2145,7 @@ def _single_step_runtime(
     store: MemoryStore,
 ) -> tuple[Any, Any]:
     from kenshi_agent.config import MockConfig, SafetyConfig
-    from kenshi_agent.env import MockEnvironment
+    from kenshi_agent.env.mock import MockEnvironment
     from kenshi_agent.reflexes import ReflexEngine
     from kenshi_agent.runtime import AgentRuntime
     from kenshi_agent.safety import OperationPolicy
@@ -2179,7 +2188,8 @@ def test_a_single_step_decision_keeps_only_what_the_receipt_supports(
     import asyncio
     import json
 
-    from kenshi_agent.models import PlannerDecision, StopAction
+    from kenshi_agent.core.operation import StopAction
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     class ClaimingPlanner(Planner):
@@ -2238,7 +2248,7 @@ def test_single_step_current_observation_stays_bound_to_the_planners_revision(
 
     import asyncio
 
-    from kenshi_agent.models import PlannerDecision
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     class RevisionClaimingPlanner(Planner):
@@ -2285,7 +2295,7 @@ def test_runtime_continuity_receipt_feedback_remains_bounded(
 ) -> None:
     import asyncio
 
-    from kenshi_agent.models import PlannerDecision
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     class ManyInvalidOperationsPlanner(Planner):
@@ -2327,7 +2337,8 @@ def test_degraded_writer_does_not_record_later_planner_delivery(
 ) -> None:
     import asyncio
 
-    from kenshi_agent.models import NoopAction, PlannerDecision
+    from kenshi_agent.core.operation import NoopAction
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     class TwoTurnPlanner(Planner):
@@ -2387,7 +2398,8 @@ def test_delivery_diagnostic_failure_never_cancels_gameplay_and_reaches_next_pla
     import asyncio
     import json
 
-    from kenshi_agent.models import NoopAction, PlannerDecision
+    from kenshi_agent.core.operation import NoopAction
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     class TwoTurnPlanner(Planner):
@@ -2457,7 +2469,8 @@ def test_automatic_recall_failure_quarantines_reads_and_writes_without_stopping_
     import asyncio
     import json
 
-    from kenshi_agent.models import NoopAction, PlannerDecision
+    from kenshi_agent.core.operation import NoopAction
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     class TwoTurnPlanner(Planner):
@@ -2650,7 +2663,7 @@ def test_runtime_records_delivery_from_the_final_prepared_input_only(
     import asyncio
     import json
 
-    from kenshi_agent.models import PlannerDecision
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import (
         Planner,
         PreparedPlannerInput,
@@ -2667,7 +2680,7 @@ def test_runtime_records_delivery_from_the_final_prepared_input_only(
             context_id: str,
         ) -> PreparedPlannerInput:
             for budget in range(4000, 60001, 1000):
-                payload = current.planner_payload(max_chars=budget)
+                payload = render_planner_payload(current, max_chars=budget)
                 document = json.loads(payload)
                 included = {record["memory_id"] for record in document["memories"]}
                 if included < {record.memory_id for record in current.memories}:
@@ -3152,7 +3165,7 @@ def test_a_transition_on_a_closed_or_unknown_record_is_a_receipt_not_a_crash(
 ) -> None:
     """Invariant: a rejected continuity update cannot corrupt gameplay."""
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.continuity import (
         ReinforceMemoryOperation,
         ResolveMemoryOperation,
         RetractMemoryOperation,
@@ -3245,7 +3258,7 @@ def test_a_superseding_replacement_is_held_to_the_same_grounding_rules(
 ) -> None:
     """A replacement fact is still a fact, and still needs evidence."""
 
-    from kenshi_agent.models import SupersedeMemoryOperation
+    from kenshi_agent.core.continuity import SupersedeMemoryOperation
 
     with open_store(tmp_path / "memory.sqlite3") as store:
         engine, _ = lifecycle_authority(store)
@@ -3301,12 +3314,12 @@ def test_a_requested_read_reaches_exactly_the_next_planner_and_touches_no_game(
     import asyncio
     import json
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.operation import (
         NoopAction,
-        PlannerDecision,
         RecallMemoryAction,
         StopAction,
     )
+    from kenshi_agent.core.planning import PlannerDecision
     from kenshi_agent.planners.base import Planner
 
     seen: list[Any] = []
@@ -3399,7 +3412,7 @@ def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
 ) -> None:
     """Unknown stays unknown: an unavailable read is not "there is nothing"."""
 
-    from kenshi_agent.models import RecallMemoryAction
+    from kenshi_agent.core.operation import RecallMemoryAction
     from kenshi_agent.runtime import AgentRuntime
 
     service = _attach_continuity(
@@ -3425,7 +3438,7 @@ def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
 
 
 def test_a_working_outcome_read_returns_exact_runtime_owned_evidence() -> None:
-    from kenshi_agent.models import RecallMemoryAction
+    from kenshi_agent.core.operation import RecallMemoryAction
     from kenshi_agent.runtime import AgentRuntime
 
     ledger = ledger_with_evidence()
@@ -3484,7 +3497,7 @@ def test_a_working_outcome_read_returns_exact_runtime_owned_evidence() -> None:
 def test_elective_memory_search_failure_is_typed_and_quarantined(
     tmp_path: Path,
 ) -> None:
-    from kenshi_agent.models import RecallMemoryAction
+    from kenshi_agent.core.operation import RecallMemoryAction
     from kenshi_agent.runtime import AgentRuntime
 
     path = tmp_path / "memory.sqlite3"
@@ -3621,8 +3634,8 @@ def test_omitted_general_memories_are_declared_in_the_observation(
     tmp_path: Path,
 ) -> None:
     from kenshi_agent.config import PlanningConfig
+    from kenshi_agent.core.continuity import RecallTier
     from kenshi_agent.memory import RecallBudget
-    from kenshi_agent.models import RecallTier
     from kenshi_agent.runtime import AgentRuntime
 
     with open_store(tmp_path / "memory.sqlite3") as store:

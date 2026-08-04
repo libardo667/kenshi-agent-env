@@ -11,14 +11,14 @@ import pytest
 
 from kenshi_agent import cli
 from kenshi_agent.config import load_config
+from kenshi_agent.core.operation import (
+    ControlMode,
+    PlanningMode,
+)
+from kenshi_agent.core.telemetry import TelemetrySnapshot
 from kenshi_agent.final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
-)
-from kenshi_agent.models import (
-    ControlMode,
-    PlanningMode,
-    TelemetrySnapshot,
 )
 from kenshi_agent.telemetry import write_snapshot_atomic
 

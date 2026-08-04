@@ -5,7 +5,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from kenshi_agent.env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
+from kenshi_agent.env.base import AgentEnvironment
+from kenshi_agent.env.live import LiveEnvironment
+from kenshi_agent.env.mock import MockEnvironment
+from kenshi_agent.env.replay import ReplayEnvironment
 from kenshi_agent.operation_definitions import OPERATION_DEFINITION_LIST
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,18 +60,10 @@ def test_live_environment_is_a_small_semantic_free_external_adapter() -> None:
     source = path.read_text(encoding="utf-8")
     assert len(source.splitlines()) <= 1500
 
-    model_imports: set[str] = set()
-    for node in _tree(path).body:
-        if isinstance(node, ast.ImportFrom) and node.module == "models":
-            model_imports.update(alias.name for alias in node.names)
-    assert model_imports <= {
-        "QUICKSAVE_COMPLETION_CAPABILITY",
-        "ControlMode",
-        "NativeControlState",
-        "Observation",
-        "TelemetrySnapshot",
-        "WorldStateRevision",
-    }
+    assert all(
+        not (isinstance(node, ast.ImportFrom) and node.module == "models")
+        for node in ast.walk(_tree(path))
+    )
 
 
 def test_handler_methods_and_kernel_entrypoint_stay_orchestration_sized() -> None:
@@ -186,9 +181,7 @@ def test_the_run_loop_carries_no_operation_family_logic() -> None:
     """
 
     kinds = {definition.kind for definition in OPERATION_DEFINITION_LIST}
-    families = {
-        definition.handler_key.split(".", 1)[0] for definition in OPERATION_DEFINITION_LIST
-    }
+    families = {definition.handler_key.split(".", 1)[0] for definition in OPERATION_DEFINITION_LIST}
     # Pause is host control shared by preemption and final safe state, not an
     # operation family the loop reasons about.
     allowed = {"Action", "StopAction", "PauseAction", "PlannerAction"}
@@ -382,3 +375,126 @@ def test_live_plan_policy_contains_no_current_operation_eligibility() -> None:
         if isinstance(node, ast.FunctionDef) and node.name == "live_plan_policy_errors"
     )
     assert [argument.arg for argument in policy.args.args] == ["plan"]
+
+
+def _production_modules() -> dict[str, Path]:
+    modules: dict[str, Path] = {}
+    for path in SOURCE.rglob("*.py"):
+        parts = list(path.relative_to(ROOT / "src").with_suffix("").parts)
+        if parts[-1] == "__init__":
+            parts.pop()
+        modules[".".join(parts)] = path
+    return modules
+
+
+def _production_import_graph() -> dict[str, set[str]]:
+    modules = _production_modules()
+    graph = {module: set() for module in modules}
+    for module, path in modules.items():
+        package = module.split(".") if path.name == "__init__.py" else module.split(".")[:-1]
+        for node in ast.walk(_tree(path)):
+            targets: list[str] = []
+            if isinstance(node, ast.Import):
+                targets.extend(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                if node.level:
+                    base = package[: len(package) - node.level + 1]
+                    target = ".".join(base + ([node.module] if node.module else []))
+                else:
+                    target = node.module or ""
+                targets.append(target)
+                targets.extend(
+                    f"{target}.{alias.name}" for alias in node.names if alias.name != "*"
+                )
+            graph[module].update(
+                target for target in targets if target in modules and target != module
+            )
+    return graph
+
+
+def _cyclic_components(graph: dict[str, set[str]]) -> list[list[str]]:
+    next_index = 0
+    indices: dict[str, int] = {}
+    lowlinks: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    components: list[list[str]] = []
+
+    def visit(module: str) -> None:
+        nonlocal next_index
+        indices[module] = next_index
+        lowlinks[module] = next_index
+        next_index += 1
+        stack.append(module)
+        on_stack.add(module)
+        for dependency in graph[module]:
+            if dependency not in indices:
+                visit(dependency)
+                lowlinks[module] = min(lowlinks[module], lowlinks[dependency])
+            elif dependency in on_stack:
+                lowlinks[module] = min(lowlinks[module], indices[dependency])
+        if lowlinks[module] != indices[module]:
+            return
+        component: list[str] = []
+        while True:
+            member = stack.pop()
+            on_stack.remove(member)
+            component.append(member)
+            if member == module:
+                break
+        if len(component) > 1:
+            components.append(sorted(component))
+
+    for module in graph:
+        if module not in indices:
+            visit(module)
+    return sorted(components)
+
+
+def test_stage_six_has_no_universal_model_or_core_barrel() -> None:
+    assert not (SOURCE / "models.py").exists()
+    core_init = _tree(SOURCE / "core" / "__init__.py")
+    assert not any(isinstance(node, (ast.Import, ast.ImportFrom)) for node in core_init.body)
+
+    offenders: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        for node in ast.walk(_tree(path)):
+            if isinstance(node, ast.ImportFrom) and node.module in {"models", "core"}:
+                offenders.append(f"{path.relative_to(ROOT)}:{node.lineno}:{node.module}")
+    assert offenders == []
+
+
+def test_stage_six_core_has_no_outward_production_dependencies() -> None:
+    graph = _production_import_graph()
+    offenders = {
+        module: sorted(
+            dependency
+            for dependency in dependencies
+            if dependency.startswith("kenshi_agent.")
+            and not dependency.startswith("kenshi_agent.core.")
+        )
+        for module, dependencies in graph.items()
+        if module.startswith("kenshi_agent.core.")
+    }
+    assert {
+        module: dependencies for module, dependencies in offenders.items() if dependencies
+    } == {}
+
+
+def test_stage_six_has_no_function_local_core_imports() -> None:
+    offenders: list[str] = []
+    for path in SOURCE.rglob("*.py"):
+        tree = _tree(path)
+        top_level = {id(node) for node in tree.body}
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom) or id(node) in top_level:
+                continue
+            if node.module is not None and "core" in node.module.split("."):
+                offenders.append(
+                    f"{path.relative_to(ROOT)}:{node.lineno}:{node.module}"
+                )
+    assert offenders == []
+
+
+def test_stage_six_production_import_graph_is_acyclic() -> None:
+    assert _cyclic_components(_production_import_graph()) == []

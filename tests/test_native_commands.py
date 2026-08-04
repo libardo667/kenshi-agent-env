@@ -3,14 +3,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kenshi_agent.models import (
-    ControlMode,
+from kenshi_agent.core.operation import ControlMode
+from kenshi_agent.core.telemetry import (
     NativeCommandAcknowledgement,
-    NativeCommandRequest,
     NativeCommandStatus,
     NativeControlState,
-    WorldStateRevision,
 )
+from kenshi_agent.core.transport import NativeCommandRequest
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.native_commands import write_native_command_request_atomic
 
 COMMAND_ID = "cmd-0123456789abcdef0123456789abcdef"

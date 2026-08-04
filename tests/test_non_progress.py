@@ -6,34 +6,38 @@ import pytest
 
 from kenshi_agent.affordances import offered_affordances
 from kenshi_agent.continuity import ContinuityLedger
-from kenshi_agent.models import (
+from kenshi_agent.core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
-    ActionReceipt,
-    ActivateVisibleControlAction,
-    CharacterState,
-    ControlMode,
-    Disposition,
-    GameState,
-    HarvestResourceAction,
-    InventoryItem,
-    NearbyEntity,
-    NormalizedPointerBounds,
-    Observation,
-    PlannerDecision,
-    PlanningMode,
     PurchaseEvidence,
-    PurchaseItemAction,
     PurchaseStatus,
     ResourceHarvestStatus,
     SemanticActionReceipt,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ActivateVisibleControlAction,
+    ControlMode,
+    HarvestResourceAction,
+    PlanningMode,
+    PurchaseItemAction,
+)
+from kenshi_agent.core.planning import PlannerDecision
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    Disposition,
+    GameState,
+    InventoryItem,
+    NearbyEntity,
+    NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.transport import ActionReceipt
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.non_progress import (
     retry_state_fingerprint,
     unchanged_definitive_no_op_reason,

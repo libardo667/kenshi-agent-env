@@ -19,64 +19,72 @@ from kenshi_agent.affordances import (
 )
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import MacroConfig, PlanningConfig, SafetyConfig
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
-from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.memory import MemoryStore, RecallBudget
-from kenshi_agent.models import (
+from kenshi_agent.core.authority import InputBoundaryDecision
+from kenshi_agent.core.continuity import (
+    CreateFieldbookProjectOperation,
+    FieldbookEntryKind,
+    FieldbookProjectKind,
+)
+from kenshi_agent.core.evidence import SemanticActionReceipt
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
-    ActionReceipt,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CharacterState,
-    CommandDispatchContext,
+    ControlMode,
+    GameBinding,
+    IdempotencyPolicy,
+    InterruptPolicy,
+    MoveInDirectionAction,
+    PauseAction,
+    PlanningMode,
+    ReadFieldbookAction,
+    RespondToImmediateThreatAction,
+    SelectSquadMemberExactAction,
+    SetSpeedAction,
+    SkillAction,
+    SkillArgument,
+    StopAction,
+    ThreatResponseStrategy,
+    UseGameBindingAction,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
-    ControlMode,
-    CreateFieldbookProjectOperation,
+    PlanEnvelope,
+    PlannerDecision,
+    PlannerOutput,
+    PlanPatch,
+    PlanStep,
+    RiskBudget,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
     Disposition,
-    FieldbookEntryKind,
-    FieldbookProjectKind,
-    GameBinding,
     GameState,
-    IdempotencyPolicy,
-    InputBoundaryDecision,
-    InputBoundaryReport,
-    InterruptPolicy,
-    MoveInDirectionAction,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeControlState,
     NearbyEntity,
     NormalizedPointerBounds,
-    Observation,
-    PauseAction,
-    PlanEnvelope,
-    PlannerDecision,
-    PlannerOutput,
-    PlanningMode,
-    PlanPatch,
-    PlanStep,
-    ReadFieldbookAction,
-    RespondToImmediateThreatAction,
-    RiskBudget,
-    SelectSquadMemberExactAction,
-    SemanticActionReceipt,
-    SetSpeedAction,
-    SkillAction,
-    SkillArgument,
-    StopAction,
     TelemetrySnapshot,
-    ThreatResponseStrategy,
-    Transition,
     UIState,
-    UseGameBindingAction,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    InputBoundaryReport,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
+from kenshi_agent.evals import evaluate_log, replay_plan_lifecycle
+from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.memory import MemoryStore, RecallBudget
 from kenshi_agent.operation_definitions import (
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     NATIVE_WALK_DESTINATION_REACHED_RESULT,
@@ -4547,12 +4555,16 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
 
     from kenshi_agent.continuity import ContinuityLedger
     from kenshi_agent.continuity_service import ContinuityService
-    from kenshi_agent.models import (
-        AuthoredPlannerContext,
-        CurrentObservationEvidence,
+    from kenshi_agent.core.continuity import (
         KeepMemoryOperation,
         MemoryKind,
+    )
+    from kenshi_agent.core.evidence import (
+        CurrentObservationEvidence,
         PlanDisposition,
+    )
+    from kenshi_agent.core.planner_context import (
+        AuthoredPlannerContext,
         PlannerContextManifest,
     )
     from kenshi_agent.outcome_recorder import OutcomeRecorder
@@ -4657,7 +4669,8 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
     it orders sits there going nowhere: one run spent 1412 of its 1443
     observations paused and moved eighty units in total.
     """
-    from kenshi_agent.models import GameState, PauseAction
+    from kenshi_agent.core.operation import PauseAction
+    from kenshi_agent.core.telemetry import GameState
 
     dispatched: list[object] = []
 
@@ -4702,7 +4715,7 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
 
 def test_a_handback_does_not_disturb_a_world_already_running() -> None:
     """Nothing to restore, so nothing should be sent."""
-    from kenshi_agent.models import GameState
+    from kenshi_agent.core.telemetry import GameState
 
     class Unused:
         async def control_pause(self, action, *, command):  # type: ignore[no-untyped-def]
@@ -4725,11 +4738,11 @@ def test_a_handback_does_not_disturb_a_world_already_running() -> None:
 def _keep_a_route_lesson() -> object:
     """One grounded keep, cited against the observation the patch was written on."""
 
-    from kenshi_agent.models import (
-        CurrentObservationEvidence,
+    from kenshi_agent.core.continuity import (
         KeepMemoryOperation,
         MemoryKind,
     )
+    from kenshi_agent.core.evidence import CurrentObservationEvidence
 
     return KeepMemoryOperation(
         kind=MemoryKind.FACT,

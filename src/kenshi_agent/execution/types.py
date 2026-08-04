@@ -7,8 +7,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Protocol
 
+from ..core.observation import Observation
+from ..core.transport import (
+    CommandDispatchContext,
+    Transition,
+)
 from ..input_boundary import ExecutionToken
-from ..models import CommandDispatchContext, Observation, Transition
 from ..operation_definitions import BoundOperation
 from ..planning import PlanningClock
 from ..session_log import SessionLogger

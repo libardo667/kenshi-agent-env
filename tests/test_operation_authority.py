@@ -5,23 +5,25 @@ from __future__ import annotations
 from dataclasses import replace
 
 from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
-from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import SafetyConfig
-from kenshi_agent.models import (
+from kenshi_agent.core.authority import AuthorizationCode
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CharacterState,
     ControlMode,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
     Disposition,
     GameState,
     NearbyEntity,
     NormalizedPointerBounds,
-    Observation,
     TelemetrySnapshot,
     UIState,
     VisibleUIControl,
-    WorldStateRevision,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_authority import OperationAuthority
 from kenshi_agent.operation_definitions import BoundOperation
 from kenshi_agent.safety import OperationPolicy

@@ -13,10 +13,8 @@ from .continuity import (
     render_evidence_snapshot,
     resolve_evidence_reference,
 )
-from .fieldbook import FieldbookNoOp, FieldbookTransitionError
-from .models import (
+from .core.continuity import (
     AppendFieldbookEntryOperation,
-    AuthoredPlannerContext,
     CanonicalFieldbookProvenance,
     ContinuityOperationStatus,
     ContinuityOrigin,
@@ -26,13 +24,15 @@ from .models import (
     FieldbookOperation,
     FieldbookOperationReceipt,
     FieldbookProject,
-    Observation,
     ResolvedEvidenceSnapshot,
     SelectFieldbookProjectOperation,
     SetFieldbookProjectStatusOperation,
     UpdateFieldbookSummaryOperation,
     new_fieldbook_operation_receipt_id,
 )
+from .core.observation import Observation
+from .core.planner_context import AuthoredPlannerContext
+from .fieldbook import FieldbookNoOp, FieldbookTransitionError
 
 _FACT_ENTRY_KINDS = frozenset(
     {

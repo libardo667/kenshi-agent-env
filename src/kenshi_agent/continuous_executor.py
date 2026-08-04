@@ -4,25 +4,29 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .affordances import terminal_affordance_receipt
+from .condition_evaluation import evaluate_conditions
 from .config import PlanningConfig
-from .models import (
+from .core.affordance import (
     AffordanceExecution,
     AffordanceLifecycleStatus,
+)
+from .core.observation import Observation
+from .core.operation import (
+    PauseAction,
+    StopAction,
+)
+from .core.planning import (
     ConditionEvaluation,
     ConditionResult,
-    Observation,
-    PauseAction,
     PlanEnvelope,
     PlannerDecision,
     PlanStep,
-    StopAction,
 )
 from .operation_execution import OperationExecutionService
 from .plan_events import PlanEventReporter
 from .planning import (
     PlanBudgetLedger,
     PlanningClock,
-    evaluate_conditions,
     game_elapsed_seconds,
 )
 from .reflexes import ReflexEngine

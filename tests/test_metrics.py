@@ -243,17 +243,17 @@ def test_the_observation_digest_keeps_what_the_evaluator_reads() -> None:
     wants orientation, not two hundred control bounds.
     """
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.observation import Observation
+    from kenshi_agent.core.telemetry import (
         CharacterState,
         GameState,
         NativeCommandAcknowledgement,
         NativeCommandStatus,
         NativeControlState,
-        Observation,
         TelemetrySnapshot,
         UIState,
-        WorldStateRevision,
     )
+    from kenshi_agent.core.world import WorldStateRevision
 
     command_id = "cmd-" + "a" * 32
     observation = Observation(

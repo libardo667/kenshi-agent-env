@@ -4,8 +4,12 @@ from pathlib import Path
 
 from operation_test_support import execute_operation
 
-from kenshi_agent.env import ReplayEnvironment
-from kenshi_agent.models import ControlMode, Observation, WaitAction
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    WaitAction,
+)
+from kenshi_agent.env.replay import ReplayEnvironment
 
 
 def test_replay_environment_returns_recorded_observations(tmp_path: Path) -> None:

@@ -5,25 +5,29 @@ from datetime import UTC, datetime
 
 from operation_test_support import operation_family, operation_for
 
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
-    ActionReceipt,
+    PauseAction,
+    RespondToImmediateThreatAction,
+    SkillAction,
+    ThreatResponseStrategy,
+)
+from kenshi_agent.core.telemetry import (
     CharacterState,
     Disposition,
     GameState,
     NearbyEntity,
-    Observation,
-    PauseAction,
-    RespondToImmediateThreatAction,
-    SkillAction,
     TelemetrySnapshot,
-    ThreatResponseStrategy,
-    Transition,
     UIState,
     Vec3,
-    WorldStateRevision,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
 from kenshi_agent.options import (
     OptionStatus,
     StatefulMovementOption,
@@ -171,7 +175,10 @@ def test_approach_can_start_from_a_running_world() -> None:
     never begin at all, and the operator had to pause the game by hand.
     """
 
-    from kenshi_agent.models import Disposition, NearbyEntity
+    from kenshi_agent.core.telemetry import (
+        Disposition,
+        NearbyEntity,
+    )
     from kenshi_agent.options import OptionLifecycleError, StatefulApproachOption
 
     target = NearbyEntity(

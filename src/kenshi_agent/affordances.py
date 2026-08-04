@@ -24,10 +24,7 @@ from pydantic import (
     ValidationError,
 )
 
-from .authorization import AuthorizationCode
-from .models import (
-    TIME_GAME_BINDINGS,
-    Action,
+from .core.affordance import (
     AffordanceExecution,
     AffordanceLifecycleEvent,
     AffordanceLifecycleStatus,
@@ -36,22 +33,31 @@ from .models import (
     AffordanceSource,
     AffordanceTarget,
     BoundAffordance,
+)
+from .core.authority import AuthorizationCode
+from .core.observation import Observation
+from .core.operation import (
+    TIME_GAME_BINDINGS,
+    Action,
     CameraRotationDirection,
-    CharacterState,
-    ContextActionKind,
     ControlMode,
     GameBinding,
     GameScreen,
-    Observation,
     PlanningMode,
     SingleStepRuntimeAction,
     ThreatResponseStrategy,
+)
+from .core.planning import screen_is_open
+from .core.telemetry import (
+    CharacterState,
+    ContextActionKind,
     is_runtime_owned_visible_control,
     map_destination_travel_available,
     normalize_control_label,
-    screen_is_open,
 )
+from .non_progress import unchanged_definitive_no_op_reason
 from .operation_definitions import (
+    SQUAD_REGROUP_ARRIVAL_DISTANCE,
     BindingFailure,
     BoundOperation,
     OperationDefinition,
@@ -661,8 +667,6 @@ def _inventory_offers(observation: Observation) -> Iterable[AffordanceOffer]:
 
 
 def _character_offers(observation: Observation) -> Iterable[AffordanceOffer]:
-    from .operation_definitions import SQUAD_REGROUP_ARRIVAL_DISTANCE
-
     telemetry = observation.telemetry
     if telemetry is None:
         return
@@ -1179,8 +1183,6 @@ def _operation_for(
 
 def _offer_binds_now(offer: AffordanceOffer, observation: Observation) -> bool:
     operation = _operation_for(offer, _sample_parameters(offer))
-    from .non_progress import unchanged_definitive_no_op_reason
-
     if unchanged_definitive_no_op_reason(operation, observation) is not None:
         return False
     if observation.planning_mode is PlanningMode.SINGLE_STEP:
@@ -1474,8 +1476,6 @@ class OperationBindingAuthority:
 
         if affordance is not None:
             return _rebind_affordance_operation(operation, affordance, observation)
-        from .non_progress import unchanged_definitive_no_op_reason
-
         non_progress_reason = unchanged_definitive_no_op_reason(operation, observation)
         if non_progress_reason is not None:
             raise OperationBindingError(

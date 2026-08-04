@@ -6,23 +6,25 @@ import pytest
 
 from kenshi_agent.affordances import offered_affordances, selection_for
 from kenshi_agent.config import PlanningConfig
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    PlanningMode,
+)
+from kenshi_agent.core.telemetry import (
     CharacterState,
     ContextActionKind,
-    ControlMode,
     Disposition,
     GameState,
     NearbyEntity,
     NormalizedPointerBounds,
-    Observation,
-    PlanningMode,
     TelemetrySnapshot,
     UIState,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.planners.plan_proposal import (
     PlanProposal,
     compile_plan_proposal,

@@ -26,36 +26,42 @@ from kenshi_agent.config import (
     PlanningConfig,
     SafetyConfig,
 )
-from kenshi_agent.env import MockEnvironment
-from kenshi_agent.env.mock import MockOperationPort
-from kenshi_agent.evals import evaluate_log
-from kenshi_agent.live_plan_policy import live_plan_policy_errors
-from kenshi_agent.models import (
+from kenshi_agent.core.advisor import AdvisorRecommendation
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
     AdvisorFocus,
-    AdvisorRecommendation,
-    CharacterState,
-    CommandDispatchContext,
+    ConsultAdvisorAction,
+    ControlMode,
+    IdempotencyPolicy,
+    PlanningMode,
+    StopAction,
+    WaitAction,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
-    ConsultAdvisorAction,
-    ControlMode,
-    GameState,
-    IdempotencyPolicy,
-    Observation,
     PlanEnvelope,
     PlannerDecision,
     PlannerOutput,
-    PlanningMode,
     PlanStep,
     RiskBudget,
-    StopAction,
-    TelemetrySnapshot,
-    Transition,
-    WaitAction,
-    WorldStateRevision,
 )
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    GameState,
+    TelemetrySnapshot,
+)
+from kenshi_agent.core.transport import (
+    CommandDispatchContext,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.mock import MockEnvironment, MockOperationPort
+from kenshi_agent.evals import evaluate_log
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
+from kenshi_agent.planner_context import planner_nutrition_digest
 from kenshi_agent.planners.base import Planner
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.runtime import AgentRuntime
@@ -480,7 +486,7 @@ def test_advisor_payload_defines_live_hunger_and_fallible_food_semantics() -> No
     payload = advisor_world_payload(current)
     semantics = payload["telemetry_semantics"]
 
-    assert payload["squad_nutrition"] == current.squad_nutrition_digest()
+    assert payload["squad_nutrition"] == planner_nutrition_digest(current)
     selected = payload["telemetry"]["selected"]
     assert selected["nutrition_reserve"] == 2.5
     assert "hunger" not in selected

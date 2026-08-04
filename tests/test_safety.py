@@ -5,29 +5,22 @@ import pytest
 from kenshi_agent.action_budget import ActionBudgetError, ActionBudgetLedger
 from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig, SafetyConfig
-from kenshi_agent.models import (
+from kenshi_agent.core.continuity import (
+    FieldbookProjectIndex,
+    FieldbookProjectKind,
+    FieldbookProjectStatus,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
     ApproachDialogueTargetAction,
-    CharacterState,
     ClickAction,
     ConsultAdvisorAction,
     ControlMode,
     CoordinateSpace,
-    Disposition,
-    FieldbookProjectIndex,
-    FieldbookProjectKind,
-    FieldbookProjectStatus,
     GameBinding,
-    GameState,
     KeyAction,
-    KnownMapDestination,
     MoveCursorAction,
-    NativeCommandAcknowledgement,
-    NativeCommandStatus,
-    NativeControlState,
-    NearbyEntity,
-    NormalizedPointerBounds,
-    Observation,
     PauseAction,
     PurchaseItemAction,
     ReadFieldbookAction,
@@ -38,12 +31,23 @@ from kenshi_agent.models import (
     SetSpeedAction,
     SkillAction,
     SkillArgument,
-    TelemetrySnapshot,
     TravelToMapDestinationAction,
-    UIState,
     UseGameBindingAction,
-    VisibleUIControl,
     WaitAction,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    Disposition,
+    GameState,
+    KnownMapDestination,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
+    NearbyEntity,
+    NormalizedPointerBounds,
+    TelemetrySnapshot,
+    UIState,
+    VisibleUIControl,
 )
 from kenshi_agent.safety import OperationPolicy, SafetyViolation, require_exact_target_id
 from kenshi_agent.skills import MacroRegistry

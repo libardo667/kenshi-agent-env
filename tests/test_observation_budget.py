@@ -9,44 +9,55 @@ from typing import TypeVar
 import pytest
 
 from kenshi_agent import observation_budget
-from kenshi_agent.models import (
-    ActionOutcome,
-    ActionOutcomeAssessment,
-    ActivePlanContext,
-    CharacterState,
-    ContextActionKind,
+from kenshi_agent.core.continuity import (
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
-    ControlMode,
-    GameState,
-    InventoryItem,
     MemoryKind,
     MemoryRecord,
     MemorySearchResult,
     MemoryStatus,
+)
+from kenshi_agent.core.evidence import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    PlanningMode,
+    SkillAction,
+    SkillArgument,
+    SkillSpec,
+)
+from kenshi_agent.core.planning import ActivePlanContext
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    GameState,
+    InventoryItem,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NativeControlState,
     NearbyEntity,
     NormalizedPointerBounds,
-    Observation,
-    PlanningMode,
-    SkillAction,
-    SkillArgument,
-    SkillSpec,
     TelemetrySnapshot,
     UIState,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.nutrition import model_facing_telemetry_payload
 from kenshi_agent.observation_budget import (
     PlannerPayloadContextError,
     budget_observation_payload,
     irreducible_payload,
+)
+from kenshi_agent.planner_context import (
+    planner_affordance_digest,
+    planner_nutrition_digest,
+    render_planner_payload,
 )
 
 _NOW = datetime(2026, 7, 23, 20, 0, tzinfo=UTC)
@@ -154,9 +165,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
         )
         for index in range(30)
     ]
-    warnings = [
-        f"Low-priority warning {index}: " + "w" * 120 for index in range(12)
-    ]
+    warnings = [f"Low-priority warning {index}: " + "w" * 120 for index in range(12)]
 
     telemetry = TelemetrySnapshot(
         protocol_version="0.5.0",
@@ -179,8 +188,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             dialogue_open=True,
             dialogue_target_id=_TARGET_ID,
             dialogue_options=[
-                f"Dialogue option {index} — 選択肢 " + "q" * 100
-                for index in range(16)
+                f"Dialogue option {index} — 選択肢 " + "q" * 100 for index in range(16)
             ],
             tooltip_visible=True,
             tooltip_text="Dried Meat — 乾燥肉 " + "t" * 1000,
@@ -244,9 +252,7 @@ def _oversized_observation(*, reverse_low_priority: bool = False) -> Observation
             receipt_message=f"Receipt {index}: " + "r" * 500,
             assessment=ActionOutcomeAssessment.CHANGED,
             feedback=f"Causal feedback {index}: " + "f" * 300,
-            telemetry_changes=[
-                f"telemetry change {item} — 変更 " + "c" * 60 for item in range(8)
-            ],
+            telemetry_changes=[f"telemetry change {item} — 変更 " + "c" * 60 for item in range(8)],
             selected_character_name="Hep",
         )
         for index in range(6)
@@ -321,7 +327,7 @@ def _minimum_fitting_budget(observation: Observation) -> tuple[int, str]:
     budget = 1000
     for _ in range(8):
         try:
-            return budget, observation.planner_payload(max_chars=budget)
+            return budget, render_planner_payload(observation, max_chars=budget)
         except PlannerPayloadContextError as exc:
             assert exc.required_units > budget
             budget = exc.required_units
@@ -365,9 +371,7 @@ def _assert_critical_envelope(document: dict[str, object]) -> None:
     assert {item["id"] for item in nearby} == {_TARGET_ID, _OUTCOME_TARGET_ID}
     affordances = document["affordances"]
     assert isinstance(affordances, list)
-    assert {"observe", "stop_run"} <= {
-        offer["semantic"] for offer in affordances
-    }
+    assert {"observe", "stop_run"} <= {offer["semantic"] for offer in affordances}
     assert not any(offer["source"] == "context_order" for offer in affordances)
 
     outcomes = document["recent_action_outcomes"]
@@ -427,9 +431,9 @@ def test_semantic_budget_never_discards_a_current_target_memory() -> None:
     document = json.loads(payload)
 
     assert len(payload) <= budget
-    assert [
-        (memory["target_id"], memory["content"]) for memory in document["memories"]
-    ] == [(_TARGET_ID, target_memory.content)]
+    assert [(memory["target_id"], memory["content"]) for memory in document["memories"]] == [
+        (_TARGET_ID, target_memory.content)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -525,13 +529,9 @@ def test_fieldbook_budget_preserves_active_read_and_latest_adverse_receipt(
     retained = irreducible_payload(original)
 
     assert retained["fieldbook_projects"] == []
-    assert retained["active_fieldbook_project"] == (
-        original["active_fieldbook_project"]
-    )
+    assert retained["active_fieldbook_project"] == (original["active_fieldbook_project"])
     assert retained["fieldbook_read"] == original["fieldbook_read"]
-    assert retained["recent_fieldbook_receipts"] == [
-        original["recent_fieldbook_receipts"][0]
-    ]
+    assert retained["recent_fieldbook_receipts"] == [original["recent_fieldbook_receipts"][0]]
 
 
 def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
@@ -539,7 +539,7 @@ def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
     minimum, _ = _minimum_fitting_budget(observation)
 
     for budget in (minimum, minimum + 1, minimum + 37, minimum + 500, minimum + 2500):
-        payload = observation.planner_payload(max_chars=budget)
+        payload = render_planner_payload(observation, max_chars=budget)
         document = json.loads(payload)
         assert len(payload) <= budget
         _assert_critical_envelope(document)
@@ -548,7 +548,7 @@ def test_semantic_budget_is_valid_json_across_tight_budgets() -> None:
     # grows whenever a new preserved digest is added, and a hardcoded floor here
     # rots into a failure about a number rather than about behaviour.
     for headroom in (0, 6000, 12000, 18000):
-        document = json.loads(observation.planner_payload(max_chars=minimum + headroom))
+        document = json.loads(render_planner_payload(observation, max_chars=minimum + headroom))
         available = set(document["available_skills"])
         specified = {item["name"] for item in document["skill_specs"]}
         assert available == specified
@@ -559,7 +559,7 @@ def test_semantic_budget_rejects_budget_below_irreducible_envelope() -> None:
 
     for budget in (0, 1, 100, 1000):
         with pytest.raises(PlannerPayloadContextError) as raised:
-            observation.planner_payload(max_chars=budget)
+            render_planner_payload(observation, max_chars=budget)
 
         assert raised.value.hard_max_units == budget
         assert raised.value.required_units > raised.value.hard_max_units
@@ -579,8 +579,7 @@ def test_compaction_target_cannot_terminate_context_that_fits_the_hard_envelope(
     recalled = observation.memories[0].model_copy(
         update={
             "content": (
-                "Explicitly recalled evidence that must reach this planner call. "
-                + "x" * 35_000
+                "Explicitly recalled evidence that must reach this planner call. " + "x" * 35_000
             )
         }
     )
@@ -594,7 +593,8 @@ def test_compaction_target_cannot_terminate_context_that_fits_the_hard_envelope(
         }
     )
 
-    payload = observation.planner_payload(
+    payload = render_planner_payload(
+        observation,
         max_chars=30_000,
         max_context_chars=1_000_000,
     )
@@ -619,8 +619,8 @@ def test_low_priority_reordering_does_not_change_budgeted_payload() -> None:
     minimum, _ = _minimum_fitting_budget(original)
     budget = minimum + 1500
 
-    assert original.planner_payload(max_chars=budget) == reordered.planner_payload(
-        max_chars=budget
+    assert render_planner_payload(original, max_chars=budget) == render_planner_payload(
+        reordered, max_chars=budget
     )
 
 
@@ -633,7 +633,7 @@ def test_full_payload_keeps_original_contract_when_it_fits() -> None:
         telemetry=TelemetrySnapshot(captured_at=_NOW),
     )
 
-    payload = observation.planner_payload(max_chars=24000)
+    payload = render_planner_payload(observation, max_chars=24000)
     document = json.loads(payload)
 
     assert "observation_budget" not in document
@@ -651,11 +651,11 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
     observation = _oversized_observation()
     legacy = observation.model_dump(mode="json", exclude={"screenshot_path"})
     legacy["telemetry"] = model_facing_telemetry_payload(legacy.get("telemetry"))
-    legacy["affordances"] = observation.affordance_digest()
-    legacy["squad_nutrition"] = observation.squad_nutrition_digest()
+    legacy["affordances"] = planner_affordance_digest(observation)
+    legacy["squad_nutrition"] = planner_nutrition_digest(observation)
     legacy_text = json.dumps(legacy, indent=2, ensure_ascii=False)
 
-    text = observation.planner_payload(max_chars=1_000_000)
+    text = render_planner_payload(observation, max_chars=1_000_000)
     projected = json.loads(text)
     telemetry = projected["telemetry"]
 
@@ -667,7 +667,7 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
     assert telemetry["ui"]["visible_controls"] == []
     assert telemetry["native_control"]["acknowledgements"] == []
     assert telemetry["native_control"]["active_command_id"] is None
-    assert projected["affordances"] == observation.affordance_digest()
+    assert projected["affordances"] == planner_affordance_digest(observation)
 
     assert observation.telemetry is not None
     for collection in (
@@ -676,9 +676,7 @@ def test_planner_projection_removes_private_mechanics_and_conserves_gameplay_sta
         "world_targets",
         "known_map_destinations",
     ):
-        expected_ids = [
-            item.id for item in getattr(observation.telemetry, collection)
-        ]
+        expected_ids = [item.id for item in getattr(observation.telemetry, collection)]
         assert [item["id"] for item in telemetry[collection]] == expected_ids
 
 
@@ -700,7 +698,7 @@ def _assert_semantic_conservation(original: object, retained: object) -> None:
 
 def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None:
     observation = _oversized_observation(reverse_low_priority=True)
-    original = json.loads(observation.planner_payload(max_chars=1_000_000))
+    original = json.loads(render_planner_payload(observation, max_chars=1_000_000))
     original["recent_plan_outcomes"] = [
         {"plan_outcome_id": "po-1", "objective": "Earlier objective."},
         {"plan_outcome_id": "po-2", "objective": "Middle objective."},
@@ -780,16 +778,12 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
     original["telemetry"]["native_control"]["last_target_id"] = "world-ref-z"
     assert observation.telemetry is not None
     source_native = observation.telemetry.native_control
-    original["telemetry"]["native_control"]["active_command_id"] = (
-        source_native.active_command_id
-    )
+    original["telemetry"]["native_control"]["active_command_id"] = source_native.active_command_id
     original["telemetry"]["native_control"]["acknowledgements"] = [
         acknowledgement.model_dump(mode="json")
         for acknowledgement in source_native.acknowledgements
     ]
-    active_acknowledgement = original["telemetry"]["native_control"][
-        "acknowledgements"
-    ][-1]
+    active_acknowledgement = original["telemetry"]["native_control"]["acknowledgements"][-1]
     active_acknowledgement["target_id"] = "world-ref-a"
     active_acknowledgement["acknowledged_at_telemetry_sequence"] = 1
     latest_acknowledgement = deepcopy(active_acknowledgement)
@@ -800,9 +794,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
             "acknowledged_at_telemetry_sequence": 50,
         }
     )
-    original["telemetry"]["native_control"]["acknowledgements"].append(
-        latest_acknowledgement
-    )
+    original["telemetry"]["native_control"]["acknowledgements"].append(latest_acknowledgement)
     original["telemetry"]["world_targets"].extend(
         [
             {"id": "world-unrelated-z", "distance": 9.0},
@@ -835,14 +827,8 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
     assert reduced["events"] == sorted(original["events"])
     assert reduced["recent_action_outcomes"] == original["recent_action_outcomes"]
     assert reduced["recent_plan_outcomes"] == original["recent_plan_outcomes"]
-    assert (
-        reduced["recent_continuity_receipts"]
-        == original["recent_continuity_receipts"]
-    )
-    assert (
-        reduced["recent_fieldbook_receipts"]
-        == original["recent_fieldbook_receipts"]
-    )
+    assert reduced["recent_continuity_receipts"] == original["recent_continuity_receipts"]
+    assert reduced["recent_fieldbook_receipts"] == original["recent_fieldbook_receipts"]
     assert reduced["fieldbook_projects"] == original["fieldbook_projects"]
     assert reduced["available_skills"] == sorted(original["available_skills"])
     assert reduced["skill_specs"] == sorted(
@@ -865,18 +851,17 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
     critical_memories = [
         item
         for item in original["memories"]
-        if item["kind"] == "commitment"
-        or item.get("target_id") in current_target_ids
+        if item["kind"] == "commitment" or item.get("target_id") in current_target_ids
     ]
-    optional_memories = [
-        item for item in original["memories"] if item not in critical_memories
-    ]
+    optional_memories = [item for item in original["memories"] if item not in critical_memories]
+
     def memory_key(item: dict[str, object]) -> tuple[float, str, str]:
         return (
             float(item["salience"]),  # type: ignore[arg-type]
             str(item["created_at"]),
             str(item["memory_id"]),
         )
+
     assert reduced["memories"] == [
         *sorted(critical_memories, key=memory_key, reverse=True),
         *sorted(optional_memories, key=memory_key, reverse=True),
@@ -887,8 +872,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
                 item
                 for item in original["telemetry"]["squad"]
                 if item["selected"]
-                or item["id"]
-                in original["telemetry"]["ui"]["selected_character_ids"]
+                or item["id"] in original["telemetry"]["ui"]["selected_character_ids"]
             ),
             key=lambda item: (
                 str(item["id"]),
@@ -905,8 +889,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
                 item
                 for item in original["telemetry"]["squad"]
                 if not item["selected"]
-                and item["id"]
-                not in original["telemetry"]["ui"]["selected_character_ids"]
+                and item["id"] not in original["telemetry"]["ui"]["selected_character_ids"]
             ),
             key=lambda item: (
                 str(item["id"]),
@@ -920,6 +903,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         ),
     ]
     referenced_world_ids = {"world-ref-a", "world-ref-z"}
+
     def world_key(item: dict[str, object]) -> tuple[float, str, str]:
         return (
             float(item["distance"]),  # type: ignore[arg-type]
@@ -942,6 +926,7 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
                 sort_keys=True,
             ),
         )
+
     assert reduced["telemetry"]["world_targets"] == [
         *sorted(
             (
@@ -960,12 +945,8 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
             key=world_key,
         ),
     ]
-    assert reduced["telemetry"]["capabilities"] == sorted(
-        original["telemetry"]["capabilities"]
-    )
-    assert reduced["telemetry"]["warnings"] == sorted(
-        original["telemetry"]["warnings"]
-    )
+    assert reduced["telemetry"]["capabilities"] == sorted(original["telemetry"]["capabilities"])
+    assert reduced["telemetry"]["warnings"] == sorted(original["telemetry"]["warnings"])
     assert reduced["telemetry"]["ui"]["visible_controls"] == sorted(
         original["telemetry"]["ui"]["visible_controls"],
         key=lambda item: json.dumps(
@@ -976,15 +957,12 @@ def test_semantic_reduction_conserves_every_value_when_everything_fits() -> None
         ),
     )
     assert [
-        item["command_id"]
-        for item in reduced["telemetry"]["native_control"]["acknowledgements"]
+        item["command_id"] for item in reduced["telemetry"]["native_control"]["acknowledgements"]
     ] == [_ACTIVE_COMMAND_ID, "cmd-" + "f" * 32, "cmd-" + "d" * 32]
 
 
 def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
-    original = json.loads(
-        _oversized_observation().planner_payload(max_chars=1_000_000)
-    )
+    original = json.loads(render_planner_payload(_oversized_observation(), max_chars=1_000_000))
     original["recent_action_outcomes"] = [
         {
             "outcome_id": "ao-current",
@@ -1098,33 +1076,25 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
 
     retained = irreducible_payload(original)
 
-    assert retained["recent_action_outcomes"] == [
-        original["recent_action_outcomes"][-1]
-    ]
-    assert retained["recent_plan_outcomes"] == [
-        original["recent_plan_outcomes"][-1]
-    ]
-    assert retained["recent_continuity_receipts"] == [
-        original["recent_continuity_receipts"][-1]
-    ]
+    assert retained["recent_action_outcomes"] == [original["recent_action_outcomes"][-1]]
+    assert retained["recent_plan_outcomes"] == [original["recent_plan_outcomes"][-1]]
+    assert retained["recent_continuity_receipts"] == [original["recent_continuity_receipts"][-1]]
     assert [item["memory_id"] for item in retained["memories"]] == [
         "mem-high",
         "mem-low",
         "mem-current-target",
     ]
     assert [
-        item["command_id"]
-        for item in retained["telemetry"]["native_control"]["acknowledgements"]
+        item["command_id"] for item in retained["telemetry"]["native_control"]["acknowledgements"]
     ] == ["cmd-active", "cmd-latest"]
-    assert [item["id"] for item in retained["telemetry"]["squad"]] == sorted(
-        selected_ids
+    assert [item["id"] for item in retained["telemetry"]["squad"]] == sorted(selected_ids)
+    assert [item["id"] for item in retained["telemetry"]["nearby_entities"]] == sorted(
+        referenced_nearby
     )
-    assert [
-        item["id"] for item in retained["telemetry"]["nearby_entities"]
-    ] == sorted(referenced_nearby)
-    assert [
-        item["id"] for item in retained["telemetry"]["world_targets"]
-    ] == ["world-active", "world-latest"]
+    assert [item["id"] for item in retained["telemetry"]["world_targets"]] == [
+        "world-active",
+        "world-latest",
+    ]
     assert retained["telemetry"]["capabilities"] == []
     assert "camera" not in retained["telemetry"]
     assert retained["telemetry"]["warnings"] == []
@@ -1132,10 +1102,7 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
     assert retained["telemetry"]["ui"]["visible_controls"] == []
     assert "tooltip_text" not in retained["telemetry"]["ui"]
     assert "tooltip_source_bounds" not in retained["telemetry"]["ui"]
-    assert (
-        retained["telemetry"]["native_control"]["last_target_id"]
-        == "near-last"
-    )
+    assert retained["telemetry"]["native_control"]["last_target_id"] == "near-last"
 
     original["recent_continuity_receipts"][-1]["status"] = "failed"
     original["telemetry"]["world_targets"][-1]["distance"] = 999.0
@@ -1147,11 +1114,21 @@ def test_irreducible_selection_is_exact_ordered_and_detached() -> None:
         preserve_current_target_memories=False,
     )
     assert without_memories["memories"] == []
-    assert irreducible_payload(
-        {"events": [], "recent_action_outcomes": [], "recent_plan_outcomes": [],
-         "recent_continuity_receipts": [], "available_skills": [],
-         "skill_specs": [], "memories": [], "telemetry": None}
-    )["telemetry"] is None
+    assert (
+        irreducible_payload(
+            {
+                "events": [],
+                "recent_action_outcomes": [],
+                "recent_plan_outcomes": [],
+                "recent_continuity_receipts": [],
+                "available_skills": [],
+                "skill_specs": [],
+                "memories": [],
+                "telemetry": None,
+            }
+        )["telemetry"]
+        is None
+    )
 
 
 def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
@@ -1178,9 +1155,12 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
     assert observation_budget._current_memory_target_ids({"telemetry": None}) == set()
     malformed_first_collection = deepcopy(payload)
     malformed_first_collection["telemetry"]["squad"] = None
-    assert observation_budget._current_memory_target_ids(
-        malformed_first_collection
-    ) == {"nearby-a", "world-a", "town-a", "dialogue-a"}
+    assert observation_budget._current_memory_target_ids(malformed_first_collection) == {
+        "nearby-a",
+        "world-a",
+        "town-a",
+        "dialogue-a",
+    }
     no_dialogue = deepcopy(payload)
     no_dialogue["telemetry"]["ui"] = {}
     assert observation_budget._current_memory_target_ids(no_dialogue) == {
@@ -1208,12 +1188,13 @@ def test_target_identity_extractors_cover_each_authoritative_shape() -> None:
         }
     ) == {"semantic-a", "argument-a"}
     assert observation_budget._outcome_target_ids({"action": None}) == set()
-    assert observation_budget._outcome_target_ids(
-        {"action": {"kind": "skill", "args": None}}
-    ) == set()
-    assert observation_budget._outcome_target_ids(
-        {"action": {"kind": "click", "target_id": 3}}
-    ) == set()
+    assert (
+        observation_budget._outcome_target_ids({"action": {"kind": "skill", "args": None}}) == set()
+    )
+    assert (
+        observation_budget._outcome_target_ids({"action": {"kind": "click", "target_id": 3}})
+        == set()
+    )
 
 
 def test_omission_helpers_report_exact_paths_counts_and_meaning() -> None:
@@ -1282,9 +1263,7 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
     observation_budget._prepend_path(document, "outer.items", {"id": "first"})
     source["nested"].append("later")
 
-    assert observation_budget._get_path(document, "outer.value") == {
-        "nested": ["value"]
-    }
+    assert observation_budget._get_path(document, "outer.value") == {"nested": ["value"]}
     assert observation_budget._get_path(document, "outer.missing") is None
     assert document["outer"]["items"] == [
         {"id": "first"},
@@ -1310,9 +1289,7 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
         "specs": [{"name": "bounded", "description": "exact"}],
     }
 
-    assert observation_budget._canonical_json({"β": 2, "a": 1}) == (
-        '{"a":1,"β":2}'
-    )
+    assert observation_budget._canonical_json({"β": 2, "a": 1}) == ('{"a":1,"β":2}')
     assert observation_budget._entity_sort_key({"id": "b", "value": 1}) == (
         "b",
         '{"id":"b","value":1}',
@@ -1322,18 +1299,22 @@ def test_budget_primitives_preserve_values_and_define_stable_priority() -> None:
         "b",
         '{"distance":null,"id":"b"}',
     )
-    assert observation_budget._world_target_sort_key(
-        {"id": "b", "distance": 2}
-    ) == (2.0, "b", '{"distance":2,"id":"b"}')
+    assert observation_budget._world_target_sort_key({"id": "b", "distance": 2}) == (
+        2.0,
+        "b",
+        '{"distance":2,"id":"b"}',
+    )
     assert observation_budget._acknowledgement_sort_key(
         {"command_id": "cmd-b", "acknowledged_at_telemetry_sequence": 4}
     ) == (4, "cmd-b")
     assert observation_budget._memory_sort_key(
         {"salience": 0.5, "created_at": "2026", "memory_id": "mem-b"}
     ) == (0.5, "2026", "mem-b")
-    assert observation_budget._nearby_sort_key(
-        {"id": "a", "distance": 2.5}
-    ) == (2.5, "a", '{"distance":2.5,"id":"a"}')
+    assert observation_budget._nearby_sort_key({"id": "a", "distance": 2.5}) == (
+        2.5,
+        "a",
+        '{"distance":2.5,"id":"a"}',
+    )
     assert observation_budget._critical_acknowledgements(
         {
             "active_command_id": "cmd-active",
@@ -1463,13 +1444,8 @@ def test_irreducible_fieldbook_fallback_is_the_latest_nonadverse_receipt() -> No
 
     retained = irreducible_payload(original)
 
-    assert retained["recent_fieldbook_receipts"] == [
-        original["recent_fieldbook_receipts"][-1]
-    ]
-    assert (
-        retained["recent_fieldbook_receipts"][0]
-        is not original["recent_fieldbook_receipts"][-1]
-    )
+    assert retained["recent_fieldbook_receipts"] == [original["recent_fieldbook_receipts"][-1]]
+    assert retained["recent_fieldbook_receipts"][0] is not original["recent_fieldbook_receipts"][-1]
     assert (
         retained["recent_fieldbook_receipts"][0]["detail"]
         is not original["recent_fieldbook_receipts"][-1]["detail"]
@@ -1531,10 +1507,10 @@ def test_partial_fieldbook_restoration_never_discards_the_latest_adverse_receipt
         )
     )
 
-    assert [
-        receipt["receipt_id"]
-        for receipt in reduced["recent_fieldbook_receipts"]
-    ] == [receipts[0]["receipt_id"], receipts[2]["receipt_id"]]
+    assert [receipt["receipt_id"] for receipt in reduced["recent_fieldbook_receipts"]] == [
+        receipts[0]["receipt_id"],
+        receipts[2]["receipt_id"],
+    ]
 
 
 def test_budget_boundaries_are_inclusive_for_full_and_semantic_payloads() -> None:
@@ -1550,11 +1526,14 @@ def test_budget_boundaries_are_inclusive_for_full_and_semantic_payloads() -> Non
         "telemetry": None,
     }
     full_text = json.dumps(minimal, ensure_ascii=False)
-    assert budget_observation_payload(
-        minimal,
-        full_text=full_text,
-        max_chars=len(full_text),
-    ) == full_text
+    assert (
+        budget_observation_payload(
+            minimal,
+            full_text=full_text,
+            max_chars=len(full_text),
+        )
+        == full_text
+    )
 
     candidate = irreducible_payload(minimal)
     candidate["events"] = [optional_event]

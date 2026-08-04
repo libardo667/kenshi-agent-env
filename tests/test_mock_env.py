@@ -4,14 +4,14 @@ from pathlib import Path
 from operation_test_support import execute_operation
 
 from kenshi_agent.config import MockConfig
-from kenshi_agent.env import MockEnvironment
-from kenshi_agent.models import (
-    CameraRecoveryStatus,
+from kenshi_agent.core.evidence import CameraRecoveryStatus
+from kenshi_agent.core.operation import (
     PauseAction,
     RecoverCameraViewAction,
     SetSpeedAction,
     SkillAction,
 )
+from kenshi_agent.env.mock import MockEnvironment
 
 
 def test_mock_environment_state_transitions(tmp_path: Path) -> None:

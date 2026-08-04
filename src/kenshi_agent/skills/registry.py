@@ -5,14 +5,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import MacroConfig, NormalizedPointerBoundsConfig
-from ..models import (
+from ..core.operation import (
     Action,
     ControlMode,
-    NormalizedPointerBounds,
     SkillAction,
     SkillSpec,
     parse_action,
 )
+from ..core.telemetry import NormalizedPointerBounds
 
 
 class UnknownSkillError(KeyError):

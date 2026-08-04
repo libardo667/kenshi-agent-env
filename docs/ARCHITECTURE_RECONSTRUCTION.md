@@ -992,6 +992,26 @@ At stage exit:
 - Run bundles and stored records remain readable or have an explicit versioned migration.
 - Portable gates pass.
 
+**Closed 2026-08-04.** The 5,417-line universal `models.py` and its old import
+path are deleted. Types now live in direct bounded-context modules under
+`core/` for authority, affordance, telemetry, operations, world revision,
+evidence, continuity, advisor vocabulary, planning, observation, authored
+planner context, and transport. `core/__init__.py` exports nothing.
+
+Planner payload construction moved from `Observation` to the planner-context
+owner; condition evaluation is a direct module used by planning and input
+revalidation; context-menu envelope validation, compaction candidate identity,
+and authorization verdicts live with their core vocabularies. Function-local
+core imports and the environment adapter re-export barrel are gone.
+
+Fitness tests parse the production import graph and require zero strongly
+connected components, no outward core dependency, no function-local core
+imports, no universal model module, and no core convenience barrel. Repeated
+schema generation was byte-for-byte stable with no schema changes. Hosted
+planner-contract, replay, restart-continuity, memory, and fieldbook tests
+confirmed that planner visibility and stored evidence remain readable without
+migration. The full portable gate passed on the closure candidate.
+
 ### Live proof
 
 No dedicated live proof is required. Run the ordinary short launch/run smoke only if schema or serialization changes touch the live adapter.
@@ -1465,5 +1485,6 @@ recorded `pause_confirmed` with no additional finalizer input.
 ### 20.4 Closure order completed
 
 Stage 5 extraction, Stage 3 closure, and the combined Sections 20.1/20.3 Stage 4
-closure are complete. Stage 6 is next. Do not reopen these stages or encode the
-deleted compatibility boundaries into the model-universe split.
+closure are complete. Stage 6 is also closed as recorded in Section 13. Stage 7
+is next. Do not reopen these stages or restore deleted compatibility boundaries
+while moving tooling to the perimeter.

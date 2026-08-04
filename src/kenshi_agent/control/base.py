@@ -5,9 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from ..models import (
-    ActionReceipt,
-    CalibrationIdentity,
+from ..core.operation import (
     ClickAction,
     HotkeyAction,
     KeyAction,
@@ -15,6 +13,10 @@ from ..models import (
     MouseDragAction,
     MoveCursorAction,
     ScrollAction,
+)
+from ..core.transport import (
+    ActionReceipt,
+    CalibrationIdentity,
 )
 
 PrimitiveInputAction = (

@@ -13,37 +13,43 @@ from PIL import Image, ImageDraw, ImageFont
 from ..affordances import OPERATION_BINDING_AUTHORITY
 from ..camera_recovery import score_camera_observation
 from ..config import MockConfig
-from ..models import (
-    GAME_SPEED_MULTIPLIER_BY_GEAR,
-    Action,
-    ActionReceipt,
-    ActivateVisibleControlAction,
-    ApproachDialogueTargetAction,
+from ..core.evidence import (
     CameraRecoveryEvidence,
     CameraRecoveryStatus,
+    SemanticActionReceipt,
+)
+from ..core.observation import Observation
+from ..core.operation import (
+    GAME_SPEED_MULTIPLIER_BY_GEAR,
+    Action,
+    ActivateVisibleControlAction,
+    ApproachDialogueTargetAction,
+    ControlMode,
+    PauseAction,
+    RecoverCameraViewAction,
+    SetSpeedAction,
+    SkillAction,
+    WaitAction,
+)
+from ..core.telemetry import (
     CameraState,
     CharacterState,
-    CommandDispatchContext,
-    ControlMode,
     Disposition,
     GameState,
     InventoryItem,
     NearbyEntity,
     NormalizedPointerBounds,
-    Observation,
-    PauseAction,
-    RecoverCameraViewAction,
-    SemanticActionReceipt,
-    SetSpeedAction,
-    SkillAction,
     TelemetrySnapshot,
-    Transition,
     UIState,
     Vec3,
     VisibleUIControl,
-    WaitAction,
-    WorldStateRevision,
 )
+from ..core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from ..core.world import WorldStateRevision
 from ..operation_definitions import (
     BindingFailure,
     BoundActor,

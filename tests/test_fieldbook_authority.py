@@ -11,34 +11,38 @@ import pytest
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.continuity import ContinuityAuthority, ContinuityLedger
-from kenshi_agent.fieldbook import FieldbookNoOp
-from kenshi_agent.fieldbook_authority import FieldbookAuthority
-from kenshi_agent.memory import MemoryStore
-from kenshi_agent.models import (
-    AdvisorBriefEvidence,
+from kenshi_agent.core.continuity import (
     AppendFieldbookEntryOperation,
-    AuthoredPlannerContext,
     ContinuityOperationStatus,
     ContinuityOrigin,
     CreateFieldbookProjectOperation,
-    CurrentObservationEvidence,
     EvidenceAuthority,
     FieldbookEntryKind,
     FieldbookLifecycleEvent,
     FieldbookProjectKind,
     FieldbookProjectStatus,
-    MemoryEvidence,
     MemoryKind,
-    Observation,
-    PlanDisposition,
-    PlannerContextManifest,
-    PlanOutcomeEvidence,
     ResolvedEvidenceSnapshot,
     SelectFieldbookProjectOperation,
     SetFieldbookProjectStatusOperation,
     UpdateFieldbookSummaryOperation,
-    WorldStateRevision,
 )
+from kenshi_agent.core.evidence import (
+    AdvisorBriefEvidence,
+    CurrentObservationEvidence,
+    MemoryEvidence,
+    PlanDisposition,
+    PlanOutcomeEvidence,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.planner_context import (
+    AuthoredPlannerContext,
+    PlannerContextManifest,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.fieldbook import FieldbookNoOp
+from kenshi_agent.fieldbook_authority import FieldbookAuthority
+from kenshi_agent.memory import MemoryStore
 
 BRIEF_ID = "advisor-" + "1" * 32
 

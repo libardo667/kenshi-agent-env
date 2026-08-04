@@ -13,39 +13,45 @@ from typing import Any, Literal, Protocol, cast
 from ... import native_commands
 from ... import operation_definitions as operations
 from ...affordances import OperationBindingAuthority
-from ...authorization import AuthorizationCode
 from ...config import PlanningConfig
-from ...input_boundary import ExecutionToken
-from ...models import (
+from ...core.authority import AuthorizationCode
+from ...core.evidence import (
+    ResourceHarvestEvidence,
+    ResourceHarvestStatus,
+    ResourceTransferEvidence,
+    ResourceTransferStatus,
+    SemanticActionReceipt,
+)
+from ...core.observation import Observation
+from ...core.operation import (
     Action,
-    ActionReceipt,
     ClickAction,
     CollectResourceOutputAction,
-    CommandDispatchContext,
     DismissScreenAction,
     GameBinding,
     GameScreen,
     HarvestResourceAction,
     MouseButton,
     MoveCursorAction,
-    NativeCommandStatus,
-    Observation,
     OpenContextInventoryAction,
     PerformContextAction,
     ProduceResourceOutputAction,
-    ResourceHarvestEvidence,
-    ResourceHarvestStatus,
-    ResourceTransferEvidence,
-    ResourceTransferStatus,
-    SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
     SkillArgument,
-    Transition,
     UseGameBindingAction,
-    new_command_id,
+)
+from ...core.telemetry import (
+    NativeCommandStatus,
     normalize_control_label,
 )
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+    new_command_id,
+)
+from ...input_boundary import ExecutionToken
 from ...operation_authority import AuthorizationDecision, OperationAuthority
 from ...operation_definitions import BoundOperation
 from ...options import StatefulNativeMovementOption

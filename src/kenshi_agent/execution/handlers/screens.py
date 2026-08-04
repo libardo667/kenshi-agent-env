@@ -11,31 +11,37 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from ... import operation_definitions as operations
-from ...input_boundary import ExecutionToken
-from ...models import (
-    SCREEN_BINDINGS,
+from ...core.evidence import (
+    QuicksaveEvidence,
+    QuicksaveStatus,
+    SemanticActionReceipt,
+)
+from ...core.operation import (
     Action,
-    ActionReceipt,
     ActivateVisibleControlAction,
     ClickAction,
-    CommandDispatchContext,
     DismissScreenAction,
     GameBinding,
     GameScreen,
     HotkeyAction,
     KeyAction,
     OpenScreenAction,
-    QuicksaveEvidence,
-    QuicksaveStatus,
     ScrollAction,
     ScrollScreenAction,
-    SemanticActionReceipt,
-    Transition,
     UseGameBindingAction,
     game_binding_primitive,
-    screen_is_open,
-    window_close_point,
 )
+from ...core.planning import (
+    SCREEN_BINDINGS,
+    screen_is_open,
+)
+from ...core.telemetry import window_close_point
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ..types import (
     ActiveOperation,

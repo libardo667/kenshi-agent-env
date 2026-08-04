@@ -18,7 +18,11 @@ from kenshi_agent.authored_starts import (
     verify_authored_game_start_snapshot,
     verify_installed_authored_starts,
 )
-from kenshi_agent.models import CharacterState, GameState, TelemetrySnapshot
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    GameState,
+    TelemetrySnapshot,
+)
 
 
 def _bundle(payload: bytes = b"exact authored scenario mod") -> AuthoredStartsBundle:

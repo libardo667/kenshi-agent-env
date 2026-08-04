@@ -8,28 +8,32 @@ from functools import partial
 from typing import Any, TypeAlias, TypeGuard
 
 from .approach import ApproachMonitor, ApproachStatus
-from .input_boundary import ExecutionToken
-from .models import (
+from .core.evidence import SemanticActionReceipt
+from .core.observation import Observation
+from .core.operation import (
     Action,
     ApproachDialogueTargetAction,
-    CommandDispatchContext,
     ExitCurrentBuildingAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
-    NativeCommandAcknowledgement,
-    NativeCommandStatus,
-    Observation,
     PerformContextAction,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
     RespondToImmediateThreatAction,
-    SemanticActionReceipt,
     SkillAction,
     ThreatResponseStrategy,
-    Transition,
     TravelToMapDestinationAction,
-    WorldStateRevision,
 )
+from .core.telemetry import (
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+)
+from .core.transport import (
+    CommandDispatchContext,
+    Transition,
+)
+from .core.world import WorldStateRevision
+from .input_boundary import ExecutionToken
 from .movement_ownership import has_keyed_native_movement_terminal
 from .operation_definitions import definition_for
 from .threat_response import (

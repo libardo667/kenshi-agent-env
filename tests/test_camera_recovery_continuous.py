@@ -8,47 +8,55 @@ import pytest
 from operation_test_support import operation_port, plan_executor
 
 from kenshi_agent.config import PlanningConfig, SafetyConfig
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.live_plan_policy import live_plan_policy_errors
-from kenshi_agent.models import (
-    Action,
-    ActionReceipt,
+from kenshi_agent.core.evidence import (
     CameraFrameScore,
     CameraRecoveryEvidence,
     CameraRecoveryStatus,
-    CameraState,
-    CharacterState,
+    ResourceTransferEvidence,
+    ResourceTransferStatus,
+    SemanticActionReceipt,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    Action,
     CollectResourceOutputAction,
-    CommandDispatchContext,
+    ControlMode,
+    IdempotencyPolicy,
+    OpenContextInventoryAction,
+    PlanningMode,
+    RecoverCameraViewAction,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
-    ControlMode,
+    PlanEnvelope,
+    PlanStep,
+    RiskBudget,
+)
+from kenshi_agent.core.telemetry import (
+    CameraState,
+    CharacterState,
     GameState,
-    IdempotencyPolicy,
     InventoryItem,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NormalizedPointerBounds,
-    Observation,
-    OpenContextInventoryAction,
-    PlanEnvelope,
-    PlanningMode,
-    PlanStep,
-    RecoverCameraViewAction,
-    ResourceTransferEvidence,
-    ResourceTransferStatus,
-    RiskBudget,
-    SemanticActionReceipt,
     TelemetrySnapshot,
-    Transition,
     UIState,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
+from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import OperationPolicy

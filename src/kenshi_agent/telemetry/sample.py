@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from ..models import (
+from ..core.telemetry import (
     CameraState,
     CharacterState,
     GameState,

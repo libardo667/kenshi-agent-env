@@ -9,7 +9,7 @@ Mercenaries, and Holy Citizens.
 
 from __future__ import annotations
 
-from kenshi_agent.models import (
+from kenshi_agent.core.telemetry import (
     CharacterState,
     Disposition,
     NearbyEntity,
@@ -17,6 +17,7 @@ from kenshi_agent.models import (
     confirmed_vendor_candidates,
     dialogue_targets,
 )
+from kenshi_agent.planner_context import render_planner_payload
 
 
 def entity(name: str, **flags: object) -> NearbyEntity:
@@ -45,16 +46,34 @@ def hub_scene() -> list[NearbyEntity]:
     return [
         barman(distance=26.0),
         # Ninja Guards carry a vendor list but are not leaders and have no dialogue.
-        entity("Ninja Guard", is_animal=False, has_vendor_list=True,
-               is_squad_leader=False, has_dialogue=False,
-               disposition=Disposition.NEUTRAL, distance=40.0),
+        entity(
+            "Ninja Guard",
+            is_animal=False,
+            has_vendor_list=True,
+            is_squad_leader=False,
+            has_dialogue=False,
+            disposition=Disposition.NEUTRAL,
+            distance=40.0,
+        ),
         # Mercenary Captain leads and talks but sells nothing -- talkable, not a vendor.
-        entity("Mercenary Captain", is_animal=False, has_vendor_list=False,
-               is_squad_leader=True, has_dialogue=True,
-               disposition=Disposition.NEUTRAL, distance=15.0),
-        entity("Mercenary", is_animal=False, has_vendor_list=False,
-               is_squad_leader=False, has_dialogue=False,
-               disposition=Disposition.NEUTRAL, distance=12.0),
+        entity(
+            "Mercenary Captain",
+            is_animal=False,
+            has_vendor_list=False,
+            is_squad_leader=True,
+            has_dialogue=True,
+            disposition=Disposition.NEUTRAL,
+            distance=15.0,
+        ),
+        entity(
+            "Mercenary",
+            is_animal=False,
+            has_vendor_list=False,
+            is_squad_leader=False,
+            has_dialogue=False,
+            disposition=Disposition.NEUTRAL,
+            distance=12.0,
+        ),
     ]
 
 
@@ -78,25 +97,35 @@ def test_confirmed_vendor_implies_dialogue_target() -> None:
 
 
 def test_a_talkable_non_vendor_is_a_dialogue_target_but_not_a_vendor() -> None:
-    captain = entity("Mercenary Captain", is_animal=False, has_vendor_list=False,
-                     is_squad_leader=True, has_dialogue=True, disposition=Disposition.NEUTRAL)
+    captain = entity(
+        "Mercenary Captain",
+        is_animal=False,
+        has_vendor_list=False,
+        is_squad_leader=True,
+        has_dialogue=True,
+        disposition=Disposition.NEUTRAL,
+    )
     assert captain.is_dialogue_target() is True
     assert captain.is_confirmed_vendor() is False
 
 
 def test_no_dialogue_means_not_a_talk_target_even_with_a_vendor_list() -> None:
     # A guard carrying an inherited vendor list but no dialogue is not talkable.
-    guard = entity("Ninja Guard", is_animal=False, has_vendor_list=True,
-                   is_squad_leader=False, has_dialogue=False, disposition=Disposition.NEUTRAL)
+    guard = entity(
+        "Ninja Guard",
+        is_animal=False,
+        has_vendor_list=True,
+        is_squad_leader=False,
+        has_dialogue=False,
+        disposition=Disposition.NEUTRAL,
+    )
     assert guard.is_dialogue_target() is False
     assert guard.is_confirmed_vendor() is False
 
 
 def test_hostile_or_animal_dialogue_holder_is_not_a_talk_target() -> None:
-    hostile = entity("Bandit", is_animal=False, has_dialogue=True,
-                     disposition=Disposition.HOSTILE)
-    beast = entity("Bonedog", is_animal=True, has_dialogue=True,
-                   disposition=Disposition.NEUTRAL)
+    hostile = entity("Bandit", is_animal=False, has_dialogue=True, disposition=Disposition.HOSTILE)
+    beast = entity("Bonedog", is_animal=True, has_dialogue=True, disposition=Disposition.NEUTRAL)
     assert hostile.is_dialogue_target() is False
     assert beast.is_dialogue_target() is False
 
@@ -153,7 +182,8 @@ def test_missing_distance_sorts_last_not_crash() -> None:
 def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
     import json
 
-    from kenshi_agent.models import Observation, TelemetrySnapshot
+    from kenshi_agent.core.observation import Observation
+    from kenshi_agent.core.telemetry import TelemetrySnapshot
 
     actor = CharacterState(id="entity-player", name="Player", selected=True)
     observation = Observation(
@@ -179,16 +209,31 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
             squad=[actor],
             nearby_entities=[
                 barman(distance=26.0),
-                entity("Mercenary Captain", is_animal=False, has_vendor_list=False,
-                       is_squad_leader=True, has_dialogue=True,
-                       disposition=Disposition.NEUTRAL, distance=15.0),
-                entity("Bandit", is_animal=False, has_dialogue=True,
-                       disposition=Disposition.HOSTILE, distance=8.0),
-            ]
+                entity(
+                    "Mercenary Captain",
+                    is_animal=False,
+                    has_vendor_list=False,
+                    is_squad_leader=True,
+                    has_dialogue=True,
+                    disposition=Disposition.NEUTRAL,
+                    distance=15.0,
+                ),
+                entity(
+                    "Bandit",
+                    is_animal=False,
+                    has_dialogue=True,
+                    disposition=Disposition.HOSTILE,
+                    distance=8.0,
+                ),
+            ],
         ),
     )
 
-    payload = json.loads(observation.planner_payload())
+    payload = json.loads(
+        render_planner_payload(
+            observation,
+        )
+    )
     targets = [
         affordance["target"]
         for affordance in payload["affordances"]
@@ -203,8 +248,12 @@ def test_planner_payload_surfaces_exact_dialogue_affordances() -> None:
 def test_planner_payload_affordances_empty_without_telemetry() -> None:
     import json
 
-    from kenshi_agent.models import Observation
+    from kenshi_agent.core.observation import Observation
 
     observation = Observation(run_id="no-telemetry", step_index=0, mode="mock")
-    payload = json.loads(observation.planner_payload())
+    payload = json.loads(
+        render_planner_payload(
+            observation,
+        )
+    )
     assert payload["affordances"] == []

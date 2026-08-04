@@ -8,50 +8,56 @@ import pytest
 from openai.lib._pydantic import to_strict_json_schema
 from pydantic import ValidationError
 
+from kenshi_agent.condition_evaluation import evaluate_condition
 from kenshi_agent.config import MacroConfig, PlanningConfig
-from kenshi_agent.models import (
+from kenshi_agent.core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     ActivateVisibleControlAction,
-    ActivePlanContext,
     ApproachDialogueTargetAction,
-    CharacterState,
+    ControlMode,
+    IdempotencyPolicy,
+    InterruptPolicy,
+    PauseAction,
+    PlanningMode,
+    PurchaseItemAction,
+    SetSpeedAction,
+    SkillAction,
+    StopAction,
+)
+from kenshi_agent.core.planning import (
+    ActivePlanContext,
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionResult,
-    ControlMode,
-    Disposition,
     FieldConditionPath,
-    GameState,
-    IdempotencyPolicy,
-    InterruptPolicy,
-    NativeControlState,
-    NearbyEntity,
-    Observation,
-    PauseAction,
     PlanEnvelope,
     PlannerDecision,
-    PlanningMode,
     PlanPatch,
     PlanStep,
-    PurchaseItemAction,
     RiskBudget,
-    SetSpeedAction,
-    SkillAction,
-    StopAction,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    Disposition,
+    GameState,
+    NativeControlState,
+    NearbyEntity,
     TelemetrySnapshot,
     UIState,
     Vec3,
-    WorldStateRevision,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.planners import HeuristicPlanner, ScriptedPlanner
 from kenshi_agent.planners.plan_proposal import DecisionProposal, PlanProposal
 from kenshi_agent.planning import (
     PlanBudgetLedger,
     PlanValidationError,
     SystemPlanningClock,
-    evaluate_condition,
     game_elapsed_seconds,
     validate_future_plan_patch,
     validate_plan,
@@ -394,9 +400,7 @@ def test_every_field_condition_path_resolves_its_observed_scalar() -> None:
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_AVAILABLE: True,
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_COMMAND_ACTIVE: False,
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND_SEQUENCE: 19,
-        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND: (
-            "perform_context_action"
-        ),
+        FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_COMMAND: ("perform_context_action"),
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_RESULT: "completed",
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_TARGET: "Copper Resource",
         FieldConditionPath.TELEMETRY_NATIVE_CONTROL_LAST_TARGET_ID: "mine",
@@ -510,10 +514,7 @@ def test_telemetry_condition_classification_fails_stale_fields_closed() -> None:
         ControlMode.INTERFACE_ONLY.value,
         required_capabilities=["missing.capability"],
     )
-    assert (
-        evaluate_condition(capability_bound_control, current).result
-        is ConditionResult.STALE
-    )
+    assert evaluate_condition(capability_bound_control, current).result is ConditionResult.STALE
 
 
 @pytest.mark.parametrize(
@@ -556,17 +557,13 @@ def test_condition_operators_follow_their_truth_tables(
                     current_goal=actual if isinstance(actual, str) else "Operating machine",
                 )
             ],
-                "ui": UIState(
-                    selected_character_id="selected",
-                    selected_character_ids=["selected"],
-                ),
+            "ui": UIState(
+                selected_character_id="selected",
+                selected_character_ids=["selected"],
+            ),
         }
     )
-    path = (
-        "selected.current_goal"
-        if isinstance(actual, str)
-        else "telemetry.game.money"
-    )
+    path = "selected.current_goal" if isinstance(actual, str) else "telemetry.game.money"
     evaluation = evaluate_condition(
         field_condition(path, expected, operator=operator),
         current,
@@ -714,9 +711,7 @@ def test_exact_selection_count_requires_stable_identity_capability() -> None:
                 selected_character_id="entity-player",
                 selected_character_ids=["entity-player"],
             ),
-            "squad": [
-                CharacterState(id="entity-player", name="Wanderer", selected=True)
-            ],
+            "squad": [CharacterState(id="entity-player", name="Wanderer", selected=True)],
         }
     )
 
@@ -984,17 +979,11 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
     no_revision = valid_observation.world_revision.model_copy(
         update={"telemetry_sequence": None, "frame_sequence": None}
     )
-    no_revision_observation = valid_observation.model_copy(
-        update={"world_revision": no_revision}
-    )
+    no_revision_observation = valid_observation.model_copy(update={"world_revision": no_revision})
     base_telemetry = valid_observation.telemetry
     assert base_telemetry is not None
     no_elapsed_telemetry = base_telemetry.model_copy(
-        update={
-            "game": base_telemetry.game.model_copy(
-                update={"elapsed_minutes": None}
-            )
-        }
+        update={"game": base_telemetry.game.model_copy(update={"elapsed_minutes": None})}
     )
     no_time_capability = base_telemetry.model_copy(
         update={"capabilities": ["game.pause", "game.speed"]}
@@ -1002,16 +991,12 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
     native_observation = valid_observation.model_copy(
         update={"control_mode": ControlMode.NATIVE_ASSISTED}
     )
-    native_plan = valid_plan.model_copy(
-        update={"control_mode": ControlMode.NATIVE_ASSISTED}
-    )
+    native_plan = valid_plan.model_copy(update={"control_mode": ControlMode.NATIVE_ASSISTED})
 
     invalid_cases = [
         (
             valid_plan,
-            valid_observation.model_copy(
-                update={"control_mode": ControlMode.NATIVE_ASSISTED}
-            ),
+            valid_observation.model_copy(update={"control_mode": ControlMode.NATIVE_ASSISTED}),
             PlanningConfig(),
         ),
         (
@@ -1136,7 +1121,7 @@ def test_plan_validation_fails_closed_for_every_outer_authority_boundary() -> No
 def test_live_plan_policy_receives_the_exact_plan_and_configured_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kenshi_agent import live_plan_policy
+    from kenshi_agent import planning as planning_module
 
     current = observation().model_copy(update={"mode": "live"})
     plan = plan_for(current.world_revision)
@@ -1151,7 +1136,7 @@ def test_live_plan_policy_receives_the_exact_plan_and_configured_bound(
         return []
 
     monkeypatch.setattr(
-        live_plan_policy,
+        planning_module,
         "live_plan_policy_errors",
         policy_errors,
     )
@@ -1180,9 +1165,7 @@ def test_plan_validation_accepts_every_configured_boundary_at_equality() -> None
             max_plan_game_seconds=plan.max_game_seconds,
             max_pointer_actions_per_plan=plan.risk_budget.max_pointer_actions,
             max_purchase_actions_per_plan=plan.risk_budget.max_purchase_actions,
-            max_native_assisted_actions_per_plan=(
-                plan.risk_budget.max_native_assisted_actions
-            ),
+            max_native_assisted_actions_per_plan=(plan.risk_budget.max_native_assisted_actions),
         ),
         MacroRegistry({}),
     )
@@ -1199,9 +1182,7 @@ def test_plan_validation_accepts_every_configured_boundary_at_equality() -> None
         one_channel_observation = current.model_copy(
             update={"world_revision": one_channel_revision}
         )
-        one_channel_plan = plan.model_copy(
-            update={"based_on_revision": one_channel_revision}
-        )
+        one_channel_plan = plan.model_copy(update={"based_on_revision": one_channel_revision})
         validate_plan(
             one_channel_plan,
             one_channel_observation,
@@ -1374,9 +1355,7 @@ def test_plan_risk_validation_conserves_cost_across_all_steps_and_retries() -> N
             MacroRegistry({}),
         )
 
-    native_current = current.model_copy(
-        update={"control_mode": ControlMode.NATIVE_ASSISTED}
-    )
+    native_current = current.model_copy(update={"control_mode": ControlMode.NATIVE_ASSISTED})
     native_steps = [
         PlanStep(
             step_id="first",
@@ -1563,9 +1542,7 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
     )
     assert rebased.based_on_revision.same_snapshot_as(revision(8))
 
-    protected_patch = patch.model_copy(
-        update={"replace_future_steps": [speed_step("resume")]}
-    )
+    protected_patch = patch.model_copy(update={"replace_future_steps": [speed_step("resume")]})
     with pytest.raises(PlanValidationError, match="active or completed"):
         validate_future_plan_patch(
             protected_patch,
@@ -1581,9 +1558,7 @@ def test_future_patch_rebases_to_current_state_and_cannot_restart_protected_step
 
 
 def test_future_patch_rebase_leaves_latest_entry_authority_to_submission() -> None:
-    planner_observation = observation(sequence=7, paused=False).model_copy(
-        update={"mode": "live"}
-    )
+    planner_observation = observation(sequence=7, paused=False).model_copy(update={"mode": "live"})
     active_plan = plan_for(planner_observation.world_revision)
     patch = PlanPatch(
         schema_version="1.0",
@@ -1631,9 +1606,7 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
                 plan_version=active_plan.plan_version,
                 objective=active_plan.objective,
                 active_step_id="resume",
-                active_step_interrupt_policy=(
-                    InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
-                ),
+                active_step_interrupt_policy=(InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH),
                 remaining_actions=ledger.remaining_actions,
             )
         }
@@ -1690,9 +1663,7 @@ def test_interrupt_patch_requires_exact_opt_in_and_a_pause_handoff() -> None:
             ]
         }
     )
-    valid = no_pause.model_copy(
-        update={"replace_future_steps": [interruption_pause_step()]}
-    )
+    valid = no_pause.model_copy(update={"replace_future_steps": [interruption_pause_step()]})
     with pytest.raises(PlanValidationError, match="does not permit"):
         validate_future_plan_patch(
             valid,
@@ -1843,9 +1814,7 @@ def test_interrupt_patch_requires_every_fact_in_the_pause_handoff() -> None:
                 plan_version=active_plan.plan_version,
                 objective=active_plan.objective,
                 active_step_id="resume",
-                active_step_interrupt_policy=(
-                    InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH
-                ),
+                active_step_interrupt_policy=(InterruptPolicy.CANCEL_ON_REFLEX_OR_PLAN_PATCH),
                 remaining_actions=3,
             )
         }
@@ -1879,18 +1848,12 @@ def test_interrupt_patch_requires_every_fact_in_the_pause_handoff() -> None:
             ]
         }
     )
-    unpausing_action = valid_pause.model_copy(
-        update={"action": PauseAction(paused=False)}
-    )
+    unpausing_action = valid_pause.model_copy(update={"action": PauseAction(paused=False)})
     no_active_context = planner_observation.model_copy(update={"active_plan": None})
     active_context = planner_observation.active_plan
     assert active_context is not None
     ghost_context = planner_observation.model_copy(
-        update={
-            "active_plan": active_context.model_copy(
-                update={"active_step_id": "ghost"}
-            )
-        }
+        update={"active_plan": active_context.model_copy(update={"active_step_id": "ghost"})}
     )
 
     invalid_cases = [
@@ -1927,11 +1890,7 @@ def test_future_patch_validates_replacement_risk_with_the_supplied_registry() ->
         }
     )
     registry = MacroRegistry(
-        {
-            "click_once": MacroConfig(
-                actions=[{"kind": "click", "x": 0.25, "y": 0.75}]
-            )
-        }
+        {"click_once": MacroConfig(actions=[{"kind": "click", "x": 0.25, "y": 0.75}])}
     )
     replacement = PlanStep(
         step_id="click",

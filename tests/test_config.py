@@ -8,10 +8,10 @@ from kenshi_agent.config import (
     MemoryConfig,
     load_config,
 )
-from kenshi_agent.models import (
+from kenshi_agent.core.continuity import MemoryRetrievalPolicy
+from kenshi_agent.core.operation import (
     ClickAction,
     ControlMode,
-    MemoryRetrievalPolicy,
     PlanningMode,
     SkillAction,
 )

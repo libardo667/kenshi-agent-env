@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 
+from ..core.observation import Observation
 from ..final_safe_state import FinalSafeStateOutcome
-from ..models import Observation
 
 
 class AgentEnvironment(ABC):

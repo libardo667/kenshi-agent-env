@@ -9,66 +9,70 @@ import pytest
 from operation_test_support import execute_operation
 
 from kenshi_agent.affordances import OperationBindingError
-from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import CaptureConfig, ControlsConfig, MacroConfig, RuntimeConfig
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
-from kenshi_agent.env.live import LiveEnvironment
-from kenshi_agent.execution.handlers import kenshi_surface
-from kenshi_agent.models import (
-    ActionReceipt,
+from kenshi_agent.core.authority import AuthorizationCode
+from kenshi_agent.core.evidence import ResourceTransferStatus
+from kenshi_agent.core.operation import (
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    CalibrationStatus,
     CameraRotationDirection,
-    CharacterState,
     ClickAction,
     CollectResourceOutputAction,
-    CommandDispatchContext,
     CommandWorldTargetAction,
-    ContextActionKind,
     ControlMode,
-    Disposition,
     ExitCurrentBuildingAction,
     GameBinding,
-    GameState,
     HotkeyAction,
-    InventoryItem,
     KeyAction,
-    KnownMapDestination,
     MouseButton,
     MouseButtonAction,
     MouseDragAction,
     MoveInDirectionAction,
     MoveToCharacterAction,
-    NativeCommandAcknowledgement,
-    NativeCommandRequest,
-    NativeCommandStatus,
-    NativeControlState,
-    NearbyEntity,
-    NormalizedPointerBounds,
     OpenContextInventoryAction,
     PauseAction,
     PerformContextAction,
     PointerActionClass,
     ProduceResourceOutputAction,
     RegroupWithSquadMemberAction,
-    ResourceTransferStatus,
     RespondToImmediateThreatAction,
     RotateCameraAction,
     SelectSquadMemberAction,
     SelectSquadMemberExactAction,
     SetSpeedAction,
     SkillAction,
-    TelemetrySnapshot,
     ThreatResponseStrategy,
     TravelToMapDestinationAction,
-    UIState,
     UseGameBindingAction,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    Disposition,
+    GameState,
+    InventoryItem,
+    KnownMapDestination,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
+    NearbyEntity,
+    NormalizedPointerBounds,
+    TelemetrySnapshot,
+    UIState,
     Vec2,
     Vec3,
     VisibleUIControl,
     WorldTarget,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    CalibrationStatus,
+    CommandDispatchContext,
+    NativeCommandRequest,
+)
+from kenshi_agent.env.live import LiveEnvironment
+from kenshi_agent.execution.handlers import kenshi_surface
 from kenshi_agent.skills import MacroRegistry
 from kenshi_agent.telemetry import TelemetryRead
 
@@ -385,7 +389,7 @@ def test_semantic_mouse_binding_dispatches_one_held_button(tmp_path: Path) -> No
 
 
 def test_quicksave_waits_for_an_exact_quiescent_save_tree(tmp_path: Path) -> None:
-    from kenshi_agent.models import QuicksaveStatus
+    from kenshi_agent.core.evidence import QuicksaveStatus
 
     class QuicksavePulseController(PulseController):
         def __init__(self, telemetry: PulseTelemetry, quicksave_dir: Path) -> None:
@@ -435,7 +439,7 @@ def test_quicksave_waits_for_an_exact_quiescent_save_tree(tmp_path: Path) -> Non
 def test_quicksave_does_not_promote_an_input_receipt_to_completion(
     tmp_path: Path,
 ) -> None:
-    from kenshi_agent.models import QuicksaveStatus
+    from kenshi_agent.core.evidence import QuicksaveStatus
 
     async def scenario() -> None:
         telemetry = PulseTelemetry()

@@ -19,31 +19,33 @@ from kenshi_agent.affordances import (
     selection_for,
     terminal_affordance_receipt,
 )
-from kenshi_agent.models import (
+from kenshi_agent.core.affordance import AffordanceLifecycleStatus
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     TIME_GAME_BINDINGS,
-    AffordanceLifecycleStatus,
-    CharacterState,
-    ContextActionKind,
     ControlMode,
-    Disposition,
     GameBinding,
     GameScreen,
+    PlanningMode,
+    UseGameBindingAction,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    Disposition,
     GameState,
     KnownMapDestination,
     NearbyEntity,
     NormalizedPointerBounds,
-    Observation,
-    PlanningMode,
     TelemetrySnapshot,
     UIState,
-    UseGameBindingAction,
     Vec2,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
     is_runtime_owned_visible_control,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     APPROACH_DIALOGUE_TARGET_DEFINITION,
     USE_GAME_BINDING_DEFINITION,

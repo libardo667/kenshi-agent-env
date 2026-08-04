@@ -13,8 +13,8 @@ import json
 import sys
 from pathlib import Path
 
+from kenshi_agent.core.telemetry import TelemetrySnapshot
 from kenshi_agent.fact_coverage import audit
-from kenshi_agent.models import TelemetrySnapshot
 
 
 def _from_log(path: Path) -> TelemetrySnapshot:

@@ -6,14 +6,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
 
-from ...models import (
-    ActionReceipt,
-    AdvisorConsultStatus,
+from ...core.advisor import AdvisorConsultStatus
+from ...core.observation import Observation
+from ...core.operation import (
     ConsultAdvisorAction,
-    Observation,
     ReadFieldbookAction,
     RecallMemoryAction,
 )
+from ...core.transport import ActionReceipt
 from ...operation_definitions import BoundOperation
 from ..types import (
     ActiveOperation,

@@ -8,17 +8,17 @@ eligibility belong to operation definitions and ``OperationAuthority``.
 
 from __future__ import annotations
 
-from .models import (
+from .condition_evaluation import evaluate_conditions
+from .core.observation import Observation
+from .core.operation import is_controller_primitive
+from .core.planning import (
     ConditionKind,
     ConditionResult,
-    Observation,
     PlanEnvelope,
     PlanStep,
     RiskBudget,
-    is_controller_primitive,
 )
 from .operation_definitions import risk_for_operation
-from .planning import evaluate_conditions
 
 # Default only. The caller passes the configured `max_plan_steps` so a
 # long-form run can be given a longer leash without editing this module.
@@ -188,9 +188,7 @@ def live_plan_policy_errors(
         )
 
     for step in plan.steps:
-        errors.extend(
-            _step_action_errors(step)
-        )
+        errors.extend(_step_action_errors(step))
 
     # Risk budgets must cover what the contracts actually cost, so an
     # underdeclared budget cannot smuggle a native or pointer action through.

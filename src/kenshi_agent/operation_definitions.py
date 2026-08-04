@@ -17,30 +17,22 @@ from typing import Literal, TypeAlias, TypeVar
 
 from pydantic import BaseModel
 
-from .models import (
+from .core.affordance import BoundAffordance
+from .core.observation import Observation
+from .core.operation import (
     GAME_BINDING_KEYS,
     GAME_BINDING_MOUSE_BUTTONS,
-    GAME_BINDING_TERMINALS,
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     QUICKSAVE_COMPLETION_CAPABILITY,
-    SCREEN_BINDINGS,
     TIME_GAME_BINDINGS,
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
-    BoundAffordance,
-    CharacterState,
     CollectResourceOutputAction,
     CommandWorldTargetAction,
-    Condition,
-    ConditionKind,
-    ConditionOperator,
-    ConditionPath,
     ConsultAdvisorAction,
-    ContextActionKind,
     ControlMode,
     DismissScreenAction,
-    Disposition,
     EquipItemAction,
     ExitCurrentBuildingAction,
     GameBinding,
@@ -50,8 +42,6 @@ from .models import (
     MoveInDirectionAction,
     MoveToCharacterAction,
     NoopAction,
-    NormalizedPointerBounds,
-    Observation,
     OpenContextInventoryAction,
     OpenScreenAction,
     PauseAction,
@@ -76,18 +66,32 @@ from .models import (
     TravelToMapDestinationAction,
     UseGameBindingAction,
     WaitAction,
-    WorldStateRevision,
-    WorldTarget,
+)
+from .core.planning import (
+    GAME_BINDING_TERMINALS,
+    SCREEN_BINDINGS,
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    ConditionPath,
     close_screen_success_condition,
-    dialogue_targets,
     game_binding_success_condition,
+    open_screen_success_condition,
+    screen_is_open,
+)
+from .core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    Disposition,
+    NormalizedPointerBounds,
+    WorldTarget,
+    dialogue_targets,
     is_runtime_owned_visible_control,
     map_destination_already_reached,
     map_destination_travel_available,
     normalize_control_label,
-    open_screen_success_condition,
-    screen_is_open,
 )
+from .core.world import WorldStateRevision
 from .resource_transfer import resource_transfer_layout_error
 from .threat_response import threat_response_authority_error
 

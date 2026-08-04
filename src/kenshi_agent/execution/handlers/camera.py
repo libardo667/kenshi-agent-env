@@ -13,25 +13,29 @@ from ... import operation_definitions as operations
 from ...affordances import OPERATION_BINDING_AUTHORITY
 from ...camera_recovery import score_camera_observation
 from ...control.base import PrimitiveInputAction
-from ...input_boundary import ExecutionToken
-from ...models import (
-    Action,
-    ActionReceipt,
+from ...core.evidence import (
     CameraFrameScore,
     CameraRecoveryEvidence,
     CameraRecoveryStatus,
+    SemanticActionReceipt,
+)
+from ...core.observation import Observation
+from ...core.operation import (
+    Action,
     ClickAction,
-    CommandDispatchContext,
     KeyAction,
-    NormalizedPointerBounds,
-    Observation,
     RecoverCameraViewAction,
     RotateCameraAction,
-    SemanticActionReceipt,
-    Transition,
-    WorldStateRevision,
     camera_rotation_primitive,
 )
+from ...core.telemetry import NormalizedPointerBounds
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from ...core.world import WorldStateRevision
+from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ..types import (
     ActiveOperation,

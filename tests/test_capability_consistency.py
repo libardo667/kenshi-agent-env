@@ -38,8 +38,8 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.config import MockConfig
+from kenshi_agent.core.operation import ControlMode
 from kenshi_agent.env.mock import MockEnvironment
-from kenshi_agent.models import ControlMode
 from kenshi_agent.native_commands import (
     NATIVE_APPROACH_WIRE_COMMAND,
     NATIVE_CONTEXT_ACTION_WIRE_COMMAND,

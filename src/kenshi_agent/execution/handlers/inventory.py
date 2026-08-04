@@ -9,20 +9,24 @@ from datetime import datetime
 from typing import Protocol, cast
 
 from ... import operation_definitions as operations
-from ...input_boundary import ExecutionToken
-from ...models import (
+from ...core.evidence import (
+    ResourceTransferStatus,
+    SemanticActionReceipt,
+)
+from ...core.operation import (
     Action,
-    ActionReceipt,
     ClickAction,
     CollectResourceOutputAction,
-    CommandDispatchContext,
     EquipItemAction,
     MouseButton,
     MoveCursorAction,
-    ResourceTransferStatus,
-    SemanticActionReceipt,
+)
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
     Transition,
 )
+from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ..types import (
     ActiveOperation,

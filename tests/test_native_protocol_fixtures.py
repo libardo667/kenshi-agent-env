@@ -5,11 +5,11 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kenshi_agent.models import (
+from kenshi_agent.core.telemetry import (
     NativeCommandAcknowledgement,
-    NativeCommandRequest,
     WorldTarget,
 )
+from kenshi_agent.core.transport import NativeCommandRequest
 
 FIXTURES = Path(__file__).parent / "fixtures" / "native_commands"
 

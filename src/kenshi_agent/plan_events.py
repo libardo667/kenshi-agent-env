@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from .models import Observation, PlanEnvelope, PlanStep
+from .core.observation import Observation
+from .core.planning import (
+    PlanEnvelope,
+    PlanStep,
+)
 from .session_log import SessionLogger
 
 

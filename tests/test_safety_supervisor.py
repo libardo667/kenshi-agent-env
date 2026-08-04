@@ -3,17 +3,17 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import PauseAction
+from kenshi_agent.core.planning import PlannerDecision
+from kenshi_agent.core.telemetry import (
     CharacterState,
     Disposition,
     GameState,
     NearbyEntity,
-    Observation,
-    PauseAction,
-    PlannerDecision,
     TelemetrySnapshot,
-    WorldStateRevision,
 )
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety_supervisor import SafetyCause, SafetySupervisor
 from kenshi_agent.world_state import WorldStateStore

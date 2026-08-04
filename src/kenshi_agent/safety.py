@@ -4,18 +4,16 @@ import re
 from collections.abc import Iterable
 
 from .affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
-from .authorization import AuthorizationCode
 from .config import SafetyConfig
-from .models import (
+from .core.authority import AuthorizationCode
+from .core.observation import Observation
+from .core.operation import (
     Action,
     ClickAction,
     ConsultAdvisorAction,
     ControlMode,
     CoordinateSpace,
-    Disposition,
     MoveCursorAction,
-    NativeCommandStatus,
-    Observation,
     PauseAction,
     PointerActionClass,
     PurchaseItemAction,
@@ -26,6 +24,10 @@ from .models import (
     SkillAction,
     WaitAction,
     is_controller_primitive,
+)
+from .core.telemetry import (
+    Disposition,
+    NativeCommandStatus,
     normalize_control_label,
 )
 from .operation_definitions import (

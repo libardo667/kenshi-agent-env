@@ -7,50 +7,58 @@ from pathlib import Path
 from operation_test_support import operation_port, plan_executor
 
 from kenshi_agent.config import PlanningConfig, SafetyConfig
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.live_plan_policy import live_plan_policy_errors
-from kenshi_agent.models import (
+from kenshi_agent.core.evidence import (
+    ResourceHarvestStatus,
+    ResourceTransferEvidence,
+    ResourceTransferStatus,
+    SemanticActionReceipt,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
-    ActionReceipt,
-    CharacterState,
     CollectResourceOutputAction,
-    CommandDispatchContext,
-    Condition,
-    ConditionKind,
-    ConditionOperator,
-    ContextActionKind,
     ControlMode,
     DismissScreenAction,
     GameBinding,
-    GameState,
     HarvestResourceAction,
     IdempotencyPolicy,
+    OpenContextInventoryAction,
+    PlanningMode,
+    ProduceResourceOutputAction,
+    SetSpeedAction,
+    UseGameBindingAction,
+)
+from kenshi_agent.core.planning import (
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    PlanEnvelope,
+    PlanStep,
+    RiskBudget,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    GameState,
     InventoryItem,
     NativeCommandAcknowledgement,
     NativeCommandStatus,
     NormalizedPointerBounds,
-    Observation,
-    OpenContextInventoryAction,
-    PlanEnvelope,
-    PlanningMode,
-    PlanStep,
-    ProduceResourceOutputAction,
-    ResourceHarvestStatus,
-    ResourceTransferEvidence,
-    ResourceTransferStatus,
-    RiskBudget,
-    SemanticActionReceipt,
-    SetSpeedAction,
     TelemetrySnapshot,
-    Transition,
     UIState,
-    UseGameBindingAction,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
+from kenshi_agent.input_boundary import ExecutionToken
+from kenshi_agent.live_plan_policy import live_plan_policy_errors
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.safety import OperationPolicy

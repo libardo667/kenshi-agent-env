@@ -22,23 +22,13 @@ from pathlib import Path
 
 from ..campaign import CampaignScope, CampaignScopeOrigin
 from ..continuity import ContinuityAuthority, ContinuityLedger
-from ..env import ReplayEnvironment
-from ..fieldbook_authority import FieldbookAuthority
-from ..memory import MemoryStore, RecallBudget, TieredRecall
-from ..models import (
-    ActionOutcome,
-    ActionOutcomeAssessment,
-    ActionOutcomeEvidence,
+from ..core.continuity import (
     AppendFieldbookEntryOperation,
-    AuthoredPlannerContext,
-    CharacterState,
-    CollectResourceOutputAction,
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
     CreateFieldbookProjectOperation,
-    CurrentObservationEvidence,
     EvidenceAuthority,
     FieldbookEntryKind,
     FieldbookProjectIndex,
@@ -46,26 +36,43 @@ from ..models import (
     FieldbookReadReceipt,
     FieldbookReadStatus,
     FieldbookReceiptDigest,
-    GameState,
-    InventoryItem,
     KeepMemoryOperation,
     MemoryKind,
     MemoryRecord,
     MemoryResolutionDisposition,
     MemoryStatus,
-    NearbyEntity,
-    NoopAction,
-    NormalizedPointerBounds,
-    Observation,
-    PlanDisposition,
     ResolveMemoryOperation,
+)
+from ..core.evidence import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
+    ActionOutcomeEvidence,
+    CurrentObservationEvidence,
+    PlanDisposition,
     ResourceTransferStatus,
+)
+from ..core.observation import Observation
+from ..core.operation import (
+    CollectResourceOutputAction,
+    NoopAction,
+    WaitAction,
+)
+from ..core.planner_context import AuthoredPlannerContext
+from ..core.telemetry import (
+    CharacterState,
+    GameState,
+    InventoryItem,
+    NearbyEntity,
+    NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
     VisibleUIControl,
-    WaitAction,
-    WorldStateRevision,
 )
+from ..core.world import WorldStateRevision
+from ..env.replay import ReplayEnvironment
+from ..fieldbook_authority import FieldbookAuthority
+from ..memory import MemoryStore, RecallBudget, TieredRecall
+from ..planner_context import render_planner_payload
 from ..planners.base import planner_context_manifest
 from ..resource_transfer import evaluate_resource_transfer
 from ..runtime_continuity import build_fieldbook_read_receipt
@@ -74,9 +81,7 @@ CAMPAIGN_ID = "ladle-restart-eval"
 OTHER_CAMPAIGN_ID = "not-ladle-restart-eval"
 CARGO_ITEM_NAME = "Sealed Cargo"
 CARGO_QUANTITY = 6
-COMMITMENT_CONTENT = (
-    f"Deliver exactly {CARGO_QUANTITY} {CARGO_ITEM_NAME} units to the destination."
-)
+COMMITMENT_CONTENT = f"Deliver exactly {CARGO_QUANTITY} {CARGO_ITEM_NAME} units to the destination."
 BACKGROUND_COMMITMENT = "Return the borrowed route chart after the delivery."
 OPEN_HYPOTHESIS = "The eastern gate may be the safer delivery route."
 OLD_LOCATION = "Old Yard"
@@ -337,11 +342,7 @@ def _active_records(store: MemoryStore | None) -> list[MemoryRecord]:
     if store is None:
         return []
     return sorted(
-        (
-            record
-            for record in store.all_records()
-            if record.status is MemoryStatus.ACTIVE
-        ),
+        (record for record in store.all_records() if record.status is MemoryStatus.ACTIVE),
         key=lambda record: (
             record.kind.value,
             record.content,
@@ -382,14 +383,10 @@ def _canonical_state(store: MemoryStore | None) -> dict[str, object]:
         key=lambda project: (project.title, project.project_id),
     )
     entries = [
-        entry
-        for project in projects
-        for entry in store.fieldbook.entries(project.project_id)
+        entry for project in projects for entry in store.fieldbook.entries(project.project_id)
     ]
     return {
-        "memory_records": [
-            record.model_dump(mode="json") for record in records
-        ],
+        "memory_records": [record.model_dump(mode="json") for record in records],
         "fieldbook_projects": [
             project.model_dump(mode="json")  # pragma: no mutate
             for project in projects
@@ -425,11 +422,7 @@ def _phase_one(
     campaign_id: str,
 ) -> dict[str, object]:
     run_id = f"{treatment.value}-phase-one"
-    store = (
-        _open_store(database_path, campaign_id)
-        if _memory_enabled(treatment)
-        else None
-    )
+    store = _open_store(database_path, campaign_id) if _memory_enabled(treatment) else None
     logger = _DiscardLogger()
     ledger = _evaluation_ledger(run_id)
     outcomes, plans = _working_outcomes(run_id=run_id, ledger=ledger)
@@ -477,10 +470,7 @@ def _phase_one(
                 ),
                 KeepMemoryOperation(
                     kind=MemoryKind.FACT,
-                    content=(
-                        f"{ENTITY_NAME} was observed at {OLD_LOCATION} "
-                        "before the restart."
-                    ),
+                    content=(f"{ENTITY_NAME} was observed at {OLD_LOCATION} before the restart."),
                     salience=0.8,
                     target_id=OLD_ENTITY_ID,
                     references=[CurrentObservationEvidence()],
@@ -546,17 +536,12 @@ def _phase_one(
                 plan_version=1,
                 step_id="create-dockets",
             )
-            if any(
-                receipt.status is not ContinuityOperationStatus.ACCEPTED
-                for receipt in created
-            ):
+            if any(receipt.status is not ContinuityOperationStatus.ACCEPTED for receipt in created):
                 raise RestartEvaluationError(  # mutation: reason
                     "fieldbook project creation was refused"
                 )
             project_ids = [
-                receipt.project_id
-                for receipt in created
-                if receipt.project_id is not None
+                receipt.project_id for receipt in created if receipt.project_id is not None
             ]
             if len(project_ids) != 2:
                 raise RestartEvaluationError(  # mutation: reason
@@ -595,10 +580,7 @@ def _phase_one(
                     AppendFieldbookEntryOperation(
                         project_id=route_project_id,
                         kind=FieldbookEntryKind.ROUTE_ENTRY,
-                        content=(
-                            f"{OLD_LOCATION} was the observed route location "
-                            "before restart."
-                        ),
+                        content=(f"{OLD_LOCATION} was the observed route location before restart."),
                         references=[CurrentObservationEvidence()],
                     ),
                     AppendFieldbookEntryOperation(
@@ -609,11 +591,7 @@ def _phase_one(
                             "remained inconclusive; "
                             "do not infer delivery."
                         ),
-                        references=[
-                            ActionOutcomeEvidence(
-                                outcome_id=outcomes[1].outcome_id
-                            )
-                        ],
+                        references=[ActionOutcomeEvidence(outcome_id=outcomes[1].outcome_id)],
                     ),
                 ],
                 origin=ContinuityOrigin.PLAN,
@@ -624,16 +602,13 @@ def _phase_one(
                 step_id="record-route",
             )
             if any(
-                receipt.status is not ContinuityOperationStatus.ACCEPTED
-                for receipt in appended
+                receipt.status is not ContinuityOperationStatus.ACCEPTED for receipt in appended
             ):
                 raise RestartEvaluationError(  # mutation: reason
                     "fieldbook route append was refused"
                 )
             route_entry_ids = [
-                receipt.entry_id
-                for receipt in appended
-                if receipt.entry_id is not None
+                receipt.entry_id for receipt in appended if receipt.entry_id is not None
             ]
             fieldbook_receipts.extend(receipt.digest() for receipt in appended)
 
@@ -657,11 +632,7 @@ def _phase_one(
                         memory_id=commitment_id,
                         reason="The first attempt completed the delivery.",
                         disposition=MemoryResolutionDisposition.COMPLETED,
-                        references=[
-                            ActionOutcomeEvidence(
-                                outcome_id=outcomes[0].outcome_id
-                            )
-                        ],
+                        references=[ActionOutcomeEvidence(outcome_id=outcomes[0].outcome_id)],
                     )
                 ],
                 origin=ContinuityOrigin.PLAN,
@@ -702,23 +673,16 @@ def _phase_one(
                 correction_observation,
                 context_id="pc-3",
             )
-            manifests.append(
-                correction_context.manifest.model_dump(mode="json")
-            )
+            manifests.append(correction_context.manifest.model_dump(mode="json"))
             corrected = authority.apply(
                 [
                     KeepMemoryOperation(
                         kind=MemoryKind.EPISODE,
                         content=(
-                            "The first delivery attempt was a no-op; "
-                            "the commitment remains open."
+                            "The first delivery attempt was a no-op; the commitment remains open."
                         ),
                         salience=0.7,
-                        references=[
-                            ActionOutcomeEvidence(
-                                outcome_id=outcomes[0].outcome_id
-                            )
-                        ],
+                        references=[ActionOutcomeEvidence(outcome_id=outcomes[0].outcome_id)],
                     )
                 ],
                 origin=ContinuityOrigin.PLAN,
@@ -733,9 +697,7 @@ def _phase_one(
                 ContinuityOperationStatus.ACCEPTED,
             )
             continuity_receipts.append(corrected)
-            if rejected.receipt_id not in (
-                correction_context.manifest.continuity_receipt_ids
-            ):
+            if rejected.receipt_id not in (correction_context.manifest.continuity_receipt_ids):
                 raise RestartEvaluationError(  # mutation: reason
                     "rejection feedback did not reach the corrected context"
                 )
@@ -745,8 +707,7 @@ def _phase_one(
                 "memory_id": corrected.memory_id,
                 "cites_receipt_id": rejected.receipt_id,
                 "repeated_rejected_operation": (
-                    corrected.operation.operation
-                    == rejected.operation.operation
+                    corrected.operation.operation == rejected.operation.operation
                 ),
             }
 
@@ -757,9 +718,7 @@ def _phase_one(
                     "accepted commitment had no runtime identity"  # pragma: no mutate - diagnostic
                 )
             commitment_record = store.get(commitment_id)
-        if commitment_record is not None and (
-            commitment_record.status is not MemoryStatus.ACTIVE
-        ):
+        if commitment_record is not None and (commitment_record.status is not MemoryStatus.ACTIVE):
             raise RestartEvaluationError(  # mutation: reason
                 "the commitment did not remain active before restart"
             )
@@ -769,15 +728,12 @@ def _phase_one(
             "treatment": treatment.value,
             "campaign_id": campaign_id,
             "run_id": run_id,
-            "action_outcomes": [
-                outcome.model_dump(mode="json") for outcome in outcomes
-            ],
+            "action_outcomes": [outcome.model_dump(mode="json") for outcome in outcomes],
             "plans": plans,
             "manifests": manifests,
             "observations": observations,
             "continuity_receipts": [
-                receipt.model_dump(mode="json")
-                for receipt in continuity_receipts
+                receipt.model_dump(mode="json") for receipt in continuity_receipts
             ],
             "canonical_state": _canonical_state(store),
             "commitment": (
@@ -988,12 +944,8 @@ async def _replay_evidence(
         "actions_executed": actions_executed,
         "current_telemetry_location": telemetry.game.location_name,
         "restart_memory_ids": restart_manifest.memory_ids,
-        "restart_fieldbook_project_ids": (
-            restart_manifest.fieldbook_project_ids
-        ),
-        "restart_fieldbook_read_receipt_ids": (
-            restart_manifest.fieldbook_read_receipt_ids
-        ),
+        "restart_fieldbook_project_ids": (restart_manifest.fieldbook_project_ids),
+        "restart_fieldbook_read_receipt_ids": (restart_manifest.fieldbook_read_receipt_ids),
         "delivery_outcome_ids": delivery_manifest.action_outcome_ids,
     }
 
@@ -1005,11 +957,7 @@ def _phase_two(
     campaign_id: str,
 ) -> dict[str, object]:
     run_id = f"{treatment.value}-phase-two"
-    store = (
-        _open_store(database_path, campaign_id)
-        if _memory_enabled(treatment)
-        else None
-    )
+    store = _open_store(database_path, campaign_id) if _memory_enabled(treatment) else None
     logger = _DiscardLogger()
     ledger = _evaluation_ledger(run_id)
     authority = _authority(
@@ -1020,9 +968,7 @@ def _phase_two(
     )
     manifests: list[dict[str, object]] = []
     try:
-        commitment = (
-            _single_active_commitment(store) if store is not None else None
-        )
+        commitment = _single_active_commitment(store) if store is not None else None
         recalled: list[MemoryRecord] = []
         recall_tiers: dict[str, str] = {}
         recall_omitted = {
@@ -1035,13 +981,9 @@ def _phase_two(
             tiered_recall = _restart_recall(store)
             recalled = tiered_recall.records
             recall_tiers = {
-                memory_id: tier.value
-                for memory_id, tier in tiered_recall.tiers.items()
+                memory_id: tier.value for memory_id, tier in tiered_recall.tiers.items()
             }
-            recall_omitted = {
-                tier.value: count
-                for tier, count in tiered_recall.omitted.items()
-            }
+            recall_omitted = {tier.value: count for tier, count in tiered_recall.omitted.items()}
         all_projects = [] if store is None else store.fieldbook.all_projects()
         project_index = _project_index(store, limit=1)
         restart_observation = _observation(
@@ -1067,13 +1009,10 @@ def _phase_two(
             "old_entity_id": OLD_ENTITY_ID,
             "new_entity_id": NEW_ENTITY_ID,
             "shared_name": ENTITY_NAME,
-            "old_target_memory_id": (
-                None if old_target is None else old_target.memory_id
-            ),
+            "old_target_memory_id": (None if old_target is None else old_target.memory_id),
             "old_target_memory_recalled": (
                 old_target is not None
-                and old_target.memory_id
-                in restart_context.manifest.memory_ids
+                and old_target.memory_id in restart_context.manifest.memory_ids
             ),
         }
 
@@ -1139,9 +1078,7 @@ def _phase_two(
                 [
                     KeepMemoryOperation(
                         kind=MemoryKind.FACT,
-                        content=(
-                            f"The current route location is {CURRENT_LOCATION}."
-                        ),
+                        content=(f"The current route location is {CURRENT_LOCATION}."),
                         salience=0.9,
                         references=[CurrentObservationEvidence()],
                     )
@@ -1264,11 +1201,7 @@ def _phase_two(
                         memory_id=commitment.memory_id,
                         reason="All six cargo units crossed the transfer boundary.",
                         disposition=MemoryResolutionDisposition.COMPLETED,
-                        references=[
-                            ActionOutcomeEvidence(
-                                outcome_id=delivery_outcome.outcome_id
-                            )
-                        ],
+                        references=[ActionOutcomeEvidence(outcome_id=delivery_outcome.outcome_id)],
                     )
                 ],
                 origin=ContinuityOrigin.PLAN,
@@ -1283,24 +1216,18 @@ def _phase_two(
                 ContinuityOperationStatus.ACCEPTED,
             )
             continuity_receipts.append(resolved)
-            if _receipt_authority(resolved) != (
-                EvidenceAuthority.VERIFIED_WORLD_EFFECT.value
-            ):
+            if _receipt_authority(resolved) != (EvidenceAuthority.VERIFIED_WORLD_EFFECT.value):
                 raise RestartEvaluationError(  # mutation: reason
                     "verified transfer did not resolve as a world effect"
                 )
             resolution_payload = {
                 "status": resolved.status.value,
                 "memory_status": (
-                    None
-                    if resolved.memory_status is None
-                    else resolved.memory_status.value
+                    None if resolved.memory_status is None else resolved.memory_status.value
                 ),
                 "cited_outcome_id": delivery_outcome.outcome_id,
                 "evidence_authority": _receipt_authority(resolved),
-                "commitment_was_active_before_delivery": (
-                    current.status is MemoryStatus.ACTIVE
-                ),
+                "commitment_was_active_before_delivery": (current.status is MemoryStatus.ACTIVE),
                 "receipt_id": resolved.receipt_id,
             }
 
@@ -1341,19 +1268,14 @@ def _phase_two(
                 delivery_observation.model_dump(mode="json"),
             ],
             "continuity_receipts": [
-                receipt.model_dump(mode="json")
-                for receipt in continuity_receipts
+                receipt.model_dump(mode="json") for receipt in continuity_receipts
             ],
             "canonical_state": _canonical_state(store),
             "restart_context": {
                 "manifest": restart_context.manifest.model_dump(mode="json"),
-                "commitment_status": (
-                    "absent" if commitment is None else commitment.status.value
-                ),
+                "commitment_status": ("absent" if commitment is None else commitment.status.value),
                 "fieldbook_index_count": len(project_index),
-                "fieldbook_index_truncated": (
-                    len(all_projects) > len(project_index)
-                ),
+                "fieldbook_index_truncated": (len(all_projects) > len(project_index)),
                 "recall_tiers": recall_tiers,
                 "recall_omitted": recall_omitted,
             },
@@ -1363,18 +1285,10 @@ def _phase_two(
             "delivery": {
                 "outcome_id": delivery_outcome.outcome_id,
                 "transfer_status": transfer_evidence.status.value,
-                "source_quantity_before": (
-                    transfer_evidence.source_quantity_before
-                ),
-                "source_quantity_after": (
-                    transfer_evidence.source_quantity_after
-                ),
-                "destination_quantity_before": (
-                    transfer_evidence.destination_quantity_before
-                ),
-                "destination_quantity_after": (
-                    transfer_evidence.destination_quantity_after
-                ),
+                "source_quantity_before": (transfer_evidence.source_quantity_before),
+                "source_quantity_after": (transfer_evidence.source_quantity_after),
+                "destination_quantity_before": (transfer_evidence.destination_quantity_before),
+                "destination_quantity_after": (transfer_evidence.destination_quantity_after),
                 "controller_verified": delivery_outcome.controller_verified,
                 "manifest": delivery_context.manifest.model_dump(mode="json"),
                 "action": transfer_action.model_dump(  # pragma: no mutate
@@ -1391,9 +1305,7 @@ def _phase_two(
                 "fieldbook_project_ids": other_project_ids,
             },
             "replay_log_name": replay_path.name,
-            "planner_payload_characters": len(
-                read_observation.planner_payload()
-            ),
+            "planner_payload_characters": len(render_planner_payload(read_observation)),
             "replay": replay,
         }
     finally:
@@ -1474,13 +1386,9 @@ def _invoke_worker(
         )
     result = _read_json(output_path)
     if result.get("phase") != phase:
-        raise RestartEvaluationError(
-            f"{treatment.value} worker returned the wrong phase"
-        )
+        raise RestartEvaluationError(f"{treatment.value} worker returned the wrong phase")
     if result.get("treatment") != treatment.value:
-        raise RestartEvaluationError(
-            f"{treatment.value} worker returned the wrong treatment"
-        )
+        raise RestartEvaluationError(f"{treatment.value} worker returned the wrong treatment")
     return result
 
 
@@ -1574,10 +1482,7 @@ def _metrics(
             and bool(operation.get("references"))
         ):
             reference_receipts.append(receipt)
-    rejection_count = sum(
-        receipt.get("status") == "rejected"
-        for receipt in reference_receipts
-    )
+    rejection_count = sum(receipt.get("status") == "rejected" for receipt in reference_receipts)
     correction_count = int(
         corrected.get("status") == "accepted"
         and corrected.get("operation") == "keep"
@@ -1592,22 +1497,16 @@ def _metrics(
     return {
         "repeated_no_ops": 0,
         "resumed_commitments": resumed,
-        "stale_memory_corrections": int(
-            correction.get("status") == "accepted"
-        ),
+        "stale_memory_corrections": int(correction.get("status") == "accepted"),
         "unsupported_success_claims": 0,
         "cross_campaign_leaks": cross_campaign_leaks,
         "evidence_reference_rejections": rejection_count,
         "evidence_reference_rejection_rate": (
-            0.0
-            if operation_attempts == 0
-            else rejection_count / operation_attempts
+            0.0 if operation_attempts == 0 else rejection_count / operation_attempts
         ),
         "correction_after_rejection": correction_count,
         "fieldbook_reads": fieldbook_reads,
-        "planner_payload_characters": phase_two[
-            "planner_payload_characters"
-        ],
+        "planner_payload_characters": phase_two["planner_payload_characters"],
         "exact_delivered_memory_counts": _manifest_memory_counts(phase_two),
         "restart_continuity": resumed == 1,
         "eventual_delivery_status": delivery["transfer_status"],
@@ -1689,9 +1588,7 @@ def run_restart_evaluation(
         "treatments": treatments,
         "comparison": {
             "semantic_retrieval": "not_available_in_this_build",
-            "required_treatments": [
-                treatment.value for treatment in RestartTreatment
-            ],
+            "required_treatments": [treatment.value for treatment in RestartTreatment],
         },
         "claims": [
             "This is synthetic portable evidence.",
@@ -1709,9 +1606,7 @@ def run_restart_evaluation(
 # acceptance-tested through parsed argv, including both failure branches.
 # pragma: no mutate start
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="python -m kenshi_agent.evals.restart_continuity"
-    )
+    parser = argparse.ArgumentParser(prog="python -m kenshi_agent.evals.restart_continuity")
     parser.add_argument(
         "--output",
         type=Path,

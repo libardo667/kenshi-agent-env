@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from ..models import ActionReceipt
+from ..core.transport import ActionReceipt
 from .base import InputController, PrimitiveInputAction, WindowRect
 
 

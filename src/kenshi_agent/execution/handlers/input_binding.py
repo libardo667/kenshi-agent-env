@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import TypeVar
 
+from ...core.observation import Observation
+from ...core.operation import Action
 from ...input_boundary import ExecutionToken
-from ...models import Action, Observation
 from ...operation_definitions import require_bound
 
 BindingT = TypeVar("BindingT")

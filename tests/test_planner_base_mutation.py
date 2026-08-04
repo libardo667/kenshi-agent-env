@@ -6,20 +6,22 @@ from types import SimpleNamespace
 import pytest
 
 import kenshi_agent.planners.base as planner_base
-from kenshi_agent.models import (
-    CharacterState,
+from kenshi_agent.core.continuity import (
     ContinuityOperationStatus,
     ContinuityOrigin,
     ContinuityReceiptDigest,
     MemoryKind,
     MemoryRecord,
     MemoryStatus,
-    Observation,
-    PlannerContextManifest,
-    PlanningMode,
-    TelemetrySnapshot,
-    WorldStateRevision,
 )
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import PlanningMode
+from kenshi_agent.core.planner_context import PlannerContextManifest
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    TelemetrySnapshot,
+)
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.planners.base import planner_context_manifest, prepared_budgeted_input
 
 _NOW = datetime(2026, 7, 28, 8, 0, tzinfo=UTC)

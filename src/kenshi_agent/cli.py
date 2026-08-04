@@ -23,7 +23,16 @@ from .campaign import (
 )
 from .config import AppConfig, load_config
 from .control import Win32InputController
-from .env import AgentEnvironment, LiveEnvironment, MockEnvironment, ReplayEnvironment
+from .core.continuity import MemoryCompactionCandidate
+from .core.operation import (
+    ControlMode,
+    PlanningMode,
+)
+from .core.telemetry import ScenarioIdentity
+from .env.base import AgentEnvironment
+from .env.live import LiveEnvironment
+from .env.mock import MockEnvironment
+from .env.replay import ReplayEnvironment
 from .evals import evaluate_log
 from .fieldbook import render_fieldbook_markdown
 from .final_safe_state import FinalSafeStateOutcome, FinalSafeStateStatus
@@ -36,12 +45,6 @@ from .memory import (
 from .memory_compaction import (
     MemoryCompactionError,
     build_lossless_compaction_candidate,
-)
-from .models import (
-    ControlMode,
-    MemoryCompactionCandidate,
-    PlanningMode,
-    ScenarioIdentity,
 )
 from .overlay import show_overlay
 from .planners import (

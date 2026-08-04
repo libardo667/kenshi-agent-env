@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from kenshi_agent.models import (
+from kenshi_agent.core.telemetry import (
     GameState,
     NormalizedPointerBounds,
     TelemetrySnapshot,

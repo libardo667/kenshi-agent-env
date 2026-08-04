@@ -18,15 +18,17 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from .advisor import AdvisorSession, advisor_state_fingerprint, disabled_advisor_availability
-from .models import (
-    ActionReceipt,
+from .core.advisor import (
     AdvisorAvailability,
     AdvisorConsultEvidence,
     AdvisorConsultStatus,
+)
+from .core.observation import Observation
+from .core.operation import (
     ConsultAdvisorAction,
     ControlMode,
-    Observation,
 )
+from .core.transport import ActionReceipt
 from .planner_service import bounded_text
 from .reporting import ConsoleDecisionReporter
 from .session_log import SessionLogger

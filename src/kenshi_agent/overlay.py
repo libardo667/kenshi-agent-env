@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from .models import PlannerDecision
+from .core.planning import PlannerDecision
 from .reporting import format_action
 
 OverlayFeedOperation = Literal["append", "replace", "skip"]

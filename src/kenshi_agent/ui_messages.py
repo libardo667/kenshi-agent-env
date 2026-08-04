@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from .models import TelemetrySnapshot
+from .core.telemetry import TelemetrySnapshot
 
 MESSAGE_PANEL_WIDGET = "MessageTextBox"
 

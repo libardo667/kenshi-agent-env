@@ -13,13 +13,7 @@ from pydantic import ValidationError
 from kenshi_agent import cli
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import load_config
-from kenshi_agent.fieldbook import (
-    FieldbookNoOp,
-    FieldbookTransitionError,
-    render_fieldbook_markdown,
-)
-from kenshi_agent.memory import MemoryStore
-from kenshi_agent.models import (
+from kenshi_agent.core.continuity import (
     AppendFieldbookEntryOperation,
     CreateFieldbookProjectOperation,
     FieldbookEntryKind,
@@ -32,6 +26,12 @@ from kenshi_agent.models import (
     SetFieldbookProjectStatusOperation,
     UpdateFieldbookSummaryOperation,
 )
+from kenshi_agent.fieldbook import (
+    FieldbookNoOp,
+    FieldbookTransitionError,
+    render_fieldbook_markdown,
+)
+from kenshi_agent.memory import MemoryStore
 from kenshi_agent.runtime_continuity import build_fieldbook_read_receipt
 
 

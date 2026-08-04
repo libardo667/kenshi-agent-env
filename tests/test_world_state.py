@@ -6,29 +6,40 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.models import (
-    Action,
+from kenshi_agent.condition_evaluation import evaluate_condition
+from kenshi_agent.core.continuity import (
+    FieldbookProjectIndex,
+    FieldbookProjectKind,
+    FieldbookProjectStatus,
+)
+from kenshi_agent.core.evidence import (
     ActionOutcome,
     ActionOutcomeAssessment,
-    ActionReceipt,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    Action,
+    StopAction,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionResult,
+)
+from kenshi_agent.core.telemetry import (
     Disposition,
-    FieldbookProjectIndex,
-    FieldbookProjectKind,
-    FieldbookProjectStatus,
     GameState,
     NearbyEntity,
-    Observation,
-    StopAction,
     TelemetrySnapshot,
-    Transition,
-    WorldStateRevision,
 )
-from kenshi_agent.planning import PlanningClock, evaluate_condition
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
+from kenshi_agent.planning import PlanningClock
 from kenshi_agent.world_state import (
     CommandCausalityError,
     ObservationPump,
@@ -186,9 +197,7 @@ def test_planner_context_decoration_preserves_fieldbook_authority() -> None:
         selected=True,
     )
 
-    decorated = store.decorate_latest(
-        first.model_copy(update={"fieldbook_projects": [project]})
-    )
+    decorated = store.decorate_latest(first.model_copy(update={"fieldbook_projects": [project]}))
 
     assert decorated.fieldbook_projects == [project]
     assert store.latest is not None

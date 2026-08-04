@@ -7,7 +7,9 @@ from collections import Counter
 
 from PIL import Image, ImageStat
 
-from .models import CameraFrameScore, Observation, normalize_control_label
+from .core.evidence import CameraFrameScore
+from .core.observation import Observation
+from .core.telemetry import normalize_control_label
 
 WORLD_ROI = (0.12, 0.05, 0.90, 0.72)
 SCORE_SIZE = (160, 90)

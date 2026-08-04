@@ -13,12 +13,14 @@ from pydantic import BaseModel
 
 from ..affordances import offered_affordances, selection_for
 from ..config import PlannerConfig, PlanningConfig
+from ..core.observation import Observation
+from ..core.planning import PlannerOutput
 from ..hosted_continuation import (
     CONTINUE_STRUCTURED_JSON_SUFFIX,
     TRUNCATED_FINISH_REASONS,
     assistant_continuation,
 )
-from ..models import Observation, PlannerOutput
+from ..planner_context import render_planner_payload
 from .base import (
     HostedPlannerCallDiagnostics,
     HostedPlannerResponseError,
@@ -271,10 +273,11 @@ class OpenRouterPlanner(Planner):
             ),
         )
         if envelope.compaction_target_tokens is None:
-            payload = observation.planner_payload()
+            payload = render_planner_payload(observation)
         else:
             assert envelope.hard_observation_tokens is not None
-            payload = observation.planner_payload(
+            payload = render_planner_payload(
+                observation,
                 max_chars=envelope.compaction_target_tokens,
                 max_context_chars=envelope.hard_observation_tokens,
                 measure=conservative_text_token_estimate,

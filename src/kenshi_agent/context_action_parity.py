@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import cast
 
 from .context_action_vocabulary import load_task_types
-from .models import TelemetrySnapshot
+from .core.telemetry import TelemetrySnapshot
 
 ROOT = Path(__file__).resolve().parents[2]
 WITNESSES_PATH = ROOT / "game_sources" / "kenshi" / "context_menu_witnesses.json"

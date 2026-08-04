@@ -19,8 +19,10 @@ from dataclasses import dataclass, field
 from pydantic import JsonValue
 
 from .affordances import OperationBindingAuthority, OperationBindingError
-from .authorization import AuthorizationCode
-from .models import Observation, PointerActionClass, WorldStateRevision
+from .core.authority import AuthorizationCode
+from .core.observation import Observation
+from .core.operation import PointerActionClass
+from .core.world import WorldStateRevision
 from .operation_definitions import BoundOperation
 from .safety import OperationPolicy, SafetyViolation
 

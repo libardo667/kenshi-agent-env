@@ -23,40 +23,42 @@ from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import Any, Protocol
 
-from .memory import MemoryStore, MemoryTransitionError
-from .models import (
-    ActionOutcome,
-    ActionOutcomeAssessment,
-    ActionOutcomeDigest,
-    ActionOutcomeEvidence,
-    AuthoredPlannerContext,
+from .core.continuity import (
     CanonicalMemoryProvenance,
     ContinuityOperation,
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
     ContinuityOrigin,
-    CurrentObservationEvidence,
     EvidenceAuthority,
-    EvidenceReference,
     KeepMemoryOperation,
-    MemoryEvidence,
     MemoryKind,
     MemoryRecord,
     MemoryResolutionDisposition,
     MemorySearchResult,
     MemoryStatus,
-    Observation,
-    PlanDisposition,
-    PlanOutcome,
-    PlanOutcomeDigest,
-    PlanOutcomeEvidence,
     ReinforceMemoryOperation,
     ResolvedEvidenceSnapshot,
     ResolveMemoryOperation,
     SupersedeMemoryOperation,
-    WorldStateRevision,
     new_continuity_receipt_id,
 )
+from .core.evidence import (
+    ActionOutcome,
+    ActionOutcomeAssessment,
+    ActionOutcomeDigest,
+    ActionOutcomeEvidence,
+    CurrentObservationEvidence,
+    EvidenceReference,
+    MemoryEvidence,
+    PlanDisposition,
+    PlanOutcome,
+    PlanOutcomeDigest,
+    PlanOutcomeEvidence,
+)
+from .core.observation import Observation
+from .core.planner_context import AuthoredPlannerContext
+from .core.world import WorldStateRevision
+from .memory import MemoryStore, MemoryTransitionError
 
 # A fact or an episode reports something that happened; it must point at what
 # proved it. A commitment is an intention and a hypothesis is an uncertainty:

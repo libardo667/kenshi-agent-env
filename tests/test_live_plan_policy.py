@@ -7,37 +7,41 @@ chain work" test and still have failed this milestone.
 
 from __future__ import annotations
 
-from kenshi_agent.live_plan_policy import (
-    live_plan_policy_errors,
-    live_plan_rebase_errors,
-)
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
     ActivateVisibleControlAction,
     ApproachDialogueTargetAction,
     ClickAction,
+    ControlMode,
+    GameBinding,
+    IdempotencyPolicy,
+    SkillAction,
+    UseGameBindingAction,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionPath,
     ConditionResult,
-    ControlMode,
-    Disposition,
-    GameBinding,
-    GameState,
-    IdempotencyPolicy,
-    NearbyEntity,
-    NormalizedPointerBounds,
-    Observation,
     PlanEnvelope,
     PlanStep,
     RiskBudget,
-    SkillAction,
+)
+from kenshi_agent.core.telemetry import (
+    Disposition,
+    GameState,
+    NearbyEntity,
+    NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
-    UseGameBindingAction,
     VisibleUIControl,
-    WorldStateRevision,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.live_plan_policy import (
+    live_plan_policy_errors,
+    live_plan_rebase_errors,
 )
 
 VENDOR_ID = "entity-barman"
@@ -216,9 +220,7 @@ class TestGenericComposition:
                 ),
                 step(
                     "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.", role="button"
-                    ),
+                    ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
                     success=[screen_is("trade")],
                 ),
             ],
@@ -331,9 +333,7 @@ class TestGenericPolicyRejections:
             [
                 step(
                     "activate",
-                    ActivateVisibleControlAction(
-                        exact_label="Show me your goods.", role="button"
-                    ),
+                    ActivateVisibleControlAction(exact_label="Show me your goods.", role="button"),
                     success=[screen_is("trade")],
                 )
             ],
@@ -473,7 +473,7 @@ class TestRunControlActions:
     """A plan may include run control; it binds to nothing and ends the plan."""
 
     def test_a_plan_ending_in_stop_is_accepted(self) -> None:
-        from kenshi_agent.models import StopAction
+        from kenshi_agent.core.operation import StopAction
 
         composed = plan(
             [
@@ -493,7 +493,8 @@ class TestRunControlActions:
         assert live_plan_policy_errors(composed) == []
 
     def test_noncausal_authored_terminal_is_rejected_even_for_stop(self) -> None:
-        from kenshi_agent.models import ConditionPath, StopAction
+        from kenshi_agent.core.operation import StopAction
+        from kenshi_agent.core.planning import ConditionPath
 
         control_mode_only = Condition(
             kind=ConditionKind.FIELD,
@@ -511,7 +512,7 @@ class TestRunControlActions:
         assert any("none witness a causal world change" in error for error in errors)
 
     def test_run_control_steps_do_not_block_a_rebase(self) -> None:
-        from kenshi_agent.models import StopAction
+        from kenshi_agent.core.operation import StopAction
 
         composed = plan(
             [
@@ -529,9 +530,7 @@ class TestRunControlActions:
             pointer=0,
         )
         planner_view = observation(controls=TRADE_CONTROLS)
-        assert live_plan_rebase_errors(
-            composed, planner_view, later(planner_view)
-        ) == []
+        assert live_plan_rebase_errors(composed, planner_view, later(planner_view)) == []
 
 
 class TestDismissScreen:
@@ -551,13 +550,13 @@ class TestDismissScreen:
         )
 
     def test_dismissing_the_open_screen_is_accepted(self) -> None:
-        from kenshi_agent.models import DismissScreenAction
+        from kenshi_agent.core.operation import DismissScreenAction
 
         composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
         assert live_plan_policy_errors(composed) == []
 
     def test_dismissing_a_screen_that_is_not_open_is_left_to_authority(self) -> None:
-        from kenshi_agent.models import DismissScreenAction
+        from kenshi_agent.core.operation import DismissScreenAction
 
         composed = self._plan_with(DismissScreenAction(expected_screen="trade"))
         assert live_plan_policy_errors(composed) == []
@@ -575,7 +574,7 @@ class TestCapabilityAliases:
     """The generic capability name must work against a legacy-named plug-in."""
 
     def test_either_approach_capability_name_satisfies_the_other(self) -> None:
-        from kenshi_agent.planning import capability_satisfied
+        from kenshi_agent.condition_evaluation import capability_satisfied
 
         legacy_only = {"control.approach_vendor"}
         generic_only = {"control.approach_dialogue_target"}
@@ -584,14 +583,14 @@ class TestCapabilityAliases:
         assert not capability_satisfied("control.approach_vendor", set())
 
     def test_an_unrelated_capability_is_not_aliased(self) -> None:
-        from kenshi_agent.planning import capability_satisfied
+        from kenshi_agent.condition_evaluation import capability_satisfied
 
         assert not capability_satisfied("ui.tooltip", {"control.approach_vendor"})
 
     def test_a_plan_requiring_the_generic_name_runs_on_a_legacy_plugin(self) -> None:
         """The exact failure that stopped run p8-longform-05."""
 
-        from kenshi_agent.planning import evaluate_condition
+        from kenshi_agent.condition_evaluation import evaluate_condition
 
         generic = Condition(
             kind=ConditionKind.TELEMETRY_FRESH,
@@ -616,7 +615,7 @@ class TestFutureStepsMayReferenceFutureState:
     """
 
     def _approach_then_reply(self) -> PlanEnvelope:
-        from kenshi_agent.models import ActivateVisibleControlAction
+        from kenshi_agent.core.operation import ActivateVisibleControlAction
 
         return plan(
             [
@@ -653,9 +652,7 @@ class TestFutureStepsMayReferenceFutureState:
             },
             deep=True,
         )
-        assert live_plan_rebase_errors(
-            self._approach_then_reply(), in_world, later(in_world)
-        ) == []
+        assert live_plan_rebase_errors(self._approach_then_reply(), in_world, later(in_world)) == []
 
     def test_entry_step_binding_is_also_left_to_operation_authority(self) -> None:
 
@@ -670,7 +667,7 @@ class TestIdempotencyClaims:
     """Plan policy judges the step's retry declaration, not operation policy."""
 
     def _plan_with(self, idem: IdempotencyPolicy, retries: int = 0) -> PlanEnvelope:
-        from kenshi_agent.models import ScrollScreenAction
+        from kenshi_agent.core.operation import ScrollScreenAction
 
         return plan(
             [
@@ -714,7 +711,8 @@ class TestDerivedRiskBudget:
     """The plan's steps are its declaration of what it will spend."""
 
     def _buying_plan(self, declared: int) -> PlanEnvelope:
-        from kenshi_agent.models import PurchaseItemAction, RiskBudget
+        from kenshi_agent.core.operation import PurchaseItemAction
+        from kenshi_agent.core.planning import RiskBudget
 
         composed = plan(
             [
@@ -768,12 +766,12 @@ class TestDerivedRiskBudget:
 
 def test_capability_presence_can_never_count_as_causal_effect_proof() -> None:
     """A capability says a fact is observable, not that the intended effect occurred."""
-    from kenshi_agent.live_plan_policy import _is_causal_condition
-    from kenshi_agent.models import (
+    from kenshi_agent.core.planning import (
         Condition,
         ConditionKind,
         ConditionOperator,
     )
+    from kenshi_agent.live_plan_policy import _is_causal_condition
 
     condition = Condition(
         kind=ConditionKind.FIELD,

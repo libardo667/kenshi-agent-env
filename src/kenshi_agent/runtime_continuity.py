@@ -13,8 +13,7 @@ from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from .memory import RecallBudget, TieredRecall
-from .models import (
+from .core.continuity import (
     ContinuityOperationReceipt,
     ContinuityReceiptDigest,
     FieldbookReadReceipt,
@@ -28,6 +27,7 @@ from .models import (
     new_fieldbook_read_receipt_id,
     new_memory_read_receipt_id,
 )
+from .memory import RecallBudget, TieredRecall
 
 
 class ContinuityStore(Protocol):

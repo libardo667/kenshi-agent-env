@@ -11,26 +11,32 @@ from typing import Literal, Protocol, TypeAlias, cast
 
 from ... import operation_definitions as operations
 from ...affordances import OPERATION_BINDING_AUTHORITY
-from ...input_boundary import ExecutionToken
-from ...models import (
-    Action,
-    ActionReceipt,
-    ClickAction,
-    CommandDispatchContext,
-    MouseButton,
-    MoveCursorAction,
-    Observation,
+from ...core.evidence import (
     PurchaseEvidence,
-    PurchaseItemAction,
     PurchaseStatus,
     SaleEvidence,
     SaleStatus,
-    SellItemAction,
     SemanticActionReceipt,
+)
+from ...core.observation import Observation
+from ...core.operation import (
+    Action,
+    ClickAction,
+    MouseButton,
+    MoveCursorAction,
+    PurchaseItemAction,
+    SellItemAction,
+)
+from ...core.telemetry import (
     TelemetrySnapshot,
-    Transition,
     normalize_control_label,
 )
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ...telemetry import TelemetryReadError
 from ...ui_messages import causally_new_game_message, game_message_panel_texts

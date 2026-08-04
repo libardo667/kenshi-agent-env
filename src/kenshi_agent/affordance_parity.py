@@ -14,6 +14,10 @@ from enum import StrEnum
 from hashlib import sha256
 from pathlib import Path
 
+from .affordances import AFFORDANCE_ADAPTERS
+from .core.operation import GameBinding
+from .core.planning import GAME_BINDING_TERMINALS, UNWITNESSED_BINDINGS
+
 CONTROLS_SNAPSHOT = (
     Path(__file__).resolve().parents[2] / "game_sources" / "kenshi" / "controls.cfg"
 )
@@ -86,23 +90,15 @@ class BindingDecision:
 
 
 def _witnessed_names() -> frozenset[str]:
-    from .models import GAME_BINDING_TERMINALS
-
     return frozenset(binding.value for binding in GAME_BINDING_TERMINALS)
 
 
 def _unwitnessed_reasons() -> dict[str, str]:
-    from .models import UNWITNESSED_BINDINGS
-
     return {binding.value: reason for binding, reason in UNWITNESSED_BINDINGS.items()}
 
 
 def _binding_or_none(name: str) -> object | None:
-    """The enum member for a binding name, or None when Kenshi names one we do
-    not model. Imported locally because `models` imports this module's siblings.
-    """
-
-    from .models import GameBinding
+    """The enum member for a binding name, or None when Kenshi names no model."""
 
     try:
         return GameBinding(name)
@@ -132,9 +128,6 @@ class BindingParityReport:
 
     def decision_errors(self) -> tuple[str, ...]:
         """Invalid claims, including a wired route absent from real code."""
-
-        from .affordances import AFFORDANCE_ADAPTERS
-        from .models import GameBinding
 
         errors: list[str] = []
         adapter_names = {adapter.name for adapter in AFFORDANCE_ADAPTERS}

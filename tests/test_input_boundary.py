@@ -25,33 +25,36 @@ from test_live_env import (
     movement_registry,
 )
 
-from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import (
     CaptureConfig,
     ControlsConfig,
     RuntimeConfig,
     SafetyConfig,
 )
-from kenshi_agent.env.live import LiveEnvironment
-from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.models import (
+from kenshi_agent.core.authority import AuthorizationCode, InputBoundaryDecision
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     ActivateVisibleControlAction,
-    CharacterState,
-    CommandDispatchContext,
+    ControlMode,
+    PointerActionClass,
+    SkillAction,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionPath,
     ConditionResult,
-    ControlMode,
-    InputBoundaryDecision,
-    InputBoundaryReport,
-    Observation,
     PlannerDecision,
-    PointerActionClass,
-    SkillAction,
-    WorldStateRevision,
 )
+from kenshi_agent.core.telemetry import CharacterState
+from kenshi_agent.core.transport import (
+    CommandDispatchContext,
+    InputBoundaryReport,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.live import LiveEnvironment
+from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.operation_authority import AuthorizationDecision
 from kenshi_agent.operation_definitions import definition_for
 from kenshi_agent.planners.base import Planner
@@ -127,7 +130,11 @@ def observation(
     telemetry_stale: bool = False,
     telemetry_age_seconds: float | None = 0.0,
 ) -> Observation:
-    from kenshi_agent.models import GameState, TelemetrySnapshot, UIState
+    from kenshi_agent.core.telemetry import (
+        GameState,
+        TelemetrySnapshot,
+        UIState,
+    )
 
     return Observation(
         run_id="boundary-test",

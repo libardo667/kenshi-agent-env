@@ -9,6 +9,28 @@ import pytest
 from kenshi_agent import live_dev
 from kenshi_agent.config import ControlsConfig, load_config
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
+from kenshi_agent.core.operation import (
+    ClickAction,
+    HotkeyAction,
+    KeyAction,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    Disposition,
+    GameState,
+    KnownMapDestination,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
+    NativeControlState,
+    NearbyEntity,
+    NormalizedPointerBounds,
+    TelemetrySnapshot,
+    UIState,
+    Vec3,
+    VisibleUIControl,
+    WorldTarget,
+)
+from kenshi_agent.core.transport import ActionReceipt
 from kenshi_agent.dev_cli import export_reference, parse_args, render_reference
 from kenshi_agent.live_dev import (
     MYGUI_CLICK_HOLD_SECONDS,
@@ -31,26 +53,6 @@ from kenshi_agent.live_dev import (
     _validate_resumable_launcher_rect,
     _validate_safe_close_snapshot,
     _wait_until,
-)
-from kenshi_agent.models import (
-    ActionReceipt,
-    CharacterState,
-    ClickAction,
-    Disposition,
-    GameState,
-    HotkeyAction,
-    KeyAction,
-    KnownMapDestination,
-    NativeCommandAcknowledgement,
-    NativeCommandStatus,
-    NativeControlState,
-    NearbyEntity,
-    NormalizedPointerBounds,
-    TelemetrySnapshot,
-    UIState,
-    Vec3,
-    VisibleUIControl,
-    WorldTarget,
 )
 from kenshi_agent.telemetry import TelemetryRead
 

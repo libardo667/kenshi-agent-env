@@ -7,10 +7,7 @@ from datetime import UTC, datetime
 
 import pytest
 
-from kenshi_agent.memory import RecallBudget, TieredRecall
-from kenshi_agent.models import (
-    ActionOutcomeAssessment,
-    ActionOutcomeDigest,
+from kenshi_agent.core.continuity import (
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
     ContinuityOrigin,
@@ -20,11 +17,16 @@ from kenshi_agent.models import (
     MemoryRecord,
     MemorySearchResult,
     MemoryStatus,
+    RecallTier,
+)
+from kenshi_agent.core.evidence import (
+    ActionOutcomeAssessment,
+    ActionOutcomeDigest,
     PlanDisposition,
     PlanOutcomeDigest,
-    RecallTier,
-    WorldStateRevision,
 )
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.memory import RecallBudget, TieredRecall
 from kenshi_agent.runtime_continuity import (
     StoreBoundaryFailure,
     build_memory_read_receipt,

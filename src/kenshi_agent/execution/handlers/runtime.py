@@ -8,19 +8,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Protocol, cast
 
-from ...input_boundary import ExecutionToken
-from ...models import (
+from ...core.observation import Observation
+from ...core.operation import (
     Action,
-    ActionReceipt,
-    CommandDispatchContext,
     NoopAction,
-    Observation,
     PauseAction,
     SetSpeedAction,
     StopAction,
-    Transition,
     WaitAction,
 )
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
+    Transition,
+)
+from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundOperation
 from ..types import (
     ActiveOperation,

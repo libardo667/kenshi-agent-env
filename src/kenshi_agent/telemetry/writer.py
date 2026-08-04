@@ -4,7 +4,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from ..models import TelemetrySnapshot
+from ..core.telemetry import TelemetrySnapshot
 
 
 def write_snapshot_atomic(path: Path, snapshot: TelemetrySnapshot) -> None:

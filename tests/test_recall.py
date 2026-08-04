@@ -14,16 +14,18 @@ from pathlib import Path
 import pytest
 
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
-from kenshi_agent.memory import MemoryStore, RecallBudget
-from kenshi_agent.models import (
+from kenshi_agent.core.continuity import (
     MemoryKind,
     MemoryReadReceipt,
     MemoryReadStatus,
     MemoryRecord,
-    RecallMemoryAction,
     RecallTier,
+)
+from kenshi_agent.core.operation import (
+    RecallMemoryAction,
     is_runtime_control_action,
 )
+from kenshi_agent.memory import MemoryStore, RecallBudget
 
 
 def open_store(path: Path, campaign_id: str = "test") -> MemoryStore:
@@ -434,10 +436,10 @@ def test_an_open_commitment_survives_a_budget_that_drops_general_context() -> No
 
     from datetime import UTC, datetime
 
-    from kenshi_agent.models import (
-        MemoryStatus,
+    from kenshi_agent.core.continuity import MemoryStatus
+    from kenshi_agent.core.observation import Observation
+    from kenshi_agent.core.telemetry import (
         NearbyEntity,
-        Observation,
         TelemetrySnapshot,
     )
 

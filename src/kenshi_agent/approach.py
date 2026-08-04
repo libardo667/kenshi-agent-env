@@ -13,7 +13,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import Disposition, NearbyEntity, Observation
+from .core.observation import Observation
+from .core.telemetry import (
+    Disposition,
+    NearbyEntity,
+)
 
 
 @dataclass(frozen=True, slots=True)

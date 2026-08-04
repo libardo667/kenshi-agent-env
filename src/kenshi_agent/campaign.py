@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .config import MemoryConfig
-from .models import ScenarioIdentity
+from .core.telemetry import ScenarioIdentity
 
 CAMPAIGN_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9:._-]{0,79}$"
 LEGACY_CAMPAIGN_PREFIX = "legacy:"

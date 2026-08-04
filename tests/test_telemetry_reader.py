@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.models import TelemetrySnapshot
+from kenshi_agent.core.telemetry import TelemetrySnapshot
 from kenshi_agent.telemetry import TelemetryReader, TelemetryReadError, write_snapshot_atomic
 
 

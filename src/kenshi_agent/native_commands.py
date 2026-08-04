@@ -5,7 +5,7 @@ import tempfile
 from pathlib import Path
 from typing import Literal
 
-from .models import NativeCommandRequest
+from .core.transport import NativeCommandRequest
 
 NATIVE_APPROACH_WIRE_COMMAND: Literal["approach_confirmed_vendor"] = (
     "approach_confirmed_vendor"

@@ -10,7 +10,7 @@ import hashlib
 import json
 from collections.abc import Sequence
 
-from .models import (
+from .core.continuity import (
     CompactionMethod,
     MemoryCompactionCandidate,
     MemoryCompactionGenerator,
@@ -64,30 +64,6 @@ def source_fingerprint(record: MemoryRecord) -> str:
     ).hexdigest()
 
 
-def validate_compaction_source_identity(
-    source_memory_ids: list[str],
-    source_fingerprints: dict[str, str],
-) -> None:
-    """Reject a candidate whose bounded source identity is not exact."""
-
-    if source_memory_ids != sorted(set(source_memory_ids)):
-        raise ValueError(  # mutation: reason
-            "compaction source_memory_ids must be unique and sorted"  # mutation: reason
-        )
-    if set(source_fingerprints) != set(source_memory_ids):
-        raise ValueError(  # mutation: reason
-            "compaction fingerprints must exactly match source IDs"  # mutation: reason
-        )
-    if any(
-        len(fingerprint) != 64
-        or any(character not in "0123456789abcdef" for character in fingerprint)
-        for fingerprint in source_fingerprints.values()
-    ):
-        raise ValueError(  # mutation: reason
-            "compaction fingerprints must be lowercase SHA-256"  # mutation: reason
-        )
-
-
 def _validated_sources(records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
     if not _MIN_SOURCES <= len(records) <= _MAX_SOURCES:
         raise MemoryCompactionError(  # mutation: reason
@@ -131,9 +107,7 @@ def _validated_sources(records: Sequence[MemoryRecord]) -> list[MemoryRecord]:
 
 
 def _lossless_content(records: Sequence[MemoryRecord]) -> str:
-    content = _CONTENT_PREFIX + _unicode_json_array(
-        [record.content for record in records]
-    )
+    content = _CONTENT_PREFIX + _unicode_json_array([record.content for record in records])
     if len(content) > 2000:
         raise MemoryCompactionError(  # mutation: reason
             "The verbatim compaction candidate exceeds 2000 characters."  # mutation: reason
@@ -154,9 +128,7 @@ def build_lossless_compaction_candidate(
         # the group invariants and complete candidate payload are both tested.
         campaign_id=ordered[0].campaign_id,  # pragma: no mutate
         source_memory_ids=[record.memory_id for record in ordered],
-        source_fingerprints={
-            record.memory_id: source_fingerprint(record) for record in ordered
-        },
+        source_fingerprints={record.memory_id: source_fingerprint(record) for record in ordered},
         kind=ordered[0].kind,  # pragma: no mutate
         content=_lossless_content(ordered),
         salience=max(record.salience for record in ordered),
@@ -190,9 +162,7 @@ def validate_lossless_compaction_candidate(
         raise MemoryCompactionError(  # mutation: reason
             "Compaction candidate source IDs do not match current sources."  # mutation: reason
         )
-    current_fingerprints = {
-        record.memory_id: source_fingerprint(record) for record in ordered
-    }
+    current_fingerprints = {record.memory_id: source_fingerprint(record) for record in ordered}
     if candidate.source_fingerprints != current_fingerprints:
         raise MemoryCompactionError(  # mutation: reason
             "A compaction source changed after the candidate was generated."  # mutation: reason

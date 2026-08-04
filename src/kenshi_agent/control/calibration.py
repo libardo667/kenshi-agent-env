@@ -5,12 +5,12 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..models import (
+from ..core.operation import PointerActionClass
+from ..core.telemetry import Vec2
+from ..core.transport import (
     CalibrationIdentity,
     CalibrationReport,
     CalibrationStatus,
-    PointerActionClass,
-    Vec2,
 )
 
 # Fields compared as floats need a tolerance; the rest compare exactly.

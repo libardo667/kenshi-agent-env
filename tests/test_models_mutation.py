@@ -9,39 +9,50 @@ from typing import Any
 
 import pytest
 
-from kenshi_agent.models import (
-    AdvisorAvailability,
-    CharacterState,
-    ClickAction,
-    Condition,
-    ConditionKind,
-    ContextActionKind,
+from kenshi_agent.core.advisor import AdvisorAvailability
+from kenshi_agent.core.continuity import (
     ContinuityOperationReceipt,
     ContinuityOperationStatus,
     ContinuityOrigin,
-    ControlMode,
-    Disposition,
-    GameState,
     KeepMemoryOperation,
-    KnownMapDestination,
     MemoryKind,
     MemoryStatus,
-    NearbyEntity,
-    NormalizedPointerBounds,
-    Observation,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ClickAction,
+    ControlMode,
     PerformContextAction,
     PlanningMode,
+    is_semantic_action,
+)
+from kenshi_agent.core.planning import (
+    Condition,
+    ConditionKind,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    Disposition,
+    GameState,
+    KnownMapDestination,
+    NearbyEntity,
+    NormalizedPointerBounds,
     TelemetrySnapshot,
     UIState,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
     _nearest_first,
     budgeted_visible_controls,
     group_controls_by_window,
-    is_semantic_action,
     normalize_control_label,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.planner_context import (
+    planner_affordance_digest,
+    planner_nutrition_digest,
+    render_planner_payload,
 )
 
 NOW = datetime(2026, 7, 28, 1, 2, 3, tzinfo=UTC)
@@ -304,7 +315,7 @@ def test_continuity_store_health_is_bounded_and_planner_visible(field: str) -> N
     )
 
     assert getattr(observation, field) == reason
-    assert json.loads(observation.planner_payload(max_chars=100_000))[field] == reason
+    assert json.loads(render_planner_payload(observation, max_chars=100_000))[field] == reason
 
     with pytest.raises(ValueError):
         Observation(
@@ -399,10 +410,7 @@ def _expected_role_balanced_controls(
     if limit <= 0:
         return []
     roles = list(dict.fromkeys(control.role for control in controls))
-    buckets = {
-        role: [control for control in controls if control.role == role]
-        for role in roles
-    }
+    buckets = {role: [control for control in controls if control.role == role] for role in roles}
     selected: list[VisibleUIControl] = []
     for round_index in range(len(controls)):
         for role in roles:
@@ -626,9 +634,7 @@ def test_context_target_digest_is_sorted_attemptable_and_bounded() -> None:
             kind="machine",
             position=Vec3(x=float(index), y=0.0, z=0.0),
             distance=float(20 - index),
-            context_actions=(
-                [ContextActionKind.OPERATE] if index != 10 else []
-            ),
+            context_actions=([ContextActionKind.OPERATE] if index != 10 else []),
             default_task="operate",
             mining_resource_level=float(index) / 20,
         )
@@ -636,11 +642,7 @@ def test_context_target_digest_is_sorted_attemptable_and_bounded() -> None:
     ]
 
     expected_targets = sorted(
-        (
-            target
-            for target in observation.telemetry.world_targets
-            if target.context_actions
-        ),
+        (target for target in observation.telemetry.world_targets if target.context_actions),
         key=lambda target: (target.distance, target.name, target.id),
     )[:16]
     assert observation.context_target_digest() == [
@@ -710,9 +712,7 @@ def test_visible_control_digest_keeps_unnamed_item_cells_distinct() -> None:
         _control("cell", "item", window="Stock"),
     ]
 
-    assert [
-        entry["ambiguous"] for entry in observation.visible_control_digest()
-    ] == [True, True]
+    assert [entry["ambiguous"] for entry in observation.visible_control_digest()] == [True, True]
 
 
 def test_affordance_digest_is_plain_json_without_runtime_mechanics() -> None:
@@ -720,7 +720,7 @@ def test_affordance_digest_is_plain_json_without_runtime_mechanics() -> None:
         update={"telemetry_stale": False, "telemetry_age_seconds": 0.1}
     )
 
-    digest = observation.affordance_digest()
+    digest = planner_affordance_digest(observation)
     assert digest
     assert json.loads(json.dumps(digest)) == digest
     assert all("operation_kind" not in entry for entry in digest)
@@ -751,10 +751,7 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "digest",
         "telemetry",
     }
-    assert {
-        key: digest[key]
-        for key in set(digest) - {"telemetry"}
-    } == {
+    assert {key: digest[key] for key in set(digest) - {"telemetry"}} == {
         "run_id": "rich-run",
         "step_index": 17,
         "mode": "live",
@@ -787,8 +784,7 @@ def test_log_digest_conserves_the_complete_bounded_logging_contract() -> None:
         "selected",
     }
     assert {
-        key: telemetry_digest[key]
-        for key in set(telemetry_digest) - {"game", "ui", "selected"}
+        key: telemetry_digest[key] for key in set(telemetry_digest) - {"game", "ui", "selected"}
     } == {
         "sequence": 20,
         "source": "rich-fixture",
@@ -890,13 +886,15 @@ def test_log_digest_marks_absent_telemetry_without_inventing_nested_state() -> N
 def test_planner_payload_default_and_rendering_are_exact_public_contracts() -> None:
     observation = _rich_observation(item_control_count=1)
     observation.objective = "See café inventory."
-    assert observation.planner_payload() == observation.planner_payload(
-        max_chars=100_000
+    assert render_planner_payload(
+        observation,
+    ) == render_planner_payload(observation, max_chars=100_000)
+    payload_text = render_planner_payload(
+        observation,
     )
-    payload_text = observation.planner_payload()
     payload = json.loads(payload_text)
 
-    assert payload["affordances"] == observation.affordance_digest()
+    assert payload["affordances"] == planner_affordance_digest(observation)
     for superseded in (
         "semantic_actions",
         "dialogue_targets",
@@ -917,11 +915,9 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
     observation = _rich_observation(item_control_count=0)
     assert observation.telemetry is not None
     empty = observation.model_copy(
-        update={
-            "telemetry": observation.telemetry.model_copy(update={"squad": []})
-        }
+        update={"telemetry": observation.telemetry.model_copy(update={"squad": []})}
     )
-    assert empty.squad_nutrition_digest() == {}
+    assert planner_nutrition_digest(empty) == {}
     observation.telemetry = observation.telemetry.model_copy(
         update={
             "squad": [
@@ -1011,7 +1007,11 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
         ],
     }
 
-    full_payload = json.loads(observation.planner_payload())
+    full_payload = json.loads(
+        render_planner_payload(
+            observation,
+        )
+    )
     assert full_payload["squad_nutrition"] == expected
     model_facing_squad = full_payload["telemetry"]["squad"]
     assert [member["nutrition_reserve"] for member in model_facing_squad] == [
@@ -1025,15 +1025,18 @@ def test_planner_payload_interprets_nutrition_reserve_for_the_whole_squad() -> N
         None,
     ]
     assert all("hunger" not in member for member in model_facing_squad)
-    assert json.loads(
-        observation.planner_payload(max_chars=1, max_context_chars=1_000_000)
-    )["squad_nutrition"] == expected
+    assert (
+        json.loads(render_planner_payload(observation, max_chars=1, max_context_chars=1_000_000))[
+            "squad_nutrition"
+        ]
+        == expected
+    )
 
 
 def test_planner_payload_passes_compaction_target_and_hard_envelope(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from kenshi_agent import models as models_module
+    from kenshi_agent import planner_context as planner_context_module
 
     observation = _rich_observation(item_control_count=4)
     passed_budgets: list[tuple[int, int | None]] = []
@@ -1055,16 +1058,18 @@ def test_planner_payload_passes_compaction_target_and_hard_envelope(
         return "{}"
 
     monkeypatch.setattr(
-        models_module,
+        planner_context_module,
         "budget_observation_payload",
         capture_budget,
     )
 
-    observation.planner_payload(
+    render_planner_payload(
+        observation,
         max_chars=8_000,
         max_context_chars=1_000_000,
     )
-    observation.planner_payload(
+    render_planner_payload(
+        observation,
         max_chars=12_000,
         max_context_chars=900_000,
     )
@@ -1077,18 +1082,20 @@ def test_planner_payload_fails_closed_below_the_complete_affordance_ceiling() ->
     from kenshi_agent.observation_budget import PlannerPayloadContextError
 
     with pytest.raises(PlannerPayloadContextError):
-        observation.planner_payload(max_chars=1, max_context_chars=1)
+        render_planner_payload(observation, max_chars=1, max_context_chars=1)
 
     exact = json.loads(
-        observation.planner_payload(
+        render_planner_payload(
+            observation,
             max_chars=100_000,
             max_context_chars=100_000,
         )
     )
-    assert exact["affordances"] == observation.affordance_digest()
+    assert exact["affordances"] == planner_affordance_digest(observation)
 
     with pytest.raises(PlannerPayloadContextError):
-        observation.planner_payload(
+        render_planner_payload(
+            observation,
             max_chars=1_000,
             max_context_chars=1_000,
         )

@@ -4,36 +4,41 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from kenshi_agent.models import (
-    CharacterState,
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     ClickAction,
+    ControlMode,
+    NoopAction,
+    PerformContextAction,
+    PlanningMode,
+    ScrollAction,
+    SkillAction,
+    SkillSpec,
+    parse_action,
+)
+from kenshi_agent.core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
+    PlannerDecision,
+    PlanStep,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
     ContextActionKind,
-    ControlMode,
     Disposition,
     GameState,
     KnownMapDestination,
     NearbyEntity,
-    NoopAction,
     NormalizedPointerBounds,
-    Observation,
-    PerformContextAction,
-    PlannerDecision,
-    PlanningMode,
-    PlanStep,
-    ScrollAction,
-    SkillAction,
-    SkillSpec,
     TelemetrySnapshot,
     UIState,
     Vec3,
     VisibleUIControl,
-    WorldStateRevision,
     WorldTarget,
-    parse_action,
 )
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.planner_context import render_planner_payload
 from kenshi_agent.schema_export import export_schemas
 
 
@@ -414,7 +419,9 @@ def test_observation_planner_payload_omits_screenshot_path() -> None:
             )
         ],
     )
-    payload = observation.planner_payload()
+    payload = render_planner_payload(
+        observation,
+    )
     assert "secret-frame.png" not in payload
     document = json.loads(payload)
     assert document["run_id"] == "run"
@@ -463,15 +470,15 @@ def test_reviewed_world_target_is_an_exact_attemptable_affordance() -> None:
         ),
     )
 
-    payload = json.loads(observation.planner_payload())
+    payload = json.loads(
+        render_planner_payload(
+            observation,
+        )
+    )
 
-    assert payload["telemetry"]["world_targets"] == [
-        target.model_dump(mode="json")
-    ]
+    assert payload["telemetry"]["world_targets"] == [target.model_dump(mode="json")]
     context_offers = [
-        offer
-        for offer in payload["affordances"]
-        if offer["source"] == "context_order"
+        offer for offer in payload["affordances"] if offer["source"] == "context_order"
     ]
     assert len(context_offers) == 1
     assert context_offers[0]["semantic"] == "operate"

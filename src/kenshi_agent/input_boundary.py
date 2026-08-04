@@ -14,22 +14,26 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from .authorization import AuthorizationCode, InputBoundaryDecision
+from .condition_evaluation import evaluate_conditions
 from .control.calibration import calibration_allows_input
-from .models import (
-    CalibrationReport,
+from .core.authority import AuthorizationCode, InputBoundaryDecision
+from .core.observation import Observation
+from .core.operation import (
+    ControlMode,
+    PointerActionClass,
+)
+from .core.planning import (
     Condition,
     ConditionEvaluation,
     ConditionResult,
-    ControlMode,
-    InputBoundaryReport,
-    Observation,
-    PointerActionClass,
-    WorldStateRevision,
 )
+from .core.transport import (
+    CalibrationReport,
+    InputBoundaryReport,
+)
+from .core.world import WorldStateRevision
 from .operation_authority import AuthorizationDecision
 from .operation_definitions import BoundOperation
-from .planning import evaluate_conditions
 from .terminal_state import TERMINAL_WINDOW_EVENT_PREFIX
 
 _MAX_REPORTED_EVALUATIONS = 24
@@ -247,8 +251,7 @@ class ExecutionToken(_ExecutionTokenState):
                 violation = decision.details.get("violation", decision.code.value)
                 return self._reject(
                     decision.code,
-                    "The operation is no longer authorized "
-                    f"at the input boundary: {violation}",
+                    f"The operation is no longer authorized at the input boundary: {violation}",
                     lease_wait_seconds=lease_wait_seconds,
                     boundary_revision=boundary_revision,
                 )

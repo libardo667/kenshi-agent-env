@@ -6,9 +6,10 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
-from .authorization import AuthorizationCode
 from .config import SafetyConfig
-from .models import Observation, SkillAction
+from .core.authority import AuthorizationCode
+from .core.observation import Observation
+from .core.operation import SkillAction
 from .operation_definitions import BoundOperation
 from .skills import MacroRegistry
 

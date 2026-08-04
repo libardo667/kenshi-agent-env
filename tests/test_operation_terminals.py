@@ -1,23 +1,25 @@
 from __future__ import annotations
 
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     ActivateVisibleControlAction,
-    ConditionOperator,
     ControlMode,
     DismissScreenAction,
     GameBinding,
-    GameState,
-    Observation,
     PauseAction,
     PurchaseItemAction,
     SellItemAction,
     SetSpeedAction,
-    TelemetrySnapshot,
-    UIState,
     UseGameBindingAction,
     WaitAction,
-    WorldStateRevision,
 )
+from kenshi_agent.core.planning import ConditionOperator
+from kenshi_agent.core.telemetry import (
+    GameState,
+    TelemetrySnapshot,
+    UIState,
+)
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     ACTIVATE_VISIBLE_CONTROL_DEFINITION,
     DISMISS_SCREEN_DEFINITION,

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from .models import TelemetrySnapshot
+from .core.telemetry import TelemetrySnapshot
 
 
 class FactState(StrEnum):

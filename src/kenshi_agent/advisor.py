@@ -22,6 +22,21 @@ import yaml
 from pydantic import Field, ValidationError, model_validator
 
 from .config import AdvisorConfig
+from .core.advisor import (
+    AdvisorAttribution,
+    AdvisorAvailability,
+    AdvisorBrief,
+    AdvisorConsultEvidence,
+    AdvisorConsultStatus,
+    AdvisorRecommendation,
+)
+from .core.base import StrictModel
+from .core.evidence import ActionOutcome
+from .core.observation import Observation
+from .core.operation import (
+    AdvisorFocus,
+    ConsultAdvisorAction,
+)
 from .hosted_continuation import (
     CONTINUE_STRUCTURED_JSON_SUFFIX,
     TRUNCATED_FINISH_REASONS,
@@ -29,20 +44,8 @@ from .hosted_continuation import (
     message_field,
     structured_json_was_truncated,
 )
-from .models import (
-    ActionOutcome,
-    AdvisorAttribution,
-    AdvisorAvailability,
-    AdvisorBrief,
-    AdvisorConsultEvidence,
-    AdvisorConsultStatus,
-    AdvisorFocus,
-    AdvisorRecommendation,
-    ConsultAdvisorAction,
-    Observation,
-    StrictModel,
-)
 from .nutrition import model_facing_telemetry_payload
+from .planner_context import planner_nutrition_digest
 from .planners.schema_dialect import portable_response_format
 
 
@@ -105,9 +108,7 @@ class GuideCorpus(StrictModel):
 
     def prompt_payload(self, focus: AdvisorFocus) -> dict[str, Any]:
         focused = [
-            fact
-            for fact in self.facts
-            if focus.value in fact.tags or "general" in fact.tags
+            fact for fact in self.facts if focus.value in fact.tags or "general" in fact.tags
         ]
         facts = focused or self.facts
         cited = {source_id for fact in facts for source_id in fact.source_ids}
@@ -397,9 +398,7 @@ class AdvisorSession:
                     summary=draft.summary,
                     recommendations=draft.recommendations,
                     uncertainties=draft.uncertainties,
-                    sources=[
-                        sources[source_id].attribution() for source_id in source_ids
-                    ],
+                    sources=[sources[source_id].attribution() for source_id in source_ids],
                     corpus_version=self.corpus.corpus_version,
                     provider=self.client.provider,
                     model=self.client.model,
@@ -536,7 +535,7 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
         "step_index": observation.step_index,
         "world_revision": observation.world_revision.model_dump(mode="json"),
         "telemetry": model_facing_telemetry_payload(digest.get("telemetry")),
-        "squad_nutrition": observation.squad_nutrition_digest(),
+        "squad_nutrition": planner_nutrition_digest(observation),
         "telemetry_semantics": {
             "selected.nutrition_reserve": (
                 "The current reserve on the squad_nutrition scale. Use that "
@@ -556,8 +555,7 @@ def advisor_world_payload(observation: Observation) -> dict[str, Any]:
         "travel_destinations": observation.travel_destination_digest(),
         "known_map_destinations": observation.known_map_destination_digest(),
         "recent_action_outcomes": [
-            outcome.model_dump(mode="json")
-            for outcome in observation.recent_action_outcomes[-12:]
+            outcome.model_dump(mode="json") for outcome in observation.recent_action_outcomes[-12:]
         ],
         "memories": [
             {

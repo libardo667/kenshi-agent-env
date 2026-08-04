@@ -32,36 +32,43 @@ from .control_ownership import (
     ControlOwnershipMachine,
     ControlOwnershipState,
 )
-from .env import AgentEnvironment
+from .core.affordance import (
+    AffordanceExecution,
+    AffordanceLifecycleStatus,
+)
+from .core.continuity import MemoryRetrievalPolicy
+from .core.evidence import PlanDisposition
+from .core.observation import Observation
+from .core.operation import (
+    ControlMode,
+    IdempotencyPolicy,
+    PauseAction,
+    PlanningMode,
+    StopAction,
+)
+from .core.planner_context import AuthoredPlannerContext
+from .core.planning import (
+    Condition,
+    ConditionKind,
+    ConditionOperator,
+    PlanEnvelope,
+    PlannerDecision,
+    PlanPatch,
+    PlanStep,
+    RiskBudget,
+)
+from .core.telemetry import ScenarioIdentity
+from .core.transport import (
+    CommandDispatchContext,
+    Transition,
+)
+from .core.world import WorldStateRevision
+from .env.base import AgentEnvironment
 from .final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
 )
-from .models import (
-    AffordanceExecution,
-    AffordanceLifecycleStatus,
-    AuthoredPlannerContext,
-    CommandDispatchContext,
-    Condition,
-    ConditionKind,
-    ConditionOperator,
-    ControlMode,
-    IdempotencyPolicy,
-    MemoryRetrievalPolicy,
-    Observation,
-    PauseAction,
-    PlanDisposition,
-    PlanEnvelope,
-    PlannerDecision,
-    PlanningMode,
-    PlanPatch,
-    PlanStep,
-    RiskBudget,
-    ScenarioIdentity,
-    StopAction,
-    Transition,
-    WorldStateRevision,
-)
+from .live_plan_policy import live_plan_rebase_errors, with_covering_risk_budget
 from .operation_execution import OperationExecutionFactory
 from .outcome_recorder import OutcomeRecorder
 from .plan_events import PlanEventRecorder
@@ -674,8 +681,6 @@ class RunCoordinator:
                 if observation.mode == "live" and not plan.based_on_revision.same_snapshot_as(
                     observation.world_revision
                 ):
-                    from .live_plan_policy import live_plan_rebase_errors
-
                     rebase_errors = live_plan_rebase_errors(
                         plan,
                         planner_observation,
@@ -749,10 +754,6 @@ class RunCoordinator:
                 # derive the budget from them rather than rejecting a plan for
                 # failing to also state a number we compute anyway. Raised only,
                 # so a planner asking for more headroom keeps it.
-                from .live_plan_policy import (
-                    with_covering_risk_budget,
-                )
-
                 plan = with_covering_risk_budget(plan)
                 try:
                     assumption_evidence = validate_plan(

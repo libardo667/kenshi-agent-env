@@ -9,17 +9,21 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from .config import PlanningConfig
-from .execution.monitor_types import MonitoredOperation, MonitorScope, StagedPatch
-from .models import (
-    ActivePlanContext,
-    AuthoredPlannerContext,
-    AuthoredPlannerOutput,
+from .core.continuity import (
     ContinuityOperation,
     FieldbookOperation,
-    Observation,
+)
+from .core.observation import Observation
+from .core.planner_context import (
+    AuthoredPlannerContext,
+    AuthoredPlannerOutput,
+)
+from .core.planning import (
+    ActivePlanContext,
     PlanEnvelope,
     PlanPatch,
 )
+from .execution.monitor_types import MonitoredOperation, MonitorScope, StagedPatch
 from .plan_events import PlanEventReporter
 from .planning import (
     PlanBudgetLedger,

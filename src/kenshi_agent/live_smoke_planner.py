@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from .models import (
+from .core.observation import Observation
+from .core.operation import (
+    IdempotencyPolicy,
+    InterruptPolicy,
+    PauseAction,
+    StopAction,
+)
+from .core.planning import (
     Condition,
     ConditionKind,
     ConditionOperator,
     ConditionPath,
-    IdempotencyPolicy,
-    InterruptPolicy,
-    Observation,
-    PauseAction,
     PlanPatch,
     PlanStep,
-    StopAction,
 )
 
 

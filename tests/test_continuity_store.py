@@ -23,12 +23,7 @@ from kenshi_agent.campaign import (
     resolve_campaign_scope,
 )
 from kenshi_agent.config import MemoryConfig
-from kenshi_agent.memory import (
-    SCHEMA_VERSION,
-    MemoryStore,
-    MemoryTransitionError,
-)
-from kenshi_agent.models import (
+from kenshi_agent.core.continuity import (
     CanonicalMemoryProvenance,
     ContinuityOrigin,
     KeepMemoryOperation,
@@ -40,9 +35,14 @@ from kenshi_agent.models import (
     ReinforceMemoryOperation,
     ResolveMemoryOperation,
     RetractMemoryOperation,
-    ScenarioIdentity,
     SupersedeMemoryOperation,
-    WorldStateRevision,
+)
+from kenshi_agent.core.telemetry import ScenarioIdentity
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.memory import (
+    SCHEMA_VERSION,
+    MemoryStore,
+    MemoryTransitionError,
 )
 
 

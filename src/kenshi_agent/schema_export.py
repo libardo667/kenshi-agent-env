@@ -4,16 +4,18 @@ import json
 from pathlib import Path
 
 from .affordances import AffordanceSelection
-from .models import (
-    ACTION_ADAPTER,
-    ActionReceipt,
-    AffordanceReceipt,
-    NativeCommandRequest,
-    Observation,
+from .core.affordance import AffordanceReceipt
+from .core.observation import Observation
+from .core.operation import ACTION_ADAPTER
+from .core.planning import (
     PlanEnvelope,
     PlannerDecision,
     PlanPatch,
-    TelemetrySnapshot,
+)
+from .core.telemetry import TelemetrySnapshot
+from .core.transport import (
+    ActionReceipt,
+    NativeCommandRequest,
 )
 from .planners.plan_proposal import DecisionProposal, PlanProposal
 

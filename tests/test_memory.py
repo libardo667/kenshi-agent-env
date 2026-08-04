@@ -10,19 +10,23 @@ from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.continuity import ContinuityLedger
 from kenshi_agent.continuity_service import ContinuityService
-from kenshi_agent.evals import evaluate_log
-from kenshi_agent.memory import MemoryStore, RecallBudget, _partition_target_ids
-from kenshi_agent.models import (
-    ActionReceipt,
-    ApproachDialogueTargetAction,
-    ControlMode,
+from kenshi_agent.core.continuity import (
     MemoryKind,
     MemoryRecord,
-    NearbyEntity,
-    Observation,
+)
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ApproachDialogueTargetAction,
+    ControlMode,
     StopAction,
+)
+from kenshi_agent.core.telemetry import (
+    NearbyEntity,
     TelemetrySnapshot,
 )
+from kenshi_agent.core.transport import ActionReceipt
+from kenshi_agent.evals import evaluate_log
+from kenshi_agent.memory import MemoryStore, RecallBudget, _partition_target_ids
 from kenshi_agent.planner_context import PlannerContextAssembler
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.session_log import SessionLogger

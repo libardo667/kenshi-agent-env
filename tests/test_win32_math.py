@@ -15,7 +15,7 @@ from kenshi_agent.control.win32 import (
     select_unique_window,
     wheel_delta_data,
 )
-from kenshi_agent.models import CoordinateSpace
+from kenshi_agent.core.operation import CoordinateSpace
 
 
 class FakeModernUser32:

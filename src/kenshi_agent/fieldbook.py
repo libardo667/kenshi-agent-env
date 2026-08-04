@@ -14,7 +14,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
-from .models import (
+from .core.continuity import (
     ActiveFieldbookProject,
     CanonicalFieldbookProvenance,
     FieldbookEntry,

@@ -17,35 +17,40 @@ from kenshi_agent.affordance_parity import (
     BindingStatus,
     audit_binding_parity,
 )
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     GAME_BINDING_KEYS,
     GAME_BINDING_MOUSE_BUTTONS,
-    GAME_BINDING_TERMINALS,
     MANAGEMENT_TAB_CLOSED,
     MANAGEMENT_TAB_INDICES,
     TOGGLE_GAME_BINDINGS,
-    UNWITNESSED_BINDINGS,
-    CharacterState,
-    ConditionOperator,
-    FieldConditionPath,
     GameBinding,
     GameScreen,
-    GameState,
     HotkeyAction,
-    Observation,
     OpenScreenAction,
-    TelemetrySnapshot,
-    UIState,
     UseGameBindingAction,
-    WorldStateRevision,
+)
+from kenshi_agent.core.planning import (
+    GAME_BINDING_TERMINALS,
+    UNWITNESSED_BINDINGS,
+    ConditionOperator,
+    FieldConditionPath,
     game_binding_success_condition,
 )
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    GameState,
+    TelemetrySnapshot,
+    UIState,
+)
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.operation_definitions import (
     OPEN_SCREEN_DEFINITION,
     PURCHASE_ITEM_DEFINITION,
     USE_GAME_BINDING_DEFINITION,
     TerminalOwner,
 )
+from kenshi_agent.planner_context import render_planner_payload
 
 
 def observation(*, loaded: bool = True, stale: bool = False) -> Observation:
@@ -77,9 +82,7 @@ def test_every_binding_maps_to_exactly_one_input() -> None:
     """A binding must resolve to one physical input, never zero or two."""
 
     for binding in GameBinding:
-        assert (binding in GAME_BINDING_KEYS) != (
-            binding in GAME_BINDING_MOUSE_BUTTONS
-        ), binding
+        assert (binding in GAME_BINDING_KEYS) != (binding in GAME_BINDING_MOUSE_BUTTONS), binding
 
 
 @pytest.mark.parametrize(
@@ -155,7 +158,10 @@ def test_squad_group_binding_selects_one_exact_group(
     expected_virtual_key: int,
 ) -> None:
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import KeyAction, game_binding_primitive
+    from kenshi_agent.core.operation import (
+        KeyAction,
+        game_binding_primitive,
+    )
 
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding_name] == BindingDecision(
@@ -173,7 +179,7 @@ def test_squad_group_binding_selects_one_exact_group(
 
 def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
     binding = GameBinding.EDITOR_TOGGLE
-    from kenshi_agent.models import game_binding_primitive
+    from kenshi_agent.core.operation import game_binding_primitive
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
@@ -190,7 +196,7 @@ def test_editor_toggle_is_reachable_through_a_semantic_hotkey_binding() -> None:
 def test_highlight_is_reachable_through_a_held_fifth_mouse_button() -> None:
     binding = GameBinding.HIGHLIGHT
     from kenshi_agent.control.win32 import mouse_button_input_spec
-    from kenshi_agent.models import (
+    from kenshi_agent.core.operation import (
         MouseButton,
         MouseButtonAction,
         game_binding_primitive,
@@ -215,7 +221,10 @@ def test_highlight_is_reachable_through_a_held_fifth_mouse_button() -> None:
 def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
     binding = GameBinding.MEDIC
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import KeyAction, game_binding_primitive
+    from kenshi_agent.core.operation import (
+        KeyAction,
+        game_binding_primitive,
+    )
 
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
         status=BindingStatus.WIRED,
@@ -233,7 +242,10 @@ def test_medic_is_reachable_through_a_semantic_toggle_binding() -> None:
 
 def test_rescue_is_reachable_through_a_semantic_toggle_binding() -> None:
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import KeyAction, game_binding_primitive
+    from kenshi_agent.core.operation import (
+        KeyAction,
+        game_binding_primitive,
+    )
 
     binding = GameBinding("rescue")
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
@@ -264,7 +276,10 @@ def test_preferred_combat_stance_binding_is_reachable(
     expected_virtual_key: int,
 ) -> None:
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import KeyAction, game_binding_primitive
+    from kenshi_agent.core.operation import (
+        KeyAction,
+        game_binding_primitive,
+    )
 
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
@@ -302,7 +317,7 @@ def test_world_data_binding_is_reachable_as_an_exact_hotkey(
         expected_effect=f"apply the exact {binding_name} world-data control",
     )
     assert USE_GAME_BINDING_DEFINITION.bind(action, observation()).bound
-    from kenshi_agent.models import game_binding_primitive
+    from kenshi_agent.core.operation import game_binding_primitive
 
     assert game_binding_primitive(binding) == HotkeyAction(keys=expected_keys)
 
@@ -320,7 +335,10 @@ def test_mode_toggle_binding_is_reachable_without_invented_completion_state(
     expected_virtual_key: int,
 ) -> None:
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import KeyAction, game_binding_primitive
+    from kenshi_agent.core.operation import (
+        KeyAction,
+        game_binding_primitive,
+    )
 
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
@@ -356,7 +374,10 @@ def test_remaining_squad_stance_binding_is_reachable(
     expected_virtual_key: int,
 ) -> None:
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import KeyAction, game_binding_primitive
+    from kenshi_agent.core.operation import (
+        KeyAction,
+        game_binding_primitive,
+    )
 
     binding = GameBinding(binding_name)
     assert audit_binding_parity().decisions[binding.value] == BindingDecision(
@@ -378,14 +399,16 @@ def test_remaining_squad_stance_binding_is_reachable(
 
 
 def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> None:
+    from kenshi_agent.condition_evaluation import evaluate_condition
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import (
-        ConditionOperator,
-        ConditionPath,
+    from kenshi_agent.core.operation import (
         KeyAction,
         game_binding_primitive,
     )
-    from kenshi_agent.planning import evaluate_condition
+    from kenshi_agent.core.planning import (
+        ConditionOperator,
+        ConditionPath,
+    )
 
     binding = GameBinding.QUICKLOAD
     state = observation()
@@ -437,16 +460,19 @@ def test_quickload_is_reachable_and_completes_on_a_new_identity_session() -> Non
             "telemetry": after_telemetry,
         }
     )
-    assert evaluate_condition(
-        session_changed,
-        after,
-        after_revision=state.world_revision,
-    ).result.value == "true"
+    assert (
+        evaluate_condition(
+            session_changed,
+            after,
+            after_revision=state.world_revision,
+        ).result.value
+        == "true"
+    )
 
 
 def test_quicksave_is_reachable_only_with_controller_owned_completion() -> None:
     from kenshi_agent.control.win32 import Win32InputController
-    from kenshi_agent.models import (
+    from kenshi_agent.core.operation import (
         QUICKSAVE_COMPLETION_CAPABILITY,
         KeyAction,
         game_binding_primitive,
@@ -500,7 +526,10 @@ def test_quicksave_is_reachable_only_with_controller_owned_completion() -> None:
 
 
 def test_saved_quicksave_evidence_requires_an_observed_nonempty_file() -> None:
-    from kenshi_agent.models import QuicksaveEvidence, QuicksaveStatus
+    from kenshi_agent.core.evidence import (
+        QuicksaveEvidence,
+        QuicksaveStatus,
+    )
 
     with pytest.raises(
         ValueError,
@@ -516,11 +545,13 @@ def test_saved_quicksave_evidence_requires_an_observed_nonempty_file() -> None:
 
 
 def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> None:
-    from kenshi_agent.models import (
+    from kenshi_agent.core.operation import (
         CommandWorldTargetAction,
+        PointerActionClass,
+    )
+    from kenshi_agent.core.telemetry import (
         ContextActionKind,
         NormalizedPointerBounds,
-        PointerActionClass,
         Vec2,
         Vec3,
         WorldTarget,
@@ -585,7 +616,7 @@ def test_mouse_command_binds_one_current_world_target_at_observed_geometry() -> 
 
 
 def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
-    from kenshi_agent.models import (
+    from kenshi_agent.core.operation import (
         CameraRotationDirection,
         MouseButton,
         MouseDragAction,
@@ -624,19 +655,21 @@ def test_mouse_rotate_is_reachable_through_a_bounded_semantic_drag() -> None:
         delta_y=0,
         steps=8,
     )
-    assert ROTATE_CAMERA_DEFINITION.pointer_class is (
-        PointerActionClass.COORDINATE_INDEPENDENT
-    )
+    assert ROTATE_CAMERA_DEFINITION.pointer_class is (PointerActionClass.COORDINATE_INDEPENDENT)
 
 
 def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> None:
-    from kenshi_agent.models import (
-        CharacterState,
-        ConditionOperator,
-        ConditionPath,
-        NormalizedPointerBounds,
+    from kenshi_agent.core.operation import (
         PointerActionClass,
         SelectSquadMemberAction,
+    )
+    from kenshi_agent.core.planning import (
+        ConditionOperator,
+        ConditionPath,
+    )
+    from kenshi_agent.core.telemetry import (
+        CharacterState,
+        NormalizedPointerBounds,
         VisibleUIControl,
     )
     from kenshi_agent.operation_definitions import SELECT_SQUAD_MEMBER_DEFINITION
@@ -704,9 +737,7 @@ def test_mouse_select_binds_one_current_squad_member_at_observed_geometry() -> N
         min_y=0.84,
         max_y=0.95,
     )
-    assert SELECT_SQUAD_MEMBER_DEFINITION.pointer_class is (
-        PointerActionClass.SEMANTIC_CURRENT
-    )
+    assert SELECT_SQUAD_MEMBER_DEFINITION.pointer_class is (PointerActionClass.SEMANTIC_CURRENT)
 
     completion = SELECT_SQUAD_MEMBER_DEFINITION.resolve_terminal(action, state)
     assert completion.owner is TerminalOwner.RUNTIME_CONDITIONS
@@ -795,9 +826,7 @@ def test_screen_binding_routes_as_stateful_affordance_not_raw_toggle() -> None:
         }
     )
     closed_offer = next(
-        offer
-        for offer in offered_affordances(closed)
-        if offer.semantic == "open_map"
+        offer for offer in offered_affordances(closed) if offer.semantic == "open_map"
     )
     assert closed_offer.operation_kind == "open_screen"
     assert bind_affordance(selection_for(closed_offer), closed).operation.screen.value == "map"
@@ -818,9 +847,7 @@ def test_screen_binding_routes_as_stateful_affordance_not_raw_toggle() -> None:
     )
     opened = closed.model_copy(update={"telemetry": opened_telemetry})
     opened_offer = next(
-        offer
-        for offer in offered_affordances(opened)
-        if offer.semantic == "close_map"
+        offer for offer in offered_affordances(opened) if offer.semantic == "close_map"
     )
     opened_operation = bind_affordance(selection_for(opened_offer), opened).operation
     assert opened_operation.kind == "dismiss_screen"
@@ -928,7 +955,10 @@ def test_toggles_are_marked_and_non_toggles_are_not() -> None:
 
 
 def _control(role: str, index: int) -> object:
-    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+    from kenshi_agent.core.telemetry import (
+        NormalizedPointerBounds,
+        VisibleUIControl,
+    )
 
     return VisibleUIControl(
         label=f"{role}_{index}",
@@ -948,7 +978,7 @@ def test_the_control_budget_never_starves_a_role() -> None:
 
     from collections import Counter
 
-    from kenshi_agent.models import budgeted_visible_controls
+    from kenshi_agent.core.telemetry import budgeted_visible_controls
 
     controls = (
         [_control("button", i) for i in range(60)]
@@ -971,14 +1001,17 @@ def test_the_control_budget_never_starves_a_role() -> None:
 
 
 def test_a_short_control_list_is_returned_untouched() -> None:
-    from kenshi_agent.models import budgeted_visible_controls
+    from kenshi_agent.core.telemetry import budgeted_visible_controls
 
     controls = [_control("button", i) for i in range(5)]
     assert budgeted_visible_controls(controls, 120) == controls
 
 
 def _windowed(window: str, role: str, index: int, y: float) -> object:
-    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+    from kenshi_agent.core.telemetry import (
+        NormalizedPointerBounds,
+        VisibleUIControl,
+    )
 
     return VisibleUIControl(
         label=f"{window}_{role}_{index}",
@@ -1007,7 +1040,7 @@ def _observation_with(controls: list[object]) -> Observation:
 def test_a_scroll_binds_to_the_named_window_bounds() -> None:
     """Shop stock past the first screenful is not exported at all."""
 
-    from kenshi_agent.models import ScrollScreenAction
+    from kenshi_agent.core.operation import ScrollScreenAction
     from kenshi_agent.operation_definitions import SCROLL_SCREEN_DEFINITION
 
     controls = [
@@ -1028,7 +1061,7 @@ def test_a_scroll_binds_to_the_named_window_bounds() -> None:
 def test_a_scroll_refuses_a_window_that_is_not_open() -> None:
     """Otherwise the notches land on whatever is behind it."""
 
-    from kenshi_agent.models import ScrollScreenAction
+    from kenshi_agent.core.operation import ScrollScreenAction
     from kenshi_agent.operation_definitions import SCROLL_SCREEN_DEFINITION
 
     action = ScrollScreenAction(window="TRADER", notches=2)
@@ -1042,7 +1075,7 @@ def test_a_scroll_refuses_a_window_that_is_not_open() -> None:
 def test_a_scroll_must_actually_move() -> None:
     import pydantic
 
-    from kenshi_agent.models import ScrollScreenAction
+    from kenshi_agent.core.operation import ScrollScreenAction
 
     with pytest.raises(pydantic.ValidationError):
         ScrollScreenAction(window="BARMAN", notches=0)
@@ -1051,7 +1084,7 @@ def test_a_scroll_must_actually_move() -> None:
 def _trade_observation(*, selected_name: str = "HEP") -> Observation:
     """A trade screen: our inventory and the trader's, side by side."""
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.telemetry import (
         CharacterState,
         Disposition,
         NearbyEntity,
@@ -1115,7 +1148,7 @@ def _trade_observation(*, selected_name: str = "HEP") -> Observation:
 
 
 def test_selling_binds_to_our_own_inventory_cell() -> None:
-    from kenshi_agent.models import SellItemAction
+    from kenshi_agent.core.operation import SellItemAction
     from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
     action = SellItemAction(
@@ -1133,7 +1166,7 @@ def test_selling_binds_to_our_own_inventory_cell() -> None:
 def test_selling_refuses_a_cell_in_the_traders_window() -> None:
     """Cell ordinals run across both inventories; the window is the owner."""
 
-    from kenshi_agent.models import SellItemAction
+    from kenshi_agent.core.operation import SellItemAction
     from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
     action = SellItemAction(
@@ -1148,7 +1181,7 @@ def test_selling_refuses_a_cell_in_the_traders_window() -> None:
 
 
 def test_selling_refuses_when_the_cell_holds_something_else() -> None:
-    from kenshi_agent.models import SellItemAction
+    from kenshi_agent.core.operation import SellItemAction
     from kenshi_agent.operation_definitions import SELL_ITEM_DEFINITION
 
     action = SellItemAction(
@@ -1165,7 +1198,7 @@ def test_selling_refuses_when_the_cell_holds_something_else() -> None:
 def test_equipping_refuses_while_a_trade_is_open() -> None:
     """The same right-click sells instead, and the item is gone irreversibly."""
 
-    from kenshi_agent.models import EquipItemAction
+    from kenshi_agent.core.operation import EquipItemAction
     from kenshi_agent.operation_definitions import EQUIP_ITEM_DEFINITION
 
     base = _trade_observation()
@@ -1174,11 +1207,7 @@ def test_equipping_refuses_while_a_trade_is_open() -> None:
     trading = base.model_copy(
         update={
             "telemetry": telemetry.model_copy(
-                update={
-                    "ui": telemetry.ui.model_copy(
-                        update={"open_inventory_windows": 2}
-                    )
-                }
+                update={"ui": telemetry.ui.model_copy(update={"open_inventory_windows": 2})}
             )
         }
     )
@@ -1190,7 +1219,7 @@ def test_equipping_refuses_while_a_trade_is_open() -> None:
 
 
 def test_equipping_binds_with_no_trade_open() -> None:
-    from kenshi_agent.models import EquipItemAction
+    from kenshi_agent.core.operation import EquipItemAction
     from kenshi_agent.operation_definitions import EQUIP_ITEM_DEFINITION
 
     base = _trade_observation()
@@ -1215,7 +1244,7 @@ def test_equipping_binds_with_no_trade_open() -> None:
 
 
 def test_equipping_refuses_another_owners_window() -> None:
-    from kenshi_agent.models import EquipItemAction
+    from kenshi_agent.core.operation import EquipItemAction
     from kenshi_agent.operation_definitions import EQUIP_ITEM_DEFINITION
 
     base = _trade_observation()
@@ -1243,11 +1272,11 @@ def test_price_separates_cells_that_share_a_name() -> None:
     the price the planner already states is part of the reference.
     """
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.operation import PurchaseItemAction
+    from kenshi_agent.core.telemetry import (
         Disposition,
         NearbyEntity,
         NormalizedPointerBounds,
-        PurchaseItemAction,
         VisibleUIControl,
     )
     from kenshi_agent.operation_definitions import PURCHASE_ITEM_DEFINITION
@@ -1345,7 +1374,7 @@ def test_inert_condition_fields_are_normalised_not_rejected() -> None:
     equivalent redundancy instead.
     """
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.planning import (
         Condition,
         ConditionKind,
         ConditionOperator,
@@ -1379,7 +1408,11 @@ def test_a_capability_condition_still_requires_a_path() -> None:
 
     import pydantic
 
-    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+    from kenshi_agent.core.planning import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
 
     with pytest.raises(pydantic.ValidationError):
         Condition(
@@ -1398,7 +1431,11 @@ def test_a_field_path_in_required_capabilities_does_not_kill_the_plan() -> None:
     let an unsafe condition through, only destroy a sound plan.
     """
 
-    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+    from kenshi_agent.core.planning import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
 
     condition = Condition(
         kind=ConditionKind.FIELD,
@@ -1419,7 +1456,11 @@ def test_a_capability_condition_reads_its_subject_from_required_capabilities() -
     One named capability is an unambiguous subject, so read it.
     """
 
-    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+    from kenshi_agent.core.planning import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
 
     condition = Condition(
         kind=ConditionKind.CAPABILITY,
@@ -1434,7 +1475,11 @@ def test_a_capability_condition_reads_its_subject_from_required_capabilities() -
 def test_several_named_capabilities_are_all_enforced() -> None:
     """`path` names one, but evaluation enforces every entry, so nothing is lost."""
 
-    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+    from kenshi_agent.core.planning import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
 
     condition = Condition(
         kind=ConditionKind.CAPABILITY,
@@ -1450,7 +1495,11 @@ def test_several_named_capabilities_are_all_enforced() -> None:
 def test_a_capability_name_used_as_a_field_path_is_read_as_a_capability() -> None:
     """One flat enum offers both vocabularies with no way to tell them apart."""
 
-    from kenshi_agent.models import Condition, ConditionKind, ConditionOperator
+    from kenshi_agent.core.planning import (
+        Condition,
+        ConditionKind,
+        ConditionOperator,
+    )
 
     condition = Condition(
         kind=ConditionKind.FIELD,
@@ -1474,13 +1523,16 @@ def test_the_observation_can_carry_planner_feedback() -> None:
     with_feedback = base.model_copy(
         update={"planner_feedback": "Fix exactly this: capability needs a path."}
     )
-    full = with_feedback.planner_payload()
+    full = render_planner_payload(
+        with_feedback,
+    )
     assert "capability needs a path" in full
     # Force proactive compaction without pretending the old irreducible JSON
     # size is a product limit. A correction the planner cannot see is a
     # correction that does not happen, so it survives whenever the real hard
     # envelope can hold decision-critical state.
-    tight = with_feedback.planner_payload(
+    tight = render_planner_payload(
+        with_feedback,
         max_chars=1,
         max_context_chars=len(full) + 1_000,
     )
@@ -1496,7 +1548,10 @@ def test_a_long_caption_does_not_blind_the_agent() -> None:
     evidence we receive, not a document we author.
     """
 
-    from kenshi_agent.models import NormalizedPointerBounds, VisibleUIControl
+    from kenshi_agent.core.telemetry import (
+        NormalizedPointerBounds,
+        VisibleUIControl,
+    )
 
     rumour = "#140806Hoo boy, did I get a story for you. " + ("blah " * 200)
     assert len(rumour) > 500
@@ -1517,7 +1572,7 @@ def _purchase_guard_state(*, paused: bool):
 
     from datetime import UTC, datetime
 
-    from kenshi_agent.models import (
+    from kenshi_agent.core.telemetry import (
         CharacterState,
         Disposition,
         GameState,
@@ -1526,8 +1581,8 @@ def _purchase_guard_state(*, paused: bool):
         TelemetrySnapshot,
         UIState,
         VisibleUIControl,
-        WorldStateRevision,
     )
+    from kenshi_agent.core.world import WorldStateRevision
 
     cell = VisibleUIControl(
         label="Dried Meat",
@@ -1596,13 +1651,16 @@ def test_a_running_world_does_not_block_a_purchase_by_default() -> None:
     """
 
     from kenshi_agent.config import SafetyConfig
-    from kenshi_agent.models import PurchaseItemAction
+    from kenshi_agent.core.operation import PurchaseItemAction
     from kenshi_agent.safety import OperationPolicy, SafetyViolation
     from kenshi_agent.skills import MacroRegistry
 
     action = PurchaseItemAction(
-        cell_label="Dried Meat", item_name="Dried Meat", expected_price=38,
-        window="BARMAN", seller_id="e-barman",
+        cell_label="Dried Meat",
+        item_name="Dried Meat",
+        expected_price=38,
+        window="BARMAN",
+        seller_id="e-barman",
     )
     running = _purchase_guard_state(paused=False)
 
@@ -1635,11 +1693,14 @@ def test_a_purchase_contract_owns_transfer_conservation() -> None:
     neither restates that motor effect nor gets to call an unverified click done.
     """
 
-    from kenshi_agent.models import PurchaseItemAction
+    from kenshi_agent.core.operation import PurchaseItemAction
 
     action = PurchaseItemAction(
-        cell_label="Dried Meat", item_name="Dried Meat", expected_price=38,
-        window="BARMAN", seller_id="e-barman",
+        cell_label="Dried Meat",
+        item_name="Dried Meat",
+        expected_price=38,
+        window="BARMAN",
+        seller_id="e-barman",
     )
 
     completion = PURCHASE_ITEM_DEFINITION.resolve_terminal(action, observation())
@@ -1665,7 +1726,8 @@ def test_every_binding_is_either_witnessed_or_declared_unwitnessable() -> None:
         binding.value for binding in witnessed & unwitnessed
     )
     undecided = sorted(
-        binding.value for binding in GameBinding
+        binding.value
+        for binding in GameBinding
         if binding not in witnessed and binding not in unwitnessed
     )
     assert not undecided, (
@@ -1730,9 +1792,7 @@ def test_select_all_terminal_requires_the_complete_current_party() -> None:
 def test_a_management_tab_binding_is_witnessed_by_the_tab_not_the_window() -> None:
     """Switching between two tabs never changes `management_screen_open`."""
 
-    open_on_map = TelemetrySnapshot(
-        ui=UIState(management_screen_open=True, management_tab=0)
-    )
+    open_on_map = TelemetrySnapshot(ui=UIState(management_screen_open=True, management_tab=0))
 
     condition = game_binding_success_condition(GameBinding.TOGGLE_RESEARCH, open_on_map)
 
@@ -1796,9 +1856,7 @@ def test_opening_an_already_open_screen_sends_no_input() -> None:
     """
 
     already = _screen_observation(open_inventory_windows=1)
-    binding = OPEN_SCREEN_DEFINITION.bind(
-        OpenScreenAction(screen=GameScreen.INVENTORY), already
-    )
+    binding = OPEN_SCREEN_DEFINITION.bind(OpenScreenAction(screen=GameScreen.INVENTORY), already)
 
     assert binding.bound
     assert "already open" in binding.reason
@@ -1807,9 +1865,7 @@ def test_opening_an_already_open_screen_sends_no_input() -> None:
 
 def test_opening_a_closed_screen_names_the_control_that_opens_it() -> None:
     closed = _screen_observation(open_inventory_windows=0)
-    binding = OPEN_SCREEN_DEFINITION.bind(
-        OpenScreenAction(screen=GameScreen.INVENTORY), closed
-    )
+    binding = OPEN_SCREEN_DEFINITION.bind(OpenScreenAction(screen=GameScreen.INVENTORY), closed)
 
     assert binding.bound
     assert "toggle_inventory" in binding.reason
@@ -1834,9 +1890,7 @@ def test_a_screen_nothing_can_report_refuses_to_bind() -> None:
     """Better to refuse than to press a key and assume it worked."""
 
     unreadable = _screen_observation()
-    binding = OPEN_SCREEN_DEFINITION.bind(
-        OpenScreenAction(screen=GameScreen.RESEARCH), unreadable
-    )
+    binding = OPEN_SCREEN_DEFINITION.bind(OpenScreenAction(screen=GameScreen.RESEARCH), unreadable)
 
     assert not binding.bound
     assert "could not be proven" in binding.reason

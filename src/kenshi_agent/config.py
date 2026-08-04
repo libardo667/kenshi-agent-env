@@ -8,15 +8,15 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from .models import (
+from .core.continuity import MemoryRetrievalPolicy
+from .core.operation import (
     Action,
-    CalibrationIdentity,
     ControlMode,
-    MemoryRetrievalPolicy,
     PlanningMode,
-    ScenarioIdentity,
     parse_action,
 )
+from .core.telemetry import ScenarioIdentity
+from .core.transport import CalibrationIdentity
 from .scenario_fixtures import ScenarioAttestation
 
 _ENV_DEFAULT_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*):-([^}]*)\}")

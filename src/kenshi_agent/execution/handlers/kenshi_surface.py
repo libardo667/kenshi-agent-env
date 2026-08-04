@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Literal, Protocol
 
 from ... import native_commands
-from ...authorization import InputBoundaryDecision
 from ...config import CaptureConfig, ControlsConfig, RuntimeConfig
 from ...control.base import InputController, PrimitiveInputAction
 from ...control.calibration import (
@@ -25,35 +24,40 @@ from ...control.calibration import (
     validate_expected_client_size,
 )
 from ...control.capture import CapturedFrame
-from ...input_boundary import ExecutionToken
-from ...models import (
+from ...core.authority import InputBoundaryDecision
+from ...core.evidence import SemanticActionReceipt
+from ...core.observation import Observation
+from ...core.operation import (
     GAME_SPEED_MULTIPLIER_BY_GEAR,
     Action,
-    ActionReceipt,
-    CalibrationReport,
     ClickAction,
-    CommandDispatchContext,
-    ContextActionKind,
     ControlMode,
     HotkeyAction,
     KeyAction,
     MouseButtonAction,
     MouseDragAction,
     MoveCursorAction,
-    NativeCommandAcknowledgement,
-    NativeCommandRequest,
-    NativeCommandStatus,
-    Observation,
     PauseAction,
     PointerActionClass,
     ScrollAction,
-    SemanticActionReceipt,
     SetSpeedAction,
     SkillAction,
     SkillArgument,
+)
+from ...core.telemetry import (
+    ContextActionKind,
+    NativeCommandAcknowledgement,
+    NativeCommandStatus,
     TelemetrySnapshot,
+)
+from ...core.transport import (
+    ActionReceipt,
+    CalibrationReport,
+    CommandDispatchContext,
+    NativeCommandRequest,
     Transition,
 )
+from ...input_boundary import ExecutionToken
 from ...skills import MacroRegistry
 from ...telemetry import TelemetryReader, TelemetryReadError
 

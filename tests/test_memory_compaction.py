@@ -12,13 +12,7 @@ import pytest
 from kenshi_agent import cli
 from kenshi_agent.campaign import CampaignScope, CampaignScopeOrigin
 from kenshi_agent.config import load_config
-from kenshi_agent.memory import MemoryStore
-from kenshi_agent.memory_compaction import (
-    MemoryCompactionError,
-    build_lossless_compaction_candidate,
-    source_fingerprint,
-)
-from kenshi_agent.models import (
+from kenshi_agent.core.continuity import (
     CanonicalMemoryProvenance,
     CompactionMethod,
     ContinuityOrigin,
@@ -30,7 +24,13 @@ from kenshi_agent.models import (
     MemoryRecord,
     MemoryResolutionDisposition,
     MemoryStatus,
-    WorldStateRevision,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.memory import MemoryStore
+from kenshi_agent.memory_compaction import (
+    MemoryCompactionError,
+    build_lossless_compaction_candidate,
+    source_fingerprint,
 )
 
 

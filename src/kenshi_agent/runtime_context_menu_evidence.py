@@ -8,7 +8,7 @@ comparison, but never derives or mutates that authority from observed orders.
 
 from __future__ import annotations
 
-from .models import Observation
+from .core.observation import Observation
 
 ContextMenuEvidence = dict[str, object]
 _EvidenceSignature = tuple[object, ...]

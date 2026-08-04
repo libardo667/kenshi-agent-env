@@ -10,20 +10,22 @@ from typing import Any, Protocol, cast
 
 from ... import operation_definitions as operations
 from ...config import PlanningConfig
-from ...input_boundary import ExecutionToken
-from ...models import (
+from ...core.evidence import SemanticActionReceipt
+from ...core.operation import (
     Action,
-    ActionReceipt,
     ApproachDialogueTargetAction,
     ClickAction,
-    CommandDispatchContext,
     CommandWorldTargetAction,
     MouseButton,
-    SemanticActionReceipt,
     SkillAction,
     SkillArgument,
+)
+from ...core.transport import (
+    ActionReceipt,
+    CommandDispatchContext,
     Transition,
 )
+from ...input_boundary import ExecutionToken
 from ...operation_definitions import BoundActor, BoundOperation, require_bound
 from ...options import StatefulApproachOption
 from ..types import (

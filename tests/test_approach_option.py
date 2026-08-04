@@ -7,21 +7,25 @@ from datetime import UTC, datetime
 
 from operation_test_support import operation_for
 
-from kenshi_agent.env import AgentEnvironment
-from kenshi_agent.models import (
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
-    ActionReceipt,
     ApproachDialogueTargetAction,
+    SkillAction,
+)
+from kenshi_agent.core.telemetry import (
     Disposition,
     GameState,
     NearbyEntity,
-    Observation,
-    SkillAction,
     TelemetrySnapshot,
-    Transition,
     UIState,
-    WorldStateRevision,
 )
+from kenshi_agent.core.transport import (
+    ActionReceipt,
+    Transition,
+)
+from kenshi_agent.core.world import WorldStateRevision
+from kenshi_agent.env.base import AgentEnvironment
 from kenshi_agent.options import OptionStatus, StatefulApproachOption
 from kenshi_agent.world_state import SequenceStatus, StateDelta, StoreUpdate
 

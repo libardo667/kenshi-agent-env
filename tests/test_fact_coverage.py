@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from kenshi_agent.fact_coverage import FACTS, FactState, audit
-from kenshi_agent.models import (
+from kenshi_agent.core.telemetry import (
     CharacterState,
     GameState,
     NormalizedPointerBounds,
@@ -11,6 +10,7 @@ from kenshi_agent.models import (
     UIState,
     VisibleUIControl,
 )
+from kenshi_agent.fact_coverage import FACTS, FactState, audit
 
 
 def snapshot(

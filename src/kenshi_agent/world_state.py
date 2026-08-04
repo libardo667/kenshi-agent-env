@@ -10,13 +10,17 @@ from enum import StrEnum
 from math import dist
 from typing import TYPE_CHECKING, TypeAlias
 
-from .models import NearbyEntity, Observation, StateChange, WorldStateRevision, new_command_id
+from .core.evidence import StateChange
+from .core.observation import Observation
+from .core.telemetry import NearbyEntity
+from .core.transport import new_command_id
+from .core.world import WorldStateRevision
 from .planning import PlanningClock, SystemPlanningClock
 from .runtime_context_menu_evidence import ContextMenuEvidenceTracker
 
 if TYPE_CHECKING:
     # Only a parameter annotation: state is read by an adapter, it does not own one.
-    from .env import AgentEnvironment
+    from .env.base import AgentEnvironment
 
 
 class WorldStateError(RuntimeError):
@@ -445,7 +449,7 @@ class WorldStateStore:
                         "skill_specs",
                         "memories",
                         "advisor",
-                                )
+                    )
                 },
                 deep=True,
             )
@@ -1001,7 +1005,7 @@ class WorldStateStore:
                 "world_revision",
                 "events",
                 "memories",
-                    "recent_action_outcomes",
+                "recent_action_outcomes",
                 "screenshot_path",
                 # Excluded or the delta would feed on itself: last tick's
                 # changes differ from this tick's, so every observation would

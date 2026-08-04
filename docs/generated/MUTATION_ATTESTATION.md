@@ -23,11 +23,13 @@ digest recorded when its campaign ran:
 also depends on the tests, and a changed test suite is not tracked here. It
 promises only that the module under test has not moved.
 
-90 shards: 12 attested, 15 unverified, 10 source-changed, 53 never; 1091 open mutants where the numbers still apply.
+131 shards: 9 attested, 15 unverified, 11 source-changed, 96 never; 1091 open mutants where the numbers still apply.
 
 | shard | mutants | killed | open | attested | source | state |
 | --- | --- | --- | --- | --- | --- | --- |
+| `action_budget` | — | — | — | — | — | never |
 | `advisor` | 699 | 284 | 415 | 2026-08-02T07:43:52Z | 59565c7a3338899e | source-changed |
+| `advisor_service` | — | — | — | — | — | never |
 | `affordance_parity` | — | — | — | — | — | never |
 | `affordance_surfaces` | 19 | 19 | 0 | 2026-08-01T14:52:32Z | cae2692da14339c9 | source-changed |
 | `affordances` | — | — | — | — | — | never |
@@ -37,10 +39,12 @@ promises only that the module under test has not moved.
 | `camera_recovery` | — | — | — | — | — | never |
 | `campaign` | 21 | 21 | 0 | 2026-07-28T04:11:58Z | — | unverified |
 | `cli` | 1569 | 493 | 1076 | 2026-07-28T11:22:05Z | — | unverified |
+| `condition_evaluation` | — | — | — | — | — | never |
 | `config` | — | — | — | — | — | never |
 | `context_action_parity` | 409 | 409 | 0 | 2026-08-02T02:33:45Z | dd2db8d5e572bb31 | source-changed |
 | `context_action_vocabulary` | 60 | 60 | 0 | 2026-08-01T14:51:31Z | cd914f092c6e8bb6 | attested |
 | `continuity` | 627 | 627 | 0 | 2026-07-28T07:58:43Z | — | unverified |
+| `continuity_service` | — | — | — | — | — | never |
 | `continuous_executor` | — | — | — | — | — | never |
 | `control.base` | — | — | — | — | — | never |
 | `control.calibration` | — | — | — | — | — | never |
@@ -48,6 +52,19 @@ promises only that the module under test has not moved.
 | `control.noop` | — | — | — | — | — | never |
 | `control.win32` | — | — | — | — | — | never |
 | `control_ownership` | — | — | — | — | — | never |
+| `core.advisor` | — | — | — | — | — | never |
+| `core.affordance` | — | — | — | — | — | never |
+| `core.authority` | — | — | — | — | — | never |
+| `core.base` | — | — | — | — | — | never |
+| `core.continuity` | — | — | — | — | — | never |
+| `core.evidence` | — | — | — | — | — | never |
+| `core.observation` | — | — | — | — | — | never |
+| `core.operation` | — | — | — | — | — | never |
+| `core.planner_context` | — | — | — | — | — | never |
+| `core.planning` | — | — | — | — | — | never |
+| `core.telemetry` | — | — | — | — | — | never |
+| `core.transport` | — | — | — | — | — | never |
+| `core.world` | — | — | — | — | — | never |
 | `dev_cli` | 718 | 718 | 0 | 2026-08-02T02:12:30Z | 1c0380099c4add5e | source-changed |
 | `display_lease` | — | — | — | — | — | never |
 | `doc_export` | — | — | — | — | — | never |
@@ -57,10 +74,29 @@ promises only that the module under test has not moved.
 | `env.replay` | — | — | — | — | — | never |
 | `evals.metrics` | 1485 | 1485 | 0 | 2026-07-28T11:53:26Z | — | unverified |
 | `evals.restart_continuity` | 2051 | 2036 | 15 | 2026-07-28T17:35:11Z | — | unverified |
+| `execution.handlers.camera` | — | — | — | — | — | never |
+| `execution.handlers.cognition` | — | — | — | — | — | never |
+| `execution.handlers.dialogue` | — | — | — | — | — | never |
+| `execution.handlers.input_binding` | — | — | — | — | — | never |
+| `execution.handlers.inventory` | — | — | — | — | — | never |
+| `execution.handlers.kenshi` | — | — | — | — | — | never |
+| `execution.handlers.kenshi_surface` | — | — | — | — | — | never |
+| `execution.handlers.movement` | — | — | — | — | — | never |
+| `execution.handlers.resources` | — | — | — | — | — | never |
+| `execution.handlers.runtime` | — | — | — | — | — | never |
+| `execution.handlers.screens` | — | — | — | — | — | never |
+| `execution.handlers.trade` | — | — | — | — | — | never |
+| `execution.kernel` | — | — | — | — | — | never |
+| `execution.monitor_types` | — | — | — | — | — | never |
+| `execution.monitoring` | — | — | — | — | — | never |
+| `execution.ports` | — | — | — | — | — | never |
+| `execution.registry` | — | — | — | — | — | never |
+| `execution.types` | — | — | — | — | — | never |
 | `fact_coverage` | — | — | — | — | — | never |
 | `fieldbook` | 429 | 429 | 0 | 2026-07-28T14:23:21Z | — | unverified |
 | `fieldbook_authority` | 292 | 292 | 0 | 2026-07-28T14:24:14Z | — | unverified |
 | `final_safe_state` | — | — | — | — | — | never |
+| `future_planning` | — | — | — | — | — | never |
 | `gpu_events` | — | — | — | — | — | never |
 | `graphics_profile` | — | — | — | — | — | never |
 | `hosted_continuation` | 69 | 69 | 0 | 2026-07-29T17:51:11Z | 9b3ccfa0ecb94f4f | attested |
@@ -71,7 +107,6 @@ promises only that the module under test has not moved.
 | `live_smoke_planner` | — | — | — | — | — | never |
 | `memory` | 1476 | 1476 | 0 | 2026-07-28T16:03:50Z | — | unverified |
 | `memory_compaction` | 114 | 114 | 0 | 2026-07-28T15:50:29Z | — | unverified |
-| `models` | 1044 | 940 | 104 | 2026-08-02T07:48:19Z | f51ece7103359dff | source-changed |
 | `movement_ownership` | 5 | 5 | 0 | 2026-07-31T15:11:17Z | 160084c0bf1037d5 | source-changed |
 | `mutation_campaign` | 508 | 508 | 0 | 2026-07-29T21:33:57Z | 7ec6f5cbc6d2452a | attested |
 | `mutation_ledger` | 277 | 277 | 0 | 2026-07-28T18:31:37Z | b3c59cc2c0473cf3 | attested |
@@ -80,10 +115,16 @@ promises only that the module under test has not moved.
 | `non_progress` | 96 | 96 | 0 | 2026-07-31T00:36:47Z | daefc5759dbef1a5 | source-changed |
 | `nutrition` | 73 | 73 | 0 | 2026-08-02T15:07:59Z | 711f9a7df7cb8b0e | attested |
 | `observation_budget` | 1010 | 1010 | 0 | 2026-07-31T04:12:17Z | c1d37b06056151ff | attested |
+| `operation_authority` | — | — | — | — | — | never |
 | `operation_definitions` | — | — | — | — | — | never |
+| `operation_execution` | — | — | — | — | — | never |
 | `operation_registry_audit` | — | — | — | — | — | never |
 | `options` | 726 | 299 | 427 | 2026-07-31T14:23:45Z | 18ffc603096bc07d | source-changed |
+| `outcome_recorder` | — | — | — | — | — | never |
 | `overlay` | — | — | — | — | — | never |
+| `plan_events` | — | — | — | — | — | never |
+| `planner_context` | — | — | — | — | — | never |
+| `planner_service` | — | — | — | — | — | never |
 | `planners.base` | 330 | 330 | 0 | 2026-07-28T11:54:15Z | — | unverified |
 | `planners.context_capacity` | 152 | 152 | 0 | 2026-07-31T03:40:46Z | 23893d25b63b7080 | attested |
 | `planners.heuristic` | — | — | — | — | — | never |
@@ -96,9 +137,9 @@ promises only that the module under test has not moved.
 | `reflexes` | — | — | — | — | — | never |
 | `reporting` | — | — | — | — | — | never |
 | `resource_transfer` | 197 | 197 | 0 | 2026-07-27T23:24:49Z | — | unverified |
+| `run_coordinator` | — | — | — | — | — | never |
 | `runtime` | — | — | — | — | — | never |
-| `runtime_context_menu` | 59 | 59 | 0 | 2026-08-01T15:52:22Z | 8d37c084a1391825 | attested |
-| `runtime_context_menu_evidence` | 47 | 47 | 0 | 2026-08-02T02:36:35Z | 52165e3e5522790a | attested |
+| `runtime_context_menu_evidence` | 47 | 47 | 0 | 2026-08-02T02:36:35Z | 52165e3e5522790a | source-changed |
 | `runtime_continuity` | 105 | 105 | 0 | 2026-07-28T11:50:39Z | — | unverified |
 | `safety` | 554 | 554 | 0 | 2026-07-27T23:21:51Z | — | unverified |
 | `safety_supervisor` | — | — | — | — | — | never |
@@ -113,7 +154,7 @@ promises only that the module under test has not moved.
 | `terminal_state` | — | — | — | — | — | never |
 | `threat_response` | — | — | — | — | — | never |
 | `ui_affordances` | — | — | — | — | — | never |
-| `ui_messages` | 13 | 13 | 0 | 2026-07-30T23:14:03Z | 29e84b8eee68e5ce | attested |
+| `ui_messages` | 13 | 13 | 0 | 2026-07-30T23:14:03Z | 29e84b8eee68e5ce | source-changed |
 | `wave_player` | 13 | 13 | 0 | 2026-07-31T01:59:54Z | fe12ffe07ed3bac7 | attested |
 | `wiki_corpus` | 192 | 192 | 0 | 2026-08-02T15:06:14Z | 76c38b221938ddfb | attested |
 | `world_state` | — | — | — | — | — | never |

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from .models import (
-    CharacterState,
-    CollectResourceOutputAction,
-    Observation,
+from .core.evidence import (
     ResourceTransferEvidence,
     ResourceTransferStatus,
-    WorldStateRevision,
+)
+from .core.observation import Observation
+from .core.operation import CollectResourceOutputAction
+from .core.telemetry import (
+    CharacterState,
     normalize_control_label,
 )
+from .core.world import WorldStateRevision
 
 # These sentences explain typed evidence whose status, identities, quantities,
 # and revisions own the contract. Capitalization-only mutations are equivalent,

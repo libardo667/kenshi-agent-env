@@ -11,17 +11,15 @@ from .affordances import OPERATION_BINDING_AUTHORITY
 from .config import PlanningConfig
 from .continuity import ContinuityLedger
 from .continuity_service import ContinuityService
-from .env import AgentEnvironment
+from .core.continuity import MemoryRetrievalPolicy
+from .core.operation import ControlMode
+from .core.telemetry import ScenarioIdentity
+from .env.base import AgentEnvironment
 from .execution.ports import OperationMechanicsPort
 from .final_safe_state import (
     FinalSafeStateOutcome,
 )
 from .memory import MemoryStore, RecallBudget
-from .models import (
-    ControlMode,
-    MemoryRetrievalPolicy,
-    ScenarioIdentity,
-)
 from .operation_authority import OperationAuthority
 from .operation_execution import OperationExecutionFactory
 from .outcome_recorder import OutcomeRecorder

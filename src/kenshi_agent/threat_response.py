@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from math import atan2, degrees, hypot
 
-from .models import (
-    CharacterState,
+from .core.observation import Observation
+from .core.operation import (
     MoveInDirectionAction,
-    Observation,
     RespondToImmediateThreatAction,
     ThreatResponseStrategy,
 )
+from .core.telemetry import CharacterState
 
 IMMEDIATE_THREAT_DISTANCE = 35.0
 MINIMUM_THREAT_RESPONSE_BLOOD = 50.0

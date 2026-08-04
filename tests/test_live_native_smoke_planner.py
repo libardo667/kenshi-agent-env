@@ -2,31 +2,35 @@ from __future__ import annotations
 
 import pytest
 
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
+    ControlMode,
+    ExitCurrentBuildingAction,
+    HarvestResourceAction,
+    MoveToCharacterAction,
+    PauseAction,
+    PlanningMode,
+    StopAction,
+)
+from kenshi_agent.core.planning import (
+    ActivePlanContext,
+    PlanPatch,
+)
+from kenshi_agent.core.telemetry import (
+    CharacterState,
+    ContextActionKind,
+    GameState,
+    NearbyEntity,
+    TelemetrySnapshot,
+    UIState,
+    Vec3,
+    WorldTarget,
+)
+from kenshi_agent.core.world import WorldStateRevision
 from kenshi_agent.live_native_smoke_planner import (
     build_decision,
     build_output,
     build_plan,
-)
-from kenshi_agent.models import (
-    ActivePlanContext,
-    CharacterState,
-    ContextActionKind,
-    ControlMode,
-    ExitCurrentBuildingAction,
-    GameState,
-    HarvestResourceAction,
-    MoveToCharacterAction,
-    NearbyEntity,
-    Observation,
-    PauseAction,
-    PlanningMode,
-    PlanPatch,
-    StopAction,
-    TelemetrySnapshot,
-    UIState,
-    Vec3,
-    WorldStateRevision,
-    WorldTarget,
 )
 
 TARGET_ID = "entity-copper"

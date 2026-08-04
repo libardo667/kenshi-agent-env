@@ -167,7 +167,7 @@ def test_native_plugin_exports_bounded_visible_semantic_ui_controls() -> None:
     # screen fails validation outright instead of arriving truncated.
     import re
 
-    from kenshi_agent.models import UIState
+    from kenshi_agent.core.telemetry import UIState
 
     match = re.search(r"MAX_VISIBLE_UI_CONTROLS = (\d+)", source)
     assert match is not None

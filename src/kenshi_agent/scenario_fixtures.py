@@ -11,7 +11,11 @@ from uuid import uuid4
 
 from pydantic import Field
 
-from .models import ScenarioIdentity, StrictModel, TelemetrySnapshot
+from .core.base import StrictModel
+from .core.telemetry import (
+    ScenarioIdentity,
+    TelemetrySnapshot,
+)
 
 MANAGED_SAVE_NAME: Literal["KenshiAgentScenario"] = "KenshiAgentScenario"
 BROKE_MAX_CATS = 1_000

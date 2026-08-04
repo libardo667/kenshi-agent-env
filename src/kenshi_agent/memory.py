@@ -27,12 +27,7 @@ from typing import Any, TypeVar
 from pydantic import TypeAdapter
 
 from .campaign import CampaignScope, CampaignScopeOrigin, legacy_campaign_id
-from .fieldbook import FieldbookStore, create_fieldbook_schema
-from .memory_compaction import (
-    MemoryCompactionError,
-    validate_lossless_compaction_candidate,
-)
-from .models import (
+from .core.continuity import (
     CanonicalCompactionProvenance,
     CanonicalMemoryProvenance,
     MemoryAuthorship,
@@ -47,6 +42,11 @@ from .models import (
     MemoryStatus,
     RecallTier,
     new_memory_id,
+)
+from .fieldbook import FieldbookStore, create_fieldbook_schema
+from .memory_compaction import (
+    MemoryCompactionError,
+    validate_lossless_compaction_candidate,
 )
 
 SCHEMA_VERSION = 4

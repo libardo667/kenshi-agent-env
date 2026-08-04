@@ -45,6 +45,19 @@ from .control_ownership import (
     ControlOwnershipMachine,
     ControlOwnershipState,
 )
+from .core.operation import (
+    ClickAction,
+    HotkeyAction,
+    KeyAction,
+)
+from .core.telemetry import (
+    Disposition,
+    NormalizedPointerBounds,
+    ScenarioIdentity,
+    TelemetrySnapshot,
+    VisibleUIControl,
+    window_close_point,
+)
 from .dev_cli import LIVE_CONFIG
 from .dev_cli import build_parser as build_dev_parser
 from .display_lease import (
@@ -65,17 +78,6 @@ from .graphics_profile import (
     apply_graphics_profile,
     load_graphics_profile,
     verify_graphics_profile,
-)
-from .models import (
-    ClickAction,
-    Disposition,
-    HotkeyAction,
-    KeyAction,
-    NormalizedPointerBounds,
-    ScenarioIdentity,
-    TelemetrySnapshot,
-    VisibleUIControl,
-    window_close_point,
 )
 from .scenario_fixtures import (
     MANAGED_SAVE_NAME,

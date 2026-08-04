@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from kenshi_agent.models import (
+from kenshi_agent.core.telemetry import (
     CharacterState,
     GameState,
     ScenarioIdentity,

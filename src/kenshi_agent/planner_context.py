@@ -12,12 +12,109 @@ recall, affordance enumeration, or advisor state to describe itself.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
+from typing import Any
 
+from .affordances import offered_affordances
 from .config import PlanningConfig
 from .continuity import ContinuityLedger
 from .continuity_service import ContinuityService
-from .models import AdvisorAvailability, Observation
+from .core.advisor import AdvisorAvailability
+from .core.observation import Observation
+from .nutrition import (
+    model_facing_telemetry_payload,
+    squad_nutrition_digest,
+)
+from .observation_budget import budget_observation_payload
+
+
+def planner_affordance_digest(observation: Observation) -> list[dict[str, Any]]:
+    """Project the one runtime-authored action surface for the playing model."""
+
+    return [offer.planner_digest() for offer in offered_affordances(observation)]
+
+
+def planner_nutrition_digest(observation: Observation) -> dict[str, Any]:
+    """Interpret the native nutrition reserve for the current squad."""
+
+    squad = observation.telemetry.squad if observation.telemetry is not None else []
+    return squad_nutrition_digest(squad)
+
+
+def _planner_json(value: Any) -> str:
+    """Render the canonical compact planner document."""
+
+    # pragma: no mutate start
+    return json.dumps(
+        value,
+        separators=(",", ":"),
+        # `json.dumps` treats None exactly like False for this flag.
+        ensure_ascii=False,
+    )
+    # pragma: no mutate end
+
+
+def _project_planner_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Remove deterministic runtime mechanics from the playing-model view."""
+
+    payload["available_skills"] = []
+    payload["skill_specs"] = []
+    telemetry = payload.get("telemetry")
+    if not isinstance(telemetry, dict):
+        return payload
+    telemetry["capabilities"] = []
+    ui = telemetry.get("ui")
+    if isinstance(ui, dict) and ui.get("visible_controls") is not None:
+        ui["visible_controls"] = []
+    native = telemetry.get("native_control")
+    if isinstance(native, dict):
+        native.update(
+            {
+                "active_command_id": None,
+                "acknowledgements": [],
+                "last_command_sequence": 0,
+                "last_command": None,
+                "last_result": None,
+                "last_target": None,
+                "last_target_id": None,
+            }
+        )
+    return payload
+
+
+def render_planner_payload(
+    observation: Observation,
+    *,
+    max_chars: int | None = None,
+    max_context_chars: int | None = None,
+    measure: Callable[[str], int] = len,
+    measurement: str = "characters",
+) -> str:
+    """Render one authored observation within its soft and hard envelopes."""
+
+    payload = observation.model_dump(mode="json", exclude={"screenshot_path"})
+    payload["telemetry"] = model_facing_telemetry_payload(payload.get("telemetry"))
+    payload["affordances"] = planner_affordance_digest(observation)
+    payload["squad_nutrition"] = planner_nutrition_digest(observation)
+    payload = _project_planner_payload(payload)
+    if max_chars is None and max_context_chars is None:
+        return _planner_json(payload)
+    if max_chars is None:
+        assert max_context_chars is not None
+        max_chars = max_context_chars
+    if max_context_chars is None:
+        max_context_chars = max_chars
+
+    text = _planner_json(payload)
+    return budget_observation_payload(
+        payload,
+        full_text=text,
+        max_chars=min(max_chars, max_context_chars),
+        hard_max_chars=max_context_chars,
+        measure=measure,
+        measurement=measurement,
+    )
 
 
 class PlannerContextAssembler:

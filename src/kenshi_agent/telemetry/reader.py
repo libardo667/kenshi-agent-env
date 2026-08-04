@@ -8,7 +8,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from ..models import TelemetrySnapshot
+from ..core.telemetry import TelemetrySnapshot
 
 
 class TelemetryReadError(RuntimeError):

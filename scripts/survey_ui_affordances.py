@@ -26,8 +26,12 @@ from typing import Any
 
 from kenshi_agent.config import load_config
 from kenshi_agent.control.base import InputController
+from kenshi_agent.core.operation import (
+    ClickAction,
+    KeyAction,
+)
+from kenshi_agent.core.telemetry import normalize_control_label
 from kenshi_agent.live_dev import _controller, _telemetry_read
-from kenshi_agent.models import ClickAction, KeyAction, normalize_control_label
 from kenshi_agent.telemetry import TelemetryReader
 
 # Screens reachable from the world HUD by activating one advertised button.

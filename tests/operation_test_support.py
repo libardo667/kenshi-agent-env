@@ -7,22 +7,24 @@ from uuid import uuid4
 
 from kenshi_agent.action_budget import ActionBudgetLedger
 from kenshi_agent.affordances import OPERATION_BINDING_AUTHORITY, OperationBindingError
-from kenshi_agent.authorization import AuthorizationCode
 from kenshi_agent.config import PlanningConfig
 from kenshi_agent.continuous_executor import ContinuousPlanExecutor
-from kenshi_agent.input_boundary import ExecutionToken
-from kenshi_agent.models import (
+from kenshi_agent.core.authority import AuthorizationCode
+from kenshi_agent.core.observation import Observation
+from kenshi_agent.core.operation import (
     Action,
     ClickAction,
-    CommandDispatchContext,
     MoveCursorAction,
-    Observation,
     PauseAction,
     PointerActionClass,
     ScrollAction,
     SkillAction,
+)
+from kenshi_agent.core.transport import (
+    CommandDispatchContext,
     Transition,
 )
+from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.operation_authority import AuthorizationDecision, OperationAuthority
 from kenshi_agent.operation_definitions import BoundOperation
 from kenshi_agent.operation_execution import OperationExecutionFactory

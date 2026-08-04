@@ -1,7 +1,10 @@
 import pytest
 
 from kenshi_agent.config import MacroConfig, NormalizedPointerBoundsConfig
-from kenshi_agent.models import ClickAction, SkillAction
+from kenshi_agent.core.operation import (
+    ClickAction,
+    SkillAction,
+)
 from kenshi_agent.skills import MacroRegistry
 
 

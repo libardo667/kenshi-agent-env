@@ -8,28 +8,33 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from ..action_budget import ActionBudgetError, ActionBudgetLedger, ActionBudgetReservation
-from ..authorization import InputBoundaryDecision
-from ..input_boundary import ExecutionToken
-from ..models import (
+from ..condition_evaluation import evaluate_conditions
+from ..core.authority import InputBoundaryDecision
+from ..core.observation import Observation
+from ..core.operation import (
     Action,
-    CommandDispatchContext,
+    ObservationPolicy,
+    PointerActionClass,
+)
+from ..core.planning import (
+    Condition,
     ConditionEvaluation,
     ConditionResult,
-    Observation,
-    ObservationPolicy,
     PlanEnvelope,
     PlanStep,
-    PointerActionClass,
-    Transition,
-    WorldStateRevision,
 )
+from ..core.transport import (
+    CommandDispatchContext,
+    Transition,
+)
+from ..core.world import WorldStateRevision
+from ..input_boundary import ExecutionToken
 from ..operation_authority import AuthorizationDecision
 from ..operation_definitions import BoundOperation, OperationTerminal, TerminalOwner
 from ..planning import (
     PlanBudgetError,
     PlanBudgetLedger,
     PlanningClock,
-    evaluate_conditions,
     game_elapsed_seconds,
 )
 from ..session_log import SessionLogger
@@ -600,8 +605,6 @@ class ExecutionKernel:
         owner: TerminalOwner,
         runtime_conditions: tuple[object, ...],
     ) -> KernelResult:
-        from ..models import Condition
-
         typed_runtime_conditions = tuple(
             condition for condition in runtime_conditions if isinstance(condition, Condition)
         )
