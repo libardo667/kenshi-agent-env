@@ -647,6 +647,8 @@ At stage exit:
 
 These are reconstruction gates, not invitations to hide complexity in nested functions.
 
+
+**Residue:** this stage's exit criteria are met except for the adapter-boundary leak in Section 20.1. Do not reopen Stage 2 to fix it; close it with Stage 4.
 ### Exit criteria
 
 - One operation execution registry.
@@ -729,6 +731,8 @@ At stage exit:
 - Delete mode-specific branches from outcome recording and finalization.
 - Delete any configuration flag that selects an implementation rather than a policy.
 
+
+**Residue:** loop unification is complete; the physical coordinator extraction is Section 20.2 and legitimately waits for Stage 5.
 ### Exit criteria
 
 - One run loop.
@@ -806,6 +810,8 @@ At stage exit:
 - Delete plan validators that restate operation policy rather than validating plan structure.
 - Delete duplicate refusal strings in favor of typed codes rendered at the edge.
 
+
+**Residue:** the typed decision exists but authority identity, rebinding singularity, plan-policy eligibility, and budget separation remain. See Section 20.3.
 ### Exit criteria
 
 - Every operation has one domain policy owner.
@@ -1347,4 +1353,127 @@ which is 19.3's problem wearing a different hat.
 Worth revisiting afterward: scope such gates to the phase that needs them.
 Requiring at bind time what only one late phase depends on removes an operation
 from the menu for situations it would have handled correctly.
+
+---
+
+## 20. Named residue after Stage 4
+
+Stages 2, 3, and 4 removed their headline authorities, but each left boundary
+work that the stage's own exit criteria demand. This section names that residue
+so it is closed deliberately rather than encoded into the package graph by
+Stage 6.
+
+Recorded 2026-08-03 after an external review of the post-Stage-4 snapshot. Each
+item below was re-verified against the source rather than accepted on report.
+
+**Do not roll back the completed work.** These are closures, not redesigns.
+
+### 20.1 Stage 2 residue: the external surface still interprets operation semantics
+
+`KenshiControlSurface` is supposed to own external delivery only - lease,
+calibration, primitives, native transport, playback, receipt envelope - yet it
+reads private operation meaning:
+
+- `classify_pointer_action()` calls `definition_for(action)` to decide a
+  calibration class.
+- `rebind_in_lease()` accepts an `OperationDefinition` and invokes its binder.
+- `_is_task_start_only()` reads `native_task_started_reasons` to decide whether a
+  native terminal means "adopted" or "finished".
+
+The third was added during Stage 4 while fixing the world-resume defect. It was
+the shortest correct fix available at that moment and it deepened this leak;
+that is worth remembering as evidence that a leak left open attracts more
+traffic.
+
+The target boundary stays:
+
+```text
+operation handler / authority
+  -> narrow input or native port
+  -> Kenshi external adapter
+```
+
+The adapter must not decide what an operation means or which terminal policy
+belongs to it. Close this with Stage 4, not as a separate Stage 2 reopening: it
+is the same input-boundary rebinding problem.
+
+### 20.2 Stage 3 residue: the coordinator is behavioral, not physical
+
+`_run_single_step` and `_run_continuous` are gone and both schedules share one
+loop, one planner-call lifecycle, one error route, and one finalization. The
+loop itself contains no operation-family logic, and a fitness gate holds that.
+
+What remains is that `_run_scheduled` is still a large method on `AgentRuntime`
+rather than a `RunCoordinator` that owns sequencing alone.
+
+This dependency is real, not an excuse: `_run_scheduled` touches 21
+`AgentRuntime` methods, and 14 of them are the services Stage 5 creates -
+planner invocation and retry feedback, memory decoration, continuity commits,
+fieldbook and memory reads, advisor dispatch, plan-outcome recording,
+observation logging, and plan events. Extracting the coordinator first would
+either produce an empty wrapper or a coordinator holding a reference to the
+god-object it was meant to replace.
+
+Close after Stage 5, then narrow `ContinuousPlanExecutor` to plan-local
+execution: DAG traversal, dependency and branch handling, step retries,
+operation submission, plan-local cancellation. It must not own planner context,
+future-planning policy, memory or fieldbook authority, advisor delivery,
+continuity commits, global outcome recording, or run finalization.
+
+### 20.3 Stage 4 residue: authority identity, rebinding, policy, and budget
+
+`OperationAuthority` exists and returns one typed `AuthorizationDecision` used
+before scheduling and again inside the input lease. Four things remain.
+
+**Authority evaluates an `Action`, not a `BoundOperation`.** The fingerprint
+hashes serialized action arguments, which proves both moments concerned the same
+*request*. It does not prove they concerned the same bound operation, operation
+definition, affordance provenance, binding identity, or binding revision. This
+section asks for a bound-operation fingerprint. Make the authority take a
+`BoundOperation`, or an explicit immutable `OperationIdentity` carrying enough to
+prove the same selected and rebound operation is being revalidated.
+
+**Fresh rebinding has many implementations.** Twenty-three call sites across ten
+modules independently re-derive a current binding: `affordances.py` (3),
+`live_plan_policy.py` (2), `safety.py`, `env/mock.py`, `kenshi_surface.py`, and
+the camera, screens, movement, trade, dialogue, inventory, and resources
+handlers. Rebinding at the real input boundary is correct and must stay; having
+many independent answers to "what is the current binding?" is the defect. Take
+an inventory of these before starting, because the count is the work.
+
+**Plan policy still restates current operation eligibility.**
+`live_plan_policy.py` calls `definition_for`, `definition.bind` (twice),
+`resolve_terminal`, and checks `idempotency`, and its direct-unpause refusal even
+says "which the action guard cannot authorize". Plan validation should keep
+structural concerns - graph validity, dependency references, retry declaration,
+branch structure, declared terminal shape - and leave current eligibility to
+operation definitions and `OperationAuthority`.
+
+**`ActionGuard` is both policy owner and mutable budget ledger.** Split it: the
+authority returns a pure typed decision over a bound operation and a current
+observation; a budget ledger owns reserve, commit, release, and rate accounting.
+The kernel may coordinate both; neither should impersonate the other. Macro
+policy inside the guard belongs to Stage 7 item 9 and must not distract from
+this boundary.
+
+**Refusal codes are only partly typed.** Boundary verdicts are typed, but every
+operation-policy failure collapses into `OPERATION_UNAUTHORIZED` plus free-text
+prose. Add a small stable vocabulary only where it improves ownership - for
+example capability unavailable, binding absent, binding ambiguous, selection
+invalid, policy disallowed, transaction budget unavailable, stale bound identity.
+The purpose is to stop logs and tests depending on duplicated prose, not to build
+an error framework.
+
+### 20.4 Closure order
+
+1. Stage 5, as real extraction. A service that calls back into `AgentRuntime` is
+   not an extraction; each one must remove the implementation *and* its state.
+2. Close Stage 3 (Section 20.2) once those services own their work.
+3. Close Stage 4 (Sections 20.1 and 20.3) together, since the adapter leak and
+   the rebinding paths are one problem.
+4. Only then begin Stage 6.
+
+Splitting the model universe while authority and binding identity are still
+ambiguous would encode that ambiguity into the new package graph, which is the
+one thing Stage 6 cannot easily undo.
 
