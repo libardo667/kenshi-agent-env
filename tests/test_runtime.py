@@ -18,6 +18,7 @@ from kenshi_agent.core.operation import (
     MoveInDirectionAction,
     PauseAction,
     RecoverCameraViewAction,
+    SelectSquadMemberExactAction,
     StopAction,
 )
 from kenshi_agent.core.planning import PlannerDecision
@@ -414,6 +415,67 @@ def test_telemetry_changes_mark_mechanical_deltas_as_not_decision_relevant() -> 
         before,
         after,
     )
+
+
+def test_selection_set_change_is_progress_when_primary_character_is_unchanged() -> None:
+    """Pin the fresh KAE 03 group-to-singleton live-selection regression."""
+
+    flashbox = "char-flashbox"
+    swiff = "char-swiff"
+    before = TelemetrySnapshot.model_validate(
+        {
+            "squad": [
+                {"id": flashbox, "name": "Flashbox", "selected": True},
+                {"id": swiff, "name": "Swiff", "selected": True},
+            ],
+            "ui": {
+                "selected_character_id": flashbox,
+                "selected_character_ids": [flashbox, swiff],
+            },
+        }
+    )
+    after = TelemetrySnapshot.model_validate(
+        {
+            "squad": [
+                {"id": flashbox, "name": "Flashbox", "selected": True},
+                {"id": swiff, "name": "Swiff", "selected": False},
+            ],
+            "ui": {
+                "selected_character_id": flashbox,
+                "selected_character_ids": [flashbox],
+            },
+        }
+    )
+
+    changes = OutcomeRecorder._telemetry_changes_detailed(before, after)
+    assessment, _ = OutcomeRecorder._assess_outcome(
+        ActionReceipt(
+            action=SelectSquadMemberExactAction(target_id=flashbox),
+            accepted=True,
+            executed=True,
+            dry_run=False,
+            causal_revision_advanced=True,
+        ),
+        after,
+        visual_change=0.007,
+        telemetry_changes=changes,
+        movement_distance=0.0,
+    )
+
+    assert [change.label for change in changes] == [
+        "selected characters: ['char-flashbox', 'char-swiff'] -> ['char-flashbox']"
+    ]
+    assert changes[0].decision_relevant is True
+    assert assessment == "changed"
+
+    reordered = before.model_copy(
+        update={
+            "ui": before.ui.model_copy(
+                update={"selected_character_ids": [swiff, flashbox]}
+            )
+        }
+    )
+    assert OutcomeRecorder._telemetry_changes(before, reordered) == []
 
 
 def test_telemetry_changes_name_nutrition_by_its_model_facing_meaning() -> None:

@@ -562,6 +562,11 @@ class OutcomeRecorder:
             before.ui.selected_character_id,
             after.ui.selected_character_id,
         )
+        changed(
+            "selected characters",
+            sorted(before.ui.selected_character_ids),
+            sorted(after.ui.selected_character_ids),
+        )
 
         selected_before = cls._selected_character(before)
         selected_after = cls._selected_character(after)
