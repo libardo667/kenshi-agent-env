@@ -12,10 +12,13 @@ from ..models import (
     AuthoredPlannerContext,
     CommandDispatchContext,
     Observation,
+    PlanEnvelope,
     PlanPatch,
+    PlanStep,
     Transition,
 )
 from ..options import OptionPoll
+from ..planning import PlanBudgetLedger
 from ..world_state import StoreUpdate
 
 
@@ -36,6 +39,17 @@ class MonitoredOperationResult:
     terminal: OptionPoll
     staged_patch: StagedPatch | None
     interrupted: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class MonitorScope:
+    plan: PlanEnvelope
+    step: PlanStep
+    observation: Observation
+    budget: PlanBudgetLedger
+    remaining_run_actions: int
+    protected_step_ids: frozenset[str]
+    deadline: float
 
 
 class MonitoredOperation(Protocol):

@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from operation_test_support import execute_operation, operation_port
+from operation_test_support import execute_operation, operation_port, plan_executor
 
 from kenshi_agent.config import (
     CaptureConfig,
@@ -14,7 +14,6 @@ from kenshi_agent.config import (
     RuntimeConfig,
     SafetyConfig,
 )
-from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.control.base import InputController, PrimitiveInputAction, WindowRect
 from kenshi_agent.env.live import LiveEnvironment
 from kenshi_agent.live_plan_policy import live_plan_policy_errors
@@ -625,7 +624,7 @@ def test_continuous_executor_completes_only_the_full_purchase_terminal(
             store.publish(transition.observation)
             return transition.observation
 
-        executor = ContinuousPlanExecutor(
+        executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
             guard=ActionGuard(
@@ -744,7 +743,7 @@ def test_continuous_executor_rechecks_no_op_barrier_between_plan_steps(
             store.publish(candidate)
             return store.decorate_latest(decorated)
 
-        executor = ContinuousPlanExecutor(
+        executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
             guard=ActionGuard(

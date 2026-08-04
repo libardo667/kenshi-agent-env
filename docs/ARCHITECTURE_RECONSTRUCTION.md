@@ -732,7 +732,10 @@ At stage exit:
 - Delete any configuration flag that selects an implementation rather than a policy.
 
 
-**Residue:** loop unification is complete; the physical coordinator extraction is Section 20.2 and legitimately waits for Stage 5.
+**Closed 2026-08-03:** loop unification and the physical coordinator extraction
+are complete. `AgentRuntime` is a composition root, `RunCoordinator` is the one
+run-sequencing owner, and `ContinuousPlanExecutor` is narrowed to plan-local
+execution as recorded in Section 20.2.
 ### Exit criteria
 
 - One run loop.
@@ -1397,28 +1400,33 @@ The adapter must not decide what an operation means or which terminal policy
 belongs to it. Close this with Stage 4, not as a separate Stage 2 reopening: it
 is the same input-boundary rebinding problem.
 
-### 20.2 Stage 3 residue: the coordinator is behavioral, not physical
+### 20.2 Stage 3 closure: one physical coordinator and a plan-local executor
 
 `_run_single_step` and `_run_continuous` are gone and both schedules share one
 loop, one planner-call lifecycle, one error route, and one finalization. The
 loop itself contains no operation-family logic, and a fitness gate holds that.
 
-What remains is that `_run_scheduled` is still a large method on `AgentRuntime`
-rather than a `RunCoordinator` that owns sequencing alone.
+Closed 2026-08-03 after the Stage 5 services existed. `_run_scheduled` and its
+run-session/finalization machinery now live physically on `RunCoordinator`;
+`AgentRuntime` composes the services and delegates `run()`.
 
-This dependency is real, not an excuse: `_run_scheduled` touches 21
-`AgentRuntime` methods, and 14 of them are the services Stage 5 creates -
-planner invocation and retry feedback, memory decoration, continuity commits,
-fieldbook and memory reads, advisor dispatch, plan-outcome recording,
-observation logging, and plan events. Extracting the coordinator first would
-either produce an empty wrapper or a coordinator holding a reference to the
-god-object it was meant to replace.
+`ContinuousPlanExecutor` now owns only DAG traversal, dependency and branch
+handling, step retries, operation submission, plan-local cancellation, and
+plan-local budget/condition checks. It no longer imports or composes an
+environment, operation mechanics, handlers, execution kernel, monitor,
+operation authority, planner context, future planner, memory or fieldbook
+service, advisor service, continuity callback, or outcome recorder.
 
-Close after Stage 5, then narrow `ContinuousPlanExecutor` to plan-local
-execution: DAG traversal, dependency and branch handling, step retries,
-operation submission, plan-local cancellation. It must not own planner context,
-future-planning policy, memory or fieldbook authority, advisor delivery,
-continuity commits, global outcome recording, or run finalization.
+`OperationExecutionService` is the narrow operation-submission boundary and
+`FuturePlanningPolicy` owns the optional concurrent advisory lifecycle, patch
+validation, activation, and exact continuity commit. The old non-plan-local
+executor APIs and the scheduler implementation on `AgentRuntime` are deleted.
+
+Evidence: the full portable gate passed, and supervised live run
+`reconstruction-stage-3-run-coordinator-r3` completed 11 accepted plans,
+including a monitored native movement with repeated progress observations and
+an exact success terminal, replanned afterward, stopped explicitly with zero
+plan failures, and recorded `pause_confirmed` final safety.
 
 ### 20.3 Stage 4 residue: authority identity, rebinding, policy, and budget
 
@@ -1476,4 +1484,3 @@ an error framework.
 Splitting the model universe while authority and binding identity are still
 ambiguous would encode that ambiguity into the new package graph, which is the
 one thing Stage 6 cannot easily undo.
-

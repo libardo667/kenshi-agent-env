@@ -193,14 +193,14 @@ def test_the_run_loop_carries_no_operation_family_logic() -> None:
     # operation family the loop reasons about.
     allowed = {"Action", "StopAction", "PauseAction", "PlannerAction"}
 
-    runtime = next(
+    coordinator = next(
         node
-        for node in _tree(SOURCE / "runtime.py").body
-        if isinstance(node, ast.ClassDef) and node.name == "AgentRuntime"
+        for node in _tree(SOURCE / "run_coordinator.py").body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
     )
     loop = next(
         member
-        for member in runtime.body
+        for member in coordinator.body
         if isinstance(member, (ast.FunctionDef, ast.AsyncFunctionDef))
         and member.name == "_run_scheduled"
     )
@@ -211,7 +211,74 @@ def test_the_run_loop_carries_no_operation_family_logic() -> None:
             and isinstance(node.value, str)
             and node.value in (kinds | families)
         ):
-            found.append(f"runtime.py:{node.lineno}:{node.value}")
+            found.append(f"run_coordinator.py:{node.lineno}:{node.value}")
         if isinstance(node, ast.Name) and node.id.endswith("Action") and node.id not in allowed:
-            found.append(f"runtime.py:{node.lineno}:{node.id}")
+            found.append(f"run_coordinator.py:{node.lineno}:{node.id}")
     assert found == []
+
+
+def test_stage_three_has_one_physical_run_sequencing_owner() -> None:
+    """The composition root delegates; only RunCoordinator owns the loop."""
+
+    runtime = _tree(SOURCE / "runtime.py")
+    runtime_class = next(
+        node
+        for node in runtime.body
+        if isinstance(node, ast.ClassDef) and node.name == "AgentRuntime"
+    )
+    runtime_methods = _defined_methods(runtime_class)
+    assert "_run_scheduled" not in runtime_methods
+    assert "_run_single_step" not in runtime_methods
+    assert "_run_continuous" not in runtime_methods
+
+    coordinator = next(
+        node
+        for node in _tree(SOURCE / "run_coordinator.py").body
+        if isinstance(node, ast.ClassDef) and node.name == "RunCoordinator"
+    )
+    assert "_run_scheduled" in _defined_methods(coordinator)
+
+
+def test_plan_executor_owns_only_plan_local_execution() -> None:
+    """Stage 3's narrowed executor must not reabsorb application services."""
+
+    path = SOURCE / "continuous_executor.py"
+    tree = _tree(path)
+    imported_modules = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    forbidden_modules = {
+        "advisor_service",
+        "continuity_service",
+        "env",
+        "future_planning",
+        "operation_authority",
+        "outcome_recorder",
+        "planner_context",
+        "planner_service",
+    }
+    assert imported_modules & forbidden_modules == set()
+    assert not any(module.startswith("execution.handlers") for module in imported_modules)
+
+    executor = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ContinuousPlanExecutor"
+    )
+    constructor = next(
+        node
+        for node in executor.body
+        if isinstance(node, ast.FunctionDef) and node.name == "__init__"
+    )
+    parameters = {argument.arg for argument in constructor.args.kwonlyargs}
+    assert parameters == {
+        "operations",
+        "reflexes",
+        "logger",
+        "clock",
+        "state_store",
+        "planning_config",
+        "event",
+    }

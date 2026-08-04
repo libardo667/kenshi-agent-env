@@ -1,142 +1,34 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Coroutine, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
 
-from .advisor_service import AdvisorActionResult
-from .affordances import bind_runtime_operation, terminal_affordance_receipt
+from .affordances import terminal_affordance_receipt
 from .config import PlanningConfig
-from .env import AgentEnvironment
-from .execution.handlers.camera import camera_handlers
-from .execution.handlers.cognition import CognitiveServices, cognition_handlers
-from .execution.handlers.dialogue import dialogue_handlers
-from .execution.handlers.inventory import inventory_handlers
-from .execution.handlers.movement import movement_handlers
-from .execution.handlers.resources import resource_handlers
-from .execution.handlers.runtime import runtime_handlers
-from .execution.handlers.screens import screen_handlers
-from .execution.handlers.trade import trade_handlers
-from .execution.kernel import (
-    ExecutionKernel,
-    KernelHooks,
-    KernelRequest,
-    TransitionObserver,
-)
-from .execution.monitor_types import StagedPatch as _StagedPatch
-from .execution.monitoring import MonitorScope, OperationMonitor
-from .execution.ports import OperationMechanicsPort
-from .execution.registry import HandlerRegistry
 from .models import (
-    Action,
-    ActionReceipt,
     AffordanceExecution,
     AffordanceLifecycleStatus,
-    AuthoredPlannerContext,
-    AuthoredPlannerOutput,
     ConditionEvaluation,
     ConditionResult,
-    ConsultAdvisorAction,
-    ContinuityOperation,
-    FieldbookOperation,
     Observation,
     PauseAction,
     PlanEnvelope,
     PlannerDecision,
     PlanStep,
-    ReadFieldbookAction,
-    RecallMemoryAction,
     StopAction,
 )
 from .non_progress import unchanged_definitive_no_op_reason
-from .operation_authority import AuthorizationDecision, OperationAuthority
+from .operation_execution import OperationExecutionService
+from .plan_events import PlanEventReporter
 from .planning import (
     PlanBudgetLedger,
     PlanningClock,
-    PlanValidationError,
     evaluate_conditions,
     game_elapsed_seconds,
-    validate_future_plan_patch,
 )
 from .reflexes import ReflexEngine
-from .safety import ActionGuard
 from .session_log import SessionLogger
 from .world_state import WorldStateStore
-
-ActionStartedReporter = Callable[[int, Action], None]
-
-
-class PlanFailureReporter(Protocol):
-    def __call__(
-        self,
-        *,
-        event_type: str,
-        step_index: int,
-        plan_id: str,
-        plan_version: int,
-        step_id: str | None,
-        reason: str,
-    ) -> None: ...
-
-
-ConcurrentPlanner = Callable[
-    [Observation],
-    Coroutine[Any, Any, AuthoredPlannerOutput],
-]
-AdvisorConsultant = Callable[
-    [ConsultAdvisorAction, Observation, str, int, str],
-    Coroutine[Any, Any, "AdvisorActionResult"],
-]
-
-
-class MemoryReader(Protocol):
-    """Answer one elective memory read. Emits no game input."""
-
-    def __call__(
-        self,
-        action: RecallMemoryAction,
-        observation: Observation,
-        *,
-        plan_id: str,
-        plan_version: int,
-        step_id: str,
-    ) -> ActionReceipt: ...
-
-
-class FieldbookReader(Protocol):
-    """Answer one elective fieldbook read. Emits no game input."""
-
-    def __call__(
-        self,
-        action: ReadFieldbookAction,
-        observation: Observation,
-        *,
-        plan_id: str,
-        plan_version: int,
-        step_id: str,
-    ) -> ActionReceipt: ...
-
-
-class PatchContinuityApplier(Protocol):
-    """Commit a patch's continuity operations.
-
-    Called at the exact point a revalidated patch becomes the active plan, and
-    nowhere else. A staged patch that is rejected, superseded, or discarded
-    never reaches it, which is what keeps a discarded advisory out of durable
-    memory.
-    """
-
-    def __call__(
-        self,
-        operations: Sequence[ContinuityOperation],
-        fieldbook_operations: Sequence[FieldbookOperation],
-        observation: Observation,
-        *,
-        authored_context: AuthoredPlannerContext,
-        plan_id: str,
-        plan_version: int,
-        step_id: str | None,
-    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,33 +43,6 @@ class PlanExecutionResult:
     # Which steps actually finished, so the plan outcome can say what was done
     # rather than only why the plan stopped.
     completed_step_ids: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
-class _StepResult:
-    observation: Observation
-    succeeded: bool
-    actions_completed: int
-    reason: str
-    terminated: bool = False
-    success: bool | None = None
-    staged_patch: _StagedPatch | None = None
-    interrupted: bool = False
-    pause_before_replan: bool = False
-
-
-@dataclass(slots=True)
-class _DeferredConcurrentPlanner:
-    clock: PlanningClock
-    delay_seconds: float
-    planner: ConcurrentPlanner
-    observation: Observation
-    started_at: float | None = None
-
-    async def run(self) -> AuthoredPlannerOutput:
-        await self.clock.sleep(self.delay_seconds)
-        self.started_at = self.clock.monotonic()
-        return await self.planner(self.observation)
 
 
 def _unmet_postcondition_reason(
@@ -216,127 +81,26 @@ class ContinuousPlanExecutor:
     def __init__(
         self,
         *,
-        environment: AgentEnvironment,
-        operation_port: OperationMechanicsPort,
-        guard: ActionGuard,
+        operations: OperationExecutionService,
         reflexes: ReflexEngine,
         logger: SessionLogger,
         clock: PlanningClock,
         state_store: WorldStateStore,
-        observe_transition: TransitionObserver,
         planning_config: PlanningConfig,
-        concurrent_planner: ConcurrentPlanner | None = None,
-        consult_advisor: AdvisorConsultant | None = None,
-        apply_patch_continuity: PatchContinuityApplier | None = None,
-        read_memory: MemoryReader | None = None,
-        read_fieldbook: FieldbookReader | None = None,
-        report_action_started: ActionStartedReporter | None = None,
-        report_plan_failure: PlanFailureReporter | None = None,
+        event: PlanEventReporter,
     ) -> None:
-        self.environment = environment
-        self.guard = guard
-        # One cross-cutting authority, asked before scheduling and again
-        # inside the input lease, so both moments share one policy.
-        self.authority = OperationAuthority(guard)
+        self.operations = operations
         self.reflexes = reflexes
         self.logger = logger
         self.clock = clock
         self.state_store = state_store
-        self.observe_transition = observe_transition
         self.planning_config = planning_config
-        self.concurrent_planner = concurrent_planner
-        self.consult_advisor = consult_advisor
-        self.apply_patch_continuity = apply_patch_continuity
-        self.read_memory = read_memory
-        self.read_fieldbook = read_fieldbook
-        self.report_action_started = report_action_started
-        self.report_plan_failure = report_plan_failure
-        migrated_handlers = {
-            **runtime_handlers(operation_port),
-            **screen_handlers(operation_port),
-            **trade_handlers(operation_port),
-            **inventory_handlers(operation_port),
-            **camera_handlers(operation_port),
-            **dialogue_handlers(operation_port, planning_config),
-            **movement_handlers(operation_port, planning_config, guard.macros),
-            **resource_handlers(operation_port, guard, planning_config),
-            **cognition_handlers(
-                CognitiveServices(
-                    consult_advisor=consult_advisor,
-                    read_memory=read_memory,
-                    read_fieldbook=read_fieldbook,
-                )
-            ),
-        }
-        self.execution_kernel = ExecutionKernel(
-            handlers=HandlerRegistry(migrated_handlers),
-            guard=guard,
-            logger=logger,
-            clock=clock,
-            state_store=state_store,
-            hooks=KernelHooks(
-                event=self._event,
-                observe_transition=observe_transition,
-                authorized=self._action_authority,
-                report_action_started=report_action_started,
-            ),
-            input_boundary_observation=environment.input_boundary_observation,
-            input_boundary_max_telemetry_age_seconds=(
-                environment.input_boundary_max_telemetry_age_seconds
-            ),
-        )
+        self._event = event
         # Which steps of the plan currently in flight actually finished. One
         # executor owns one plan, so this is that plan's answer, and every
         # terminal result reports it rather than only why the plan stopped.
         self._completed_step_ids: tuple[str, ...] = ()
         self._closed_affordance_steps: set[tuple[str, int, str]] = set()
-
-    def _commit_patch_continuity(
-        self,
-        staged_patch: _StagedPatch,
-        patched_plan: PlanEnvelope,
-        observation: Observation,
-        *,
-        step_id: str,
-    ) -> None:
-        """Commit a patch's continuity at the moment the patch takes effect.
-
-        `PlanPatch.memory_writes` was in the schema and was never committed
-        anywhere - a model-authored field with no reader, which is worse than
-        an absent one because it looks like it works. It commits here, once,
-        and only for the exact patch that survived revalidation and is now the
-        active plan.
-        """
-
-        if self.apply_patch_continuity is None:
-            return
-        self.apply_patch_continuity(
-            staged_patch.patch.continuity_operations,
-            staged_patch.patch.fieldbook_operations,
-            observation,
-            authored_context=staged_patch.authored_context,
-            plan_id=patched_plan.plan_id,
-            plan_version=patched_plan.plan_version,
-            step_id=step_id,
-        )
-
-    def _action_authority(
-        self,
-        action: Action,
-        observation: Observation,
-    ) -> AuthorizationDecision:
-        """Re-ask the one authority, without spending the same budget twice."""
-
-        return self.authority.evaluate(action, observation)
-
-    @staticmethod
-    def _has_concurrent_future_authority(
-        budget: PlanBudgetLedger,
-        remaining_run_actions: int,
-    ) -> bool:
-        """Return whether a concurrent proposal could still add future work."""
-
-        return budget.remaining_actions > 0 and remaining_run_actions > 1
 
     async def execute(
         self,
@@ -546,7 +310,7 @@ class ContinuousPlanExecutor:
             affordance_execution_started = False
             affordance_monitoring_started = False
             while True:
-                step_result = await self._execute_operation(
+                step_result = await self.operations.submit(
                     plan,
                     step,
                     observation,
@@ -591,25 +355,19 @@ class ContinuousPlanExecutor:
                         observation,
                         remaining_run_actions - actions_completed,
                     )
-                    try:
-                        if budget_reason is not None:
-                            raise PlanValidationError(budget_reason)
-                        patched_plan = validate_future_plan_patch(
-                            step_result.staged_patch.patch,
-                            active_plan=plan,
-                            planner_observation=(step_result.staged_patch.planner_observation),
-                            current_observation=observation,
-                            config=self.planning_config,
-                            macros=self.guard.macros,
-                            budget=budget,
-                            remaining_run_actions=(remaining_run_actions - actions_completed),
-                            protected_step_ids=completed_step_ids | {step.step_id},
-                        )
-                    except PlanValidationError as exc:
-                        reason = (
-                            "The active option was interrupted, but its pause "
-                            f"handoff patch failed latest-state validation: {exc}"
-                        )
+                    resolution = self.operations.activate_future_patch(
+                        step_result.staged_patch,
+                        active_plan=plan,
+                        current_observation=observation,
+                        budget=budget,
+                        remaining_run_actions=(remaining_run_actions - actions_completed),
+                        protected_step_ids=completed_step_ids | {step.step_id},
+                        step_id=step.step_id,
+                        budget_reason=budget_reason,
+                        interrupted=True,
+                    )
+                    if resolution.rejection_reason is not None:
+                        reason = resolution.rejection_reason
                         aborted = self._abort(
                             plan,
                             step,
@@ -623,34 +381,10 @@ class ContinuousPlanExecutor:
                             observation,
                             reason,
                         )
-                    previous_version = plan.plan_version
-                    self.state_store.apply_plan_patch(
-                        patched_plan.plan_version,
-                        observation.world_revision,
-                    )
-                    self._commit_patch_continuity(
-                        step_result.staged_patch,
-                        patched_plan,
-                        observation,
-                        step_id=step.step_id,
-                    )
-                    plan = patched_plan
+                    assert resolution.plan is not None
+                    plan = resolution.plan
                     by_id = {item.step_id: item for item in plan.steps}
                     step_id = plan.entry_step_id
-                    self._event(
-                        "plan_patched",
-                        plan,
-                        observation,
-                        reason=(
-                            "The exact active option accepted an explicit "
-                            "interruption; its guarded pause handoff is now the "
-                            "only executable future."
-                        ),
-                        evidence={
-                            "previous_plan_version": previous_version,
-                            "patch": (step_result.staged_patch.patch.model_dump(mode="json")),
-                        },
-                    )
                     break
 
                 if step_result.succeeded:
@@ -696,65 +430,21 @@ class ContinuousPlanExecutor:
                             observation,
                             remaining_run_actions - actions_completed,
                         )
-                        try:
-                            if budget_reason is not None:
-                                raise PlanValidationError(budget_reason)
-                            patched_plan = validate_future_plan_patch(
-                                step_result.staged_patch.patch,
-                                active_plan=plan,
-                                planner_observation=(step_result.staged_patch.planner_observation),
-                                current_observation=observation,
-                                config=self.planning_config,
-                                macros=self.guard.macros,
-                                budget=budget,
-                                remaining_run_actions=(remaining_run_actions - actions_completed),
-                                protected_step_ids=completed_step_ids,
-                            )
-                        except PlanValidationError as exc:
-                            self._event(
-                                "plan_patch_rejected",
-                                plan,
-                                observation,
-                                step=step,
-                                reason=(
-                                    f"Staged future patch failed post-option revalidation: {exc}"
-                                ),
-                                evidence={
-                                    "patch": (
-                                        step_result.staged_patch.patch.model_dump(mode="json")
-                                    )
-                                },
-                            )
-                        else:
-                            previous_version = plan.plan_version
-                            self.state_store.apply_plan_patch(
-                                patched_plan.plan_version,
-                                observation.world_revision,
-                            )
-                            self._commit_patch_continuity(
-                                step_result.staged_patch,
-                                patched_plan,
-                                observation,
-                                step_id=step.step_id,
-                            )
-                            plan = patched_plan
+                        resolution = self.operations.activate_future_patch(
+                            step_result.staged_patch,
+                            active_plan=plan,
+                            current_observation=observation,
+                            budget=budget,
+                            remaining_run_actions=(remaining_run_actions - actions_completed),
+                            protected_step_ids=completed_step_ids,
+                            step_id=step.step_id,
+                            budget_reason=budget_reason,
+                            interrupted=False,
+                        )
+                        if resolution.plan is not None:
+                            plan = resolution.plan
                             by_id = {item.step_id: item for item in plan.steps}
                             step_id = plan.entry_step_id
-                            self._event(
-                                "plan_patched",
-                                plan,
-                                observation,
-                                reason=(
-                                    "A future-only concurrent patch passed latest-state "
-                                    "and remaining-budget validation."
-                                ),
-                                evidence={
-                                    "previous_plan_version": previous_version,
-                                    "patch": (
-                                        step_result.staged_patch.patch.model_dump(mode="json")
-                                    ),
-                                },
-                            )
                             break
                     step_id = step.on_success
                     break
@@ -887,76 +577,6 @@ class ContinuousPlanExecutor:
             success=None,
             reason="Plan completed.",
             completed_step_ids=self._completed_step_ids,
-        )
-
-    async def _execute_operation(
-        self,
-        plan: PlanEnvelope,
-        step: PlanStep,
-        observation: Observation,
-        budget: PlanBudgetLedger,
-        *,
-        plan_started_at: float,
-        plan_started_observation: Observation,
-        remaining_run_actions: int,
-        protected_step_ids: set[str],
-    ) -> _StepResult:
-        """Bind current authority and hand one operation to the kernel."""
-
-        try:
-            bound = bind_runtime_operation(
-                step.action,
-                observation,
-                affordance=step.affordance,
-            )
-        except ValueError as exc:
-            return _StepResult(
-                observation=observation,
-                succeeded=False,
-                actions_completed=0,
-                reason=f"Operation binding failed before execution: {exc}",
-            )
-        monitor = OperationMonitor(
-            scope=MonitorScope(
-                plan=plan,
-                step=step,
-                observation=observation,
-                budget=budget,
-                remaining_run_actions=remaining_run_actions,
-                protected_step_ids=frozenset(protected_step_ids),
-                deadline=self.clock.monotonic() + step.timeout_seconds,
-            ),
-            planning_config=self.planning_config,
-            concurrent_planner=self.concurrent_planner,
-            guard=self.guard,
-            logger=self.logger,
-            clock=self.clock,
-            state_store=self.state_store,
-            event=self._event,
-        )
-        result = await self.execution_kernel.execute(
-            bound,
-            KernelRequest(
-                plan=plan,
-                step=step,
-                observation=observation,
-                budget=budget,
-                plan_started_at=plan_started_at,
-                plan_started_observation=plan_started_observation,
-                remaining_run_actions=remaining_run_actions,
-                monitor=monitor,
-            ),
-        )
-        return _StepResult(
-            observation=result.observation,
-            succeeded=result.succeeded,
-            actions_completed=result.actions_completed,
-            reason=result.reason,
-            terminated=result.terminated,
-            success=result.success,
-            staged_patch=cast(_StagedPatch | None, result.staged_patch),
-            interrupted=result.interrupted,
-            pause_before_replan=result.pause_before_replan,
         )
 
     def _budget_stop_reason(
@@ -1122,43 +742,6 @@ class ContinuousPlanExecutor:
             reflex_decision=decision,
             completed_step_ids=result.completed_step_ids,
         )
-
-    def _event(
-        self,
-        event_type: str,
-        plan: PlanEnvelope,
-        observation: Observation,
-        *,
-        reason: str,
-        step: PlanStep | None = None,
-        evidence: dict[str, object] | None = None,
-    ) -> None:
-        self.logger.write(
-            event_type,
-            step_index=observation.step_index,
-            payload={
-                "plan_id": plan.plan_id,
-                "plan_version": plan.plan_version,
-                "step_id": step.step_id if step is not None else None,
-                "world_revision": observation.world_revision.model_dump(mode="json"),
-                "control_mode": observation.control_mode.value,
-                "reason": reason,
-                "evidence": evidence or {},
-            },
-        )
-        if self.report_plan_failure is not None and event_type in {
-            "plan_patch_rejected",
-            "concurrent_planner_discarded",
-            "plan_aborted",
-        }:
-            self.report_plan_failure(
-                event_type=event_type,
-                step_index=observation.step_index,
-                plan_id=plan.plan_id,
-                plan_version=plan.plan_version,
-                step_id=step.step_id if step is not None else None,
-                reason=reason,
-            )
 
     @staticmethod
     def _first_non_true(

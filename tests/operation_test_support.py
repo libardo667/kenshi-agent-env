@@ -5,9 +5,19 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+from kenshi_agent.config import PlanningConfig
+from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.models import Action, CommandDispatchContext, Transition
+from kenshi_agent.operation_authority import OperationAuthority
+from kenshi_agent.operation_execution import OperationExecutionFactory
 from kenshi_agent.options import TransitionOperation
+from kenshi_agent.plan_events import PlanEventRecorder
+from kenshi_agent.planning import PlanningClock
+from kenshi_agent.reflexes import ReflexEngine
+from kenshi_agent.safety import ActionGuard
+from kenshi_agent.session_log import SessionLogger
+from kenshi_agent.world_state import WorldStateStore
 
 _EXACT_METHODS = frozenset(
     {
@@ -153,3 +163,44 @@ class ScriptedOperationPort:
 
 def operation_port(environment: Any) -> ScriptedOperationPort:
     return ScriptedOperationPort(environment)
+
+
+def plan_executor(
+    *,
+    environment: Any,
+    operation_port: Any,
+    guard: ActionGuard,
+    reflexes: ReflexEngine,
+    logger: SessionLogger,
+    clock: PlanningClock,
+    state_store: WorldStateStore,
+    observe_transition: Any,
+    planning_config: PlanningConfig,
+) -> ContinuousPlanExecutor:
+    """Compose the production plan boundary for focused operation tests."""
+
+    events = PlanEventRecorder(logger)
+    factory = OperationExecutionFactory(
+        environment=environment,
+        operation_port=operation_port,
+        guard=guard,
+        authority=OperationAuthority(guard),
+        logger=logger,
+        clock=clock,
+        observe_transition=observe_transition,
+    )
+    operations = factory.create(
+        state_store=state_store,
+        planning_config=planning_config,
+        event=events,
+        concurrent_planning=False,
+    )
+    return ContinuousPlanExecutor(
+        operations=operations,
+        reflexes=reflexes,
+        logger=logger,
+        clock=clock,
+        state_store=state_store,
+        planning_config=planning_config,
+        event=events,
+    )

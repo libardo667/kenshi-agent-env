@@ -246,8 +246,8 @@ def test_continuous_stop_decision_commits_its_fieldbook_sidecar(
         runtime, logger = runtime_for(tmp_path, UnusedPlanner(), store)
         try:
             current = runtime.planner_context.decorate(await runtime.environment.reset(seed=1))
-            runtime._state_store = runtime._new_world_state_store()
-            current = runtime._state_store.publish(current).observation
+            runtime.coordinator._state_store = runtime.coordinator._new_world_state_store()
+            current = runtime.coordinator._state_store.publish(current).observation
             context = AuthoredPlannerContext(
                 manifest=PlannerContextManifest(
                     context_id="pc-1",
@@ -259,7 +259,7 @@ def test_continuous_stop_decision_commits_its_fieldbook_sidecar(
                 ),
                 observation=current,
             )
-            latest, _, terminated, _, _ = await runtime._execute_continuous_decision(
+            latest, _, terminated, _, _ = await runtime.coordinator._execute_continuous_decision(
                 PlannerDecision(
                     intent="Stop and retain the continuing docket.",
                     rationale="Stopping the run must not discard its sidecar.",

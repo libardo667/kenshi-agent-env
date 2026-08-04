@@ -4,10 +4,9 @@ import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 
-from operation_test_support import operation_port
+from operation_test_support import operation_port, plan_executor
 
 from kenshi_agent.config import PlanningConfig, SafetyConfig
-from kenshi_agent.continuous_executor import ContinuousPlanExecutor
 from kenshi_agent.env import AgentEnvironment
 from kenshi_agent.input_boundary import ExecutionToken
 from kenshi_agent.live_plan_policy import live_plan_policy_errors
@@ -487,7 +486,7 @@ def test_harvest_is_one_planner_action_with_controller_owned_transfer(
             store.publish(transition.observation)
             return transition.observation
 
-        executor = ContinuousPlanExecutor(
+        executor = plan_executor(
             environment=environment,
             operation_port=operation_port(environment),
             guard=ActionGuard(

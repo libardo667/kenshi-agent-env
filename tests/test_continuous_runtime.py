@@ -92,6 +92,7 @@ from kenshi_agent.planners.base import (
 from kenshi_agent.planning import PlanningClock
 from kenshi_agent.reflexes import ReflexEngine
 from kenshi_agent.reporting import ConsoleDecisionReporter
+from kenshi_agent.run_coordinator import RunCoordinator
 from kenshi_agent.runtime import AgentRuntime
 from kenshi_agent.safety import ActionGuard
 from kenshi_agent.session_log import SessionLogger
@@ -1701,14 +1702,14 @@ def test_semantically_identical_orphaned_patches_share_one_bounded_failure(
             logger.close()
 
         assert summary.terminated is True
-        assert planner.calls == AgentRuntime._IDENTICAL_REPLAN_FAILURE_LIMIT
+        assert planner.calls == RunCoordinator._IDENTICAL_REPLAN_FAILURE_LIMIT
         assert environment.actions == []
         assert "same orphaned plan patch" in summary.stop_reason
 
         events = read_events(tmp_path / "events.jsonl")
         assert (
             sum(event["event_type"] == "plan_rejected" for event in events)
-            == AgentRuntime._IDENTICAL_REPLAN_FAILURE_LIMIT
+            == RunCoordinator._IDENTICAL_REPLAN_FAILURE_LIMIT
         )
         stalled = [event for event in events if event["event_type"] == "replan_stalled"]
         assert len(stalled) == 1
@@ -4657,7 +4658,6 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
     observations paused and moved eighty units in total.
     """
     from kenshi_agent.models import GameState, PauseAction
-    from kenshi_agent.runtime import AgentRuntime
 
     dispatched: list[object] = []
 
@@ -4681,7 +4681,8 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
         def complete_command(self, command_id, revision):  # type: ignore[no-untyped-def]
             self.completed = command_id
 
-    runtime = object.__new__(AgentRuntime)
+    # _restore_running_world is the coordinator's, so build one directly.
+    runtime = object.__new__(RunCoordinator)
     runtime.operation_port = FakeOperationPort()
     runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
     store = FakeStore()
@@ -4703,13 +4704,12 @@ def test_a_handback_sets_a_stopped_world_running_again() -> None:
 def test_a_handback_does_not_disturb_a_world_already_running() -> None:
     """Nothing to restore, so nothing should be sent."""
     from kenshi_agent.models import GameState
-    from kenshi_agent.runtime import AgentRuntime
 
     class Unused:
         async def pause(self, action, *, command, token):  # type: ignore[no-untyped-def]
             raise AssertionError("a running world needs no resume")
 
-    runtime = object.__new__(AgentRuntime)
+    runtime = object.__new__(RunCoordinator)
     runtime.operation_port = Unused()
     runtime.logger = SimpleNamespace(write=lambda *a, **k: None)
 

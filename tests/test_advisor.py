@@ -827,7 +827,7 @@ def test_advisor_handoff_rebases_context_after_telemetry_advances(
             minimum_memory_salience=0.0,
             planning_config=PlanningConfig(mode=PlanningMode.CONTINUOUS),
         )
-        runtime._state_store = store
+        runtime.coordinator._state_store = store
         try:
             result = await runtime.advisor_service.consult(
                 ConsultAdvisorAction(
@@ -884,7 +884,7 @@ def test_runtime_never_shortens_the_configured_advisor_timeout(
                 return None
 
         monkeypatch.setattr(
-            "kenshi_agent.runtime.asyncio.timeout",
+            "kenshi_agent.run_coordinator.asyncio.timeout",
             lambda delay: RejectShortTimeout(delay),
         )
 
