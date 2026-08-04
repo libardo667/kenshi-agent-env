@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from collections import deque
 from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from dataclasses import asdict, dataclass
@@ -20,7 +19,8 @@ from .advisor import (
 )
 from .affordances import terminal_affordance_receipt
 from .config import PlanningConfig
-from .continuity import ContinuityAuthority, ContinuityLedger
+from .continuity import ContinuityLedger
+from .continuity_service import ContinuityService
 from .continuous_executor import (
     AdvisorActionResult,
     ContinuousPlanExecutor,
@@ -32,8 +32,6 @@ from .control_ownership import (
 )
 from .env import AgentEnvironment
 from .execution.ports import OperationMechanicsPort
-from .fieldbook import FieldbookTransitionError
-from .fieldbook_authority import FieldbookAuthority
 from .final_safe_state import (
     FinalSafeStateOutcome,
     FinalSafeStateStatus,
@@ -57,23 +55,10 @@ from .models import (
     ConditionKind,
     ConditionOperator,
     ConsultAdvisorAction,
-    ContinuityOperation,
-    ContinuityOperationReceipt,
-    ContinuityOrigin,
-    ContinuityReceiptDigest,
     ControlMode,
-    FieldbookOperation,
-    FieldbookOperationReceipt,
-    FieldbookReadReceipt,
-    FieldbookReadResult,
-    FieldbookReadStatus,
-    FieldbookReceiptDigest,
     HarvestResourceAction,
     IdempotencyPolicy,
-    MemoryReadReceipt,
-    MemoryReadStatus,
     MemoryRetrievalPolicy,
-    MemorySearchResult,
     NearbyEntity,
     Observation,
     PauseAction,
@@ -85,8 +70,6 @@ from .models import (
     PlanStep,
     PurchaseItemAction,
     PurchaseStatus,
-    ReadFieldbookAction,
-    RecallMemoryAction,
     RecoverCameraViewAction,
     ResourceHarvestStatus,
     RiskBudget,
@@ -112,12 +95,8 @@ from .planning import PlanningClock, PlanValidationError, SystemPlanningClock, v
 from .reflexes import ReflexEngine
 from .reporting import ConsoleDecisionReporter
 from .runtime_continuity import (
-    build_fieldbook_read_receipt,
-    build_memory_read_receipt,
-    continuity_receipt_digests,
     recall_for_observation,
     record_planner_delivery,
-    search_durable_memory,
 )
 from .safety import ActionGuard, SafetyViolation
 from .safety_supervisor import SafetyCause, SafetyPreemption, SafetySupervisor
@@ -265,26 +244,18 @@ class AgentRuntime:
         )
         # Bounded and short: these exist so a deterministic invalid update is
         # not repeated, not as a second history.
-        self._continuity_receipts: deque[ContinuityReceiptDigest] = deque(
-            maxlen=MAX_SURFACED_CONTINUITY_RECEIPTS
-        )
-        self._pending_memory_search: MemoryReadReceipt | None = None
-        self._fieldbook_receipts: deque[FieldbookReceiptDigest] = deque(
-            maxlen=MAX_SURFACED_FIELDBOOK_RECEIPTS
-        )
-        self._pending_fieldbook_read: FieldbookReadReceipt | None = None
         self._advisor_brief_ids: set[str] = set()
         self._advisor_task: asyncio.Task[None] | None = None
         self._advisor_result_ready = False
         self._planner_contexts_issued = 0
-        self._continuity = ContinuityAuthority(
+        self.continuity = ContinuityService(
             run_id=run_id,
             store=memory,
             ledger=self._ledger,
             logger=logger,
+            control_mode=control_mode,
             advisor_brief_ids=lambda: self._advisor_brief_ids,
         )
-        self._fieldbook = FieldbookAuthority(continuity=self._continuity)
         self.reporter = reporter
         self.planning_config = planning_config or PlanningConfig()
         self.planning_clock = planning_clock or SystemPlanningClock()
@@ -408,10 +379,7 @@ class AgentRuntime:
         self._ledger.reset()
         self._advisor_brief_ids.clear()
         self._planner_contexts_issued = 0
-        self._continuity_receipts.clear()
-        self._pending_memory_search = None
-        self._fieldbook_receipts.clear()
-        self._pending_fieldbook_read = None
+        self.continuity.reset()
         observation = self._with_memories(await self.environment.reset(seed=seed))
         self.logger.write(
             "run_started",
@@ -984,7 +952,7 @@ class AgentRuntime:
                 # Only now: after schema, causal basis, assumptions, control
                 # mode, graph, and budget validation have all passed. A plan
                 # that never became executable contributes no continuity.
-                self._apply_plan_continuity(
+                self.continuity.apply_plan(
                     plan,
                     observation,
                     authored_context=authored_context,
@@ -1024,9 +992,9 @@ class AgentRuntime:
                     planning_config=self.planning_config,
                     concurrent_planner=self._decide,
                     consult_advisor=self._execute_advisor_action,
-                    apply_patch_continuity=self._apply_patch_continuity,
-                    read_memory=self._execute_memory_read,
-                    read_fieldbook=self._execute_fieldbook_read,
+                    apply_patch_continuity=self.continuity.apply_patch,
+                    read_memory=self.continuity.read_memory,
+                    read_fieldbook=self.continuity.read_fieldbook,
                     report_action_started=(
                         self.reporter.action_started if self.reporter is not None else None
                     ),
@@ -2079,9 +2047,9 @@ class AgentRuntime:
             observe_transition=self._observe_plan_transition,
             planning_config=planning_config or self.planning_config,
             consult_advisor=self._execute_advisor_action,
-            apply_patch_continuity=self._apply_patch_continuity,
-            read_memory=self._execute_memory_read,
-            read_fieldbook=self._execute_fieldbook_read,
+            apply_patch_continuity=self.continuity.apply_patch,
+            read_memory=self.continuity.read_memory,
+            read_fieldbook=self.continuity.read_fieldbook,
             report_action_started=(
                 self.reporter.action_started if self.reporter is not None else None
             ),
@@ -2397,20 +2365,20 @@ class AgentRuntime:
             "planning_mode": self.planning_config.mode,
             "recent_action_outcomes": self._ledger.recent_action_outcomes,
             "recent_plan_outcomes": self._ledger.recent_plan_outcomes,
-            "recent_continuity_receipts": list(self._continuity_receipts),
-            "recent_fieldbook_receipts": list(getattr(self, "_fieldbook_receipts", ())),
-            "continuity_writes_degraded_reason": (self._continuity.writes_degraded_reason),
-            "continuity_reads_degraded_reason": (self._continuity.reads_degraded_reason),
+            "recent_continuity_receipts": self.continuity.recent_receipts,
+            "recent_fieldbook_receipts": self.continuity.recent_fieldbook_receipts,
+            "continuity_writes_degraded_reason": (self.continuity.authority.writes_degraded_reason),
+            "continuity_reads_degraded_reason": (self.continuity.authority.reads_degraded_reason),
             "advisor": advisor_availability,
-            "memory_search": self._pending_memory_search,
-            "fieldbook_read": getattr(self, "_pending_fieldbook_read", None),
+            "memory_search": self.continuity.pending_memory_search,
+            "fieldbook_read": self.continuity.pending_fieldbook_read,
             "fieldbook_projects": [],
             "active_fieldbook_project": None,
         }
         if self.memory is not None:
             recalled = recall_for_observation(
                 self.memory,
-                self._continuity,
+                self.continuity.authority,
                 budget=self._recall_budget,
                 target_ids=observation.current_memory_target_ids(),
             )
@@ -2427,7 +2395,7 @@ class AgentRuntime:
                         "reason": recalled.failure.reason,
                     },
                 )
-            if self._continuity.reads_degraded_reason is None:
+            if self.continuity.authority.reads_degraded_reason is None:
                 try:
                     updates["fieldbook_projects"] = self.memory.fieldbook.list_projects(
                         limit=getattr(self, "fieldbook_project_limit", 8)
@@ -2436,10 +2404,10 @@ class AgentRuntime:
                         self.memory.fieldbook.active_project_summary()
                     )
                 except sqlite3.Error as exc:
-                    reason = self._continuity.quarantine_reads_after_store_failure(exc)
+                    reason = self.continuity.authority.quarantine_reads_after_store_failure(exc)
                     updates["continuity_reads_degraded_reason"] = reason
                     updates["continuity_writes_degraded_reason"] = (
-                        self._continuity.writes_degraded_reason
+                        self.continuity.authority.writes_degraded_reason
                     )
                     self.logger.write(
                         "continuity_store_failed",
@@ -2768,70 +2736,6 @@ class AgentRuntime:
             self._advisor_task = None
             self._advisor_result_ready = False
 
-    def _apply_plan_continuity(
-        self,
-        plan: PlanEnvelope,
-        observation: Observation,
-        *,
-        authored_context: AuthoredPlannerContext,
-    ) -> None:
-        """Commit an accepted plan's continuity, and nothing about its future.
-
-        This used to also write an automatic "Set out to: <objective>" episode,
-        on the theory that continuity is too important to leave to the model.
-        But that was a durable claim about work not yet done, filed under the
-        kind reserved for events that happened. Plan purpose is working history
-        now: `_record_plan_outcome` files the original objective once the plan
-        has actually ended, with the reason it ended.
-        """
-
-        self._surface(
-            self._continuity.apply(
-                plan.continuity_operations,
-                origin=ContinuityOrigin.PLAN,
-                authored_context=authored_context,
-                commit_observation=observation,
-                plan_id=plan.plan_id,
-                plan_version=plan.plan_version,
-            )
-        )
-        if plan.fieldbook_operations:
-            self._surface_fieldbook(
-                self._fieldbook.apply(
-                    plan.fieldbook_operations,
-                    origin=ContinuityOrigin.PLAN,
-                    authored_context=authored_context,
-                    commit_observation=observation,
-                    plan_id=plan.plan_id,
-                    plan_version=plan.plan_version,
-                )
-            )
-
-    def _apply_decision_continuity(
-        self,
-        decision: PlannerDecision,
-        observation: Observation,
-        *,
-        authored_context: AuthoredPlannerContext | None,
-        plan_id: str,
-        step_id: str,
-    ) -> None:
-        if not decision.continuity_operations:
-            return
-        if authored_context is None:
-            raise RuntimeError("Planner-authored continuity has no authored planner context.")
-        self._surface(
-            self._continuity.apply(
-                decision.continuity_operations,
-                origin=ContinuityOrigin.DECISION,
-                authored_context=authored_context,
-                commit_observation=observation,
-                plan_id=plan_id,
-                plan_version=1,
-                step_id=step_id,
-            )
-        )
-
     def _apply_decision_sidecars(
         self,
         decision: PlannerDecision,
@@ -2849,83 +2753,17 @@ class AgentRuntime:
             raise RuntimeError(
                 "Planner-authored durable operations have no authored planner context."
             )
-        self._apply_decision_continuity(
+        self.continuity.apply_decision(
             decision,
             observation,
             authored_context=authored_context,
             plan_id=plan_id,
             step_id=step_id,
         )
-        if decision.fieldbook_operations:
-            assert authored_context is not None
-            self._surface_fieldbook(
-                self._fieldbook.apply(
-                    decision.fieldbook_operations,
-                    origin=ContinuityOrigin.DECISION,
-                    authored_context=authored_context,
-                    commit_observation=observation,
-                    plan_id=plan_id,
-                    plan_version=1,
-                    step_id=step_id,
-                )
-            )
         latest = self._with_memories(observation)
         if self._state_store is not None:
             latest = self._state_store.decorate_latest(latest)
         return latest
-
-    def _apply_patch_continuity(
-        self,
-        operations: Sequence[ContinuityOperation],
-        fieldbook_operations: Sequence[FieldbookOperation],
-        observation: Observation,
-        *,
-        authored_context: AuthoredPlannerContext,
-        plan_id: str,
-        plan_version: int,
-        step_id: str | None,
-    ) -> None:
-        """Commit a patch's continuity only where the patch itself took effect.
-
-        Called by the executor at the exact point a revalidated patch becomes
-        the active plan. A staged patch that is later rejected, superseded, or
-        discarded never reaches here, so it leaves no trace in durable memory.
-        """
-
-        self._surface(
-            self._continuity.apply(
-                operations,
-                origin=ContinuityOrigin.PATCH,
-                authored_context=authored_context,
-                commit_observation=observation,
-                plan_id=plan_id,
-                plan_version=plan_version,
-                step_id=step_id,
-            )
-        )
-        if fieldbook_operations:
-            self._surface_fieldbook(
-                self._fieldbook.apply(
-                    fieldbook_operations,
-                    origin=ContinuityOrigin.PATCH,
-                    authored_context=authored_context,
-                    commit_observation=observation,
-                    plan_id=plan_id,
-                    plan_version=plan_version,
-                    step_id=step_id,
-                )
-            )
-
-    def _surface(self, receipts: Sequence[ContinuityOperationReceipt]) -> None:
-        """Keep the newest receipts where the next planner will see them."""
-
-        self._continuity_receipts.extend(continuity_receipt_digests(receipts))
-
-    def _surface_fieldbook(
-        self,
-        receipts: Sequence[FieldbookOperationReceipt],
-    ) -> None:
-        self._fieldbook_receipts.extend(receipt.digest() for receipt in receipts)
 
     def _record_plan_outcome(
         self,
@@ -3000,7 +2838,7 @@ class AgentRuntime:
         if self.memory is not None:
             failure = record_planner_delivery(
                 self.memory,
-                self._continuity,
+                self.continuity.authority,
                 run_id=self.run_id,
                 memory_ids=manifest.memory_ids,
             )
@@ -3013,8 +2851,7 @@ class AgentRuntime:
                         "reason": failure.reason,
                     },
                 )
-        self._pending_memory_search = None
-        self._pending_fieldbook_read = None
+        self.continuity.clear_pending_reads()
         try:
             output = await self.planner.decide_prepared(prepared)
         except Exception:
@@ -3034,194 +2871,6 @@ class AgentRuntime:
                 structured_output_accepted=True,
             )
         return AuthoredPlannerOutput(output=output, context=prepared.context)
-
-    def _execute_memory_read(
-        self,
-        action: RecallMemoryAction,
-        observation: Observation,
-        *,
-        plan_id: str,
-        plan_version: int,
-        step_id: str,
-    ) -> ActionReceipt:
-        """Answer one deliberate read. Emits nothing into the game.
-
-        Unavailability is reported as unavailability. A read that could not
-        happen must not read as "there is nothing there".
-        """
-
-        started_at = datetime.now(UTC)
-        read_status = MemoryReadStatus.COMPLETED
-        campaign_id: str | None = None
-        if action.source == "working_outcomes":
-            result = self._ledger.search_outcomes(
-                query=action.query,
-                limit=action.max_records,
-            )
-        elif self.memory is None:
-            read_status = MemoryReadStatus.UNAVAILABLE
-            result = MemorySearchResult(
-                query=action.query,
-                reason="Durable memory is disabled for this run; nothing was read.",
-            )
-        else:
-            campaign_id = self.memory.campaign_id
-            search = search_durable_memory(
-                self.memory,
-                self._continuity,
-                query=action.query,
-                limit=action.max_records,
-            )
-            result = search.result
-            if self._continuity.reads_degraded_reason is not None:
-                read_status = MemoryReadStatus.FAILED
-            if search.failure is not None:
-                self.logger.write(
-                    "continuity_store_failed",
-                    step_index=observation.step_index,
-                    payload={
-                        "boundary": search.failure.boundary,
-                        "reason": search.failure.reason,
-                    },
-                )
-        read_receipt = build_memory_read_receipt(
-            result,
-            source=action.source,
-            status=read_status,
-            campaign_id=campaign_id,
-            plan_id=plan_id,
-            plan_version=plan_version,
-            step_id=step_id,
-        )
-        self._pending_memory_search = read_receipt
-        receipt = ActionReceipt(
-            action=action,
-            control_mode=self.control_mode,
-            accepted=True,
-            executed=True,
-            dry_run=False,
-            started_at=started_at,
-            finished_at=datetime.now(UTC),
-            primitive_actions=0,
-            message=read_receipt.reason,
-        )
-        self.logger.write(
-            "memory_read",
-            step_index=observation.step_index,
-            payload={
-                "plan_id": plan_id,
-                "plan_version": plan_version,
-                "step_id": step_id,
-                "controller_primitives": 0,
-                "world_command_created": False,
-                "result": read_receipt.model_dump(mode="json"),
-            },
-        )
-        self.logger.write(
-            "action_receipt",
-            step_index=observation.step_index,
-            payload=receipt,
-        )
-        return receipt
-
-    def _execute_fieldbook_read(
-        self,
-        action: ReadFieldbookAction,
-        observation: Observation,
-        *,
-        plan_id: str,
-        plan_version: int,
-        step_id: str,
-    ) -> ActionReceipt:
-        """Answer one bounded project read without creating a world command."""
-
-        started_at = datetime.now(UTC)
-        campaign_id: str | None = None
-        status = FieldbookReadStatus.COMPLETED
-        if self.memory is None:
-            status = FieldbookReadStatus.UNAVAILABLE
-            result = FieldbookReadResult(
-                project_id=action.project_id,
-                query=action.query,
-                reason="The durable fieldbook is disabled; nothing was read.",
-            )
-        elif self._continuity.reads_degraded_reason is not None:
-            campaign_id = self.memory.campaign_id
-            status = FieldbookReadStatus.FAILED
-            result = FieldbookReadResult(
-                project_id=action.project_id,
-                query=action.query,
-                reason=self._continuity.reads_degraded_reason,
-            )
-        else:
-            campaign_id = self.memory.campaign_id
-            try:
-                result = self.memory.fieldbook.read(
-                    project_id=action.project_id,
-                    query=action.query,
-                    limit=action.max_entries,
-                )
-            except FieldbookTransitionError as exc:
-                status = FieldbookReadStatus.FAILED
-                result = FieldbookReadResult(
-                    project_id=action.project_id,
-                    query=action.query,
-                    reason=str(exc),
-                )
-            except sqlite3.Error as exc:
-                status = FieldbookReadStatus.FAILED
-                reason = self._continuity.quarantine_reads_after_store_failure(exc)
-                result = FieldbookReadResult(
-                    project_id=action.project_id,
-                    query=action.query,
-                    reason=reason,
-                )
-                self.logger.write(
-                    "continuity_store_failed",
-                    step_index=observation.step_index,
-                    payload={
-                        "boundary": "elective_fieldbook_read",
-                        "reason": reason,
-                    },
-                )
-        read_receipt = build_fieldbook_read_receipt(
-            result,
-            status=status,
-            campaign_id=campaign_id,
-            plan_id=plan_id,
-            plan_version=plan_version,
-            step_id=step_id,
-        )
-        self._pending_fieldbook_read = read_receipt
-        receipt = ActionReceipt(
-            action=action,
-            control_mode=self.control_mode,
-            accepted=True,
-            executed=True,
-            dry_run=False,
-            started_at=started_at,
-            finished_at=datetime.now(UTC),
-            primitive_actions=0,
-            message=read_receipt.reason,
-        )
-        self.logger.write(
-            "fieldbook_read",
-            step_index=observation.step_index,
-            payload={
-                "plan_id": plan_id,
-                "plan_version": plan_version,
-                "step_id": step_id,
-                "controller_primitives": 0,
-                "world_command_created": False,
-                "result": read_receipt.model_dump(mode="json"),
-            },
-        )
-        self.logger.write(
-            "action_receipt",
-            step_index=observation.step_index,
-            payload=receipt,
-        )
-        return receipt
 
     def _record_action_outcome(
         self,

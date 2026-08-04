@@ -4541,7 +4541,8 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     """
     from datetime import UTC, datetime
 
-    from kenshi_agent.continuity import ContinuityAuthority, ContinuityLedger
+    from kenshi_agent.continuity import ContinuityLedger
+    from kenshi_agent.continuity_service import ContinuityService
     from kenshi_agent.models import (
         AuthoredPlannerContext,
         CurrentObservationEvidence,
@@ -4562,12 +4563,12 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
     runner.run_id = "continuity"
     runner.logger = SimpleNamespace(write=lambda *a, **k: None)
     runner._ledger = ledger
-    runner._continuity_receipts = []
-    runner._continuity = ContinuityAuthority(
+    runner.continuity = ContinuityService(
         run_id="continuity",
         store=store,
         ledger=ledger,
         logger=runner.logger,
+        control_mode=ControlMode.INTERFACE_ONLY,
         advisor_brief_ids=set,
     )
 
@@ -4591,7 +4592,7 @@ def test_an_accepted_plan_leaves_a_trace_the_next_plan_can_read(tmp_path) -> Non
             ],
         }
     )
-    runner._apply_plan_continuity(
+    runner.continuity.apply_plan(
         plan,
         basis,
         authored_context=AuthoredPlannerContext(

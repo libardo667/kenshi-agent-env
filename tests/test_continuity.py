@@ -73,6 +73,32 @@ BRIEF_ID = "advisor-" + "0" * 32
 OTHER_BRIEF_ID = "advisor-" + "f" * 32
 
 
+
+def _attach_continuity(
+    runner: object,
+    *,
+    store: object = None,
+    ledger: object = None,
+    logger: object = None,
+    authority: object = None,
+    run_id: str = "run-a",
+) -> object:
+    """Give a bare runner a real continuity service instead of a fake."""
+
+    from kenshi_agent.continuity_service import ContinuityService
+
+    service = ContinuityService(
+        run_id=run_id,
+        store=store,  # type: ignore[arg-type]
+        ledger=ledger,  # type: ignore[arg-type]
+        logger=logger or SimpleNamespace(write=lambda *a, **k: None),  # type: ignore[arg-type]
+        control_mode=ControlMode.INTERFACE_ONLY,
+        advisor_brief_ids=set,
+        authority=authority,  # type: ignore[arg-type]
+    )
+    runner.continuity = service  # type: ignore[attr-defined]
+    return service
+
 def observation(
     *,
     run_id: str = "run-a",
@@ -2271,12 +2297,12 @@ def test_runtime_continuity_receipt_feedback_remains_bounded(
             finally:
                 logger.close()
 
-            assert len(runtime._continuity_receipts) == 4
+            assert len(runtime.continuity.recent_receipts) == 4
             assert all(
                 receipt.status is ContinuityOperationStatus.REJECTED
-                for receipt in runtime._continuity_receipts
+                for receipt in runtime.continuity.recent_receipts
             )
-            assert len({receipt.receipt_id for receipt in runtime._continuity_receipts}) == 4
+            assert len({receipt.receipt_id for receipt in runtime.continuity.recent_receipts}) == 4
 
     asyncio.run(scenario())
 
@@ -2335,7 +2361,7 @@ def test_degraded_writer_does_not_record_later_planner_delivery(
                 if entry.event is MemoryLifecycleEvent.DELIVER
             ]
             assert len(delivery_events) == 1
-            assert runtime._continuity.writes_degraded_reason is not None
+            assert runtime.continuity.authority.writes_degraded_reason is not None
 
     asyncio.run(scenario())
 
@@ -2394,7 +2420,7 @@ def test_delivery_diagnostic_failure_never_cancels_gameplay_and_reaches_next_pla
             assert summary.steps_completed == 2
             assert TwoTurnPlanner.seen_degraded_reasons == [None, expected_reason]
             assert store.delivery_attempts == 1
-            assert runtime._continuity.writes_degraded_reason == expected_reason
+            assert runtime.continuity.authority.writes_degraded_reason == expected_reason
 
         events = [
             json.loads(line)
@@ -2472,8 +2498,8 @@ def test_automatic_recall_failure_quarantines_reads_and_writes_without_stopping_
                 (expected_reason, expected_reason),
             ]
             assert store.recall_attempts == 1
-            assert runtime._continuity.reads_degraded_reason == expected_reason
-            assert runtime._continuity.writes_degraded_reason == expected_reason
+            assert runtime.continuity.authority.reads_degraded_reason == expected_reason
+            assert runtime.continuity.authority.writes_degraded_reason == expected_reason
 
         events = [
             json.loads(line)
@@ -2570,10 +2596,9 @@ def test_decorating_observations_at_pump_rate_writes_nothing(tmp_path: Path) -> 
             general=8,
         )
         runner.advisor = None
-        runner._continuity_receipts = []
-        runner._pending_memory_search = None
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=4)
-        runner._continuity, _ = authority(store, runner._ledger)
+        engine, _ = authority(store, runner._ledger)
+        _attach_continuity(runner, store=store, ledger=runner._ledger, authority=engine)
         runner.planning_config = PlanningConfig()
 
         current = observation(target_ids=("entity-a",))
@@ -3362,15 +3387,11 @@ def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
     from kenshi_agent.models import RecallMemoryAction
     from kenshi_agent.runtime import AgentRuntime
 
-    runner = object.__new__(AgentRuntime)
-    runner.memory = None
-    runner.run_id = "reader"
-    runner.control_mode = ControlMode.INTERFACE_ONLY
-    runner.logger = SimpleNamespace(write=lambda *a, **k: None)
-    runner._pending_memory_search = None
+    service = _attach_continuity(
+        object.__new__(AgentRuntime), store=None, ledger=None, run_id="reader"
+    )
 
-    receipt = AgentRuntime._execute_memory_read(
-        runner,
+    receipt = service.read_memory(
         RecallMemoryAction(query="gate"),
         observation(),
         plan_id="single-step",
@@ -3378,13 +3399,13 @@ def test_a_read_with_memory_disabled_reports_unavailability_not_emptiness(
         step_id="step-0",
     )
 
-    assert runner._pending_memory_search is not None
-    assert runner._pending_memory_search.records == []
-    assert runner._pending_memory_search.receipt_id.startswith("mrr-")
-    assert runner._pending_memory_search.source == "durable_memory"
-    assert runner._pending_memory_search.status is MemoryReadStatus.UNAVAILABLE
-    assert runner._pending_memory_search.campaign_id is None
-    assert "disabled" in runner._pending_memory_search.reason
+    assert service.pending_memory_search is not None
+    assert service.pending_memory_search.records == []
+    assert service.pending_memory_search.receipt_id.startswith("mrr-")
+    assert service.pending_memory_search.source == "durable_memory"
+    assert service.pending_memory_search.status is MemoryReadStatus.UNAVAILABLE
+    assert service.pending_memory_search.campaign_id is None
+    assert "disabled" in service.pending_memory_search.reason
     assert receipt.primitive_actions == 0
 
 
@@ -3397,18 +3418,16 @@ def test_a_working_outcome_read_returns_exact_runtime_owned_evidence() -> None:
         action_outcome("ao-2").model_copy(update={"plan_id": "plan-action"})
     )
     events: list[tuple[str, dict[str, Any]]] = []
-    runner = object.__new__(AgentRuntime)
-    runner.memory = None
-    runner.run_id = "run-a"
-    runner.control_mode = ControlMode.INTERFACE_ONLY
-    runner._ledger = ledger
-    runner.logger = SimpleNamespace(
-        write=lambda event_type, **kwargs: events.append((event_type, kwargs))
+    service = _attach_continuity(
+        object.__new__(AgentRuntime),
+        store=None,
+        ledger=ledger,
+        logger=SimpleNamespace(
+            write=lambda event_type, **kwargs: events.append((event_type, kwargs))
+        ),
     )
-    runner._pending_memory_search = None
 
-    receipt = AgentRuntime._execute_memory_read(
-        runner,
+    receipt = service.read_memory(
         RecallMemoryAction(
             source="working_outcomes",
             query="plan",
@@ -3420,7 +3439,7 @@ def test_a_working_outcome_read_returns_exact_runtime_owned_evidence() -> None:
         step_id="read-outcomes",
     )
 
-    returned = runner._pending_memory_search
+    returned = service.pending_memory_search
     assert returned is not None
     assert returned.source == "working_outcomes"
     assert returned.status is MemoryReadStatus.COMPLETED
@@ -3461,26 +3480,25 @@ def test_elective_memory_search_failure_is_typed_and_quarantined(
         ledger = ContinuityLedger(run_id="reader", action_outcome_limit=0)
         engine, _ = authority(store, ledger)
         events: list[tuple[str, dict[str, Any]]] = []
-        runner = object.__new__(AgentRuntime)
-        runner.memory = store
-        runner.run_id = "reader"
-        runner.control_mode = ControlMode.INTERFACE_ONLY
-        runner._continuity = engine
-        runner.logger = SimpleNamespace(
-            write=lambda event_type, **kwargs: events.append((event_type, kwargs))
+        service = _attach_continuity(
+            object.__new__(AgentRuntime),
+            store=store,
+            ledger=None,
+            authority=engine,
+            run_id="reader",
+            logger=SimpleNamespace(
+                write=lambda event_type, **kwargs: events.append((event_type, kwargs))
+            ),
         )
-        runner._pending_memory_search = None
 
-        receipt = AgentRuntime._execute_memory_read(
-            runner,
+        receipt = service.read_memory(
             RecallMemoryAction(query="gate"),
             observation(),
             plan_id="single-step",
             plan_version=1,
             step_id="step-0",
         )
-        repeated = AgentRuntime._execute_memory_read(
-            runner,
+        repeated = service.read_memory(
             RecallMemoryAction(query="gate"),
             observation(),
             plan_id="single-step",
@@ -3494,11 +3512,11 @@ def test_elective_memory_search_failure_is_typed_and_quarantined(
             "(DatabaseError: injected search failure)."
         )
         assert store.search_attempts == 1
-        assert runner._pending_memory_search is not None
-        assert runner._pending_memory_search.records == []
-        assert runner._pending_memory_search.status is MemoryReadStatus.FAILED
-        assert runner._pending_memory_search.campaign_id == "reader"
-        assert runner._pending_memory_search.reason == expected_reason
+        assert service.pending_memory_search is not None
+        assert service.pending_memory_search.records == []
+        assert service.pending_memory_search.status is MemoryReadStatus.FAILED
+        assert service.pending_memory_search.campaign_id == "reader"
+        assert service.pending_memory_search.reason == expected_reason
         assert receipt.message == expected_reason
         assert repeated.message == expected_reason
         assert receipt.primitive_actions == 0
@@ -3542,9 +3560,7 @@ def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
         runner.advisor = None
         runner.logger = SimpleNamespace(write=lambda *a, **k: None)
         runner._ledger = ledger
-        runner._continuity = engine
-        runner._pending_memory_search = None
-        runner._continuity_receipts = []
+        _attach_continuity(runner, store=store, ledger=ledger, authority=engine)
         runner.planning_config = PlanningConfig()
         runner._recall_budget = RecallBudget(
             commitments=4,
@@ -3554,9 +3570,10 @@ def test_a_rejected_operation_is_shown_to_the_planner_that_would_repeat_it(
         )
         current = observation()
 
-        runner._apply_decision_continuity(
+        runner.continuity.apply_decision(
             SimpleNamespace(  # type: ignore[arg-type]
-                continuity_operations=[keep(MemoryKind.FACT, "Unsupported claim.")]
+                continuity_operations=[keep(MemoryKind.FACT, "Unsupported claim.")],
+                fieldbook_operations=[],
             ),
             current,
             authored_context=planner_context(
@@ -3601,9 +3618,8 @@ def test_omitted_general_memories_are_declared_in_the_observation(
         runner.memory = store
         runner.advisor = None
         runner._ledger = ContinuityLedger(run_id="run-a", action_outcome_limit=0)
-        runner._continuity, _ = authority(store, runner._ledger)
-        runner._continuity_receipts = []
-        runner._pending_memory_search = None
+        engine, _ = authority(store, runner._ledger)
+        _attach_continuity(runner, store=store, ledger=runner._ledger, authority=engine)
         runner.planning_config = PlanningConfig()
         runner._recall_budget = RecallBudget(
             commitments=1,
